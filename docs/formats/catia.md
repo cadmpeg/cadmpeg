@@ -191,7 +191,7 @@ A standard `u16be` edge row with no interior handles does not match every bounda
 
 The standard `u16be` endpoint ports form a larger namespace than the vertex table; a port handle is not a vertex index. Port-handle identity is scoped to its `01 01` or `01 02` edge table. Equal handles in one table name the same port; equal numeric handles across the two tables do not establish identity. Boundary-run corner unions bridge the two table-local namespaces. FBB `u24be` handles instead share the mesh-boundary namespace used by the trim packets; cross-face logical-vertex collapse is applied after complete-run identity is established.
 
-The endpoint components induced by exact face-local run matches are provisional. Distinct occurrence components may map to one counted `05 08 01` vertex when the same physical corner uses different trim handles on adjacent faces. Coordinate-row indices therefore cannot be assigned directly from component ordinals; closed cross-face incidence supplies the remaining quotient.
+The endpoint components induced by exact face-local run matches are provisional. Distinct occurrence components map to one logical vertex when their physical edge endpoints carry the same native endpoint identity, even when adjacent faces use different trim handles. Native endpoint identities are global within the topology; each edge's ordered identity pair is in physical edge-row direction and replaces its provisional corner pair. Coordinate-row indices therefore cannot be assigned directly from component ordinals; the native-identity quotient precedes coordinate binding.
 
 Resolved physical-edge endpoint pairs constrain the port namespace. For every
 port handle, intersect the unordered vertex pairs of all resolved edge rows

@@ -293,7 +293,39 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     assert_eq!(topology.edge_rows()[0].handles, vec![0x01_0010, 0x01_0011]);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
     assert_eq!(topology.logical_vertex_count(), 8);
-    assert!(topology.vertex_points().is_empty());
+    assert_eq!(topology.vertex_points().len(), 4);
+    let native_ports = [
+        [100, 101],
+        [101, 102],
+        [102, 103],
+        [103, 100],
+        [100, 101],
+        [101, 102],
+        [102, 103],
+        [103, 100],
+    ];
+    let quotient = crate::topology::parse_fbb_with_native_vertices(&bytes, &native_ports)
+        .expect("native endpoint quotient");
+    assert_eq!(quotient.logical_vertex_count(), 4);
+    assert_eq!(
+        quotient.edge_vertices().expect("edge vertices"),
+        native_ports.map(|pair| pair.map(|identity| usize::try_from(identity - 100).unwrap()))
+    );
+    assert_eq!(
+        quotient
+            .bind_vertex_points(&[
+                [0, 1],
+                [1, 2],
+                [2, 3],
+                [3, 0],
+                [0, 1],
+                [1, 2],
+                [2, 3],
+                [3, 0],
+            ])
+            .expect("coordinate binding"),
+        vec![0, 1, 2, 3]
+    );
     let runs = crate::topology::standard_mesh_edge_runs(&bytes).expect("u24 edge runs");
     assert_eq!(runs.len(), 8);
     assert!(runs.iter().all(|run| run.segment_count == 1));

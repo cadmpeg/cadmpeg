@@ -116,6 +116,43 @@ impl StandardTopology {
 
         edge_vertices.into_iter().collect()
     }
+
+    /// Replace provisional trim-handle endpoint components with the quotient
+    /// induced by one native endpoint-identity pair per physical edge.
+    ///
+    /// Native identities are global within the parsed topology. Equal values
+    /// collapse face-local corners even when adjacent faces use different trim
+    /// handles. The pair order is the physical edge-row direction.
+    #[must_use]
+    pub fn with_native_edge_vertices(&self, edge_ports: &[[u32; 2]]) -> Option<Self> {
+        if edge_ports.len() != self.edge_rows.len() {
+            return None;
+        }
+        let mut identities = HashMap::new();
+        let mut edge_vertices = Vec::with_capacity(edge_ports.len());
+        for ports in edge_ports {
+            let pair = ports.map(|identity| {
+                let next = identities.len();
+                *identities.entry(identity).or_insert(next)
+            });
+            edge_vertices.push(pair);
+        }
+        let mut topology = self.clone();
+        for face in &mut topology.faces {
+            for boundary in &mut face.boundaries {
+                for coedge in &mut boundary.coedges {
+                    let [start, end] = edge_vertices[coedge.edge_row];
+                    [coedge.start_vertex, coedge.end_vertex] = if coedge.reversed {
+                        [end, start]
+                    } else {
+                        [start, end]
+                    };
+                }
+            }
+        }
+        topology.logical_vertex_count = identities.len();
+        Some(topology)
+    }
 }
 
 fn unique_bijections(
@@ -1365,14 +1402,26 @@ fn incidence_cycles(
     Some(cycles)
 }
 
-/// Parses the FBB-only spine. Its edge rows and trim handles are `u24be`; its
-/// coordinate records are not part of the counted spine and remain unbound.
+/// Parses the FBB-only spine. Its edge rows and trim handles are `u24be`; the
+/// following counted `05 08 01` table supplies vertex coordinates.
 #[must_use]
 pub fn parse_fbb(bytes: &[u8]) -> Option<StandardTopology> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, _) = parse_fbb_edge_tables(bytes, after_faces)?;
+    let vertex_points = standard_vertex_points(bytes)?;
     let trims = parse_trim_chain(bytes, face_start, face_count, 3)?;
-    reconstruct(edge_rows, Vec::new(), &trims)
+    reconstruct(edge_rows, vertex_points, &trims)
+}
+
+/// Parse an FBB-only spine and apply its global native endpoint identities.
+/// This closes the cross-face quotient independently of face-local trim-handle
+/// names.
+#[must_use]
+pub fn parse_fbb_with_native_vertices(
+    bytes: &[u8],
+    edge_ports: &[[u32; 2]],
+) -> Option<StandardTopology> {
+    parse_fbb(bytes)?.with_native_edge_vertices(edge_ports)
 }
 
 fn reconstruct(

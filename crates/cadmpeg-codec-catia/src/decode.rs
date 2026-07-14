@@ -2456,12 +2456,12 @@ fn attach_standard_topology(
         &supports,
         &endpoint_candidates,
     );
+    let native_edges = crate::b5::edge_vertex_references(source);
+    let native_ports = supports
+        .iter()
+        .map(|support| native_edges.get(&support.tag).copied())
+        .collect::<Option<Vec<_>>>();
     let native_endpoint_pairs = endpoint_options.as_ref().and_then(|options| {
-        let native_edges = crate::b5::edge_vertex_references(source);
-        let native_ports = supports
-            .iter()
-            .map(|support| native_edges.get(&support.tag).copied())
-            .collect::<Option<Vec<_>>>();
         native_ports
             .as_ref()
             .and_then(|ports| topology::bind_edge_port_candidates(ports, options))
@@ -2541,28 +2541,33 @@ fn attach_standard_topology(
     });
     let resolved_endpoint_pairs = propagated_endpoint_pairs
         .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<[usize; 2]>>>());
-    let mesh_bound = topology::parse_standard(brep).and_then(|topology| {
-        let endpoint_pairs = resolved_endpoint_pairs
-            .clone()
-            .or_else(|| {
-                endpoint_candidates
-                    .iter()
-                    .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
-                    .collect::<Option<Vec<[usize; 2]>>>()
-            })
-            .or_else(|| {
-                let ports = topology
-                    .edge_vertices()?
-                    .into_iter()
-                    .map(|[left, right]| {
-                        Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
-                    })
-                    .collect::<Option<Vec<_>>>()?;
-                topology::bind_edge_port_candidates(&ports, constrained_endpoint_options.as_ref()?)
-            })?;
-        let point_assignment = topology.bind_vertex_points(&endpoint_pairs)?;
-        Some((topology, point_assignment))
-    });
+    let mesh_bound = topology::parse_standard(brep)
+        .or_else(|| topology::parse_fbb_with_native_vertices(brep, native_ports.as_ref()?))
+        .and_then(|topology| {
+            let endpoint_pairs = resolved_endpoint_pairs
+                .clone()
+                .or_else(|| {
+                    endpoint_candidates
+                        .iter()
+                        .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
+                        .collect::<Option<Vec<[usize; 2]>>>()
+                })
+                .or_else(|| {
+                    let ports = topology
+                        .edge_vertices()?
+                        .into_iter()
+                        .map(|[left, right]| {
+                            Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    topology::bind_edge_port_candidates(
+                        &ports,
+                        constrained_endpoint_options.as_ref()?,
+                    )
+                })?;
+            let point_assignment = topology.bind_vertex_points(&endpoint_pairs)?;
+            Some((topology, point_assignment))
+        });
     let circle_anchors: Vec<Option<[usize; 2]>> = supports
         .iter()
         .zip(&endpoint_candidates)

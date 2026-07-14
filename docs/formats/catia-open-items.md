@@ -57,7 +57,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 ## FBB-only and float-packed variants
 
-- `u24be` endpoint-port to logical-vertex collapse.
+- Binding the quotient of `u24be` endpoints by native identity to the counted coordinate rows.
 - The record-family discriminator and following byte grammar are unspecified when a nested file contains an FBB-like run but lacks one or more required edge or vertex populations.
 - Variant loop-node payloads outside the length-framed `b5 03 62` and `a8 03 62` forms are unspecified.
 - The delimiter grammar of the marker-only `00 33 3X` surface path is unspecified.
