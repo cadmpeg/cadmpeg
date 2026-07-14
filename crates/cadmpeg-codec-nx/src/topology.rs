@@ -389,6 +389,8 @@ pub struct BlendSurface {
     pub spine: u32,
     /// Signed support offsets in millimetres.
     pub offsets: [f64; 2],
+    /// Dimensionless thumb weights in support order.
+    pub thumb_weights: [f64; 2],
     /// Record type-tag offset in the inflated stream.
     pub pos: usize,
 }
@@ -525,6 +527,7 @@ pub fn blend_surfaces(stream: &[u8]) -> Vec<BlendSurface> {
                 supports: [refs[0], refs[1]],
                 spine: refs[2],
                 offsets: [values[0] * 1000.0, values[1] * 1000.0],
+                thumb_weights: [values[2], values[3]],
                 pos: node.pos,
             })
         })

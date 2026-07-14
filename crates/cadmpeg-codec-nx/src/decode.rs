@@ -39,8 +39,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_ir::Exactness;
+use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::{self, Container};
 use crate::geometry;
@@ -349,7 +348,15 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
                 },
-                source_object: None,
+                source_object: Some(SourceObjectAssociation {
+                    format: "nx".to_string(),
+                    object_id: format!("nx:s{si}:blend-surface-record#{}", blend.xmt),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
             });
             annotations
                 .note(&procedural_id, source_stream, blend.pos as u64)
@@ -3095,6 +3102,8 @@ fn attach_native_object_model(
     let segment_stream_links = crate::native::segment_stream_links(&scan.container, &scan.streams);
     let segment_body_bindings =
         crate::native::segment_body_bindings(&scan.container, &scan.streams);
+    let parasolid_blend_surface_records =
+        crate::native::parasolid_blend_surface_records(&scan.streams);
     let parasolid_attribute_definitions =
         crate::native::parasolid_attribute_definitions(&scan.streams);
     let parasolid_entity_51_records = crate::native::parasolid_entity_51_records(&scan.streams);
@@ -3354,6 +3363,7 @@ fn attach_native_object_model(
         && segment_stream_links.is_empty()
         && segment_body_bindings.is_empty()
         && segment_body_lineage_statuses.is_empty()
+        && parasolid_blend_surface_records.is_empty()
         && parasolid_attribute_definitions.is_empty()
         && parasolid_entity_51_records.is_empty()
         && parasolid_entity_52_integer_records.is_empty()
@@ -3462,6 +3472,13 @@ fn attach_native_object_model(
             .note(&status.id, annotation_stream, status.source_offset)
             .tag("SEGMENT_BODY_LINEAGE_STATUS");
         annotations.exactness(&status.id, Exactness::Derived);
+    }
+    for record in &parasolid_blend_surface_records {
+        let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
+        annotations
+            .note(&record.id, source_stream, record.inflated_offset)
+            .tag("BLEND_SURF");
+        annotations.exactness(&record.id, Exactness::ByteExact);
     }
     for definition in &parasolid_attribute_definitions {
         let source_stream = annotations.stream(format!("nx:s{}", definition.stream_ordinal));
@@ -3859,7 +3876,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(131);
+    namespace.version = namespace.version.max(132);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3873,6 +3890,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "segment_body_lineage_statuses",
             &segment_body_lineage_statuses,
+        )?;
+    }
+    if !parasolid_blend_surface_records.is_empty() {
+        namespace.set_arena(
+            "parasolid_blend_surface_records",
+            &parasolid_blend_surface_records,
         )?;
     }
     if !parasolid_attribute_definitions.is_empty() {

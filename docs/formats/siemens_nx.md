@@ -532,7 +532,12 @@ support refs +20,+22,+24    (large-index capable): support 0, support 1, spine
 4 × xmt tail refs           `1` (null references)
 ```
 
-A BLEND_SURF used by a FACE transfers as a procedural surface carrier. The carrier and blend construction reference each other; oriented supports, spine, radius law, and cross-section remain in the construction.
+A BLEND_SURF used by a FACE transfers as a procedural surface carrier. The
+carrier references the complete typed source record. The carrier and blend
+construction reference each other; oriented supports, spine, radius law, and
+cross-section remain in the construction. The source record retains both
+signed support offsets and both dimensionless thumb weights in serialized
+support order.
 
 `values[0:2]` are signed support offsets `range[2]` in meters. Their magnitude gives the rolling-ball radius `r = |range|`. `values[2:4]` are dimensionless `thumb_weight[2]`. Support reference 2 identifies the ball-centre spine. Spine families include:
 

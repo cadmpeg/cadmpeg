@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 131);
+    assert_eq!(namespace.version, 132);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6452,7 +6452,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 131);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 132);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -7201,6 +7201,32 @@ fn decode_emits_rolling_ball_blend_surface() {
     assert!(spine.is_none());
     assert!(native.is_none());
     assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
+    let records = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::ParasolidBlendSurfaceRecord>("parasolid_blend_surface_records")
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].support_xmts, [6, 6]);
+    assert_eq!(records[0].spine_xmt, 1);
+    assert_eq!(records[0].offsets, [-3.0, 3.0]);
+    assert_eq!(records[0].thumb_weights, [1.0, 1.0]);
+    let carrier = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == procedural.surface)
+        .unwrap();
+    assert_eq!(
+        carrier
+            .source_object
+            .as_ref()
+            .map(|association| association.object_id.as_str()),
+        Some(records[0].id.as_str())
+    );
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 

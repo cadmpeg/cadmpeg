@@ -118,6 +118,27 @@ pub struct SegmentBodyLineageStatus {
     pub source_offset: u64,
 }
 
+/// Complete typed type-56 rolling-ball blend-surface record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidBlendSurfaceRecord {
+    /// Globally unique native-record identity.
+    pub id: String,
+    /// Zero-based embedded Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stream-local `BLEND_SURF` identity.
+    pub xmt: u32,
+    /// Ordered support-surface identities.
+    pub support_xmts: [u32; 2],
+    /// Ball-centre spine identity; `1` is the null reference.
+    pub spine_xmt: u32,
+    /// Signed support offsets in model millimetres.
+    pub offsets: [f64; 2],
+    /// Dimensionless support thumb weights.
+    pub thumb_weights: [f64; 2],
+    /// Offset of the type tag in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Named Parasolid attribute class declared in one inflated body stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidAttributeDefinition {
@@ -4944,6 +4965,31 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
                 })
         })
         .collect()
+}
+
+/// Retain complete typed rolling-ball blend records from all Parasolid streams.
+pub fn parasolid_blend_surface_records(streams: &[Stream]) -> Vec<ParasolidBlendSurfaceRecord> {
+    let mut records = streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .flat_map(|(stream_ordinal, stream)| {
+            crate::topology::blend_surfaces(&stream.inflated)
+                .into_iter()
+                .map(move |blend| ParasolidBlendSurfaceRecord {
+                    id: format!("nx:s{stream_ordinal}:blend-surface-record#{}", blend.xmt),
+                    stream_ordinal: stream_ordinal as u32,
+                    xmt: blend.xmt,
+                    support_xmts: blend.supports,
+                    spine_xmt: blend.spine,
+                    offsets: blend.offsets,
+                    thumb_weights: blend.thumb_weights,
+                    inflated_offset: blend.pos as u64,
+                })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by(|first, second| first.id.cmp(&second.id));
+    records
 }
 
 /// Retain every non-null topology-to-attribute-list reference.
