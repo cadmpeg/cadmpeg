@@ -1091,7 +1091,7 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, scan: &Scan) -> bool {
     if booleans.is_empty() && body_operands.is_empty() {
         return false;
     }
-    let Some(terminal) = crate::native::terminal_feature_body_indices(
+    let Some(statuses) = crate::native::segment_body_lineage_statuses(
         &labels,
         &body_references,
         &booleans,
@@ -1102,19 +1102,16 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, scan: &Scan) -> bool {
     };
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
-    for binding in bindings
+    for (binding, status) in bindings
         .iter()
         .filter(|binding| binding.stream_kind == "partition")
+        .filter_map(|binding| {
+            statuses
+                .iter()
+                .find(|status| status.segment_body_binding == binding.id)
+                .map(|status| (binding, status))
+        })
     {
-        let identities = [binding.body_object_index, binding.body_alias_object_index];
-        let statuses = identities
-            .into_iter()
-            .map(|identity| terminal.contains(&identity))
-            .collect::<BTreeSet<_>>();
-        if statuses.len() != 1 {
-            return false;
-        }
-        let is_terminal = *statuses.first().expect("one terminal status");
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
         let stream_bodies = ir
             .model
@@ -1127,7 +1124,7 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, scan: &Scan) -> bool {
             continue;
         }
         mapped.extend(stream_bodies.iter().cloned());
-        if is_terminal {
+        if status.terminal {
             selected.extend(stream_bodies);
         }
     }
@@ -2912,6 +2909,14 @@ fn attach_native_object_model(
             &offset_store_named_points,
         );
     let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
+    let segment_body_lineage_statuses = crate::native::segment_body_lineage_statuses(
+        &feature_operation_labels,
+        &feature_body_references,
+        &feature_boolean_operations,
+        &feature_operation_body_operands,
+        &segment_body_bindings,
+    )
+    .unwrap_or_default();
     let expression_declarations = crate::native::expression_declarations(&scan.container);
     let data_block_object_frames = crate::native::data_block_object_frames(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
@@ -2962,6 +2967,7 @@ fn attach_native_object_model(
         && segment_om_links.is_empty()
         && segment_stream_links.is_empty()
         && segment_body_bindings.is_empty()
+        && segment_body_lineage_statuses.is_empty()
         && parasolid_attribute_definitions.is_empty()
         && om_record_areas.is_empty()
         && feature_operation_labels.is_empty()
@@ -3049,6 +3055,12 @@ fn attach_native_object_model(
             .note(&binding.id, annotation_stream, binding.source_offset)
             .tag("UG_PART_SEGMENT_BODY_BINDING");
         annotations.exactness(&binding.id, Exactness::ByteExact);
+    }
+    for status in &segment_body_lineage_statuses {
+        annotations
+            .note(&status.id, annotation_stream, status.source_offset)
+            .tag("SEGMENT_BODY_LINEAGE_STATUS");
+        annotations.exactness(&status.id, Exactness::Derived);
     }
     for definition in &parasolid_attribute_definitions {
         let source_stream = annotations.stream(format!("nx:s{}", definition.stream_ordinal));
@@ -3356,7 +3368,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(114);
+    namespace.version = namespace.version.max(115);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3365,6 +3377,12 @@ fn attach_native_object_model(
     }
     if !segment_body_bindings.is_empty() {
         namespace.set_arena("segment_body_bindings", &segment_body_bindings)?;
+    }
+    if !segment_body_lineage_statuses.is_empty() {
+        namespace.set_arena(
+            "segment_body_lineage_statuses",
+            &segment_body_lineage_statuses,
+        )?;
     }
     if !parasolid_attribute_definitions.is_empty() {
         namespace.set_arena(

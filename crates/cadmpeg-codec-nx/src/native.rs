@@ -101,6 +101,23 @@ pub struct SegmentBodyBinding {
     pub source_offset: u64,
 }
 
+/// Unambiguous terminal status of one segment-bound body image.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SegmentBodyLineageStatus {
+    /// Globally unique status identity.
+    pub id: String,
+    /// Segment binding whose alias pair names the body image.
+    pub segment_body_binding: String,
+    /// First serialized body identity.
+    pub body_object_index: u32,
+    /// Alias identity naming the same body image.
+    pub body_alias_object_index: u32,
+    /// Whether the image remains terminal after retained history.
+    pub terminal: bool,
+    /// Absolute source offset of the segment binding.
+    pub source_offset: u64,
+}
+
 /// Named Parasolid attribute class declared in one inflated body stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidAttributeDefinition {
@@ -1855,6 +1872,39 @@ pub fn terminal_feature_body_indices(
             .filter(|identity| terminal_roots.contains(&canonical(*identity)))
             .collect(),
     )
+}
+
+/// Resolve one atomic terminal status for every segment-bound body image.
+pub fn segment_body_lineage_statuses(
+    labels: &[FeatureOperationLabel],
+    references: &[FeatureBodyReference],
+    booleans: &[FeatureBooleanOperation],
+    operands: &[FeatureOperationBodyOperand],
+    bindings: &[SegmentBodyBinding],
+) -> Option<Vec<SegmentBodyLineageStatus>> {
+    let terminal = terminal_feature_body_indices(labels, references, booleans, operands, bindings)?;
+    bindings
+        .iter()
+        .map(|binding| {
+            let statuses = [binding.body_object_index, binding.body_alias_object_index]
+                .map(|identity| terminal.contains(&identity));
+            if statuses[0] != statuses[1] {
+                return None;
+            }
+            let key = binding
+                .id
+                .rsplit_once('#')
+                .map_or(binding.id.as_str(), |(_, key)| key);
+            Some(SegmentBodyLineageStatus {
+                id: format!("nx:segment-body-lineage:status#{key}"),
+                segment_body_binding: binding.id.clone(),
+                body_object_index: binding.body_object_index,
+                body_alias_object_index: binding.body_alias_object_index,
+                terminal: statuses[0],
+                source_offset: binding.source_offset,
+            })
+        })
+        .collect()
 }
 
 /// Map each segment body identity to the smaller identity in its alias pair.

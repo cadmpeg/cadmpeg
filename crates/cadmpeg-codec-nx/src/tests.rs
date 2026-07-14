@@ -485,7 +485,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 114);
+    assert_eq!(namespace.version, 115);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1975,6 +1975,70 @@ fn feature_body_lineage_excludes_tools_consumed_after_their_latest_writer() {
         crate::native::terminal_feature_body_indices(&labels, &references, &booleans, &[], &[]),
         Some([10].into_iter().collect())
     );
+}
+
+#[test]
+fn segment_body_lineage_statuses_cover_every_bound_image() {
+    use crate::native::{
+        segment_body_lineage_statuses, FeatureBodyReference, FeatureBooleanKind,
+        FeatureBooleanOperation, FeatureOperationLabel, SegmentBodyBinding,
+    };
+    let labels = [
+        FeatureOperationLabel {
+            id: "operation#0".to_string(),
+            section_link: "history#0".to_string(),
+            ordinal: 0,
+            value: "EXTRUDE".to_string(),
+            object_indices: [None; 4],
+            source_offset: 0,
+        },
+        FeatureOperationLabel {
+            id: "operation#1".to_string(),
+            section_link: "history#0".to_string(),
+            ordinal: 1,
+            value: "UNITE".to_string(),
+            object_indices: [None; 4],
+            source_offset: 1,
+        },
+    ];
+    let references = [FeatureBodyReference {
+        id: "reference#0".to_string(),
+        operation_label: "operation#0".to_string(),
+        body_object_index: 10,
+        source_offset: 0,
+    }];
+    let booleans = [FeatureBooleanOperation {
+        id: "boolean#0".to_string(),
+        operation_label: "operation#1".to_string(),
+        kind: FeatureBooleanKind::Unite,
+        target_object_index: 10,
+        tool_object_indices: vec![21],
+        source_offset: 1,
+    }];
+    let binding = |id: &str, stream_ordinal: u32, body, alias| SegmentBodyBinding {
+        id: id.to_string(),
+        stream_link: format!("stream#{stream_ordinal}"),
+        stream_ordinal,
+        stream_kind: "partition".to_string(),
+        body_object_index: body,
+        body_alias_object_index: alias,
+        stream_role: 19,
+        source_offset: u64::from(stream_ordinal),
+    };
+    let statuses = segment_body_lineage_statuses(
+        &labels,
+        &references,
+        &booleans,
+        &[],
+        &[
+            binding("binding#0", 0, 10, 11),
+            binding("binding#1", 1, 20, 21),
+        ],
+    )
+    .unwrap();
+    assert_eq!(statuses.len(), 2);
+    assert!(statuses[0].terminal);
+    assert!(!statuses[1].terminal);
 }
 
 #[test]
@@ -5633,7 +5697,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 114);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 115);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
