@@ -524,7 +524,7 @@ impl SldprtNative {
             lane.surface_selections.sort_by_key(|record| record.ordinal);
             if let Some(record) = lane.surface_selections.iter().find(|record| {
                 usize::try_from(record.offset).ok().and_then(|offset| {
-                    crate::resolved_features::compact_surface_selection_at(
+                    crate::resolved_features::compact_surface_reference_at(
                         &lane.native_payload,
                         offset,
                     )
@@ -661,7 +661,7 @@ impl SldprtNative {
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.local_component_ids.is_empty()
                     || usize::try_from(record.offset).ok().and_then(|offset| {
-                        crate::resolved_features::compact_surface_selection_at(
+                        crate::resolved_features::compact_surface_reference_at(
                             &lane.native_payload,
                             offset,
                         )

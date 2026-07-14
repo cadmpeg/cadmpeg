@@ -3492,8 +3492,13 @@ fn validate_compact_surface_selection_edits(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let FeatureDefinition::Thicken { faces, .. } = &feature.definition else {
-            continue;
+        let faces = match &feature.definition {
+            FeatureDefinition::Thicken { faces, .. } => faces,
+            FeatureDefinition::Extrude {
+                extent: cadmpeg_ir::features::Extent::ToFace { face },
+                ..
+            } => face,
+            _ => continue,
         };
         let expected =
             FaceSelection::Native(crate::resolved_features::compact_surface_selection_value(

@@ -255,12 +255,13 @@ mod marker_tests {
         compact_body_selection_at, compact_body_selection_vector, compact_body_state_ids,
         compact_edge_selection_at, compact_extrusion_through_all_at, compact_extrusion_to_face_at,
         compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
-        compact_reference_plane_source, compact_surface_selection_at, component_profile_source_at,
-        coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
-        marker_local_id, marker_local_links, marker_object_index, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers, unique_locus,
-        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
+        compact_reference_plane_source, compact_single_face_reference_path_at,
+        compact_surface_selection_at, component_profile_source_at, coordinate_marker_local_links,
+        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
+        marker_object_index, named_scalars, native_scalar_matches_discrete_parameter, object_names,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
+        SCALAR_HEADER,
     };
     use crate::records::{
         FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind,
@@ -807,7 +808,14 @@ mod marker_tests {
         payload[88..92].copy_from_slice(&1u32.to_le_bytes());
         payload[92..96].copy_from_slice(&[0, 2, 0, 0]);
         payload[100..116].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        payload[118..122].copy_from_slice(&[0x32, 0x80, 0, 0]);
+        payload[122..134].fill(1);
+        payload[134..138].copy_from_slice(&7u32.to_le_bytes());
         assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
+        assert_eq!(
+            compact_single_face_reference_path_at(&payload, 100),
+            Some(vec![7])
+        );
 
         payload[12] = 1;
         payload[22] = 1;
@@ -2352,21 +2360,13 @@ fn compact_surface_selections(
         .classes
         .iter()
         .filter(|class| class.name == "moCompSurfaceBody_c");
-    let Some(class) = classes.next() else {
-        return Vec::new();
-    };
-    if classes.next().is_some() {
-        return Vec::new();
-    }
-    let Some(token_offset) = usize::try_from(class.offset)
-        .ok()
-        .and_then(|offset| offset.checked_add(6 + class.name.len()))
-    else {
-        return Vec::new();
-    };
-    let Some(token) = lane.native_payload.get(token_offset..token_offset + 2) else {
-        return Vec::new();
-    };
+    let surface_class = classes.next().filter(|_| classes.next().is_none());
+    let surface_token = surface_class.and_then(|class| {
+        usize::try_from(class.offset)
+            .ok()
+            .and_then(|offset| offset.checked_add(6 + class.name.len()))
+            .and_then(|offset| lane.native_payload.get(offset..offset + 2))
+    });
     let mut objects = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -2379,25 +2379,43 @@ fn compact_surface_selections(
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
     for (index, &(name, feature)) in objects.iter().enumerate() {
-        if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
-            != NativeClassKind::Thicken
-        {
-            continue;
-        }
+        let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
         let Some(start) = usize::try_from(name.offset).ok() else {
             continue;
         };
+        let mut end_index = index + 1;
+        if kind == NativeClassKind::Extrusion
+            && objects.get(end_index).is_some_and(|(_, next)| {
+                native_object_class(next.input_class.as_deref().unwrap_or_default()).kind
+                    == NativeClassKind::ProfileFeature
+            })
+        {
+            end_index += 1;
+        }
         let end = objects
-            .get(index + 1)
+            .get(end_index)
             .and_then(|(next, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
-        let candidates = (start..end.saturating_sub(105))
-            .filter(|offset| lane.native_payload.get(*offset..*offset + 2) == Some(token))
-            .filter_map(|offset| {
-                let marker = offset + 103;
-                compact_surface_selection_at(&lane.native_payload, marker).map(|ids| (marker, ids))
-            })
-            .collect::<Vec<_>>();
+        let candidates = match kind {
+            NativeClassKind::Thicken => surface_token.map_or_else(Vec::new, |token| {
+                (start..end.saturating_sub(105))
+                    .filter(|offset| lane.native_payload.get(*offset..*offset + 2) == Some(token))
+                    .filter_map(|offset| {
+                        let marker = offset + 103;
+                        compact_surface_selection_at(&lane.native_payload, marker)
+                            .map(|ids| (marker, ids))
+                    })
+                    .collect()
+            }),
+            NativeClassKind::Extrusion => (start..end.saturating_sub(103))
+                .filter_map(|offset| compact_extrusion_to_face_at(&lane.native_payload, offset))
+                .filter_map(|marker| {
+                    compact_single_face_reference_path_at(&lane.native_payload, marker)
+                        .map(|ids| (marker, ids))
+                })
+                .collect(),
+            _ => continue,
+        };
         let [(offset, local_component_ids)] = candidates.as_slice() else {
             continue;
         };
@@ -2437,6 +2455,11 @@ pub(crate) fn compact_surface_selection_at(payload: &[u8], marker: usize) -> Opt
         }
     }
     (!ids.is_empty()).then_some(ids)
+}
+
+pub(crate) fn compact_surface_reference_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
+    compact_surface_selection_at(payload, marker)
+        .or_else(|| compact_single_face_reference_path_at(payload, marker))
 }
 
 fn repeated_edge_selections(
@@ -4773,10 +4796,19 @@ pub(crate) fn project_compact_surface_selections(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let FeatureDefinition::Thicken { faces, .. } = &mut feature.definition else {
-            continue;
+        let faces = match &mut feature.definition {
+            FeatureDefinition::Thicken { faces, .. } => faces,
+            FeatureDefinition::Extrude {
+                extent: cadmpeg_ir::features::Extent::ToFace { face },
+                ..
+            } => face,
+            _ => continue,
         };
-        if matches!(faces, cadmpeg_ir::features::FaceSelection::Unresolved) {
+        if matches!(
+            faces,
+            cadmpeg_ir::features::FaceSelection::Unresolved
+                | cadmpeg_ir::features::FaceSelection::Native(_)
+        ) {
             *faces = cadmpeg_ir::features::FaceSelection::Native(compact_surface_selection_value(
                 &selection.local_component_ids,
             ));
@@ -5132,16 +5164,33 @@ fn compact_extrusion_end_spec_header(payload: &[u8], offset: usize, code: u32) -
 }
 
 fn compact_single_face_reference_at(payload: &[u8], marker: usize) -> bool {
+    compact_single_face_reference_path_at(payload, marker).is_some()
+}
+
+fn compact_single_face_reference_path_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
     let count = marker.checked_sub(12).and_then(|offset| {
         Some(u32::from_le_bytes(
             payload.get(offset..offset + 4)?.try_into().ok()?,
         ))
-    });
-    matches!(count, Some(1..=64))
-        && payload.get(marker..marker + 16) == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        && payload.get(marker - 8..marker - 4) == Some(&[0, 2, 0, 0])
-        && payload.get(marker + 16..marker + 18) == Some(&[0, 0])
-        && payload.get(marker + 22..marker + 38).is_some()
+    })?;
+    let count = usize::try_from(count)
+        .ok()
+        .filter(|count| (1..=64).contains(count))?;
+    if payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+        || payload.get(marker - 8..marker - 4) != Some(&[0, 2, 0, 0])
+        || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
+    {
+        return None;
+    }
+    compact_heterogeneous_edge_path(payload, marker + 18, count)
+        .map(|(ids, _)| ids)
+        .or_else(|| {
+            let (ids, end) = (count > 1)
+                .then(|| compact_heterogeneous_edge_path(payload, marker + 18, count - 1))
+                .flatten()?;
+            (payload.get(end..end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]))
+                .then_some(ids)
+        })
 }
 
 pub(crate) fn compact_surface_selection_value(ids: &[u32]) -> String {
