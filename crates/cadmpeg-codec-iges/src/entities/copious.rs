@@ -154,7 +154,10 @@ pub(super) fn project(
             }
             2 => (3, 3, None),
             3 => (3, 6, None),
-            _ => unreachable!("validated interpretation"),
+            _ => {
+                losses.push(entity_loss(entry, "copious-data interpretation is invalid"));
+                continue;
+            }
         };
         let Some(value_count) = tuple_count.checked_mul(tuple_width) else {
             losses.push(entity_loss(entry, "tuple value count overflows"));

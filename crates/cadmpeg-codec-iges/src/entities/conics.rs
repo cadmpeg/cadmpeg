@@ -143,7 +143,8 @@ pub(super) fn project(
         let [coeff_a, coeff_b, coeff_c, coeff_d, coeff_e, coeff_f, plane_z, start_x, start_y, end_x, end_y] =
             values.as_slice()
         else {
-            unreachable!("fixed conic parameter count");
+            losses.push(entity_loss(entry, "conic parameter count is invalid"));
+            continue;
         };
         let coefficient_scale = coeff_a
             .abs()

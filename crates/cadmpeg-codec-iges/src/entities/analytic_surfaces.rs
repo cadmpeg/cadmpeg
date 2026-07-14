@@ -341,7 +341,10 @@ pub(super) fn project(
                     minor_radius,
                 }
             }
-            _ => unreachable!(),
+            _ => {
+                losses.push(entity_loss(entry, "analytic surface type is unsupported"));
+                continue;
+            }
         };
         ir.model.surfaces.push(Surface {
             id: SurfaceId(format!("iges:model:surface#D{}", entry.sequence)),

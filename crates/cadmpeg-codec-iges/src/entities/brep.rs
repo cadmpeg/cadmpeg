@@ -733,7 +733,7 @@ pub(super) fn project(
                                 pcurves,
                             } = use_
                             else {
-                                unreachable!()
+                                continue;
                             };
                             let vertex = topology_vertex(
                                 &mut candidate,

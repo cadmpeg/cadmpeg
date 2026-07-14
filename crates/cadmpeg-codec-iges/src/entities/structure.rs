@@ -1406,7 +1406,7 @@ pub(super) fn project(
         let fields_valid = match entry.form {
             0 | 2 | 4 => nonempty_string(1) && nonempty_string(2),
             1 | 3 => nonempty_string(1),
-            _ => unreachable!("filtered external-reference form"),
+            _ => false,
         };
         if fields_valid {
             decoded.insert(entry.sequence);
@@ -2018,7 +2018,7 @@ pub(super) fn project(
                             .get(&instance.definition)
                             .is_some_and(|child| child.depth < definition.depth)
                 }),
-                _ => unreachable!(),
+                _ => false,
             }
         });
         if definition_fields_valid.contains(sequence) && nesting_valid {

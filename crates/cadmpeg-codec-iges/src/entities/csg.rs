@@ -135,7 +135,7 @@ pub(super) fn project(
             160 => (1..=2)
                 .map(|index| record.number(index))
                 .collect::<Option<Vec<_>>>(),
-            _ => unreachable!("filtered primitive type"),
+            _ => None,
         };
         let Some(dimensions) = dimensions else {
             losses.push(entity_loss(entry, "primitive dimensions are not numeric"));
@@ -173,7 +173,7 @@ pub(super) fn project(
                     && dimensions[2] > 0.0
                     && dimensions.iter().all(|value| value.is_finite())
             }
-            _ => unreachable!("filtered primitive type"),
+            _ => false,
         };
         if !dimensions_valid {
             losses.push(entity_loss(
@@ -190,7 +190,10 @@ pub(super) fn project(
             158 => (2, None, None),
             160 => (3, None, Some(6)),
             168 => (4, Some(7), Some(10)),
-            _ => unreachable!("filtered primitive type"),
+            _ => {
+                losses.push(entity_loss(entry, "primitive solid type is unsupported"));
+                continue;
+            }
         };
         let Some(origin) = vector_or(record, origin_start, Vector3::new(0.0, 0.0, 0.0)) else {
             losses.push(entity_loss(entry, "primitive origin is invalid"));

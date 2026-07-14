@@ -42,12 +42,12 @@ fn add(point: Point3, vector: Vector3, scale: f64) -> Point3 {
     )
 }
 
-fn coordinate(point: Point3, index: u8) -> f64 {
+fn coordinate(point: Point3, index: u8) -> Option<f64> {
     match index {
-        1 => point.x,
-        2 => point.y,
-        3 => point.z,
-        _ => unreachable!(),
+        1 => Some(point.x),
+        2 => Some(point.y),
+        3 => Some(point.z),
+        _ => None,
     }
 }
 
@@ -475,11 +475,11 @@ pub(super) fn project(
                         controls.clear();
                         break;
                     };
-                    controls.push(add(
-                        base,
-                        offset_direction,
-                        coordinate(function_control, coordinate_index),
-                    ));
+                    let Some(distance) = coordinate(function_control, coordinate_index) else {
+                        controls.clear();
+                        break;
+                    };
+                    controls.push(add(base, offset_direction, distance));
                 }
                 if controls.len() != function_nurbs.control_points.len() {
                     losses.push(entity_loss(
@@ -502,7 +502,10 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let distance = coordinate(function_start, coordinate_index);
+                let Some(distance) = coordinate(function_start, coordinate_index) else {
+                    losses.push(entity_loss(entry, "offset function coordinate is invalid"));
+                    continue;
+                };
                 let law = CurveOffsetDistanceLaw::Coordinate {
                     function: function_id,
                     coordinate: coordinate_index,
@@ -522,7 +525,10 @@ pub(super) fn project(
                     }),
                 )
             }
-            _ => unreachable!(),
+            _ => {
+                losses.push(entity_loss(entry, "offset curve form is unsupported"));
+                continue;
+            }
         };
         let Some(start_position) = cadmpeg_ir::eval::curve_point(&geometry, start) else {
             losses.push(entity_loss(
