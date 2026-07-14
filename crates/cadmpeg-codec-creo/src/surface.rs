@@ -622,6 +622,25 @@ fn scalar_values(body: &[u8], cache: &scalar::ScalarCache) -> Vec<f64> {
     values
 }
 
+fn named_record_boundary(body: &[u8]) -> Option<usize> {
+    body.iter()
+        .enumerate()
+        .filter(|(_, byte)| **byte == psb::token::NAMED_RECORD)
+        .find_map(|(offset, _)| {
+            let field_type = *body.get(offset + 1)?;
+            (field_type <= 0x24).then_some(())?;
+            let name = body.get(offset + 2..)?;
+            let name_len = name.iter().take(96).position(|byte| *byte == 0)?;
+            let name = name.get(..name_len)?;
+            (!name.is_empty()
+                && name[0].is_ascii_alphabetic()
+                && name
+                    .iter()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'(' | b')')))
+            .then_some(offset)
+        })
+}
+
 /// Decode bounded parameter bodies for positional `srf_array` rows.
 pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
     let cache = scalar::ScalarCache::from_section(payload);
@@ -656,18 +675,9 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
             body_end = body_start + relative;
             boundary = SurfaceBodyBoundary::CompoundClose;
         }
-        if let Some(relative) = payload[*body_start..body_end]
-            .iter()
-            .position(|byte| *byte == psb::token::NAMED_RECORD)
-        {
-            let candidate = body_start + relative;
-            if payload
-                .get(candidate + 2..body_end)
-                .is_some_and(|bytes| bytes.contains(&0))
-            {
-                body_end = candidate;
-                boundary = SurfaceBodyBoundary::NamedRecord;
-            }
+        if let Some(relative) = named_record_boundary(&payload[*body_start..body_end]) {
+            body_end = body_start + relative;
+            boundary = SurfaceBodyBoundary::NamedRecord;
         }
         let body = payload[*body_start..body_end].to_vec();
         records.push(SurfaceParameterRecord {

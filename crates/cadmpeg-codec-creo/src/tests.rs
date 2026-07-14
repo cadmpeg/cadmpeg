@@ -289,6 +289,25 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
 }
 
 #[test]
+fn surface_parameter_body_ignores_invalid_embedded_named_marker() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[0x2f, 0x43, 0, 0xe0, 0xff, 0x80, 0, 0x0f]);
+    payload.extend_from_slice(b"\xe0\x01next_record\0");
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert_eq!(scan.surface_parameters.len(), 1);
+    assert_eq!(
+        scan.surface_parameters[0].body,
+        [0x2f, 0x43, 0, 0xe0, 0xff, 0x80, 0, 0x0f]
+    );
+    assert_eq!(
+        scan.surface_parameters[0].boundary,
+        crate::surface::SurfaceBodyBoundary::NamedRecord
+    );
+}
+
+#[test]
 fn scan_ignores_surface_header_candidates_inside_a_preceding_header() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0x24]);
