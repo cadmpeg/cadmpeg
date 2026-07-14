@@ -523,7 +523,7 @@ For plane-carrier `0xa0` cases, evaluating the UV jet on its `0xc8` plane produc
 
 ## 10. FBB-only partial-spine variant
 
-A nested-`V5_CFV2` file with a valid FBB face group and `05 08 01` vertices whose post-FBB edge tables and trim packets use one common selected handle width `W∈{2,3}` across **two** edge tables (`kind=0x01` then `kind=0x02`). The width-2 delimiter is `10 94 04 ff ff 00 00 00`; the width-3 delimiter is `10 24 04 ff ff 00 00 00`. The table walk selects the width/delimiter pair that lands exactly on both delimiters and the counted vertex table.
+A nested-`V5_CFV2` file with a valid FBB face group and `05 08 01` vertices whose post-FBB edge tables and trim packets use one common selected handle width `W∈{2,3}` across **two** edge tables (`kind=0x01` then `kind=0x02`). A width-2 delimiter is `10 F4 04 ff ff 00 00 00`, where the high nibble `F` is a nonzero family discriminator other than `2`; both delimiters carry the same discriminator. The width-3 delimiter is `10 24 04 ff ff 00 00 00`. The table walk selects the width/delimiter pair that lands exactly on both delimiters and the counted vertex table.
 
 ```text
 edge_table := 01 <kind∈{0x01,0x02}> count(row_count) edge_row{row_count}

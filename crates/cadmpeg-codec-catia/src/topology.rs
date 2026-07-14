@@ -1511,14 +1511,9 @@ fn parse_fbb_edge_tables_width(
     mut position: usize,
     handle_width: usize,
 ) -> Option<(Vec<EdgeRow>, usize, usize)> {
-    const U16_EDGE_DELIMITER: [u8; 8] = [0x10, 0x94, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
-    let delimiter = if handle_width == 2 {
-        U16_EDGE_DELIMITER.as_slice()
-    } else {
-        EDGE_DELIMITER.as_slice()
-    };
     let mut rows = Vec::new();
     let mut table_count = 0;
+    let mut delimiter_family = None;
     loop {
         if bytes.get(position) != Some(&0x01) {
             return None;
@@ -1553,11 +1548,26 @@ fn parse_fbb_edge_tables_width(
             });
         }
         table_count += 1;
-        if bytes.get(position..)?.starts_with(delimiter) {
-            position += delimiter.len();
-        } else {
+        let delimiter = bytes.get(position..position + EDGE_DELIMITER.len())?;
+        let family = match handle_width {
+            2 if delimiter[0] == 0x10
+                && delimiter[1] >= 0x14
+                && delimiter[1] != 0x24
+                && delimiter[1] & 0x0f == 0x04
+                && delimiter[2..] == EDGE_DELIMITER[2..] =>
+            {
+                delimiter[1] >> 4
+            }
+            3 if delimiter == EDGE_DELIMITER => 0x02,
+            _ => return None,
+        };
+        if delimiter_family
+            .replace(family)
+            .is_some_and(|value| value != family)
+        {
             return None;
         }
+        position += EDGE_DELIMITER.len();
         if bytes.get(position..position + 2) == Some(&[0x01, 0x06]) {
             break;
         }
