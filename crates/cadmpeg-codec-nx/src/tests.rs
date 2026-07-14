@@ -1046,6 +1046,13 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
             ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
         ])
     );
+    assert_eq!(
+        crate::decode::simple_hole_diameters(&ir, &templates, &[]),
+        std::collections::BTreeMap::from([
+            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
+            ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+        ])
+    );
 
     let mut mismatched = ir;
     let SurfaceGeometry::Cylinder { radius, .. } = &mut mismatched.model.surfaces[1].geometry

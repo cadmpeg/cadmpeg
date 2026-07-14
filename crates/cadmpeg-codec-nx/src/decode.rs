@@ -6987,17 +6987,16 @@ pub(crate) fn non_boolean_feature_definition(
 }
 
 /// Derive a shared simple-hole diameter only when the active B-rep supplies a
-/// complete bijection between one native construction group and through-bore
-/// cylinder walls. The group does not encode face identities, so differing
-/// radii or any unmatched bore wall reject the projection atomically.
+/// complete bijection between simple through-hole operations and through-bore
+/// cylinder walls. A native construction group establishes the operation set
+/// when present. Without a group, a uniform equal-cardinality bore set makes
+/// every possible bijection yield the same diameter. Differing radii or any
+/// unmatched operation or bore wall reject the projection atomically.
 pub(crate) fn simple_hole_diameters(
     ir: &CadIr,
     templates: &[crate::native::FeatureSimpleHoleTemplate],
     groups: &[crate::native::FeatureSimpleHoleConstructionGroup],
 ) -> BTreeMap<String, Length> {
-    let [group] = groups else {
-        return BTreeMap::new();
-    };
     let template_operations = templates
         .iter()
         .filter(|template| {
@@ -7006,17 +7005,29 @@ pub(crate) fn simple_hole_diameters(
         })
         .map(|template| template.operation_label.as_str())
         .collect::<BTreeSet<_>>();
-    let group_operations = group
-        .operation_labels
-        .iter()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>();
-    if template_operations.len() != templates.len()
-        || group_operations.len() != group.operation_labels.len()
-        || template_operations != group_operations
-    {
+    if template_operations.len() != templates.len() || template_operations.is_empty() {
         return BTreeMap::new();
     }
+    let operations = match groups {
+        [] => templates
+            .iter()
+            .map(|template| template.operation_label.clone())
+            .collect::<Vec<_>>(),
+        [group] => {
+            let group_operations = group
+                .operation_labels
+                .iter()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>();
+            if group_operations.len() != group.operation_labels.len()
+                || template_operations != group_operations
+            {
+                return BTreeMap::new();
+            }
+            group.operation_labels.clone()
+        }
+        _ => return BTreeMap::new(),
+    };
 
     let surfaces = ir
         .model
@@ -7039,15 +7050,14 @@ pub(crate) fn simple_hole_diameters(
     let Some(radius) = radii.first().copied() else {
         return BTreeMap::new();
     };
-    if radii.len() != group.operation_labels.len()
+    if radii.len() != operations.len()
         || radii
             .iter()
             .any(|candidate| candidate.to_bits() != radius.to_bits())
     {
         return BTreeMap::new();
     }
-    group
-        .operation_labels
+    operations
         .iter()
         .cloned()
         .map(|operation| (operation, Length(radius * 2.0)))
