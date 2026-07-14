@@ -3682,13 +3682,15 @@ impl MeshQuotient {
     }
 }
 
+type MeshFaceSelection = Option<(usize, Vec<Vec<bool>>)>;
+
 struct MeshSelectionSearch<'a> {
     assignments: &'a [Vec<MeshFaceBoundaryAssignment>],
     face_work: Vec<Option<usize>>,
     edge_candidates: &'a [Vec<[usize; 2]>],
     edge_rows: &'a [EdgeRow],
     vertex_points: &'a [[f64; 3]],
-    selected: Vec<Option<(usize, Vec<Vec<bool>>)>>,
+    selected: Vec<MeshFaceSelection>,
     states: usize,
     solution: Option<(StandardTopology, Vec<usize>)>,
     ambiguous: bool,
@@ -3832,23 +3834,14 @@ impl MeshSelectionSearch<'_> {
         }
     }
 
-    fn orientable_with(&self, candidate: Option<(usize, usize, &[Vec<bool>])>) -> bool {
+    fn selection_orientable(&self, selection: &[MeshFaceSelection]) -> bool {
         let mut constraints = Vec::<Vec<(usize, bool)>>::new();
         let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
-        for (face, selected) in self.selected.iter().enumerate() {
-            let selected_candidate = candidate
-                .filter(|(candidate_face, _, _)| *candidate_face == face)
-                .map(|(_, assignment_index, directions)| (assignment_index, directions));
-            let (assignment_index, directions): (usize, &[Vec<bool>]) = match selected_candidate {
-                Some(selected) => selected,
-                None => {
-                    let Some((assignment_index, directions)) = selected else {
-                        continue;
-                    };
-                    (*assignment_index, directions)
-                }
+        for (face, selected) in selection.iter().enumerate() {
+            let Some((assignment_index, directions)) = selected else {
+                continue;
             };
-            let Some(assignment) = self.assignments[face].get(assignment_index) else {
+            let Some(assignment) = self.assignments[face].get(*assignment_index) else {
                 return false;
             };
             if assignment.boundaries.len() != directions.len() {
@@ -3915,34 +3908,34 @@ impl MeshSelectionSearch<'_> {
     }
 
     fn selected_orientable(&self) -> bool {
-        self.orientable_with(None)
+        self.selection_orientable(&self.selected)
     }
 
     fn fixed_remaining_faces_are_orientable(&self) -> bool {
-        self.selected
-            .iter()
-            .enumerate()
-            .filter(|(_, selected)| selected.is_none())
-            .all(|(face, _)| {
-                self.assignments[face]
-                    .iter()
-                    .enumerate()
-                    .any(|(assignment_index, assignment)| {
-                        let directions = assignment
-                            .boundaries
-                            .iter()
-                            .map(|boundary| {
-                                boundary
-                                    .iter()
-                                    .map(|use_| use_.reversed)
-                                    .collect::<Option<Vec<_>>>()
-                            })
-                            .collect::<Option<Vec<_>>>();
-                        directions.is_none_or(|directions| {
-                            self.orientable_with(Some((face, assignment_index, &directions)))
-                        })
-                    })
-            })
+        let mut completion = self.selected.clone();
+        for (face, selected) in completion.iter_mut().enumerate() {
+            if selected.is_some() {
+                continue;
+            }
+            let [assignment] = self.assignments[face].as_slice() else {
+                continue;
+            };
+            let Some(directions) = assignment
+                .boundaries
+                .iter()
+                .map(|boundary| {
+                    boundary
+                        .iter()
+                        .map(|use_| use_.reversed)
+                        .collect::<Option<Vec<_>>>()
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            *selected = Some((0, directions));
+        }
+        self.selection_orientable(&completion)
     }
 
     fn search(&mut self, quotient: &MeshQuotient) {
@@ -5353,6 +5346,42 @@ mod motif_tests {
         assert!(!search.fixed_remaining_faces_are_orientable());
         search.selected[1] = Some((0, vec![vec![false, true]]));
         assert!(search.fixed_remaining_faces_are_orientable());
+    }
+
+    #[test]
+    fn mesh_selection_checks_all_fixed_remaining_faces_together() {
+        let use_ = |edge| MeshBoundaryEdgeCandidate {
+            edge,
+            start: 0,
+            end: 1,
+            reversed: Some(false),
+        };
+        let assignments = vec![
+            vec![MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(2), use_(0)]],
+            }],
+            vec![MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(0), use_(1)]],
+            }],
+            vec![MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(1), use_(2)]],
+            }],
+        ];
+        let edge_candidates = vec![Vec::new(); 3];
+        let search = MeshSelectionSearch {
+            assignments: &assignments,
+            face_work: vec![Some(1); 3],
+            edge_candidates: &edge_candidates,
+            edge_rows: &[],
+            vertex_points: &[],
+            selected: vec![Some((0, vec![vec![false, false]])), None, None],
+            states: 0,
+            solution: None,
+            ambiguous: false,
+            exhausted: false,
+        };
+
+        assert!(!search.fixed_remaining_faces_are_orientable());
     }
 
     #[test]
