@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 59);
+    assert_eq!(namespace.version, 60);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -4764,7 +4764,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 59);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 60);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -6633,6 +6633,31 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
     assert_eq!(handles[0].occurrence_count, 2);
     assert_eq!(handles[0].data_blocks, ["nx:test:control-block#0"]);
     assert_eq!(handles[0].external_records, ["nx:test:external-record#6"]);
+}
+
+#[test]
+fn nx_control_handle_pairs_require_maximal_runs_of_exactly_two() {
+    let reference = |ordinal: u32, offset: u64| crate::native::DataBlockControlReference {
+        id: format!("reference#{ordinal}"),
+        data_block: "block#0".into(),
+        ordinal,
+        kind: crate::native::ObjectReferenceKind::PersistentHandle,
+        value: ordinal + 100,
+        source_offset: offset,
+    };
+    let references = [
+        reference(0, 10),
+        reference(1, 15),
+        reference(2, 30),
+        reference(3, 35),
+        reference(4, 40),
+    ];
+    let pairs = crate::native::data_block_control_handle_pairs(&references);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].first_reference, "reference#0");
+    assert_eq!(pairs[0].second_reference, "reference#1");
+    assert_eq!(pairs[0].first_handle, 100);
+    assert_eq!(pairs[0].second_handle, 101);
 }
 
 #[test]

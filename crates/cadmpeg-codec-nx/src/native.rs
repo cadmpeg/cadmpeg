@@ -2663,6 +2663,25 @@ pub struct DataBlockControlReference {
     pub source_offset: u64,
 }
 
+/// Exact two-token persistent-handle run in an offset-store control block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockControlHandlePair {
+    /// Globally unique pair identity.
+    pub id: String,
+    /// Owning control block in the native `data_blocks` arena.
+    pub data_block: String,
+    /// First handle-reference occurrence.
+    pub first_reference: String,
+    /// Second handle-reference occurrence.
+    pub second_reference: String,
+    /// First persistent-handle value.
+    pub first_handle: u32,
+    /// Second persistent-handle value.
+    pub second_handle: u32,
+    /// Absolute file offset of the first `e0` marker.
+    pub source_offset: u64,
+}
+
 /// Cross-record identity established by equal persistent-handle values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PersistentHandle {
@@ -3235,6 +3254,50 @@ pub fn data_block_control_references(container: &Container) -> Vec<DataBlockCont
                 .collect()
         })
         .collect()
+}
+
+/// Join maximal two-token adjacent persistent-handle runs atomically.
+pub fn data_block_control_handle_pairs(
+    references: &[DataBlockControlReference],
+) -> Vec<DataBlockControlHandlePair> {
+    let mut by_block = BTreeMap::<&str, Vec<&DataBlockControlReference>>::new();
+    for reference in references
+        .iter()
+        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
+    {
+        by_block
+            .entry(reference.data_block.as_str())
+            .or_default()
+            .push(reference);
+    }
+    let mut pairs = Vec::new();
+    for (data_block, mut block_references) in by_block {
+        block_references.sort_by_key(|reference| reference.source_offset);
+        let mut at = 0;
+        while at < block_references.len() {
+            let start = at;
+            while block_references
+                .get(at + 1)
+                .is_some_and(|next| next.source_offset == block_references[at].source_offset + 5)
+            {
+                at += 1;
+            }
+            let run = &block_references[start..=at];
+            if let [first, second] = run {
+                pairs.push(DataBlockControlHandlePair {
+                    id: format!("{}:handle-pair#{}", first.id, first.ordinal),
+                    data_block: data_block.to_string(),
+                    first_reference: first.id.clone(),
+                    second_reference: second.id.clone(),
+                    first_handle: first.value,
+                    second_handle: second.value,
+                    source_offset: first.source_offset,
+                });
+            }
+            at += 1;
+        }
+    }
+    pairs
 }
 
 /// Decode framed object references from offset-only OM data blocks.

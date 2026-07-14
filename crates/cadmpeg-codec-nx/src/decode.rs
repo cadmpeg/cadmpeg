@@ -2831,6 +2831,8 @@ fn attach_native_object_model(
     let data_block_control_values = crate::native::data_block_control_values(&scan.container);
     let data_block_control_references =
         crate::native::data_block_control_references(&scan.container);
+    let data_block_control_handle_pairs =
+        crate::native::data_block_control_handle_pairs(&data_block_control_references);
     let data_block_references = crate::native::data_block_references(&scan.container);
     let feature_parameter_bindings = crate::native::feature_parameter_bindings(
         &feature_input_blocks,
@@ -2887,6 +2889,7 @@ fn attach_native_object_model(
         && data_blocks.is_empty()
         && data_block_control_values.is_empty()
         && data_block_control_references.is_empty()
+        && data_block_control_handle_pairs.is_empty()
         && data_block_references.is_empty()
         && feature_parameter_bindings.is_empty()
         && store_headers.is_empty()
@@ -3008,6 +3011,12 @@ fn attach_native_object_model(
             .note(&reference.id, annotation_stream, reference.source_offset)
             .tag("OM_DATA_BLOCK_CONTROL_REFERENCE");
         annotations.exactness(&reference.id, Exactness::ByteExact);
+    }
+    for pair in &data_block_control_handle_pairs {
+        annotations
+            .note(&pair.id, annotation_stream, pair.source_offset)
+            .tag("OM_DATA_BLOCK_CONTROL_HANDLE_PAIR");
+        annotations.exactness(&pair.id, Exactness::ByteExact);
     }
     for reference in &data_block_references {
         annotations
@@ -3147,7 +3156,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(59);
+    namespace.version = namespace.version.max(60);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3311,6 +3320,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "data_block_control_references",
             &data_block_control_references,
+        )?;
+    }
+    if !data_block_control_handle_pairs.is_empty() {
+        namespace.set_arena(
+            "data_block_control_handle_pairs",
+            &data_block_control_handle_pairs,
         )?;
     }
     if !data_block_references.is_empty() {
