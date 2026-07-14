@@ -2435,6 +2435,8 @@ pub(crate) fn bind_extrusion_operations(
 pub(crate) fn bind_sketch_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut [Sketch],
+    sketch_entities: &[SketchEntity],
+    parameters: &[cadmpeg_ir::features::DesignParameter],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     annotations: &Annotations,
@@ -2498,6 +2500,102 @@ pub(crate) fn bind_sketch_profiles(
                 }
                 _ => {}
             }
+        }
+    }
+    bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
+}
+
+fn bind_circular_profile_by_dimension(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &mut [Sketch],
+    sketch_entities: &[SketchEntity],
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+) {
+    let geometry_by_entity = sketch_entities
+        .iter()
+        .map(|entity| (&entity.id, &entity.geometry))
+        .collect::<HashMap<_, _>>();
+    let circular_profiles = sketches
+        .iter()
+        .filter_map(|sketch| {
+            let [profile] = sketch.profiles.as_slice() else {
+                return None;
+            };
+            let [entity] = profile.as_slice() else {
+                return None;
+            };
+            let SketchGeometry::Circle { radius, .. } = geometry_by_entity.get(&entity.entity)?
+            else {
+                return None;
+            };
+            Some((sketch.id.clone(), radius.0))
+        })
+        .collect::<Vec<_>>();
+    let mut proposals = Vec::new();
+    for (sketch, radius) in circular_profiles {
+        let matches = features
+            .iter()
+            .enumerate()
+            .filter(|(_, feature)| {
+                matches!(
+                    feature.definition,
+                    cadmpeg_ir::features::FeatureDefinition::Sketch {
+                        space: cadmpeg_ir::features::SketchSpace::Planar,
+                        ..
+                    }
+                )
+            })
+            .filter(|(_, feature)| {
+                parameters.iter().any(|parameter| {
+                    if parameter.owner != feature.id {
+                        return false;
+                    }
+                    let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
+                        &parameter.value
+                    else {
+                        return false;
+                    };
+                    let expected = match parameter.display {
+                        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
+                        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                        None => return false,
+                    };
+                    same_dimension_length(expected, radius)
+                })
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        if let [feature] = matches.as_slice() {
+            proposals.push((sketch, *feature));
+        }
+    }
+    let mut feature_counts = HashMap::new();
+    for (_, feature) in &proposals {
+        *feature_counts.entry(*feature).or_insert(0usize) += 1;
+    }
+    for (sketch_id, feature_index) in proposals {
+        if feature_counts.get(&feature_index) != Some(&1) {
+            continue;
+        }
+        for feature in features.iter_mut() {
+            let cadmpeg_ir::features::FeatureDefinition::Sketch { sketch: bound, .. } =
+                &mut feature.definition
+            else {
+                continue;
+            };
+            if bound.as_ref() == Some(&sketch_id) {
+                *bound = None;
+            }
+        }
+        let name = features[feature_index].name.clone();
+        let cadmpeg_ir::features::FeatureDefinition::Sketch { sketch, .. } =
+            &mut features[feature_index].definition
+        else {
+            continue;
+        };
+        *sketch = Some(sketch_id.clone());
+        if let Some(native) = sketches.iter_mut().find(|sketch| sketch.id == sketch_id) {
+            native.name = name;
         }
     }
 }
@@ -4700,11 +4798,11 @@ fn marker_entities(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        dimensioned_circle_surface_transforms, dimensioned_circle_transform,
-        implicit_circle_marker, marker_entities, profile_loci_by_marker,
-        project_dimensioned_sketch_geometry, typed_marker_relation_definition,
-        typed_relation_definition, unique_compatible_marker_transform, unique_marker_transform,
-        MarkerTransform,
+        bind_circular_profile_by_dimension, dimensioned_circle_surface_transforms,
+        dimensioned_circle_transform, implicit_circle_marker, marker_entities,
+        profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        typed_marker_relation_definition, typed_relation_definition,
+        unique_compatible_marker_transform, unique_marker_transform, MarkerTransform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -5412,6 +5510,88 @@ mod profile_join_tests {
             transformed,
             HashSet::from([(-6, -6), (-14, -6), (-14, -13), (-6, -13)])
         );
+    }
+
+    #[test]
+    fn circular_profile_binds_by_unique_diameter_signature() {
+        let sketch_id = SketchId("circle-profile".into());
+        let entity_id = SketchEntityId("circle".into());
+        let feature = |id: &str, name: &str, sketch| Feature {
+            id: FeatureId(id.into()),
+            ordinal: 0,
+            name: Some(name.into()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch,
+            },
+            native_ref: Some(format!("native-{id}")),
+        };
+        let mut features = vec![
+            feature("first", "Sketch1", None),
+            feature("second", "Sketch2", Some(sketch_id.clone())),
+        ];
+        let parameter = |id: &str, owner: &str, diameter: f64| DesignParameter {
+            id: ParameterId(id.into()),
+            owner: FeatureId(owner.into()),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: format!("<MOD-DIAM>{diameter}"),
+            display: Some(DimensionDisplay::Diameter),
+            value: Some(ParameterValue::Length(Length(diameter))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let parameters = [
+            parameter("first-diameter", "first", 4.0),
+            parameter("second-diameter", "second", 5.0),
+        ];
+        let mut sketches = [Sketch {
+            id: sketch_id.clone(),
+            name: Some("Sketch2".into()),
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: vec![vec![cadmpeg_ir::sketches::SketchEntityUse {
+                entity: entity_id.clone(),
+                reversed: false,
+            }]],
+            native_ref: None,
+        }];
+        let entities = [SketchEntity {
+            id: entity_id,
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+            },
+        }];
+
+        bind_circular_profile_by_dimension(&mut features, &mut sketches, &entities, &parameters);
+
+        assert!(matches!(
+            &features[0].definition,
+            FeatureDefinition::Sketch { sketch: Some(id), .. } if id == &sketch_id
+        ));
+        assert!(matches!(
+            &features[1].definition,
+            FeatureDefinition::Sketch { sketch: None, .. }
+        ));
+        assert_eq!(sketches[0].name.as_deref(), Some("Sketch1"));
     }
 }
 

@@ -305,6 +305,8 @@ fn build_geometry_ir(
     crate::resolved_features::bind_sketch_profiles(
         &mut ir.model.features,
         &mut sketches,
+        &sketch_entities,
+        &ir.model.parameters,
         &histories,
         &lanes,
         &ir.annotations,
@@ -860,6 +862,8 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     crate::resolved_features::bind_sketch_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
+        &ir.model.sketch_entities,
+        &ir.model.parameters,
         &histories,
         &lanes,
         &ir.annotations,
