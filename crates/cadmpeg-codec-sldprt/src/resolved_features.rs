@@ -7850,6 +7850,30 @@ fn typed_marker_relation_definition_in_sketch(
                 ArcAngle270 => 3.0 * std::f64::consts::FRAC_PI_2,
                 _ => unreachable!("relation kind was filtered above"),
             };
+            if !sketch_entities.is_empty() {
+                let Some(SketchEntity {
+                    geometry:
+                        SketchGeometry::Arc {
+                            start_angle,
+                            end_angle,
+                            ..
+                        },
+                    ..
+                }) = sketch_entities
+                    .iter()
+                    .find(|candidate| candidate.id == entity)
+                else {
+                    return Some(native());
+                };
+                let raw = end_angle.0 - start_angle.0;
+                let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
+                if sweep <= 1.0e-12 && raw.abs() > 1.0e-12 {
+                    sweep = std::f64::consts::TAU;
+                }
+                if !same_dimension_angle(sweep, angle) {
+                    return Some(native());
+                }
+            }
             SketchConstraintDefinition::ArcAngle {
                 entity,
                 angle: cadmpeg_ir::features::Angle(angle),
@@ -7932,6 +7956,21 @@ fn typed_marker_relation_definition_in_sketch(
             if loci.len() < 2 {
                 return Some(native());
             }
+            if !sketch_entities.is_empty() {
+                let Some(points) = loci
+                    .iter()
+                    .map(|locus| profile_locus_point(locus, sketch_entities))
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    return Some(native());
+                };
+                if points.iter().skip(1).any(|point| {
+                    !same_dimension_length(point.u, points[0].u)
+                        || !same_dimension_length(point.v, points[0].v)
+                }) {
+                    return Some(native());
+                }
+            }
             SketchConstraintDefinition::CoincidentLoci { loci }
         }
         HorizontalPoints | VerticalPoints => {
@@ -7975,6 +8014,23 @@ fn typed_marker_relation_definition_in_sketch(
             else {
                 return Some(native());
             };
+            if !sketch_entities.is_empty() {
+                let Some(point_position) = profile_locus_point(&point, sketch_entities) else {
+                    return Some(native());
+                };
+                let Some(midpoint) = sketch_entities
+                    .iter()
+                    .find(|candidate| candidate.id == entity)
+                    .and_then(sketch_entity_midpoint)
+                else {
+                    return Some(native());
+                };
+                if !same_dimension_length(point_position.u, midpoint.u)
+                    || !same_dimension_length(point_position.v, midpoint.v)
+                {
+                    return Some(native());
+                }
+            }
             SketchConstraintDefinition::Midpoint { point, entity }
         }
         crate::records::SketchRelationKind::Distance
@@ -7983,6 +8039,33 @@ fn typed_marker_relation_definition_in_sketch(
         | crate::records::SketchRelationKind::Diameter => return None,
         _ => native(),
     })
+}
+
+fn sketch_entity_midpoint(entity: &SketchEntity) -> Option<Point2> {
+    match &entity.geometry {
+        SketchGeometry::Line { start, end } => Some(Point2::new(
+            (start.u + end.u) * 0.5,
+            (start.v + end.v) * 0.5,
+        )),
+        SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            let raw = end_angle.0 - start_angle.0;
+            let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
+            if sweep <= 1.0e-12 && raw.abs() > 1.0e-12 {
+                sweep = std::f64::consts::TAU;
+            }
+            let angle = start_angle.0 + sweep * 0.5;
+            Some(Point2::new(
+                center.u + radius.0 * angle.cos(),
+                center.v + radius.0 * angle.sin(),
+            ))
+        }
+        _ => None,
+    }
 }
 
 fn binary_relation_matches_evaluated_geometry(
@@ -11406,6 +11489,179 @@ mod profile_join_tests {
                 &unrelated_circle,
             ));
         }
+    }
+
+    #[test]
+    fn locus_relations_require_matching_evaluated_geometry() {
+        let sketch = SketchId("sketch".into());
+        let entity = |id: &str, geometry| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let mut first = entity(
+            "first",
+            SketchGeometry::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+        );
+        let mut second = entity(
+            "second",
+            SketchGeometry::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+        );
+        let line = entity(
+            "line",
+            SketchGeometry::Line {
+                start: Point2::new(-2.0, 0.0),
+                end: Point2::new(2.0, 0.0),
+            },
+        );
+        let mut arc = entity(
+            "arc",
+            SketchGeometry::Arc {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(1.0),
+                start_angle: cadmpeg_ir::features::Angle(0.0),
+                end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+            },
+        );
+        let first_marker = marker("first-marker", None);
+        let second_marker = marker("second-marker", None);
+        let mut line_marker = marker("line-marker", None);
+        line_marker.kind = SketchInputKind::LineOrCircle;
+        let mut arc_marker = marker("arc-marker", None);
+        arc_marker.kind = SketchInputKind::Arc;
+        let mut coincident = marker("coincident", None);
+        coincident.kind = SketchInputKind::Relation(SketchRelationKind::Coincident);
+        coincident.links = [(&first_marker, 1), (&second_marker, 2)]
+            .map(|(marker, local_id)| SketchInputLink {
+                local_id,
+                entity_ref: marker.id.clone(),
+            })
+            .to_vec();
+        let mut midpoint = marker("midpoint", None);
+        midpoint.kind = SketchInputKind::Relation(SketchRelationKind::Midpoint);
+        midpoint.links = [(&first_marker, 1), (&line_marker, 3)]
+            .map(|(marker, local_id)| SketchInputLink {
+                local_id,
+                entity_ref: marker.id.clone(),
+            })
+            .to_vec();
+        let mut arc_angle = marker("arc-angle", None);
+        arc_angle.kind = SketchInputKind::Relation(SketchRelationKind::ArcAngle90);
+        arc_angle.links = vec![SketchInputLink {
+            local_id: 4,
+            entity_ref: arc_marker.id.clone(),
+        }];
+        let markers = HashMap::from([
+            (first_marker.id.as_str(), &first_marker),
+            (second_marker.id.as_str(), &second_marker),
+            (line_marker.id.as_str(), &line_marker),
+            (arc_marker.id.as_str(), &arc_marker),
+            (coincident.id.as_str(), &coincident),
+            (midpoint.id.as_str(), &midpoint),
+            (arc_angle.id.as_str(), &arc_angle),
+        ]);
+        let loci = HashMap::from([
+            (
+                first_marker.id.clone(),
+                vec![SketchLocus::Entity(first.id.clone())],
+            ),
+            (
+                second_marker.id.clone(),
+                vec![SketchLocus::Entity(second.id.clone())],
+            ),
+            (
+                line_marker.id.clone(),
+                vec![SketchLocus::Entity(line.id.clone())],
+            ),
+            (
+                arc_marker.id.clone(),
+                vec![SketchLocus::Entity(arc.id.clone())],
+            ),
+        ]);
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &coincident,
+                &sketch,
+                &[first.clone(), second.clone(), line.clone(), arc.clone()],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::CoincidentLoci { .. })
+        ));
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &midpoint,
+                &sketch,
+                &[first.clone(), second.clone(), line.clone(), arc.clone()],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Midpoint { .. })
+        ));
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &arc_angle,
+                &sketch,
+                &[first.clone(), second.clone(), line.clone(), arc.clone()],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::ArcAngle { .. })
+        ));
+
+        second.geometry = SketchGeometry::Point {
+            position: Point2::new(1.0, 0.0),
+        };
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &coincident,
+                &sketch,
+                &[first.clone(), second.clone(), line.clone(), arc.clone()],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Native { .. })
+        ));
+        first.clone_from(&entity(
+            "first",
+            SketchGeometry::Point {
+                position: Point2::new(1.0, 0.0),
+            },
+        ));
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &midpoint,
+                &sketch,
+                &[first.clone(), second.clone(), line.clone(), arc.clone()],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Native { .. })
+        ));
+        arc.geometry = SketchGeometry::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(1.0),
+            start_angle: cadmpeg_ir::features::Angle(0.0),
+            end_angle: cadmpeg_ir::features::Angle(std::f64::consts::PI),
+        };
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &arc_angle,
+                &sketch,
+                &[first.clone(), second.clone(), line.clone(), arc.clone()],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Native { .. })
+        ));
     }
 
     #[test]
