@@ -4316,22 +4316,6 @@ fn transfer_resolved_revolution_surfaces(
         if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve) {
             continue;
         }
-        let full_turn = ir.model.features.iter().any(|feature| {
-            feature.id == IrFeatureId(format!("creo:model:feature#{feature_id}"))
-                && matches!(
-                    &feature.definition,
-                    IrFeatureDefinition::Revolve {
-                        construction: RevolutionConstruction {
-                            extent: Some(Extent::Angle { angle: Angle(value) }),
-                            ..
-                        },
-                        ..
-                    } if (*value - std::f64::consts::TAU).abs() <= 1e-12
-                )
-        });
-        if !full_turn {
-            continue;
-        }
         let Some(definition) = scan
             .feature_definitions
             .iter()
