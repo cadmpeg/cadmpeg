@@ -2714,6 +2714,16 @@ fn symbol_and_sectioned_area_file() -> Vec<u8> {
     ])
 }
 
+fn associativity_definition_file() -> Vec<u8> {
+    owned_test_file(&[OwnedTestEntity {
+        entity_type: 302,
+        form: 5001,
+        label: "ASSOCDEF".into(),
+        status: "00000200",
+        parameters: "302,2,1,1,2,1,2,2,2,1,3;".into(),
+    }])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4284,6 +4294,38 @@ fn decode_types_general_symbol_components_and_section_fill_definition() {
     assert_eq!(section.fields["fill_pattern"], 2);
     assert_eq!(section.fields["pattern_spacing"], 1.0);
     assert_eq!(section.fields["islands"][0], "iges:entity:directory#11");
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_preserves_implementor_associativity_class_grammar() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(associativity_definition_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let definition = &result.ir.native.namespace("iges").unwrap().arenas["associativities"][0];
+    assert_eq!(definition.fields["kind"], "definition");
+    assert_eq!(definition.fields["associativity_form"], 5001);
+    assert_eq!(definition.fields["classes"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        definition.fields["classes"][0]["back_pointers_required"],
+        true
+    );
+    assert_eq!(definition.fields["classes"][0]["ordered"], true);
+    assert_eq!(definition.fields["classes"][0]["item_types"][0], 1);
+    assert_eq!(definition.fields["classes"][0]["item_types"][1], 2);
+    assert_eq!(
+        definition.fields["classes"][1]["back_pointers_required"],
+        false
+    );
+    assert_eq!(definition.fields["classes"][1]["ordered"], false);
+    assert_eq!(definition.fields["classes"][1]["item_types"][0], 3);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

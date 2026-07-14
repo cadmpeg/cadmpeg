@@ -186,6 +186,14 @@ fn integer_or(record: &ParameterRecord, index: usize, default: i64) -> Option<i6
     }
 }
 
+fn entity_parameter_end(
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> usize {
+    trailing_pointer_groups(record, entries)
+        .map_or(record.tokens.len(), |groups| groups.token_start)
+}
+
 fn assembly_cycle(
     sequence: u32,
     definitions: &BTreeMap<u32, SolidAssembly>,
@@ -375,6 +383,58 @@ pub(super) fn project(
             losses.push(entity_loss(
                 entry,
                 "attribute-table instance definition, row count, or typed value is invalid",
+            ));
+        }
+    }
+
+    for entry in directory.iter().filter(|entry| entry.entity_type == 302) {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let class_count = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0);
+        let mut cursor = 2;
+        let mut classes_valid = class_count.is_some();
+        for _ in 0..class_count.unwrap_or_default() {
+            classes_valid &= record
+                .integer(cursor)
+                .is_some_and(|value| matches!(value, 1..=2));
+            classes_valid &= record
+                .integer(cursor + 1)
+                .is_some_and(|value| matches!(value, 1..=2));
+            let item_count = record
+                .integer(cursor + 2)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0);
+            cursor += 3;
+            for _ in 0..item_count.unwrap_or_default() {
+                classes_valid &= record
+                    .integer(cursor)
+                    .is_some_and(|value| matches!(value, 1..=3));
+                cursor += 1;
+            }
+            classes_valid &= item_count.is_some();
+        }
+        let directory_valid = matches!(entry.form, 5001..=9999)
+            && entry.status.use_flag == 2
+            && entry.structure == 0
+            && entry.line_font == 0
+            && entry.level == 0
+            && entry.view == 0
+            && entry.transform == 0
+            && entry.label_display == 0
+            && entry.line_weight == 0
+            && entry.color == 0;
+        if directory_valid && classes_valid && cursor == entity_parameter_end(record, &entries) {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "associativity form, class count, class flags, item layout, or Directory fields are invalid",
             ));
         }
     }

@@ -324,6 +324,26 @@ struct NativeGroup {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeAssociativityClassDefinition {
+    back_pointers_required: Option<bool>,
+    ordered: Option<bool>,
+    declared_item_count: Option<i64>,
+    item_types: Vec<Option<i64>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum NativeAssociativity {
+    Definition {
+        id: String,
+        source_entity: String,
+        associativity_form: i64,
+        declared_class_count: Option<i64>,
+        classes: Vec<NativeAssociativityClassDefinition>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeAttributeValue {
     value: NativeTokenValue,
     display_template: Option<String>,
@@ -1587,6 +1607,49 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let associativities = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 302)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let class_count = record
+                .and_then(|record| record.integer(1))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let mut cursor = 2;
+            let classes = (0..class_count)
+                .map(|_| {
+                    let item_count = record
+                        .and_then(|record| record.integer(cursor + 2))
+                        .and_then(|value| usize::try_from(value).ok())
+                        .unwrap_or_default();
+                    let class = NativeAssociativityClassDefinition {
+                        back_pointers_required: record
+                            .and_then(|record| record.integer(cursor))
+                            .map(|value| value == 1),
+                        ordered: record
+                            .and_then(|record| record.integer(cursor + 1))
+                            .map(|value| value == 1),
+                        declared_item_count: record.and_then(|record| record.integer(cursor + 2)),
+                        item_types: (0..item_count)
+                            .map(|offset| {
+                                record.and_then(|record| record.integer(cursor + 3 + offset))
+                            })
+                            .collect(),
+                    };
+                    cursor += 3 + item_count;
+                    class
+                })
+                .collect();
+            NativeAssociativity::Definition {
+                id: format!("iges:structure:associativity#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                associativity_form: entry.form,
+                declared_class_count: record.and_then(|record| record.integer(1)),
+                classes,
+            }
+        })
+        .collect::<Vec<_>>();
     let attribute_table_definitions = directory
         .iter()
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
@@ -2389,6 +2452,7 @@ pub(crate) fn store(
     namespace.set_arena("circular_arrays", &circular_arrays)?;
     namespace.set_arena("external_references", &external_references)?;
     namespace.set_arena("groups", &groups)?;
+    namespace.set_arena("associativities", &associativities)?;
     namespace.set_arena("attribute_table_definitions", &attribute_table_definitions)?;
     namespace.set_arena("attribute_table_instances", &attribute_table_instances)?;
     namespace.set_arena("product_properties", &product_properties)?;
