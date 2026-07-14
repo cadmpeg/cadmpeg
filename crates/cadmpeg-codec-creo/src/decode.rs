@@ -3454,10 +3454,16 @@ fn placed_tabulated_cylinder_directrix(
     let [_, frame] = parameters.scalar_frames.as_slice() else {
         return None;
     };
+    let cache = crate::scalar::ScalarCache::default();
     let values = frame
         .slots
         .iter()
-        .map(|slot| slot.value)
+        .map(|slot| {
+            crate::scalar::decode_tabulated_cylinder_second_coordinate(&slot.raw, 0, &cache)
+                .filter(|(_, end)| *end == slot.raw.len())
+                .map(|(value, _)| value)
+                .or(slot.value)
+        })
         .collect::<Option<Vec<_>>>()?;
     let [a0, a1, a2, b0, b1, b2] = values.as_slice() else {
         return None;
@@ -3513,10 +3519,20 @@ fn placed_tabulated_cylinder_directrix(
         .iter()
         .map(|point| {
             let mut placed = [0.0; 3];
-            placed[*first_axis] =
-                -(first[*first_axis].max(second[*first_axis]) - (point[0] - local_min[0]));
-            placed[*second_axis] =
-                -(first[*second_axis].min(second[*second_axis]) + (point[1] - local_min[1]));
+            let chart_first =
+                first[*first_axis].max(second[*first_axis]) - (point[0] - local_min[0]);
+            let chart_second =
+                first[*second_axis].min(second[*second_axis]) + (point[1] - local_min[1]);
+            placed[*first_axis] = if *first_axis < 2 {
+                -chart_first
+            } else {
+                chart_first
+            };
+            placed[*second_axis] = if *second_axis < 2 {
+                -chart_second
+            } else {
+                chart_second
+            };
             placed[*sweep_axis] = first[*sweep_axis];
             Point3::new(placed[0], placed[1], placed[2])
         })
@@ -8081,7 +8097,7 @@ mod resolved_sketch_tests {
     fn parameter_slot(value: f64) -> crate::surface::SurfaceParameterScalar {
         crate::surface::SurfaceParameterScalar {
             value: Some(value),
-            raw: vec![0xe4],
+            raw: vec![],
             offset: 0,
             length: 1,
         }
