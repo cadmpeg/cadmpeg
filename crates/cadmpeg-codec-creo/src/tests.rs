@@ -275,17 +275,11 @@ fn scan_discovers_typed_surface_rows() {
     let mut payload = visibgeom_payload(2, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 8]);
     payload.extend_from_slice(&[8, 0x24, 4, 0xf6, 0x01, 0]);
-    payload.extend_from_slice(&[9, 0x2b, 4, 0x01, 0, 0]);
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
-    assert_eq!(scan.surface_rows.len(), 3);
+    assert_eq!(scan.surface_rows.len(), 2);
     assert_eq!(scan.surface_rows[0].id, 7);
     assert_eq!(scan.surface_rows[1].id, 8);
-    assert_eq!(scan.surface_rows[2].id, 9);
-    assert_eq!(
-        scan.surface_rows[2].kind,
-        crate::surface::SurfaceKind::Sphere
-    );
 }
 
 #[test]
@@ -2579,17 +2573,6 @@ fn decode_places_first_cone_sphere_and_torus_instances_from_named_prototypes() {
         (
             0x26,
             "torus",
-            vec![("radius1", 0.0), ("radius2", 1.0)],
-            cadmpeg_ir::geometry::SurfaceGeometry::Sphere {
-                center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-                radius: 1.0,
-            },
-        ),
-        (
-            0x2b,
-            "sphere",
             vec![("radius1", 0.0), ("radius2", 1.0)],
             cadmpeg_ir::geometry::SurfaceGeometry::Sphere {
                 center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),

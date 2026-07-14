@@ -20,8 +20,6 @@ pub enum SurfaceKind {
     /// `geom_type = 0x26`: a torus when the prototype's `radius1` is
     /// nonzero, a sphere when `radius1 = 0` ([spec §3.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#33-torus-and-sphere-representation)).
     TorusOrSphere,
-    /// `geom_type = 0x2b`: sphere.
-    Sphere,
     /// `geom_type = 0x28`.
     Spline,
     /// `geom_type = 0x29`: fillet or spline surface family; the split
@@ -39,7 +37,6 @@ impl SurfaceKind {
             0x24 => Some(Self::Cylinder),
             0x25 => Some(Self::Cone),
             0x26 => Some(Self::TorusOrSphere),
-            0x2b => Some(Self::Sphere),
             0x28 => Some(Self::Spline),
             0x29 => Some(Self::FilletOrSpline),
             0x2a | 0x2c => Some(Self::Extrusion),
@@ -1052,7 +1049,7 @@ pub fn prototypes(payload: &[u8]) -> Vec<SurfacePrototype> {
                 _ => None,
             };
             let radius = match kind {
-                SurfaceKind::TorusOrSphere | SurfaceKind::Sphere => scalar("radius1"),
+                SurfaceKind::TorusOrSphere => scalar("radius1"),
                 _ => scalar("radius"),
             };
             Some(SurfacePrototype {
