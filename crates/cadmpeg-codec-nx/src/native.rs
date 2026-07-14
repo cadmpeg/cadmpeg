@@ -248,6 +248,21 @@ pub struct FeatureBodyReference {
     pub source_offset: u64,
 }
 
+/// Ordered body-reference field retained from one feature-history operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBodyReferenceOccurrence {
+    /// Globally unique occurrence identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Zero-based field order within the bounded operation record.
+    pub ordinal: u32,
+    /// Serialized body object index.
+    pub body_object_index: u32,
+    /// Absolute file offset of the object-index token.
+    pub source_offset: u64,
+}
+
 /// Operation-header input resolved to one bounded offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureInputBlock {
@@ -541,6 +556,50 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
                 body_object_index: reference.object_index,
                 source_offset: entry_offset + reference.offset as u64,
             });
+        }
+    }
+    references
+}
+
+/// Decode every ordered body-reference field from bounded feature operations.
+pub fn feature_body_reference_occurrences(
+    container: &Container,
+) -> Vec<FeatureBodyReferenceOccurrence> {
+    let sections = container.om_sections();
+    let mut references = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+            references.extend(
+                crate::om::operation_body_references(record)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ordinal, reference)| FeatureBodyReferenceOccurrence {
+                        id: format!(
+                            "nx:feature-history:body-reference-occurrence#{section_key}-{operation_ordinal}-{ordinal}"
+                        ),
+                        operation_label: operation_label.clone(),
+                        ordinal: ordinal as u32,
+                        body_object_index: reference.object_index,
+                        source_offset: entry_offset + reference.offset as u64,
+                    }),
+            );
         }
     }
     references

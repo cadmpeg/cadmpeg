@@ -2765,6 +2765,8 @@ fn attach_native_object_model(
     let feature_operation_records = crate::native::feature_operation_records(&scan.container);
     let feature_payload_strings = crate::native::feature_payload_strings(&scan.container);
     let feature_body_references = crate::native::feature_body_references(&scan.container);
+    let feature_body_reference_occurrences =
+        crate::native::feature_body_reference_occurrences(&scan.container);
     let feature_input_blocks = crate::native::feature_input_blocks(&scan.container);
     let feature_sketch_records = crate::native::feature_sketch_records(
         &feature_operation_labels,
@@ -3013,7 +3015,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(30);
+    namespace.version = namespace.version.max(31);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3046,6 +3048,12 @@ fn attach_native_object_model(
     }
     if !feature_body_references.is_empty() {
         namespace.set_arena("feature_body_references", &feature_body_references)?;
+    }
+    if !feature_body_reference_occurrences.is_empty() {
+        namespace.set_arena(
+            "feature_body_reference_occurrences",
+            &feature_body_reference_occurrences,
+        )?;
     }
     if !feature_input_blocks.is_empty() {
         namespace.set_arena("feature_input_blocks", &feature_input_blocks)?;

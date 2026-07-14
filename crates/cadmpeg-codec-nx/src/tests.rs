@@ -419,7 +419,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 30);
+    assert_eq!(namespace.version, 31);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -740,6 +740,19 @@ fn decode_retains_role_scoped_om_record_area_header() {
     assert_eq!(body_references.len(), 1);
     assert_eq!(body_references[0].operation_label, labels[0].id);
     assert_eq!(body_references[0].body_object_index, 6466);
+    let body_reference_occurrences = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::FeatureBodyReferenceOccurrence>(
+            "feature_body_reference_occurrences",
+        )
+        .unwrap();
+    assert_eq!(body_reference_occurrences.len(), 1);
+    assert_eq!(body_reference_occurrences[0].operation_label, labels[0].id);
+    assert_eq!(body_reference_occurrences[0].ordinal, 0);
+    assert_eq!(body_reference_occurrences[0].body_object_index, 6466);
     let feature = result.ir.model.features.first().expect("neutral feature");
     assert_eq!(feature.name.as_deref(), Some("UNITE"));
     assert_eq!(feature.native_ref.as_deref(), Some(labels[0].id.as_str()));
@@ -824,6 +837,25 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
     );
 
     let duplicate = [bytes.as_slice(), bytes.as_slice()].concat();
+    assert_eq!(
+        crate::om::operation_body_references(crate::om::OperationRecord {
+            offset: 100,
+            bytes: &duplicate,
+            payload_offset: 100,
+            payload: &duplicate,
+            label,
+        }),
+        [
+            crate::om::OperationBodyReference {
+                offset: 103,
+                object_index: 6466,
+            },
+            crate::om::OperationBodyReference {
+                offset: 110,
+                object_index: 6466,
+            },
+        ]
+    );
     assert!(
         crate::om::operation_body_reference(crate::om::OperationRecord {
             offset: 100,
@@ -3684,7 +3716,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 30);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 31);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

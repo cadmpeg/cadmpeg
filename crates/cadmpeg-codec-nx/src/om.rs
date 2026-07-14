@@ -542,6 +542,15 @@ pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPa
 
 /// Decode the unique `01 02 10 index ff` primary-body field in one operation.
 pub fn operation_body_reference(record: OperationRecord<'_>) -> Option<OperationBodyReference> {
+    let matches = operation_body_references(record);
+    let [reference] = matches.as_slice() else {
+        return None;
+    };
+    Some(*reference)
+}
+
+/// Decode every ordered `01 02 10 index ff` body-reference field in one operation.
+pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBodyReference> {
     let mut matches = Vec::new();
     for marker in record
         .bytes
@@ -550,18 +559,17 @@ pub fn operation_body_reference(record: OperationRecord<'_>) -> Option<Operation
         .filter_map(|(offset, window)| (window == [0x01, 0x02, 0x10]).then_some(offset))
     {
         let token = marker + 3;
-        let (value, end) = feature_object_index(record.bytes, token)?;
+        let Some((Some(object_index), end)) = feature_object_index(record.bytes, token) else {
+            continue;
+        };
         if record.bytes.get(end) == Some(&0xff) {
             matches.push(OperationBodyReference {
                 offset: record.offset + token,
-                object_index: value?,
+                object_index,
             });
         }
     }
-    let [reference] = matches.as_slice() else {
-        return None;
-    };
-    Some(*reference)
+    matches
 }
 
 fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
