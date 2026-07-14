@@ -8216,8 +8216,9 @@ fn typed_relation_definition(
         PointLineDistance => {
             let point = marker(0)
                 .and_then(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker));
-            let line = marker(1)
-                .and_then(|marker| single_marker_entity(marker, markers_by_id, loci_by_marker));
+            let line = marker(1).and_then(|marker| {
+                single_marker_curve_entity(marker, markers_by_id, loci_by_marker, sketch_entities)
+            });
             let (point, line) = match (point, line) {
                 (Some(point), Some(line)) => (point, line),
                 (Some(point), None) => (
@@ -8237,10 +8238,18 @@ fn typed_relation_definition(
             })
         }
         LineLineDistance => {
-            let first = marker(0)
-                .and_then(|marker| single_marker_entity(marker, markers_by_id, loci_by_marker));
-            let second = marker(1)
-                .and_then(|marker| single_marker_entity(marker, markers_by_id, loci_by_marker));
+            let curve = |index| {
+                marker(index).and_then(|marker| {
+                    single_marker_curve_entity(
+                        marker,
+                        markers_by_id,
+                        loci_by_marker,
+                        sketch_entities,
+                    )
+                })
+            };
+            let first = curve(0);
+            let second = curve(1);
             let (first, second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
@@ -8944,6 +8953,36 @@ fn single_marker_entity(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchEntityId> {
     let entities = marker_entities(marker_id, markers_by_id, loci_by_marker);
+    let [entity] = entities.as_slice() else {
+        return None;
+    };
+    Some(entity.clone())
+}
+
+fn single_marker_curve_entity(
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    sketch_entities: &[SketchEntity],
+) -> Option<SketchEntityId> {
+    let mut entities = marker_entities(marker_id, markers_by_id, loci_by_marker)
+        .into_iter()
+        .filter(|id| {
+            sketch_entities
+                .iter()
+                .find(|entity| entity.id == *id)
+                .is_some_and(|entity| {
+                    matches!(
+                        entity.geometry,
+                        SketchGeometry::Line { .. }
+                            | SketchGeometry::Circle { .. }
+                            | SketchGeometry::Arc { .. }
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    entities.sort();
+    entities.dedup();
     let [entity] = entities.as_slice() else {
         return None;
     };
@@ -10151,16 +10190,16 @@ mod profile_join_tests {
         marker_point_locus, profile_loci_by_marker, project_dimensioned_sketch_geometry,
         project_relation_point_geometry, project_relation_solved_point_geometry,
         relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
-        resolved_marker_locus, select_marker_transforms_by_frame, sketch_frame_marker_transform,
-        type_display_relation_parameters, typed_marker_relation_definition,
-        typed_relation_definition, unique_axis_aligned_linked_loci,
-        unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
-        unique_profile_axis_distance_locus, unique_profile_axis_distance_pair,
-        unique_profile_distance_loci_pair, unique_profile_distance_locus,
-        unique_profile_line_angle_entity, unique_profile_line_angle_pair,
-        unique_profile_line_distance_entity, unique_profile_line_distance_pair,
-        unique_profile_line_point_locus, unique_profile_point_line_entity,
-        unique_profile_point_line_pair, MarkerTransform,
+        resolved_marker_locus, select_marker_transforms_by_frame, single_marker_curve_entity,
+        sketch_frame_marker_transform, type_display_relation_parameters,
+        typed_marker_relation_definition, typed_relation_definition,
+        unique_axis_aligned_linked_loci, unique_compatible_marker_transform,
+        unique_linked_endpoint_locus, unique_marker_transform, unique_profile_axis_distance_locus,
+        unique_profile_axis_distance_pair, unique_profile_distance_loci_pair,
+        unique_profile_distance_locus, unique_profile_line_angle_entity,
+        unique_profile_line_angle_pair, unique_profile_line_distance_entity,
+        unique_profile_line_distance_pair, unique_profile_line_point_locus,
+        unique_profile_point_line_entity, unique_profile_point_line_pair, MarkerTransform,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -10587,6 +10626,54 @@ mod profile_join_tests {
                 &[known, candidate, ambiguous],
             ),
             None
+        );
+    }
+
+    #[test]
+    fn curve_operand_rejects_a_point_qualified_geometry_alias() {
+        let sketch = SketchId("sketch".into());
+        let point_id = SketchEntityId("point".into());
+        let line_id = SketchEntityId("line".into());
+        let entities = vec![
+            SketchEntity {
+                id: point_id.clone(),
+                sketch: sketch.clone(),
+                construction: true,
+                native_ref: None,
+                geometry_ref: Some("curve-marker".into()),
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: Point2::new(0.5, 0.0),
+                },
+            },
+            SketchEntity {
+                id: line_id.clone(),
+                sketch,
+                construction: false,
+                native_ref: Some("line-marker".into()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            },
+        ];
+        let loci = HashMap::from([
+            ("curve-marker".into(), vec![SketchLocus::Entity(point_id)]),
+            (
+                "line-marker".into(),
+                vec![SketchLocus::Entity(line_id.clone())],
+            ),
+        ]);
+
+        assert_eq!(
+            single_marker_curve_entity("curve-marker", &HashMap::new(), &loci, &entities),
+            None
+        );
+        assert_eq!(
+            single_marker_curve_entity("line-marker", &HashMap::new(), &loci, &entities),
+            Some(line_id)
         );
     }
 
