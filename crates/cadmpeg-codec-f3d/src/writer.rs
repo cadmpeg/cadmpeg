@@ -479,7 +479,7 @@ fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), Codec
         }
         for entity_id in &object.entity_ids {
             if entity_kinds
-                .insert(*entity_id, object.kind)
+                .insert(*entity_id, object.kind.clone())
                 .is_some_and(|before| before != object.kind)
             {
                 return Err(CodecError::Malformed(format!(
@@ -520,7 +520,7 @@ fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), Codec
                 header.id, header.entity_suffix
             )));
         }
-        let owned_kind = entity_kinds.get(&header.entity_suffix).copied();
+        let owned_kind = entity_kinds.get(&header.entity_suffix).cloned();
         if header.object_kind != owned_kind {
             return Err(CodecError::Malformed(format!(
                 "F3D Design header {} object kind conflicts with MetaStream ownership",
@@ -1808,7 +1808,7 @@ fn encode_design_metastream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
 
     let mut out = Vec::new();
     for object in &native.design_objects {
-        native_lp_ascii(&mut out, design_object_kind_name(object.kind))?;
+        native_lp_ascii(&mut out, design_object_kind_name(&object.kind))?;
         let count = u32::try_from(object.entity_ids.len()).map_err(|_| {
             CodecError::Malformed("Design object owns more than u32::MAX entities".into())
         })?;
@@ -1836,7 +1836,7 @@ fn encode_design_metastream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
     Ok(Some(out))
 }
 
-fn design_object_kind_name(kind: DesignObjectKind) -> &'static str {
+fn design_object_kind_name(kind: &DesignObjectKind) -> &str {
     match kind {
         DesignObjectKind::Fusion => "Fusion",
         DesignObjectKind::Body => "Body",
@@ -1847,6 +1847,7 @@ fn design_object_kind_name(kind: DesignObjectKind) -> &'static str {
         DesignObjectKind::Scene => "Scene",
         DesignObjectKind::EntityTracking => "EntityTracking",
         DesignObjectKind::CommonData => "CommonData",
+        DesignObjectKind::Other(name) => name,
     }
 }
 

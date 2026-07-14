@@ -6590,8 +6590,7 @@ pub fn decode_lost_edge_references(
 /// Decode every GUID-owned design object record from each design
 /// `MetaStream` entry in `scan` ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): an ASCII type name, the design
 /// entity IDs it owns, its self GUID, an optional parent GUID, and a
-/// revision. Records whose type name does not match a known
-/// [`DesignObjectKind`] are skipped.
+/// revision. Unrecognized type names remain exact native object kinds.
 pub fn decode_objects(
     _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -6609,10 +6608,14 @@ pub fn decode_objects(
                 offset += 1;
                 continue;
             };
-            let Some(kind) = object_kind(&name) else {
+            if name.is_empty()
+                || is_guid(&name)
+                || !name.bytes().all(|byte| byte.is_ascii_graphic())
+            {
                 offset += 1;
                 continue;
-            };
+            }
+            let kind = object_kind(&name);
             let Some(count_raw) = bytes.get(after_name..after_name + 4) else {
                 break;
             };
@@ -6698,7 +6701,9 @@ pub fn decode_entity_headers(
     let mut object_kinds = HashMap::new();
     for object in decode_objects(reader, scan)? {
         for entity_id in object.entity_ids {
-            object_kinds.entry(entity_id).or_insert(object.kind);
+            object_kinds
+                .entry(entity_id)
+                .or_insert_with(|| object.kind.clone());
         }
     }
     for entry in scan
@@ -6749,7 +6754,7 @@ pub fn decode_entity_headers(
             if suffix.parse::<u64>().ok() != Some(entity_suffix) {
                 continue;
             }
-            let object_kind = object_kinds.get(&entity_suffix).copied();
+            let object_kind = object_kinds.get(&entity_suffix).cloned();
             let (
                 record_reference,
                 record_reference_offset,
@@ -7893,18 +7898,18 @@ fn body_bound_candidates(
     })
 }
 
-fn object_kind(name: &str) -> Option<DesignObjectKind> {
+fn object_kind(name: &str) -> DesignObjectKind {
     match name {
-        "Fusion" => Some(DesignObjectKind::Fusion),
-        "Body" => Some(DesignObjectKind::Body),
-        "Component" => Some(DesignObjectKind::Component),
-        "Geometry" => Some(DesignObjectKind::Geometry),
-        "MSketch" => Some(DesignObjectKind::Sketch),
-        "Dimension" => Some(DesignObjectKind::Dimension),
-        "Scene" => Some(DesignObjectKind::Scene),
-        "EntityTracking" => Some(DesignObjectKind::EntityTracking),
-        "CommonData" => Some(DesignObjectKind::CommonData),
-        _ => None,
+        "Fusion" => DesignObjectKind::Fusion,
+        "Body" => DesignObjectKind::Body,
+        "Component" => DesignObjectKind::Component,
+        "Geometry" => DesignObjectKind::Geometry,
+        "MSketch" => DesignObjectKind::Sketch,
+        "Dimension" => DesignObjectKind::Dimension,
+        "Scene" => DesignObjectKind::Scene,
+        "EntityTracking" => DesignObjectKind::EntityTracking,
+        "CommonData" => DesignObjectKind::CommonData,
+        _ => DesignObjectKind::Other(name.to_owned()),
     }
 }
 

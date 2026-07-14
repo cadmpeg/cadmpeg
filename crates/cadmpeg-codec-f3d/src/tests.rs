@@ -6881,6 +6881,20 @@ fn generated_source_less_writes_design_object_metastream() {
             revision: 9,
             revision_offset: 0,
         },
+        DesignObject {
+            id: "generated:design-object#2".into(),
+            byte_offset: 0,
+            kind: DesignObjectKind::Other("FutureFeature".into()),
+            entity_ids: vec![999],
+            entity_id_offsets: Vec::new(),
+            self_guid: "33333333-4444-5555-6666-777777777777".into(),
+            self_guid_offset: 0,
+            zero_run_length: 0,
+            parent_guid: Some("11111111-2222-3333-4444-555555555555".into()),
+            parent_guid_offset: None,
+            revision: 11,
+            revision_offset: 0,
+        },
     ];
 
     drop(native);
@@ -6900,19 +6914,31 @@ fn generated_source_less_writes_design_object_metastream() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design MetaStream round trip");
     let objects = &f3d_native(&round_trip.ir).design_objects;
-    assert_eq!(objects.len(), 2);
-    assert_eq!(objects[0].kind, DesignObjectKind::Fusion);
-    assert_eq!(objects[0].entity_ids, [1, 2]);
-    assert_eq!(objects[0].revision, 7);
-    assert_eq!(objects[0].zero_run_length, 16);
-    assert_eq!(objects[1].kind, DesignObjectKind::Sketch);
-    assert_eq!(objects[1].entity_ids, [277]);
+    assert_eq!(objects.len(), 3);
+    let fusion = objects
+        .iter()
+        .find(|object| object.kind == DesignObjectKind::Fusion)
+        .expect("Fusion object");
+    assert_eq!(fusion.entity_ids, [1, 2]);
+    assert_eq!(fusion.revision, 7);
+    assert_eq!(fusion.zero_run_length, 16);
+    let sketch = objects
+        .iter()
+        .find(|object| object.kind == DesignObjectKind::Sketch)
+        .expect("Sketch object");
+    assert_eq!(sketch.entity_ids, [277]);
     assert_eq!(
-        objects[1].parent_guid.as_deref(),
+        sketch.parent_guid.as_deref(),
         Some("11111111-2222-3333-4444-555555555555")
     );
-    assert_eq!(objects[1].revision, 9);
-    assert_eq!(objects[1].zero_run_length, 4);
+    assert_eq!(sketch.revision, 9);
+    assert_eq!(sketch.zero_run_length, 4);
+    let future = objects
+        .iter()
+        .find(|object| object.kind == DesignObjectKind::Other("FutureFeature".into()))
+        .expect("forward-compatible object");
+    assert_eq!(future.entity_ids, [999]);
+    assert_eq!(future.revision, 11);
 }
 
 #[test]

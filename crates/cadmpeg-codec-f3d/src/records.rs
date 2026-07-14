@@ -1187,7 +1187,7 @@ pub struct DesignMaterialAssignment {
 }
 
 /// Design `MetaStream` object class.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DesignObjectKind {
     /// Root Fusion document object.
@@ -1208,6 +1208,8 @@ pub enum DesignObjectKind {
     EntityTracking,
     /// A shared common-data object referenced by other object kinds.
     CommonData,
+    /// A forward-compatible object class retained by its exact ASCII name.
+    Other(String),
 }
 
 /// JSON configuration payload stored in a Fusion design-configuration entry.
