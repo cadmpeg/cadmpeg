@@ -134,6 +134,8 @@ pub(crate) struct Scan {
     pub(crate) objects: Vec<ObjectDescriptor>,
     /// Parsed instance definitions and recoverable definition diagnostics.
     pub(crate) definitions: DefinitionScan,
+    /// Decoded built-in history records in source order.
+    pub(crate) history: Vec<crate::history::HistoryRecord>,
     /// Validated EOF descriptor.
     pub(crate) eof_offset: usize,
     /// Recoverable checksum and unknown-record notes.
@@ -231,10 +233,7 @@ fn table_base(typecode: u32) -> u32 {
 }
 
 fn retain_record_descriptors(typecode: u32) -> bool {
-    matches!(
-        table_base(typecode),
-        TCODE_PROPERTIES | TCODE_SETTINGS | TCODE_LAYER | TCODE_INSTANCE_DEFINITION | TCODE_OBJECTS
-    )
+    table_base(typecode) != TCODE_USER
 }
 
 fn record_is_allowed(table: u32, record: u32, short: bool) -> bool {
@@ -353,6 +352,7 @@ fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, Co
     let mut saw_objects = false;
     let mut all_objects = Vec::new();
     let mut definitions = DefinitionScan::default();
+    let mut history = Vec::new();
     let mut record_count = 0_usize;
     while offset < data.len() {
         let chunk = chunk_at(&data, offset, data.len(), archive, false)
@@ -373,6 +373,7 @@ fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, Co
                 tables,
                 objects: all_objects,
                 definitions,
+                history,
                 eof_offset: offset,
                 warnings,
                 metadata,
@@ -467,14 +468,25 @@ fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, Co
                     record.typecode, chunk.typecode
                 ));
             }
-            if let Some(note) = checksum_warning(
-                &data,
-                record.typecode,
-                child_offset,
-                chunk.body.end,
-                archive,
-            )? {
-                warnings.push(note);
+            // A layer wrapper has no direct bytes, and object records use a
+            // zero outer CRC. Checksummed leaf children remain independently
+            // validated.
+            let zero_nested_container_crc =
+                matches!(record.typecode, TCODE_OBJECT_RECORD | TCODE_LAYER_RECORD)
+                    && child
+                        .checksum
+                        .as_ref()
+                        .is_some_and(|range| data[range.clone()].iter().all(|byte| *byte == 0));
+            if !zero_nested_container_crc {
+                if let Some(note) = checksum_warning(
+                    &data,
+                    record.typecode,
+                    child_offset,
+                    chunk.body.end,
+                    archive,
+                )? {
+                    warnings.push(note);
+                }
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
@@ -508,6 +520,9 @@ fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, Co
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
             definitions = parse_definitions(&data, &records, archive);
+        }
+        if table_base(chunk.typecode) == TCODE_HISTORY {
+            history = crate::history::parse_records(&data, &records, archive, &mut warnings);
         }
         tables.push(Table {
             typecode: chunk.typecode,
