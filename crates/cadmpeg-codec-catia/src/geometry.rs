@@ -605,6 +605,34 @@ pub struct A8Surface {
     pub geometry: SurfaceGeometry,
 }
 
+/// Parameter lattice decoded from an `a8 03 34` surface record independently
+/// of its pole representation.
+#[derive(Debug, Clone, PartialEq)]
+pub struct A8SurfaceHeader {
+    /// Source offset of the framed record.
+    pub pos: usize,
+    /// Inline persistent object id.
+    pub object_id: u32,
+    /// U degree.
+    pub u_degree: u32,
+    /// V degree.
+    pub v_degree: u32,
+    /// Distinct U knots.
+    pub u_distinct_knots: Vec<f64>,
+    /// Distinct V knots.
+    pub v_distinct_knots: Vec<f64>,
+    /// U multiplicities corresponding to `u_distinct_knots`.
+    pub u_multiplicities: Vec<u32>,
+    /// V multiplicities corresponding to `v_distinct_knots`.
+    pub v_multiplicities: Vec<u32>,
+    /// Derived U pole count.
+    pub u_count: u32,
+    /// Derived V pole count.
+    pub v_count: u32,
+    /// Whether the record selects rational weights.
+    pub rational: bool,
+}
+
 #[derive(Debug, Clone)]
 /// Degree-5 UV jet stored in an `a8 03 20` object record.
 pub struct A8Pcurve {
@@ -3484,6 +3512,22 @@ pub fn a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
     scan_surfaces(data, *b"\xa8\x03\x34", 3, a8_surface)
 }
 
+/// Decode every structurally complete `a8 03 34` parameter lattice, including
+/// records whose pole representation is not inline.
+#[must_use]
+pub fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
+    let mut out = Vec::new();
+    let mut search = 0usize;
+    while let Some(relative) = data[search..].windows(3).position(|v| v == [0xa8, 3, 0x34]) {
+        let pos = search + relative;
+        search = pos + 3;
+        if let Some(parsed) = parse_a8_surface_header(data, pos) {
+            out.push(parsed.header);
+        }
+    }
+    out
+}
+
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
 pub fn a5_surfaces(data: &[u8]) -> Vec<A8Surface> {
@@ -3587,7 +3631,13 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<A8Surface> {
     })
 }
 
-fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
+struct ParsedA8SurfaceHeader {
+    header: A8SurfaceHeader,
+    pole_start: usize,
+    end: usize,
+}
+
+fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHeader> {
     let payload_len = u32_le(data, pos + 3)? as usize;
     let object_id = u32_le(data, pos + 7)?;
     let end = pos.checked_add(11)?.checked_add(payload_len)?;
@@ -3624,15 +3674,53 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
     if u_count == 0 || v_count == 0 || u_count > 20_000 || v_count > 20_000 {
         return None;
     }
+    Some(ParsedA8SurfaceHeader {
+        header: A8SurfaceHeader {
+            pos,
+            object_id,
+            u_degree,
+            v_degree,
+            u_distinct_knots: u_distinct,
+            v_distinct_knots: v_distinct,
+            u_multiplicities: u_mults,
+            v_multiplicities: v_mults,
+            u_count,
+            v_count,
+            rational: mode == 0x05,
+        },
+        pole_start: at,
+        end,
+    })
+}
+
+fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
+    let ParsedA8SurfaceHeader {
+        header,
+        mut pole_start,
+        end,
+    } = parse_a8_surface_header(data, pos)?;
+    let A8SurfaceHeader {
+        object_id,
+        u_degree,
+        v_degree,
+        u_distinct_knots,
+        v_distinct_knots,
+        u_multiplicities,
+        v_multiplicities,
+        u_count,
+        v_count,
+        rational,
+        ..
+    } = header;
     let poles = (u_count as usize).checked_mul(v_count as usize)?;
     let pole_bytes = poles.checked_mul(24)?;
-    if at.checked_add(pole_bytes)? > end {
+    if pole_start.checked_add(pole_bytes)? > end {
         return None;
     }
     let mut control_points = Vec::with_capacity(poles);
     for _ in 0..poles {
-        control_points.push(f64_point(data, at)?);
-        at += 24;
+        control_points.push(f64_point(data, pole_start)?);
+        pole_start += 24;
     }
     if control_points
         .iter()
@@ -3641,8 +3729,8 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
     {
         return None;
     }
-    let weights = if mode == 0x05 {
-        let values = f64_values(data, &mut at, poles, end)?;
+    let weights = if rational {
+        let values = f64_values(data, &mut pole_start, poles, end)?;
         values
             .iter()
             .all(|weight| *weight != 0.0)
@@ -3650,7 +3738,7 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
     } else {
         Vec::new()
     };
-    if at > end {
+    if pole_start > end {
         return None;
     }
     Some(A8Surface {
@@ -3659,12 +3747,12 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
         geometry: SurfaceGeometry::Nurbs(NurbsSurface {
             u_degree,
             v_degree,
-            u_knots: expand_knots(&u_distinct, &u_mults)?,
-            v_knots: expand_knots(&v_distinct, &v_mults)?,
+            u_knots: expand_knots(&u_distinct_knots, &u_multiplicities)?,
+            v_knots: expand_knots(&v_distinct_knots, &v_multiplicities)?,
             u_count,
             v_count,
             control_points,
-            weights: (mode == 0x05).then_some(weights),
+            weights: rational.then_some(weights),
             u_periodic: false,
             v_periodic: false,
         }),

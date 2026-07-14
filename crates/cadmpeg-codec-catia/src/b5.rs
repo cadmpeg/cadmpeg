@@ -73,6 +73,14 @@ pub enum B5Profile {
 /// A resolved `b5 03` surface node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
 pub enum B5Surface {
+    /// A NURBS surface whose parameter lattice is decoded but whose pole
+    /// representation remains opaque.
+    UnresolvedNurbs {
+        /// Decoded degree, knot, multiplicity, and pole-cardinality fields.
+        header: crate::geometry::A8SurfaceHeader,
+        /// Exact source payload, including the opaque pole representation.
+        payload: Vec<u8>,
+    },
     /// An identity-bearing surface record whose carrier geometry remains opaque.
     Unknown {
         /// Source record family (`0xa8`).
@@ -207,9 +215,17 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     if records.is_empty() || by_id.len() != records.len() {
         return None;
     }
+    let a8_headers: BTreeMap<u32, crate::geometry::A8SurfaceHeader> =
+        crate::geometry::a8_surface_headers(bytes)
+            .into_iter()
+            .map(|header| (header.object_id, header))
+            .collect();
     let mut surfaces: BTreeMap<u32, B5Surface> = records
         .iter()
-        .filter_map(|record| surface_node(record).map(|surface| (record.object_id, surface)))
+        .filter_map(|record| {
+            surface_node(record, a8_headers.get(&record.object_id))
+                .map(|surface| (record.object_id, surface))
+        })
         .collect();
     for surface in crate::geometry::a8_surfaces(bytes) {
         if let SurfaceGeometry::Nurbs(nurbs) = surface.geometry {
@@ -824,12 +840,23 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
     }
 }
 
-fn surface_node(record: &B5Record) -> Option<B5Surface> {
+fn surface_node(
+    record: &B5Record,
+    header: Option<&crate::geometry::A8SurfaceHeader>,
+) -> Option<B5Surface> {
     parse_surface(record).or_else(|| {
-        (record.family == 0xa8 && record.class == 0x34).then(|| B5Surface::Unknown {
-            family: record.family,
-            class: record.class,
-            payload: record.payload.clone(),
+        (record.family == 0xa8 && record.class == 0x34).then(|| {
+            header.map_or_else(
+                || B5Surface::Unknown {
+                    family: record.family,
+                    class: record.class,
+                    payload: record.payload.clone(),
+                },
+                |header| B5Surface::UnresolvedNurbs {
+                    header: header.clone(),
+                    payload: record.payload.clone(),
+                },
+            )
         })
     })
 }
@@ -841,7 +868,7 @@ fn lift_pcurve_endpoints(
 ) -> Option<[[f64; 3]; 2]> {
     let endpoints = [*control_points.first()?, *control_points.last()?];
     match surface {
-        B5Surface::Unknown { .. } => None,
+        B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => None,
         B5Surface::Plane {
             origin,
             direction_u,
@@ -1565,7 +1592,7 @@ mod tests {
         assert_eq!(records[0].object_id, 7);
         assert_eq!(records[0].payload, [1, 2, 3]);
         assert_eq!(
-            surface_node(&records[0]),
+            surface_node(&records[0], None),
             Some(B5Surface::Unknown {
                 family: 0xa8,
                 class: 0x34,

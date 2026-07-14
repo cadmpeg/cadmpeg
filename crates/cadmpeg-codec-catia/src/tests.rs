@@ -2978,6 +2978,20 @@ fn a8_surface_parser_reads_common_form_nurbs() {
 }
 
 #[test]
+fn a8_surface_header_survives_an_opaque_pole_representation() {
+    let mut bytes = a8_surface_stream();
+    bytes[59..67].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::geometry::a8_surfaces(&bytes).is_empty());
+    let headers = crate::geometry::a8_surface_headers(&bytes);
+    assert_eq!(headers.len(), 1);
+    assert_eq!(headers[0].object_id, 0xdeca_fbad);
+    assert_eq!((headers[0].u_degree, headers[0].v_degree), (2, 2));
+    assert_eq!((headers[0].u_count, headers[0].v_count), (3, 3));
+    assert_eq!(headers[0].u_multiplicities, [3, 3]);
+    assert_eq!(headers[0].v_multiplicities, [3, 3]);
+}
+
+#[test]
 fn a8_pcurve_parser_reads_degree5_uv_jet() {
     let pcurves = crate::geometry::a8_pcurves(&a8_pcurve_stream());
     assert_eq!(pcurves.len(), 1);

@@ -577,7 +577,7 @@ fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
 fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<CurveGeometry> {
     let knots = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities)?;
     match surface {
-        B5Surface::Unknown { .. } => None,
+        B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => None,
         B5Surface::Plane {
             origin,
             direction_u,
@@ -824,7 +824,7 @@ fn neutral_surface(
 ) -> SurfacePlan {
     let mut revolution = None;
     let geometry = match surface {
-        B5Surface::Unknown { .. } => SurfaceGeometry::Unknown {
+        B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => SurfaceGeometry::Unknown {
             record: Some(payload.clone()),
         },
         B5Surface::Plane {
