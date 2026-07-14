@@ -640,29 +640,38 @@ struct IncidenceCandidateSearch<'a> {
 }
 
 impl IncidenceCandidateSearch<'_> {
+    fn orientation_fits_ports(&self, edge: usize, points: [usize; 2]) -> bool {
+        self.edge_ports.is_none_or(|ports| {
+            ports[edge].iter().zip(points).all(|(&port, point)| {
+                self.port_points
+                    .get(&port)
+                    .is_none_or(|stored| *stored == point)
+            })
+        })
+    }
+
     fn candidate_orientations(&self, edge: usize, pair: [usize; 2]) -> Vec<[usize; 2]> {
-        let Some(ports) = self.edge_ports else {
+        if self.edge_ports.is_none() {
             return vec![pair];
-        };
+        }
         let mut oriented = vec![pair];
         if pair[0] != pair[1] {
             oriented.push([pair[1], pair[0]]);
         }
-        oriented.retain(|points| {
-            ports[edge].iter().zip(points).all(|(&port, point)| {
-                self.port_points
-                    .get(&port)
-                    .is_none_or(|stored| *stored == *point)
-            })
-        });
+        oriented.retain(|points| self.orientation_fits_ports(edge, *points));
         oriented
+    }
+
+    fn candidate_has_port_orientation(&self, edge: usize, pair: [usize; 2]) -> bool {
+        self.orientation_fits_ports(edge, pair)
+            || (pair[0] != pair[1] && self.orientation_fits_ports(edge, [pair[1], pair[0]]))
     }
 
     fn candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
         let mut faces = self.edge_faces[edge].to_vec();
         faces.sort_unstable();
         faces.dedup();
-        !self.candidate_orientations(edge, pair).is_empty()
+        self.candidate_has_port_orientation(edge, pair)
             && faces.iter().all(|&face| {
                 pair.iter().enumerate().all(|(rank, &point)| {
                     let multiplicity = 1 + usize::from(rank == 0 && pair[0] == pair[1]);
