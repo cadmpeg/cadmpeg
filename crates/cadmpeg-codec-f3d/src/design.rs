@@ -12,15 +12,15 @@ use crate::records::{
     DesignBodyMember, DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity, DesignDimensionLocus,
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
-    DesignDimensionRecipeRecord, DesignEdgeOperand, DesignEdgeRecipeEntry, DesignEdgeRecipeSide,
-    DesignEdgeRecipeStructure, DesignEdgeRecipeTopologyTriplet, DesignEntityHeader,
-    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignDimensionRecipeRecord, DesignEdgeOperand, DesignEntityHeader, DesignExtrudeExtent,
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
     DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind,
     DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-    DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
-    PersistentReference, PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, DesignTopologyRecipeEntry,
+    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference,
+    PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
+    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -6800,9 +6800,16 @@ fn parse_edge_operand(
     })
 }
 
-pub(crate) fn edge_recipe_structure(program: &[i32]) -> Option<DesignEdgeRecipeStructure> {
+pub(crate) fn edge_recipe_structure(
+    program: &[i32],
+) -> Option<crate::records::DesignEdgeRecipeStructure> {
+    edge_recipe_structure_tail(program.get(7..)?)
+}
+
+fn edge_recipe_structure_tail(
+    program: &[i32],
+) -> Option<crate::records::DesignEdgeRecipeStructure> {
     let runs = program
-        .get(7..)?
         .split(|word| *word == -1)
         .filter(|run| !run.is_empty())
         .collect::<Vec<_>>();
@@ -6825,13 +6832,49 @@ pub(crate) fn edge_recipe_structure(program: &[i32]) -> Option<DesignEdgeRecipeS
     let [sides] = sides.as_slice() else {
         return None;
     };
-    Some(DesignEdgeRecipeStructure {
+    Some(crate::records::DesignEdgeRecipeStructure {
         root: runs[0][0],
         sides: sides.clone(),
     })
 }
 
-fn edge_recipe_side(runs: &[&[i32]]) -> Option<DesignEdgeRecipeSide> {
+pub(crate) fn face_recipe_structure(
+    program: &[i32],
+) -> Option<crate::records::DesignFaceRecipeStructure> {
+    let runs = program
+        .split(|word| *word == -1)
+        .filter(|run| !run.is_empty())
+        .collect::<Vec<_>>();
+    if runs
+        .get(0..3)
+        .is_none_or(|prefix| prefix.iter().any(|run| run.len() != 1))
+    {
+        return None;
+    }
+    let sides = [4usize, 5]
+        .into_iter()
+        .filter_map(|first_len| {
+            let second_len = runs.len().checked_sub(3 + first_len)?;
+            if !matches!(second_len, 4 | 5) {
+                return None;
+            }
+            Some([
+                edge_recipe_side(&runs[3..3 + first_len])?,
+                edge_recipe_side(&runs[3 + first_len..])?,
+            ])
+        })
+        .collect::<Vec<_>>();
+    let [sides] = sides.as_slice() else {
+        return None;
+    };
+    Some(crate::records::DesignFaceRecipeStructure {
+        root: runs[0][0],
+        prelude: [runs[1][0], runs[2][0]],
+        sides: sides.clone(),
+    })
+}
+
+fn edge_recipe_side(runs: &[&[i32]]) -> Option<DesignTopologyRecipeSide> {
     if !matches!(runs.len(), 4 | 5)
         || runs[0].len() != 2
         || runs[1].len() != 1
@@ -6844,7 +6887,7 @@ fn edge_recipe_side(runs: &[&[i32]]) -> Option<DesignEdgeRecipeSide> {
     if payload.len() < 2 || (payload.len() - 2) % 8 != 0 {
         return None;
     }
-    Some(DesignEdgeRecipeSide {
+    Some(DesignTopologyRecipeSide {
         header: [runs[0][0], runs[0][1]],
         first: runs[1][0],
         second: runs[2][0],
@@ -6854,11 +6897,11 @@ fn edge_recipe_side(runs: &[&[i32]]) -> Option<DesignEdgeRecipeSide> {
     })
 }
 
-fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignEdgeRecipeEntry>> {
+fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> {
     words
         .chunks_exact(8)
         .map(|entry| {
-            Some(DesignEdgeRecipeEntry {
+            Some(DesignTopologyRecipeEntry {
                 selector: entry[0],
                 boundary_edge_count: std::num::NonZeroU32::new(u32::try_from(entry[1]).ok()?)?,
                 topology_triplets: [
@@ -6870,7 +6913,7 @@ fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignEdgeRecipeEntry>> {
         .collect()
 }
 
-fn edge_recipe_topology_triplet(words: &[i32]) -> Option<DesignEdgeRecipeTopologyTriplet> {
+fn edge_recipe_topology_triplet(words: &[i32]) -> Option<DesignTopologyRecipeTriplet> {
     let [outer, middle, repeated_outer] = words else {
         return None;
     };
@@ -6880,7 +6923,7 @@ fn edge_recipe_topology_triplet(words: &[i32]) -> Option<DesignEdgeRecipeTopolog
     let outer = std::num::NonZeroU32::new(u32::try_from(*outer).ok()?)?;
     let middle = u32::try_from(*middle).ok()?;
     (middle == outer.get() || middle.checked_add(1) == Some(outer.get()))
-        .then_some(DesignEdgeRecipeTopologyTriplet { outer, middle })
+        .then_some(DesignTopologyRecipeTriplet { outer, middle })
 }
 
 fn parse_face_operand(
@@ -6986,12 +7029,14 @@ fn parse_face_operand(
                 .chain(std::iter::once(recipe_program.len())),
         )
         .map(|(start, end)| {
+            let program = recipe_program.get(start..end)?.to_vec();
             Some(crate::records::DesignFaceRecipeNode {
                 byte_offset: u64::try_from(recipe_program_at.checked_add(start.checked_mul(4)?)?)
                     .ok()?,
                 end_byte_offset: u64::try_from(recipe_program_at.checked_add(end.checked_mul(4)?)?)
                     .ok()?,
-                program: recipe_program.get(start..end)?.to_vec(),
+                recipe_structure: program.get(3..).and_then(face_recipe_structure),
+                program,
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -11179,6 +11224,18 @@ mod relation_tests {
         assert_eq!(extended.sides[1].third, Some(4));
         assert!(extended.sides[0].entries.is_empty());
         assert!(extended.sides[1].entries.is_empty());
+        let face = super::face_recipe_structure(&[
+            0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 3, -1, 0, 0, -1,
+        ])
+        .expect("face node topology recipe structure");
+        assert_eq!(face.root, 0);
+        assert_eq!(face.prelude, [1, 2]);
+        assert_eq!(face.sides[0].header, [3, 0]);
+        assert_eq!(face.sides[0].first, 2);
+        assert_eq!(face.sides[0].second, 1);
+        assert_eq!(face.sides[1].header, [3, 0]);
+        assert_eq!(face.sides[1].first, 1);
+        assert_eq!(face.sides[1].second, 3);
         assert_eq!(edge_operand.next_record_index, 104);
         assert_eq!(edge_operand.next_byte_offset, next_at);
         bind_edge_operand_candidates(

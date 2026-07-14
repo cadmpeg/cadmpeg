@@ -1341,6 +1341,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     node.byte_offset == start
                         && node.end_byte_offset == end
                         && node.program.get(0..3) == Some(&[-1, -1, 2])
+                        && node.recipe_structure
+                            == node
+                                .program
+                                .get(3..)
+                                .and_then(design::face_recipe_structure)
                         && u64::try_from(node.program.len()).ok().is_some_and(|words| {
                             start.saturating_add(words.saturating_mul(4)) == end
                         })

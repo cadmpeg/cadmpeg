@@ -1087,12 +1087,12 @@ pub struct DesignEdgeRecipeStructure {
     /// Scalar before the first `-1` delimiter.
     pub root: i32,
     /// Two ordered side clauses.
-    pub sides: [DesignEdgeRecipeSide; 2],
+    pub sides: [DesignTopologyRecipeSide; 2],
 }
 
 /// One delimiter-bounded side clause in a standard edge recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignEdgeRecipeSide {
+pub struct DesignTopologyRecipeSide {
     /// Two words before the clause's first delimiter.
     pub header: [i32; 2],
     /// Scalar between the first and second clause delimiters.
@@ -1105,23 +1105,23 @@ pub struct DesignEdgeRecipeSide {
     /// Two-word prefix after the final scalar delimiter.
     pub payload_prefix: [i32; 2],
     /// Ordered eight-word payload entries.
-    pub entries: Vec<DesignEdgeRecipeEntry>,
+    pub entries: Vec<DesignTopologyRecipeEntry>,
 }
 
 /// One eight-word topology entry in an edge-recipe side clause.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignEdgeRecipeEntry {
+pub struct DesignTopologyRecipeEntry {
     /// Side-local selector.
     pub selector: i32,
     /// Number of boundary edges on the referenced face loop.
     pub boundary_edge_count: NonZeroU32,
     /// Two ordered topology triplets.
-    pub topology_triplets: [DesignEdgeRecipeTopologyTriplet; 2],
+    pub topology_triplets: [DesignTopologyRecipeTriplet; 2],
 }
 
 /// One three-word invariant in an edge-recipe entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignEdgeRecipeTopologyTriplet {
+pub struct DesignTopologyRecipeTriplet {
     /// Equal positive first and third words.
     pub outer: NonZeroU32,
     /// Middle word, equal to `outer` or one less.
@@ -1189,6 +1189,19 @@ pub struct DesignFaceRecipeNode {
     pub end_byte_offset: u64,
     /// Complete node words, including the three-word opener.
     pub program: Vec<i32>,
+    /// Shared two-side topology recipe structure following the node opener.
+    pub recipe_structure: Option<DesignFaceRecipeStructure>,
+}
+
+/// Structured topology program following a face-recipe node opener.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFaceRecipeStructure {
+    /// Scalar before the prelude delimiters.
+    pub root: i32,
+    /// Two scalar prelude runs before the first side clause.
+    pub prelude: [i32; 2],
+    /// Two ordered topology side clauses.
+    pub sides: [DesignTopologyRecipeSide; 2],
 }
 
 /// Local-to-model placement frame referenced by a Design sketch scope.
