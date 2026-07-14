@@ -407,6 +407,12 @@ family, native-versus-neutral status, and post-processing composition. Native va
 the census again from the object and feature graphs; missing projections and stale classifications
 are errors rather than coverage-report omissions.
 
+Native document, object, property, payload, ledger, product, drawing, and application identities
+use canonical CADIR ids. Persisted names form percent-escaped id keys while the exact unescaped
+name remains in its typed record. Child records derive their key from the owning record instead of
+embedding a second id delimiter. Neutral topology and carrier ids use the shape-payload key under
+their own model arena kind, so persistent references remain globally valid and collision-free.
+
 Part construction geometry transfers as neutral history rather than relying on cached result
 shapes. This includes standalone vertices, line segments, circular and elliptic angular arcs,
 open or closed ordered polylines, regular polygons, bounded rectangular planes, and faces built

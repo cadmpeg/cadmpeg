@@ -207,7 +207,7 @@ impl<'a> Builder<'a> {
                 continue;
             }
             ir.model.tessellations.push(Tessellation {
-                id: format!("{}:triangulation#{index}", self.payload.id),
+                id: crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
                 body: None,
                 faces: Vec::new(),
                 chordal_deflection: Some(triangulation.deflection),
@@ -234,12 +234,15 @@ impl<'a> Builder<'a> {
     }
 
     fn pcurve_id(&self, edge: usize, representation: usize, secondary: bool) -> PcurveId {
-        PcurveId(format!(
-            "{}:pcurve#{}:{}:{}",
-            self.payload.id,
-            edge,
-            representation + 1,
-            usize::from(secondary) + 1
+        PcurveId(crate::native::model_id(
+            "pcurve",
+            &self.payload.id,
+            format!(
+                "{}:{}:{}",
+                edge,
+                representation + 1,
+                usize::from(secondary) + 1
+            ),
         ))
     }
 
@@ -262,7 +265,7 @@ impl<'a> Builder<'a> {
         self.body_scope = root.transform;
         let root_kind = self.shape(root.shape)?.kind;
         let body_key = occurrence_label(root.shape, root.transform);
-        let body_id = BodyId(format!("{}:body#{body_key}", self.payload.id));
+        let body_id = BodyId(crate::native::model_id("body", &self.payload.id, &body_key));
         self.current_body = Some(body_id.clone());
         let kind = match root_kind {
             TextShapeKind::Solid => BodyKind::Solid,
@@ -323,7 +326,7 @@ impl<'a> Builder<'a> {
             return Ok(());
         }
         let key = self.topology_label(shape_index, transform);
-        let region_id = RegionId(format!("{}:region#{key}", self.payload.id));
+        let region_id = RegionId(crate::native::model_id("region", &self.payload.id, &key));
         let mut shells = Vec::new();
         if shape.kind == TextShapeKind::Solid {
             for child in shape
@@ -381,7 +384,7 @@ impl<'a> Builder<'a> {
     ) -> Result<ShellId, CodecError> {
         let shape = self.shape(shape_index)?.clone();
         let key = self.topology_label(shape_index, transform);
-        let shell_id = ShellId(format!("{}:shell#{key}", self.payload.id));
+        let shell_id = ShellId(crate::native::model_id("shell", &self.payload.id, &key));
         let mut faces = Vec::new();
         let mut wire_edges = Vec::new();
         match shape.kind {
@@ -478,7 +481,7 @@ impl<'a> Builder<'a> {
         };
         let surface_transform = multiply(face_transform, self.tables.location(location));
         let face_key = self.topology_label(face_use.shape, face_transform);
-        let face_id = FaceId(format!("{}:face#{face_key}", self.payload.id));
+        let face_id = FaceId(crate::native::model_id("face", &self.payload.id, &face_key));
         let located_triangulation = triangulation.map(|index| {
             let triangulation = &self.tables.triangulations[index - 1];
             let vertices = triangulation
@@ -496,9 +499,10 @@ impl<'a> Builder<'a> {
         let surface_id = if surface != 0 {
             self.located_surface(ir, surface, surface_transform)?
         } else if let Some((index, triangulation, vertices, triangles)) = &located_triangulation {
-            let id = SurfaceId(format!(
-                "{}:surface#triangulation:{}@{}",
-                self.payload.id, index, face_key
+            let id = SurfaceId(crate::native::model_id(
+                "surface",
+                &self.payload.id,
+                format!("triangulation:{index}@{face_key}"),
             ));
             let deflection_scale = similarity(surface_transform)?.scale;
             if self.emitted_surfaces.insert(id.clone()) {
@@ -530,7 +534,11 @@ impl<'a> Builder<'a> {
                 })
                 .unwrap_or_default();
             ir.model.tessellations.push(Tessellation {
-                id: format!("{}:triangulation#{}@{}", self.payload.id, index, face_key),
+                id: crate::native::model_id(
+                    "tessellation",
+                    &self.payload.id,
+                    format!("{index}@{face_key}"),
+                ),
                 body: self.current_body.clone(),
                 faces: vec![face_id.clone()],
                 chordal_deflection: Some(triangulation.deflection * deflection_scale),
@@ -564,20 +572,17 @@ impl<'a> Builder<'a> {
             if edge_uses.is_empty() {
                 continue;
             }
-            let loop_id = LoopId(format!(
-                "{}:loop#{}:{}",
-                self.payload.id,
-                face_key,
-                loop_index + 1
+            let loop_id = LoopId(crate::native::model_id(
+                "loop",
+                &self.payload.id,
+                format!("{}:{}", face_key, loop_index + 1),
             ));
             let coedge_ids = (0..edge_uses.len())
                 .map(|index| {
-                    CoedgeId(format!(
-                        "{}:coedge#{}:{}:{}",
-                        self.payload.id,
-                        face_key,
-                        loop_index + 1,
-                        index + 1
+                    CoedgeId(crate::native::model_id(
+                        "coedge",
+                        &self.payload.id,
+                        format!("{}:{}:{}", face_key, loop_index + 1, index + 1),
                     ))
                 })
                 .collect::<Vec<_>>();
@@ -665,10 +670,10 @@ impl<'a> Builder<'a> {
         let end_use = endpoint_use(TextOrientation::Reversed).unwrap_or_else(|| start_use.clone());
         let start = self.ensure_vertex(ir, &start_use, transform)?;
         let end = self.ensure_vertex(ir, &end_use, transform)?;
-        let id = EdgeId(format!(
-            "{}:edge#{}",
-            self.payload.id,
-            self.topology_label(edge_use.shape, transform)
+        let id = EdgeId(crate::native::model_id(
+            "edge",
+            &self.payload.id,
+            self.topology_label(edge_use.shape, transform),
         ));
         let curve_representation = representations
             .iter()
@@ -830,8 +835,8 @@ impl<'a> Builder<'a> {
             )));
         };
         let label = self.topology_label(vertex_use.shape, transform);
-        let point_id = PointId(format!("{}:point#{label}", self.payload.id));
-        let vertex_id = VertexId(format!("{}:vertex#{label}", self.payload.id));
+        let point_id = PointId(crate::native::model_id("point", &self.payload.id, &label));
+        let vertex_id = VertexId(crate::native::model_id("vertex", &self.payload.id, &label));
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: transform_point(transform, point),
@@ -860,15 +865,18 @@ impl<'a> Builder<'a> {
         source: usize,
         transform: Transform,
     ) -> Result<CurveId, CodecError> {
-        let base_id = CurveId(format!("{}:curve#{source}", self.payload.id));
+        let base_id = CurveId(crate::native::model_id(
+            "curve",
+            &self.payload.id,
+            source.to_string(),
+        ));
         if is_identity(transform) {
             return Ok(base_id);
         }
-        let id = CurveId(format!(
-            "{}:curve#{}@{}",
-            self.payload.id,
-            source,
-            transform_digest(transform)
+        let id = CurveId(crate::native::model_id(
+            "curve",
+            &self.payload.id,
+            format!("{}@{}", source, transform_digest(transform)),
         ));
         if self.emitted_curves.insert(id.clone()) {
             let base = ir
@@ -895,15 +903,18 @@ impl<'a> Builder<'a> {
         source: usize,
         transform: Transform,
     ) -> Result<SurfaceId, CodecError> {
-        let base_id = SurfaceId(format!("{}:surface#{source}", self.payload.id));
+        let base_id = SurfaceId(crate::native::model_id(
+            "surface",
+            &self.payload.id,
+            source.to_string(),
+        ));
         if is_identity(transform) {
             return Ok(base_id);
         }
-        let id = SurfaceId(format!(
-            "{}:surface#{}@{}",
-            self.payload.id,
-            source,
-            transform_digest(transform)
+        let id = SurfaceId(crate::native::model_id(
+            "surface",
+            &self.payload.id,
+            format!("{}@{}", source, transform_digest(transform)),
         ));
         if self.emitted_surfaces.insert(id.clone()) {
             let base = ir

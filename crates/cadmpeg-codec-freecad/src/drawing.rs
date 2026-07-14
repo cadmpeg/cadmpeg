@@ -25,7 +25,7 @@ pub(crate) fn transfer(
                 .cloned()
                 .unwrap_or_default();
             DrawingRecord {
-                id: format!("fcstd:drawing:{}", object.name),
+                id: crate::native::native_id("drawing", &object.name),
                 object: object.id.clone(),
                 kind: object.type_name.clone(),
                 views: links(&owned, "Views")

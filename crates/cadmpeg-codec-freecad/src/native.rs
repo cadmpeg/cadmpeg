@@ -4,8 +4,62 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub(crate) fn native_id(kind: &str, key: impl AsRef<str>) -> String {
+    format!("fcstd:native:{kind}#{}", encode_id_key(key.as_ref()))
+}
+
+pub(crate) fn native_child_id(kind: &str, parent: &str, child: &str) -> String {
+    let parent_key = id_key(parent);
+    format!("fcstd:native:{kind}#{parent_key}:{}", encode_id_key(child))
+}
+
+pub(crate) fn model_id(kind: &str, parent: &str, child: impl AsRef<str>) -> String {
+    format!(
+        "fcstd:model:{kind}#{}:{}",
+        id_key(parent),
+        encode_id_key(child.as_ref())
+    )
+}
+
+pub(crate) fn id_key(id: &str) -> &str {
+    id.split_once('#').map_or(id, |(_, key)| key)
+}
+
+fn encode_id_key(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':' | b'/') {
+            output.push(char::from(byte));
+        } else {
+            use std::fmt::Write;
+            write!(output, "%{byte:02X}").expect("writing to a String cannot fail");
+        }
+    }
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{model_id, native_child_id, native_id};
+
+    #[test]
+    fn canonical_ids_escape_names_without_aliasing_literal_escapes() {
+        assert_eq!(
+            native_id("object", "A B#C"),
+            "fcstd:native:object#A%20B%23C"
+        );
+        assert_eq!(native_id("object", "A%20B"), "fcstd:native:object#A%2520B");
+        let property = native_child_id("property", &native_id("object", "A B"), "Shape Value");
+        assert_eq!(property, "fcstd:native:property#A%20B:Shape%20Value");
+        assert_eq!(
+            model_id("body", &property, "root#1"),
+            "fcstd:model:body#A%20B:Shape%20Value:root%231"
+        );
+    }
+}
+
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 13;
+pub const VERSION: u32 = 14;
 
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

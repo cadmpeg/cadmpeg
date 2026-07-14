@@ -81,7 +81,7 @@ pub(crate) fn transfer(
             })
             .collect::<BTreeMap<_, _>>();
         output.push(JointRecord {
-            id: format!("fcstd:joint:{}", object.name),
+            id: crate::native::native_id("joint", &object.name),
             object: object.id.clone(),
             kind: if grounded {
                 "grounded".into()

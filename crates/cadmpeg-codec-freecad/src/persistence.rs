@@ -124,7 +124,7 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
         parse_properties(
             text,
             document_properties,
-            "fcstd:document#0",
+            &crate::native::native_id("document", "0"),
             &mut properties,
         )?;
     }
@@ -242,7 +242,7 @@ fn parse_properties(
         let name = required_attr(node, "name")?;
         let type_name = required_attr(node, "type")?;
         output.push(PropertyRecord {
-            id: format!("{owner}:property:{name}"),
+            id: crate::native::native_child_id("property", owner, &name),
             owner: owner.to_owned(),
             name,
             family: classify_property(&type_name),
@@ -300,7 +300,7 @@ fn parse_properties(
             .filter(|value| !value.is_empty())
             .collect();
         output.push(PropertyRecord {
-            id: format!("{owner}:property:{name}"),
+            id: crate::native::native_child_id("property", owner, &name),
             owner: owner.to_owned(),
             name,
             family: classify_property(&type_name),
@@ -468,11 +468,11 @@ fn attribute_any(attributes: &BTreeMap<String, String>, names: &[&str]) -> Optio
 }
 
 fn object_id(name: &str) -> String {
-    format!("fcstd:object:{name}")
+    crate::native::native_id("object", name)
 }
 
 fn extension_id(owner: &str, name: &str, order: usize) -> String {
-    format!("{owner}:extension:{order}:{name}")
+    crate::native::native_child_id("extension", owner, &format!("{order}:{name}"))
 }
 
 fn required_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Result<String, CodecError> {

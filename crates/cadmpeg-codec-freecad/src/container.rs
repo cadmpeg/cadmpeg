@@ -276,7 +276,7 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
     }
     .to_owned();
     Ok(DocumentFacts {
-        id: "fcstd:document#0".into(),
+        id: crate::native::native_id("document", "0"),
         schema_version,
         file_version,
         program_version: attr(root, &["ProgramVersion", "programVersion"]),
@@ -636,7 +636,7 @@ fn partition(len: u64, regions: &[Region]) -> Result<Vec<ArchiveSpan>, CodecErro
                     (region.role, region.entry.clone())
                 });
                 ArchiveSpan {
-                    id: format!("fcstd:archive-span#{index}"),
+                    id: crate::native::native_id("archive-span", index.to_string()),
                     start,
                     end: end.min(len),
                     role: role.into(),

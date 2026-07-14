@@ -29,7 +29,7 @@ pub(crate) fn transfer(
                 .split_once("::")
                 .map_or("Unqualified", |(domain, _)| domain);
             ApplicationRecord {
-                id: format!("fcstd:application:{}", object.name),
+                id: crate::native::native_id("application", &object.name),
                 object: object.id.clone(),
                 type_name: object.type_name.clone(),
                 domain: domain.to_owned(),

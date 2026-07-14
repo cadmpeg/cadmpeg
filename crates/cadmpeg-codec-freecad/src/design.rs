@@ -321,7 +321,10 @@ pub(crate) fn transfer(
             .flat_map(|payload| {
                 body_ids
                     .iter()
-                    .filter(move |body| body.0.starts_with(&format!("{}:body#", payload.id)))
+                    .filter(move |body| {
+                        body.0
+                            .starts_with(&crate::native::model_id("body", &payload.id, ""))
+                    })
                     .cloned()
             })
             .collect();
@@ -2686,8 +2689,8 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
         } else {
             let last = group.links.len() - 1;
             (
-                BodySelection::Native(format!("{}#link:{last}", group.id)),
-                BodySelection::Native(format!("{}#links:0..{last}", group.id)),
+                BodySelection::Native(format!("{}:link:{last}", group.id)),
+                BodySelection::Native(format!("{}:links:0..{last}", group.id)),
             )
         }
     } else if let (Some(base), Some(tool)) =
@@ -2706,8 +2709,8 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
             return None;
         }
         (
-            BodySelection::Native(format!("{}#link:0", shapes.id)),
-            BodySelection::Native(format!("{}#links:1..{}", shapes.id, shapes.links.len())),
+            BodySelection::Native(format!("{}:link:0", shapes.id)),
+            BodySelection::Native(format!("{}:links:1..{}", shapes.id, shapes.links.len())),
         )
     };
     Some(FeatureDefinition::Combine { target, tools, op })
@@ -3642,7 +3645,7 @@ pub(crate) fn census(
                 })?
                 .to_owned();
             Ok(crate::native::DesignCensusRecord {
-                id: format!("{}:design-census", object.id),
+                id: crate::native::native_child_id("design-census", &object.id, "projection"),
                 object: object.id.clone(),
                 type_name: object.type_name.clone(),
                 feature: feature.id.0.clone(),

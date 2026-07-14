@@ -478,7 +478,7 @@ pub fn parse_payloads(
                 ShapePayloadForm::Binary => (None, Some(parse_binary_prefix(&entry.data)?)),
             };
             Ok(ShapePayloadRecord {
-                id: format!("{}:shape-payload", property.id),
+                id: crate::native::native_child_id("shape-payload", &property.id, "shape"),
                 property: property.id.clone(),
                 entry: entry.id.clone(),
                 form,
@@ -521,7 +521,7 @@ pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::Car
                     return None;
                 };
             let mut record = crate::native::CarrierCensusRecord {
-                id: format!("{}:carrier-census", payload.id),
+                id: crate::native::native_child_id("carrier-census", &payload.id, "families"),
                 payload: payload.id.clone(),
                 form: match payload.form {
                     ShapePayloadForm::Text => "text".into(),

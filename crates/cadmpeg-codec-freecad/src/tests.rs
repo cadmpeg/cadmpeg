@@ -5,6 +5,15 @@ use zip::write::SimpleFileOptions;
 
 use crate::FcstdCodec;
 
+fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
+    let errors = cadmpeg_ir::validate(ir, Vec::new())
+        .findings
+        .into_iter()
+        .filter(|finding| finding.severity >= cadmpeg_ir::Severity::Error)
+        .collect::<Vec<_>>();
+    assert!(errors.is_empty(), "{errors:#?}");
+}
+
 #[test]
 fn rejects_malformed_sketch_record_counts() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
@@ -262,7 +271,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
     assert!(external
         .geometry_ref
         .as_deref()
-        .is_some_and(|reference| reference.ends_with(":property:ExternalGeometry")));
+        .is_some_and(|reference| reference.ends_with(":ExternalGeometry")));
     assert_eq!(external.endpoint_refs, ["Edge1"]);
     assert!(matches!(
         constraint(2).definition,
@@ -472,7 +481,7 @@ fn transfers_non_default_revolution_branches() {
     assert!(matches!(
         definition("Midplane"),
         FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { axis: Some(axis), extent: Some(Extent::SymmetricAngle { .. }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), fuse_order: Some(cadmpeg_ir::features::RevolutionFuseOrder::FeatureFirst), solid: Some(true), allow_multi_profile_faces: Some(false), .. }, .. }
-            if axis.direction.y == -1.0 && reference.ends_with(":property:ReferenceAxis")
+            if axis.direction.y == -1.0 && reference.ends_with(":ReferenceAxis")
     ));
     assert!(matches!(
         definition("ThroughAll"),
@@ -487,7 +496,7 @@ fn transfers_non_default_revolution_branches() {
     assert!(matches!(
         definition("Standalone"),
         FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)), axis: Some(axis), extent: Some(Extent::SymmetricAngle { .. }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), solid: Some(true), face_maker_class: Some(face_maker), .. }, op: BooleanOp::NewBody }
-            if axis.direction.z == 1.0 && reference.ends_with(":property:AxisLink")
+            if axis.direction.z == 1.0 && reference.ends_with(":AxisLink")
                 && face_maker == "Part::FaceMakerUnified"
     ));
 }
@@ -781,7 +790,7 @@ fn transfers_part_construction_geometry_features() {
         }
     ));
     assert!(
-        matches!(&feature("Face").definition, FeatureDefinition::FaceFromShapes { sources: cadmpeg_ir::features::BodySelection::Native(source), face_maker_class } if source.ends_with(":property:Sources") && face_maker_class == "Part::FaceMakerUnified")
+        matches!(&feature("Face").definition, FeatureDefinition::FaceFromShapes { sources: cadmpeg_ir::features::BodySelection::Native(source), face_maker_class } if source.ends_with(":Sources") && face_maker_class == "Part::FaceMakerUnified")
     );
     assert_eq!(feature("Face").dependencies.len(), 2);
     assert!(result.report.losses.is_empty());
@@ -895,7 +904,7 @@ fn transfers_part_compound_refine_and_reverse_operations() {
         &feature("Compound").definition,
         cadmpeg_ir::features::FeatureDefinition::Compound {
             members: cadmpeg_ir::features::BodySelection::Native(reference)
-        } if reference.ends_with(":property:Links")
+        } if reference.ends_with(":Links")
     ));
     assert!(matches!(
         feature("Refine").definition,
@@ -956,7 +965,7 @@ fn transfers_part_ruled_surface_and_section_intersection() {
             first: cadmpeg_ir::features::PathRef::Native(first),
             second: cadmpeg_ir::features::PathRef::Native(second),
             orientation: cadmpeg_ir::features::RuledCurveOrientation::Reversed,
-        } if first.ends_with(":property:Curve1") && second.ends_with(":property:Curve2")
+        } if first.ends_with(":Curve1") && second.ends_with(":Curve2")
     ));
     assert!(matches!(
         feature("Section").definition,
@@ -1008,7 +1017,7 @@ fn transfers_standalone_part_mirror_plane_semantics() {
             plane_origin: cadmpeg_ir::math::Point3 { x: 1.0, y: 2.0, z: 3.0 },
             plane_normal: cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 },
             plane_reference: Some(cadmpeg_ir::features::FaceSelection::Native(reference)),
-        } if source.ends_with(":property:Source") && reference.ends_with(":property:MirrorPlane")
+        } if source.ends_with(":Source") && reference.ends_with(":MirrorPlane")
     ));
     assert_eq!(feature.dependencies.len(), 2);
     assert!(result.report.losses.is_empty());
@@ -1058,8 +1067,8 @@ fn transfers_part_projection_on_surface_construction() {
             mode: cadmpeg_ir::features::SurfaceProjectionMode::Faces,
             height: cadmpeg_ir::features::Length(8.0),
             offset: cadmpeg_ir::features::Length(-1.5),
-        } if sources.ends_with(":property:Projection")
-            && support.ends_with(":property:SupportFace")
+        } if sources.ends_with(":Projection")
+            && support.ends_with(":SupportFace")
     ));
     assert_eq!(feature.dependencies.len(), 3);
     assert!(result.report.losses.is_empty());
@@ -1120,11 +1129,11 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
     assert_eq!(*op, cadmpeg_ir::features::BooleanOp::Join);
     assert!(matches!(
         target,
-        cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with("#link:0")
+        cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with(":link:0")
     ));
     assert!(matches!(
         tools,
-        cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with("#links:1..2")
+        cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with(":links:1..2")
     ));
     assert!(result.report.losses.is_empty());
 }
@@ -1165,8 +1174,8 @@ fn transfers_partdesign_boolean_base_and_group_rules() {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
             op: cadmpeg_ir::features::BooleanOp::Join,
-        } if target.ends_with(":property:Group#link:2")
-            && tools.ends_with(":property:Group#links:0..2")
+        } if target.ends_with(":Group:link:2")
+            && tools.ends_with(":Group:links:0..2")
     ));
     assert!(matches!(
         definition("Cut"),
@@ -1174,7 +1183,7 @@ fn transfers_partdesign_boolean_base_and_group_rules() {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
             op: cadmpeg_ir::features::BooleanOp::Cut,
-        } if target.ends_with(":property:BaseFeature") && tools.ends_with(":property:Group")
+        } if target.ends_with(":BaseFeature") && tools.ends_with(":Group")
     ));
     assert!(result.report.losses.is_empty());
 }
@@ -1289,7 +1298,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             path_tangent: true,
             allow_multi_profile_faces: Some(true),
             ..
-        } if path.ends_with(":property:Spine") && sections.len() == 1
+        } if path.ends_with(":Spine") && sections.len() == 1
     ));
     assert!(matches!(
         &feature("SurfaceSweep").definition,
@@ -1493,7 +1502,7 @@ fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() 
             .provenance
             .as_ref()
             .and_then(|provenance| provenance.tag.as_deref()),
-        Some("fcstd:object:Custom")
+        Some("fcstd:native:object#Custom")
     );
     let census = result
         .ir
@@ -1504,16 +1513,23 @@ fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() 
         .expect("design census");
     assert_eq!(census.len(), 3);
     assert!(census.iter().any(|record| {
-        record.object == "fcstd:object:Seed"
+        record.object == "fcstd:native:object#Seed"
             && record.semantic_kind == "stored_geometry"
             && record.neutral
             && !record.post_processed
     }));
     assert!(census.iter().any(|record| {
-        record.object == "fcstd:object:Custom"
+        record.object == "fcstd:native:object#Custom"
             && record.semantic_kind == "native"
             && !record.neutral
     }));
+    let baseline_findings = cadmpeg_ir::validate(&result.ir, Vec::new()).findings;
+    assert!(
+        baseline_findings
+            .iter()
+            .all(|finding| finding.check != cadmpeg_ir::Check::Identity),
+        "{baseline_findings:?}"
+    );
     let mut corrupted = result.ir.clone();
     let mut stale_census = census;
     stale_census[0].neutral = !stale_census[0].neutral;
@@ -1945,7 +1961,7 @@ fn transfers_complete_thickness_construction_controls() {
             resolve_intersections: Some(true),
             allow_self_intersections: Some(true),
             ..
-        } if selection.ends_with(":property:Base")
+        } if selection.ends_with(":Base")
     ));
     assert_eq!(wall.dependencies.len(), 1);
     assert!(result.report.losses.is_empty());
@@ -2089,8 +2105,8 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             pull_direction,
             angle: cadmpeg_ir::features::Angle(angle),
             outward: true,
-        } if faces.ends_with(":property:Base")
-            && plane.ends_with(":property:NeutralPlane")
+        } if faces.ends_with(":Base")
+            && plane.ends_with(":NeutralPlane")
             && (pull_direction.x - 0.0).abs() < 1e-12
             && (pull_direction.y + 1.0).abs() < 1e-12
             && pull_direction.z.abs() < 1e-12
@@ -2311,7 +2327,7 @@ fn reports_attributable_native_design_blockers() {
             .provenance
             .as_ref()
             .and_then(|provenance| provenance.tag.as_deref()),
-        Some("fcstd:object:Custom")
+        Some("fcstd:native:object#Custom")
     );
 }
 
@@ -2425,7 +2441,7 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(assembly.members, vec![occurrence.object.clone()]);
     assert_eq!(
         occurrence.prototype.as_deref(),
-        Some("fcstd:object:Prototype")
+        Some("fcstd:native:object#Prototype")
     );
     assert_eq!(occurrence.local_transform.expect("placement")[0][3], 4.0);
     assert_eq!(occurrence.element_count, Some(2));
@@ -2434,6 +2450,7 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(occurrence.element_transforms[1][0][3], 4.0);
     assert_eq!(occurrence.element_scales, vec![[1.0; 3], [2.0; 3]]);
     assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]
@@ -2472,7 +2489,7 @@ fn recovers_assembly_joint_operands_frames_and_state() {
     assert_eq!(joints[0].references.len(), 2);
     assert_eq!(
         joints[0].references[0].object.as_deref(),
-        Some("fcstd:object:Assembly")
+        Some("fcstd:native:object#Assembly")
     );
     assert_eq!(joints[0].references[0].subelements, ["A.Face1", "A.Edge2"]);
     assert_eq!(joints[0].placements[1][0][3], 2.0);
@@ -2481,6 +2498,7 @@ fn recovers_assembly_joint_operands_frames_and_state() {
         Some("true")
     );
     assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]
@@ -2517,12 +2535,16 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
         .iter()
         .map(|record| (record.domain.as_str(), record))
         .collect::<std::collections::HashMap<_, _>>();
-    assert_eq!(by_domain["Mesh"].dependencies, ["fcstd:object:Points"]);
+    assert_eq!(
+        by_domain["Mesh"].dependencies,
+        ["fcstd:native:object#Points"]
+    );
     assert_eq!(by_domain["Fem"].side_entries, ["analysis.dat"]);
     assert!(by_domain["Path"].inert_payload);
     assert!(!by_domain["Mesh"].inert_payload);
     assert_eq!(by_domain["Unqualified"].type_name, "LocalType");
     assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]
@@ -2572,7 +2594,7 @@ fn transfers_application_mesh_and_transformed_point_cloud_payloads() {
         mesh.source_object
             .as_ref()
             .map(|source| source.object_id.as_str()),
-        Some("fcstd:object:Mesh")
+        Some("fcstd:native:object#Mesh")
     );
     assert_eq!(result.ir.model.points.len(), 2);
     assert_eq!(
@@ -2633,6 +2655,7 @@ fn retains_ordered_document_level_gui_state() {
         .expect("section asset");
     assert_eq!(section.referenced_by, [documents[0].states[2].id.clone()]);
     assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]
@@ -2676,25 +2699,29 @@ fn recovers_techdraw_page_template_and_view_graph() {
     assert_eq!(drawings.len(), 3);
     let page = drawings
         .iter()
-        .find(|drawing| drawing.object.ends_with(":Page"))
+        .find(|drawing| drawing.object.ends_with("#Page"))
         .expect("page");
     let template = drawings
         .iter()
-        .find(|drawing| drawing.object.ends_with(":Template"))
+        .find(|drawing| drawing.object.ends_with("#Template"))
         .expect("template");
     let view = drawings
         .iter()
-        .find(|drawing| drawing.object.ends_with(":View"))
+        .find(|drawing| drawing.object.ends_with("#View"))
         .expect("view");
-    assert_eq!(page.template.as_deref(), Some("fcstd:object:Template"));
-    assert_eq!(page.views, ["fcstd:object:View"]);
+    assert_eq!(
+        page.template.as_deref(),
+        Some("fcstd:native:object#Template")
+    );
+    assert_eq!(page.views, ["fcstd:native:object#View"]);
     assert_eq!(template.side_entries, ["page.svg"]);
     assert_eq!(
         view.sources[0].object.as_deref(),
-        Some("fcstd:object:Model")
+        Some("fcstd:native:object#Model")
     );
     assert!(view.parameters.contains_key("Direction"));
     assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]
@@ -2735,7 +2762,7 @@ fn separates_semantic_annotations_from_drawing_relationships() {
     assert_eq!(annotations.len(), 2);
     let dimension = annotations
         .iter()
-        .find(|annotation| annotation.object.ends_with(":Dimension"))
+        .find(|annotation| annotation.object.ends_with("#Dimension"))
         .expect("dimension");
     assert_eq!(dimension.text, ["12.5 mm"]);
     assert_eq!(
@@ -2744,20 +2771,21 @@ fn separates_semantic_annotations_from_drawing_relationships() {
     );
     let note = annotations
         .iter()
-        .find(|annotation| annotation.object.ends_with(":Note"))
+        .find(|annotation| annotation.object.ends_with("#Note"))
         .expect("note");
     assert_eq!(note.text, ["INSPECT"]);
     let drawing_dimension = drawings
         .iter()
-        .find(|drawing| drawing.object.ends_with(":Dimension"))
+        .find(|drawing| drawing.object.ends_with("#Dimension"))
         .expect("drawing dimension");
     assert_eq!(
         drawing_dimension.relationships["BaseView"][0]
             .object
             .as_deref(),
-        Some("fcstd:object:View")
+        Some("fcstd:native:object#View")
     );
     assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]
@@ -2901,7 +2929,7 @@ fn transfers_non_default_extrusion_termination_branches() {
         } if direction.y == 1.0 && first.0 == 7.0 && second.0 == 3.0
             && (*draft - 2_f64.to_radians()).abs() < 1e-12
             && (*reverse_draft - 4_f64.to_radians()).abs() < 1e-12
-            && reference.ends_with(":property:DirLink")
+            && reference.ends_with(":DirLink")
             && face_maker.class == "Part::FaceMakerUnified" && face_maker.mode == Some(4)
     ));
 }
@@ -3027,7 +3055,7 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
         } if matches!(first.as_ref(), Extent::Blind { length: Length(-5.0) })
             && matches!(second.as_ref(), Extent::ToShape { .. })
             && direction.y == 1.0
-            && reference.ends_with(":property:ReferenceAxis")
+            && reference.ends_with(":ReferenceAxis")
             && (*first_draft - 2_f64.to_radians()).abs() < 1e-12
             && (*second_draft + 3_f64.to_radians()).abs() < 1e-12
     ));
@@ -3135,7 +3163,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     assert_eq!(pocket.parent.as_ref(), Some(&body.id));
     assert_eq!(
         body.source_properties.get("Tip").map(String::as_str),
-        Some("fcstd:object:Pocket")
+        Some("fcstd:native:object#Pocket")
     );
     assert!(pocket.suppressed);
     assert_eq!(
@@ -3222,7 +3250,7 @@ fn retains_support_attachment_and_distinct_offset_frame() {
     assert_eq!(attachments[0].map_mode.as_deref(), Some("FlatFace"));
     assert_eq!(
         attachments[0].supports[0].object.as_deref(),
-        Some("fcstd:object:Support")
+        Some("fcstd:native:object#Support")
     );
     assert_eq!(attachments[0].supports[0].subelements, ["Face1"]);
     assert_eq!(attachments[0].placement.expect("placement")[0][3], 10.0);
@@ -3231,6 +3259,7 @@ fn retains_support_attachment_and_distinct_offset_frame() {
     let sketch = result.ir.model.sketches.first().expect("sketch");
     assert_eq!(sketch.origin.x, 10.0);
     assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]
@@ -3549,7 +3578,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 13);
+    assert_eq!(namespace.version, 14);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
         .expect("carrier census");
@@ -3569,13 +3598,14 @@ Co 1001000 +2 0 *
     assert_eq!(gui_providers.len(), 1);
     assert_eq!(
         gui_providers[0].object.as_deref(),
-        Some("fcstd:object:Shape")
+        Some("fcstd:native:object#Shape")
     );
     assert_eq!(gui_properties.len(), 7);
     assert!(gui_properties
         .iter()
         .all(|property| property.raw_xml.starts_with("<Property")));
     assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
     assert!(result
         .ir
         .model
@@ -3587,8 +3617,7 @@ Co 1001000 +2 0 *
         report
             .findings
             .iter()
-            .all(|finding| finding.severity < cadmpeg_ir::Severity::Error
-                || finding.check == cadmpeg_ir::Check::Identity),
+            .all(|finding| finding.severity < cadmpeg_ir::Severity::Error),
         "{:#?}",
         report.findings
     );
@@ -3783,6 +3812,7 @@ Co 1001000 +2 0 *
         2
     );
     assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]
@@ -4065,21 +4095,21 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("extensions");
     assert_eq!(objects.len(), 2);
     assert_eq!(extensions.len(), 1);
-    assert_eq!(extensions[0].owner, "fcstd:object:Body");
+    assert_eq!(extensions[0].owner, "fcstd:native:object#Body");
     let extension_value = properties
         .iter()
         .find(|property| property.name == "ExtensionValue")
         .expect("extension property");
     assert_eq!(extension_value.owner, extensions[0].id);
-    assert_eq!(objects[0].dependencies, vec!["fcstd:object:Sketch"]);
+    assert_eq!(objects[0].dependencies, vec!["fcstd:native:object#Sketch"]);
     let support = properties
         .iter()
         .find(|property| property.name == "Support")
         .expect("support");
-    assert_eq!(support.owner, "fcstd:object:Body");
+    assert_eq!(support.owner, "fcstd:native:object#Body");
     assert_eq!(
         support.links[0].object.as_deref(),
-        Some("fcstd:object:Sketch")
+        Some("fcstd:native:object#Sketch")
     );
     assert_eq!(support.family, crate::native::PropertyFamily::Link);
     assert_eq!(support.links[0].subelements, vec!["Face1"]);
@@ -4094,7 +4124,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(members.links.len(), 2);
     assert_eq!(
         members.links[0].object.as_deref(),
-        Some("fcstd:object:Sketch")
+        Some("fcstd:native:object#Sketch")
     );
     assert_eq!(members.links[1].object.as_deref(), Some(""));
     let transient = properties

@@ -165,7 +165,10 @@ pub(crate) fn transfer(
                 ir.model
                     .bodies
                     .iter()
-                    .filter(move |body| body.id.0.starts_with(&format!("{payload}:body#")))
+                    .filter(move |body| {
+                        crate::native::id_key(&body.id.0)
+                            .starts_with(&format!("{}:", crate::native::id_key(payload)))
+                    })
                     .map(|body| body.id.clone())
             })
             .collect::<Vec<_>>();
@@ -194,7 +197,7 @@ pub(crate) fn transfer(
         let payload_prefixes = payloads_by_owner
             .iter()
             .filter(|(owner, _)| *owner == object_id)
-            .map(|(_, payload)| format!("{payload}:"))
+            .map(|(_, payload)| format!("{}:", crate::native::id_key(payload)))
             .collect::<Vec<_>>();
         if let Some(color) = values
             .get("LineColor")
@@ -312,7 +315,7 @@ fn transfer_edge_appearance(
         .filter(|edge| {
             payload_prefixes
                 .iter()
-                .any(|prefix| edge.id.0.starts_with(prefix))
+                .any(|prefix| crate::native::id_key(&edge.id.0).starts_with(prefix))
         })
         .map(|edge| edge.id.clone())
         .collect::<Vec<_>>();
@@ -361,7 +364,7 @@ fn transfer_vertex_appearance(
         .filter(|vertex| {
             payload_prefixes
                 .iter()
-                .any(|prefix| vertex.id.0.starts_with(prefix))
+                .any(|prefix| crate::native::id_key(&vertex.id.0).starts_with(prefix))
         })
         .map(|vertex| vertex.id.clone())
         .collect::<Vec<_>>();
@@ -425,7 +428,7 @@ fn gui_state(text: &str, order: usize, node: roxmltree::Node<'_, '_>) -> GuiStat
         .filter(|value| !value.is_empty())
         .collect();
     GuiStateRecord {
-        id: format!("fcstd:gui:state:{}#{order}", node.tag_name().name()),
+        id: crate::native::native_id("gui-state", format!("{}:{order}", node.tag_name().name())),
         kind: node.tag_name().name().to_owned(),
         order,
         attributes: node
@@ -451,7 +454,7 @@ fn append_native_provider(
     let name = provider
         .attribute("name")
         .ok_or_else(|| CodecError::Malformed("ViewProvider has no name".into()))?;
-    let id = format!("fcstd:gui:view-provider:{name}");
+    let id = crate::native::native_id("gui-view-provider", name);
     providers.push(GuiViewProviderRecord {
         id: id.clone(),
         object: object.map(str::to_owned),
@@ -501,7 +504,7 @@ fn append_native_provider(
             .map(|(_, value)| value.clone())
             .collect();
         properties.push(GuiPropertyRecord {
-            id: format!("{id}:property:{property_name}"),
+            id: crate::native::native_child_id("gui-property", &id, property_name),
             owner: id.clone(),
             name: property_name.to_owned(),
             type_name: type_name.to_owned(),
@@ -660,7 +663,7 @@ fn transfer_topology_colors(
                 id: format!(
                     "fcstd:appearance:binding#{lower}:{provider_name}:{}:{}",
                     index + 1,
-                    topology_id
+                    crate::native::id_key(topology_id)
                 ),
                 target,
                 appearance: appearance_id.clone(),

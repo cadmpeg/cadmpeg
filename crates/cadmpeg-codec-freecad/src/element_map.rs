@@ -66,7 +66,7 @@ pub(crate) fn parse(
         };
         let entries = parse_string_table(bytes, declared_count, source_entry.is_some())?;
         tables.push(StringTableRecord {
-            id: format!("fcstd:string-table#{index}"),
+            id: crate::native::native_id("string-table", index.to_string()),
             index,
             owner_property,
             save_all,
@@ -129,7 +129,7 @@ pub(crate) fn parse(
             )));
         }
         maps.push(ElementMapRecord {
-            id: format!("{}:element-map", property.id),
+            id: crate::native::native_child_id("element-map", &property.id, "map"),
             property: property.id.clone(),
             version,
             hasher_index,
@@ -175,14 +175,15 @@ pub(crate) fn bind_topology(
 }
 
 fn topology_ids(ir: &CadIr, payload: &str, kind: &str) -> Vec<String> {
-    let prefix = format!("{payload}:");
+    let prefix = format!("{}:", crate::native::id_key(payload));
+    let belongs_to_payload = |id: &str| crate::native::id_key(id).starts_with(&prefix);
     match kind {
         "Vertex" => ir
             .model
             .vertices
             .iter()
             .map(|entity| entity.id.0.as_str())
-            .filter(|id| id.starts_with(&prefix))
+            .filter(|id| belongs_to_payload(id))
             .map(str::to_owned)
             .collect(),
         "Edge" => ir
@@ -190,7 +191,7 @@ fn topology_ids(ir: &CadIr, payload: &str, kind: &str) -> Vec<String> {
             .edges
             .iter()
             .map(|entity| entity.id.0.as_str())
-            .filter(|id| id.starts_with(&prefix))
+            .filter(|id| belongs_to_payload(id))
             .map(str::to_owned)
             .collect(),
         "Wire" => ir
@@ -198,7 +199,7 @@ fn topology_ids(ir: &CadIr, payload: &str, kind: &str) -> Vec<String> {
             .loops
             .iter()
             .map(|entity| entity.id.0.as_str())
-            .filter(|id| id.starts_with(&prefix))
+            .filter(|id| belongs_to_payload(id))
             .map(str::to_owned)
             .chain(
                 ir.model
@@ -206,7 +207,7 @@ fn topology_ids(ir: &CadIr, payload: &str, kind: &str) -> Vec<String> {
                     .iter()
                     .filter(|entity| !entity.wire_edges.is_empty())
                     .map(|entity| entity.id.0.as_str())
-                    .filter(|id| id.starts_with(&prefix))
+                    .filter(|id| belongs_to_payload(id))
                     .map(str::to_owned),
             )
             .collect(),
@@ -215,7 +216,7 @@ fn topology_ids(ir: &CadIr, payload: &str, kind: &str) -> Vec<String> {
             .faces
             .iter()
             .map(|entity| entity.id.0.as_str())
-            .filter(|id| id.starts_with(&prefix))
+            .filter(|id| belongs_to_payload(id))
             .map(str::to_owned)
             .collect(),
         "Shell" => ir
@@ -223,7 +224,7 @@ fn topology_ids(ir: &CadIr, payload: &str, kind: &str) -> Vec<String> {
             .shells
             .iter()
             .map(|entity| entity.id.0.as_str())
-            .filter(|id| id.starts_with(&prefix))
+            .filter(|id| belongs_to_payload(id))
             .map(str::to_owned)
             .collect(),
         "Solid" | "CompSolid" | "Compound" => ir
@@ -231,7 +232,7 @@ fn topology_ids(ir: &CadIr, payload: &str, kind: &str) -> Vec<String> {
             .bodies
             .iter()
             .map(|entity| entity.id.0.as_str())
-            .filter(|id| id.starts_with(&prefix))
+            .filter(|id| belongs_to_payload(id))
             .map(str::to_owned)
             .collect(),
         _ => Vec::new(),

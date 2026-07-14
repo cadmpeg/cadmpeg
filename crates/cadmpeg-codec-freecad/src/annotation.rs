@@ -36,7 +36,7 @@ pub(crate) fn transfer(
                 .map(|property| (property.name.clone(), property.raw_xml.clone()))
                 .collect();
             SemanticAnnotationRecord {
-                id: format!("fcstd:annotation:{}", object.name),
+                id: crate::native::native_id("annotation", &object.name),
                 object: object.id.clone(),
                 kind: object.type_name.clone(),
                 text: owned

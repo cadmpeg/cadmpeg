@@ -30,7 +30,7 @@ pub(crate) fn transfer(
             }
             let effective_frame = placement.or(offset).unwrap_or(IDENTITY);
             Some(AttachmentRecord {
-                id: format!("fcstd:attachment:{}", object.name),
+                id: crate::native::native_id("attachment", &object.name),
                 object: object.id.clone(),
                 supports: support.map_or_else(Vec::new, |property| property.links.clone()),
                 map_mode: mode.and_then(property_text),

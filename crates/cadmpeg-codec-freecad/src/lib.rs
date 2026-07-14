@@ -573,7 +573,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     for property in &properties {
-        if property.owner != "fcstd:document#0"
+        if property.owner != native::native_id("document", "0")
             && !object_ids.contains(property.owner.as_str())
             && !extension_ids.contains(property.owner.as_str())
         {
@@ -588,7 +588,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .iter()
             .filter_map(|link| link.object.as_deref())
         {
-            if target.starts_with("fcstd:object:") && !object_ids.contains(target) {
+            if target.starts_with("fcstd:native:object#") && !object_ids.contains(target) {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
                     format!("{} has missing link target {target}", property.id),
@@ -922,12 +922,12 @@ impl Codec for FcstdCodec {
             ir.set_native_unknowns(
                 "fcstd",
                 &[UnknownRecord {
-                    id: UnknownId(format!("fcstd:entry:{name}")),
+                    id: UnknownId(native::native_id("thumbnail", name)),
                     offset: 0,
                     byte_len: bytes.len() as u64,
                     sha256: sha256_hex(bytes),
                     data: Some(bytes.clone()),
-                    links: vec!["fcstd:document#0".into()],
+                    links: vec![native::native_id("document", "0")],
                 }],
             )?;
         }
@@ -967,7 +967,7 @@ impl Codec for FcstdCodec {
                         .map(|property| property.id.clone())
                         .collect();
                     Ok(native::EntryRecord {
-                        id: format!("fcstd:entry:{}", entry.name),
+                        id: native::native_id("entry", &entry.name),
                         name: entry.name.clone(),
                         role: entry.role.clone(),
                         byte_len: bytes.len() as u64,
@@ -1255,7 +1255,11 @@ fn transfer_text_curves(
             instance_path: Vec::new(),
         };
         for (index, curve) in curves.iter().enumerate() {
-            let id = CurveId(format!("{}:curve#{}", payload.id, index + 1));
+            let id = CurveId(native::model_id(
+                "curve",
+                &payload.id,
+                (index + 1).to_string(),
+            ));
             append_text_curve(curve, id, &association, &mut transfer);
         }
     }
@@ -1407,7 +1411,11 @@ fn transfer_text_surfaces(
         for (index, surface) in surfaces.iter().enumerate() {
             append_text_surface(
                 surface,
-                SurfaceId(format!("{}:surface#{}", payload.id, index + 1)),
+                SurfaceId(native::model_id(
+                    "surface",
+                    &payload.id,
+                    (index + 1).to_string(),
+                )),
                 &association,
                 curve_transfer,
                 &mut transfer,
@@ -1702,7 +1710,7 @@ fn push_logical_span(
 ) {
     if start < end {
         output.push(native::LogicalSpan {
-            id: format!("fcstd:logical-span#{}", output.len()),
+            id: native::native_id("logical-span", output.len().to_string()),
             entry: entry.name.clone(),
             start,
             end,

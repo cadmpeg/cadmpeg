@@ -37,7 +37,7 @@ pub(crate) fn transfer(
             .find(|property| property.name == "LinkPlacement")
             .or_else(|| owned.iter().find(|property| property.name == "Placement"));
         output.push(ProductNodeRecord {
-            id: format!("fcstd:product:{}", object.name),
+            id: crate::native::native_id("product", &object.name),
             object: object.id.clone(),
             kind: kind.into(),
             members: group
