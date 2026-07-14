@@ -206,7 +206,7 @@ each defined boundary byte; `boundary_type` does not select their scalar layout.
 | `28`        | Spline surface                                   |
 | `29`        | Fillet surface                                   |
 | `2a`        | Linear-extrusion family, `2a` body variant       |
-| `2c`        | Linear-extrusion family, direction/directrix body variant |
+| `2c`        | Linear-extrusion family, including direction/directrix bodies |
 
 A decoder must not infer the kind of a row without a materialized parameter row from adjacent rows or topology.
 
@@ -240,14 +240,15 @@ record also ends the prototype; its named fields belong to that peer entity.
 
 Positional cylinder rows store cap-plane point data rather than a `local_sys` replay. Their per-instance radius does not inherit the prototype default; derive it from bound `fc 05` cap-circle geometry or from a byte-backed analytic construction.
 
-A `geom_type = 2c` positional body begins with a three-scalar model-space
-sweep-direction frame followed by the bytes `00 0c 9a`. The directrix
-construction begins after this marker. For a straight directrix it is a
-six-scalar frame containing the start and end XYZ points. An optional terminal
-`f7` entity reference follows the directrix frame. A nonzero sweep direction
-and a nondegenerate straight directrix define an unbounded plane. The normalized
-directrix is the plane's first parameter direction, and the normalized cross
-product of the directrix with the sweep direction is the plane normal.
+The direction/directrix form of a `geom_type = 2c` positional body begins with
+a three-scalar model-space sweep-direction frame followed by the bytes
+`00 0c 9a`. The directrix construction begins after this marker. For a straight
+directrix it is a six-scalar frame containing the start and end XYZ points. An
+optional terminal `f7` entity reference follows the directrix frame. A nonzero
+sweep direction and a nondegenerate straight directrix define an unbounded
+plane. The normalized directrix is the plane's first parameter direction, and
+the normalized cross product of the directrix with the sweep direction is the
+plane normal.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 
