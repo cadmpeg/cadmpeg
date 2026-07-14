@@ -295,6 +295,8 @@ Cylinder and torus payloads store a face-side witness point as three little-endi
 
 A generated standard line carrier begins at its stored start vertex, has unit direction toward its end vertex, and uses the distance interval `[0, |end-start|]`. A standard circle carrier uses radians in its orthonormal reference frame. Its edge interval is emitted only when an incident cylinder or torus witness selects the angular branch; every incident witnessed carrier must select the same oriented interval after conversion into the circle frame.
 
+A derived face pcurve exists only when both physical edge endpoints lie on that face's carrier. Analytic inverse parameterization does not project an off-carrier endpoint into UV space. A trim-mesh endpoint allocation that is topologically valid but fails this carrier-incidence invariant retains its coedge without a pcurve.
+
 A standard spline edge is the exact intersection construction of its two adjacent face carriers. The neutral construction uses the ordered adjacent-face pair and an endpoint-normalized `[0,1]` interval. The serialized spline cache remains attached as an opaque carrier until its pole and knot program resolves; it does not replace the two-surface construction.
 
 | Surface  | kind   | prebyte | length | sign byte |

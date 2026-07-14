@@ -1638,7 +1638,36 @@ mod chart_tests {
             },
         ];
         assert_eq!(
-            standard_circle_endpoint_candidates(&points, Point3::new(0.0, 0.0, 7.0), 5.0),
+            standard_circle_endpoint_candidates(&points, Point3::new(0.0, 0.0, 7.0), 5.0, None,),
+            [0]
+        );
+    }
+
+    #[test]
+    fn standard_circle_endpoint_domain_requires_both_face_carriers() {
+        let points = [
+            Point {
+                id: PointId("incident".to_string()),
+                position: Point3::new(3.0, 4.0, 0.0),
+            },
+            Point {
+                id: PointId("other-occurrence".to_string()),
+                position: Point3::new(3.0, -4.0, 0.0),
+            },
+        ];
+        let left = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 4.0, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let right = SurfaceGeometry::Unknown { record: None };
+        assert_eq!(
+            standard_circle_endpoint_candidates(
+                &points,
+                Point3::new(0.0, 0.0, 0.0),
+                5.0,
+                Some((&left, &right)),
+            ),
             [0]
         );
     }
@@ -1834,6 +1863,29 @@ mod chart_tests {
                 direction: cadmpeg_ir::math::Point2::new(3.0, 4.0),
             }
         );
+    }
+
+    #[test]
+    fn standard_pcurve_rejects_endpoints_outside_the_face_carrier() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Line,
+        };
+        assert!(standard_pcurve_geometry(
+            &surface,
+            &support,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.0, 0.0),
+            None,
+        )
+        .is_none());
     }
 
     #[test]
@@ -4153,7 +4205,12 @@ fn attach_standard_topology(
         };
         let candidates = match &support.geometry {
             geometry::StandardCurveGeometry::Circle { center, radius } => {
-                standard_circle_endpoint_candidates(&ir.model.points, *center, *radius)
+                standard_circle_endpoint_candidates(
+                    &ir.model.points,
+                    *center,
+                    *radius,
+                    Some((&surface0.geometry, &surface1.geometry)),
+                )
             }
             geometry::StandardCurveGeometry::Line | geometry::StandardCurveGeometry::Bspline => {
                 let mut faces = support.faces;
@@ -4812,13 +4869,19 @@ fn standard_circle_endpoint_candidates(
     points: &[Point],
     center: Point3,
     radius: f64,
+    surfaces: Option<(&SurfaceGeometry, &SurfaceGeometry)>,
 ) -> Vec<usize> {
     points
         .iter()
         .enumerate()
         .filter_map(|(index, point)| {
-            ((point_distance_squared(point.position, center).sqrt() - radius).abs() <= 1e-3)
-                .then_some(index)
+            let on_circle =
+                (point_distance_squared(point.position, center).sqrt() - radius).abs() <= 1e-3;
+            let incident = surfaces.is_none_or(|(left, right)| {
+                point_on_known_surface(point.position, left)
+                    && point_on_known_surface(point.position, right)
+            });
+            (on_circle && incident).then_some(index)
         })
         .collect()
 }
@@ -4963,6 +5026,9 @@ fn standard_pcurve_geometry(
     end: Point3,
     witness: Option<Point3>,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
+    if !point_on_surface(start, surface) || !point_on_surface(end, surface) {
+        return None;
+    }
     let mut uv = [
         analytic_surface_uv(surface, start)?,
         analytic_surface_uv(surface, end)?,
