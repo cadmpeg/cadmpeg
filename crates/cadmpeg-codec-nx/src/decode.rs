@@ -22,7 +22,7 @@ use cadmpeg_ir::eval::{
 use cadmpeg_ir::features::{
     Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
     FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
-    FeatureTreeNodeRole, HoleKind, Length, ParameterId, ParameterValue, SketchSpace,
+    FeatureTreeNodeRole, HoleForm, HoleKind, Length, ParameterId, ParameterValue, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -6546,7 +6546,7 @@ pub(crate) fn non_boolean_feature_definition(
             face: None,
             position: None,
             direction: None,
-            kind: HoleKind::Simple,
+            kind: simple_hole_kind(payload_strings),
             diameter: None,
             extent: simple_hole_extent(payload_strings),
         },
@@ -6563,6 +6563,23 @@ fn simple_hole_extent(payload_strings: &[&str]) -> Option<cadmpeg_ir::features::
         .iter()
         .find_map(|value| crate::native::parse_simple_hole_template(value))
         .map(|_| cadmpeg_ir::features::Extent::ThroughAll)
+}
+
+fn simple_hole_kind(payload_strings: &[&str]) -> HoleKind {
+    if payload_strings
+        .iter()
+        .any(|value| crate::native::parse_simple_hole_template(value).is_some())
+    {
+        HoleKind::Unresolved {
+            form: Some(HoleForm::Chamfer),
+            counterbore_diameter: None,
+            counterbore_depth: None,
+            countersink_diameter: None,
+            countersink_angle: None,
+        }
+    } else {
+        HoleKind::Simple
+    }
 }
 
 pub(crate) fn feature_body_selection(

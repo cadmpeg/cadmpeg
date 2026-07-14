@@ -1273,6 +1273,8 @@ pub enum HoleKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HoleForm {
+    /// Beveled entry whose diameter and angle may be resolved independently.
+    Chamfer,
     /// Wider, flat-bottomed entry.
     Counterbore,
     /// Conical entry.
