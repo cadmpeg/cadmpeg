@@ -1030,7 +1030,10 @@ A curve-equation entity carries its placement in `local_sys f9 <dimensions> <cou
 
 A `protextrude` or `protrevolve` operation references its sweep axis through `gsec3d_ptr` placement fields rather than an inline axis vector. The `srf_array` row `feat_id` binds each materialized carrier to the generating feature. Extruding a section line yields a plane, extruding an arc yields a cylinder, and extruding an interpolation spline yields a degree-one ruled NURBS surface that retains the spline's degree, knot vector, control points, and weights along the directrix parameter. The feature's cap-plane offsets bound the translation parameter, including symmetric and two-sided spans. A closed profile yields cap planes. Each solved `ent_tab` carrier defines an unbounded surface of revolution independently of the operation's angular trim. A line parallel, angled, or perpendicular to the axis yields a cylinder, circular cone, or plane. A circular arc with center on or off the axis yields a sphere or torus. An interpolation spline yields a full-turn tensor-product NURBS carrier. The projected carrier-to-axis vector defines the zero-azimuth direction; construction segments outside `ent_tab` do not generate surfaces.
 
-`FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table pointer. `e1` is an explicit null pointer; `f7 <canonical-reference-id>` identifies a present driver table.
+`FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table
+pointer. The configuration-root identity is
+`creo:family_info:driver_table#root`. `e1` is an explicit null pointer; `f7
+<canonical-reference-id>` identifies a present driver table.
 The pointer is a configuration-root record even when it is null. A referenced
 form retains the canonical entity identifier; interpreting the referenced
 driver-table rows requires their table grammar.

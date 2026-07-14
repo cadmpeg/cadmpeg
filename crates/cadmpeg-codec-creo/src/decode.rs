@@ -392,7 +392,7 @@ fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTableRecord> {
         crate::container::FamilyTablePointer::Entity(id) => ("entity_reference", Some(id)),
     };
     Some(CreoFamilyTableRecord {
-        id: "creo:family_info:driver_table",
+        id: "creo:family_info:driver_table#root",
         pointer_kind,
         table_entity_id,
         offset: record.offset,

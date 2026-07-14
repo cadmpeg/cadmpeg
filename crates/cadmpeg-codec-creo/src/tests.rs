@@ -3653,6 +3653,7 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         .expect("decode null family table");
     let configuration = &decoded.ir.native.namespace("creo").unwrap().arenas["configuration"];
     assert_eq!(configuration.len(), 1);
+    assert_eq!(configuration[0].id, "creo:family_info:driver_table#root");
     assert_eq!(configuration[0].fields["pointer_kind"], "null");
     assert!(configuration[0].fields["table_entity_id"].is_null());
 
