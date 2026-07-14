@@ -247,11 +247,13 @@ mod marker_tests {
         arc_angle_relation_kind, compact_body_path_at, compact_body_selection_at,
         compact_body_selection_vector, compact_body_state_ids, compact_edge_selection_at,
         compact_extrusion_through_all_at, compact_extrusion_to_face_at,
-        compact_general_curve_ref_at, compact_surface_selection_at, coordinate_marker_local_links,
-        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
-        named_scalars, native_scalar_matches_discrete_parameter, object_names,
-        resolve_operand_marker, resolve_operand_marker_excluding, unique_locus,
-        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
+        compact_general_curve_ref_at, compact_line_region_addresses,
+        compact_reference_plane_source, compact_surface_selection_at,
+        coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
+        marker_local_id, marker_local_links, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, resolve_operand_marker,
+        resolve_operand_marker_excluding, unique_locus, unique_marker_candidate,
+        COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         FeatureInputOperandKind, SketchInputEntity, SketchInputKind, SketchRelationKind,
@@ -284,6 +286,45 @@ mod marker_tests {
 
         payload[12 + 15..12 + 19].copy_from_slice(&206u32.to_le_bytes());
         assert!(compact_body_state_ids(&payload, 0, 180, token).is_empty());
+    }
+
+    #[test]
+    fn compact_line_region_is_an_ordered_one_based_curve_roster() {
+        let mut payload = b"moSketchRegion_c".to_vec();
+        payload.extend(0x8060u16.to_le_bytes());
+        payload.extend(4u16.to_le_bytes());
+        for address in [2u16, 1, 4, 3] {
+            payload.extend(0x80e1u16.to_le_bytes());
+            payload.extend(address.to_le_bytes());
+            payload.extend([0xff; 4]);
+            payload.extend([0; 4]);
+        }
+        assert_eq!(
+            compact_line_region_addresses(&payload),
+            Some(vec![2, 1, 4, 3])
+        );
+        payload[22] = 1;
+        assert_eq!(compact_line_region_addresses(&payload), None);
+    }
+
+    #[test]
+    fn compact_reference_plane_source_requires_the_complete_trailer() {
+        let mut payload = b"moCompRefPlane_c".to_vec();
+        payload.extend([0; 12]);
+        let start = payload.len();
+        payload.extend(2u32.to_le_bytes());
+        payload.extend(0x6554f1b8u32.to_le_bytes());
+        payload.extend([0, 0, 3, 0]);
+        payload.extend([0; 27]);
+        payload.extend(1.0f64.to_le_bytes());
+        payload.extend([
+            0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
+            0x00, 0x65,
+        ]);
+        payload.extend([0; 4]);
+        assert_eq!(compact_reference_plane_source(&payload), Some(2));
+        payload[start + 59] ^= 1;
+        assert_eq!(compact_reference_plane_source(&payload), None);
     }
 
     #[test]
@@ -2970,6 +3011,277 @@ pub(crate) fn bind_sketch_profiles(
         }
     }
     bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
+}
+
+/// Materialize a planar line profile carried directly by a compact sketch region.
+pub(crate) fn project_compact_sketch_profiles(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &mut Vec<Sketch>,
+    sketch_entities: &mut Vec<SketchEntity>,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    const QUANTUM: f64 = 1.0e-8;
+
+    let native_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let principal_planes = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| {
+            let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
+            let neutral = features
+                .iter()
+                .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))?;
+            let cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } =
+                neutral.definition
+            else {
+                return None;
+            };
+            Some((source, plane))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for lane in lanes {
+        let mut objects = native_features
+            .values()
+            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
+            .collect::<Vec<_>>();
+        objects.sort_by_key(|(offset, _)| *offset);
+        for (object_index, &(start, native_feature)) in objects.iter().enumerate() {
+            let Some(feature_index) = features.iter().position(|feature| {
+                feature.native_ref.as_deref() == Some(native_feature.id.as_str())
+                    && matches!(
+                        feature.definition,
+                        cadmpeg_ir::features::FeatureDefinition::Sketch {
+                            space: cadmpeg_ir::features::SketchSpace::Planar,
+                            sketch: None,
+                        }
+                    )
+            }) else {
+                continue;
+            };
+            let end = objects
+                .get(object_index + 1)
+                .map_or(lane.native_payload.len() as u64, |(offset, _)| *offset);
+            let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
+                continue;
+            };
+            let Some(interval) = lane.native_payload.get(start..end) else {
+                continue;
+            };
+            let Some(addresses) = compact_line_region_addresses(interval) else {
+                continue;
+            };
+            let line_classes = lane
+                .classes
+                .iter()
+                .filter(|class| {
+                    class.name == "sgLineHandle"
+                        && usize::try_from(class.offset)
+                            .is_ok_and(|offset| offset >= start && offset < end)
+                })
+                .collect::<Vec<_>>();
+            let [line_class] = line_classes.as_slice() else {
+                continue;
+            };
+            if lane.classes.iter().any(|class| {
+                class.name == "sgArcHandle"
+                    && usize::try_from(class.offset)
+                        .is_ok_and(|offset| offset >= start && offset < end)
+            }) {
+                continue;
+            }
+            let Some(first_marker) = lane
+                .sketch_entities
+                .iter()
+                .filter(|marker| {
+                    marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
+                        && marker.offset <= line_class.offset
+                })
+                .max_by_key(|marker| marker.offset)
+            else {
+                continue;
+            };
+            let markers = lane
+                .sketch_entities
+                .iter()
+                .filter(|marker| {
+                    marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
+                        && marker.offset >= first_marker.offset
+                })
+                .take_while(|marker| marker.coordinates_m.is_some())
+                .collect::<Vec<_>>();
+            if markers.len() != addresses.len() || markers.len() < 3 {
+                continue;
+            }
+            let Some(source_id) = compact_reference_plane_source(&lane.native_payload) else {
+                continue;
+            };
+            let Some((origin, normal, u_axis)) = principal_planes
+                .get(&source_id)
+                .and_then(|plane| principal_sketch_frame(*plane))
+            else {
+                continue;
+            };
+            let lane_key = lane
+                .id
+                .rsplit_once('#')
+                .map_or(lane.id.as_str(), |(_, key)| key);
+            let sketch_id = SketchId(format!(
+                "sldprt:model:sketch#compact:{lane_key}:{}",
+                native_feature.ordinal
+            ));
+            let sketch = Sketch {
+                id: sketch_id.clone(),
+                name: Some(native_feature.name.clone()),
+                configuration: lane.configuration.clone(),
+                origin,
+                normal,
+                u_axis,
+                profiles: Vec::new(),
+                native_ref: Some(lane.id.clone()),
+            };
+            let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
+                continue;
+            };
+            let points = addresses
+                .iter()
+                .filter_map(|address| {
+                    let marker = markers.get(usize::from(*address).checked_sub(1)?)?;
+                    let [u, v] = marker.coordinates_m?;
+                    let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                    let point = transform.apply(native)?;
+                    Some((
+                        *marker,
+                        Point2::new(point.0 as f64 * QUANTUM, point.1 as f64 * QUANTUM),
+                    ))
+                })
+                .collect::<Vec<_>>();
+            if points.len() != addresses.len()
+                || points
+                    .iter()
+                    .enumerate()
+                    .any(|(index, (_, point))| *point == points[(index + 1) % points.len()].1)
+            {
+                continue;
+            }
+            let mut profile = Vec::with_capacity(points.len());
+            for (index, (marker, start)) in points.iter().enumerate() {
+                let end = points[(index + 1) % points.len()].1;
+                let entity_id = SketchEntityId(format!(
+                    "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
+                    native_feature.ordinal
+                ));
+                profile.push(SketchEntityUse {
+                    entity: entity_id.clone(),
+                    reversed: false,
+                });
+                sketch_entities.push(SketchEntity {
+                    id: entity_id,
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: Some(marker.id.clone()),
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry: SketchGeometry::Line { start: *start, end },
+                });
+            }
+            let mut sketch = sketch;
+            sketch.profiles.push(profile);
+            sketches.push(sketch);
+            features[feature_index].definition = cadmpeg_ir::features::FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: Some(sketch_id),
+            };
+        }
+    }
+}
+
+fn compact_line_region_addresses(payload: &[u8]) -> Option<Vec<u16>> {
+    const NAME: &[u8] = b"moSketchRegion_c";
+    let matches = payload
+        .windows(NAME.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == NAME).then_some(offset))
+        .collect::<Vec<_>>();
+    let [offset] = matches.as_slice() else {
+        return None;
+    };
+    let header = offset.checked_add(NAME.len())?;
+    let region_token = u16::from_le_bytes(payload.get(header..header + 2)?.try_into().ok()?);
+    if region_token == 0 {
+        return None;
+    }
+    let count = usize::from(u16::from_le_bytes(
+        payload.get(header + 2..header + 4)?.try_into().ok()?,
+    ));
+    if count < 3 {
+        return None;
+    }
+    let mut addresses = Vec::with_capacity(count);
+    let mut entry_token = None;
+    for index in 0..count {
+        let entry = header.checked_add(4 + index * 12)?;
+        let token = u16::from_le_bytes(payload.get(entry..entry + 2)?.try_into().ok()?);
+        if !matches!(token, 0x80e1 | 0x8386 | 0xbc87)
+            || entry_token.is_some_and(|existing| existing != token)
+            || payload.get(entry + 4..entry + 8)? != [0xff; 4]
+            || payload.get(entry + 8..entry + 12)? != [0; 4]
+        {
+            return None;
+        }
+        entry_token = Some(token);
+        addresses.push(u16::from_le_bytes(
+            payload.get(entry + 2..entry + 4)?.try_into().ok()?,
+        ));
+    }
+    let expected = (1..=u16::try_from(count).ok()?).collect::<HashSet<_>>();
+    (addresses.iter().copied().collect::<HashSet<_>>() == expected).then_some(addresses)
+}
+
+fn compact_reference_plane_source(payload: &[u8]) -> Option<u32> {
+    const CLASS: &[u8] = b"moCompRefPlane_c";
+    let class_count = payload
+        .windows(CLASS.len())
+        .filter(|bytes| *bytes == CLASS)
+        .count();
+    if class_count != 1 {
+        return None;
+    }
+    let mut matches = payload.windows(67).filter_map(|bytes| {
+        let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+        (source != 0
+            && bytes.get(8..12) == Some(&[0, 0, 3, 0])
+            && bytes.get(12..39)?.iter().all(|byte| *byte == 0)
+            && bytes.get(39..47) == Some(&1.0f64.to_le_bytes())
+            && bytes.get(47..63)
+                == Some(&[
+                    0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00, 0x00,
+                    0x00, 0x00, 0x65,
+                ]))
+        .then_some(source)
+    });
+    let source = matches.next()?;
+    matches.next().is_none().then_some(source)
+}
+
+fn principal_sketch_frame(
+    plane: cadmpeg_ir::features::PrincipalPlane,
+) -> Option<(Point3, Vector3, Vector3)> {
+    use cadmpeg_ir::features::PrincipalPlane;
+    match plane {
+        PrincipalPlane::Front => Some((
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        )),
+        PrincipalPlane::Top | PrincipalPlane::Right => None,
+    }
 }
 
 fn bind_circular_profile_by_dimension(
