@@ -470,6 +470,19 @@ pub struct DatumPlaneDoubleReferenceBranch {
     pub references: [ExtrudeProfileReference; 2],
 }
 
+/// Complete terminal compact-index lane in a reconstructed datum-plane payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatumPlaneObjectIndexLane {
+    /// Payload-relative offset of the opening `01` marker.
+    pub offset: usize,
+    /// Serialized count.
+    pub declared_count: u8,
+    /// Ordered non-null compact indices and their payload-relative offsets.
+    pub indices: Vec<(u32, usize)>,
+    /// Big-endian trailer word after the zero separator.
+    pub trailer: u32,
+}
+
 /// Fixed scalar header in one bounded extrusion payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrudePayloadHeader {
@@ -1713,6 +1726,43 @@ pub fn datum_plane_double_reference_branch(
     Some(DatumPlaneDoubleReferenceBranch {
         references: [first, second],
     })
+}
+
+/// Decode unique datum-plane index lanes ending at the logical payload boundary.
+pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndexLane> {
+    let mut lanes = Vec::new();
+    for start in 0..bytes.len().saturating_sub(7) {
+        if bytes[start] != 0x01 {
+            continue;
+        }
+        let declared_count = bytes[start + 1];
+        if declared_count < 2 {
+            continue;
+        }
+        let mut at = start + 2;
+        let mut indices = Vec::with_capacity(usize::from(declared_count) - 1);
+        let mut complete = true;
+        for _ in 1..declared_count {
+            let Some((CompactIndex::Value(value), width)) = bytes.get(at..).and_then(compact_index)
+            else {
+                complete = false;
+                break;
+            };
+            indices.push((value, at));
+            at += width;
+        }
+        if !complete || bytes.get(at) != Some(&0x00) || at + 5 != bytes.len() {
+            continue;
+        }
+        let trailer = u32::from_be_bytes(bytes[at + 1..at + 5].try_into().expect("four bytes"));
+        lanes.push(DatumPlaneObjectIndexLane {
+            offset: start,
+            declared_count,
+            indices,
+            trailer,
+        });
+    }
+    lanes
 }
 
 fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<u32>> {

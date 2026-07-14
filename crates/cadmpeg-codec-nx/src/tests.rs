@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 88);
+    assert_eq!(namespace.version, 89);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1433,6 +1433,23 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     assert_eq!(descriptor_count_three.descriptor_offset, 110);
     assert_eq!(descriptor_count_three.object_index, 721);
     assert_eq!(descriptor_count_three.object_offset, 116);
+}
+
+#[test]
+fn om_datum_plane_object_index_lane_ends_at_logical_payload_boundary() {
+    let bytes = [
+        0x80, 0xab, 0x01, 0x04, 0x01, 0x01, 0x01, 0x00, 0x12, 0x34, 0x56, 0x78,
+    ];
+    let lanes = crate::om::datum_plane_object_index_lanes(&bytes);
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(lanes[0].offset, 2);
+    assert_eq!(lanes[0].declared_count, 4);
+    assert_eq!(lanes[0].indices, [(1, 4), (1, 5), (1, 6)]);
+    assert_eq!(lanes[0].trailer, 0x1234_5678);
+
+    let mut trailing = bytes.to_vec();
+    trailing.push(0);
+    assert!(crate::om::datum_plane_object_index_lanes(&trailing).is_empty());
 }
 
 #[test]
@@ -5228,7 +5245,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 88);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 89);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

@@ -481,6 +481,21 @@ pub struct FeatureDatumPlanePayload {
     pub block_byte_lengths: Vec<u64>,
     /// Absolute file offset of each source block.
     pub block_source_offsets: Vec<u64>,
+    /// Payload-relative opening offset of a unique terminal index lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index_lane_offset: Option<u64>,
+    /// Declared count of the terminal index lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index_lane_declared_count: Option<u8>,
+    /// Ordered decoded compact indices.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub index_lane_values: Vec<u32>,
+    /// Payload-relative offsets of decoded compact indices.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub index_lane_value_offsets: Vec<u64>,
+    /// Big-endian trailer word of the terminal lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index_lane_trailer: Option<u32>,
 }
 
 /// Datum-plane construction lane containing a reused block.
@@ -1837,6 +1852,11 @@ pub fn feature_datum_plane_payloads(
         .filter_map(|header| {
             let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
                 join_data_block_bytes(&header.object_data_blocks, &blocks)?;
+            let lanes = crate::om::datum_plane_object_index_lanes(&payload);
+            let lane = match lanes.as_slice() {
+                [lane] => Some(lane),
+                _ => None,
+            };
             let key = header.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             Some(FeatureDatumPlanePayload {
                 id: format!("nx:feature-history:datum-plane-payload#{key}"),
@@ -1848,6 +1868,18 @@ pub fn feature_datum_plane_payloads(
                 block_payload_offsets,
                 block_byte_lengths,
                 block_source_offsets,
+                index_lane_offset: lane.map(|lane| lane.offset as u64),
+                index_lane_declared_count: lane.map(|lane| lane.declared_count),
+                index_lane_values: lane.map_or_else(Vec::new, |lane| {
+                    lane.indices.iter().map(|(value, _)| *value).collect()
+                }),
+                index_lane_value_offsets: lane.map_or_else(Vec::new, |lane| {
+                    lane.indices
+                        .iter()
+                        .map(|(_, offset)| *offset as u64)
+                        .collect()
+                }),
+                index_lane_trailer: lane.map(|lane| lane.trailer),
             })
         })
         .collect()
