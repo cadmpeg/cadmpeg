@@ -449,6 +449,14 @@ pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
     }
     result.sort_by_key(|row| row.offset);
     result.dedup_by_key(|row| row.offset);
+    let id_counts = result.iter().fold(
+        std::collections::BTreeMap::<u32, usize>::new(),
+        |mut counts, row| {
+            *counts.entry(row.id).or_default() += 1;
+            counts
+        },
+    );
+    result.retain(|row| id_counts.get(&row.id) == Some(&1));
     result
 }
 
@@ -1209,9 +1217,9 @@ mod tests {
     #[test]
     fn finds_one_byte_and_two_byte_surface_rows() {
         let payload = [
-            7, 0x22, 4, 0x01, 0, 8, // plane id 7 -> 8
-            0x80, 0x80, 0x24, 0x81, 0x01, 0xf6, 0x06, 0x80, 0x81,
-        ]; // cylinder id 128, feature 257, reversed -> 129
+            7, 0x22, 4, 0x01, 0, 0x80, 0x80, // plane id 7 -> 128
+            0x80, 0x80, 0x24, 0x81, 0x01, 0xf6, 0x06, 7,
+        ]; // cylinder id 128, feature 257, reversed -> 7
         assert_eq!(
             rows(&payload),
             vec![
@@ -1221,7 +1229,7 @@ mod tests {
                     feature_id: 4,
                     reversed: false,
                     boundary_type: 0,
-                    next_surface: 8,
+                    next_surface: 128,
                     offset: 0,
                 },
                 SurfaceRow {
@@ -1230,11 +1238,20 @@ mod tests {
                     feature_id: 257,
                     reversed: true,
                     boundary_type: 6,
-                    next_surface: 129,
-                    offset: 6,
+                    next_surface: 7,
+                    offset: 7,
                 },
             ]
         );
+    }
+
+    #[test]
+    fn rejects_duplicate_surface_ids() {
+        let duplicate_ids = [
+            7, 0x22, 4, 0x01, 0, 0, // first id 7
+            7, 0x24, 4, 0x01, 0, 0, // second id 7
+        ];
+        assert!(rows(&duplicate_ids).is_empty());
     }
 
     #[test]
