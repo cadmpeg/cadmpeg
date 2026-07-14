@@ -425,6 +425,29 @@ pub struct FeatureDatumCsysConstruction {
     pub source_offsets: [u64; 8],
 }
 
+/// Exact logical payload reconstructed from the two leading datum-CSYS blocks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDatumCsysPayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `DATUM_CSYS` operation label.
+    pub operation_label: String,
+    /// Construction defining the ordered block lane.
+    pub construction: String,
+    /// Two leading source blocks in serialized order.
+    pub data_blocks: [String; 2],
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the concatenated bytes.
+    pub sha256: String,
+    /// Payload-relative block starts.
+    pub block_payload_offsets: [u64; 2],
+    /// Exact source-block lengths.
+    pub block_byte_lengths: [u64; 2],
+    /// Absolute source-block offsets.
+    pub block_source_offsets: [u64; 2],
+}
+
 /// Common typed header of one datum-plane construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDatumPlaneHeader {
@@ -1928,6 +1951,37 @@ pub fn feature_datum_plane_payloads(
                         .collect()
                 }),
                 index_lane_trailer: lane.map(|lane| lane.trailer),
+            })
+        })
+        .collect()
+}
+
+/// Reconstruct the two leading object blocks of each datum coordinate system.
+pub fn feature_datum_csys_payloads(
+    container: &Container,
+    constructions: &[FeatureDatumCsysConstruction],
+) -> Vec<FeatureDatumCsysPayload> {
+    let blocks = offset_data_block_bytes(container);
+    constructions
+        .iter()
+        .filter_map(|construction| {
+            let data_blocks = [
+                construction.data_blocks[0].clone(),
+                construction.data_blocks[1].clone(),
+            ];
+            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            Some(FeatureDatumCsysPayload {
+                id: construction
+                    .id
+                    .replacen("datum-csys-construction", "datum-csys-payload", 1),
+                operation_label: construction.operation_label.clone(),
+                construction: construction.id.clone(),
+                data_blocks,
+                byte_len: bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
+                block_payload_offsets: starts.try_into().ok()?,
+                block_byte_lengths: lengths.try_into().ok()?,
+                block_source_offsets: sources.try_into().ok()?,
             })
         })
         .collect()
