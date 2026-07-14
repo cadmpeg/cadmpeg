@@ -19,8 +19,8 @@
 - [x] Detection reads a bounded prefix and assigns high confidence only to valid Fixed ASCII framing.
 - [x] Inspection does not construct geometry.
 - [x] Card, Global, Directory Entry, Parameter Data, graph, and projection layers remain independently testable.
-- [ ] Checked arithmetic and configured limits cover counts, offsets, allocation sizes, Hollerith lengths, graph depth, transform depth, retained bytes, and derived tessellation.
-- [ ] Malformed input returns deterministic errors or findings and never panics.
+- [x] Checked arithmetic and configured limits cover counts, offsets, allocation sizes, Hollerith lengths, graph depth, transform depth, retained bytes, and derived tessellation.
+- [x] Malformed input returns deterministic errors or findings and never panics.
 - [x] Projection does not reparse source bytes.
 - [x] Topology candidates validate before attachment.
 - [ ] Score changes and their cumulative assertions land in the same commit.
