@@ -111,6 +111,8 @@ Coordinate-bearing marker codes `0`, `1`, `2`, and `3` identify point, line-or-c
 
 Coordinate-bearing geometry handles and no-coordinate relation handles reuse feature-local identifiers. A handle reference with one coordinate-bearing candidate selects that geometry handle. With zero or multiple coordinate-bearing candidates, the identifier resolves only when it has one candidate in the complete feature-local marker set.
 
+A referenced line-or-circle handle with exactly two linked coordinate-bearing point handles carries a construction line from the first linked point to the second. Every admissible sketch placement must produce the same two distinct endpoints. The handle retains its native identity on the construction line.
+
 A horizontal or vertical relation marker constrains the single profile entity common to all of its resolved linked loci. When its two linked markers instead identify two distinct profile loci, it aligns those loci along the corresponding sketch coordinate. A fixed relation marker constrains the single profile entity common to all of its resolved linked loci. The relation remains native when neither arity form resolves uniquely.
 
 A recognized relation marker whose resolved operands do not satisfy the relation's typed arity and locus-kind invariants remains a native constraint with its ordered local identifiers and resolved native references.
