@@ -154,12 +154,30 @@ apply before conversion-based-unit factors. Conversion-based units resolve as
 an acyclic chain ending in a dimensional base unit. Representation uncertainty
 is a linear tolerance in the representation's length unit.
 
+A conical surface permits zero reference radius at its placement origin. Its
+half-angle is converted from the representation's plane-angle unit to radians.
+An unknown NURBS closed or periodic LOGICAL value makes no periodicity
+assertion. A POLYLINE with `n` points is the degree-one NURBS having those
+points as control points and a clamped piecewise-linear knot vector.
+
+TRIMMED_CURVE trim selects contain parameter values, Cartesian points, or
+both. Cartesian selects on lines, circles, and ellipses resolve through the
+basis curve's parameterization. Composite-curve segments retain order,
+same-sense, transition continuity, and their referenced trimmed or composite
+carrier identities.
+
 Topology orientation composes at each relation: face bound orientation,
 oriented-edge orientation, edge-curve `same_sense`, face `same_sense`, and
 oriented-shell orientation. Reversing a relation reverses use, not the shared
 underlying entity. A committed body graph contains complete ownership and
 valid referenced indices; recoverable non-manifold incidence is retained and
 reported without fabricating manifold ownership.
+
+A face boundary is either an EDGE_LOOP coedge ring or a VERTEX_LOOP naming one
+vertex at a surface singularity. No zero-length edge is introduced for a
+vertex loop. A geometric set containing surfaces forms a sheet carrier;
+decoded curve-only or point-only sets remain standalone geometry and do not
+create a body.
 
 Product shape binds through `PRODUCT_DEFINITION_SHAPE` and
 `SHAPE_DEFINITION_REPRESENTATION`. Occurrence transforms compose once from the
@@ -168,7 +186,17 @@ context-dependent relationships that identify the same placement do not cause
 double application.
 
 Exact and tessellated representations of the same product remain linked.
-Tessellated coordinate indices are one-based. Styles resolve from a styled item
-through presentation assignments to color, with overriding styles taking
-precedence for their occurrence. Semantic PMI retains its shape-aspect target;
-presentation PMI retains annotation identity and placement.
+Tessellated indices are one-based. PNINDEX is the local-point to shared-coordinate
+table; triangle, strip, and fan indices address local points. A normal aggregate
+of length one applies to every local point; otherwise normals align with the
+local point table.
+
+Styles resolve from a styled item through presentation assignments to color,
+with overriding styles taking precedence for their occurrence. A style on a
+geometric set applies to each member. Empty and NULL style assignments add no
+appearance. Styles on native presentation carriers without a neutral geometry
+arena retain the carrier identity as their target. Semantic PMI retains its
+shape-aspect target; presentation PMI retains annotation identity and
+placement. PLUS_MINUS_TOLERANCE carries either numeric lower/upper deviations
+or the form variance, zone variance, grade, and source fields of
+LIMITS_AND_FITS.

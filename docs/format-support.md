@@ -44,7 +44,8 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | Creo Parametric `.prt`                     | **L1 claimed** | derived datum planes, prototype geometry census                                                       |
 | Rhino `.3dm` (V3/V4)                       | **L1 tested**  | metadata and bounded object-record retention                                                          |
 | Rhino `.3dm` (V1/V2 and archive 5)         | **L0 tested**  | header-only inspection; decode is rejected                                                            |
-| STEP AP214                                 | translation    | partial B-rep export with explicit loss reporting                                                     |
+| STEP Part 21 AP242 editions 1–3            | **L8 tested**  | AP214 B-rep export with explicit loss reporting                                                        |
+| STEP Part 21 AP203 editions 1–2 and AP214  | **L8 tested**  | AP214 B-rep export with explicit loss reporting                                                        |
 
 Each current score applies to the envelope described in its profile.
 
@@ -67,7 +68,7 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 - **CATIA V5 `.CATPart` (L2 claimed for the standard-nested band):** exact carriers and conditionally connected topology. Other layout bands score L1. Read only.
 - **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.
 - **Creo Parametric `.prt` (L1 claimed):** container navigation, derived datum planes, and prototype geometry inspection. Read only.
-- **STEP AP214 (translation):** partial B-rep export with explicit loss reporting.
+- **STEP Part 21 (L8 tested):** AP242 editions 1–3 and AP203/AP214 clear-text exchanges transfer exact geometry, connected topology, products, tessellation, presentation, PMI, and named opaque application records with complete byte accounting. Read plus partial AP214 export.
 
 ## Rhino `.3dm`
 
@@ -221,18 +222,30 @@ The principal geometry gate is the unresolved general 8-byte PSB float-token for
 
 See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-items.md`](formats/creo_prt-open-items.md).
 
-## STEP AP214 export
+## STEP Part 21
 
-The pure-Rust `cadmpeg-step` crate writes ISO 10303-21 AP214.
+**Model:** ISO 10303-21 clear-text exchange with AP203, AP214, or AP242 application data
 
-- **Geometry: Partial.** Planes, cylinders, cones, spheres, tori, lines, circles, ellipses, and rational or non-rational B-spline carriers map to STEP entities.
-- **Topology: Partial.** Supported bodies emit a solid, shell, face, loop, edge, and vertex hierarchy. Export reports losses for omitted faces with unknown surfaces and curveless edges. Shell closure and manifold validity remain unchecked. Export reports non-identity body transforms and leaves coordinates in body-local space.
-- **Procedural geometry: Solved carriers only.** Source-native procedural definitions reduce to their analytic or NURBS carriers and produce an informational loss.
-- **Tessellation: None.**
-- **Product structure: None.**
-- **Design intent: None.** STEP output excludes feature histories, sketches, construction recipes, Design records, and ACT records.
-- **Presentation and metadata: None.** STEP output excludes colors, appearance assets, bindings, source attributes, and opaque records.
-- **Loss reporting: Partial.** Export reports omitted, reduced, or normalized IR content. The roadmap also requires preserved, mapped, solved, and lost outcomes.
+**Ladder: L8 tested for AP242 editions 1–3 and AP203 editions 1–2/AP214.** Part 28 XML, Part 26 binary/HDF5, AP242 BO-Model sidecars, and ZIP packaging are outside the declared bands. AP203/AP214 gates for constructs their schemas cannot carry are inapplicable. Part 21 exchange documents do not carry originating feature replay histories, sketch-constraint systems, or assembly mates, so L4, L6, and the L7 mate gate are inapplicable.
+
+### Read profile
+
+- **Container and versions: Band-wide.** The codec detects clear-text exchanges, parses headers and all DATA sections, parses edition-3 ANCHOR, REFERENCE, and SIGNATURE sections, reports schemas and external dependencies, and names every undecoded entity family.
+- **Geometry: Band-wide.** Millimeter-normalized points, placements, analytic curves and surfaces, polylines, rational and non-rational NURBS, parameter- and Cartesian-trimmed curves, composite and surface curves, offsets, sweeps, revolutions, curve-bounded surfaces, and geometric sets transfer with their unit and orientation semantics.
+- **Topology: Band-wide.** Solid, void, sheet, geometrically bounded surface, oriented-shell, edge-loop, and singular vertex-loop cases transfer through connected body, region, shell, face, loop, coedge, edge, vertex, and pcurve ownership.
+- **Tessellation: Band-wide where carried.** AP242 shared coordinate lists, local point-index tables, normals, faces, strips, fans, shells, solids, and exact-body links transfer without duplicating exact solids.
+- **Design intent: Inapplicable.** These application protocols exchange solved product shape and structure, not ordered feature/sketch replay history.
+- **Product structure: Band-wide.** Product identity, occurrences, mapped items, relative placements, context-dependent transformations, and named external document/resource dependencies transfer.
+- **Presentation and metadata: Band-wide.** Layers, direct and overriding styles, colors on topology, exact geometry, tessellation, geometric sets, null styles, semantic dimensions/tolerances/datums, presentation annotations, validation properties, and limits-and-fits classes transfer. Unmodeled application records remain named opaque records with identity and references.
+- **Byte accounting: Band-wide.** Every input byte is structural, typed, or part of a named opaque record; unclassified bytes fail the accounting invariant.
+
+The evidence tier is tested. Proven status additionally requires accepted public CC0 corpus entries, sustained fuzz runs, and the roadmap's complete round-trip gates.
+
+### Write and round trip
+
+- **Native write: Partial AP214 translation.** Planes, cylinders, cones, spheres, tori, lines, circles, ellipses, polylines represented as NURBS, composite curves, rational/non-rational B-splines, connected B-rep, singular vertex loops, and per-face colors emit as clear text. Unknown surfaces, curveless edges, non-identity body transforms, tessellation, product structure, PMI, source attributes, and opaque application records produce explicit losses or remain unsupported.
+- **Procedural geometry: Solved carriers only.** Source-native procedural definitions reduce to their analytic or NURBS carriers with an informational loss.
+- **Round trip: Partial.** Generated geometry/topology/style fixtures re-decode to validated semantic IR. General unchanged-source replay and target-schema selection are not implemented.
 
 ## Maintaining these profiles
 
