@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Byte-level topology for standard nested CATIA V5 B-rep streams.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 const FBB_ROW: [u8; 4] = [0x30, 0x04, 0x04, 0xff];
 const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
@@ -3079,39 +3079,16 @@ impl MeshQuotient {
     }
 
     fn edge_domains_viable(&mut self, edge_candidates: &[Vec<[usize; 2]>]) -> bool {
-        edge_candidates
-            .iter()
-            .enumerate()
-            .all(|(edge, candidates)| self.edge_domain_viable(edge, candidates))
-    }
-
-    fn edge_domain_viable(&mut self, edge: usize, candidates: &[[usize; 2]]) -> bool {
-        let start = self.union.find(edge * 2);
-        let end = self.union.find(edge * 2 + 1);
-        if start == end {
-            let domain = &self.domains[start];
-            return if candidates.is_empty() {
-                !domain.is_empty()
-            } else {
-                candidates
-                    .iter()
-                    .any(|pair| pair[0] == pair[1] && domain.contains(&pair[0]))
-            };
-        }
-        let starts = &self.domains[start];
-        let ends = &self.domains[end];
-        if candidates.is_empty() {
-            return starts
+        self.propagate_edge_domains(
+            edge_candidates
                 .iter()
-                .any(|start| ends.iter().any(|end| start != end));
-        }
-        candidates.iter().any(|pair| {
-            (starts.contains(&pair[0]) && ends.contains(&pair[1]))
-                || (starts.contains(&pair[1]) && ends.contains(&pair[0]))
-        })
+                .enumerate()
+                .filter_map(|(edge, candidates)| (!candidates.is_empty()).then_some(edge)),
+            edge_candidates,
+        )
     }
 
-    fn component_edge_domains_viable(
+    fn propagate_component_edge_domains(
         &mut self,
         root: usize,
         edge_candidates: &[Vec<[usize; 2]>],
@@ -3119,10 +3096,117 @@ impl MeshQuotient {
         let edges = self.members[root]
             .iter()
             .map(|node| node / 2)
+            .filter(|edge| !edge_candidates[*edge].is_empty())
             .collect::<HashSet<_>>();
-        edges
-            .into_iter()
-            .all(|edge| self.edge_domain_viable(edge, &edge_candidates[edge]))
+        self.propagate_edge_domains(edges, edge_candidates)
+    }
+
+    fn propagate_edge_domains(
+        &mut self,
+        edges: impl IntoIterator<Item = usize>,
+        edge_candidates: &[Vec<[usize; 2]>],
+    ) -> bool {
+        fn enqueue_component_edges(
+            root: usize,
+            members: &[Vec<usize>],
+            edge_candidates: &[Vec<[usize; 2]>],
+            queue: &mut VecDeque<usize>,
+            queued: &mut HashSet<usize>,
+        ) {
+            for edge in members[root].iter().map(|node| node / 2) {
+                if !edge_candidates[edge].is_empty() && queued.insert(edge) {
+                    queue.push_back(edge);
+                }
+            }
+        }
+
+        let mut queue = VecDeque::new();
+        let mut queued = HashSet::new();
+        for edge in edges {
+            if queued.insert(edge) {
+                queue.push_back(edge);
+            }
+        }
+        while let Some(edge) = queue.pop_front() {
+            queued.remove(&edge);
+            let candidates = &edge_candidates[edge];
+            if candidates.is_empty() {
+                continue;
+            }
+            let start = self.union.find(edge * 2);
+            let end = self.union.find(edge * 2 + 1);
+            if start == end {
+                let supported = candidates
+                    .iter()
+                    .filter(|pair| pair[0] == pair[1])
+                    .map(|pair| pair[0])
+                    .filter(|point| self.domains[start].contains(point))
+                    .collect::<HashSet<_>>();
+                if supported.is_empty() {
+                    return false;
+                }
+                if supported != self.domains[start] {
+                    self.domains[start] = supported;
+                    enqueue_component_edges(
+                        start,
+                        &self.members,
+                        edge_candidates,
+                        &mut queue,
+                        &mut queued,
+                    );
+                }
+                continue;
+            }
+
+            let starts = self.domains[start].clone();
+            let ends = self.domains[end].clone();
+            let supported_starts = starts
+                .iter()
+                .copied()
+                .filter(|start_point| {
+                    ends.iter().any(|end_point| {
+                        candidates.iter().any(|candidate| {
+                            same_unordered_pair(*candidate, [*start_point, *end_point])
+                        })
+                    })
+                })
+                .collect::<HashSet<_>>();
+            let supported_ends = ends
+                .iter()
+                .copied()
+                .filter(|end_point| {
+                    starts.iter().any(|start_point| {
+                        candidates.iter().any(|candidate| {
+                            same_unordered_pair(*candidate, [*start_point, *end_point])
+                        })
+                    })
+                })
+                .collect::<HashSet<_>>();
+            if supported_starts.is_empty() || supported_ends.is_empty() {
+                return false;
+            }
+            if supported_starts != self.domains[start] {
+                self.domains[start] = supported_starts;
+                enqueue_component_edges(
+                    start,
+                    &self.members,
+                    edge_candidates,
+                    &mut queue,
+                    &mut queued,
+                );
+            }
+            if supported_ends != self.domains[end] {
+                self.domains[end] = supported_ends;
+                enqueue_component_edges(
+                    end,
+                    &self.members,
+                    edge_candidates,
+                    &mut queue,
+                    &mut queued,
+                );
+            }
+        }
+        true
     }
 
     fn assignment_has_option(
@@ -3166,7 +3250,7 @@ impl MeshQuotient {
                 let Some(root) = quotient.merge(last_end, first_start) else {
                     return false;
                 };
-                return quotient.component_edge_domains_viable(root, edge_candidates)
+                return quotient.propagate_component_edge_domains(root, edge_candidates)
                     && walk(
                         boundaries,
                         boundary_index + 1,
@@ -3191,7 +3275,7 @@ impl MeshQuotient {
                     let Some(root) = quotient.merge(previous_end, current_start) else {
                         return false;
                     };
-                    if !quotient.component_edge_domains_viable(root, edge_candidates) {
+                    if !quotient.propagate_component_edge_domains(root, edge_candidates) {
                         return false;
                     }
                 }
@@ -3260,10 +3344,11 @@ impl MeshQuotient {
                     let Some(first_start) = edge_start(boundary[0], directions[0]) else {
                         return;
                     };
-                    if let Some(root) = quotient.merge(last_end, first_start) {
-                        if quotient.component_edge_domains_viable(root, edge_candidates) {
-                            output.push((directions.clone(), quotient));
-                        }
+                    let Some(root) = quotient.merge(last_end, first_start) else {
+                        return;
+                    };
+                    if quotient.propagate_component_edge_domains(root, edge_candidates) {
+                        output.push((directions.clone(), quotient));
                     }
                     return;
                 }
@@ -3283,7 +3368,7 @@ impl MeshQuotient {
                         let Some(root) = quotient.merge(previous_end, current_start) else {
                             continue;
                         };
-                        if !quotient.component_edge_domains_viable(root, edge_candidates) {
+                        if !quotient.propagate_component_edge_domains(root, edge_candidates) {
                             continue;
                         }
                     }
@@ -3346,6 +3431,26 @@ impl MeshQuotient {
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> Option<HashMap<usize, usize>> {
+        let mut solutions = self.point_assignments(point_count, edge_candidates, 2);
+        (solutions.len() == 1).then(|| solutions.remove(0))
+    }
+
+    fn point_assignment_exists(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+    ) -> bool {
+        !self
+            .point_assignments(point_count, edge_candidates, 1)
+            .is_empty()
+    }
+
+    fn point_assignments(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        solution_limit: usize,
+    ) -> Vec<HashMap<usize, usize>> {
         fn value_viable(
             root: usize,
             point: usize,
@@ -3390,8 +3495,9 @@ impl MeshQuotient {
             assigned: &mut [Option<usize>],
             used: &mut HashSet<usize>,
             solutions: &mut Vec<Vec<usize>>,
+            solution_limit: usize,
         ) {
-            if solutions.len() > 1 {
+            if solutions.len() >= solution_limit {
                 return;
             }
             let next = assigned
@@ -3434,10 +3540,11 @@ impl MeshQuotient {
                     assigned,
                     used,
                     solutions,
+                    solution_limit,
                 );
                 used.remove(&point);
                 assigned[root] = None;
-                if solutions.len() > 1 {
+                if solutions.len() >= solution_limit {
                     return;
                 }
             }
@@ -3451,7 +3558,7 @@ impl MeshQuotient {
             }
         }
         if roots.len() != point_count {
-            return None;
+            return Vec::new();
         }
         let domains = roots
             .iter()
@@ -3462,7 +3569,7 @@ impl MeshQuotient {
             .enumerate()
             .map(|(index, root)| (*root, index))
             .collect::<HashMap<_, _>>();
-        let edge_roots = edge_candidates
+        let Some(edge_roots) = edge_candidates
             .iter()
             .enumerate()
             .map(|(edge, _)| {
@@ -3471,7 +3578,10 @@ impl MeshQuotient {
                     *root_indices.get(&self.union.find(edge * 2 + 1))?,
                 ])
             })
-            .collect::<Option<Vec<_>>>()?;
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Vec::new();
+        };
 
         let mut solutions = Vec::new();
         walk(
@@ -3481,8 +3591,12 @@ impl MeshQuotient {
             &mut vec![None; domains.len()],
             &mut HashSet::new(),
             &mut solutions,
+            solution_limit,
         );
-        (solutions.len() == 1).then(|| roots.into_iter().zip(solutions.remove(0)).collect())
+        solutions
+            .into_iter()
+            .map(|solution| roots.iter().copied().zip(solution).collect())
+            .collect()
     }
 }
 
@@ -3570,6 +3684,11 @@ impl MeshSelectionSearch<'_> {
             .map(Vec::len)
             .sum::<usize>();
         if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
+            return;
+        }
+        if root_count == self.vertex_points.len()
+            && !measured.point_assignment_exists(self.vertex_points.len(), self.edge_candidates)
+        {
             return;
         }
         let next = self
@@ -4572,8 +4691,24 @@ mod motif_tests {
                 .into(),
             members: (0..4).map(|node| vec![node]).collect(),
         };
-        let root = quotient.merge(1, 2).expect("nonempty port intersection");
-        assert!(!quotient.component_edge_domains_viable(root, &[vec![[0, 1]], vec![[0, 2]]],));
+        quotient.merge(1, 2).expect("nonempty port intersection");
+        assert!(!quotient.edge_domains_viable(&[vec![[0, 1]], vec![[0, 2]]]));
+    }
+
+    #[test]
+    fn quotient_pair_domains_propagate_through_shared_components() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: [vec![0, 1], vec![2], vec![0, 1], vec![3, 4]]
+                .map(|domain| domain.into_iter().collect())
+                .into(),
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        let root = quotient.merge(0, 2).expect("shared endpoint component");
+
+        assert!(quotient.edge_domains_viable(&[vec![[0, 2]], vec![[0, 3], [1, 4]],]));
+        assert_eq!(quotient.domains[root], HashSet::from([0]));
+        assert_eq!(quotient.domains[quotient.union.find(3)], HashSet::from([3]));
     }
 
     #[test]
@@ -4658,6 +4793,7 @@ mod motif_tests {
             members: (0..4).map(|node| vec![node]).collect(),
         };
         assert!(quotient().point_assignment(4, &[vec![], vec![]]).is_none());
+        assert!(quotient().point_assignment_exists(4, &[vec![], vec![]]));
 
         let assignment = quotient()
             .point_assignment(4, &[vec![[0, 2]], vec![[1, 3]]])
@@ -4666,6 +4802,17 @@ mod motif_tests {
         assert_eq!(assignment[&1], 2);
         assert_eq!(assignment[&2], 1);
         assert_eq!(assignment[&3], 3);
+    }
+
+    #[test]
+    fn quotient_point_existence_rejects_an_all_different_conflict() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(2),
+            domains: vec![HashSet::from([0]), HashSet::from([0])],
+            members: vec![vec![0], vec![1]],
+        };
+
+        assert!(!quotient.point_assignment_exists(2, &[vec![]]));
     }
 
     #[test]
@@ -4771,6 +4918,23 @@ mod motif_tests {
         quotient.merge(0, 1).expect("closed endpoint merge");
         assert!(quotient.edge_domains_viable(&[vec![[2, 2]]]));
         assert!(!quotient.edge_domains_viable(&[vec![[1, 2]]]));
+    }
+
+    #[test]
+    fn quotient_retains_diagonal_pairs_until_ports_are_merged() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(2),
+            domains: vec![HashSet::from([1, 2]), HashSet::from([1, 2])],
+            members: vec![vec![0], vec![1]],
+        };
+
+        assert!(quotient.edge_domains_viable(&[vec![[2, 2]]]));
+        assert_eq!(
+            quotient.domains,
+            vec![HashSet::from([2]), HashSet::from([2])]
+        );
+        quotient.merge(0, 1).expect("closed endpoint merge");
+        assert!(quotient.edge_domains_viable(&[vec![[2, 2]]]));
     }
 
     #[test]
