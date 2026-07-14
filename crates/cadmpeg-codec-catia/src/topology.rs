@@ -892,14 +892,21 @@ pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
+    let scopes = parse_edge_tables_scoped_at(bytes, after_faces)
+        .filter(|(rows, _, _)| rows.len() == edge_rows.len())
+        .map_or_else(
+            || edge_rows.iter().map(|row| usize::from(row.kind)).collect(),
+            |(_, scopes, _)| scopes,
+        );
     let mut identities = HashMap::new();
     edge_rows
         .iter()
-        .map(|row| {
+        .zip(scopes)
+        .map(|(row, scope)| {
             [*row.handles.first()?, *row.handles.last()?]
                 .map(|handle| {
                     let next = identities.len();
-                    u32::try_from(*identities.entry((row.kind, handle)).or_insert(next)).ok()
+                    u32::try_from(*identities.entry((scope, handle)).or_insert(next)).ok()
                 })
                 .into_iter()
                 .collect::<Option<Vec<_>>>()
@@ -915,6 +922,7 @@ pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]
 pub fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
+    let local_ports = standard_edge_port_identities(bytes)?;
     let mut solutions = Vec::new();
     for width in [1, 2, 3] {
         let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
@@ -926,14 +934,11 @@ pub fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
             .collect::<Option<Vec<_>>>()?;
         let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
         let mut union = UnionFind::new(edge_rows.len() * 2);
-        let mut table_ports = HashMap::new();
-        for (edge, row) in edge_rows.iter().enumerate() {
-            for (side, handle) in [row.handles.first()?, row.handles.last()?]
-                .into_iter()
-                .enumerate()
-            {
+        let mut node_by_identity = HashMap::new();
+        for (edge, ports) in local_ports.iter().enumerate() {
+            for (side, identity) in ports.iter().copied().enumerate() {
                 let node = edge * 2 + side;
-                if let Some(previous) = table_ports.insert((row.kind, *handle), node) {
+                if let Some(previous) = node_by_identity.insert(identity, node) {
                     union.union(previous, node);
                 }
             }
@@ -1641,6 +1646,7 @@ fn standard_mesh_missing_edge_assignments_impl(
     }
     let coverage = standard_mesh_face_coverage(bytes, edge_faces)?;
     let edge_ports = standard_mesh_edge_ports(bytes)?;
+    let table_ports = standard_edge_port_identities(bytes)?;
     let edge_runs = standard_mesh_edge_runs(bytes)?;
     let mut solutions = Vec::new();
     for width in [1, 2, 3] {
@@ -1694,7 +1700,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                     &cycle_lengths,
                     &face.missing_edges,
                     &edge_rows,
-                    &edge_ports,
+                    &table_ports,
                 )
                 .or_else(|| {
                     enumerate_face(
@@ -3076,24 +3082,33 @@ impl MeshQuotient {
         edge_candidates
             .iter()
             .enumerate()
-            .all(|(edge, candidates)| {
-                let start = self.union.find(edge * 2);
-                let end = self.union.find(edge * 2 + 1);
-                if start == end {
-                    return false;
-                }
-                let starts = &self.domains[start];
-                let ends = &self.domains[end];
-                if candidates.is_empty() {
-                    return starts
-                        .iter()
-                        .any(|start| ends.iter().any(|end| start != end));
-                }
-                candidates.iter().any(|pair| {
-                    (starts.contains(&pair[0]) && ends.contains(&pair[1]))
-                        || (starts.contains(&pair[1]) && ends.contains(&pair[0]))
-                })
-            })
+            .all(|(edge, candidates)| self.edge_domain_viable(edge, candidates))
+    }
+
+    fn edge_domain_viable(&mut self, edge: usize, candidates: &[[usize; 2]]) -> bool {
+        let start = self.union.find(edge * 2);
+        let end = self.union.find(edge * 2 + 1);
+        if start == end {
+            let domain = &self.domains[start];
+            return if candidates.is_empty() {
+                !domain.is_empty()
+            } else {
+                candidates
+                    .iter()
+                    .any(|pair| pair[0] == pair[1] && domain.contains(&pair[0]))
+            };
+        }
+        let starts = &self.domains[start];
+        let ends = &self.domains[end];
+        if candidates.is_empty() {
+            return starts
+                .iter()
+                .any(|start| ends.iter().any(|end| start != end));
+        }
+        candidates.iter().any(|pair| {
+            (starts.contains(&pair[0]) && ends.contains(&pair[1]))
+                || (starts.contains(&pair[1]) && ends.contains(&pair[0]))
+        })
     }
 
     fn component_edge_domains_viable(
@@ -3105,25 +3120,9 @@ impl MeshQuotient {
             .iter()
             .map(|node| node / 2)
             .collect::<HashSet<_>>();
-        edges.into_iter().all(|edge| {
-            let start = self.union.find(edge * 2);
-            let end = self.union.find(edge * 2 + 1);
-            if start == end {
-                return false;
-            }
-            let starts = &self.domains[start];
-            let ends = &self.domains[end];
-            let candidates = &edge_candidates[edge];
-            if candidates.is_empty() {
-                return starts
-                    .iter()
-                    .any(|start| ends.iter().any(|end| start != end));
-            }
-            candidates.iter().any(|pair| {
-                (starts.contains(&pair[0]) && ends.contains(&pair[1]))
-                    || (starts.contains(&pair[1]) && ends.contains(&pair[0]))
-            })
-        })
+        edges
+            .into_iter()
+            .all(|edge| self.edge_domain_viable(edge, &edge_candidates[edge]))
     }
 
     fn assignment_has_option(
@@ -3923,8 +3922,18 @@ fn parse_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usi
         .map(|(rows, vertex_header, _)| (rows, vertex_header))
 }
 
-fn parse_edge_tables_at(bytes: &[u8], mut position: usize) -> Option<(Vec<EdgeRow>, usize)> {
+fn parse_edge_tables_at(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
+    parse_edge_tables_scoped_at(bytes, position)
+        .map(|(rows, _, vertex_header)| (rows, vertex_header))
+}
+
+fn parse_edge_tables_scoped_at(
+    bytes: &[u8],
+    mut position: usize,
+) -> Option<(Vec<EdgeRow>, Vec<usize>, usize)> {
     let mut rows = Vec::new();
+    let mut scopes = Vec::new();
+    let mut scope = 0usize;
     loop {
         if bytes.get(position) != Some(&0x01) {
             return None;
@@ -3956,6 +3965,7 @@ fn parse_edge_tables_at(bytes: &[u8], mut position: usize) -> Option<(Vec<EdgeRo
                 handles,
                 boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
             });
+            scopes.push(scope);
         }
         let mut saw_delimiter = false;
         while bytes.get(position..)?.starts_with(&EDGE_DELIMITER) {
@@ -3968,8 +3978,9 @@ fn parse_edge_tables_at(bytes: &[u8], mut position: usize) -> Option<(Vec<EdgeRo
         if bytes.get(position..position + 2) == Some(&[0x01, 0x06]) {
             break;
         }
+        scope = scope.checked_add(1)?;
     }
-    Some((rows, position))
+    Some((rows, scopes, position))
 }
 
 fn parse_vertex_table(bytes: &[u8], mut position: usize) -> Option<Vec<[f64; 3]>> {
@@ -4706,6 +4717,18 @@ mod motif_tests {
         assert!(mesh_edge_points_compatible(true, &[[2, 2]], [2, 2]));
         assert!(!mesh_edge_points_compatible(false, &[[2, 2]], [2, 2]));
         assert!(!mesh_edge_points_compatible(true, &[[1, 1]], [2, 2]));
+    }
+
+    #[test]
+    fn quotient_accepts_diagonal_domain_for_closed_edge() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(2),
+            domains: vec![HashSet::from([2]), HashSet::from([2])],
+            members: vec![vec![0], vec![1]],
+        };
+        quotient.merge(0, 1).expect("closed endpoint merge");
+        assert!(quotient.edge_domains_viable(&[vec![[2, 2]]]));
+        assert!(!quotient.edge_domains_viable(&[vec![[1, 2]]]));
     }
 
     #[test]
