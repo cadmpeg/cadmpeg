@@ -3102,6 +3102,7 @@ fn a5_edge_binding_resolves_partner_nurbs_carrier() {
         blocks[0].supports[1],
         Some(A5SupportBinding::NurbsCarrier { offset, .. }) if offset == 0.0
     ));
+    assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
     assert!(blocks[0].endpoint_loci.is_some());
 }
 
@@ -3114,6 +3115,7 @@ fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
         blocks[0].supports[1],
         Some(A5SupportBinding::NurbsCarrier { offset, .. }) if (offset.abs() - 2.0).abs() < 1e-6
     ));
+    assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
     assert!(blocks[0].endpoint_loci.is_some());
 }
 

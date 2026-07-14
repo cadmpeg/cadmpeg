@@ -1015,6 +1015,9 @@ pub struct ResolvedA5EdgeBlock {
     pub block: A5EdgeBlock,
     /// Carrier binding for each pcurve side.
     pub supports: [Option<A5SupportBinding>; 2],
+    /// Shared lifted 3D definition sites when every liftable side agrees
+    /// pointwise in the common edge parameterization.
+    pub shared_loci: Option<Vec<Point3>>,
     /// Unordered 3D endpoint loci when at least one uniquely bound side can be
     /// lifted and every liftable side agrees.
     pub endpoint_loci: Option<[Point3; 2]>,
@@ -1202,31 +1205,29 @@ pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
                     supports[partner] = Some(winner.clone());
                 }
             }
-            let endpoint_loci = resolved_support_endpoints(
-                &block,
-                &supports,
-                &standalone,
-                &embedded,
-                &cones,
-                &surfaces,
-            );
+            let shared_loci =
+                resolved_support_loci(&block, &supports, &standalone, &embedded, &cones, &surfaces);
+            let endpoint_loci = shared_loci
+                .as_ref()
+                .and_then(|points| Some([*points.first()?, *points.last()?]));
             ResolvedA5EdgeBlock {
                 block,
                 supports,
+                shared_loci,
                 endpoint_loci,
             }
         })
         .collect()
 }
 
-fn resolved_support_endpoints(
+fn resolved_support_loci(
     block: &A5EdgeBlock,
     supports: &[Option<A5SupportBinding>; 2],
     cylinders: &[B2Cylinder],
     embedded: &[B2EmbeddedCylinder],
     cones: &[B2Cone],
     surfaces: &[A8Surface],
-) -> Option<[Point3; 2]> {
+) -> Option<Vec<Point3>> {
     let candidates = supports
         .iter()
         .zip(&block.pcurves)
@@ -1239,20 +1240,20 @@ fn resolved_support_endpoints(
                 cones,
                 surfaces,
             )?;
-            Some([*points.first()?, *points.last()?])
+            (!points.is_empty()).then_some(points)
         })
         .collect::<Vec<_>>();
-    let first = *candidates.first()?;
+    let first = candidates.first()?;
     candidates
         .iter()
         .all(|candidate| {
-            let direct = point_distance(first[0], candidate[0]) <= 2e-3
-                && point_distance(first[1], candidate[1]) <= 2e-3;
-            let reversed = point_distance(first[0], candidate[1]) <= 2e-3
-                && point_distance(first[1], candidate[0]) <= 2e-3;
-            direct || reversed
+            candidate.len() == first.len()
+                && first
+                    .iter()
+                    .zip(candidate)
+                    .all(|(&left, &right)| point_distance(left, right) <= 2e-3)
         })
-        .then_some(first)
+        .then(|| first.clone())
 }
 
 fn support_points(
