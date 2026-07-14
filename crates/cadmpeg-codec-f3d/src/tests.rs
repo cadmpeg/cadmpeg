@@ -6594,11 +6594,15 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     ];
     native.lost_edge_references = vec![LostEdgeReference {
         id: "generated:lost-edge-reference#0".into(),
-        byte_offset: 0,
+        record_byte_offset: 0,
         class_tag_offset: 0,
         class_tag: "419".into(),
-        record_index: 4646,
+        record_index: 4645,
         record_index_offset: 0,
+        byte_offset: 0,
+        next_byte_offset: 0,
+        next_class_tag: "419".into(),
+        next_record_index: 4646,
     }];
 
     drop(native);
@@ -6713,7 +6717,9 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     );
     assert_eq!(native.lost_edge_references.len(), 1);
     assert_eq!(native.lost_edge_references[0].class_tag, "419");
-    assert_eq!(native.lost_edge_references[0].record_index, 4646);
+    assert_eq!(native.lost_edge_references[0].record_index, 4645);
+    assert_eq!(native.lost_edge_references[0].next_class_tag, "419");
+    assert_eq!(native.lost_edge_references[0].next_record_index, 4646);
 }
 
 #[test]
@@ -7771,7 +7777,8 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
     );
     let lost_edge = &mut native.lost_edge_references[0];
-    assert!(lost_edge.class_tag_offset > lost_edge.byte_offset);
+    assert!(lost_edge.class_tag_offset > lost_edge.record_byte_offset);
+    assert!(lost_edge.class_tag_offset < lost_edge.byte_offset);
     lost_edge.class_tag = "420".into();
     lost_edge.record_index = 4_700;
     let assignment = &mut native.design_material_assignments[0];
@@ -8652,6 +8659,11 @@ fn generated_design_bulkstream() -> Vec<u8> {
     out.extend_from_slice(&23u32.to_le_bytes());
     out.extend_from_slice(b"IntrinsicMetaTypeuint64");
     out.extend_from_slice(&439u64.to_le_bytes());
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"419");
+    out.extend_from_slice(&4645u32.to_le_bytes());
+    out.extend_from_slice(&[0; 14]);
+    out.extend_from_slice(&19u32.to_le_bytes());
     out.extend_from_slice(b"EDGE_REFERENCE_LOST");
     out.extend_from_slice(&3u32.to_le_bytes());
     out.extend_from_slice(b"419");
@@ -16863,6 +16875,10 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert_eq!(
         f3d_native(&result.ir).lost_edge_references[0].record_index,
+        4645
+    );
+    assert_eq!(
+        f3d_native(&result.ir).lost_edge_references[0].next_record_index,
         4646
     );
     assert!(result.report.losses.iter().any(|loss| loss

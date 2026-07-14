@@ -987,9 +987,9 @@ pub struct PersistentReference {
 pub struct LostEdgeReference {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Byte offset of the `EDGE_REFERENCE_LOST` marker in its Design `BulkStream`.
-    pub byte_offset: u64,
-    /// Byte offset of the three-byte class tag.
+    /// Byte offset of the unresolved record's indexed header.
+    pub record_byte_offset: u64,
+    /// Byte offset of the unresolved record's three-byte class tag.
     pub class_tag_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag of the unresolved record.
     pub class_tag: String,
@@ -997,6 +997,14 @@ pub struct LostEdgeReference {
     pub record_index: u32,
     /// Byte offset of `record_index`.
     pub record_index_offset: u64,
+    /// Byte offset of the `EDGE_REFERENCE_LOST` marker in its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Byte offset of the indexed header immediately following this record.
+    pub next_byte_offset: u64,
+    /// Per-file dynamic class tag of the following indexed record.
+    pub next_class_tag: String,
+    /// Record index of the following indexed record.
+    pub next_record_index: u32,
 }
 
 /// One Design `BulkStream` material assignment joining a design entity to visual assets.

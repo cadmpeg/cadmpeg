@@ -5106,9 +5106,8 @@ pub fn decode_persistent_references(
     Ok(out.into_iter().map(|(_, reference)| reference).collect())
 }
 
-/// Decode every `EDGE_REFERENCE_LOST` marker record from each design
-/// `BulkStream` entry in `scan`: the ASCII literal, a `u32` length of `3`, a
-/// three-digit class tag, and a `u32` record index.
+/// Decode every indexed `EDGE_REFERENCE_LOST` record from each design
+/// `BulkStream` entry in `scan`.
 pub fn decode_lost_edge_references(
     _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -5128,36 +5127,45 @@ pub fn decode_lost_edge_references(
         {
             let offset = cursor + relative;
             cursor = offset + marker.len();
-            let payload = offset + marker.len();
-            let Some(length) = bytes.get(payload..payload + 4) else {
+            let Some(header_offset) = offset.checked_sub(29) else {
                 continue;
             };
-            if u32::from_le_bytes(
-                length.try_into().expect(
-                    "invariant: length is a 4-byte slice from bytes.get(range) of length 4",
-                ),
-            ) != 3
+            let Some((class_tag, after_tag)) = lp_ascii(bytes, header_offset) else {
+                continue;
+            };
+            if after_tag != header_offset + 7
+                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                || bytes.get(header_offset + 11..header_offset + 25) != Some(&[0; 14])
+                || u32_at(bytes, header_offset + 25) != Some(marker.len() as u32)
             {
                 continue;
             }
-            let Some(class_tag) = bytes.get(payload + 4..payload + 7) else {
+            let Some(record_index) = u32_at(bytes, after_tag) else {
                 continue;
             };
-            if !class_tag.iter().all(u8::is_ascii_digit) {
+            let next_byte_offset = offset + marker.len();
+            let Some((next_class_tag, after_next_tag)) = lp_ascii(bytes, next_byte_offset) else {
+                continue;
+            };
+            if after_next_tag != next_byte_offset + 7
+                || !next_class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            {
                 continue;
             }
-            let Some(index) = bytes.get(payload + 7..payload + 11) else {
+            let Some(next_record_index) = u32_at(bytes, after_next_tag) else {
                 continue;
             };
             out.push(LostEdgeReference {
-                id: format!("f3d:{}:lost-edge-reference#{offset}", entry.name),
+                id: format!("f3d:{}:lost-edge-reference#{header_offset}", entry.name),
+                record_byte_offset: header_offset as u64,
+                class_tag_offset: (header_offset + 4) as u64,
+                class_tag,
+                record_index,
+                record_index_offset: (header_offset + 7) as u64,
                 byte_offset: offset as u64,
-                class_tag_offset: (payload + 4) as u64,
-                class_tag: String::from_utf8_lossy(class_tag).into_owned(),
-                record_index: u32::from_le_bytes(index.try_into().expect(
-                    "invariant: index is a 4-byte slice from bytes.get(range) of length 4",
-                )),
-                record_index_offset: (payload + 7) as u64,
+                next_byte_offset: next_byte_offset as u64,
+                next_class_tag,
+                next_record_index,
             });
         }
     }

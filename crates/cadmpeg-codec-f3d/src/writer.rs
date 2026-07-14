@@ -1340,12 +1340,30 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         out.extend_from_slice(b"IntrinsicMetaTypeuint64");
         out.extend_from_slice(&reference.value.to_le_bytes());
     }
-    for reference in &native.lost_edge_references {
+    for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
         validate_dynamic_class_tag(&reference.class_tag, "lost-edge reference")?;
+        validate_dynamic_class_tag(&reference.next_class_tag, "lost-edge next record")?;
+        if let Some(previous) = ordinal
+            .checked_sub(1)
+            .and_then(|ordinal| native.lost_edge_references.get(ordinal))
+        {
+            if previous.next_class_tag != reference.class_tag
+                || previous.next_record_index != reference.record_index
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D lost-edge record {} does not continue the preceding indexed run",
+                    reference.id
+                )));
+            }
+        } else {
+            native_lp_ascii(&mut out, &reference.class_tag)?;
+            out.extend_from_slice(&reference.record_index.to_le_bytes());
+        }
+        out.extend_from_slice(&[0; 14]);
+        out.extend_from_slice(&19u32.to_le_bytes());
         out.extend_from_slice(b"EDGE_REFERENCE_LOST");
-        out.extend_from_slice(&3u32.to_le_bytes());
-        out.extend_from_slice(reference.class_tag.as_bytes());
-        out.extend_from_slice(&reference.record_index.to_le_bytes());
+        native_lp_ascii(&mut out, &reference.next_class_tag)?;
+        out.extend_from_slice(&reference.next_record_index.to_le_bytes());
     }
     Ok(Some(out))
 }
