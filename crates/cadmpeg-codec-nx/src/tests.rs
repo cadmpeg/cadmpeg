@@ -8334,6 +8334,43 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
 }
 
 #[test]
+fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
+    let mut control_points = Vec::new();
+    for (x, z) in [
+        (-10.0, 0.0),
+        (0.0, 0.0),
+        (10.0, 2.0),
+        (0.0, 4.0),
+        (-10.0, 4.0),
+    ] {
+        control_points.extend([
+            cadmpeg_ir::math::Point3::new(x, 0.0, z),
+            cadmpeg_ir::math::Point3::new(x, 10.0, z),
+        ]);
+    }
+    let surface = cadmpeg_ir::geometry::NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 5,
+        v_count: 2,
+        control_points,
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let expected = Point2::new(0.125, 0.3);
+    let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
+
+    let actual =
+        crate::decode::nurbs_parameters(&surface, point, Some(Point2::new(0.875, 0.3))).unwrap();
+
+    assert!((actual.u - expected.u).abs() < 1.0e-10);
+    assert!((actual.v - expected.v).abs() < 1.0e-10);
+}
+
+#[test]
 fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
     use cadmpeg_ir::geometry::{Curve, NurbsCurve};
     use cadmpeg_ir::ids::CurveId;

@@ -2020,23 +2020,7 @@ fn closest_nurbs_curve_parameter(
                 + (position.z - point.z).powi(2),
         )
     };
-    let subdivisions = 2 * (degree + 1).max(2);
-    let mut samples = vec![domain[0]];
-    for span in knots[degree..].windows(2) {
-        let start = span[0].max(domain[0]);
-        let end = span[1].min(domain[1]);
-        if start >= end {
-            continue;
-        }
-        for index in 1..=subdivisions {
-            samples.push(start + (end - start) * index as f64 / subdivisions as f64);
-        }
-        if end >= domain[1] {
-            break;
-        }
-    }
-    samples.sort_by(f64::total_cmp);
-    samples.dedup_by(|left, right| *left == *right);
+    let samples = knot_domain_samples(knots, degree, domain);
     let distances = samples
         .iter()
         .map(|parameter| squared_distance(*parameter))
@@ -2081,6 +2065,27 @@ fn closest_nurbs_curve_parameter(
         }
     }
     Some(best)
+}
+
+fn knot_domain_samples(knots: &[f64], degree: usize, domain: [f64; 2]) -> Vec<f64> {
+    let subdivisions = 2 * (degree + 1).max(2);
+    let mut samples = vec![domain[0]];
+    for span in knots[degree..].windows(2) {
+        let start = span[0].max(domain[0]);
+        let end = span[1].min(domain[1]);
+        if start >= end {
+            continue;
+        }
+        for index in 1..=subdivisions {
+            samples.push(start + (end - start) * index as f64 / subdivisions as f64);
+        }
+        if end >= domain[1] {
+            break;
+        }
+    }
+    samples.sort_by(f64::total_cmp);
+    samples.dedup_by(|left, right| *left == *right);
+    samples
 }
 
 fn golden_section_minimum(
@@ -2381,34 +2386,77 @@ pub(crate) fn nurbs_parameters(
     if u_domain[0] >= u_domain[1] || v_domain[0] >= v_domain[1] {
         return None;
     }
-    let squared_distance = |candidate: Point3| {
-        (candidate.x - point.x).powi(2)
-            + (candidate.y - point.y).powi(2)
-            + (candidate.z - point.z).powi(2)
-    };
-    let mut parameters = seed.unwrap_or_else(|| {
-        let mut best = Point2::new(u_domain[0], v_domain[0]);
-        let mut best_distance = f64::INFINITY;
-        for ui in 0..=8 {
-            for vi in 0..=8 {
-                let candidate = Point2::new(
-                    u_domain[0] + (u_domain[1] - u_domain[0]) * f64::from(ui) / 8.0,
-                    v_domain[0] + (v_domain[1] - v_domain[0]) * f64::from(vi) / 8.0,
-                );
-                let Some(position) =
-                    cadmpeg_ir::eval::nurbs_surface_point(surface, candidate.u, candidate.v)
-                else {
-                    continue;
-                };
-                let distance = squared_distance(position);
-                if distance < best_distance {
-                    best = candidate;
-                    best_distance = distance;
-                }
+    let squared_distance = |candidate: Point3| point_distance(candidate, point).powi(2);
+    let mut coarse = Vec::with_capacity(81);
+    for ui in 0..=8 {
+        for vi in 0..=8 {
+            let parameters = Point2::new(
+                u_domain[0] + (u_domain[1] - u_domain[0]) * f64::from(ui) / 8.0,
+                v_domain[0] + (v_domain[1] - v_domain[0]) * f64::from(vi) / 8.0,
+            );
+            let position =
+                cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)?;
+            coarse.push((parameters, squared_distance(position)));
+        }
+    }
+    let mut starts = Vec::new();
+    if let Some(seed) = seed {
+        starts.push(seed);
+    }
+    for ui in 0..=8 {
+        for vi in 0..=8 {
+            let index = ui * 9 + vi;
+            let distance = coarse[index].1;
+            let local_minimum = ui.saturating_sub(1)..=(ui + 1).min(8);
+            if local_minimum
+                .flat_map(|neighbor_u| {
+                    (vi.saturating_sub(1)..=(vi + 1).min(8))
+                        .map(move |neighbor_v| neighbor_u * 9 + neighbor_v)
+                })
+                .all(|neighbor| distance <= coarse[neighbor].1)
+            {
+                starts.push(coarse[index].0);
             }
         }
-        best
-    });
+    }
+    let mut best = None;
+    let mut best_distance = f64::INFINITY;
+    let mut best_seed_distance = f64::INFINITY;
+    for start in starts {
+        let parameters = refine_nurbs_surface_parameters(
+            surface,
+            point,
+            start,
+            u_domain,
+            v_domain,
+            &squared_distance,
+        )?;
+        let position = cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)?;
+        let distance = squared_distance(position);
+        let seed_distance = seed.map_or(parameters.u.abs() + parameters.v.abs(), |seed| {
+            (parameters.u - seed.u).hypot(parameters.v - seed.v)
+        });
+        let same_point = (distance - best_distance).abs()
+            <= f64::EPSILON * 64.0 * distance.abs().max(best_distance.abs()).max(1.0);
+        if distance < best_distance && !same_point
+            || same_point && seed_distance < best_seed_distance
+        {
+            best = Some(parameters);
+            best_distance = distance;
+            best_seed_distance = seed_distance;
+        }
+    }
+    best
+}
+
+fn refine_nurbs_surface_parameters(
+    surface: &NurbsSurface,
+    point: Point3,
+    mut parameters: Point2,
+    u_domain: [f64; 2],
+    v_domain: [f64; 2],
+    squared_distance: &impl Fn(Point3) -> f64,
+) -> Option<Point2> {
     parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
     parameters.v = parameters.v.clamp(v_domain[0], v_domain[1]);
     for _ in 0..32 {
@@ -2432,12 +2480,32 @@ pub(crate) fn nurbs_parameters(
         }
         let du_residual = dot(du, residual);
         let dv_residual = dot(dv, residual);
-        let step_u = (dv_squared * du_residual - mixed * dv_residual) / determinant;
-        let step_v = (du_squared * dv_residual - mixed * du_residual) / determinant;
-        parameters.u = (parameters.u - step_u).clamp(u_domain[0], u_domain[1]);
-        parameters.v = (parameters.v - step_v).clamp(v_domain[0], v_domain[1]);
-        if step_u.abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
-            && step_v.abs() <= 1.0e-12 * (1.0 + parameters.v.abs())
+        let step = Point2::new(
+            (dv_squared * du_residual - mixed * dv_residual) / determinant,
+            (du_squared * dv_residual - mixed * du_residual) / determinant,
+        );
+        let current_distance = squared_distance(position);
+        let mut scale = 1.0;
+        let mut accepted = None;
+        for _ in 0..16 {
+            let candidate = Point2::new(
+                (parameters.u - scale * step.u).clamp(u_domain[0], u_domain[1]),
+                (parameters.v - scale * step.v).clamp(v_domain[0], v_domain[1]),
+            );
+            let candidate_position =
+                cadmpeg_ir::eval::nurbs_surface_point(surface, candidate.u, candidate.v)?;
+            if squared_distance(candidate_position) <= current_distance {
+                accepted = Some(candidate);
+                break;
+            }
+            scale *= 0.5;
+        }
+        let Some(candidate) = accepted else {
+            break;
+        };
+        parameters = candidate;
+        if scale * step.u.abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
+            && scale * step.v.abs() <= 1.0e-12 * (1.0 + parameters.v.abs())
         {
             break;
         }
