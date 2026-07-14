@@ -7850,6 +7850,23 @@ fn typed_marker_relation_definition_in_sketch(
             let [first, second] = entities.as_slice() else {
                 return Some(native());
             };
+            if !sketch_entities.is_empty() {
+                let Some(first_entity) = sketch_entities
+                    .iter()
+                    .find(|candidate| candidate.id == *first)
+                else {
+                    return Some(native());
+                };
+                let Some(second_entity) = sketch_entities
+                    .iter()
+                    .find(|candidate| candidate.id == *second)
+                else {
+                    return Some(native());
+                };
+                if !binary_relation_matches_evaluated_geometry(kind, first_entity, second_entity) {
+                    return Some(native());
+                }
+            }
             match kind {
                 Parallel => SketchConstraintDefinition::Parallel {
                     first: first.clone(),
@@ -7936,6 +7953,160 @@ fn typed_marker_relation_definition_in_sketch(
         | crate::records::SketchRelationKind::Diameter => return None,
         _ => native(),
     })
+}
+
+fn binary_relation_matches_evaluated_geometry(
+    kind: crate::records::SketchRelationKind,
+    first: &SketchEntity,
+    second: &SketchEntity,
+) -> bool {
+    use crate::records::SketchRelationKind::{
+        Collinear, Concentric, Equal, Parallel, Perpendicular, Tangent,
+    };
+    match kind {
+        Parallel => line_relation_value(first, second, |cross, _dot, lengths| {
+            cross.abs() <= SKETCH_POINT_TOLERANCE * lengths
+        }),
+        Perpendicular => line_relation_value(first, second, |_cross, dot, lengths| {
+            dot.abs() <= SKETCH_POINT_TOLERANCE * lengths
+        }),
+        Collinear => line_line_distance(first, second)
+            .is_some_and(|distance| same_dimension_length(distance, 0.0)),
+        Concentric => centered_geometry(first)
+            .zip(centered_geometry(second))
+            .is_some_and(|(first, second)| {
+                same_dimension_length(first.u, second.u) && same_dimension_length(first.v, second.v)
+            }),
+        Equal => equal_geometry_size(first, second),
+        Tangent => tangent_geometry(first, second),
+        _ => false,
+    }
+}
+
+fn line_relation_value(
+    first: &SketchEntity,
+    second: &SketchEntity,
+    predicate: impl FnOnce(f64, f64, f64) -> bool,
+) -> bool {
+    let Some((first_u, first_v, first_length)) = line_direction(first) else {
+        return false;
+    };
+    let Some((second_u, second_v, second_length)) = line_direction(second) else {
+        return false;
+    };
+    predicate(
+        first_u * second_v - first_v * second_u,
+        first_u * second_u + first_v * second_v,
+        first_length * second_length,
+    )
+}
+
+fn line_direction(entity: &SketchEntity) -> Option<(f64, f64, f64)> {
+    let SketchGeometry::Line { start, end } = &entity.geometry else {
+        return None;
+    };
+    let u = end.u - start.u;
+    let v = end.v - start.v;
+    let length = u.hypot(v);
+    (length > SKETCH_POINT_TOLERANCE).then_some((u, v, length))
+}
+
+fn centered_geometry(entity: &SketchEntity) -> Option<Point2> {
+    match &entity.geometry {
+        SketchGeometry::Circle { center, .. }
+        | SketchGeometry::Arc { center, .. }
+        | SketchGeometry::Ellipse { center, .. } => Some(*center),
+        _ => None,
+    }
+}
+
+fn circular_radius(entity: &SketchEntity) -> Option<f64> {
+    match &entity.geometry {
+        SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
+            Some(radius.0)
+        }
+        _ => None,
+    }
+}
+
+fn equal_geometry_size(first: &SketchEntity, second: &SketchEntity) -> bool {
+    match (&first.geometry, &second.geometry) {
+        (
+            SketchGeometry::Line {
+                start: first_start,
+                end: first_end,
+            },
+            SketchGeometry::Line {
+                start: second_start,
+                end: second_end,
+            },
+        ) => same_dimension_length(
+            (first_end.u - first_start.u).hypot(first_end.v - first_start.v),
+            (second_end.u - second_start.u).hypot(second_end.v - second_start.v),
+        ),
+        (
+            SketchGeometry::Circle {
+                radius: first_radius,
+                ..
+            }
+            | SketchGeometry::Arc {
+                radius: first_radius,
+                ..
+            },
+            SketchGeometry::Circle {
+                radius: second_radius,
+                ..
+            }
+            | SketchGeometry::Arc {
+                radius: second_radius,
+                ..
+            },
+        ) => same_dimension_length(first_radius.0, second_radius.0),
+        (
+            SketchGeometry::Ellipse {
+                major_radius: first_major,
+                minor_radius: first_minor,
+                ..
+            },
+            SketchGeometry::Ellipse {
+                major_radius: second_major,
+                minor_radius: second_minor,
+                ..
+            },
+        ) => {
+            same_dimension_length(first_major.0, second_major.0)
+                && same_dimension_length(first_minor.0, second_minor.0)
+        }
+        _ => false,
+    }
+}
+
+fn tangent_geometry(first: &SketchEntity, second: &SketchEntity) -> bool {
+    let line_circle = |line: &SketchEntity, circle: &SketchEntity| {
+        centered_geometry(circle)
+            .zip(circular_radius(circle))
+            .and_then(|(center, radius)| {
+                point_line_distance_value(center, line).map(|distance| (distance, radius))
+            })
+            .is_some_and(|(distance, radius)| same_dimension_length(distance, radius))
+    };
+    if matches!(first.geometry, SketchGeometry::Line { .. }) {
+        return line_circle(first, second);
+    }
+    if matches!(second.geometry, SketchGeometry::Line { .. }) {
+        return line_circle(second, first);
+    }
+    centered_geometry(first)
+        .zip(circular_radius(first))
+        .zip(centered_geometry(second).zip(circular_radius(second)))
+        .is_some_and(
+            |((first_center, first_radius), (second_center, second_radius))| {
+                let center_distance =
+                    (second_center.u - first_center.u).hypot(second_center.v - first_center.v);
+                same_dimension_length(center_distance, first_radius + second_radius)
+                    || same_dimension_length(center_distance, (first_radius - second_radius).abs())
+            },
+        )
 }
 
 fn unique_axis_aligned_linked_loci(
@@ -10440,14 +10611,15 @@ fn marker_entities_inner(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        bind_circle_dimension_centers, bind_circular_profile_by_dimension,
-        bind_detached_relation_drivers, bind_pattern_inputs, bind_sweep_adjacent_profiles,
-        dimensioned_circle_surface_transforms, dimensioned_circle_transform,
-        implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
-        marker_point_locus, profile_loci_by_marker, project_dimensioned_sketch_geometry,
-        project_relation_point_geometry, project_relation_solved_point_geometry,
-        relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
-        resolved_marker_locus, select_marker_transforms_by_frame, single_marker_curve_entity,
+        binary_relation_matches_evaluated_geometry, bind_circle_dimension_centers,
+        bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
+        bind_sweep_adjacent_profiles, dimensioned_circle_surface_transforms,
+        dimensioned_circle_transform, implicit_circle_marker, line_endpoint_markers,
+        line_reference_direction, marker_entities, marker_point_locus, profile_loci_by_marker,
+        project_dimensioned_sketch_geometry, project_relation_point_geometry,
+        project_relation_solved_point_geometry, relation_operand_marker, relation_owner_markers,
+        relation_parameter_by_display_name, resolved_marker_locus,
+        select_marker_transforms_by_frame, single_marker_curve_entity,
         sketch_frame_marker_transform, type_display_relation_parameters,
         typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
         typed_relation_definition, unique_axis_aligned_linked_loci,
@@ -10660,8 +10832,47 @@ mod profile_join_tests {
 
         assert_eq!(
             typed_marker_relation_definition(&relation, &markers, &loci),
-            Some(SketchConstraintDefinition::Parallel { first, second })
+            Some(SketchConstraintDefinition::Parallel {
+                first: first.clone(),
+                second: second.clone(),
+            })
         );
+        let sketch = SketchId("sketch".into());
+        let line = |id, start, end| SketchEntity {
+            id,
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let first_line = line(first, Point2::new(0.0, 0.0), Point2::new(4.0, 0.0));
+        let mut second_line = line(second, Point2::new(0.0, 2.0), Point2::new(4.0, 2.0));
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &relation,
+                &sketch,
+                &[first_line.clone(), second_line.clone()],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Parallel { .. })
+        ));
+        second_line.geometry = SketchGeometry::Line {
+            start: Point2::new(0.0, 2.0),
+            end: Point2::new(0.0, 6.0),
+        };
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &relation,
+                &sketch,
+                &[first_line, second_line],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Native { .. })
+        ));
     }
 
     #[test]
@@ -11081,6 +11292,90 @@ mod profile_join_tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn binary_relations_require_matching_evaluated_geometry() {
+        use SketchRelationKind::{Collinear, Concentric, Equal, Parallel, Perpendicular, Tangent};
+        let sketch = SketchId("sketch".into());
+        let entity = |id: &str, geometry| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let horizontal = entity(
+            "horizontal",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(4.0, 0.0),
+            },
+        );
+        let parallel = entity(
+            "parallel",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 2.0),
+                end: Point2::new(4.0, 2.0),
+            },
+        );
+        let perpendicular = entity(
+            "perpendicular",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(0.0, 4.0),
+            },
+        );
+        let collinear = entity(
+            "collinear",
+            SketchGeometry::Line {
+                start: Point2::new(6.0, 0.0),
+                end: Point2::new(10.0, 0.0),
+            },
+        );
+        let circle = |id: &str, u, v, radius| {
+            entity(
+                id,
+                SketchGeometry::Circle {
+                    center: Point2::new(u, v),
+                    radius: Length(radius),
+                },
+            )
+        };
+        let first_circle = circle("first-circle", 0.0, 2.0, 2.0);
+        let equal_circle = circle("equal-circle", 4.0, 2.0, 2.0);
+        let concentric_circle = circle("concentric-circle", 0.0, 2.0, 1.0);
+        let unrelated_circle = circle("unrelated-circle", 8.0, 8.0, 3.0);
+
+        for (kind, first, second) in [
+            (Parallel, &horizontal, &parallel),
+            (Perpendicular, &horizontal, &perpendicular),
+            (Collinear, &horizontal, &collinear),
+            (Equal, &first_circle, &equal_circle),
+            (Concentric, &first_circle, &concentric_circle),
+            (Tangent, &horizontal, &first_circle),
+            (Tangent, &first_circle, &equal_circle),
+        ] {
+            assert!(binary_relation_matches_evaluated_geometry(
+                kind, first, second
+            ));
+        }
+        for kind in [
+            Parallel,
+            Perpendicular,
+            Collinear,
+            Equal,
+            Concentric,
+            Tangent,
+        ] {
+            assert!(!binary_relation_matches_evaluated_geometry(
+                kind,
+                &horizontal,
+                &unrelated_circle,
+            ));
+        }
     }
 
     #[test]
