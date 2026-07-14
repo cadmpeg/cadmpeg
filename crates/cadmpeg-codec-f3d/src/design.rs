@@ -12,12 +12,12 @@ use crate::records::{
     DesignConfigurationKind, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
     DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
-    DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-    DesignFilletRadiusGroup, DesignObject, DesignObjectKind, DesignParameter,
-    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignExtrudeOperandRole, DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup,
+    DesignExtrudeSelectionMember, DesignFilletRadiusGroup, DesignObject, DesignObjectKind,
+    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+    DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
+    PersistentReference, PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry,
+    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -229,6 +229,7 @@ pub fn project_parameter_design(
     native: &[DesignParameter],
     owners: &[DesignParameterOwner],
     scopes: &[DesignParameterScope],
+    construction_groups: &[DesignConstructionOperandGroup],
     fillet_radius_groups: &[DesignFilletRadiusGroup],
     placements: &[DesignSketchPlacement],
 ) -> (
@@ -292,27 +293,29 @@ pub fn project_parameter_design(
                         .cloned(),
                 }
             } else if scope.kind == "Extrude" {
-                project_extrude(scope, &parameters, placements).unwrap_or_else(|| {
-                    let mut properties = BTreeMap::new();
-                    if let Some(profile) = scope.extrude_profile.as_ref() {
-                        if let Some(placement) = placements.iter().find(|placement| {
-                            native_stream(&placement.id) == Some(native_scope)
-                                && placement.entity_id == profile.entity_id
-                        }) {
-                            properties.insert("profile".into(), neutral_sketch_id(placement).0);
+                project_extrude(scope, &parameters, construction_groups, placements).unwrap_or_else(
+                    || {
+                        let mut properties = BTreeMap::new();
+                        if let Some(profile) = scope.extrude_profile.as_ref() {
+                            if let Some(placement) = placements.iter().find(|placement| {
+                                native_stream(&placement.id) == Some(native_scope)
+                                    && placement.entity_id == profile.entity_id
+                            }) {
+                                properties.insert("profile".into(), neutral_sketch_id(placement).0);
+                            }
                         }
-                    }
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: parameters
-                            .iter()
-                            .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
-                            })
-                            .collect(),
-                        properties,
-                    }
-                })
+                        FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: parameters
+                                .iter()
+                                .map(|(_, parameter)| {
+                                    (parameter.name.clone(), parameter.expression.clone())
+                                })
+                                .collect(),
+                            properties,
+                        }
+                    },
+                )
             } else if scope.kind == "Fillet" {
                 let mut assignments = fillet_radius_groups
                     .iter()
@@ -579,6 +582,7 @@ fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Le
 fn project_extrude(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
+    construction_groups: &[DesignConstructionOperandGroup],
     placements: &[DesignSketchPlacement],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length, ProfileRef};
@@ -637,11 +641,20 @@ fn project_extrude(
         Some(parameter) => design_angle(parameter).filter(|angle| angle.0 != 0.0),
         None => None,
     };
+    let has_body_operands = construction_groups.iter().any(|group| {
+        native_stream(&group.id) == native_stream(&scope.id)
+            && group.scope_record_index == scope.record_index
+            && group.extrude_role == Some(DesignExtrudeOperandRole::Bodies)
+    });
     Some(FeatureDefinition::Extrude {
         profile: ProfileRef::Native(scope.id.clone()),
         direction,
         extent,
-        op: BooleanOp::Unresolved,
+        op: if has_body_operands {
+            BooleanOp::Unresolved
+        } else {
+            BooleanOp::NewBody
+        },
         draft,
     })
 }
@@ -2861,6 +2874,16 @@ fn parse_construction_operand_group(
     }
     let identity_record_index = u32_at(bytes, position + 7)?;
     let role = read_u64(bytes, position + 17)?;
+    let extrude_role = if scope.kind == "Extrude" {
+        Some(match role {
+            0x0000_0008_0000_0000 => DesignExtrudeOperandRole::Bodies,
+            0x0000_0041_0000_0000 => DesignExtrudeOperandRole::Profile,
+            0x0000_0011_0000_0000 => DesignExtrudeOperandRole::Faces,
+            _ => return None,
+        })
+    } else {
+        None
+    };
     let opaque_index = u32_at(bytes, position + 35)?;
     let opaque_scalar = f64_at(bytes, position + 39)?;
     if opaque_index == 0
@@ -2899,6 +2922,7 @@ fn parse_construction_operand_group(
         identity_record_index,
         identity_record_offset: u64::try_from(position + 7).ok()?,
         role,
+        extrude_role,
         role_offset: u64::try_from(position + 17).ok()?,
         opaque_index,
         opaque_index_offset: u64::try_from(position + 35).ok()?,
@@ -5275,10 +5299,11 @@ mod relation_tests {
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
-        DesignDimensionLocusPair, DesignEntityHeader, DesignExtrudeProfileOperand,
-        DesignObjectKind, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-        DesignRecordHeader, DesignSketchPlacement, SketchConstraintKind, SketchCurveGeometry,
-        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+        DesignDimensionLocusPair, DesignEntityHeader, DesignExtrudeOperandRole,
+        DesignExtrudeProfileOperand, DesignObjectKind, DesignParameterKind, DesignParameterOwner,
+        DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, SketchConstraintKind,
+        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+        SketchRelationOperand,
     };
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -5768,6 +5793,7 @@ mod relation_tests {
         assert_eq!(group.member_offsets, [26, 37]);
         assert_eq!(group.identity_record_index, 300);
         assert_eq!(group.role, 0x0000_0008_0000_0000);
+        assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Bodies));
         assert_eq!(group.opaque_index, 180);
         assert_eq!(group.opaque_scalar, 0.125);
         assert!(group.variant);
@@ -5795,6 +5821,7 @@ mod relation_tests {
             identity_record_index: 300,
             identity_record_offset: 1043,
             role: 0x0000_0008_0000_0000,
+            extrude_role: Some(DesignExtrudeOperandRole::Bodies),
             role_offset: 1053,
             opaque_index: 180,
             opaque_index_offset: 1071,
@@ -6461,6 +6488,7 @@ mod relation_tests {
             &[],
             &[],
             &[],
+            &[],
         );
         let half = parameters
             .iter()
@@ -6528,7 +6556,8 @@ mod relation_tests {
         half.record_index = 21;
         half.source_ordinal = 5;
 
-        let (features, projected) = project_parameter_design(&[half, width], &[], &[], &[], &[]);
+        let (features, projected) =
+            project_parameter_design(&[half, width], &[], &[], &[], &[], &[]);
         assert!(features.is_empty());
         assert_eq!(projected[0].name, "Width");
         assert_eq!(projected[0].owner, None);
@@ -6584,7 +6613,7 @@ mod relation_tests {
         };
 
         let (features, parameters) =
-            project_parameter_design(&[parameter], &[owner], &[scope], &[], &[]);
+            project_parameter_design(&[parameter], &[owner], &[scope], &[], &[], &[]);
         assert_eq!(features.len(), 1);
         assert!(matches!(
             &features[0].definition,
@@ -6655,21 +6684,59 @@ mod relation_tests {
         };
         let along = parameter("AlongDistance", "mm", 0.55);
         let taper = parameter("TaperAngle", "deg", 0.2);
-        let blind =
-            project_extrude(&scope, &[(0, &along), (1, &taper)], &[]).expect("typed blind Extrude");
+        let blind = project_extrude(&scope, &[(0, &along), (1, &taper)], &[], &[])
+            .expect("typed blind Extrude");
         assert!(matches!(
             blind,
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Native(ref profile),
                 direction: None,
                 extent: Extent::Blind { length: Length(5.5) },
-                op: BooleanOp::Unresolved,
+                op: BooleanOp::NewBody,
                 draft: Some(Angle(0.2)),
             } if profile == &scope.id
         ));
 
+        let body_group = DesignConstructionOperandGroup {
+            id: "f3d:Design/BulkStream.dat:operand-group#101".into(),
+            scope_record_index: 12,
+            scope_reference_ordinal: 1,
+            record_index: 101,
+            byte_offset: 1000,
+            class_tag: "332".into(),
+            member_count_offset: 1021,
+            members: vec![200],
+            member_offsets: vec![1026],
+            identity_record_index: 300,
+            identity_record_offset: 1044,
+            role: 0x0000_0008_0000_0000,
+            extrude_role: Some(DesignExtrudeOperandRole::Bodies),
+            role_offset: 1054,
+            opaque_index: 180,
+            opaque_index_offset: 1072,
+            opaque_scalar: 0.125,
+            opaque_scalar_offset: 1076,
+            variant: false,
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 1125,
+        };
+        let target_body = project_extrude(
+            &scope,
+            &[(0, &along), (1, &taper)],
+            std::slice::from_ref(&body_group),
+            &[],
+        )
+        .expect("typed target-body Extrude");
+        assert!(matches!(
+            target_body,
+            FeatureDefinition::Extrude {
+                op: BooleanOp::Unresolved,
+                ..
+            }
+        ));
+
         let against = parameter("AgainstDistance", "mm", -0.05);
-        let two_sided = project_extrude(&scope, &[(0, &along), (1, &against)], &[])
+        let two_sided = project_extrude(&scope, &[(0, &along), (1, &against)], &[], &[])
             .expect("typed two-sided Extrude");
         assert!(matches!(
             two_sided,
@@ -6702,7 +6769,7 @@ mod relation_tests {
             paired_class_tag: "260".into(),
             paired_byte_offset: 929,
         };
-        let reversed = project_extrude(&scope, &[(0, &reversed_along)], &[placement])
+        let reversed = project_extrude(&scope, &[(0, &reversed_along)], &[], &[placement])
             .expect("typed reversed Extrude");
         assert!(matches!(
             reversed,
@@ -6793,6 +6860,7 @@ mod relation_tests {
             &scopes,
             &[],
             &[],
+            &[],
         );
 
         let fillet = features
@@ -6864,6 +6932,7 @@ mod relation_tests {
             identity_record_index: 300 + ordinal,
             identity_record_offset: 1100 + u64::from(ordinal) * 200,
             role: 0x0000_0008_0000_0000,
+            extrude_role: None,
             role_offset: 1110 + u64::from(ordinal) * 200,
             opaque_index: 100,
             opaque_index_offset: 1128 + u64::from(ordinal) * 200,
@@ -6934,6 +7003,7 @@ mod relation_tests {
             &parameters,
             &owners,
             std::slice::from_ref(&scope),
+            &groups,
             &assignments,
             &[],
         );
@@ -7020,6 +7090,7 @@ mod relation_tests {
             ],
             &[owner(44, 12, 45), owner(54, 22, 55)],
             &[scope(12, 100, "Sketch"), scope(22, 200, "Extrude")],
+            &[],
             &[],
             &[],
         );

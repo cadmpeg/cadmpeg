@@ -615,6 +615,18 @@ pub struct DesignExtrudeSelectionGroup {
     pub paired_byte_offset: u64,
 }
 
+/// Semantic role of a counted Extrude operand group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignExtrudeOperandRole {
+    /// Existing bodies consumed by the Boolean operation.
+    Bodies,
+    /// Sketch profile swept by the Extrude.
+    Profile,
+    /// Faces used by profile-start or termination construction.
+    Faces,
+}
+
 /// Counted construction-operand group owned by a feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignConstructionOperandGroup {
@@ -642,6 +654,9 @@ pub struct DesignConstructionOperandGroup {
     pub identity_record_offset: u64,
     /// Source u64 role code.
     pub role: u64,
+    /// Extrude-specific semantic role of `role`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_role: Option<DesignExtrudeOperandRole>,
     /// Byte offset of `role`.
     pub role_offset: u64,
     /// Opaque repeated nonzero u32.

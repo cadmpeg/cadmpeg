@@ -430,7 +430,27 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
+                let role_is_valid = match scope.kind.as_str() {
+                    "Extrude" => match group.extrude_role {
+                        Some(records::DesignExtrudeOperandRole::Bodies) => {
+                            group.role == 0x0000_0008_0000_0000
+                        }
+                        Some(records::DesignExtrudeOperandRole::Profile) => {
+                            group.role == 0x0000_0041_0000_0000
+                                && scope.extrude_profile.as_ref().is_some_and(|profile| {
+                                    group.members.as_slice() == [profile.record_index]
+                                })
+                        }
+                        Some(records::DesignExtrudeOperandRole::Faces) => {
+                            group.role == 0x0000_0011_0000_0000
+                        }
+                        None => false,
+                    },
+                    "Fillet" | "Chamfer" => group.extrude_role.is_none(),
+                    _ => false,
+                };
                 matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer")
+                    && role_is_valid
                     && usize::try_from(group.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
