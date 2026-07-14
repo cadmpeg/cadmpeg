@@ -86,7 +86,7 @@ impl StandardTopology {
                 *uses[body].entry(coedge.edge_row).or_default() += 1;
             }
         }
-        if bodies_by_edge.iter().any(|bodies| bodies.len() > 1) {
+        if bodies_by_edge.iter().any(|bodies| bodies.len() != 1) {
             return None;
         }
         Some(
@@ -5241,7 +5241,7 @@ mod motif_tests {
 
     #[test]
     fn open_standard_edge_incidence_classifies_a_sheet_body() {
-        let topology = StandardTopology {
+        let mut topology = StandardTopology {
             faces: vec![FaceTopology {
                 boundaries: vec![Boundary {
                     coedges: vec![CoedgeUse {
@@ -5252,15 +5252,24 @@ mod motif_tests {
                     }],
                 }],
             }],
-            edge_rows: vec![EdgeRow {
-                kind: 1,
-                handles: vec![0, 1],
-                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-            }],
+            edge_rows: vec![
+                EdgeRow {
+                    kind: 1,
+                    handles: vec![0, 1],
+                    boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+                },
+                EdgeRow {
+                    kind: 1,
+                    handles: vec![2, 3],
+                    boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+                },
+            ],
             vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
             logical_vertex_count: 2,
         };
 
+        assert_eq!(topology.body_kinds(&[1]), None);
+        topology.edge_rows.pop();
         assert_eq!(topology.body_kinds(&[1]), Some(vec![BodyKind::Sheet]));
     }
 
