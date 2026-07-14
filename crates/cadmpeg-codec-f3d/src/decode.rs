@@ -24,6 +24,77 @@ use crate::brep::{self, Brep};
 use crate::container::{self, BrepFacts, ContainerScan};
 use crate::{asm_header, materials, sab};
 
+fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
+    use std::collections::{HashMap, HashSet};
+
+    let parameters = native
+        .design_parameters
+        .iter()
+        .map(|parameter| {
+            (
+                (
+                    crate::design::native_stream(&parameter.id).unwrap_or("f3d:design"),
+                    parameter.record_index,
+                ),
+                parameter.kind,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let dimension_owners = native
+        .design_parameter_owners
+        .iter()
+        .filter_map(|owner| {
+            let stream = crate::design::native_stream(&owner.id).unwrap_or("f3d:design");
+            (parameters.get(&(stream, owner.parameter_record_index))
+                == Some(&crate::records::DesignParameterKind::Dimension))
+            .then_some((stream, owner.record_index))
+        })
+        .collect::<HashSet<_>>();
+    let mut typed = HashSet::new();
+    for pair in &native.design_dimension_locus_pairs {
+        typed.insert((
+            crate::design::native_stream(&pair.id).unwrap_or("f3d:design"),
+            pair.companion_record_index,
+        ));
+    }
+    for group in &native.design_dimension_locus_groups {
+        typed.insert((
+            crate::design::native_stream(&group.id).unwrap_or("f3d:design"),
+            group.companion_record_index,
+        ));
+    }
+    for pair in &native.design_dimension_null_locus_pairs {
+        typed.insert((
+            crate::design::native_stream(&pair.id).unwrap_or("f3d:design"),
+            pair.companion_record_index,
+        ));
+    }
+    native
+        .design_parameter_companions
+        .iter()
+        .filter(|companion| {
+            let stream = crate::design::native_stream(&companion.id).unwrap_or("f3d:design");
+            companion.payload_byte_length > 0
+                && dimension_owners.contains(&(stream, companion.owner_record_index))
+                && !typed.contains(&(stream, companion.record_index))
+        })
+        .count()
+}
+
+fn report_unresolved_dimension_companions(report: &mut DecodeReport, native: &F3dNative) {
+    let count = unresolved_dimension_companion_count(native);
+    if count != 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{count} payload-bearing Design dimension companion(s) were retained without a typed locus frame."
+            ),
+            provenance: None,
+        });
+    }
+}
+
 /// Decode a `.f3d` reader into a document and its loss report.
 pub fn decode(
     reader: &mut dyn ReadSeek,
@@ -239,6 +310,7 @@ pub fn decode(
             native.act_entities = act.entities;
             native.act_guids = act.guids;
             native.act_root_components = act.root_components;
+            report_unresolved_dimension_companions(&mut report, &native);
             if !native.lost_edge_references.is_empty() {
                 report.losses.push(LossNote {
                     category: LossCategory::Attribute,
@@ -455,7 +527,8 @@ pub fn decode(
     native.store(ir.native.namespace_mut("f3d"))?;
     populate_annotations(&mut ir, &scan, &native, None);
     preserve_source_image(&scan, &mut ir)?;
-    let report = build_container_report(&scan, false);
+    let mut report = build_container_report(&scan, false);
+    report_unresolved_dimension_companions(&mut report, &native);
     Ok(DecodeResult::new(ir, report))
 }
 
@@ -1478,5 +1551,95 @@ fn resolve_face_appearance_bindings(
                 channels: std::collections::BTreeMap::new(),
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unresolved_dimension_companion_count;
+    use crate::native::F3dNative;
+    use crate::records::{
+        DesignDimensionLocusPair, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+        DesignParameterOwner,
+    };
+
+    #[test]
+    fn payload_bearing_dimension_companion_requires_a_typed_locus_frame() {
+        let stream = "f3d:test/BulkStream.dat";
+        let mut native = F3dNative::default();
+        native.design_parameters.push(DesignParameter {
+            id: format!("{stream}:design-parameter#10"),
+            byte_offset: 0,
+            class_tag: "305".into(),
+            record_index: 10,
+            prefix_value: 0,
+            prefix_value_offset: 22,
+            source_ordinal: 0,
+            owner_record_index: Some(20),
+            expression: "5 mm".into(),
+            expression_offset: 40,
+            source_kind: "Linear Dimension-2".into(),
+            source_kind_offset: 60,
+            kind: DesignParameterKind::Dimension,
+            unit: Some("mm".into()),
+            unit_offset: Some(90),
+            name: "d1".into(),
+            name_offset: 100,
+            evaluated_value: 0.5,
+            evaluated_value_offset: 110,
+        });
+        native.design_parameter_owners.push(DesignParameterOwner {
+            id: format!("{stream}:design-parameter-owner#20"),
+            byte_offset: 120,
+            class_tag: "292".into(),
+            record_index: 20,
+            scope_record_index: 1,
+            local_ordinal: 0,
+            evaluated_value: 0.5,
+            evaluated_value_offset: 160,
+            parameter_record_index: 10,
+            owned_ordinal: 0,
+            variant: 0,
+            companion_record_index: 30,
+        });
+        native
+            .design_parameter_companions
+            .push(DesignParameterCompanion {
+                id: format!("{stream}:design-parameter-companion#30"),
+                byte_offset: 220,
+                class_tag: "408".into(),
+                record_index: 30,
+                owner_record_index: 20,
+                timestamp_micros: 1,
+                timestamp_micros_offset: 262,
+                payload_byte_offset: 278,
+                payload_byte_length: 100,
+                owned_recipe_ids: Vec::new(),
+            });
+        assert_eq!(unresolved_dimension_companion_count(&native), 1);
+
+        native
+            .design_dimension_locus_pairs
+            .push(DesignDimensionLocusPair {
+                id: format!("{stream}:design-dimension-locus-pair#278"),
+                companion_record_index: 30,
+                byte_offset: 278,
+                class_tag: "423".into(),
+                record_index: 31,
+                frame_length: 100,
+                opaque_index: 0,
+                opaque_index_offset: 300,
+                first_geometry_record_index: 40,
+                first_geometry_reference_offset: 305,
+                first_role: 1,
+                first_role_offset: 315,
+                second_geometry_record_index: 41,
+                second_geometry_reference_offset: 320,
+                second_role: 2,
+                second_role_offset: 330,
+                paired_class_tag: "259".into(),
+                paired_byte_offset: 378,
+            });
+        assert_eq!(unresolved_dimension_companion_count(&native), 0);
     }
 }
