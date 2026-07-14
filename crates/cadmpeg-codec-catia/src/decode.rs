@@ -14,9 +14,10 @@
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, PcurveGeometry,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    RollingBallJetDerivative, RollingBallJetSite, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
+    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -2286,6 +2287,52 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
                 extension_flags: Vec::new(),
             },
             cache_fit_tolerance: None,
+        });
+    }
+
+    for guide in geometry::a5_guide_curves(data) {
+        let points = guide
+            .sites
+            .iter()
+            .map(|site| site.point)
+            .collect::<Vec<_>>();
+        let first = guide
+            .first_derivatives
+            .iter()
+            .map(|value| [value[0], value[1], value[2]])
+            .collect::<Vec<_>>();
+        let second = guide
+            .second_derivatives
+            .iter()
+            .map(|value| [value[0], value[1], value[2]])
+            .collect::<Vec<_>>();
+        let Some((knots, control_points)) =
+            geometry::quintic_jet_bspline3(guide.degree, &guide.knots, &points, &first, &second)
+        else {
+            continue;
+        };
+        let id = CurveId(format!("catia:guide:curve#{}", ir.model.curves.len()));
+        annotate(
+            annotations,
+            &id,
+            "consolidated_a5_03_39",
+            guide.pos as u64,
+            format!("header_token:{:08x}", guide.header_token),
+            Exactness::Derived,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Nurbs(NurbsCurve {
+                degree: guide.degree,
+                knots,
+                control_points: control_points
+                    .into_iter()
+                    .map(|point| Point3::new(point[0], point[1], point[2]))
+                    .collect(),
+                weights: None,
+                periodic: false,
+            }),
+            source_object: None,
         });
     }
 

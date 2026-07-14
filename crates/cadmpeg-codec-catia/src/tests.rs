@@ -10,7 +10,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::variant::Variant;
@@ -4479,6 +4479,47 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
     assert_eq!(curves[0].sites[0].point, [0.0, 0.0, 0.0]);
     assert_eq!(curves[0].sites[0].direction, [1.0, 0.0, 0.0]);
     assert_eq!(curves[0].sites[1].direction, [0.0, 1.0, 0.0]);
+    let points = curves[0]
+        .sites
+        .iter()
+        .map(|site| site.point)
+        .collect::<Vec<_>>();
+    let derivatives = vec![[0.0; 3]; 2];
+    let (knots, controls) = crate::geometry::quintic_jet_bspline3(
+        curves[0].degree,
+        &curves[0].knots,
+        &points,
+        &derivatives,
+        &derivatives,
+    )
+    .expect("exact 3D quintic jet");
+    assert_eq!(knots, [vec![0.0; 6], vec![1.0; 6]].concat());
+    assert_eq!(controls.first(), Some(&[0.0, 0.0, 0.0]));
+    assert_eq!(controls.last(), Some(&[2.0, 3.0, 4.0]));
+}
+
+#[test]
+fn standard_decode_transfers_consolidated_guide_curve() {
+    let mut bytes = standard_catpart();
+    bytes.splice(16..16, a5_guide_curve_stream());
+    let file_len = u32::try_from(bytes.len()).expect("guide fixture length");
+    bytes[8..12].copy_from_slice(&be32(file_len));
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode guide fixture");
+    let guide = decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0.starts_with("catia:guide:curve#"))
+        .expect("typed guide curve");
+    let CurveGeometry::Nurbs(nurbs) = &guide.geometry else {
+        panic!("guide curve must be NURBS");
+    };
+    assert_eq!(nurbs.degree, 5);
+    assert_eq!(nurbs.control_points.first().unwrap().x, 0.0);
+    assert_eq!(nurbs.control_points.last().unwrap().z, 4.0);
 }
 
 #[test]

@@ -3285,6 +3285,27 @@ pub(crate) fn quintic_jet_bspline(
     first: &[[f64; 2]],
     second: &[[f64; 2]],
 ) -> Option<(Vec<f64>, Vec<[f64; 2]>)> {
+    quintic_jet_bspline_nd(degree, knots, points, first, second)
+}
+
+/// Convert a 3D degree-5 position/derivative jet to an exact B-spline.
+pub(crate) fn quintic_jet_bspline3(
+    degree: u32,
+    knots: &[f64],
+    points: &[[f64; 3]],
+    first: &[[f64; 3]],
+    second: &[[f64; 3]],
+) -> Option<(Vec<f64>, Vec<[f64; 3]>)> {
+    quintic_jet_bspline_nd(degree, knots, points, first, second)
+}
+
+fn quintic_jet_bspline_nd<const N: usize>(
+    degree: u32,
+    knots: &[f64],
+    points: &[[f64; N]],
+    first: &[[f64; N]],
+    second: &[[f64; N]],
+) -> Option<(Vec<f64>, Vec<[f64; N]>)> {
     if degree != 5
         || knots.len() < 2
         || points.len() != knots.len()
@@ -3308,16 +3329,14 @@ pub(crate) fn quintic_jet_bspline(
         let dd1 = second[index + 1];
         controls.extend([
             p0,
-            [p0[0] + h * d0[0] / 5.0, p0[1] + h * d0[1] / 5.0],
-            [
-                p0[0] + 2.0 * h * d0[0] / 5.0 + h * h * dd0[0] / 20.0,
-                p0[1] + 2.0 * h * d0[1] / 5.0 + h * h * dd0[1] / 20.0,
-            ],
-            [
-                p1[0] - 2.0 * h * d1[0] / 5.0 + h * h * dd1[0] / 20.0,
-                p1[1] - 2.0 * h * d1[1] / 5.0 + h * h * dd1[1] / 20.0,
-            ],
-            [p1[0] - h * d1[0] / 5.0, p1[1] - h * d1[1] / 5.0],
+            std::array::from_fn(|axis| p0[axis] + h * d0[axis] / 5.0),
+            std::array::from_fn(|axis| {
+                p0[axis] + 2.0 * h * d0[axis] / 5.0 + h * h * dd0[axis] / 20.0
+            }),
+            std::array::from_fn(|axis| {
+                p1[axis] - 2.0 * h * d1[axis] / 5.0 + h * h * dd1[axis] / 20.0
+            }),
+            std::array::from_fn(|axis| p1[axis] - h * d1[axis] / 5.0),
             p1,
         ]);
         full_knots.extend([knots[index + 1]; 6]);
