@@ -66,7 +66,7 @@ pub fn decode(
 
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
-        if let Some((decoded, report)) = try_decode_brep(&scan, &streams) {
+        if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
             let ir = build_geometry_ir(
                 &scan,
                 streams[decoded.selected].block,
@@ -74,6 +74,7 @@ pub fn decode(
                 decoded.brep,
                 &decoded.configuration_bodies,
             )?;
+            append_design_losses(&ir, &mut report);
             return Ok(DecodeResult::new(ir, report));
         }
     }
@@ -81,6 +82,75 @@ pub fn decode(
     let ir = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
     Ok(DecodeResult::new(ir, report))
+}
+
+fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
+    use cadmpeg_ir::features::{BodyRetentionMode, FeatureDefinition};
+    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+
+    let native_constraints = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| {
+            matches!(
+                constraint.definition,
+                SketchConstraintDefinition::Native { .. }
+            )
+        })
+        .count();
+    if native_constraints > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{native_constraints} sketch constraint(s) retain native relation kinds and operands without complete neutral geometric semantics."
+            ),
+            provenance: None,
+        });
+    }
+
+    let native_features = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| matches!(feature.definition, FeatureDefinition::Native { .. }))
+        .count();
+    if native_features > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{native_features} feature(s) retain their native kind without a complete neutral operation definition."
+            ),
+            provenance: None,
+        });
+    }
+
+    let unresolved_body_modes = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.definition,
+                FeatureDefinition::DeleteBody {
+                    mode: BodyRetentionMode::Unresolved,
+                    ..
+                }
+            )
+        })
+        .count();
+    if unresolved_body_modes > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_body_modes} body delete/keep feature(s) retain selected native body identities without a decoded retention mode."
+            ),
+            provenance: None,
+        });
+    }
 }
 
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream

@@ -15678,6 +15678,9 @@ fn decode_and_validate_compact_delete_body_selection() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    assert!(decoded.report.losses.iter().any(|loss| loss
+        .message
+        .contains("body delete/keep feature(s) retain selected native body identities")));
     let mut native = sldprt_native(&decoded.ir);
     let [selection] = native.feature_input_lanes[0].body_selections.as_slice() else {
         panic!("one compact body selection");
