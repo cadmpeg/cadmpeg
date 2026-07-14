@@ -675,6 +675,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.changed_candidate_faces.clear();
         operand.preceding_boundary_edge_slots.clear();
         operand.changed_boundary_edge_slots.clear();
+        operand.changed_boundary_edge_contexts.clear();
         operand.recipe_reference_contexts.clear();
         operand.recipe_candidate_edge_slots.clear();
         let stream = crate::design::native_stream(&operand.id);
@@ -726,6 +727,12 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .copied()
             .filter(|edge| changed_edges.contains(edge))
             .collect();
+        operand.changed_boundary_edge_contexts = operand
+            .changed_boundary_edge_slots
+            .iter()
+            .copied()
+            .map(|edge| historical_edge_context(edge, topology))
+            .collect();
         operand.recipe_reference_contexts = operand
             .recipe_references
             .iter()
@@ -755,14 +762,11 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 })
             })
             .collect();
-        operand.recipe_candidate_edge_slots = recipe_boundary_count_candidates(operand, topology);
+        operand.recipe_candidate_edge_slots = recipe_boundary_count_candidates(operand);
     }
 }
 
-fn recipe_boundary_count_candidates(
-    operand: &crate::records::DesignEdgeOperand,
-    topology: &AsmHistoricalTopology,
-) -> Vec<i64> {
+fn recipe_boundary_count_candidates(operand: &crate::records::DesignEdgeOperand) -> Vec<i64> {
     let Some(structure) = &operand.recipe_structure else {
         return Vec::new();
     };
@@ -781,14 +785,73 @@ fn recipe_boundary_count_candidates(
         })
         .collect::<Vec<_>>();
     operand
-        .changed_boundary_edge_slots
+        .changed_boundary_edge_contexts
         .iter()
-        .copied()
-        .filter(|edge| {
-            let counts = edge_incident_loop_counts(*edge, topology);
+        .filter(|context| {
+            let counts = context
+                .incident_loops
+                .iter()
+                .map(|incident| i64::from(incident.boundary_edge_count))
+                .collect::<Vec<_>>();
             incident_loop_counts_satisfy_sides(&counts, &required)
         })
+        .map(|context| context.edge_slot)
         .collect()
+}
+
+fn historical_edge_context(
+    edge: i64,
+    topology: &AsmHistoricalTopology,
+) -> crate::records::DesignHistoricalEdgeContext {
+    let mut incident_loops = topology
+        .coedge_topology
+        .iter()
+        .filter(|coedge| coedge.edge == edge)
+        .filter_map(|coedge| {
+            let loop_relation = topology
+                .loop_coedges
+                .iter()
+                .find(|relation| relation.owner_ref == coedge.owner_loop)?;
+            let ordinal = loop_relation
+                .member_refs
+                .iter()
+                .position(|candidate| *candidate == coedge.coedge)?;
+            let boundary_edge_count = u32::try_from(loop_relation.member_refs.len()).ok()?;
+            let coedge_ordinal = u32::try_from(ordinal).ok()?;
+            let previous_coedge = loop_relation.member_refs.get(
+                (ordinal + loop_relation.member_refs.len() - 1) % loop_relation.member_refs.len(),
+            )?;
+            let next_coedge = loop_relation
+                .member_refs
+                .get((ordinal + 1) % loop_relation.member_refs.len())?;
+            let edge_for_coedge = |slot| {
+                topology
+                    .coedge_topology
+                    .iter()
+                    .find(|candidate| candidate.coedge == slot)
+                    .map(|candidate| candidate.edge)
+            };
+            let face_slot = topology
+                .face_loops
+                .iter()
+                .find(|relation| relation.member_refs.contains(&coedge.owner_loop))?
+                .owner_ref;
+            Some(crate::records::DesignHistoricalEdgeLoopContext {
+                coedge_slot: coedge.coedge,
+                loop_slot: coedge.owner_loop,
+                face_slot,
+                boundary_edge_count,
+                coedge_ordinal,
+                previous_edge_slot: edge_for_coedge(*previous_coedge)?,
+                next_edge_slot: edge_for_coedge(*next_coedge)?,
+            })
+        })
+        .collect::<Vec<_>>();
+    incident_loops.sort_by_key(|context| context.coedge_slot);
+    crate::records::DesignHistoricalEdgeContext {
+        edge_slot: edge,
+        incident_loops,
+    }
 }
 
 fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Option<i64>]) -> bool {
@@ -800,23 +863,6 @@ fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Option<i64>]) 
         available.remove(index);
         true
     })
-}
-
-fn edge_incident_loop_counts(edge: i64, topology: &AsmHistoricalTopology) -> Vec<i64> {
-    let owner_loops = topology
-        .coedge_topology
-        .iter()
-        .filter(|coedge| coedge.edge == edge)
-        .map(|coedge| coedge.owner_loop)
-        .collect::<HashSet<_>>();
-    let mut counts = topology
-        .loop_coedges
-        .iter()
-        .filter(|relation| owner_loops.contains(&relation.owner_ref))
-        .filter_map(|relation| i64::try_from(relation.member_refs.len()).ok())
-        .collect::<Vec<_>>();
-    counts.sort_unstable();
-    counts
 }
 
 fn bind_face_selection(
@@ -1643,7 +1689,21 @@ mod tests {
         assert_eq!(topology.loop_coedges[0].member_refs, [6]);
         assert_eq!(topology.coedge_topology[0].edge, 7);
         assert_eq!(topology.coedge_topology[0].radial_next, 6);
-        assert_eq!(edge_incident_loop_counts(7, &topology), [1]);
+        assert_eq!(
+            historical_edge_context(7, &topology),
+            crate::records::DesignHistoricalEdgeContext {
+                edge_slot: 7,
+                incident_loops: vec![crate::records::DesignHistoricalEdgeLoopContext {
+                    coedge_slot: 6,
+                    loop_slot: 5,
+                    face_slot: 4,
+                    boundary_edge_count: 1,
+                    coedge_ordinal: 0,
+                    previous_edge_slot: 7,
+                    next_edge_slot: 7,
+                }],
+            }
+        );
         assert!(incident_loop_counts_satisfy_sides(
             &[4, 5],
             &[Some(5), Some(4)]

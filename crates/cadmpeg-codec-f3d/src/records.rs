@@ -1079,6 +1079,9 @@ pub struct DesignEdgeOperand {
     /// Preceding boundary-edge slots deleted or updated by the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed_boundary_edge_slots: Vec<i64>,
+    /// Ordered incident-loop topology for every changed boundary edge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
     /// Ordered historical topology context for each prefix reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recipe_reference_contexts: Vec<DesignEdgeRecipeReferenceContext>,
@@ -1104,6 +1107,34 @@ pub struct DesignEdgeRecipeReferenceContext {
     pub shared_edge_slots: Vec<i64>,
     /// Shared edge slots deleted or updated by the owning feature transition.
     pub changed_shared_edge_slots: Vec<i64>,
+}
+
+/// Historical topology surrounding one candidate edge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignHistoricalEdgeContext {
+    /// Stable ASM edge slot.
+    pub edge_slot: i64,
+    /// Incident coedge uses in stable coedge-slot order.
+    pub incident_loops: Vec<DesignHistoricalEdgeLoopContext>,
+}
+
+/// One historical coedge use of a candidate edge and its ordered loop neighbors.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignHistoricalEdgeLoopContext {
+    /// Stable ASM coedge slot using the candidate edge.
+    pub coedge_slot: i64,
+    /// Stable ASM owner-loop slot.
+    pub loop_slot: i64,
+    /// Stable ASM owner-face slot.
+    pub face_slot: i64,
+    /// Number of coedges in the owner loop.
+    pub boundary_edge_count: u32,
+    /// Zero-based position of this coedge in the owner loop's ordered membership.
+    pub coedge_ordinal: u32,
+    /// Stable edge slot used by the preceding coedge.
+    pub previous_edge_slot: i64,
+    /// Stable edge slot used by the following coedge.
+    pub next_edge_slot: i64,
 }
 
 /// Standard delimiter structure following an edge recipe's common prologue.
