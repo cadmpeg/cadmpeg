@@ -1596,12 +1596,21 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
         b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
     payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
+    let definition_length = payload.len();
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let offset = container::scan_bytes(data.clone()).feature_definitions[0].offset as u64;
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
 
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
     assert_eq!(namespace.version, 1);
+    let definitions = &namespace.arenas["feature_definitions"];
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0].id, "creo:featdefs:feature_definition#40");
+    assert_eq!(definitions[0].fields["definition_id"], 40);
+    assert_eq!(
+        definitions[0].fields["body"].as_array().unwrap().len(),
+        definition_length
+    );
     let sketches = &namespace.arenas["sketches"];
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].id, "creo:featdefs:sketch#40");

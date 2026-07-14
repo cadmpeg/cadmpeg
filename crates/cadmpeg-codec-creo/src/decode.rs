@@ -66,6 +66,15 @@ struct CreoSketchRecord {
 }
 
 #[derive(Serialize)]
+struct CreoFeatureDefinitionRecord {
+    id: String,
+    definition_id: u32,
+    owner_feature_id: Option<u32>,
+    body: Vec<u8>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
 struct CreoSketchTrimEntity {
     external_id: u32,
     mode: Option<u32>,
@@ -976,6 +985,35 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .collect(),
         })
         .collect()
+}
+
+fn feature_definition_record_id(definition_id: u32) -> String {
+    format!("creo:featdefs:feature_definition#{definition_id}")
+}
+
+fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatureDefinitionRecord> {
+    scan.feature_definitions
+        .iter()
+        .map(|definition| CreoFeatureDefinitionRecord {
+            id: feature_definition_record_id(definition.id),
+            definition_id: definition.id,
+            owner_feature_id: definition.owner_feature_id,
+            body: definition.body.clone(),
+            offset: definition.offset,
+        })
+        .collect()
+}
+
+fn owning_feature_definition_ref(scan: &ContainerScan, feature_id: u32) -> Option<String> {
+    let definitions = scan
+        .feature_definitions
+        .iter()
+        .filter(|definition| definition.owner_feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let [definition] = definitions.as_slice() else {
+        return None;
+    };
+    Some(feature_definition_record_id(definition.id))
 }
 
 fn section_line_geometry(
@@ -13713,6 +13751,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             crate::feature::FeatureRecipeKind::Extrude => "protextrude".to_string(),
             crate::feature::FeatureRecipeKind::Revolve => "protrevolve".to_string(),
         });
+        let native_ref = owning_feature_definition_ref(scan, operation.feature_id);
         if let Some(existing) = ir
             .model
             .features
@@ -13733,6 +13772,9 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             existing.source_properties.extend(source_properties);
             if source_tag.is_some() {
                 existing.source_tag = source_tag;
+            }
+            if existing.native_ref.is_none() {
+                existing.native_ref = native_ref;
             }
             for output in outputs {
                 if !existing.outputs.contains(&output) {
@@ -13766,7 +13808,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             source_content: Vec::new(),
             outputs,
             definition,
-            native_ref: None,
+            native_ref,
         });
     }
     for row in &scan.feature_rows {
@@ -13810,7 +13852,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             source_content: Vec::new(),
             outputs: feature_output_bodies(scan, &ir, row.feature_id),
             definition,
-            native_ref: None,
+            native_ref: owning_feature_definition_ref(scan, row.feature_id),
         });
     }
     transfer_curve_expression_features(scan, &mut ir, &mut annotations);
@@ -13850,6 +13892,22 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("pcurve_endpoints", &records)?;
+    }
+    let feature_definitions = feature_definition_records(scan);
+    if !feature_definitions.is_empty() {
+        for definition in &feature_definitions {
+            annotate(
+                &mut annotations,
+                &definition.id,
+                "FeatDefs",
+                definition.offset as u64,
+                "feature_definition_record",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_definitions", &feature_definitions)?;
     }
     let sketches = sketch_records(scan);
     if !sketches.is_empty() {
