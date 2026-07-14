@@ -609,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "40");
+    assert_eq!(result.ir.ir_version, "41");
     let feature = |name: &str| {
         &result
             .ir
@@ -2711,10 +2711,13 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
  <ObjectDeps Name="Pad"><Dep Name="Sheet"/></ObjectDeps>
 </Objects>
 <ObjectData Count="2">
- <Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2" xlink="1">
-  <Cell address="A1" content="5" alias="width" displayUnit="mm"/>
+ <Object name="Sheet"><Properties Count="3"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2" xlink="1">
+  <Cell address="A1" content="5" alias="width" displayUnit="mm" rowSpan="1" colSpan="2"/>
   <Cell address="A2" content="=width * 3" alias="height" style="bold"/>
- </Cells></Property></Properties></Object>
+ </Cells></Property>
+ <Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="2"><Column name="A" width="120"/><Column name="B" width="80"/></ColumnInfo></Property>
+ <Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><RowInfo Count="1"><Row name="2" height="45"/></RowInfo></Property>
+ </Properties></Object>
  <Object name="Pad"><Properties Count="2">
   <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
   <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="Sheet.width * 2"/></ExpressionEngine></Property>
@@ -2756,6 +2759,48 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .find(|parameter| parameter.owner == pad.id && parameter.name == "Length")
         .expect("pad length");
     assert_eq!(length.dependencies, vec![width.id.clone()]);
+    let sheet = result.ir.model.spreadsheets.first().expect("sheet state");
+    assert_eq!(sheet.feature.0, "fcstd:design:feature#Sheet");
+    assert_eq!(sheet.cells.len(), 2);
+    assert_eq!(
+        sheet.column_widths,
+        [
+            cadmpeg_ir::SpreadsheetDimension {
+                name: "A".into(),
+                pixels: 120,
+            },
+            cadmpeg_ir::SpreadsheetDimension {
+                name: "B".into(),
+                pixels: 80,
+            },
+        ]
+    );
+    assert_eq!(
+        sheet.row_heights,
+        [cadmpeg_ir::SpreadsheetDimension {
+            name: "2".into(),
+            pixels: 45,
+        }]
+    );
+    assert_eq!(
+        sheet.merged_ranges,
+        [cadmpeg_ir::SpreadsheetRange {
+            start: "A1".into(),
+            end: "B1".into(),
+        }]
+    );
+    assert_valid_document(&result.ir);
+    let mut corrupted = result.ir.clone();
+    corrupted.model.spreadsheets[0]
+        .merged_ranges
+        .push(cadmpeg_ir::SpreadsheetRange {
+            start: "A1".into(),
+            end: "A2".into(),
+        });
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("merged ranges overlap")));
 }
 
 #[test]

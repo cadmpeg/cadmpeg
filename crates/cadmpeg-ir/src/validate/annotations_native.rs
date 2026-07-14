@@ -5,6 +5,7 @@
 use super::*;
 use crate::features::{DesignConfiguration, DesignParameter};
 use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
+use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 
 macro_rules! define_model_entity_json {

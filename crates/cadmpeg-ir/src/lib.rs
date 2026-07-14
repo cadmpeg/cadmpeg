@@ -50,6 +50,7 @@ mod provenance;
 pub mod read;
 pub mod report;
 pub mod sketches;
+pub mod spreadsheets;
 pub mod subd;
 pub mod tessellation;
 pub mod topology;
@@ -80,6 +81,7 @@ pub use sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
 };
+pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,

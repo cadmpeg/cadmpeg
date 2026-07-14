@@ -23,6 +23,9 @@ use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
 };
+use cadmpeg_ir::spreadsheets::{
+    Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange,
+};
 
 use crate::brep::ShapePayloadRecord;
 use crate::native::{ObjectRecord, PropertyRecord, ValueRecord};
@@ -88,7 +91,11 @@ pub(crate) fn transfer(
             .unwrap_or_default();
         let id = feature_id(object);
         let definition = if is_spreadsheet(&object.type_name) {
-            append_spreadsheet_parameters(&mut ir.model.parameters, object, &owned)?;
+            ir.model.spreadsheets.push(append_spreadsheet(
+                &mut ir.model.parameters,
+                object,
+                &owned,
+            )?);
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::Equations,
                 children: Vec::new(),
@@ -426,18 +433,18 @@ fn post_processed_definition(
     })
 }
 
-fn append_spreadsheet_parameters(
+fn append_spreadsheet(
     parameters: &mut Vec<DesignParameter>,
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
-) -> Result<(), CodecError> {
-    let Some(property) = properties
+) -> Result<Spreadsheet, CodecError> {
+    let property = properties
         .iter()
         .copied()
         .find(|property| property.type_name.contains("PropertySheet") || property.name == "cells")
-    else {
-        return Ok(());
-    };
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("spreadsheet {} has no cells property", object.id))
+        })?;
     let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
         CodecError::Malformed(format!("invalid spreadsheet {}: {error}", property.id))
     })?;
@@ -468,6 +475,8 @@ fn append_spreadsheet_parameters(
             records.len()
         )));
     }
+    let mut cell_ids = Vec::with_capacity(records.len());
+    let mut merged_ranges = Vec::new();
     for (index, cell) in records.into_iter().enumerate() {
         let address = cell
             .attribute("address")
@@ -489,11 +498,16 @@ fn append_spreadsheet_parameters(
                 retained.insert(attribute.into(), value.to_owned());
             }
         }
+        let id = ParameterId(format!(
+            "fcstd:design:parameter#{}:cell:{address}",
+            object.name
+        ));
+        cell_ids.push(id.clone());
+        if let Some(range) = merged_range(cell)? {
+            merged_ranges.push(range);
+        }
         parameters.push(DesignParameter {
-            id: ParameterId(format!(
-                "fcstd:design:parameter#{}:cell:{address}",
-                object.name
-            )),
+            id,
             owner: feature_id(object),
             ordinal: index as u32,
             name: name.to_owned(),
@@ -508,7 +522,133 @@ fn append_spreadsheet_parameters(
             native_ref: Some(property.id.clone()),
         });
     }
-    Ok(())
+    Ok(Spreadsheet {
+        id: SpreadsheetId(format!("fcstd:design:spreadsheet#{}", object.name)),
+        feature: feature_id(object),
+        cells: cell_ids,
+        column_widths: spreadsheet_dimensions(
+            properties,
+            "PropertyColumnWidths",
+            "Column",
+            "width",
+        )?,
+        row_heights: spreadsheet_dimensions(properties, "PropertyRowHeights", "Row", "height")?,
+        merged_ranges,
+        native_ref: Some(object.id.clone()),
+    })
+}
+
+fn spreadsheet_dimensions(
+    properties: &[&PropertyRecord],
+    type_name: &str,
+    element: &str,
+    value_name: &str,
+) -> Result<Vec<SpreadsheetDimension>, CodecError> {
+    let Some(property) = properties
+        .iter()
+        .copied()
+        .find(|property| property.type_name.contains(type_name))
+    else {
+        return Ok(Vec::new());
+    };
+    let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+        CodecError::Malformed(format!(
+            "invalid spreadsheet dimension {}: {error}",
+            property.id
+        ))
+    })?;
+    let root = xml
+        .descendants()
+        .find(|node| node.children().any(|child| child.has_tag_name(element)))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("{} has no dimension container", property.id))
+        })?;
+    let records = root
+        .children()
+        .filter(|node| node.has_tag_name(element))
+        .collect::<Vec<_>>();
+    let declared = root
+        .attribute("Count")
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("{} has invalid dimension count", property.id))
+        })?;
+    if declared != records.len() || declared > MAX_SKETCH_RECORDS {
+        return Err(CodecError::Malformed(format!(
+            "{} dimension count does not match its records",
+            property.id
+        )));
+    }
+    records
+        .into_iter()
+        .map(|record| {
+            let name = record.attribute("name").ok_or_else(|| {
+                CodecError::Malformed(format!("{} dimension has no name", property.id))
+            })?;
+            let pixels = record
+                .attribute(value_name)
+                .and_then(|value| value.parse::<u32>().ok())
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("{} dimension has invalid size", property.id))
+                })?;
+            Ok(SpreadsheetDimension {
+                name: name.to_owned(),
+                pixels,
+            })
+        })
+        .collect()
+}
+
+fn merged_range(cell: roxmltree::Node<'_, '_>) -> Result<Option<SpreadsheetRange>, CodecError> {
+    let rows = cell
+        .attribute("rowSpan")
+        .map_or(Ok(1_u32), str::parse::<u32>)
+        .map_err(|_| CodecError::Malformed("spreadsheet cell has invalid row span".into()))?;
+    let columns = cell
+        .attribute("colSpan")
+        .map_or(Ok(1_u32), str::parse::<u32>)
+        .map_err(|_| CodecError::Malformed("spreadsheet cell has invalid column span".into()))?;
+    if rows == 0 || columns == 0 {
+        return Err(CodecError::Malformed(
+            "spreadsheet cell has a zero span".into(),
+        ));
+    }
+    if rows == 1 && columns == 1 {
+        return Ok(None);
+    }
+    let start = cell
+        .attribute("address")
+        .ok_or_else(|| CodecError::Malformed("spreadsheet cell has no address".into()))?;
+    let end = offset_cell_address(start, rows - 1, columns - 1)
+        .ok_or_else(|| CodecError::Malformed("spreadsheet cell span is out of range".into()))?;
+    Ok(Some(SpreadsheetRange {
+        start: start.to_owned(),
+        end,
+    }))
+}
+
+fn offset_cell_address(address: &str, rows: u32, columns: u32) -> Option<String> {
+    let split = address.find(|character: char| character.is_ascii_digit())?;
+    let mut column = address[..split].bytes().try_fold(0_u32, |value, byte| {
+        byte.is_ascii_uppercase().then(|| {
+            value
+                .checked_mul(26)?
+                .checked_add(u32::from(byte - b'A' + 1))
+        })?
+    })?;
+    let row = address[split..].parse::<u32>().ok()?.checked_add(rows)?;
+    column = column.checked_add(columns)?;
+    if row == 0 || column == 0 {
+        return None;
+    }
+    let mut label = Vec::new();
+    while column > 0 {
+        column -= 1;
+        label.push(b'A' + (column % 26) as u8);
+        column /= 26;
+    }
+    label.reverse();
+    Some(format!("{}{row}", String::from_utf8(label).ok()?))
 }
 
 fn append_operation_parameters(

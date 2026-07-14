@@ -150,7 +150,10 @@ content, display unit, alignment, style, colors, and spans are retained independ
 content supplies a dimensionless evaluated value, while formula content remains an expression.
 Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet and feature
 parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
-match their declared framing.
+match their declared framing. A neutral sheet record binds those cell identities to the owning
+feature and retains ordered non-default column widths, row heights, and inclusive merged ranges.
+Dimension counts must match their records; names, addresses, ownership, merged anchors, duplicate
+cells, and overlapping merged ranges are validated.
 
 ## Product structure
 
