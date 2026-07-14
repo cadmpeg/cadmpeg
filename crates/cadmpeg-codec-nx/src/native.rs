@@ -463,6 +463,35 @@ pub struct FeatureOperationBody11Continuation {
     pub terminal_source_offset: u64,
 }
 
+/// Homogeneous value encoding in a branch-`1c` body-reference lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureOperationBody1cLaneEncoding {
+    /// NX OM compact-index encoding.
+    CompactIndex,
+    /// `f0`/`f1` payload object-index encoding.
+    PayloadObjectIndex,
+}
+
+/// Counted reference lane following a branch-`1c` body scalar clause.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationBody1cReferenceLane {
+    /// Globally unique lane identity.
+    pub id: String,
+    /// Owning operation label.
+    pub operation_label: String,
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Serialized body object index.
+    pub body_object_index: u32,
+    /// Homogeneous encoding used by every lane value.
+    pub encoding: FeatureOperationBody1cLaneEncoding,
+    /// Ordered decoded indices.
+    pub object_indices: Vec<u32>,
+    /// Absolute file offsets of the encoded index markers.
+    pub source_offsets: Vec<u64>,
+}
+
 /// Structured `32` branch following an extrusion body-reference field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureExtrudePayload32Branch {
@@ -1316,6 +1345,62 @@ pub fn feature_operation_body_11_continuations(
         }
     }
     continuations
+}
+
+/// Decode complete counted reference lanes following branch-`1c` body clauses.
+pub fn feature_operation_body_1c_reference_lanes(
+    container: &Container,
+) -> Vec<FeatureOperationBody1cReferenceLane> {
+    let sections = container.om_sections();
+    let mut lanes = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            for lane in crate::om::operation_body_1c_reference_lanes(record) {
+                let encoding = match lane.encoding {
+                    crate::om::OperationBody1cLaneEncoding::CompactIndex => {
+                        FeatureOperationBody1cLaneEncoding::CompactIndex
+                    }
+                    crate::om::OperationBody1cLaneEncoding::PayloadObjectIndex => {
+                        FeatureOperationBody1cLaneEncoding::PayloadObjectIndex
+                    }
+                };
+                lanes.push(FeatureOperationBody1cReferenceLane {
+                    id: format!(
+                        "nx:feature-history:operation-body-1c-reference-lane#{section_key}-{operation_ordinal}-{}",
+                        lane.body_reference_ordinal
+                    ),
+                    operation_label: format!(
+                        "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                    ),
+                    body_reference_ordinal: lane.body_reference_ordinal,
+                    body_object_index: lane.body_object_index,
+                    encoding,
+                    object_indices: lane.values.iter().map(|value| value.object_index).collect(),
+                    source_offsets: lane
+                        .values
+                        .iter()
+                        .map(|value| entry_offset + value.offset as u64)
+                        .collect(),
+                });
+            }
+        }
+    }
+    lanes
 }
 
 /// Decode structured `32` branches following extrusion body-reference fields.

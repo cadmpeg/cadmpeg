@@ -359,6 +359,39 @@ pub struct OperationBody11Continuation {
     pub terminal_offset: usize,
 }
 
+/// Homogeneous value encoding in a branch-`1c` body-reference lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationBody1cLaneEncoding {
+    /// NX OM compact-index encoding.
+    CompactIndex,
+    /// `f0`/`f1` payload object-index encoding.
+    PayloadObjectIndex,
+}
+
+/// One value in a bounded branch-`1c` body-reference lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationBody1cLaneValue {
+    /// Zero-based value order.
+    pub ordinal: u32,
+    /// Decoded index.
+    pub object_index: u32,
+    /// Absolute offset of the encoded index marker.
+    pub offset: usize,
+}
+
+/// Counted reference lane following a branch-`1c` body scalar clause.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationBody1cReferenceLane {
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Serialized body object index.
+    pub body_object_index: u32,
+    /// Homogeneous encoding used by every lane value.
+    pub encoding: OperationBody1cLaneEncoding,
+    /// Ordered non-null lane values.
+    pub values: Vec<OperationBody1cLaneValue>,
+}
+
 /// Structured `32` branch following an extrusion body reference.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtrudePayload32Branch {
@@ -1041,6 +1074,90 @@ pub fn operation_body_11_continuations(
             })
         })
         .collect()
+}
+
+/// Decode complete counted reference lanes following branch-`1c` body clauses.
+pub fn operation_body_1c_reference_lanes(
+    record: OperationRecord<'_>,
+) -> Vec<OperationBody1cReferenceLane> {
+    operation_body_references(record)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(body_ordinal, reference)| {
+            let token = reference.offset.checked_sub(record.offset)?;
+            let (_, end) = feature_object_index(record.bytes, token)?;
+            if record.bytes.get(end..end + 2) != Some(&[0xff, 0x1c]) {
+                return None;
+            }
+            let mut at = end + 2;
+            for _ in 0..3 {
+                let (_, _, width) = payload_scalar(record.bytes.get(at..)?)?;
+                at += width;
+            }
+            if record.bytes.get(at) != Some(&0x01) {
+                return None;
+            }
+            let count = usize::from(*record.bytes.get(at + 1)?);
+            if count < 2 {
+                return None;
+            }
+            at += 2;
+            let compact = operation_body_1c_lane_values(
+                record,
+                at,
+                count - 1,
+                OperationBody1cLaneEncoding::CompactIndex,
+            );
+            let objects = operation_body_1c_lane_values(
+                record,
+                at,
+                count - 1,
+                OperationBody1cLaneEncoding::PayloadObjectIndex,
+            );
+            let (encoding, values) = match (compact, objects) {
+                (Some(values), None) => (OperationBody1cLaneEncoding::CompactIndex, values),
+                (None, Some(values)) => (OperationBody1cLaneEncoding::PayloadObjectIndex, values),
+                _ => return None,
+            };
+            Some(OperationBody1cReferenceLane {
+                body_reference_ordinal: body_ordinal as u32,
+                body_object_index: reference.object_index,
+                encoding,
+                values,
+            })
+        })
+        .collect()
+}
+
+fn operation_body_1c_lane_values(
+    record: OperationRecord<'_>,
+    mut at: usize,
+    count: usize,
+    encoding: OperationBody1cLaneEncoding,
+) -> Option<Vec<OperationBody1cLaneValue>> {
+    let mut values = Vec::with_capacity(count);
+    for ordinal in 0..count {
+        let value_at = at;
+        let (object_index, width) = match encoding {
+            OperationBody1cLaneEncoding::CompactIndex => {
+                let (CompactIndex::Value(value), width) = compact_index(record.bytes.get(at..)?)?
+                else {
+                    return None;
+                };
+                (value, width)
+            }
+            OperationBody1cLaneEncoding::PayloadObjectIndex => {
+                payload_object_index(record.bytes.get(at..)?)?
+            }
+        };
+        at += width;
+        values.push(OperationBody1cLaneValue {
+            ordinal: ordinal as u32,
+            object_index,
+            offset: record.offset + value_at,
+        });
+    }
+    (record.bytes.get(at..at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(values)
 }
 
 /// Decode the structured `32` branch following an extrusion body field.

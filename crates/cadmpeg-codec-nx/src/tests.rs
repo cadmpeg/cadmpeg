@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 45);
+    assert_eq!(namespace.version, 46);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1526,6 +1526,71 @@ fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
             bytes: truncated,
             payload: truncated,
             ..record
+        })
+        .is_empty()
+    );
+}
+
+#[test]
+fn om_operation_body_branch_1c_decodes_homogeneous_reference_lanes() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "OFFSET",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let compact = b"\x01\x02\x10\x6e\xff\x1c\x00\x00\x00\x01\x03\x80\x0d\x69\x00\x00\x0b\x00";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: compact,
+        payload_offset: 100,
+        payload: compact,
+        label,
+    };
+    let lanes = crate::om::operation_body_1c_reference_lanes(record);
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(lanes[0].body_object_index, 110);
+    assert_eq!(
+        lanes[0].encoding,
+        crate::om::OperationBody1cLaneEncoding::CompactIndex
+    );
+    assert_eq!(
+        lanes[0]
+            .values
+            .iter()
+            .map(|value| (value.object_index, value.offset))
+            .collect::<Vec<_>>(),
+        [(13, 111), (105, 113)]
+    );
+
+    let objects =
+        b"\x01\x02\x10\x70\xff\x1c\x00\x00\x00\x01\x03\xf1\x02\x9e\xf0\x44\x00\x00\x0b\x00";
+    let object_record = crate::om::OperationRecord {
+        bytes: objects,
+        payload: objects,
+        ..record
+    };
+    let lanes = crate::om::operation_body_1c_reference_lanes(object_record);
+    assert_eq!(
+        lanes[0].encoding,
+        crate::om::OperationBody1cLaneEncoding::PayloadObjectIndex
+    );
+    assert_eq!(
+        lanes[0]
+            .values
+            .iter()
+            .map(|value| value.object_index)
+            .collect::<Vec<_>>(),
+        [670, 68]
+    );
+
+    let truncated = &objects[..objects.len() - 1];
+    assert!(
+        crate::om::operation_body_1c_reference_lanes(crate::om::OperationRecord {
+            bytes: truncated,
+            payload: truncated,
+            ..object_record
         })
         .is_empty()
     );
@@ -4296,7 +4361,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 45);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 46);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
