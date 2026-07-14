@@ -152,6 +152,8 @@ pub struct ContainerScan {
     pub data: Vec<u8>,
     /// The magic/version header line, ASCII, trimmed.
     pub version_line: String,
+    /// Native model filename from the length-prefixed `CMNM` header record.
+    pub model_name: Option<String>,
     /// Enumerated sections in file order.
     pub sections: Vec<Section>,
     /// Identified layout family.
@@ -441,6 +443,17 @@ fn principal_unit(data: &[u8]) -> Option<String> {
         55 => Some("mmKs".to_string()),
         value => Some(format!("unknown:{value}")),
     }
+}
+
+fn model_name(data: &[u8]) -> Option<String> {
+    const PREFIX: &[u8] = b"#- CMNM ";
+    let start = find(data, PREFIX, 0)? + PREFIX.len();
+    let length_bytes = data.get(start..start + 3)?;
+    let length = usize::from_str_radix(std::str::from_utf8(length_bytes).ok()?, 16).ok()?;
+    let name = data.get(start + 3..start + 3 + length)?;
+    (!name.is_empty() && !name.iter().any(|byte| matches!(byte, 0 | b'\n' | b'\r')))
+        .then_some(())?;
+    Some(std::str::from_utf8(name).ok()?.to_string())
 }
 
 fn family_table(data: &[u8], sections: &[Section]) -> Option<FamilyTableRecord> {
@@ -1033,6 +1046,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
 /// buffer without a reader.
 pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let version_line = line_at(&data, 0);
+    let model_name = model_name(&data);
 
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
     // marker; fall back to the header end; fall back to the magic line.
@@ -1112,6 +1126,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     ContainerScan {
         data,
         version_line,
+        model_name,
         sections,
         layout,
         census,
@@ -1201,6 +1216,9 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             scan.sections.len()
         ),
     ];
+    if let Some(name) = &scan.model_name {
+        notes.push(format!("native model name: {name}"));
+    }
 
     match (scan.census.srf_array_count, scan.census.crv_array_count) {
         (None, None) => {

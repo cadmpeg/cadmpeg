@@ -6905,6 +6905,9 @@ fn annotate(
 fn source_meta(scan: &ContainerScan) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert("version_line".to_string(), scan.version_line.clone());
+    if let Some(name) = &scan.model_name {
+        attributes.insert("model_name".to_string(), name.clone());
+    }
     attributes.insert("layout".to_string(), scan.layout.token().to_string());
     attributes.insert("file_size".to_string(), scan.data.len().to_string());
     attributes.insert("section_count".to_string(), scan.sections.len().to_string());

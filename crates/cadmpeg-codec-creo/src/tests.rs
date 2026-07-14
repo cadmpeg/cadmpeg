@@ -156,6 +156,25 @@ fn detect_matches_ugc_magic_only() {
 }
 
 #[test]
+fn scan_decodes_length_prefixed_native_model_name() {
+    let data = b"#UGC:2 PART test \\\n#- CMNM 00bwidget.prt                                      \\\n#-END_OF_UGC_HEADER\n"
+        .to_vec();
+    let scan = container::scan_bytes(data.clone());
+
+    assert_eq!(scan.model_name.as_deref(), Some("widget.prt "));
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    assert_eq!(
+        result
+            .ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("model_name"))
+            .map(String::as_str),
+        Some("widget.prt ")
+    );
+}
+
+#[test]
 fn scan_enumerates_and_classifies_sections() {
     let data = build_prt(
         "test",
