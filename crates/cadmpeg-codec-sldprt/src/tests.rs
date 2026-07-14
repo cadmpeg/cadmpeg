@@ -15333,6 +15333,35 @@ fn decode_groups_native_tagged_point_line_relations() {
 }
 
 #[test]
+fn decode_uses_relation_units_for_bare_integer_dimensions() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let mut source = sldprt_with_tagged_compact_relation(
+        &triangle_body(),
+        "sgPntPntVertDist",
+        [[0xcb, 0x8d]; 2],
+    );
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"><Dimension Name="D2">25</Dimension></Sketch></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D2")
+        .expect("driving vertical-distance parameter");
+    assert_eq!(parameter.expression, "25");
+    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(25.0))));
+    assert!(parameter.native_ref.is_some());
+}
+
+#[test]
 fn decode_groups_unary_circle_diameter_relations() {
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
 

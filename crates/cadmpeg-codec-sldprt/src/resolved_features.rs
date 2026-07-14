@@ -2617,6 +2617,12 @@ pub(crate) fn bind_parameter_scalars(
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
     for lane in lanes {
+        let length_scalars = lane
+            .relation_instances
+            .iter()
+            .filter(|relation| relation.family != FeatureInputRelationFamily::Angle)
+            .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+            .collect::<HashSet<_>>();
         let names_by_id = lane
             .names
             .iter()
@@ -2666,7 +2672,11 @@ pub(crate) fn bind_parameter_scalars(
                     .into_iter()
                     .filter(|scalar| match parameter.value.as_ref() {
                         Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
-                            scalar.value.is_finite() && scalar.value == *expected as f64
+                            if length_scalars.contains(scalar.id.as_str()) {
+                                same_dimension_length(scalar.value * 1000.0, *expected as f64)
+                            } else {
+                                scalar.value.is_finite() && scalar.value == *expected as f64
+                            }
                         }
                         Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
                             scalar.value == if *expected { 1.0 } else { 0.0 }
@@ -2689,6 +2699,13 @@ pub(crate) fn bind_parameter_scalars(
                         }
                         Some(cadmpeg_ir::features::ParameterValue::Real(_)) => {
                             Some(cadmpeg_ir::features::ParameterValue::Real(scalar.value))
+                        }
+                        Some(cadmpeg_ir::features::ParameterValue::Integer(_))
+                            if length_scalars.contains(scalar.id.as_str()) =>
+                        {
+                            Some(cadmpeg_ir::features::ParameterValue::Length(
+                                cadmpeg_ir::features::Length(scalar.value * 1000.0),
+                            ))
                         }
                         _ => None,
                     };

@@ -179,6 +179,8 @@ Sketch relations use named scalar records with reference cells at fixed scalar-r
 
 Distance, horizontal-distance, vertical-distance, and circular-dimension driving scalars store metres. Angular driving scalars store radians. These relation-family units apply when the owning Keywords feature has no dimension expression.
 
+A bare integer Keywords dimension bound to a unique driving distance or circular-dimension scalar denotes millimetres rather than a discrete count. The scalar supplies its evaluated length and native identity while the original expression remains unchanged.
+
 A uniquely owned feature-input scalar is the evaluated value of the same-named Keywords dimension. Length-valued feature scalars store metres and angular feature scalars store radians. Keywords dimension text remains the parameter expression; its unitless numeric spelling does not replace the evaluated scalar. Feature operation semantics use the evaluated scalar converted to millimetres or radians.
 
 Point-reference object indices address sketch-marker local identifiers within the owning feature object. A reference resolves when that local identifier is unique in the feature object.
