@@ -105,6 +105,23 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         ir.model.regions.push(built.region);
         ir.model.bodies.push(built.body);
     }
+    for (&id, record) in &exchange.records {
+        if !matches!(
+            record.simple_name(),
+            Some("SHAPE_REPRESENTATION")
+                | Some("ADVANCED_BREP_SHAPE_REPRESENTATION")
+                | Some("GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION")
+        ) {
+            continue;
+        }
+        mark_standalone_geometric_set(
+            id,
+            record,
+            exchange,
+            ir,
+            &mut result.typed_records,
+        );
+    }
     if !ir.model.bodies.is_empty() {
         for (&id, record) in &exchange.records {
             if matches!(

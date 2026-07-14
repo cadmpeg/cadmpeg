@@ -1029,6 +1029,31 @@ fn writer_round_trips_edge_based_wire_bodies() {
 }
 
 #[test]
+fn writer_round_trips_standalone_points_and_curves() {
+    let mut ir = unit_cube();
+    ir.model.curves.truncate(1);
+    ir.model.surfaces.clear();
+    ir.model.bodies.clear();
+    ir.model.regions.clear();
+    ir.model.shells.clear();
+    ir.model.faces.clear();
+    ir.model.loops.clear();
+    ir.model.coedges.clear();
+    ir.model.edges.clear();
+    ir.model.vertices.clear();
+
+    let mut output = Vec::new();
+    write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("write standalone geometry");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode standalone geometry");
+    assert_eq!(decoded.ir.model.curves.len(), 1);
+    assert_eq!(decoded.ir.model.points.len(), ir.model.points.len());
+    assert!(decoded.ir.model.bodies.is_empty());
+}
+
+#[test]
 fn decode_builds_product_occurrences_with_relative_placement() {
     use cadmpeg_ir::product::OccurrenceParent;
 

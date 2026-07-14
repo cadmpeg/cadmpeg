@@ -306,6 +306,7 @@ struct Builder<'a> {
     curve_refs: HashMap<String, Ref>,
     edge_refs: HashMap<String, Ref>,
     vertex_refs: HashMap<String, Ref>,
+    point_refs: HashMap<String, Ref>,
     pcurve_context: Option<Ref>,
 
     /// Edges skipped because they carry no attributed 3D curve, deduplicated
@@ -327,6 +328,7 @@ struct Builder<'a> {
     body_shape_refs: HashMap<String, Ref>,
     /// Display colors that could not be attached to an emitted STEP item.
     unstyled_colors: usize,
+    unsupported_standalone_geometry: usize,
 }
 
 impl<'a> Builder<'a> {
@@ -394,6 +396,7 @@ impl<'a> Builder<'a> {
             curve_refs: HashMap::new(),
             edge_refs: HashMap::new(),
             vertex_refs: HashMap::new(),
+            point_refs: HashMap::new(),
             pcurve_context: None,
             curveless_edges: BTreeSet::new(),
             unknown_surface_faces: BTreeSet::new(),
@@ -401,6 +404,7 @@ impl<'a> Builder<'a> {
             body_step_refs: HashMap::new(),
             body_shape_refs: HashMap::new(),
             unstyled_colors: 0,
+            unsupported_standalone_geometry: 0,
         }
     }
 
@@ -416,7 +420,8 @@ impl<'a> Builder<'a> {
     fn build(&mut self) {
         let context = self.emit_context();
 
-        let shape_items = self.emit_shape_items();
+        let mut shape_items = self.emit_shape_items();
+        shape_items.extend(self.emit_standalone_geometry());
         if shape_items.is_empty() {
             self.loss(
                 LossCategory::Topology,
@@ -1110,6 +1115,52 @@ impl<'a> Builder<'a> {
         ))
     }
 
+    fn emit_standalone_geometry(&mut self) -> Vec<Ref> {
+        let curve_ids = self
+            .ir
+            .model
+            .curves
+            .iter()
+            .filter(|curve| !self.curve_refs.contains_key(curve.id.as_str()))
+            .map(|curve| curve.id.0.clone())
+            .collect::<Vec<_>>();
+        let point_ids = self
+            .ir
+            .model
+            .points
+            .iter()
+            .filter(|point| !self.point_refs.contains_key(point.id.as_str()))
+            .map(|point| point.id.0.clone())
+            .collect::<Vec<_>>();
+        let mut members = Vec::new();
+        for curve_id in curve_ids {
+            if self
+                .curves
+                .get(curve_id.as_str())
+                .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+            {
+                self.unsupported_standalone_geometry += 1;
+            } else if let Some(reference) = self.emit_curve(&curve_id) {
+                members.push(reference);
+            }
+        }
+        for point_id in point_ids {
+            let Some(point) = self.points.get(point_id.as_str()).copied() else {
+                continue;
+            };
+            let reference = geometry::point(&mut self.emitter, point.position);
+            self.point_refs.insert(point_id, reference);
+            members.push(reference);
+        }
+        if members.is_empty() {
+            Vec::new()
+        } else {
+            vec![self
+                .emitter
+                .emit("GEOMETRIC_CURVE_SET", &format!("'',{}", refs(&members)))]
+        }
+    }
+
     fn emit_tessellations(&mut self, context: Ref) {
         if self.ir.model.tessellations.is_empty() {
             return;
@@ -1417,6 +1468,7 @@ impl<'a> Builder<'a> {
         let vertex = self.vertices.get(vertex_id).copied()?;
         let pt = self.points.get(vertex.point.as_str()).copied()?;
         let cp = geometry::point(&mut self.emitter, pt.position);
+        self.point_refs.insert(vertex.point.0.clone(), cp);
         let r = self.emitter.emit("VERTEX_POINT", &format!("'',{cp}"));
         self.vertex_refs.insert(vertex_id.to_string(), r);
         Some(r)
@@ -1552,6 +1604,16 @@ impl<'a> Builder<'a> {
                      from the STEP shell (an ADVANCED_FACE requires a surface); their \
                      topology remains in the IR",
                     self.unknown_surface_faces.len()
+                ),
+            );
+        }
+        if self.unsupported_standalone_geometry > 0 {
+            self.loss(
+                LossCategory::Geometry,
+                Severity::Warning,
+                format!(
+                    "{} standalone unknown geometry carrier(s) were not written",
+                    self.unsupported_standalone_geometry
                 ),
             );
         }
