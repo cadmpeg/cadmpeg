@@ -415,6 +415,8 @@ pub struct FeatureDatumCsysConstruction {
     pub id: String,
     /// Owning `DATUM_CSYS` operation label.
     pub operation_label: String,
+    /// Payload control byte preceding the fixed construction header suffix.
+    pub control: u8,
     /// Eight object indices in serialized lane order.
     pub object_indices: [u32; 8],
     /// Eight uniquely resolved same-store blocks in lane order.
@@ -1590,6 +1592,7 @@ pub fn feature_datum_csys_constructions(
                     "nx:feature-history:datum-csys-construction#{section_key}-{operation_ordinal}"
                 ),
                 operation_label,
+                control: field.control,
                 object_indices: resolved
                     .iter()
                     .map(|(object_index, _, _)| *object_index)

@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 74);
+    assert_eq!(namespace.version, 75);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1333,6 +1333,7 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
         label,
     };
     let field = crate::om::datum_csys_references(record).unwrap();
+    assert_eq!(field.control, 0x13);
     assert_eq!(
         field.references.map(|reference| reference.object_index),
         [42, 43, 44, 45, 46, 47, 48, 49]
@@ -1340,6 +1341,19 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
     assert_eq!(
         field.references.map(|reference| reference.offset),
         [114, 116, 118, 120, 122, 124, 126, 128]
+    );
+
+    let mut alternate_control = payload.clone();
+    alternate_control[0] = 0x1a;
+    assert_eq!(
+        crate::om::datum_csys_references(crate::om::OperationRecord {
+            bytes: &alternate_control,
+            payload: &alternate_control,
+            ..record
+        })
+        .unwrap()
+        .control,
+        0x1a
     );
 
     let mut malformed = payload.clone();
@@ -1359,6 +1373,7 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
     let construction = crate::native::FeatureDatumCsysConstruction {
         id: "construction".to_string(),
         operation_label: "operation#0".to_string(),
+        control: 0x13,
         object_indices: std::array::from_fn(|index| index as u32 + 40),
         data_blocks: std::array::from_fn(|index| format!("block#{}", index + 40)),
         source_offsets: std::array::from_fn(|index| index as u64 + 100),
@@ -5142,7 +5157,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 74);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 75);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

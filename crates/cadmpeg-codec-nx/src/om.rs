@@ -433,6 +433,8 @@ pub struct ExtrudeProfileReferenceField {
 /// Fixed ordered construction-reference lane in a datum coordinate-system payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatumCsysReferenceField {
+    /// Payload control byte preceding the fixed header suffix.
+    pub control: u8,
     /// Eight canonical payload object references in serialized order.
     pub references: [ExtrudeProfileReference; 8],
 }
@@ -1517,14 +1519,16 @@ pub fn block_construction_references(
 /// Decode the fixed eight-reference construction lane at the start of a
 /// `DATUM_CSYS` payload.
 pub fn datum_csys_references(record: OperationRecord<'_>) -> Option<DatumCsysReferenceField> {
-    const HEADER: [u8; 14] = [
-        0x13, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+    const HEADER_SUFFIX: [u8; 13] = [
+        0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
     ];
     const TRAILER: [u8; 8] = [0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00];
-    if record.label.value != "DATUM_CSYS" || !record.payload.starts_with(&HEADER) {
+    if record.label.value != "DATUM_CSYS"
+        || record.payload.get(1..1 + HEADER_SUFFIX.len()) != Some(&HEADER_SUFFIX)
+    {
         return None;
     }
-    let mut at = HEADER.len();
+    let mut at = 1 + HEADER_SUFFIX.len();
     let mut references = Vec::with_capacity(8);
     for _ in 0..8 {
         let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
@@ -1536,6 +1540,7 @@ pub fn datum_csys_references(record: OperationRecord<'_>) -> Option<DatumCsysRef
     }
     (record.payload.get(at..at + TRAILER.len()) == Some(&TRAILER)).then_some(())?;
     Some(DatumCsysReferenceField {
+        control: record.payload[0],
         references: references.try_into().ok()?,
     })
 }
