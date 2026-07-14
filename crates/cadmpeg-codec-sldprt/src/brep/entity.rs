@@ -332,7 +332,7 @@ fn disc20_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     let [shell] = shells.as_slice() else {
         return Vec::new();
     };
-    let complete_lattice = faces.iter().all(|face| {
+    let per_face_lattice = faces.iter().all(|face| {
         face.refs
             .get(1)
             .and_then(|attr| by_attr.get(attr))
@@ -345,11 +345,16 @@ fn disc20_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
                     && use_record.refs.get(2) == face.refs.get(1)
             })
     });
-    if !complete_lattice {
+    let schema_36001_lattice = schema_36001_single_region_lattice(by_attr, regions[0]);
+    if !per_face_lattice && !schema_36001_lattice {
         return Vec::new();
     }
     let mut refs = faces.iter().map(|face| face.attr).collect::<Vec<_>>();
+    if schema_36001_lattice {
+        refs.extend(by_attr.keys().copied());
+    }
     refs.sort_unstable();
+    refs.dedup();
     vec![BodyRecord {
         attr: regions[0].attr,
         kind: BodyKind::Solid,
@@ -365,6 +370,90 @@ fn disc20_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
             }],
         }],
     }]
+}
+
+fn schema_36001_single_region_lattice(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    region: &EntityRecord,
+) -> bool {
+    let follows = |record: &EntityRecord, slot: usize, disc: u16| {
+        record
+            .refs
+            .get(slot)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|next| next.disc == disc)
+    };
+    let Some(disc_18) = follows(region, 2, 0x0018) else {
+        return false;
+    };
+    let Some(disc_16) = follows(disc_18, 2, 0x0016) else {
+        return false;
+    };
+    if follows(disc_16, 2, 0x0014).is_none() {
+        return false;
+    }
+    let Some(disc_1c) = follows(region, 1, 0x001c) else {
+        return false;
+    };
+    let Some(disc_22) = follows(disc_1c, 1, 0x0022) else {
+        return false;
+    };
+    let Some(disc_24) = follows(disc_22, 1, 0x0024) else {
+        return false;
+    };
+    let Some(disc_26) = follows(disc_24, 1, 0x0026) else {
+        return false;
+    };
+    follows(disc_26, 1, 0x002e).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(attr: u16, disc: u16, refs: [u16; 6]) -> EntityRecord {
+        EntityRecord {
+            attr,
+            flags: 1,
+            seq: u32::from(attr),
+            disc,
+            refs: refs.to_vec(),
+            offset: usize::from(attr),
+        }
+    }
+
+    #[test]
+    fn schema_36001_root_lattice_owns_all_disc20_faces() {
+        let records = vec![
+            record(10, 0x1a, [1, 11, 12, 1, 1, 1]),
+            record(11, 0x1c, [1, 15, 10, 1, 1, 1]),
+            record(12, 0x18, [1, 10, 13, 1, 1, 1]),
+            record(13, 0x16, [1, 12, 14, 1, 1, 1]),
+            record(14, 0x14, [1, 13, 1, 1, 1, 1]),
+            record(15, 0x22, [1, 16, 11, 1, 1, 1]),
+            record(16, 0x24, [1, 17, 15, 1, 1, 1]),
+            record(17, 0x26, [1, 18, 16, 1, 1, 1]),
+            record(18, 0x2e, [1, 1, 17, 1, 1, 1]),
+            record(20, 0x20, [1; 6]),
+            record(21, 0x20, [1; 6]),
+        ];
+        let by_attr = records
+            .iter()
+            .map(|record| (record.attr, record))
+            .collect::<HashMap<_, _>>();
+
+        let bodies = disc20_bodies(&by_attr);
+        let [body] = bodies.as_slice() else {
+            panic!("one schema-36001 body");
+        };
+        assert_eq!(body.attr, 10);
+        assert_eq!(body.kind, BodyKind::Solid);
+        assert_eq!(body.regions.len(), 1);
+        assert_eq!(body.regions[0].shells.len(), 1);
+        assert_eq!(body.regions[0].shells[0].attr, 13);
+        assert!(by_attr.keys().all(|attr| body.refs.contains(attr)));
+    }
 }
 
 fn bind_schema_32001_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord]) {

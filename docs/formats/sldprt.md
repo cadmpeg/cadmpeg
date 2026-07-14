@@ -323,6 +323,8 @@ Disc14 ownership uses the entity-level shell and face-use lattice. A `0x1a` regi
 
 In the disc20 face layout, a `0x1a` region reaches one `0x16` shell. Each canonical `0x20/flo1` face names a `0x24/flo4` node in slot 1. The `0x24` node back-references the face in slot 2 and names a `0x26/flo3` node in slot 1; the `0x26` node back-references the `0x24` node in slot 2. A complete reciprocal lattice assigns every disc20 face to the single shell.
 
+Schema 36001 also carries a single-region disc20 layout with one `0x1a` region. Its descending root chain is `0x1a.slot2 -> 0x18`, `0x18.slot2 -> 0x16`, and `0x16.slot2 -> 0x14`. Its ascending chain is `0x1a.slot1 -> 0x1c`, `0x1c.slot1 -> 0x22`, `0x22.slot1 -> 0x24`, `0x24.slot1 -> 0x26`, and `0x26.slot1 -> 0x2e`. When both chains are complete and the region reaches exactly one `0x16` shell, every canonical `0x20/flo1` face in the site belongs to that shell.
+
 ---
 
 ## 7. Geometry carriers
