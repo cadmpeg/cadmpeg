@@ -1300,6 +1300,8 @@ pub fn standard_mesh_missing_edge_assignments(
         cycle_lengths: &[usize],
         missing: &[usize],
         rows: &[EdgeRow],
+        edge_ports: &[[u32; 2]],
+        corner_ports: &HashMap<MeshCorner, u32>,
     ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
         struct Search<'a> {
             face: usize,
@@ -1307,6 +1309,8 @@ pub fn standard_mesh_missing_edge_assignments(
             cycle_lengths: &'a [usize],
             missing: &'a [usize],
             rows: &'a [EdgeRow],
+            edge_ports: &'a [[u32; 2]],
+            corner_ports: &'a HashMap<MeshCorner, u32>,
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
         }
@@ -1316,6 +1320,7 @@ pub fn standard_mesh_missing_edge_assignments(
                 gap: usize,
                 offset: usize,
                 used: u64,
+                current_port: Option<u32>,
                 placed: &mut Vec<MeshEdgePlacementCandidate>,
             ) -> Option<()> {
                 if self.assignments > MAX_ASSIGNMENTS_PER_FACE {
@@ -1330,7 +1335,24 @@ pub fn standard_mesh_missing_edge_assignments(
                 }
                 let target = self.gaps[gap].length;
                 if offset == target {
-                    return self.walk(gap + 1, 0, used, placed);
+                    let value = &self.gaps[gap];
+                    let end = (value.start + value.length) % self.cycle_lengths[value.cycle];
+                    if current_port
+                        .zip(
+                            self.corner_ports
+                                .get(&(self.face, value.cycle, end))
+                                .copied(),
+                        )
+                        .is_some_and(|(actual, expected)| actual != expected)
+                    {
+                        return Some(());
+                    }
+                    let next_port = self.gaps.get(gap + 1).and_then(|next| {
+                        self.corner_ports
+                            .get(&(self.face, next.cycle, next.start))
+                            .copied()
+                    });
+                    return self.walk(gap + 1, 0, used, next_port, placed);
                 }
                 for rank in 0..self.missing.len() {
                     if used & (1 << rank) != 0 {
@@ -1345,6 +1367,15 @@ pub fn standard_mesh_missing_edge_assignments(
                         Box::new(std::iter::once(stored_span))
                     };
                     for segment_count in spans.filter(|span| *span <= remaining) {
+                        let ports = self.edge_ports[edge];
+                        let mut next_ports = match current_port {
+                            Some(current) if ports[0] == current => vec![ports[1]],
+                            Some(current) if ports[1] == current => vec![ports[0]],
+                            Some(_) => continue,
+                            None => ports.to_vec(),
+                        };
+                        next_ports.sort_unstable();
+                        next_ports.dedup();
                         let value = MeshEdgePlacementCandidate {
                             edge,
                             face: self.face,
@@ -1356,7 +1387,15 @@ pub fn standard_mesh_missing_edge_assignments(
                             segment_count,
                         };
                         placed.push(value);
-                        self.walk(gap, offset + segment_count, used | (1 << rank), placed)?;
+                        for next_port in next_ports {
+                            self.walk(
+                                gap,
+                                offset + segment_count,
+                                used | (1 << rank),
+                                Some(next_port),
+                                placed,
+                            )?;
+                        }
                         placed.pop();
                     }
                 }
@@ -1373,19 +1412,171 @@ pub fn standard_mesh_missing_edge_assignments(
             cycle_lengths,
             missing,
             rows,
+            edge_ports,
+            corner_ports,
             assignments: 0,
             complete: Vec::new(),
         };
-        search.walk(0, 0, 0, &mut Vec::new())?;
+        let first_port = gaps
+            .first()
+            .and_then(|gap| corner_ports.get(&(face, gap.cycle, gap.start)).copied());
+        search.walk(0, 0, 0, first_port, &mut Vec::new())?;
         if search.assignments == 0 || search.assignments > MAX_ASSIGNMENTS_PER_FACE {
             return None;
         }
         Some(search.complete)
     }
 
+    fn full_gap_port_assignments(
+        face: usize,
+        gaps: &[MeshBoundaryGap],
+        cycle_lengths: &[usize],
+        missing: &[usize],
+        rows: &[EdgeRow],
+        edge_ports: &[[u32; 2]],
+    ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
+        fn order_trails(
+            trails: &[Vec<usize>],
+            used: u64,
+            edges: &mut Vec<usize>,
+            orders: &mut Vec<Vec<usize>>,
+        ) {
+            if used.count_ones() as usize == trails.len() {
+                orders.push(edges.clone());
+                return;
+            }
+            for (index, trail) in trails.iter().enumerate() {
+                if used & (1 << index) != 0 {
+                    continue;
+                }
+                for reversed in [false, true] {
+                    if reversed && trail.len() == 1 {
+                        continue;
+                    }
+                    let before = edges.len();
+                    if reversed {
+                        edges.extend(trail.iter().rev());
+                    } else {
+                        edges.extend(trail);
+                    }
+                    order_trails(trails, used | (1 << index), edges, orders);
+                    edges.truncate(before);
+                }
+            }
+        }
+
+        let [gap] = gaps else {
+            return None;
+        };
+        if cycle_lengths.len() != 1
+            || gap.start != 0
+            || gap.cycle != 0
+            || gap.length != cycle_lengths[0]
+            || gap.length != missing.len()
+            || missing
+                .iter()
+                .any(|&edge| rows[edge].handles.len() != 2 || edge_ports.get(edge).is_none())
+        {
+            return None;
+        }
+        let point_pairs = edge_ports
+            .iter()
+            .map(|pair| {
+                Some([
+                    usize::try_from(pair[0]).ok()?,
+                    usize::try_from(pair[1]).ok()?,
+                ])
+            })
+            .collect::<Option<Vec<[usize; 2]>>>()?;
+        let mut at_point = HashMap::<usize, Vec<usize>>::new();
+        for &edge in missing {
+            for point in point_pairs[edge] {
+                at_point.entry(point).or_default().push(edge);
+            }
+        }
+        if at_point.values().any(|edges| edges.len() > 2) {
+            return None;
+        }
+        let mut unseen = missing.iter().copied().collect::<HashSet<_>>();
+        let mut trails = Vec::<Vec<usize>>::new();
+        while !unseen.is_empty() {
+            let first = unseen
+                .iter()
+                .copied()
+                .filter(|edge| {
+                    point_pairs[*edge]
+                        .iter()
+                        .any(|point| at_point[point].len() == 1)
+                })
+                .min()
+                .or_else(|| unseen.iter().copied().min())?;
+            let endpoints = point_pairs[first];
+            let start = endpoints
+                .iter()
+                .copied()
+                .find(|point| at_point[point].len() == 1)
+                .unwrap_or(endpoints[0]);
+            let mut point = start;
+            let mut edge = first;
+            let mut trail = Vec::new();
+            loop {
+                if !unseen.remove(&edge) {
+                    break;
+                }
+                trail.push(edge);
+                let endpoints = point_pairs[edge];
+                point = if endpoints[0] == point {
+                    endpoints[1]
+                } else if endpoints[1] == point {
+                    endpoints[0]
+                } else {
+                    return None;
+                };
+                let Some(next) = at_point[&point]
+                    .iter()
+                    .copied()
+                    .find(|candidate| unseen.contains(candidate))
+                else {
+                    break;
+                };
+                edge = next;
+            }
+            if point == start && trail.len() != missing.len() {
+                return None;
+            }
+            trails.push(trail);
+        }
+        if trails.len() > u64::BITS as usize {
+            return None;
+        }
+        let mut orders = Vec::new();
+        order_trails(&trails, 0, &mut Vec::new(), &mut orders);
+        (orders.len() <= MAX_ASSIGNMENTS_PER_FACE).then(|| {
+            orders
+                .into_iter()
+                .map(|order| {
+                    order
+                        .into_iter()
+                        .enumerate()
+                        .map(|(offset, edge)| MeshEdgePlacementCandidate {
+                            edge,
+                            face,
+                            cycle: gap.cycle,
+                            start: offset,
+                            end: (offset + 1) % gap.length,
+                            segment_count: 1,
+                        })
+                        .collect()
+                })
+                .collect()
+        })
+    }
+
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
     let coverage = standard_mesh_face_coverage(bytes, edge_faces)?;
+    let edge_ports = standard_mesh_edge_ports(bytes)?;
+    let edge_runs = standard_mesh_edge_runs(bytes)?;
     let mut solutions = Vec::new();
     for width in [1, 2, 3] {
         let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
@@ -1395,16 +1586,46 @@ pub fn standard_mesh_missing_edge_assignments(
             .iter()
             .map(|trim| boundary_cycles(&trim.triangles))
             .collect::<Option<Vec<_>>>()?;
+        let mut corner_ports = HashMap::<MeshCorner, u32>::new();
+        for run in &edge_runs {
+            let length = cycles[run.face][run.cycle].len();
+            let end = (run.start + run.segment_count) % length;
+            let ports = edge_ports[run.edge];
+            let oriented = if run.reversed {
+                [ports[1], ports[0]]
+            } else {
+                ports
+            };
+            for (corner, port) in [(run.start, oriented[0]), (end, oriented[1])] {
+                match corner_ports.insert((run.face, run.cycle, corner), port) {
+                    Some(stored) if stored != port => return None,
+                    Some(_) | None => {}
+                }
+            }
+        }
         let assignments = coverage
             .iter()
             .map(|face| {
-                enumerate_face(
+                let cycle_lengths = cycles[face.face].iter().map(Vec::len).collect::<Vec<_>>();
+                full_gap_port_assignments(
                     face.face,
                     &face.gaps,
-                    &cycles[face.face].iter().map(Vec::len).collect::<Vec<_>>(),
+                    &cycle_lengths,
                     &face.missing_edges,
                     &edge_rows,
+                    &edge_ports,
                 )
+                .or_else(|| {
+                    enumerate_face(
+                        face.face,
+                        &face.gaps,
+                        &cycle_lengths,
+                        &face.missing_edges,
+                        &edge_rows,
+                        &edge_ports,
+                        &corner_ports,
+                    )
+                })
             })
             .collect::<Option<Vec<_>>>()?;
         solutions.push(assignments);

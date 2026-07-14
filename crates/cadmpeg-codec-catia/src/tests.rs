@@ -546,6 +546,32 @@ fn fbb_topology_reads_u16_mesh_and_edge_handles() {
 }
 
 #[test]
+fn standard_mesh_gap_assignment_follows_native_port_cycle() {
+    let mut bytes = standard_quad_topology_stream();
+    for _ in 0..4 {
+        let row = bytes
+            .windows(2)
+            .position(|window| window == [0x02, 0x03])
+            .expect("unmodified edge row");
+        bytes[row + 1] = 2;
+        bytes.drain(row + 4..row + 6);
+    }
+
+    let assignments = crate::topology::standard_mesh_missing_edge_assignments(&bytes, &[[0, 0]; 4])
+        .expect("native port-ordered full gap");
+    assert_eq!(assignments.len(), 1);
+    assert_eq!(assignments[0].len(), 280);
+    assert!(assignments[0].iter().all(|assignment| {
+        assignment
+            .iter()
+            .map(|placement| placement.edge)
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            == 4
+    }));
+}
+
+#[test]
 fn fbb_topology_reads_u8_mesh_and_edge_handles() {
     let mut bytes = vec![0x01, 0x49, 0x02, 0xff, 6, 0, 0, 0];
     for value in [0.0f32, 0.0, 1.0] {
