@@ -120,6 +120,12 @@ to the source constraint property and retain whether the value is driving. Negat
 indices, unsupported midpoint interpretations, unresolved operands, and future family codes remain
 explicit native relations rather than being guessed.
 
+An expression binding is retained independently from its target property's cached scalar. The
+neutral parameter carries the exact decoded expression, evaluated canonical value, scalar-property
+identity, expression-engine identity, and dependencies on other decoded parameters when qualified
+or same-owner identifiers resolve unambiguously. Unresolved symbols remain expression text and do
+not create fabricated parameter identities.
+
 Pad, pocket, and linear-extrusion records resolve linked neutral sketches when their profile link
 targets an earlier decoded sketch. Their literal and evaluated length values remain linked to the
 owning native property, and the operation records distinguish additive, subtractive, and

@@ -71,16 +71,24 @@ pub(crate) fn transfer(
             let length_property = property(&owned, "Length");
             let length = length_property.and_then(scalar_value).unwrap_or(0.0);
             if let Some(property) = length_property {
+                let expression = expression_binding(&owned, "Length");
                 ir.model.parameters.push(DesignParameter {
                     id: ParameterId(format!("fcstd:design:parameter#{}:Length", object.name)),
                     owner: id.clone(),
                     ordinal: 0,
                     name: "Length".into(),
-                    expression: scalar_text(property).unwrap_or_else(|| length.to_string()),
+                    expression: expression.as_ref().map_or_else(
+                        || scalar_text(property).unwrap_or_else(|| length.to_string()),
+                        |(_, expression)| expression.clone(),
+                    ),
                     display: None,
                     value: Some(ParameterValue::Length(Length(length))),
                     dependencies: Vec::new(),
-                    properties: BTreeMap::new(),
+                    properties: expression
+                        .map(|(native_ref, _)| {
+                            [("expression_native_ref".into(), native_ref)].into()
+                        })
+                        .unwrap_or_default(),
                     pmi: None,
                     native_ref: Some(property.id.clone()),
                 });
@@ -143,6 +151,7 @@ pub(crate) fn transfer(
             native_ref: Some(object.id.clone()),
         });
     }
+    bind_parameter_dependencies(&mut ir.model.parameters, objects);
     Ok(())
 }
 
@@ -354,6 +363,18 @@ fn parse_constraints(
                         index + 1
                     ));
                     let angle = type_code == 9;
+                    let path = format!("Constraints[{index}]");
+                    let expression = expression_binding(properties, &path);
+                    let mut parameter_properties = [(
+                        "is_driving".into(),
+                        node.attribute("IsDriving").unwrap_or("1").to_owned(),
+                    )]
+                    .into_iter()
+                    .collect::<BTreeMap<_, _>>();
+                    if let Some((native_ref, _)) = &expression {
+                        parameter_properties
+                            .insert("expression_native_ref".into(), native_ref.clone());
+                    }
                     parameters.push(DesignParameter {
                         id: id.clone(),
                         owner: feature_id(object),
@@ -362,7 +383,10 @@ fn parse_constraints(
                             .attribute("Name")
                             .filter(|name| !name.is_empty())
                             .map_or_else(|| format!("Constraint{}", index + 1), str::to_owned),
-                        expression: node.attribute("Value").unwrap_or_default().to_owned(),
+                        expression: expression.map_or_else(
+                            || node.attribute("Value").unwrap_or_default().to_owned(),
+                            |(_, expression)| expression,
+                        ),
                         display: None,
                         value: Some(if angle {
                             ParameterValue::Angle(cadmpeg_ir::features::Angle(value))
@@ -370,11 +394,7 @@ fn parse_constraints(
                             ParameterValue::Length(Length(value))
                         }),
                         dependencies: Vec::new(),
-                        properties: [(
-                            "is_driving".into(),
-                            node.attribute("IsDriving").unwrap_or("1").to_owned(),
-                        )]
-                        .into(),
+                        properties: parameter_properties,
                         pmi: None,
                         native_ref: Some(property.id.clone()),
                     });
@@ -415,6 +435,69 @@ fn parse_constraints(
         });
     }
     Ok((constraints, parameters))
+}
+
+fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(String, String)> {
+    let engine = property(properties, "ExpressionEngine")?;
+    engine
+        .values
+        .iter()
+        .find(|value| {
+            value.tag == "Expression"
+                && value
+                    .attributes
+                    .get("path")
+                    .is_some_and(|value| value == path)
+        })
+        .and_then(|value| {
+            Some((
+                engine.id.clone(),
+                value.attributes.get("expression")?.clone(),
+            ))
+        })
+}
+
+fn bind_parameter_dependencies(parameters: &mut [DesignParameter], objects: &[ObjectRecord]) {
+    let object_names = objects
+        .iter()
+        .map(|object| (feature_id(object), object.name.as_str()))
+        .collect::<HashMap<_, _>>();
+    let candidates = parameters
+        .iter()
+        .map(|parameter| {
+            (
+                parameter.id.clone(),
+                parameter.owner.clone(),
+                parameter.name.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    for parameter in parameters {
+        parameter.dependencies = candidates
+            .iter()
+            .filter(|(id, _, _)| *id != parameter.id)
+            .filter(|(_, owner, name)| {
+                let local =
+                    owner == &parameter.owner && contains_identifier(&parameter.expression, name);
+                let qualified = object_names.get(owner).is_some_and(|object| {
+                    contains_identifier(&parameter.expression, &format!("{object}.{name}"))
+                });
+                local || qualified
+            })
+            .map(|(id, _, _)| id.clone())
+            .collect();
+    }
+}
+
+fn contains_identifier(expression: &str, identifier: &str) -> bool {
+    expression.match_indices(identifier).any(|(start, _)| {
+        let end = start + identifier.len();
+        let boundary = |character: Option<char>| {
+            character.is_none_or(|character| !character.is_ascii_alphanumeric() && character != '_')
+        };
+        boundary(expression[..start].chars().next_back())
+            && boundary(expression[end..].chars().next())
+    })
 }
 
 fn neutral_constraint(

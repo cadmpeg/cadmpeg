@@ -33,10 +33,11 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
   </Properties></Object>
-  <Object name="Pocket"><Properties Count="3">
+  <Object name="Pocket"><Properties Count="4">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Length" type="App::PropertyLength"><Float value="2.5"/></Property>
     <Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/></Property>
+    <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="Pad.Length / 4"/></ExpressionEngine></Property>
   </Properties></Object>
 </ObjectData>
 </Document>"#;
@@ -89,6 +90,15 @@ fn transfers_sketch_pad_and_pocket_design_history() {
             .map(String::as_str),
         Some("true")
     );
+    let pocket_length = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner == pocket.id && parameter.name == "Length")
+        .expect("pocket length");
+    assert_eq!(pocket_length.expression, "Pad.Length / 4");
+    assert_eq!(pocket_length.dependencies.len(), 1);
     assert!(matches!(
         pad.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
