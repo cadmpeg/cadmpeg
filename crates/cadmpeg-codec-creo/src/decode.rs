@@ -4497,14 +4497,10 @@ fn transfer_resolved_revolution_surfaces(
                 .as_ref()
                 .and_then(|order| order.external_id(spline.entity_id?))
                 .and_then(|external_id| spline_bindings.get(&external_id).copied());
-            let surface_id = native_surface.map_or_else(
-                || {
-                    SurfaceId(format!(
-                        "creo:feature:revolution_surface#{feature_id}:{suffix}"
-                    ))
-                },
-                |id| SurfaceId(format!("creo:visibgeom:surface#{id}")),
-            );
+            let Some(native_surface) = native_surface else {
+                continue;
+            };
+            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{native_surface}"));
             let procedural_id = ProceduralSurfaceId(format!(
                 "creo:feature:revolution_construction#{feature_id}:{suffix}"
             ));
@@ -4532,10 +4528,7 @@ fn transfer_resolved_revolution_surfaces(
                 geometry: SurfaceGeometry::Nurbs(surface),
                 source_object: Some(SourceObjectAssociation {
                     format: "creo".to_string(),
-                    object_id: native_surface.map_or_else(
-                        || format!("FeatDefs:revolution#{feature_id}:{suffix}"),
-                        |id| format!("VisibGeom:{id}"),
-                    ),
+                    object_id: format!("VisibGeom:{native_surface}"),
                     name: None,
                     color: None,
                     visible: None,
