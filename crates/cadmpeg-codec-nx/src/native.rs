@@ -375,6 +375,33 @@ pub struct FeatureExtrudePayloadHeader {
     pub source_offset: u64,
 }
 
+/// Serialized width form of an extrusion payload scalar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeaturePayloadScalarEncoding {
+    /// Single-byte exact zero.
+    Zero,
+    /// Four-byte shifted IEEE-754 binary32.
+    Binary32,
+    /// Eight-byte shifted IEEE-754 binary64.
+    Binary64,
+}
+
+/// Three typed scalars following an extrusion body-reference field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureExtrudePayloadScalarTriple {
+    /// Globally unique scalar-lane identity.
+    pub id: String,
+    /// Owning `EXTRUDE` operation label.
+    pub operation_label: String,
+    /// Ordered finite scalar values.
+    pub values: [f64; 3],
+    /// Ordered serialized width forms.
+    pub encodings: [FeaturePayloadScalarEncoding; 3],
+    /// Absolute file offsets of the three scalar markers.
+    pub source_offsets: [u64; 3],
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -984,6 +1011,59 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
         }
     }
     headers
+}
+
+/// Decode typed scalar triples following extrusion body-reference fields.
+pub fn feature_extrude_payload_scalar_triples(
+    container: &Container,
+) -> Vec<FeatureExtrudePayloadScalarTriple> {
+    let sections = container.om_sections();
+    let mut triples = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let Some(triple) = crate::om::extrude_payload_scalar_triple(record) else {
+                continue;
+            };
+            let encoding = |encoding| match encoding {
+                crate::om::PayloadScalarEncoding::Zero => FeaturePayloadScalarEncoding::Zero,
+                crate::om::PayloadScalarEncoding::Binary32 => {
+                    FeaturePayloadScalarEncoding::Binary32
+                }
+                crate::om::PayloadScalarEncoding::Binary64 => {
+                    FeaturePayloadScalarEncoding::Binary64
+                }
+            };
+            triples.push(FeatureExtrudePayloadScalarTriple {
+                id: format!(
+                    "nx:feature-history:extrude-payload-scalar-triple#{section_key}-{operation_ordinal}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                ),
+                values: triple.scalars.map(|scalar| scalar.value),
+                encodings: triple.scalars.map(|scalar| encoding(scalar.encoding)),
+                source_offsets: triple
+                    .scalars
+                    .map(|scalar| entry_offset + scalar.offset as u64),
+            });
+        }
+    }
+    triples
 }
 
 fn unique_offset_data_block(

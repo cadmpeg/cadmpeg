@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 38);
+    assert_eq!(namespace.version, 39);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1312,6 +1312,49 @@ fn om_extrude_header_decodes_shifted_ieee_scalars() {
         crate::om::extrude_payload_header(crate::om::OperationRecord {
             payload: &invalid,
             bytes: &invalid,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_extrude_body_scalar_lane_decodes_zero_binary32_and_binary64() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "EXTRUDE",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x01\x02\x10\x42\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 100,
+        payload,
+        label,
+    };
+    let triple = crate::om::extrude_payload_scalar_triple(record).unwrap();
+    assert_eq!(
+        triple.scalars.map(|scalar| scalar.value),
+        [0.0, 3.0, -170.0]
+    );
+    assert_eq!(
+        triple.scalars.map(|scalar| scalar.encoding),
+        [
+            crate::om::PayloadScalarEncoding::Zero,
+            crate::om::PayloadScalarEncoding::Binary32,
+            crate::om::PayloadScalarEncoding::Binary64,
+        ]
+    );
+    assert_eq!(triple.scalars.map(|scalar| scalar.offset), [106, 107, 111]);
+
+    let truncated = &payload[..18];
+    assert!(
+        crate::om::extrude_payload_scalar_triple(crate::om::OperationRecord {
+            bytes: truncated,
+            payload: truncated,
             ..record
         })
         .is_none()
@@ -4004,7 +4047,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 38);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 39);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

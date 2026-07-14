@@ -281,6 +281,35 @@ pub struct ExtrudePayloadHeader {
     pub scalars: [f64; 2],
 }
 
+/// Width form of one self-delimiting operation-payload scalar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PayloadScalarEncoding {
+    /// Single-byte exact zero.
+    Zero,
+    /// Four-byte shifted IEEE-754 binary32.
+    Binary32,
+    /// Eight-byte shifted IEEE-754 binary64.
+    Binary64,
+}
+
+/// One typed scalar in a bounded operation payload.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PayloadScalar {
+    /// Absolute offset of the scalar marker.
+    pub offset: usize,
+    /// Finite scalar value.
+    pub value: f64,
+    /// Serialized width form.
+    pub encoding: PayloadScalarEncoding,
+}
+
+/// Ordered three-scalar lane following an extrusion body reference.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExtrudePayloadScalarTriple {
+    /// Three scalar atoms in byte order.
+    pub scalars: [PayloadScalar; 3],
+}
+
 /// Self-framed NX parameter name in one bounded expression declaration record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExpressionDeclarationName<'a> {
@@ -732,6 +761,57 @@ fn shifted_ieee_f64(bytes: &[u8]) -> Option<f64> {
     raw[0] = raw[0].checked_add(0x10)?;
     let value = f64::from_be_bytes(raw);
     value.is_finite().then_some(value)
+}
+
+/// Decode the three self-delimiting scalars following an extrusion body field.
+pub fn extrude_payload_scalar_triple(
+    record: OperationRecord<'_>,
+) -> Option<ExtrudePayloadScalarTriple> {
+    if record.label.value != "EXTRUDE" {
+        return None;
+    }
+    let reference = operation_body_reference(record)?;
+    let token = reference.offset.checked_sub(record.offset)?;
+    let (_, end) = feature_object_index(record.bytes, token)?;
+    if record.bytes.get(end..end + 2) != Some(&[0xff, 0x11]) {
+        return None;
+    }
+    let mut at = end + 2;
+    let mut scalars = Vec::with_capacity(3);
+    for _ in 0..3 {
+        let (value, encoding, width) = payload_scalar(record.bytes.get(at..)?)?;
+        scalars.push(PayloadScalar {
+            offset: record.offset + at,
+            value,
+            encoding,
+        });
+        at += width;
+    }
+    Some(ExtrudePayloadScalarTriple {
+        scalars: scalars.try_into().ok()?,
+    })
+}
+
+fn payload_scalar(bytes: &[u8]) -> Option<(f64, PayloadScalarEncoding, usize)> {
+    let marker = *bytes.first()?;
+    match marker {
+        0x00 => Some((0.0, PayloadScalarEncoding::Zero, 1)),
+        0x20..=0x3f | 0xa0..=0xbf => Some((
+            shifted_ieee_f64(bytes.get(..8)?)?,
+            PayloadScalarEncoding::Binary64,
+            8,
+        )),
+        0x40..=0x5f | 0xc0..=0xdf => {
+            let encoded: [u8; 4] = bytes.get(..4)?.try_into().ok()?;
+            let mut raw = encoded;
+            raw[0] = raw[0].checked_sub(0x10)?;
+            let value = f32::from_be_bytes(raw);
+            value
+                .is_finite()
+                .then_some((f64::from(value), PayloadScalarEncoding::Binary32, 4))
+        }
+        _ => None,
+    }
 }
 
 fn extrude_profile_reference_field(
