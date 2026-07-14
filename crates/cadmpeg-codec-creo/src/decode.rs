@@ -4341,6 +4341,24 @@ mod resolved_sketch_tests {
     use super::*;
 
     #[test]
+    fn fc05_row_frame_maps_cyclically_onto_each_model_axis() {
+        let center = [11.0, 13.0];
+        let reference = [0.6, 0.8];
+        assert_eq!(
+            fc05_model_frame(0, 17.0, center, reference, -1.0),
+            ([17.0, 13.0, 11.0], [-1.0, 0.0, 0.0], [0.0, 0.8, 0.6])
+        );
+        assert_eq!(
+            fc05_model_frame(1, 17.0, center, reference, -1.0),
+            ([11.0, 17.0, 13.0], [0.0, -1.0, 0.0], [0.6, 0.0, 0.8])
+        );
+        assert_eq!(
+            fc05_model_frame(2, 17.0, center, reference, -1.0),
+            ([13.0, 11.0, 17.0], [0.0, 0.0, -1.0], [0.8, 0.6, 0.0])
+        );
+    }
+
+    #[test]
     fn reversed_arc_uses_opposite_axis_and_canonical_increasing_domain() {
         let (axis_sign, range) = oriented_arc_parameterization(
             true,
@@ -6186,10 +6204,9 @@ fn transfer_cap_pair_cylinders(
         let Some(axis_index) = (0..3).find(|axis| first_cap.normal[*axis].abs() == 1.0) else {
             continue;
         };
-        if axis_index == 2
-            || placed_caps
-                .iter()
-                .any(|(plane, _)| plane.normal != first_cap.normal)
+        if placed_caps
+            .iter()
+            .any(|(plane, _)| plane.normal != first_cap.normal)
         {
             continue;
         }
@@ -6204,22 +6221,14 @@ fn transfer_cap_pair_cylinders(
             continue;
         }
         let axis_origin = first_ordinate + translations[0];
-        let [first, second] = pair.center_row_frame;
-        let [reference_x, reference_z] = pair.reference_direction_row_frame;
         let axis_sign = -f64::from(pair.parameter_sign);
-        let (origin, axis, ref_direction) = if axis_index == 0 {
-            (
-                [axis_origin, second, first],
-                [axis_sign, 0.0, 0.0],
-                [0.0, reference_z, reference_x],
-            )
-        } else {
-            (
-                [first, axis_origin, second],
-                [0.0, axis_sign, 0.0],
-                [reference_x, 0.0, reference_z],
-            )
-        };
+        let (origin, axis, ref_direction) = fc05_model_frame(
+            axis_index,
+            axis_origin,
+            pair.center_row_frame,
+            pair.reference_direction_row_frame,
+            axis_sign,
+        );
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", pair.surface_id));
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
@@ -6260,11 +6269,13 @@ fn transfer_cap_pair_cylinders(
                 || ordinate + translations[0],
                 |plane| plane.origin[axis_index],
             );
-            let center = if axis_index == 0 {
-                [cap_offset, second, first]
-            } else {
-                [first, cap_offset, second]
-            };
+            let (center, _, _) = fc05_model_frame(
+                axis_index,
+                cap_offset,
+                pair.center_row_frame,
+                pair.reference_direction_row_frame,
+                axis_sign,
+            );
             let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
             if ir.model.curves.iter().any(|curve| curve.id == id) {
                 continue;
@@ -6300,6 +6311,35 @@ fn transfer_cap_pair_cylinders(
                 }),
             });
         }
+    }
+}
+
+fn fc05_model_frame(
+    axis_index: usize,
+    axis_ordinate: f64,
+    center_row_frame: [f64; 2],
+    reference_row_frame: [f64; 2],
+    axis_sign: f64,
+) -> ([f64; 3], [f64; 3], [f64; 3]) {
+    let [first, second] = center_row_frame;
+    let [reference_x, reference_z] = reference_row_frame;
+    match axis_index {
+        0 => (
+            [axis_ordinate, second, first],
+            [axis_sign, 0.0, 0.0],
+            [0.0, reference_z, reference_x],
+        ),
+        1 => (
+            [first, axis_ordinate, second],
+            [0.0, axis_sign, 0.0],
+            [reference_x, 0.0, reference_z],
+        ),
+        2 => (
+            [second, first, axis_ordinate],
+            [0.0, 0.0, axis_sign],
+            [reference_z, reference_x, 0.0],
+        ),
+        _ => unreachable!("model-space axis index is bounded by XYZ"),
     }
 }
 
@@ -6351,24 +6391,15 @@ fn transfer_fc05_cap_circles(
         let Some(axis_index) = (0..3).find(|axis| cap.normal[*axis].abs() == 1.0) else {
             continue;
         };
-        if axis_index == 2 {
-            continue;
-        }
         let [first, second] = circle.center_row_frame;
         let axis_sign = -f64::from(parameter_sign);
-        let (center, axis, ref_direction) = if axis_index == 0 {
-            (
-                [cap.origin[0], second, first],
-                [axis_sign, 0.0, 0.0],
-                [0.0, reference[1], reference[0]],
-            )
-        } else {
-            (
-                [first, cap.origin[1], second],
-                [0.0, axis_sign, 0.0],
-                [reference[0], 0.0, reference[1]],
-            )
-        };
+        let (center, axis, ref_direction) = fc05_model_frame(
+            axis_index,
+            cap.origin[axis_index],
+            [first, second],
+            reference,
+            axis_sign,
+        );
         let id = CurveId(format!("creo:visibgeom:curve#{}", circle.curve_id));
         if !ir.model.curves.iter().any(|curve| curve.id == id) {
             annotate(
@@ -6411,11 +6442,13 @@ fn transfer_fc05_cap_circles(
         {
             continue;
         }
-        let axis_origin = if axis_index == 0 {
-            [axis_ordinate, second, first]
-        } else {
-            [first, axis_ordinate, second]
-        };
+        let (axis_origin, _, _) = fc05_model_frame(
+            axis_index,
+            axis_ordinate,
+            [first, second],
+            reference,
+            axis_sign,
+        );
         annotate(
             annotations,
             &surface_id,
@@ -7299,7 +7332,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
              Outline-backed planes, guarded non-axis support frames, and topology-bound `fc 05` \
-             cylinders with a resolved model-X or model-Y cap plane transfer as carriers; other parameter bodies remain \
+             cylinders with a resolved axis-normal cap plane transfer as carriers; other parameter bodies remain \
              structural records.",
             scan.sections.len(),
             scan.layout.token(),
