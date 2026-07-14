@@ -5872,6 +5872,86 @@ fn feature_edge_selection(scan: &ContainerScan, feature_id: u32) -> Option<EdgeS
     )))
 }
 
+fn parallel_support_radius(planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>) -> Option<f64> {
+    let planes = planes.into_iter().collect::<Vec<_>>();
+    let mut radii = Vec::new();
+    for first in 0..planes.len() {
+        for second in first + 1..planes.len() {
+            let first_normal = normalized(planes[first].1)?;
+            let second_normal = normalized(planes[second].1)?;
+            let alignment = first_normal
+                .iter()
+                .zip(second_normal)
+                .map(|(first, second)| first * second)
+                .sum::<f64>();
+            if alignment.abs() < 1.0 - 1e-9 {
+                continue;
+            }
+            let gap = planes[second]
+                .0
+                .iter()
+                .zip(planes[first].0)
+                .zip(first_normal)
+                .map(|((second, first), normal)| (second - first) * normal)
+                .sum::<f64>()
+                .abs();
+            let scale = planes[first]
+                .0
+                .iter()
+                .chain(&planes[second].0)
+                .map(|value| value.abs())
+                .fold(1.0, f64::max);
+            if gap > 1e-9 * scale {
+                radii.push(0.5 * gap);
+            }
+        }
+    }
+    let [radius] = radii.as_slice() else {
+        return None;
+    };
+    Some(*radius)
+}
+
+fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
+    scan.surface_rows
+        .iter()
+        .any(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+        })
+        .then_some(())?;
+    let records = scan
+        .feature_affected_ids
+        .iter()
+        .filter(|record| {
+            record.feature_id == feature_id
+                && record.kind == crate::feature::AffectedIdKind::Geometry
+        })
+        .collect::<Vec<_>>();
+    let [record] = records.as_slice() else {
+        return None;
+    };
+    let support_ids = record.ids.get(2..)?;
+    let support_planes = support_ids
+        .iter()
+        .filter_map(|id| {
+            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{id}"));
+            let surface = ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == surface_id)?;
+            match &surface.geometry {
+                SurfaceGeometry::Plane { origin, normal, .. } => Some((
+                    [origin.x, origin.y, origin.z],
+                    [normal.x, normal.y, normal.z],
+                )),
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    (support_planes.len() == support_ids.len()).then(|| parallel_support_radius(support_planes))?
+}
+
 fn schema_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -5911,7 +5991,12 @@ fn schema_feature_definition(
     if schema_class == 913 {
         return IrFeatureDefinition::Fillet {
             edges: feature_edge_selection(scan, feature_id).unwrap_or(EdgeSelection::Unresolved),
-            radius: RadiusSpec::Unresolved { form: None },
+            radius: round_constant_radius(scan, ir, feature_id).map_or(
+                RadiusSpec::Unresolved { form: None },
+                |radius| RadiusSpec::Constant {
+                    radius: Length(radius),
+                },
+            ),
         };
     }
     if schema_class == 914 {
@@ -6983,6 +7068,27 @@ mod resolved_sketch_tests {
                     && axis == Vector3::new(0.0, -1.0, 0.0)
                     && radius == 0.75
         ));
+    }
+
+    #[test]
+    fn unique_parallel_round_supports_define_constant_radius() {
+        assert_eq!(
+            parallel_support_radius([
+                ([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+                ([0.0, 0.0, -6.1], [0.0, 0.0, 1.0]),
+                ([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            ]),
+            Some(0.5)
+        );
+        assert_eq!(
+            parallel_support_radius([
+                ([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+                ([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+                ([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
+                ([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
+            ]),
+            None
+        );
     }
 
     #[test]
