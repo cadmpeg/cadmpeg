@@ -463,19 +463,19 @@ pub struct FeatureOperationBody11Continuation {
     pub terminal_source_offset: u64,
 }
 
-/// Homogeneous value encoding in a branch-`1c` body-reference lane.
+/// Homogeneous value encoding in an operation body-reference lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FeatureOperationBody1cLaneEncoding {
+pub enum FeatureOperationBodyReferenceLaneEncoding {
     /// NX OM compact-index encoding.
     CompactIndex,
     /// `f0`/`f1` payload object-index encoding.
     PayloadObjectIndex,
 }
 
-/// Counted reference lane following a branch-`1c` body scalar clause.
+/// Counted reference lane following an operation body scalar clause.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureOperationBody1cReferenceLane {
+pub struct FeatureOperationBodyReferenceLane {
     /// Globally unique lane identity.
     pub id: String,
     /// Owning operation label.
@@ -484,8 +484,10 @@ pub struct FeatureOperationBody1cReferenceLane {
     pub body_reference_ordinal: u32,
     /// Serialized body object index.
     pub body_object_index: u32,
+    /// Branch discriminator following the body-reference terminator.
+    pub branch: u8,
     /// Homogeneous encoding used by every lane value.
-    pub encoding: FeatureOperationBody1cLaneEncoding,
+    pub encoding: FeatureOperationBodyReferenceLaneEncoding,
     /// Ordered decoded indices.
     pub object_indices: Vec<u32>,
     /// Absolute file offsets of the encoded index markers.
@@ -1347,10 +1349,10 @@ pub fn feature_operation_body_11_continuations(
     continuations
 }
 
-/// Decode complete counted reference lanes following branch-`1c` body clauses.
-pub fn feature_operation_body_1c_reference_lanes(
+/// Decode complete unwrapped counted reference lanes following body scalar clauses.
+pub fn feature_operation_body_reference_lanes(
     container: &Container,
-) -> Vec<FeatureOperationBody1cReferenceLane> {
+) -> Vec<FeatureOperationBodyReferenceLane> {
     let sections = container.om_sections();
     let mut lanes = Vec::new();
     for link in segment_om_links(container)
@@ -1370,18 +1372,18 @@ pub fn feature_operation_body_1c_reference_lanes(
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
-            for lane in crate::om::operation_body_1c_reference_lanes(record) {
+            for lane in crate::om::operation_body_reference_lanes(record) {
                 let encoding = match lane.encoding {
-                    crate::om::OperationBody1cLaneEncoding::CompactIndex => {
-                        FeatureOperationBody1cLaneEncoding::CompactIndex
+                    crate::om::OperationBodyReferenceLaneEncoding::CompactIndex => {
+                        FeatureOperationBodyReferenceLaneEncoding::CompactIndex
                     }
-                    crate::om::OperationBody1cLaneEncoding::PayloadObjectIndex => {
-                        FeatureOperationBody1cLaneEncoding::PayloadObjectIndex
+                    crate::om::OperationBodyReferenceLaneEncoding::PayloadObjectIndex => {
+                        FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex
                     }
                 };
-                lanes.push(FeatureOperationBody1cReferenceLane {
+                lanes.push(FeatureOperationBodyReferenceLane {
                     id: format!(
-                        "nx:feature-history:operation-body-1c-reference-lane#{section_key}-{operation_ordinal}-{}",
+                        "nx:feature-history:operation-body-reference-lane#{section_key}-{operation_ordinal}-{}",
                         lane.body_reference_ordinal
                     ),
                     operation_label: format!(
@@ -1389,6 +1391,7 @@ pub fn feature_operation_body_1c_reference_lanes(
                     ),
                     body_reference_ordinal: lane.body_reference_ordinal,
                     body_object_index: lane.body_object_index,
+                    branch: lane.branch,
                     encoding,
                     object_indices: lane.values.iter().map(|value| value.object_index).collect(),
                     source_offsets: lane

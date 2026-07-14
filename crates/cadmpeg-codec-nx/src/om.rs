@@ -359,18 +359,18 @@ pub struct OperationBody11Continuation {
     pub terminal_offset: usize,
 }
 
-/// Homogeneous value encoding in a branch-`1c` body-reference lane.
+/// Homogeneous value encoding in an operation body-reference lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationBody1cLaneEncoding {
+pub enum OperationBodyReferenceLaneEncoding {
     /// NX OM compact-index encoding.
     CompactIndex,
     /// `f0`/`f1` payload object-index encoding.
     PayloadObjectIndex,
 }
 
-/// One value in a bounded branch-`1c` body-reference lane.
+/// One value in a bounded operation body-reference lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationBody1cLaneValue {
+pub struct OperationBodyReferenceLaneValue {
     /// Zero-based value order.
     pub ordinal: u32,
     /// Decoded index.
@@ -379,17 +379,19 @@ pub struct OperationBody1cLaneValue {
     pub offset: usize,
 }
 
-/// Counted reference lane following a branch-`1c` body scalar clause.
+/// Counted reference lane following an operation body scalar clause.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationBody1cReferenceLane {
+pub struct OperationBodyReferenceLane {
     /// Zero-based body-reference occurrence order.
     pub body_reference_ordinal: u32,
     /// Serialized body object index.
     pub body_object_index: u32,
+    /// Branch discriminator following the body-reference terminator.
+    pub branch: u8,
     /// Homogeneous encoding used by every lane value.
-    pub encoding: OperationBody1cLaneEncoding,
+    pub encoding: OperationBodyReferenceLaneEncoding,
     /// Ordered non-null lane values.
-    pub values: Vec<OperationBody1cLaneValue>,
+    pub values: Vec<OperationBodyReferenceLaneValue>,
 }
 
 /// Structured `32` branch following an extrusion body reference.
@@ -1076,17 +1078,21 @@ pub fn operation_body_11_continuations(
         .collect()
 }
 
-/// Decode complete counted reference lanes following branch-`1c` body clauses.
-pub fn operation_body_1c_reference_lanes(
+/// Decode complete unwrapped counted reference lanes following body scalar clauses.
+pub fn operation_body_reference_lanes(
     record: OperationRecord<'_>,
-) -> Vec<OperationBody1cReferenceLane> {
+) -> Vec<OperationBodyReferenceLane> {
     operation_body_references(record)
         .into_iter()
         .enumerate()
         .filter_map(|(body_ordinal, reference)| {
             let token = reference.offset.checked_sub(record.offset)?;
             let (_, end) = feature_object_index(record.bytes, token)?;
-            if record.bytes.get(end..end + 2) != Some(&[0xff, 0x1c]) {
+            if record.bytes.get(end) != Some(&0xff) {
+                return None;
+            }
+            let branch = *record.bytes.get(end + 1)?;
+            if !matches!(branch, 0x11 | 0x1c) {
                 return None;
             }
             let mut at = end + 2;
@@ -1102,26 +1108,30 @@ pub fn operation_body_1c_reference_lanes(
                 return None;
             }
             at += 2;
-            let compact = operation_body_1c_lane_values(
+            let compact = operation_body_reference_lane_values(
                 record,
                 at,
                 count - 1,
-                OperationBody1cLaneEncoding::CompactIndex,
+                OperationBodyReferenceLaneEncoding::CompactIndex,
             );
-            let objects = operation_body_1c_lane_values(
+            let objects = operation_body_reference_lane_values(
                 record,
                 at,
                 count - 1,
-                OperationBody1cLaneEncoding::PayloadObjectIndex,
+                OperationBodyReferenceLaneEncoding::PayloadObjectIndex,
             );
             let (encoding, values) = match (compact, objects) {
-                (Some(values), None) => (OperationBody1cLaneEncoding::CompactIndex, values),
-                (None, Some(values)) => (OperationBody1cLaneEncoding::PayloadObjectIndex, values),
+                (Some(values), None) => (OperationBodyReferenceLaneEncoding::CompactIndex, values),
+                (None, Some(values)) => (
+                    OperationBodyReferenceLaneEncoding::PayloadObjectIndex,
+                    values,
+                ),
                 _ => return None,
             };
-            Some(OperationBody1cReferenceLane {
+            Some(OperationBodyReferenceLane {
                 body_reference_ordinal: body_ordinal as u32,
                 body_object_index: reference.object_index,
+                branch,
                 encoding,
                 values,
             })
@@ -1129,29 +1139,29 @@ pub fn operation_body_1c_reference_lanes(
         .collect()
 }
 
-fn operation_body_1c_lane_values(
+fn operation_body_reference_lane_values(
     record: OperationRecord<'_>,
     mut at: usize,
     count: usize,
-    encoding: OperationBody1cLaneEncoding,
-) -> Option<Vec<OperationBody1cLaneValue>> {
+    encoding: OperationBodyReferenceLaneEncoding,
+) -> Option<Vec<OperationBodyReferenceLaneValue>> {
     let mut values = Vec::with_capacity(count);
     for ordinal in 0..count {
         let value_at = at;
         let (object_index, width) = match encoding {
-            OperationBody1cLaneEncoding::CompactIndex => {
+            OperationBodyReferenceLaneEncoding::CompactIndex => {
                 let (CompactIndex::Value(value), width) = compact_index(record.bytes.get(at..)?)?
                 else {
                     return None;
                 };
                 (value, width)
             }
-            OperationBody1cLaneEncoding::PayloadObjectIndex => {
+            OperationBodyReferenceLaneEncoding::PayloadObjectIndex => {
                 payload_object_index(record.bytes.get(at..)?)?
             }
         };
         at += width;
-        values.push(OperationBody1cLaneValue {
+        values.push(OperationBodyReferenceLaneValue {
             ordinal: ordinal as u32,
             object_index,
             offset: record.offset + value_at,
