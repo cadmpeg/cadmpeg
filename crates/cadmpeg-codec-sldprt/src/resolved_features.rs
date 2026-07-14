@@ -1751,7 +1751,7 @@ fn relation_instances(
             ));
         }
     }
-    groups
+    let mut instances = groups
         .into_iter()
         .enumerate()
         .map(
@@ -1787,7 +1787,82 @@ fn relation_instances(
                 }
             },
         )
-        .collect()
+        .collect::<Vec<_>>();
+    bind_detached_relation_drivers(&mut instances, lane);
+    instances
+}
+
+fn bind_detached_relation_drivers(
+    relations: &mut [FeatureInputRelationInstance],
+    lane: &FeatureInputLane,
+) {
+    let scalars = lane
+        .scalars
+        .iter()
+        .map(|scalar| (scalar.id.as_str(), scalar))
+        .collect::<HashMap<_, _>>();
+    let names = lane
+        .names
+        .iter()
+        .map(|name| (name.id.as_str(), name.value.as_str()))
+        .collect::<HashMap<_, _>>();
+    let claimed = relations
+        .iter()
+        .flat_map(|relation| &relation.scalar_refs)
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+    let mut drivers = HashMap::<(String, String), Vec<&FeatureInputScalar>>::new();
+    for scalar in lane.scalars.iter().filter(|scalar| {
+        scalar.role == FeatureInputScalarRole::Driving
+            && scalar.operands.is_empty()
+            && !claimed.contains(scalar.id.as_str())
+    }) {
+        let (Some(feature), Some(name)) = (
+            scalar.feature_ref.as_deref(),
+            names.get(scalar.name.as_str()).copied(),
+        ) else {
+            continue;
+        };
+        drivers
+            .entry((feature.to_string(), name.to_string()))
+            .or_default()
+            .push(scalar);
+    }
+    let mut candidates = HashMap::<(String, String), Vec<usize>>::new();
+    for (index, relation) in relations.iter().enumerate() {
+        if relation.parameter_scalar_ref.is_some() {
+            continue;
+        }
+        let relation_names = relation
+            .scalar_refs
+            .iter()
+            .filter_map(|id| scalars.get(id.as_str()))
+            .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
+            .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
+            .collect::<HashSet<_>>();
+        if relation_names.len() != 1 {
+            continue;
+        }
+        let name = *relation_names
+            .iter()
+            .next()
+            .expect("one display scalar name");
+        candidates
+            .entry((relation.feature_ref.clone(), name.to_string()))
+            .or_default()
+            .push(index);
+    }
+    for (key, relation_indices) in candidates {
+        let [relation_index] = relation_indices.as_slice() else {
+            continue;
+        };
+        let Some([driver]) = drivers.get(&key).map(Vec::as_slice) else {
+            continue;
+        };
+        let relation = &mut relations[*relation_index];
+        relation.scalar_refs.push(driver.id.clone());
+        relation.parameter_scalar_ref = Some(driver.id.clone());
+    }
 }
 
 fn relation_family(name: &str) -> Option<FeatureInputRelationFamily> {
@@ -2747,6 +2822,17 @@ pub(crate) fn bind_parameter_scalars(
             .filter(|relation| relation.family == FeatureInputRelationFamily::Angle)
             .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
             .collect::<HashSet<_>>();
+        let detached_scalars = lane
+            .relation_instances
+            .iter()
+            .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+            .filter(|id| {
+                lane.scalars
+                    .iter()
+                    .find(|scalar| scalar.id == **id)
+                    .is_some_and(|scalar| scalar.operands.is_empty())
+            })
+            .collect::<HashSet<_>>();
         let names_by_id = lane
             .names
             .iter()
@@ -2819,49 +2905,45 @@ pub(crate) fn bind_parameter_scalars(
                     .collect::<Vec<_>>();
                 if let [scalar] = compatible.as_slice() {
                     parameter.native_ref = Some(scalar.id.clone());
-                    let evaluated = match parameter.value.as_ref() {
-                        Some(cadmpeg_ir::features::ParameterValue::Length(_)) => {
-                            Some(cadmpeg_ir::features::ParameterValue::Length(
-                                cadmpeg_ir::features::Length(scalar.value * 1000.0),
-                            ))
+                    let scalar_is_detached = detached_scalars.contains(scalar.id.as_str());
+                    let scalar_is_untyped_real = matches!(
+                        parameter.value,
+                        Some(cadmpeg_ir::features::ParameterValue::Real(_))
+                    ) && !scalar_is_detached;
+                    if scalar_is_detached && length_scalars.contains(scalar.id.as_str()) {
+                        parameter.expression =
+                            crate::history::format_length_mm(scalar.value * 1000.0);
+                    } else if scalar_is_detached && angle_scalars.contains(scalar.id.as_str()) {
+                        parameter.expression = crate::history::format_angle_rad(scalar.value);
+                    }
+                    let evaluated = if length_scalars.contains(scalar.id.as_str())
+                        && !scalar_is_untyped_real
+                    {
+                        Some(cadmpeg_ir::features::ParameterValue::Length(
+                            cadmpeg_ir::features::Length(scalar.value * 1000.0),
+                        ))
+                    } else if angle_scalars.contains(scalar.id.as_str()) && !scalar_is_untyped_real
+                    {
+                        Some(cadmpeg_ir::features::ParameterValue::Angle(
+                            cadmpeg_ir::features::Angle(scalar.value),
+                        ))
+                    } else {
+                        match parameter.value.as_ref() {
+                            Some(cadmpeg_ir::features::ParameterValue::Length(_)) => {
+                                Some(cadmpeg_ir::features::ParameterValue::Length(
+                                    cadmpeg_ir::features::Length(scalar.value * 1000.0),
+                                ))
+                            }
+                            Some(cadmpeg_ir::features::ParameterValue::Angle(_)) => {
+                                Some(cadmpeg_ir::features::ParameterValue::Angle(
+                                    cadmpeg_ir::features::Angle(scalar.value),
+                                ))
+                            }
+                            Some(cadmpeg_ir::features::ParameterValue::Real(_)) => {
+                                Some(cadmpeg_ir::features::ParameterValue::Real(scalar.value))
+                            }
+                            _ => None,
                         }
-                        Some(cadmpeg_ir::features::ParameterValue::Angle(_)) => {
-                            Some(cadmpeg_ir::features::ParameterValue::Angle(
-                                cadmpeg_ir::features::Angle(scalar.value),
-                            ))
-                        }
-                        Some(cadmpeg_ir::features::ParameterValue::Real(_)) => {
-                            Some(cadmpeg_ir::features::ParameterValue::Real(scalar.value))
-                        }
-                        Some(cadmpeg_ir::features::ParameterValue::Integer(_))
-                            if length_scalars.contains(scalar.id.as_str()) =>
-                        {
-                            Some(cadmpeg_ir::features::ParameterValue::Length(
-                                cadmpeg_ir::features::Length(scalar.value * 1000.0),
-                            ))
-                        }
-                        Some(cadmpeg_ir::features::ParameterValue::Integer(_))
-                            if angle_scalars.contains(scalar.id.as_str()) =>
-                        {
-                            Some(cadmpeg_ir::features::ParameterValue::Angle(
-                                cadmpeg_ir::features::Angle(scalar.value),
-                            ))
-                        }
-                        Some(cadmpeg_ir::features::ParameterValue::Boolean(_))
-                            if length_scalars.contains(scalar.id.as_str()) =>
-                        {
-                            Some(cadmpeg_ir::features::ParameterValue::Length(
-                                cadmpeg_ir::features::Length(scalar.value * 1000.0),
-                            ))
-                        }
-                        Some(cadmpeg_ir::features::ParameterValue::Boolean(_))
-                            if angle_scalars.contains(scalar.id.as_str()) =>
-                        {
-                            Some(cadmpeg_ir::features::ParameterValue::Angle(
-                                cadmpeg_ir::features::Angle(scalar.value),
-                            ))
-                        }
-                        _ => None,
                     };
                     if let Some(evaluated) = evaluated {
                         parameter.value = Some(evaluated);
@@ -5284,13 +5366,14 @@ fn marker_entities_inner(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        bind_circular_profile_by_dimension, constrain_dimensioned_circle_transforms,
-        dimensioned_circle_surface_transforms, dimensioned_circle_transform,
-        implicit_circle_marker, marker_entities, profile_loci_by_marker,
-        project_dimensioned_sketch_geometry, relation_parameter_by_display_name,
-        sketch_frame_marker_transform, type_display_relation_parameters,
-        typed_marker_relation_definition, typed_relation_definition,
-        unique_compatible_marker_transform, unique_marker_transform, MarkerTransform,
+        bind_circular_profile_by_dimension, bind_detached_relation_drivers,
+        constrain_dimensioned_circle_transforms, dimensioned_circle_surface_transforms,
+        dimensioned_circle_transform, implicit_circle_marker, marker_entities,
+        profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        relation_parameter_by_display_name, sketch_frame_marker_transform,
+        type_display_relation_parameters, typed_marker_relation_definition,
+        typed_relation_definition, unique_compatible_marker_transform, unique_marker_transform,
+        MarkerTransform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
@@ -5386,7 +5469,7 @@ mod profile_join_tests {
                 value: "D1".into(),
                 object_id: None,
             }],
-            scalars: vec![scalar],
+            scalars: vec![scalar.clone()],
             relation_bindings: Vec::new(),
             relation_instances: Vec::new(),
             body_selections: Vec::new(),
@@ -5418,6 +5501,20 @@ mod profile_join_tests {
             .map(|parameter| &parameter.id),
             Some(&parameter.id)
         );
+
+        let mut detached = scalar;
+        detached.id = "driver".into();
+        detached.role = FeatureInputScalarRole::Driving;
+        detached.operands.clear();
+        let mut detached_lane = lane.clone();
+        detached_lane.scalars.push(detached);
+        let mut detached_relation = vec![relation.clone()];
+        bind_detached_relation_drivers(&mut detached_relation, &detached_lane);
+        assert_eq!(
+            detached_relation[0].parameter_scalar_ref.as_deref(),
+            Some("driver")
+        );
+        assert_eq!(detached_relation[0].scalar_refs, ["scalar", "driver"]);
 
         let mut parameter = parameter;
         parameter.value = Some(ParameterValue::Integer(12));

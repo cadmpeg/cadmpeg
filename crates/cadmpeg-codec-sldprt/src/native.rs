@@ -326,7 +326,7 @@ impl SldprtNative {
             !class_ids.contains(record.class_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
                 || record.scalar_refs.is_empty()
-                || record.scalar_refs.len() > 2
+                || record.scalar_refs.len() > 3
                 || record.scalar_refs.windows(2).any(|pair| pair[0] == pair[1])
                 || classes
                     .iter()
@@ -1014,7 +1014,7 @@ fn relation_instance_shape_valid(
     record: &FeatureInputRelationInstance,
     lane: &FeatureInputLane,
 ) -> bool {
-    if record.scalar_refs.is_empty() || record.scalar_refs.len() > 2 {
+    if record.scalar_refs.is_empty() || record.scalar_refs.len() > 3 {
         return false;
     }
     let Some(class) = lane
@@ -1046,21 +1046,41 @@ fn relation_instance_shape_valid(
         }
         positions.push((position, scalar));
     }
-    if positions[0].1.offset != record.offset
-        || positions.windows(2).any(|pair| pair[1].0 != pair[0].0 + 1)
-        || record.operands != positions[0].1.operands
+    if positions[0].1.offset != record.offset || record.operands != positions[0].1.operands {
+        return false;
+    }
+    let operand_scalars = positions
+        .iter()
+        .filter(|(_, scalar)| !scalar.operands.is_empty())
+        .collect::<Vec<_>>();
+    if operand_scalars.is_empty()
+        || operand_scalars
+            .windows(2)
+            .any(|pair| pair[1].0 != pair[0].0 + 1)
+        || operand_scalars.iter().any(|(_, scalar)| {
+            !scalar
+                .operands
+                .iter()
+                .map(|operand| (operand.kind, operand.entity_index))
+                .eq(positions[0]
+                    .1
+                    .operands
+                    .iter()
+                    .map(|operand| (operand.kind, operand.entity_index)))
+        })
     {
         return false;
     }
-    positions.iter().skip(1).all(|(_, scalar)| {
-        scalar
-            .operands
-            .iter()
-            .map(|operand| (operand.kind, operand.entity_index))
-            .eq(positions[0]
-                .1
-                .operands
-                .iter()
-                .map(|operand| (operand.kind, operand.entity_index)))
-    })
+    let detached = positions
+        .iter()
+        .filter(|(_, scalar)| scalar.operands.is_empty())
+        .collect::<Vec<_>>();
+    match detached.as_slice() {
+        [] => true,
+        [(position, scalar)] => {
+            record.parameter_scalar_ref.as_deref() == Some(scalar.id.as_str())
+                && *position > operand_scalars.last().expect("nonempty operand scalars").0
+        }
+        _ => false,
+    }
 }
