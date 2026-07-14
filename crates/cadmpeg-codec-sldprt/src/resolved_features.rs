@@ -6622,12 +6622,16 @@ fn select_marker_transforms_by_frame(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
 ) -> Vec<MarkerTransform> {
-    if !candidates.is_empty() {
-        return candidates.to_vec();
+    if let [candidate] = candidates {
+        return vec![*candidate];
     }
-    sketch_frame_marker_transform(sketch, quantum)
-        .into_iter()
-        .collect()
+    let frame = sketch_frame_marker_transform(sketch, quantum);
+    if candidates.is_empty() {
+        return frame.into_iter().collect();
+    }
+    frame
+        .filter(|frame| candidates.contains(frame))
+        .map_or_else(|| candidates.to_vec(), |frame| vec![frame])
 }
 
 fn dimensioned_circle_surface_transforms(
@@ -7626,7 +7630,11 @@ mod profile_join_tests {
         };
         assert_eq!(
             select_marker_transforms_by_frame(&[other, transform], &sketch, 1.0e-8),
-            vec![other, transform]
+            vec![transform]
+        );
+        assert_eq!(
+            select_marker_transforms_by_frame(&[other], &sketch, 1.0e-8),
+            vec![other]
         );
         assert_eq!(
             select_marker_transforms_by_frame(&[], &sketch, 1.0e-8),
