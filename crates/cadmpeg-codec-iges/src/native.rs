@@ -323,6 +323,31 @@ struct NativeGroup {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeAttributeValue {
+    value: NativeTokenValue,
+    display_template: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeAttributeDefinition {
+    attribute_type: Option<i64>,
+    value_data_type: Option<i64>,
+    declared_value_count: Option<i64>,
+    values: Vec<NativeAttributeValue>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeAttributeTableDefinition {
+    id: String,
+    source_entity: String,
+    form: i64,
+    name: Option<Vec<u8>>,
+    attribute_list_type: Option<i64>,
+    declared_attribute_count: Option<i64>,
+    attributes: Vec<NativeAttributeDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -1146,6 +1171,70 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let attribute_table_definitions = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let count = record
+                .and_then(|record| record.integer(3))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let mut cursor = 4;
+            let mut attributes = Vec::with_capacity(count);
+            for _ in 0..count {
+                let attribute_type = record.and_then(|record| record.integer(cursor));
+                let value_data_type = record.and_then(|record| record.integer(cursor + 1));
+                let declared_value_count = record.and_then(|record| record.integer(cursor + 2));
+                let value_count = match record
+                    .and_then(|record| record.tokens.get(cursor + 2))
+                    .map(|token| &token.value)
+                {
+                    None | Some(TokenValue::Omitted) => 1,
+                    Some(TokenValue::Integer(value)) => usize::try_from(*value).unwrap_or_default(),
+                    Some(TokenValue::Real(_) | TokenValue::String(_)) => 0,
+                };
+                cursor += 3;
+                let mut values = Vec::with_capacity(value_count);
+                if entry.form != 0 {
+                    for _ in 0..value_count {
+                        let value = record
+                            .and_then(|record| record.tokens.get(cursor))
+                            .map(token)
+                            .map_or(NativeTokenValue::Omitted, |token| token.value);
+                        cursor += 1;
+                        let display_template = (entry.form == 2)
+                            .then(|| record.and_then(|record| record.integer(cursor)))
+                            .flatten()
+                            .filter(|sequence| *sequence != 0)
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"));
+                        cursor += usize::from(entry.form == 2);
+                        values.push(NativeAttributeValue {
+                            value,
+                            display_template,
+                        });
+                    }
+                }
+                attributes.push(NativeAttributeDefinition {
+                    attribute_type,
+                    value_data_type,
+                    declared_value_count,
+                    values,
+                });
+            }
+            NativeAttributeTableDefinition {
+                id: format!("iges:product:attribute-definition#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                name: record
+                    .and_then(|record| record.string(1))
+                    .map(<[u8]>::to_vec),
+                attribute_list_type: record.and_then(|record| record.integer(2)),
+                declared_attribute_count: record.and_then(|record| record.integer(3)),
+                attributes,
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -1172,5 +1261,6 @@ pub(crate) fn store(
     namespace.set_arena("circular_arrays", &circular_arrays)?;
     namespace.set_arena("external_references", &external_references)?;
     namespace.set_arena("groups", &groups)?;
+    namespace.set_arena("attribute_table_definitions", &attribute_table_definitions)?;
     Ok(())
 }

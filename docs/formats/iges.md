@@ -84,6 +84,8 @@ Type 416 external references are identity records and never cause implicit file 
 
 Type 402 Forms 1, 7, 14, and 15 group a positive ordered parameter list of existing entities. Forms 1 and 7 are semantically unordered; Forms 14 and 15 preserve ordered group semantics. Forms 1 and 14 require every member's first trailing pointer group to contain a back pointer to the group. Forms 7 and 15 require no back pointer. The `groups` arena preserves source member order even for semantically unordered groups, group ordering semantics, back-pointer policy, and member identities.
 
+Type 322 defines an attribute table with a name, attribute-list classification, and a positive ordered list of attribute descriptors. Each descriptor stores an integer attribute type, value data type `1` integer, `2` real, `3` Hollerith string, `4` entity pointer, `5` omitted/not-used, or `6` logical integer, and a nonnegative value count defaulting to one. Form 0 stores descriptors only. Form 1 follows every descriptor with its typed values. Form 2 follows each typed value with a nullable Type 312 display-template pointer. A zero value count denotes a value that is presently unknown and stores no value token. The `attribute_table_definitions` arena preserves descriptor order, typed native values, omitted fields, and display-template links.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.

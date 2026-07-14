@@ -2306,6 +2306,32 @@ fn group_forms_file() -> Vec<u8> {
     ])
 }
 
+fn attribute_definition_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 322,
+            form: 0,
+            label: "ATTRDEF".into(),
+            status: "00000000",
+            parameters: "322,4HMETA,1,2,10,1,1,11,3,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 322,
+            form: 1,
+            label: "ATTRROW".into(),
+            status: "00000000",
+            parameters: "322,4HROW1,1,2,10,1,1,42,11,3,1,5HSTEEL;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 322,
+            form: 2,
+            label: "ATTRDSP".into(),
+            status: "00000000",
+            parameters: "322,4HROW2,1,2,10,2,1,3.5,0,11,6,1,1,0;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -3496,6 +3522,42 @@ fn decode_preserves_group_order_and_back_pointer_policy() {
     assert_eq!(groups[0].fields["members"][0], "iges:entity:directory#1");
     assert_eq!(groups[1].fields["ordered"], false);
     assert_eq!(groups[1].fields["back_pointers_required"], false);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_all_attribute_table_definition_forms() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(attribute_definition_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let definitions =
+        &result.ir.native.namespace("iges").unwrap().arenas["attribute_table_definitions"];
+    assert_eq!(definitions.len(), 3);
+    assert_eq!(definitions[0].fields["form"], 0);
+    assert_eq!(
+        definitions[0].fields["attributes"][0]["declared_value_count"],
+        1
+    );
+    assert_eq!(
+        definitions[1].fields["attributes"][0]["values"][0]["value"]["kind"],
+        "integer"
+    );
+    assert_eq!(
+        definitions[1].fields["attributes"][1]["values"][0]["value"]["kind"],
+        "string"
+    );
+    assert_eq!(
+        definitions[2].fields["attributes"][0]["values"][0]["value"]["kind"],
+        "real"
+    );
+    assert!(definitions[2].fields["attributes"][0]["values"][0]["display_template"].is_null());
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

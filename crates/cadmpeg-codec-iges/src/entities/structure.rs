@@ -176,6 +176,31 @@ fn has_association_back_pointer(
     })
 }
 
+fn attribute_value_valid(
+    record: &ParameterRecord,
+    index: usize,
+    data_type: i64,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    match (
+        data_type,
+        record.tokens.get(index).map(|token| &token.value),
+    ) {
+        (1, Some(TokenValue::Integer(_)))
+        | (3, Some(TokenValue::String(_)))
+        | (5, Some(TokenValue::Omitted)) => true,
+        (2, Some(TokenValue::Integer(_) | TokenValue::Real(_))) => {
+            record.number(index).is_some_and(f64::is_finite)
+        }
+        (4, Some(TokenValue::Integer(value))) => u32::try_from(*value)
+            .ok()
+            .filter(|sequence| sequence % 2 == 1)
+            .is_some_and(|sequence| entries.contains_key(&sequence)),
+        (6, Some(TokenValue::Integer(value))) => matches!(*value, 0..=1),
+        _ => false,
+    }
+}
+
 fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64> {
     match record.tokens.get(index).map(|token| &token.value) {
         None | Some(TokenValue::Omitted) => Some(default),
@@ -234,6 +259,68 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let name_valid = matches!(
+            record.tokens.get(1).map(|token| &token.value),
+            Some(TokenValue::String(_) | TokenValue::Omitted)
+        );
+        let list_type_valid = record
+            .integer(2)
+            .is_some_and(|value| matches!(value, 0..=9999));
+        let attribute_count = record
+            .integer(3)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0);
+        let mut cursor = 4;
+        let mut attributes_valid = attribute_count.is_some();
+        for _ in 0..attribute_count.unwrap_or_default() {
+            let attribute_type_valid = record.integer(cursor).is_some();
+            let data_type = record
+                .integer(cursor + 1)
+                .filter(|value| matches!(value, 1..=6));
+            let value_count =
+                integer_or(record, cursor + 2, 1).and_then(|value| usize::try_from(value).ok());
+            cursor += 3;
+            attributes_valid &=
+                attribute_type_valid && data_type.is_some() && value_count.is_some();
+            if entry.form != 0 {
+                for _ in 0..value_count.unwrap_or_default() {
+                    attributes_valid &= data_type.is_some_and(|data_type| {
+                        attribute_value_valid(record, cursor, data_type, &entries)
+                    });
+                    cursor += 1;
+                    if entry.form == 2 {
+                        attributes_valid &= integer_or(record, cursor, 0).is_some_and(|value| {
+                            value == 0
+                                || u32::try_from(value).ok().is_some_and(|sequence| {
+                                    entries
+                                        .get(&sequence)
+                                        .is_some_and(|target| target.entity_type == 312)
+                                })
+                        });
+                        cursor += 1;
+                    }
+                }
+            }
+        }
+        if name_valid && list_type_valid && attributes_valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "attribute-table definition header, value type, value, or display link is invalid",
+            ));
+        }
+    }
 
     for entry in directory
         .iter()
