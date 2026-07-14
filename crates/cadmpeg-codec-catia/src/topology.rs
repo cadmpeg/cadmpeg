@@ -3,6 +3,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use cadmpeg_ir::topology::BodyKind;
+
 const FBB_ROW: [u8; 4] = [0x30, 0x04, 0x04, 0xff];
 const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const TRIM_KINDS: [u8; 14] = [
@@ -55,6 +57,51 @@ impl StandardTopology {
     #[must_use]
     pub fn logical_vertex_count(&self) -> usize {
         self.logical_vertex_count
+    }
+
+    /// Classify each consecutive FBB face group from physical-edge incidence.
+    /// An edge cannot belong to faces in two different groups.
+    #[must_use]
+    pub fn body_kinds(&self, face_groups: &[usize]) -> Option<Vec<BodyKind>> {
+        if face_groups.iter().sum::<usize>() != self.faces.len() {
+            return None;
+        }
+        let mut body_by_face = Vec::with_capacity(self.faces.len());
+        for (body, count) in face_groups.iter().copied().enumerate() {
+            body_by_face.extend(std::iter::repeat_n(body, count));
+        }
+        let mut uses = vec![HashMap::<usize, usize>::new(); face_groups.len()];
+        let mut bodies_by_edge = vec![HashSet::new(); self.edge_rows.len()];
+        for (face, topology) in self.faces.iter().enumerate() {
+            let body = body_by_face[face];
+            for coedge in topology
+                .boundaries
+                .iter()
+                .flat_map(|boundary| &boundary.coedges)
+            {
+                if coedge.edge_row >= self.edge_rows.len() {
+                    return None;
+                }
+                bodies_by_edge[coedge.edge_row].insert(body);
+                *uses[body].entry(coedge.edge_row).or_default() += 1;
+            }
+        }
+        if bodies_by_edge.iter().any(|bodies| bodies.len() > 1) {
+            return None;
+        }
+        Some(
+            uses.into_iter()
+                .map(|uses| {
+                    if uses.values().any(|count| *count > 2) {
+                        BodyKind::General
+                    } else if !uses.is_empty() && uses.values().all(|count| *count == 2) {
+                        BodyKind::Solid
+                    } else {
+                        BodyKind::Sheet
+                    }
+                })
+                .collect(),
+        )
     }
 
     /// Bind logical port/corner components to coordinate-row indices from one
@@ -4812,12 +4859,15 @@ impl UnionFind {
 mod motif_tests {
     use std::collections::HashSet;
 
+    use cadmpeg_ir::topology::BodyKind;
+
     use super::{
         bind_edge_port_candidates, deduplicate_mesh_quotient_assignments,
         mesh_edge_points_compatible, motif_port_points, parse_trim_chain,
         propagate_edge_port_points, prune_edge_candidates_by_port_domains, reconstruct_incidence,
-        reconstruct_incidence_candidates, unique_coordinate_bijection, EdgeBoundaryLayout, EdgeRow,
-        MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch,
+        reconstruct_incidence_candidates, unique_coordinate_bijection, Boundary, CoedgeUse,
+        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate,
+        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
         TrimRecord, UnionFind,
     };
 
@@ -5173,6 +5223,8 @@ mod motif_tests {
         ];
         let topology = reconstruct_incidence(rows, points, &edge_faces, &edge_points, 9)
             .expect("orientable multi-boundary shell");
+        assert_eq!(topology.body_kinds(&[9]), Some(vec![BodyKind::Solid]));
+        assert_eq!(topology.body_kinds(&[4, 5]), None);
         assert_eq!(topology.faces()[4].boundaries.len(), 2);
         let mut uses = vec![Vec::new(); 18];
         for face in topology.faces() {
@@ -5185,6 +5237,31 @@ mod motif_tests {
         assert!(uses
             .iter()
             .all(|senses| senses == &[false, true] || senses == &[true, false]));
+    }
+
+    #[test]
+    fn open_standard_edge_incidence_classifies_a_sheet_body() {
+        let topology = StandardTopology {
+            faces: vec![FaceTopology {
+                boundaries: vec![Boundary {
+                    coedges: vec![CoedgeUse {
+                        edge_row: 0,
+                        reversed: false,
+                        start_vertex: 0,
+                        end_vertex: 1,
+                    }],
+                }],
+            }],
+            edge_rows: vec![EdgeRow {
+                kind: 1,
+                handles: vec![0, 1],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            }],
+            vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            logical_vertex_count: 2,
+        };
+
+        assert_eq!(topology.body_kinds(&[1]), Some(vec![BodyKind::Sheet]));
     }
 
     #[test]

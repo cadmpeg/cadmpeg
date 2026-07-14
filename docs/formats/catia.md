@@ -205,6 +205,8 @@ When a face has one surviving positional assignment, intersect the port-corner e
 
 Boundary orientation is a parity problem over the selected face boundaries. The two uses of every physical edge must traverse it in opposite directions after applying an optional reversal to each complete boundary. A partial selection whose boundary-parity graph contains an inconsistent cycle is invalid. Apply the solved boundary reversals to the completed coedge graph before emitting topology.
 
+Within one FBB face group, physical-edge incidence classifies the body. A nonempty group whose every edge has two uses is solid; a group with an edge having more than two uses is general; every other group is sheet. A physical edge cannot be shared by faces in separate FBB groups.
+
 Initialize the quotient by collapsing equal serialized port identities. Use complete mesh-occurrence components when available; otherwise use equality within each `01 01` or `01 02` table-local namespace. Face-boundary corner equations extend this initial quotient.
 
 Assignments with the same ordered physical-edge rows and the same resolved occurrence directions induce the same logical-corner quotient. Differences confined to boundary-segment allocation do not create distinct quotient choices. Positional assignments remain distinct while deriving trim-corner endpoint constraints.

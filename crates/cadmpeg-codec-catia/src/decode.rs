@@ -4070,7 +4070,7 @@ fn attach_standard_faces(
             .derived(&body_id, "regions");
         ir.model.bodies.push(Body {
             id: body_id.clone(),
-            kind: cadmpeg_ir::topology::BodyKind::Solid,
+            kind: cadmpeg_ir::topology::BodyKind::Sheet,
             regions: vec![region_id.clone()],
             transform: None,
             name: None,
@@ -4565,6 +4565,9 @@ fn attach_standard_topology(
     {
         return false;
     }
+    let Some(body_kinds) = topology.body_kinds(&fbb_groups(brep)) else {
+        return false;
+    };
     let Some(edge_vertices) = topology.edge_vertices() else {
         return false;
     };
@@ -4727,6 +4730,13 @@ fn attach_standard_topology(
             let next = uses[(position + 1) % uses.len()];
             ir.model.coedges[*current].radial_next = ir.model.coedges[next].id.clone();
         }
+    }
+    for (body_index, kind) in body_kinds.into_iter().enumerate() {
+        let id = BodyId(format!("catia:standard:body#{body_index}"));
+        let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == id) else {
+            return false;
+        };
+        body.kind = kind;
     }
     true
 }
