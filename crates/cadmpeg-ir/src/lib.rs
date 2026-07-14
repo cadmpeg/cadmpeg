@@ -36,6 +36,7 @@ pub mod compression;
 
 pub mod diff;
 pub mod document;
+pub mod drawings;
 pub mod eval;
 pub mod examples;
 pub mod features;

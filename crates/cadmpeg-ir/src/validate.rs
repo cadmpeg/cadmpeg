@@ -27,6 +27,7 @@ use sha2::{Digest, Sha256};
 
 mod annotations_native;
 mod carriers_parameterization;
+mod drawings;
 mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
@@ -39,6 +40,7 @@ mod topology;
 
 use annotations_native::{check_annotations, check_native_links};
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
+use drawings::check_drawings;
 use geometry_consistency::{check_edge_endpoint_consistency, check_pcurve_surface_consistency};
 use geometry_payloads::{check_bounds, check_tessellations, check_unknown_payloads};
 use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
@@ -88,6 +90,7 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_spreadsheets(ir, &mut findings);
     check_products(ir, &mut findings);
     check_presentation(ir, &all_ids, &mut findings);
+    check_drawings(ir, &all_ids, &mut findings);
 
     ValidationReport {
         entity_counts: entity_counts(ir),

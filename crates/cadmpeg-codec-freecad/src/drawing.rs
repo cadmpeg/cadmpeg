@@ -3,6 +3,9 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use cadmpeg_ir::document::Model;
+use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
+
 use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord};
 
 pub(crate) fn transfer(
@@ -53,6 +56,137 @@ pub(crate) fn transfer(
             }
         })
         .collect()
+}
+
+pub(crate) fn transfer_neutral(
+    model: &mut Model,
+    records: &[DrawingRecord],
+    properties: &[PropertyRecord],
+) {
+    let neutral_ids = records
+        .iter()
+        .map(|record| {
+            (
+                record.object.as_str(),
+                crate::native::model_id("drawing", &record.object, "entity"),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    for (order, record) in records.iter().enumerate() {
+        let owned = properties
+            .iter()
+            .filter(|property| property.owner == record.object)
+            .collect::<Vec<_>>();
+        let relationship = |link: &crate::native::LinkTarget| DrawingTarget {
+            target: link
+                .document
+                .is_none()
+                .then(|| {
+                    link.object.as_ref().map(|object| {
+                        neutral_ids
+                            .get(object.as_str())
+                            .cloned()
+                            .unwrap_or_else(|| object.clone())
+                    })
+                })
+                .flatten(),
+            external_document: link.document.clone(),
+            external_object: link.document.as_ref().and(link.object.clone()),
+            subelements: link.subelements.clone(),
+        };
+        let parameter = |name: &str| scalar_property(&owned, name);
+        let x = parameter("X");
+        let y = parameter("Y");
+        model.drawings.push(Drawing {
+            id: DrawingId(neutral_ids[record.object.as_str()].clone()),
+            object: record.object.clone(),
+            kind: classify(&record.kind),
+            runtime_type: record.kind.clone(),
+            order: order as u32,
+            relationships: record
+                .relationships
+                .iter()
+                .map(|(role, targets)| (role.clone(), targets.iter().map(relationship).collect()))
+                .collect(),
+            template: record.template.as_ref().map(|object| {
+                neutral_ids
+                    .get(object.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| object.clone())
+            }),
+            position: x.zip(y).map(|(x, y)| [x, y]),
+            scale: parameter("Scale"),
+            direction: record
+                .parameters
+                .contains_key("Direction")
+                .then(|| vector_property(&owned, "Direction"))
+                .flatten(),
+            rotation_degrees: parameter("Rotation"),
+            parameters: record.parameters.clone(),
+            assets: record
+                .side_entries
+                .iter()
+                .map(|name| crate::native::native_id("entry", name))
+                .collect(),
+            native_ref: record.id.clone(),
+        });
+    }
+}
+
+fn classify(runtime_type: &str) -> DrawingKind {
+    if runtime_type.contains("DrawPage") {
+        DrawingKind::Page
+    } else if runtime_type.contains("Template") {
+        DrawingKind::Template
+    } else if runtime_type.contains("Dimension") {
+        DrawingKind::Dimension
+    } else if runtime_type.contains("Annotation") {
+        DrawingKind::Annotation
+    } else if runtime_type.contains("Balloon") {
+        DrawingKind::Balloon
+    } else if runtime_type.contains("Leader") {
+        DrawingKind::Leader
+    } else if runtime_type.contains("Symbol") {
+        DrawingKind::Symbol
+    } else if runtime_type.contains("Detail") {
+        DrawingKind::Detail
+    } else if runtime_type.contains("Section") {
+        DrawingKind::Section
+    } else if runtime_type.contains("Projection") || runtime_type.contains("ProjGroup") {
+        DrawingKind::Projection
+    } else if runtime_type.contains("Image") {
+        DrawingKind::Image
+    } else if runtime_type.contains("View") {
+        DrawingKind::View
+    } else {
+        DrawingKind::Other
+    }
+}
+
+fn scalar_property(properties: &[&PropertyRecord], name: &str) -> Option<f64> {
+    properties
+        .iter()
+        .find(|property| property.name == name)?
+        .values
+        .first()?
+        .attributes
+        .get("value")?
+        .parse()
+        .ok()
+}
+
+fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<[f64; 3]> {
+    let attributes = &properties
+        .iter()
+        .find(|property| property.name == name)?
+        .values
+        .first()?
+        .attributes;
+    Some([
+        attributes.get("valueX")?.parse().ok()?,
+        attributes.get("valueY")?.parse().ok()?,
+        attributes.get("valueZ")?.parse().ok()?,
+    ])
 }
 
 fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkTarget> {

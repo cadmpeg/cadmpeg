@@ -609,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "50");
+    assert_eq!(result.ir.ir_version, "51");
     let feature = |name: &str| {
         &result
             .ir
@@ -3489,8 +3489,56 @@ fn recovers_techdraw_page_template_and_view_graph() {
         Some("fcstd:native:object#Model")
     );
     assert!(view.parameters.contains_key("Direction"));
+    assert_eq!(result.ir.model.drawings.len(), 3);
+    let neutral_page = result
+        .ir
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with("#Page"))
+        .expect("neutral page");
+    let neutral_template = result
+        .ir
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with("#Template"))
+        .expect("neutral template");
+    let neutral_view = result
+        .ir
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with("#View"))
+        .expect("neutral view");
+    assert_eq!(neutral_page.kind, cadmpeg_ir::drawings::DrawingKind::Page);
+    assert_eq!(
+        neutral_page.template.as_deref(),
+        Some(neutral_template.id.0.as_str())
+    );
+    assert_eq!(
+        neutral_page.relationships["Views"][0].target.as_deref(),
+        Some(neutral_view.id.0.as_str())
+    );
+    assert_eq!(neutral_template.assets.len(), 1);
+    assert_eq!(neutral_view.position, Some([25.0, 40.0]));
+    assert_eq!(neutral_view.scale, Some(2.0));
+    assert_eq!(neutral_view.direction, Some([0.0, 0.0, 1.0]));
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
+
+    let mut corrupted = result.ir.clone();
+    corrupted
+        .model
+        .drawings
+        .iter_mut()
+        .find(|drawing| drawing.object.ends_with("#View"))
+        .expect("neutral view")
+        .scale = Some(0.0);
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == "invalid drawing reference, order, or numeric state"));
 }
 
 #[test]
@@ -3553,6 +3601,19 @@ fn separates_semantic_annotations_from_drawing_relationships() {
             .as_deref(),
         Some("fcstd:native:object#View")
     );
+    let neutral_dimension = result
+        .ir
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with("#Dimension"))
+        .expect("neutral drawing dimension");
+    assert_eq!(
+        neutral_dimension.kind,
+        cadmpeg_ir::drawings::DrawingKind::Dimension
+    );
+    assert!(neutral_dimension.relationships.contains_key("BaseView"));
+    assert!(neutral_dimension.relationships.contains_key("References2D"));
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
 }

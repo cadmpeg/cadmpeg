@@ -307,6 +307,14 @@ assets. Drawing records independently retain every link-valued relationship, inc
 and section parents rather than only page membership and model sources. Validation requires exact
 annotation-object coverage and resolves both annotation and drawing relationships.
 
+CADIR version 51 promotes the drawing graph into a format-neutral arena. Pages, templates, model
+views, projection groups, sections, details, dimensions, annotations, balloons, symbols, leaders,
+images, and extension drawing objects retain their runtime classification and source order. Local
+drawing relationships resolve to neutral drawing identities, model sources resolve to their local
+object identities, and external document/object pairs remain explicit without being treated as
+local references. View position, positive scale, nonzero projection direction, rotation, exact
+fallback parameters, and resolved template or image assets are independently validated.
+
 Native namespace version 10 adds a `gui_documents` arena. A GUI archive has exactly one document
 record; a headless archive has none. The record retains the GUI schema and root attributes plus
 every document-level element outside `ViewProviderData` in source order. These named state records
