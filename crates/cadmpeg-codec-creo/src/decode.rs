@@ -8877,7 +8877,7 @@ fn transfer_fc05_cap_circles(
             .filter(|face| kinds.get(face) == Some(&crate::surface::SurfaceKind::Cylinder))
             .copied()
             .collect::<Vec<_>>();
-        let ([cap], [cylinder_id], Some(reference), Some(parameter_sign), Some(axis_ordinate)) = (
+        let ([cap], [cylinder_id], Some(reference), Some(parameter_sign), Some(_)) = (
             cap_planes.as_slice(),
             cylinders.as_slice(),
             circle.reference_direction_row_frame,
@@ -8940,13 +8940,6 @@ fn transfer_fc05_cap_circles(
         {
             continue;
         }
-        let (axis_origin, _, _) = fc05_model_frame(
-            axis_index,
-            axis_ordinate,
-            [first, second],
-            reference,
-            axis_sign,
-        );
         annotate(
             annotations,
             &surface_id,
@@ -8958,7 +8951,7 @@ fn transfer_fc05_cap_circles(
         ir.model.surfaces.push(Surface {
             id: surface_id,
             geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(axis_origin[0], axis_origin[1], axis_origin[2]),
+                origin: Point3::new(center[0], center[1], center[2]),
                 axis: Vector3::new(axis[0], axis[1], axis[2]),
                 ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
                 radius: circle.radius_mm,

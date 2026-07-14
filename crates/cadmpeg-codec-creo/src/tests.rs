@@ -2388,7 +2388,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         one_cap_cylinder.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
             origin: cadmpeg_ir::math::Point3 {
-                x: -5.0,
+                x: 2.0,
                 y: 5.0,
                 z: 3.0
             },

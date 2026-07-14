@@ -302,7 +302,7 @@ Each participating `fc 05` curve is a circle centered at the shared in-plane
 center and its own transformed cap ordinate, with the cylinder axis and radius.
 The curve identifier remains the `crv_array.crv_id`.
 
-One `fc 05` curve bound to one cylinder face and one resolved axis-normal cap plane independently defines both its model-space circle and the cylinder carrier. The in-plane fitted center, stored `C` ordinate, signed parameter sense, parameter-zero radial direction, and fitted radius form the cylinder axis placement and radius.
+One `fc 05` curve bound to one cylinder face and one resolved axis-normal cap plane independently defines both its model-space circle and the cylinder carrier. The cap plane supplies the model-space axial coordinate. The in-plane fitted center, signed parameter sense, parameter-zero radial direction, and fitted radius define the remaining cylinder placement and radius. The cylinder axis passes through the cap-circle center.
 
 ## 5. Topology and section records
 
