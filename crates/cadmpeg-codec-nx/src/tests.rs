@@ -7666,6 +7666,45 @@ fn decode_rejects_ambiguous_ext11_uv_lane_assignment() {
 }
 
 #[test]
+fn ext11_uv_completion_runs_after_support_incidence_resolution() {
+    let stream = two_support_ext11_charted_intersection_curve_stream(false);
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let procedural_id = result.ir.model.procedural_curves[0].id.clone();
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+        &mut result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    for side in &mut context.sides {
+        side.pcurve = None;
+    }
+    let pending = vec![(
+        procedural_id,
+        vec![
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
+        ],
+        vec![0.0, 0.01],
+        0.01,
+        [
+            Some(vec![[0.0, 0.0], [0.01, 0.0]]),
+            Some(vec![[0.0, 0.0], [0.0, 0.01]]),
+        ],
+    )];
+
+    crate::decode::complete_ext11_support_uv(&mut result.ir, &pending);
+
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn decode_emits_both_intersection_support_pcurves() {
     let stream = two_support_charted_intersection_curve_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));

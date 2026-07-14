@@ -170,6 +170,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         let mut trim_ranges = BTreeMap::new();
         let mut pending_blend_supports = Vec::new();
         let mut pending_blend_spines = Vec::new();
+        let mut pending_ext11_support_uv = Vec::new();
         let first_surface = ir.model.surfaces.len();
         let first_curve = ir.model.curves.len();
         let mut point_ordinal = 0usize;
@@ -507,6 +508,15 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             let procedural_id = ProceduralCurveId(format!("nx:s{si}:intersection#{ci}"));
             let unknown_id = UnknownId(format!("nx:container:parasolid#{si}"));
             let charted = charted_intersections.get(&construction.xmt);
+            if let Some(charted) = charted {
+                pending_ext11_support_uv.push((
+                    procedural_id.clone(),
+                    charted.points.clone(),
+                    charted.parameters.clone(),
+                    charted.fit_tolerance,
+                    charted.ext_support_uv.clone(),
+                ));
+            }
             annotations
                 .note(&curve_id, source_stream, construction.pos as u64)
                 .tag("INTERSECTION");
@@ -702,6 +712,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             source_stream,
             &mut annotations,
         );
+        complete_ext11_support_uv(&mut ir, &pending_ext11_support_uv);
 
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let mut unknown = unknown_stream(si, stream);
@@ -1474,7 +1485,22 @@ pub(crate) fn assign_ext11_support_uv(
     let [Some(first_surface), Some(second_surface)] = surface_ids else {
         return None;
     };
-    let surfaces = [first_surface, second_surface];
+    assign_ext11_support_uv_to_surfaces(
+        ir,
+        [&first_surface, &second_surface],
+        points,
+        fit_tolerance,
+        lanes,
+    )
+}
+
+fn assign_ext11_support_uv_to_surfaces(
+    ir: &CadIr,
+    surfaces: [&SurfaceId; 2],
+    points: &[Point3],
+    fit_tolerance: f64,
+    lanes: &[Option<Vec<[f64; 2]>>; 2],
+) -> Option<[Vec<[f64; 2]>; 2]> {
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
         let Some(values) = lanes[lane]
             .as_deref()
@@ -1497,12 +1523,89 @@ pub(crate) fn assign_ext11_support_uv(
                 .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
         })
     };
-    let direct = lane_matches_surface(&surfaces[0], 0) && lane_matches_surface(&surfaces[1], 1);
-    let swapped = lane_matches_surface(&surfaces[0], 1) && lane_matches_surface(&surfaces[1], 0);
+    let direct = lane_matches_surface(surfaces[0], 0) && lane_matches_surface(surfaces[1], 1);
+    let swapped = lane_matches_surface(surfaces[0], 1) && lane_matches_surface(surfaces[1], 0);
     match (direct, swapped) {
         (true, false) => Some([lanes[0].clone()?, lanes[1].clone()?]),
         (false, true) => Some([lanes[1].clone()?, lanes[0].clone()?]),
         _ => None,
+    }
+}
+
+pub(crate) type PendingExt11SupportUv = (
+    ProceduralCurveId,
+    Vec<Point3>,
+    Vec<f64>,
+    f64,
+    [Option<Vec<[f64; 2]>>; 2],
+);
+
+pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+    for (procedural_id, points, parameters, fit_tolerance, lanes) in pending {
+        let Some(procedural_index) = ir
+            .model
+            .procedural_curves
+            .iter()
+            .position(|procedural| &procedural.id == procedural_id)
+        else {
+            continue;
+        };
+        let (surfaces, missing) = match &ir.model.procedural_curves[procedural_index].definition {
+            ProceduralCurveDefinition::Intersection { context, .. } => {
+                let [Some(first), Some(second)] = &context.sides.clone().map(|side| side.surface)
+                else {
+                    continue;
+                };
+                (
+                    [first.clone(), second.clone()],
+                    context.sides.each_ref().map(|side| side.pcurve.is_none()),
+                )
+            }
+            _ => continue,
+        };
+        if !missing.into_iter().any(|missing| missing) {
+            continue;
+        }
+        let Some(assigned) = assign_ext11_support_uv_to_surfaces(
+            ir,
+            [&surfaces[0], &surfaces[1]],
+            points,
+            *fit_tolerance,
+            lanes,
+        ) else {
+            continue;
+        };
+        let replacements: [Option<PcurveGeometry>; 2] = std::array::from_fn(|side| {
+            if !missing[side] {
+                return None;
+            }
+            let surface_geometry = ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == surfaces[side])
+                .map(|surface| &surface.geometry)?;
+            Some(PcurveGeometry::Nurbs {
+                degree: 1,
+                knots: linear_knots(parameters),
+                control_points: assigned[side]
+                    .iter()
+                    .map(|uv| surface_parameters(surface_geometry, *uv))
+                    .collect(),
+                weights: None,
+                periodic: false,
+            })
+        });
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            &mut ir.model.procedural_curves[procedural_index].definition
+        else {
+            unreachable!("definition checked above");
+        };
+        for (side, replacement) in replacements.into_iter().enumerate() {
+            if let Some(replacement) = replacement {
+                context.sides[side].pcurve = Some(replacement);
+            }
+        }
     }
 }
 
