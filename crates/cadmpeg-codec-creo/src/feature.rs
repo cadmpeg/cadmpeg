@@ -237,6 +237,9 @@ pub struct FeatureRow {
     pub header: [u8; 2],
     /// Root `FeatDefs` schema class from the fixed row prefix.
     pub root_schema_class: Option<u32>,
+    /// Absolute offset of the containing `AllFeatur` section. Replay state is
+    /// scoped to this stream.
+    pub stream_offset: usize,
     /// Row bytes after the compact feature identifier, ending before the next
     /// known feature row or at the end of the section.
     pub body: Vec<u8>,
@@ -375,16 +378,30 @@ pub struct FeatureAffectedIds {
     pub offset: usize,
 }
 
-/// Affected IDs recovered from an unlabeled positional replay recipe.
+/// Whether an affected-array extent is present or inherited at its schema
+/// position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayExtentSource {
+    /// An `f8 <count>` opener occurs at this position.
+    Explicit,
+    /// The position omits `f8` and reuses the preceding extent in this schema
+    /// stream.
+    Inherited,
+}
+
+/// Geometry and edge operands recovered from a class-913 positional replay.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureReplayAffectedIds {
     /// Owning feature identifier.
     pub feature_id: u32,
-    /// Affected identifiers in replay order; geometry/edge partition is not
-    /// implied by this combined sequence.
-    pub ids: Vec<u32>,
-    /// Whether the run contained an `f8 <count>` framing opener.
-    pub has_count_opener: bool,
+    /// Geometry identifiers at the first affected-array schema position.
+    pub geometry_ids: Vec<u32>,
+    /// Edge identifiers at the second affected-array schema position.
+    pub edge_ids: Vec<u32>,
+    /// Encoding of the geometry-array extent.
+    pub geometry_extent: ReplayExtentSource,
+    /// Encoding of the edge-array extent.
+    pub edge_extent: ReplayExtentSource,
     /// Byte offset of the replay anchor in the original stream.
     pub offset: usize,
 }
@@ -1056,6 +1073,7 @@ pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<FeatureRow> {
                 feature_id,
                 header,
                 root_schema_class,
+                stream_offset: 0,
                 body: body.to_vec(),
                 body_offset: body_start,
                 offset: start,
@@ -3461,13 +3479,60 @@ pub fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
     result
 }
 
-/// Decode unlabeled positional replay affected-ID runs.
+fn skip_replay_field_label(run: &[u8], cursor: usize, expected: &[u8]) -> Option<usize> {
+    if run.get(cursor) != Some(&psb::token::NAMED_RECORD) {
+        return Some(cursor);
+    }
+    let name_end = run
+        .get(cursor + 2..)?
+        .iter()
+        .position(|byte| *byte == 0)
+        .map(|relative| cursor + 2 + relative)?;
+    (run.get(cursor + 2..name_end) == Some(expected)).then_some(name_end + 1)
+}
+
+fn replay_extent(
+    run: &[u8],
+    cursor: usize,
+    field_name: &[u8],
+    inherited: Option<u32>,
+) -> Option<(u32, ReplayExtentSource, usize)> {
+    let cursor = skip_replay_field_label(run, cursor, field_name)?;
+    if run.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
+        let (count, after) = psb::compact_int(run, cursor + 1);
+        (after > cursor + 1).then_some((count, ReplayExtentSource::Explicit, after))
+    } else {
+        inherited.map(|count| (count, ReplayExtentSource::Inherited, cursor))
+    }
+}
+
+fn replay_ids(run: &[u8], count: u32, mut cursor: usize) -> Option<(Vec<u32>, usize)> {
+    let mut ids = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        let (id, after) = psb::compact_int(run, cursor);
+        if after == cursor {
+            return None;
+        }
+        ids.push(id);
+        cursor = after;
+    }
+    Some((ids, cursor))
+}
+
+/// Decode the two affected-ID array positions in class-913 replay rows.
+///
+/// Array extents are stateful within one `AllFeatur` stream and schema class.
+/// An omitted `f8` opener reuses the preceding extent at the same array
+/// position.
 pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds> {
     const ANCHOR: &[u8] = &[0xf1, 0xf7, 0x42, 0xd8, 0x80, 0x01, 0xe3];
     const TERMINATOR: &[u8] = &[0xf5, 0x96, 0x92];
-    const SKIP: &[u8] = &[0xf7, 0xf6, 0xf1, 0xf2, 0xfb, 0xe3, 0xe1, 0xe2];
     let mut result = Vec::new();
+    let mut extents = BTreeMap::<usize, [Option<u32>; 2]>::new();
     for row in rows {
+        if row.root_schema_class != Some(913) {
+            continue;
+        }
         let Some(anchor) = row
             .body
             .windows(ANCHOR.len())
@@ -3483,43 +3548,33 @@ pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds>
             continue;
         };
         let run = &row.body[run_start..run_start + term_relative];
-        let mut ids = Vec::new();
-        let mut has_count_opener = false;
-        let mut cursor = 0;
-        while cursor < run.len() {
-            if run[cursor] == psb::token::NAMED_RECORD {
-                cursor = run[cursor + 1..]
-                    .iter()
-                    .position(|&byte| byte == 0)
-                    .map_or(run.len(), |relative| cursor + relative + 2);
-                continue;
-            }
-            if run[cursor] == psb::token::ARRAY_OPEN {
-                has_count_opener = true;
-                let (_, next) = psb::compact_int(run, cursor + 1);
-                cursor = next.max(cursor + 1);
-                continue;
-            }
-            if SKIP.contains(&run[cursor]) {
-                cursor += 1;
-                continue;
-            }
-            let (id, next) = psb::compact_int(run, cursor);
-            if next == cursor {
-                cursor += 1;
-            } else {
-                ids.push(id);
-                cursor = next;
-            }
-        }
-        if !ids.is_empty() {
-            result.push(FeatureReplayAffectedIds {
-                feature_id: row.feature_id,
-                ids,
-                has_count_opener,
-                offset: row.body_offset + anchor,
-            });
-        }
+        let state = extents.entry(row.stream_offset).or_default();
+        let Some((geometry_count, geometry_extent, cursor)) =
+            replay_extent(run, 0, b"geoms_affected", state[0])
+        else {
+            continue;
+        };
+        let Some((geometry_ids, cursor)) = replay_ids(run, geometry_count, cursor) else {
+            continue;
+        };
+        let Some((edge_count, edge_extent, cursor)) =
+            replay_extent(run, cursor, b"edgs_affected", state[1])
+        else {
+            continue;
+        };
+        let Some((edge_ids, _)) = replay_ids(run, edge_count, cursor) else {
+            continue;
+        };
+        state[0] = Some(geometry_count);
+        state[1] = Some(edge_count);
+        result.push(FeatureReplayAffectedIds {
+            feature_id: row.feature_id,
+            geometry_ids,
+            edge_ids,
+            geometry_extent,
+            edge_extent,
+            offset: row.body_offset + anchor,
+        });
     }
     result.sort_by_key(|record| record.offset);
     result
@@ -3919,6 +3974,42 @@ pub fn entity_tables(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn replay_row(feature_id: u32, operands: &[u8]) -> FeatureRow {
+        let mut body = vec![0xf1, 0xf7, 0x42, 0xd8, 0x80, 0x01, 0xe3];
+        body.extend_from_slice(operands);
+        body.extend_from_slice(&[0xf5, 0x96, 0x92]);
+        FeatureRow {
+            feature_id,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(913),
+            stream_offset: 100,
+            body,
+            body_offset: 200,
+            offset: 190,
+        }
+    }
+
+    #[test]
+    fn positional_round_replay_inherits_each_array_extent() {
+        let rows = [
+            replay_row(1, &[0xf8, 2, 10, 11, 0xf8, 3, 20, 21, 22]),
+            replay_row(2, &[12, 13, 23, 24, 25]),
+            replay_row(3, &[0xf8, 1, 14, 26, 27, 28]),
+        ];
+
+        let decoded = replay_affected_ids(&rows);
+
+        assert_eq!(decoded.len(), 3);
+        assert_eq!(decoded[1].geometry_ids, vec![12, 13]);
+        assert_eq!(decoded[1].edge_ids, vec![23, 24, 25]);
+        assert_eq!(decoded[1].geometry_extent, ReplayExtentSource::Inherited);
+        assert_eq!(decoded[1].edge_extent, ReplayExtentSource::Inherited);
+        assert_eq!(decoded[2].geometry_ids, vec![14]);
+        assert_eq!(decoded[2].edge_ids, vec![26, 27, 28]);
+        assert_eq!(decoded[2].geometry_extent, ReplayExtentSource::Explicit);
+        assert_eq!(decoded[2].edge_extent, ReplayExtentSource::Inherited);
+    }
 
     #[test]
     fn radius_dimension_type_uses_model_length_units() {

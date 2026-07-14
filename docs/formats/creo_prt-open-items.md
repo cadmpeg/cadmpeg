@@ -28,7 +28,7 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - In named `ActDatums` outline slots outside the paired standalone-zero axis slots, the value semantics of `18 <index>`, `a5`, `9f`, `5c`, and `45` are unspecified. Their values determine nonzero datum offsets and extents.
 - The direction-bit rule assigning pcurve endpoint pairs A and B to traversal start and end is unspecified, as is the partition of shared surface references into face instances.
 - Bindings for rowless face-use references outside the round-feature rowless-cylinder table are unspecified.
-- Positional-replay field alignment for edge-treatment rows after the labeled template row is unspecified.
+- Positional-replay field alignment for non-class-913 edge-treatment schemas is unspecified.
 - The byte-backed relation that assigns shells to body identifiers when face-adjacency components and body-count fields disagree is unspecified.
 - Face-instance bindings for `element_colors`, `NeuPrtSld`, and display-table elements are unspecified.
 - The remaining RGB and component scalar lanes used by appearance records are unspecified.

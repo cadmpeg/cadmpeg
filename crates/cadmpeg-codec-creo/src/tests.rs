@@ -847,11 +847,10 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
 }
 
 #[test]
-fn scan_decodes_allfeatur_positional_replay_affected_ids() {
+fn scan_partitions_allfeatur_positional_round_operands() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
-    let mut allfeatur =
-        b"\x04\xeb\x04\xf1\xf7\x42\xd8\x80\x01\xe3\xf8\x03\x07\x80\x80\x09".to_vec();
+    let mut allfeatur = b"\x04\xeb\x04\xe3\xf6\x83\x91\xe1\xf1\xf7\x42\xd8\x80\x01\xe3\xf8\x02\x07\x80\x80\xf8\x01\x09".to_vec();
     allfeatur.extend_from_slice(&[0xf5, 0x96, 0x92]);
     let data = build_prt(
         "c",
@@ -865,16 +864,27 @@ fn scan_decodes_allfeatur_positional_replay_affected_ids() {
 
     assert_eq!(scan.feature_replay_affected_ids.len(), 1);
     assert_eq!(scan.feature_replay_affected_ids[0].feature_id, 4);
-    assert_eq!(scan.feature_replay_affected_ids[0].ids, vec![7, 128, 9]);
-    assert!(scan.feature_replay_affected_ids[0].has_count_opener);
+    assert_eq!(
+        scan.feature_replay_affected_ids[0].geometry_ids,
+        vec![7, 128]
+    );
+    assert_eq!(scan.feature_replay_affected_ids[0].edge_ids, vec![9]);
+    assert_eq!(
+        scan.feature_replay_affected_ids[0].geometry_extent,
+        crate::feature::ReplayExtentSource::Explicit
+    );
+    assert_eq!(
+        scan.feature_replay_affected_ids[0].edge_extent,
+        crate::feature::ReplayExtentSource::Explicit
+    );
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
-    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
-        &result.ir.model.features[0].definition
-    else {
-        panic!("native round feature");
-    };
-    assert_eq!(parameters["replay_affected_ids"], "7,128,9");
-    assert_eq!(parameters["replay_affected_counted"], "true");
+    assert!(matches!(
+        &result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            edges: cadmpeg_ir::features::EdgeSelection::Native(selection),
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
+        } if selection == "creo:allfeatur:replay_edgs_affected#4:9"
+    ));
 }
 
 #[test]

@@ -464,7 +464,13 @@ modeling feature. The definition and feature identifiers are not interchangeable
 
 Named procedural-choice fields belong to their containing feature row. Complete compact integers, compact-integer arrays, entity references, empty alternatives, and fully decoded `f9` scalar arrays are operation parameters qualified by choice and field name. A repeated qualified field name denotes ordered occurrences of the same parameter slot. Incomplete scalar wrappers and undefined field bodies remain opaque.
 
-An unlabeled positional affected-ID replay retains its compact identifiers as one ordered sequence. The sequence does not imply the labeled template's geometry/edge partition. Presence of an `f8` opener is retained independently from the identifiers because later instances can inherit the array extent.
+Class 913 stores `geoms_affected` and `edgs_affected` as the first and second
+affected-array schema positions. Each position has independent extent state
+within one `AllFeatur` stream. `f8 <count>` replaces that position's current
+extent; omission of `f8` reuses its preceding extent. Exactly that many compact
+identifiers belong to the position before the next position begins. The first
+row can carry the field labels; positional rows omit them without changing the
+two positions.
 
 The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 913 is a round definition, class 911 is a hole definition, and class 923 is a datum-plane definition. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
 

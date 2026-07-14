@@ -820,6 +820,7 @@ fn feature_rows(data: &[u8], sections: &[Section], feature_ids: &[u32]) -> Vec<F
             feature::rows(&data[section.offset..end], &feature_ids)
                 .into_iter()
                 .map(|mut row| {
+                    row.stream_offset = section.offset;
                     row.offset += section.offset;
                     row.body_offset += section.offset;
                     row
@@ -998,6 +999,7 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
                 feature_id: operation.feature_id,
                 header: [0; 2],
                 root_schema_class: operation.root_schema_class,
+                stream_offset: section.offset,
                 body: payload.to_vec(),
                 body_offset: section.offset,
                 offset: section.offset + operation.offset,

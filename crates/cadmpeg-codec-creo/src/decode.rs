@@ -3775,9 +3775,9 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
     {
         insert_feature_parameter(
             &mut parameters,
-            "replay_affected_ids",
+            "replay_affected_geometry_ids",
             affected
-                .ids
+                .geometry_ids
                 .iter()
                 .map(u32::to_string)
                 .collect::<Vec<_>>()
@@ -3785,8 +3785,31 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         );
         insert_feature_parameter(
             &mut parameters,
-            "replay_affected_counted",
-            affected.has_count_opener.to_string(),
+            "replay_affected_edge_ids",
+            affected
+                .edge_ids
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+        insert_feature_parameter(
+            &mut parameters,
+            "replay_geometry_extent",
+            match affected.geometry_extent {
+                crate::feature::ReplayExtentSource::Explicit => "explicit",
+                crate::feature::ReplayExtentSource::Inherited => "inherited",
+            }
+            .to_string(),
+        );
+        insert_feature_parameter(
+            &mut parameters,
+            "replay_edge_extent",
+            match affected.edge_extent {
+                crate::feature::ReplayExtentSource::Explicit => "explicit",
+                crate::feature::ReplayExtentSource::Inherited => "inherited",
+            }
+            .to_string(),
         );
     }
     for direction in scan
@@ -3961,19 +3984,35 @@ fn resolved_revolution_axis(
 }
 
 fn feature_edge_selection(scan: &ContainerScan, feature_id: u32) -> Option<EdgeSelection> {
-    let ids = scan
+    if let Some(ids) = scan
         .feature_affected_ids
         .iter()
         .find(|record| {
             record.feature_id == feature_id && record.kind == crate::feature::AffectedIdKind::Edges
-        })?
-        .ids
-        .as_slice();
-    if ids.is_empty() {
-        return None;
+        })
+        .map(|record| record.ids.as_slice())
+    {
+        if ids.is_empty() {
+            return None;
+        }
+        return Some(EdgeSelection::Native(format!(
+            "creo:allfeatur:edgs_affected#{feature_id}:{}",
+            ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+        )));
     }
+
+    let replay_edges = scan
+        .feature_replay_affected_ids
+        .iter()
+        .filter(|record| record.feature_id == feature_id && !record.edge_ids.is_empty())
+        .map(|record| record.edge_ids.clone())
+        .collect::<BTreeSet<_>>();
+    let replay_edges = replay_edges.into_iter().collect::<Vec<_>>();
+    let [ids] = replay_edges.as_slice() else {
+        return None;
+    };
     Some(EdgeSelection::Native(format!(
-        "creo:allfeatur:edgs_affected#{feature_id}:{}",
+        "creo:allfeatur:replay_edgs_affected#{feature_id}:{}",
         ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
     )))
 }
