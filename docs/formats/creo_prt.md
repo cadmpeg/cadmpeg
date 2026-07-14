@@ -355,6 +355,8 @@ A two-item type-9 incidence with sense zero on one line and one point makes the
 point coincident with the line.
 A two-item sense-zero line incidence makes the lines perpendicular for type 5,
 parallel for type 7, and equal in length for type 8.
+A two-item type-6 incidence with sense zero on two arcs or circles makes their
+radii equal.
 For an `arcorient = 0` arc these map to the neutral end and start loci,
 respectively, because the analytic arc orientation is reversed. A two-item
 type-four incidence makes the referenced entities tangent at their selected

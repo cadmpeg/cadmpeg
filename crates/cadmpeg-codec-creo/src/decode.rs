@@ -4106,6 +4106,49 @@ fn section_skamp_line_pair(
     }))
 }
 
+fn section_skamp_circular_entity(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<SketchEntityId> {
+    if item.sense != 0 {
+        return None;
+    }
+    let circular = definition
+        .segments
+        .iter()
+        .flat_map(|segments| &segments.rows)
+        .find(|segment| segment.external_id == item.entity_id)
+        .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
+        || definition
+            .order_table
+            .iter()
+            .flat_map(|table| &table.rows)
+            .find(|row| row.external_id == item.entity_id)
+            .and_then(|row| {
+                definition
+                    .saved_section
+                    .as_ref()?
+                    .entities
+                    .iter()
+                    .find(|entity| match entity {
+                        crate::feature::FeatureSavedEntity::Arc(arc) => {
+                            arc.entity_id == row.internal_id
+                        }
+                        crate::feature::FeatureSavedEntity::Circle(circle) => {
+                            circle.entity_id == row.internal_id
+                        }
+                        _ => false,
+                    })
+            })
+            .is_some();
+    circular.then(|| {
+        SketchEntityId(format!(
+            "creo:featdefs:sketch_entity#{}:{}",
+            definition.id, item.entity_id
+        ))
+    })
+}
+
 fn section_skamp_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -4183,6 +4226,15 @@ fn section_skamp_constraints(
                     let [first, second] =
                         section_skamp_line_pair(definition.id, &segments.rows, first, second)?;
                     SketchConstraintDefinition::Perpendicular { first, second }
+                }
+                (6, [first, second])
+                    if section_skamp_circular_entity(definition, first).is_some()
+                        && section_skamp_circular_entity(definition, second).is_some() =>
+                {
+                    SketchConstraintDefinition::Equal {
+                        first: section_skamp_circular_entity(definition, first)?,
+                        second: section_skamp_circular_entity(definition, second)?,
+                    }
                 }
                 (7, [first, second])
                     if section_skamp_line_pair(definition.id, &segments.rows, first, second)
@@ -7594,6 +7646,18 @@ mod resolved_sketch_tests {
             external_id: 15,
             offset: 43,
         };
+        let other_arc = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Arc,
+            directions: [None; 3],
+            point_ids: [5, 6],
+            center_id: Some(7),
+            arc_orientation: Some(1),
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 16,
+            offset: 44,
+        };
         let relations = crate::feature::FeatureRelationTable {
             declared_count: 1,
             entity_ref: None,
@@ -7814,6 +7878,23 @@ mod resolved_sketch_tests {
                     ],
                     offset: 80,
                 },
+                crate::feature::FeatureSkamp {
+                    id: 16,
+                    kind: 6,
+                    flags: 0,
+                    status: 0,
+                    items: vec![
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 13,
+                            sense: 0,
+                        },
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 16,
+                            sense: 0,
+                        },
+                    ],
+                    offset: 81,
+                },
             ],
             triples: Vec::new(),
             offset: 45,
@@ -7826,9 +7907,9 @@ mod resolved_sketch_tests {
             outlines: Vec::new(),
             variables: None,
             segments: Some(crate::feature::FeatureSegmentTable {
-                declared_count: 4,
+                declared_count: 5,
                 entity_ref: None,
-                rows: vec![segment, arc, point, other_line],
+                rows: vec![segment, arc, point, other_line, other_arc],
                 offset: 30,
             }),
             trim_entities: None,
@@ -7972,6 +8053,13 @@ mod resolved_sketch_tests {
         assert_eq!(
             constraints[12].0.definition,
             SketchConstraintDefinition::Equal { first, second }
+        );
+        assert_eq!(
+            constraints[13].0.definition,
+            SketchConstraintDefinition::Equal {
+                first: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                second: SketchEntityId("creo:featdefs:sketch_entity#917:16".to_string()),
+            }
         );
         let mut distance_definition = definition.clone();
         let distance_segment = &mut distance_definition
