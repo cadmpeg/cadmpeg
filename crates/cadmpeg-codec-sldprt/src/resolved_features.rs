@@ -458,6 +458,33 @@ mod marker_tests {
     }
 
     #[test]
+    fn qualified_point_operand_selects_a_curve_marker_locus() {
+        let marker = SketchInputEntity {
+            id: "line-locus".into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: 0,
+            object_index: None,
+            local_id: Some(16),
+            kind: SketchInputKind::LineOrCircle,
+            state_value: None,
+            coordinates_m: Some([1.0, 2.0]),
+            links: Vec::new(),
+            link_selector: None,
+        };
+        assert_eq!(
+            resolve_operand_marker(
+                std::slice::from_ref(&marker),
+                FeatureInputOperandKind::Native(0x837b),
+                16,
+            )
+            .map(|resolved| resolved.id.as_str()),
+            Some("line-locus")
+        );
+    }
+
+    #[test]
     fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
         let marker = |id: &str, local_id, kind, links: &[&str]| SketchInputEntity {
             id: id.into(),
@@ -2324,14 +2351,19 @@ pub(crate) fn operand_accepts_marker(
 ) -> bool {
     match kind {
         FeatureInputOperandKind::D6
-        | FeatureInputOperandKind::Native(
-            0x80cc | 0x837b | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69,
-        ) => {
+        | FeatureInputOperandKind::Native(0x80cc | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69) => {
             matches!(
                 marker,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
         }
+        FeatureInputOperandKind::Native(0x837b) => matches!(
+            marker,
+            SketchInputKind::Point
+                | SketchInputKind::ConstrainedPoint
+                | SketchInputKind::LineOrCircle
+                | SketchInputKind::Arc
+        ),
         FeatureInputOperandKind::E1
         | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87) => {
             matches!(marker, SketchInputKind::LineOrCircle | SketchInputKind::Arc)
@@ -5005,6 +5037,24 @@ pub(crate) fn project_relation_point_geometry(
         .flat_map(|lane| &lane.sketch_entities)
         .map(|marker| (marker.id.as_str(), marker))
         .collect::<HashMap<_, _>>();
+    let point_operands = lanes
+        .iter()
+        .flat_map(|lane| &lane.relation_instances)
+        .flat_map(|relation| {
+            let count = match relation.family {
+                FeatureInputRelationFamily::PointPointDistance
+                | FeatureInputRelationFamily::PointPointHorizontalDistance
+                | FeatureInputRelationFamily::PointPointVerticalDistance => 2,
+                FeatureInputRelationFamily::PointLineDistance => 1,
+                _ => 0,
+            };
+            relation
+                .operands
+                .iter()
+                .take(count)
+                .filter_map(|operand| operand.entity_ref.as_deref())
+        })
+        .collect::<HashSet<_>>();
     let mut referenced = lanes
         .iter()
         .flat_map(|lane| {
@@ -5048,11 +5098,20 @@ pub(crate) fn project_relation_point_geometry(
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         for marker in &lane.sketch_entities {
+            let qualified_point = point_operands.contains(marker.id.as_str());
             if !referenced.contains(marker.id.as_str())
-                || !matches!(
-                    marker.kind,
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
+                || !(qualified_point
+                    && matches!(
+                        marker.kind,
+                        SketchInputKind::Point
+                            | SketchInputKind::ConstrainedPoint
+                            | SketchInputKind::LineOrCircle
+                            | SketchInputKind::Arc
+                    )
+                    || matches!(
+                        marker.kind,
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                    ))
                 || entities
                     .iter()
                     .any(|entity| entity.native_ref.as_deref() == Some(marker.id.as_str()))
@@ -5097,8 +5156,17 @@ pub(crate) fn project_relation_point_geometry(
                 )),
                 sketch: sketch.clone(),
                 construction: true,
-                native_ref: Some(marker.id.clone()),
-                geometry_ref: None,
+                native_ref: matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+                .then(|| marker.id.clone()),
+                geometry_ref: qualified_point.then(|| marker.id.clone()).filter(|_| {
+                    matches!(
+                        marker.kind,
+                        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                    )
+                }),
                 endpoint_refs: Vec::new(),
                 geometry: SketchGeometry::Point { position },
             });
@@ -6694,7 +6762,12 @@ fn profile_loci_by_marker(
     let mut result = sketch_entities
         .iter()
         .filter_map(|entity| {
-            let marker = entity.native_ref.as_ref()?;
+            let marker = entity.native_ref.as_ref().or_else(|| {
+                entity.geometry_ref.as_ref().filter(|reference| {
+                    reference.starts_with("sldprt:feature-input:sketch-entity#")
+                        && matches!(entity.geometry, SketchGeometry::Point { .. })
+                })
+            })?;
             marker
                 .starts_with("sldprt:feature-input:sketch-entity#")
                 .then(|| {
@@ -9686,11 +9759,15 @@ mod profile_join_tests {
             local_id: 3,
             entity_ref: relation_line.id.clone(),
         }];
+        let mut qualified_curve = marker("qualified-curve", Some([0.009, 0.008]));
+        qualified_curve.offset = 86;
+        qualified_curve.kind = SketchInputKind::LineOrCircle;
         markers.extend([
             endpoint_a,
             endpoint_b,
             relation_line.clone(),
             support_handle.clone(),
+            qualified_curve.clone(),
         ]);
         let mut native_payload = vec![0; 108];
         for offset in [0, 27, 54] {
@@ -9721,8 +9798,36 @@ mod profile_join_tests {
                         reference_ref: "reference".into(),
                         kind: FeatureInputOperandKind::Native(0x929d),
                         entity_index: 0,
-                        entity_ref: Some(relation_point.id),
+                        entity_ref: Some(relation_point.id.clone()),
                     }],
+                },
+                FeatureInputRelationInstance {
+                    id: "qualified-point-relation".into(),
+                    parent: "lane".into(),
+                    ordinal: 2,
+                    offset: 94,
+                    family: FeatureInputRelationFamily::PointPointDistance,
+                    class_ref: "class".into(),
+                    feature_ref: "feature-native".into(),
+                    scalar_refs: Vec::new(),
+                    parameter_scalar_ref: None,
+                    display_scalar_ref: None,
+                    operands: vec![
+                        FeatureInputOperand {
+                            offset: 95,
+                            reference_ref: "qualified-reference".into(),
+                            kind: FeatureInputOperandKind::Native(0x837b),
+                            entity_index: 16,
+                            entity_ref: Some(qualified_curve.id.clone()),
+                        },
+                        FeatureInputOperand {
+                            offset: 96,
+                            reference_ref: "point-reference".into(),
+                            kind: FeatureInputOperandKind::Native(0x837b),
+                            entity_index: 17,
+                            entity_ref: Some(relation_point.id.clone()),
+                        },
+                    ],
                 },
                 FeatureInputRelationInstance {
                     id: "line-relation".into(),
@@ -9757,6 +9862,15 @@ mod profile_join_tests {
                 && matches!(
                     entity.geometry,
                     SketchGeometry::Point { position } if position == Point2::new(6.0, 5.0)
+                )
+        }));
+        assert!(entities.iter().any(|entity| {
+            entity.construction
+                && entity.native_ref.is_none()
+                && entity.geometry_ref.as_deref() == Some("qualified-curve")
+                && matches!(
+                    entity.geometry,
+                    SketchGeometry::Point { position } if position == Point2::new(8.0, 9.0)
                 )
         }));
         assert!(entities.iter().any(|entity| {
