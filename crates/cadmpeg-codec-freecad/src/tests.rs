@@ -578,6 +578,10 @@ EndMap
 </ElementMap2>
 </Property></Properties></Object></ObjectData>
 </Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Shape"><Properties Count="2">
+<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3435973632"/></Property>
+<Property name="DiffuseColor" type="App::PropertyColorList"><ColorList file="DiffuseColor"/></Property>
+</Properties></ViewProvider></ViewProviderData></Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
 Locations 0
 Curve2ds 2
@@ -602,7 +606,13 @@ Sh 1001000 +4 0 *
 So 1001000 +3 0 *
 Co 1001000 +2 0 *
 +1 0 *";
-    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let face_colors = [1_u8, 0, 0, 0, 0, 0, 0, 255];
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("GuiDocument.xml", gui),
+        ("DiffuseColor", &face_colors),
+        ("Shape.brp", brep),
+    ]);
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("persistent element map");
@@ -623,6 +633,12 @@ Co 1001000 +2 0 *
     assert_eq!(groups[1].names[1][0].topology_ids.len(), 1);
     assert_eq!(groups[2].names[0][0].topology_ids.len(), 1);
     assert_eq!(groups[2].names[1][0].topology_ids.len(), 1);
+    assert!(result.ir.model.appearance_bindings.iter().any(|binding| {
+        matches!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Face(_)
+        ) && binding.channels.get("precedence").map(String::as_str) == Some("face_over_object")
+    }));
     assert!(crate::validate_native(&result.ir).is_empty());
 }
 

@@ -161,7 +161,11 @@ For shape-bearing objects, the view provider's shape color, transparency, visibi
 scalars produce an object appearance and explicit body bindings. Packed colors decode as red,
 green, blue, and reserved low byte; the independent transparency percentage determines opacity.
 The effective body display fields mirror this object-level assignment. Per-face diffuse-color lists
-remain a higher-precedence presentation layer and are not inferred from the object color.
+are a higher-precedence presentation layer and are not inferred from the object color. Their
+little-endian count and packed-color records bind only when the count equals the owning element
+map's ordered Face group. Each persistent face name supplies the neutral face occurrences receiving
+the override, and the resulting bindings explicitly record face-over-object precedence. Missing
+identity or a count mismatch leaves the side entry retained without guessing transient face labels.
 
 Application data without a neutral representation retains its owning object and property,
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,

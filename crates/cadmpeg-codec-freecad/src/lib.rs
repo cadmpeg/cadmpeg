@@ -527,20 +527,22 @@ impl Codec for FcstdCodec {
             ));
             topology_transfer::transfer(&mut ir, &shape_payloads)?;
             design::transfer(&mut ir, &graph.objects, &graph.properties, &shape_payloads)?;
-            if let Some(gui_bytes) = scan.data.get("GuiDocument.xml") {
-                gui::transfer(
-                    &mut ir,
-                    gui_bytes,
-                    &graph.objects,
-                    &graph.properties,
-                    &shape_payloads,
-                )?;
-            }
             let payload_ids = shape_payloads
                 .iter()
                 .map(|payload| (payload.property.as_str(), payload.id.as_str()))
                 .collect::<HashMap<_, _>>();
             element_map::bind_topology(&mut element_maps, &payload_ids, &ir);
+            if let Some(gui_bytes) = scan.data.get("GuiDocument.xml") {
+                gui::transfer(
+                    &mut ir,
+                    gui_bytes,
+                    &scan.data,
+                    &graph.objects,
+                    &graph.properties,
+                    &shape_payloads,
+                    &element_maps,
+                )?;
+            }
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena("element_maps", &element_maps)?;

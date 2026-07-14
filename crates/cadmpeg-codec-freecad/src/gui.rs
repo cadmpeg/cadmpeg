@@ -10,14 +10,16 @@ use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::topology::Color;
 
 use crate::brep::ShapePayloadRecord;
-use crate::native::{ObjectRecord, PropertyRecord};
+use crate::native::{ElementMapRecord, ObjectRecord, PropertyRecord};
 
 pub(crate) fn transfer(
     ir: &mut CadIr,
     bytes: &[u8],
+    entries: &BTreeMap<String, Vec<u8>>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
+    element_maps: &[ElementMapRecord],
 ) -> Result<(), CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
@@ -126,6 +128,21 @@ pub(crate) fn transfer(
                 body.color = packed_color.map(|packed| decode_color(packed, transparency));
             }
         }
+        if let Some(file) = values
+            .get("DiffuseColor")
+            .and_then(|value| value.attribute("file"))
+        {
+            transfer_face_colors(
+                ir,
+                name,
+                object_id,
+                file,
+                entries,
+                properties,
+                payloads,
+                element_maps,
+            )?;
+        }
         let Some(packed_color) = packed_color else {
             continue;
         };
@@ -163,6 +180,99 @@ pub(crate) fn transfer(
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some("ViewProvider".into()),
                 channels: BTreeMap::new(),
+            });
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn transfer_face_colors(
+    ir: &mut CadIr,
+    provider_name: &str,
+    object_id: &str,
+    entry_name: &str,
+    entries: &BTreeMap<String, Vec<u8>>,
+    properties: &[PropertyRecord],
+    payloads: &[ShapePayloadRecord],
+    element_maps: &[ElementMapRecord],
+) -> Result<(), CodecError> {
+    let bytes = entries.get(entry_name).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "DiffuseColor references missing entry {entry_name}"
+        ))
+    })?;
+    if bytes.len() < 4 {
+        return Err(CodecError::Malformed(format!(
+            "DiffuseColor entry {entry_name} is truncated"
+        )));
+    }
+    let count = u32::from_le_bytes(bytes[..4].try_into().expect("four-byte slice")) as usize;
+    let expected = 4_usize
+        .checked_add(count.checked_mul(4).ok_or_else(|| {
+            CodecError::Malformed(format!("DiffuseColor entry {entry_name} count overflows"))
+        })?)
+        .ok_or_else(|| CodecError::Malformed("DiffuseColor length overflows".into()))?;
+    if bytes.len() != expected {
+        return Err(CodecError::Malformed(format!(
+            "DiffuseColor entry {entry_name} declares {count} colors but has {} bytes",
+            bytes.len()
+        )));
+    }
+    let shape_properties = properties
+        .iter()
+        .filter(|property| property.owner == object_id)
+        .filter(|property| {
+            payloads
+                .iter()
+                .any(|payload| payload.property == property.id)
+        })
+        .map(|property| property.id.as_str())
+        .collect::<Vec<_>>();
+    let Some(group) = element_maps
+        .iter()
+        .find(|map| shape_properties.contains(&map.property.as_str()))
+        .and_then(|map| map.maps.last())
+        .and_then(|map| map.groups.iter().find(|group| group.indexed_name == "Face"))
+    else {
+        return Ok(());
+    };
+    if group.names.len() != count {
+        return Ok(());
+    }
+    for (index, (bytes, names)) in bytes[4..].chunks_exact(4).zip(&group.names).enumerate() {
+        let packed = u32::from_le_bytes(bytes.try_into().expect("four-byte color"));
+        let appearance_id = AppearanceId(format!(
+            "fcstd:appearance:face#{provider_name}:{}",
+            index + 1
+        ));
+        ir.model.appearances.push(Appearance {
+            id: appearance_id.clone(),
+            name: Some(format!("{provider_name} Face{} appearance", index + 1)),
+            asset_guid: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: Some("FCStd DiffuseColor".into()),
+            category: None,
+            base_color: Some(decode_color(packed, None)),
+            properties: BTreeMap::new(),
+        });
+        for topology_id in names
+            .iter()
+            .flat_map(|name| &name.topology_ids)
+            .filter(|id| ir.model.faces.iter().any(|face| face.id.0 == **id))
+        {
+            ir.model.appearance_bindings.push(AppearanceBinding {
+                id: format!(
+                    "fcstd:appearance:binding#face:{provider_name}:{}:{}",
+                    index + 1,
+                    topology_id
+                ),
+                target: AppearanceTarget::Face(cadmpeg_ir::ids::FaceId(topology_id.clone())),
+                appearance: appearance_id.clone(),
+                source_entity_id: Some(object_id.to_owned()),
+                object_type: Some("ViewProvider Face".into()),
+                channels: [("precedence".into(), "face_over_object".into())].into(),
             });
         }
     }
