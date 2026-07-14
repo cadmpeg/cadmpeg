@@ -157,10 +157,12 @@ pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHist
             bulletin_boards,
             records,
             entity_versions: Vec::new(),
+            record_table_complete: false,
         });
     }
     bind_snapshot_revision_ids(&mut states);
     bind_historical_entity_versions(&mut states);
+    bind_complete_record_tables(&mut states, bytes, width);
     if states.is_empty() {
         return None;
     }
@@ -305,6 +307,129 @@ fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
     for state in states {
         state.entity_versions = projected.remove(&state.node_index).unwrap_or_default();
     }
+}
+
+fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width: usize) {
+    let Some(start) = crate::asm_header::record_stream_start(bytes) else {
+        return;
+    };
+    let Ok(framed) = crate::sab::frame(bytes, start, bytes.len(), width) else {
+        return;
+    };
+    let Some(active_count) = states
+        .iter()
+        .flat_map(|state| &state.records)
+        .filter_map(|record| record.revision_id)
+        .min()
+        .and_then(|count| usize::try_from(count).ok())
+    else {
+        return;
+    };
+    let Some(active_records) = framed.get(..active_count) else {
+        return;
+    };
+    let complete = states
+        .iter()
+        .map(|state| materialize_record_table(states, state, active_records, bytes, width).is_some())
+        .collect::<Vec<_>>();
+    if complete.iter().all(|complete| *complete) {
+        for state in states {
+            state.record_table_complete = true;
+        }
+    }
+}
+
+fn materialize_record_table(
+    states: &[AsmDeltaState],
+    state: &AsmDeltaState,
+    active_records: &[crate::sab::Record],
+    bytes: &[u8],
+    width: usize,
+) -> Option<Vec<crate::sab::Record>> {
+    if state.entity_versions.is_empty()
+        || active_records
+            .iter()
+            .enumerate()
+            .any(|(index, record)| record.index != index)
+    {
+        return None;
+    }
+    let active_count = i64::try_from(active_records.len()).ok()?;
+    let mut revision_entities = (0..active_count)
+        .map(|entity_ref| (entity_ref, entity_ref))
+        .collect::<HashMap<_, _>>();
+    for change in states
+        .iter()
+        .flat_map(|state| &state.bulletin_boards)
+        .flat_map(|board| &board.changes)
+    {
+        let Some(old_ref) = change.old_ref else {
+            continue;
+        };
+        let entity_ref = change.new_ref.unwrap_or(old_ref);
+        if revision_entities.insert(old_ref, entity_ref).is_some() {
+            return None;
+        }
+    }
+    let mut archived_records = HashMap::new();
+    for record in states
+        .iter()
+        .flat_map(|state| &state.records)
+        .filter(|record| record.name != "End-of-ASM-data")
+    {
+        let revision_id = record.revision_id?;
+        let offset = usize::try_from(record.byte_offset).ok()?;
+        let limit = offset.checked_add(record.raw_bytes.len())?;
+        if bytes.get(offset..limit)? != record.raw_bytes {
+            return None;
+        }
+        let mut framed = crate::sab::frame(bytes, offset, limit, width).ok()?;
+        if framed.len() != 1 {
+            return None;
+        }
+        let framed = framed.pop()?;
+        if framed.name != record.name || archived_records.insert(revision_id, framed).is_some() {
+            return None;
+        }
+    }
+    if archived_records.len() != revision_entities.len().checked_sub(active_records.len())? {
+        return None;
+    }
+    let present = state
+        .entity_versions
+        .iter()
+        .map(|version| version.entity_ref)
+        .collect::<HashSet<_>>();
+    if present.len() != state.entity_versions.len() {
+        return None;
+    }
+    let mut records = Vec::with_capacity(state.entity_versions.len());
+    for version in &state.entity_versions {
+        if revision_entities.get(&version.record_ref) != Some(&version.entity_ref) {
+            return None;
+        }
+        let mut record = if version.record_ref < active_count {
+            active_records.get(usize::try_from(version.record_ref).ok()?)?.clone()
+        } else {
+            archived_records.get(&version.record_ref)?.clone()
+        };
+        record.index = usize::try_from(version.entity_ref).ok()?;
+        for token in &mut record.tokens {
+            let crate::sab::Token::Ref(reference) = token else {
+                continue;
+            };
+            if *reference < 0 {
+                continue;
+            }
+            *reference = *revision_entities.get(reference)?;
+            if !present.contains(reference) {
+                return None;
+            }
+        }
+        records.push(record);
+    }
+    records.sort_unstable_by_key(|record| record.index);
+    Some(records)
 }
 
 fn decode_bulletin_boards(
@@ -501,6 +626,7 @@ mod tests {
                 })
                 .collect(),
             entity_versions: Vec::new(),
+            record_table_complete: false,
         };
 
         bind_snapshot_revision_ids(std::slice::from_mut(&mut state));
@@ -513,6 +639,91 @@ mod tests {
                 .collect::<Vec<_>>(),
             [Some(5), Some(6), Some(7)]
         );
+    }
+
+    #[test]
+    fn materialized_record_table_normalizes_revision_references() {
+        let mut archived_bytes = vec![0x0d, 4];
+        archived_bytes.extend_from_slice(b"edge");
+        archived_bytes.push(0x0c);
+        archived_bytes.extend_from_slice(&2i64.to_le_bytes());
+        archived_bytes.push(0x11);
+        let state_id = "state".to_string();
+        let board_id = "board".to_string();
+        let state = AsmDeltaState {
+            id: state_id.clone(),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id: 1,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 0,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: vec![AsmBulletinBoard {
+                id: board_id.clone(),
+                parent: state_id.clone(),
+                byte_offset: 0,
+                owner_ref: 0,
+                number: 2,
+                changes: vec![AsmEntityChange {
+                    id: "change".into(),
+                    parent: board_id,
+                    byte_offset: 0,
+                    kind: AsmEntityChangeKind::Update,
+                    old_ref: Some(2),
+                    new_ref: Some(1),
+                }],
+            }],
+            records: vec![AsmHistoryRecord {
+                id: "record".into(),
+                parent: state_id,
+                revision_id: Some(2),
+                index: 0,
+                byte_offset: 0,
+                name: "edge".into(),
+                entity_references: vec![2],
+                raw_bytes: archived_bytes.clone(),
+            }],
+            entity_versions: vec![
+                AsmEntityVersion {
+                    entity_ref: 0,
+                    record_ref: 0,
+                },
+                AsmEntityVersion {
+                    entity_ref: 1,
+                    record_ref: 2,
+                },
+            ],
+            record_table_complete: false,
+        };
+        let active = ["asmheader", "edge"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, name)| crate::sab::Record {
+                index,
+                name: name.into(),
+                head: name.into(),
+                tokens: Vec::new(),
+                offset: 0,
+                len: 0,
+            })
+            .collect::<Vec<_>>();
+
+        let table = materialize_record_table(
+            std::slice::from_ref(&state),
+            &state,
+            &active,
+            &archived_bytes,
+            8,
+        )
+        .expect("complete historical RecordTable");
+
+        assert_eq!(table.len(), 2);
+        assert_eq!(table[1].index, 1);
+        assert_eq!(table[1].tokens, [crate::sab::Token::Ref(1)]);
     }
 
     #[test]
@@ -553,6 +764,7 @@ mod tests {
                 }],
                 records: Vec::new(),
                 entity_versions: Vec::new(),
+                record_table_complete: false,
             }
         };
         let mut states = vec![

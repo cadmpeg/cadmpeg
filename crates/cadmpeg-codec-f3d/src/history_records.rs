@@ -40,6 +40,10 @@ pub(crate) struct AsmDeltaState {
     /// the history does not form a complete reversible chain.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entity_versions: Vec<AsmEntityVersion>,
+    /// Every selected record frames and every entity reference resolves after
+    /// revision identities are normalized to stable entity slots.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub record_table_complete: bool,
 }
 
 /// Record revision occupying one stable entity slot at an ASM history state.
