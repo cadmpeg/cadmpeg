@@ -651,18 +651,18 @@ pub struct ExtrudePayloadHeader {
     pub scalars: [f64; 2],
 }
 
-/// Redundantly serialized scalar pair in a simple-hole payload.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SimpleHoleRepeatedScalarPair {
+/// Nonempty scalar lane serialized twice in a simple-hole payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SimpleHoleRepeatedScalarLane {
     /// Ordered finite shifted-binary64 values.
-    pub values: [f64; 2],
-    /// Absolute offsets of the first and repeated scalar pairs.
-    pub witness_offsets: [[usize; 2]; 2],
+    pub values: Vec<f64>,
+    /// Absolute offsets of the first and repeated scalar lanes.
+    pub witness_offsets: [Vec<usize>; 2],
 }
 
-/// Two tagged offset-store indices following each repeated scalar-pair witness.
+/// Two tagged offset-store indices following each repeated scalar-lane witness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SimpleHoleRepeatedScalarPairBlockReferences {
+pub struct SimpleHoleRepeatedScalarLaneBlockReferences {
     /// Ordered block indices following the first coordinate pair.
     pub first: [u32; 2],
     /// Ordered block indices following the repeated coordinate pair.
@@ -1138,10 +1138,10 @@ pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPa
     strings
 }
 
-/// Decode an exact duplicated shifted-binary64 pair before a hole template.
-pub fn simple_hole_repeated_scalar_pair(
+/// Decode an exact nonempty duplicated shifted-binary64 lane before a hole template.
+pub fn simple_hole_repeated_scalar_lane(
     record: OperationRecord<'_>,
-) -> Option<SimpleHoleRepeatedScalarPair> {
+) -> Option<SimpleHoleRepeatedScalarLane> {
     if record.label.value != "SIMPLE HOLE" {
         return None;
     }
@@ -1166,24 +1166,33 @@ pub fn simple_hole_repeated_scalar_pair(
         }
         at += 1;
     }
-    let [x0, y0, x1, y1] = scalars.as_slice() else {
-        return None;
-    };
-    if x0.0.to_bits() != x1.0.to_bits() || y0.0.to_bits() != y1.0.to_bits() {
+    let half = scalars.len().checked_div(2)?;
+    if half == 0 || scalars.len() != half * 2 {
         return None;
     }
-    Some(SimpleHoleRepeatedScalarPair {
-        values: [x0.0, y0.0],
-        witness_offsets: [[x0.1, y0.1], [x1.1, y1.1]],
+    let (first, second) = scalars.split_at(half);
+    if first
+        .iter()
+        .zip(second)
+        .any(|(left, right)| left.0.to_bits() != right.0.to_bits())
+    {
+        return None;
+    }
+    Some(SimpleHoleRepeatedScalarLane {
+        values: first.iter().map(|scalar| scalar.0).collect(),
+        witness_offsets: [
+            first.iter().map(|scalar| scalar.1).collect(),
+            second.iter().map(|scalar| scalar.1).collect(),
+        ],
     })
 }
 
 /// Decode the two tagged block indices immediately following each witnessed
-/// simple-hole scalar pair.
-pub fn simple_hole_repeated_scalar_pair_block_references(
+/// simple-hole scalar lane.
+pub fn simple_hole_repeated_scalar_lane_block_references(
     record: OperationRecord<'_>,
-) -> Option<SimpleHoleRepeatedScalarPairBlockReferences> {
-    let pair = simple_hole_repeated_scalar_pair(record)?;
+) -> Option<SimpleHoleRepeatedScalarLaneBlockReferences> {
+    let pair = simple_hole_repeated_scalar_lane(record)?;
     let decode_pair = |coordinate_offset: usize| {
         let relative = coordinate_offset.checked_sub(record.payload_offset)?;
         let mut at = relative.checked_add(8)?;
@@ -1200,9 +1209,9 @@ pub fn simple_hole_repeated_scalar_pair_block_references(
             ],
         ))
     };
-    let (first, first_offsets) = decode_pair(pair.witness_offsets[0][1])?;
-    let (second, second_offsets) = decode_pair(pair.witness_offsets[1][1])?;
-    Some(SimpleHoleRepeatedScalarPairBlockReferences {
+    let (first, first_offsets) = decode_pair(*pair.witness_offsets[0].last()?)?;
+    let (second, second_offsets) = decode_pair(*pair.witness_offsets[1].last()?)?;
+    Some(SimpleHoleRepeatedScalarLaneBlockReferences {
         first,
         second,
         offsets: [first_offsets, second_offsets],

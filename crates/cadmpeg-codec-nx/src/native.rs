@@ -920,31 +920,31 @@ pub struct FeatureSimpleHoleTemplate {
     pub end_treatment: SimpleHoleEndTreatment,
 }
 
-/// Exact redundantly witnessed scalar pair in a simple-hole payload.
+/// Exact nonempty redundantly witnessed scalar lane in a simple-hole payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureSimpleHoleRepeatedScalarPair {
-    /// Globally unique repeated-pair identity.
+pub struct FeatureSimpleHoleRepeatedScalarLane {
+    /// Globally unique repeated-lane identity.
     pub id: String,
     /// Owning `SIMPLE HOLE` operation label.
     pub operation_label: String,
     /// Ordered finite shifted-binary64 values.
-    pub values: [f64; 2],
-    /// Absolute offsets of the first scalar pair.
-    pub first_witness_offsets: [u64; 2],
-    /// Absolute offsets of the byte-identical repeated scalar pair.
-    pub second_witness_offsets: [u64; 2],
+    pub values: Vec<f64>,
+    /// Absolute offsets of the first scalar lane.
+    pub first_witness_offsets: Vec<u64>,
+    /// Absolute offsets of the byte-identical repeated scalar lane.
+    pub second_witness_offsets: Vec<u64>,
 }
 
-/// Offset-store blocks linked after both repeated scalar-pair witnesses.
+/// Offset-store blocks linked after both repeated scalar-lane witnesses.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSimpleHoleRepeatedScalarPairBlockReferences {
+pub struct FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
     /// Globally unique reference-lane identity.
     pub id: String,
     /// Owning `SIMPLE HOLE` operation label.
     pub operation_label: String,
     /// Ordered blocks following the first scalar pair.
     pub first_data_blocks: [String; 2],
-    /// Ordered blocks following the repeated scalar pair.
+    /// Ordered blocks following the repeated scalar lane.
     pub second_data_blocks: [String; 2],
     /// Absolute offsets of the first pair of tagged-index tokens.
     pub first_reference_offsets: [u64; 2],
@@ -2340,10 +2340,10 @@ pub fn feature_simple_hole_templates(
         .collect()
 }
 
-/// Decode exact duplicated scalar pairs from simple-hole operations.
-pub fn feature_simple_hole_repeated_scalar_pairs(
+/// Decode exact nonempty duplicated scalar lanes from simple-hole operations.
+pub fn feature_simple_hole_repeated_scalar_lanes(
     container: &Container,
-) -> Vec<FeatureSimpleHoleRepeatedScalarPair> {
+) -> Vec<FeatureSimpleHoleRepeatedScalarLane> {
     let sections = container.om_sections();
     let mut pairs = Vec::new();
     for link in segment_om_links(container)
@@ -2363,32 +2363,36 @@ pub fn feature_simple_hole_repeated_scalar_pairs(
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
-            let Some(pair) = crate::om::simple_hole_repeated_scalar_pair(record) else {
+            let Some(pair) = crate::om::simple_hole_repeated_scalar_lane(record) else {
                 continue;
             };
-            pairs.push(FeatureSimpleHoleRepeatedScalarPair {
+            pairs.push(FeatureSimpleHoleRepeatedScalarLane {
                 id: format!(
-                    "nx:feature-history:simple-hole-repeated-scalar-pair#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:simple-hole-repeated-scalar-lane#{section_key}-{operation_ordinal}"
                 ),
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
                 ),
                 values: pair.values,
                 first_witness_offsets: pair.witness_offsets[0]
-                    .map(|offset| entry_offset + offset as u64),
+                    .iter()
+                    .map(|offset| entry_offset + *offset as u64)
+                    .collect(),
                 second_witness_offsets: pair.witness_offsets[1]
-                    .map(|offset| entry_offset + offset as u64),
+                    .iter()
+                    .map(|offset| entry_offset + *offset as u64)
+                    .collect(),
             });
         }
     }
     pairs
 }
 
-/// Resolve the tagged block-index pairs following both repeated scalar-pair
+/// Resolve the tagged block-index pairs following both repeated scalar-lane
 /// witnesses through the unique offset store that owns the operation inputs.
-pub fn feature_simple_hole_repeated_scalar_pair_block_references(
+pub fn feature_simple_hole_repeated_scalar_lane_block_references(
     container: &Container,
-) -> Vec<FeatureSimpleHoleRepeatedScalarPairBlockReferences> {
+) -> Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences> {
     let sections = container.om_sections();
     let inputs = feature_input_blocks(container);
     let blocks = data_blocks(container)
@@ -2430,7 +2434,7 @@ pub fn feature_simple_hole_repeated_scalar_pair_block_references(
             }
             let prefix = prefixes.into_iter().next().expect("one checked prefix");
             let Some(decoded) =
-                crate::om::simple_hole_repeated_scalar_pair_block_references(record)
+                crate::om::simple_hole_repeated_scalar_lane_block_references(record)
             else {
                 continue;
             };
@@ -2446,9 +2450,9 @@ pub fn feature_simple_hole_repeated_scalar_pair_block_references(
             else {
                 continue;
             };
-            references.push(FeatureSimpleHoleRepeatedScalarPairBlockReferences {
+            references.push(FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
                 id: format!(
-                    "nx:feature-history:simple-hole-repeated-scalar-pair-block-references#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:simple-hole-repeated-scalar-lane-block-references#{section_key}-{operation_ordinal}"
                 ),
                 operation_label,
                 first_data_blocks,

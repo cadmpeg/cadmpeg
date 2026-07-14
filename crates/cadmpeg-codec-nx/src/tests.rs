@@ -594,7 +594,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 143);
+    assert_eq!(namespace.version, 144);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -811,7 +811,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
 #[test]
 fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
     use crate::native::{
-        FeatureSimpleHoleRepeatedScalarPair, FeatureSimpleHoleRepeatedScalarPairBlockReferences,
+        FeatureSimpleHoleRepeatedScalarLane, FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
         FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
         SimpleHoleForm,
     };
@@ -826,14 +826,14 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         start_treatment: SimpleHoleEndTreatment::Chamfer,
         end_treatment: SimpleHoleEndTreatment::Chamfer,
     };
-    let pair = FeatureSimpleHoleRepeatedScalarPair {
-        id: "pair".to_string(),
+    let lane = FeatureSimpleHoleRepeatedScalarLane {
+        id: "lane".to_string(),
         operation_label: operation.to_string(),
-        values: [508.0, 38.1],
-        first_witness_offsets: [10, 18],
-        second_witness_offsets: [30, 38],
+        values: vec![508.0, 38.1],
+        first_witness_offsets: vec![10, 18],
+        second_witness_offsets: vec![30, 38],
     };
-    let blocks = FeatureSimpleHoleRepeatedScalarPairBlockReferences {
+    let blocks = FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
         id: "blocks".to_string(),
         operation_label: operation.to_string(),
         first_data_blocks: ["block#231".to_string(), "block#232".to_string()],
@@ -842,11 +842,11 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         second_reference_offsets: [40, 42],
     };
     let properties =
-        crate::decode::simple_hole_native_properties(operation, &[template], &[pair], &[blocks]);
+        crate::decode::simple_hole_native_properties(operation, &[template], &[lane], &[blocks]);
     assert_eq!(properties["simple_hole_template"], "template");
-    assert_eq!(properties["simple_hole_repeated_scalar_pair"], "pair");
+    assert_eq!(properties["simple_hole_repeated_scalar_lane"], "lane");
     assert_eq!(
-        properties["simple_hole_repeated_scalar_pair_block_references"],
+        properties["simple_hole_repeated_scalar_lane_block_references"],
         "blocks"
     );
     assert!(crate::decode::simple_hole_native_properties(
@@ -1638,7 +1638,7 @@ fn nx_sketch_point_names_require_positive_decimal_suffixes() {
 }
 
 #[test]
-fn om_simple_hole_pair_requires_two_identical_shifted_scalar_pairs() {
+fn om_simple_hole_lane_requires_two_identical_nonempty_scalar_runs() {
     let shifted = |value: f64| {
         let mut bytes = value.to_be_bytes();
         bytes[0] -= 0x10;
@@ -1666,15 +1666,15 @@ fn om_simple_hole_pair_requires_two_identical_shifted_scalar_pairs() {
         payload: &payload,
         label,
     };
-    let pair = crate::om::simple_hole_repeated_scalar_pair(record).unwrap();
-    assert_eq!(pair.values[0], 508.0);
-    assert!((pair.values[1] - 38.1).abs() < 2.0e-12);
-    assert_eq!(pair.witness_offsets, [[200, 209], [218, 227]]);
+    let lane = crate::om::simple_hole_repeated_scalar_lane(record).unwrap();
+    assert_eq!(lane.values[0], 508.0);
+    assert!((lane.values[1] - 38.1).abs() < 2.0e-12);
+    assert_eq!(lane.witness_offsets, [vec![200, 209], vec![218, 227]]);
 
     let mut mismatched = payload.clone();
     mismatched[18 + 7] ^= 1;
     assert!(
-        crate::om::simple_hole_repeated_scalar_pair(crate::om::OperationRecord {
+        crate::om::simple_hole_repeated_scalar_lane(crate::om::OperationRecord {
             bytes: &mismatched,
             payload: &mismatched,
             ..record
@@ -1684,7 +1684,34 @@ fn om_simple_hole_pair_requires_two_identical_shifted_scalar_pairs() {
 }
 
 #[test]
-fn om_simple_hole_pair_block_references_follow_both_scalar_pairs() {
+fn om_simple_hole_lane_accepts_one_repeated_scalar() {
+    let mut scalar = 25.4f64.to_be_bytes();
+    scalar[0] -= 0x10;
+    let mut payload = scalar.to_vec();
+    payload.push(0x7f);
+    payload.extend_from_slice(&scalar);
+    payload.extend_from_slice(&[0x04, 0x08]);
+    payload.extend_from_slice(b"Hole_X\0");
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &payload,
+        payload_offset: 200,
+        payload: &payload,
+        label: crate::om::OperationLabel {
+            header_offset: 100,
+            offset: 120,
+            value: "SIMPLE HOLE",
+            object_indices: [None; 4],
+            object_index_offsets: [0; 4],
+        },
+    };
+    let lane = crate::om::simple_hole_repeated_scalar_lane(record).unwrap();
+    assert_eq!(lane.values, [25.4]);
+    assert_eq!(lane.witness_offsets, [vec![200], vec![209]]);
+}
+
+#[test]
+fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     let shifted = |value: f64| {
         let mut bytes = value.to_be_bytes();
         bytes[0] -= 0x10;
@@ -1714,7 +1741,7 @@ fn om_simple_hole_pair_block_references_follow_both_scalar_pairs() {
         payload: &payload,
         label,
     };
-    let references = crate::om::simple_hole_repeated_scalar_pair_block_references(record).unwrap();
+    let references = crate::om::simple_hole_repeated_scalar_lane_block_references(record).unwrap();
     assert_eq!(references.first, [231, 232]);
     assert_eq!(references.second, [233, 234]);
     assert_eq!(references.offsets, [[216, 218], [236, 238]]);
@@ -1722,7 +1749,7 @@ fn om_simple_hole_pair_block_references_follow_both_scalar_pairs() {
     let mut null = payload.clone();
     null[16] = 0xff;
     assert!(
-        crate::om::simple_hole_repeated_scalar_pair_block_references(crate::om::OperationRecord {
+        crate::om::simple_hole_repeated_scalar_lane_block_references(crate::om::OperationRecord {
             bytes: &null,
             payload: &null,
             ..record
@@ -6509,7 +6536,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 143);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 144);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
