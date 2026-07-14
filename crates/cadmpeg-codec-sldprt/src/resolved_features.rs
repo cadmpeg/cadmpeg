@@ -3546,6 +3546,12 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                         dimensioned_circle_surface_transforms(sketch, surfaces, &circles, QUANTUM)
                     })
             });
+            let candidates = sketches
+                .iter()
+                .find(|sketch| sketch.id == *sketch_id)
+                .map_or(candidates.clone(), |sketch| {
+                    constrain_dimensioned_circle_transforms(&candidates, sketch, QUANTUM)
+                });
             dimensioned_circle_transform(&candidates, &circles)
                 .map(|transform| ((*feature).to_string(), transform))
         })
@@ -4551,6 +4557,72 @@ impl MarkerTransform {
     }
 }
 
+fn sketch_frame_marker_transform(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    quantum: f64,
+) -> Option<MarkerTransform> {
+    let normal = [sketch.normal.x, sketch.normal.y, sketch.normal.z];
+    let u_axis = [sketch.u_axis.x, sketch.u_axis.y, sketch.u_axis.z];
+    let v_axis = [
+        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
+        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
+        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+    ];
+    let origin = [sketch.origin.x, sketch.origin.y, sketch.origin.z];
+    let axis = |vector: [f64; 3]| {
+        let matches = vector
+            .iter()
+            .enumerate()
+            .filter(|(_, value)| (value.abs() - 1.0).abs() <= 1.0e-8)
+            .map(|(index, value)| (index, if *value < 0.0 { -1 } else { 1 }))
+            .collect::<Vec<_>>();
+        let [(index, sign)] = matches.as_slice() else {
+            return None;
+        };
+        vector
+            .iter()
+            .enumerate()
+            .all(|(candidate, value)| candidate == *index || value.abs() <= 1.0e-8)
+            .then_some((*index, *sign))
+    };
+    let (normal_axis, _) = axis(normal)?;
+    let native_axes = (0..3)
+        .filter(|candidate| *candidate != normal_axis)
+        .collect::<Vec<_>>();
+    let [first_native_axis, second_native_axis] = native_axes.as_slice() else {
+        return None;
+    };
+    let (u_axis_index, u_sign) = axis(u_axis)?;
+    let (v_axis_index, v_sign) = axis(v_axis)?;
+    if u_axis_index == normal_axis || v_axis_index == normal_axis || u_axis_index == v_axis_index {
+        return None;
+    }
+    let swap = match (u_axis_index, v_axis_index) {
+        (u, v) if u == *first_native_axis && v == *second_native_axis => false,
+        (u, v) if u == *second_native_axis && v == *first_native_axis => true,
+        _ => return None,
+    };
+    Some(MarkerTransform {
+        swap,
+        u_sign,
+        v_sign,
+        translation: (
+            (-origin[u_axis_index] * f64::from(u_sign) / quantum).round() as i64,
+            (-origin[v_axis_index] * f64::from(v_sign) / quantum).round() as i64,
+        ),
+    })
+}
+
+fn constrain_dimensioned_circle_transforms(
+    candidates: &[MarkerTransform],
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    quantum: f64,
+) -> Vec<MarkerTransform> {
+    sketch_frame_marker_transform(sketch, quantum)
+        .filter(|frame| candidates.contains(frame))
+        .map_or_else(|| candidates.to_vec(), |frame| vec![frame])
+}
+
 fn dimensioned_circle_surface_transforms(
     sketch: &cadmpeg_ir::sketches::Sketch,
     surfaces: &[cadmpeg_ir::geometry::Surface],
@@ -4987,9 +5059,10 @@ fn marker_entities(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        bind_circular_profile_by_dimension, dimensioned_circle_surface_transforms,
-        dimensioned_circle_transform, implicit_circle_marker, marker_entities,
-        profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        bind_circular_profile_by_dimension, constrain_dimensioned_circle_transforms,
+        dimensioned_circle_surface_transforms, dimensioned_circle_transform,
+        implicit_circle_marker, marker_entities, profile_loci_by_marker,
+        project_dimensioned_sketch_geometry, sketch_frame_marker_transform,
         typed_marker_relation_definition, typed_relation_definition,
         unique_compatible_marker_transform, unique_marker_transform, MarkerTransform,
     };
@@ -5024,6 +5097,34 @@ mod profile_join_tests {
             links: Vec::new(),
             link_selector: None,
         }
+    }
+
+    #[test]
+    fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
+        let sketch = Sketch {
+            id: SketchId("sketch".into()),
+            name: None,
+            configuration: None,
+            origin: Point3::new(28.65, -35.0, 0.35),
+            normal: Vector3::new(0.0, -1.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, -1.0),
+            profiles: Vec::new(),
+            native_ref: None,
+        };
+        let transform = sketch_frame_marker_transform(&sketch, 1.0e-8).expect("axis frame");
+        assert_eq!(
+            transform.apply((2_865_000_000, -2_385_000_000)),
+            Some((2_420_000_000, 0))
+        );
+        let other = MarkerTransform {
+            u_sign: 1,
+            ..transform
+        };
+        assert_eq!(
+            constrain_dimensioned_circle_transforms(&[other, transform], &sketch, 1.0e-8),
+            vec![transform]
+        );
+        assert!(constrain_dimensioned_circle_transforms(&[], &sketch, 1.0e-8).is_empty());
     }
 
     #[test]
