@@ -2066,6 +2066,8 @@ fn project_hole(feature: &Feature) -> FeatureDefinition {
         Some(_) => None,
     };
     FeatureDefinition::Hole {
+        profile: None,
+        profile_filter: None,
         face: feature
             .properties
             .get("Face")
@@ -2082,6 +2084,9 @@ fn project_hole(feature: &Feature) -> FeatureDefinition {
         kind,
         diameter,
         extent,
+        bottom: None,
+        taper_angle: None,
+        specification: None,
     }
 }
 
@@ -5881,13 +5886,29 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Hole {
+                profile,
+                profile_filter,
                 face,
                 position,
                 direction,
                 kind,
                 diameter,
                 extent,
+                bottom,
+                taper_angle,
+                specification,
             } => {
+                if profile.is_some()
+                    || profile_filter.is_some()
+                    || bottom.is_some()
+                    || taper_angle.is_some()
+                    || specification.is_some()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported hole construction semantics",
+                        feature.id
+                    )));
+                }
                 if existing
                     .as_deref()
                     .is_some_and(|record| !feature_family(record, "Hole"))
@@ -5937,6 +5958,12 @@ pub fn sync_neutral_features(
                         parameters
                             .insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
                         parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
+                    }
+                    HoleKind::Counterdrill { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unsupported counterdrill construction",
+                            feature.id
+                        )));
                     }
                 }
                 let mut properties = feature.source_properties.clone();

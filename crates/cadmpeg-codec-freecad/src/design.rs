@@ -7,9 +7,10 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ChamferSpec, DesignParameter, EdgeSelection, Extent, Feature,
-    FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
-    PathRef, PatternKind, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, ShellJoin, ShellMode, SketchSpace, SweepMode,
+    FeatureDefinition, FeatureId, FeatureTreeNodeRole, HoleBottom, HoleKind, HoleProfileFilter,
+    HoleSpecification, HoleThreadDepth, Length, ParameterId, ParameterValue, PathRef, PatternKind,
+    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, ShellJoin,
+    ShellMode, SketchSpace, SweepMode, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -146,6 +147,14 @@ pub(crate) fn transfer(
                 parameters: native_parameters(&owned),
                 properties: BTreeMap::new(),
             })
+        } else if is_hole(&object.type_name) {
+            hole_definition(&owned, &sketch_ids, objects, &properties_by_owner).unwrap_or_else(
+                || FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                },
+            )
         } else if is_extrusion(&object.type_name) {
             let profile = profile_ref(&owned, &sketch_ids);
             let length_property = property(&owned, "Length");
@@ -383,7 +392,25 @@ fn append_operation_parameters(
     properties: &[&PropertyRecord],
 ) {
     const NAMES: &[&str] = &[
-        "Angle", "Angle2", "Radius", "Size", "Size2", "Length", "Length2", "Value",
+        "Angle",
+        "Angle2",
+        "Radius",
+        "Size",
+        "Size2",
+        "Length",
+        "Length2",
+        "Value",
+        "Diameter",
+        "Depth",
+        "HoleCutDiameter",
+        "HoleCutDepth",
+        "HoleCutCountersinkAngle",
+        "DrillPointAngle",
+        "TaperedAngle",
+        "ThreadPitch",
+        "ThreadDiameter",
+        "ThreadDepth",
+        "CustomThreadClearance",
     ];
     for property in properties
         .iter()
@@ -1612,6 +1639,165 @@ fn sweep_definition(
     })
 }
 
+fn hole_definition(
+    properties: &[&PropertyRecord],
+    sketches: &HashMap<&str, SketchId>,
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+) -> Option<FeatureDefinition> {
+    let profile = profile_ref(properties, sketches);
+    if matches!(profile, ProfileRef::Native(ref value) if value == "unresolved FCStd profile") {
+        return None;
+    }
+    let filter_bits = integer_property(properties, "BaseProfileType").unwrap_or(6);
+    let profile_filter = HoleProfileFilter {
+        points: filter_bits & 1 != 0,
+        circles: filter_bits & 2 != 0,
+        arcs: filter_bits & 4 != 0,
+    };
+    if !profile_filter.points && !profile_filter.circles && !profile_filter.arcs {
+        return None;
+    }
+    let positive = |name| scalar_named(properties, name).filter(|value| *value > 0.0);
+    let diameter = positive("Diameter")?;
+    let cut_angle = || {
+        positive("HoleCutCountersinkAngle")
+            .filter(|value| *value < 180.0)
+            .map(|value| cadmpeg_ir::features::Angle(value.to_radians()))
+    };
+    let kind = match integer_property(properties, "HoleCutType").unwrap_or(0) {
+        0 => HoleKind::Simple,
+        1 => HoleKind::Counterbore {
+            diameter: Length(positive("HoleCutDiameter")?),
+            depth: Length(positive("HoleCutDepth")?),
+        },
+        2 => HoleKind::Countersink {
+            diameter: Length(positive("HoleCutDiameter")?),
+            angle: cut_angle()?,
+        },
+        3 => HoleKind::Counterdrill {
+            diameter: Length(positive("HoleCutDiameter")?),
+            depth: Length(positive("HoleCutDepth")?),
+            angle: cut_angle()?,
+        },
+        _ => return None,
+    };
+    let extent = match integer_property(properties, "DepthType").unwrap_or(0) {
+        0 => Extent::Blind {
+            length: Length(positive("Depth")?),
+        },
+        1 => Extent::ThroughAll,
+        _ => return None,
+    };
+    let bottom = match integer_property(properties, "DrillPoint").unwrap_or(1) {
+        0 => HoleBottom::Flat,
+        1 => HoleBottom::Angled {
+            included_angle: cadmpeg_ir::features::Angle(positive("DrillPointAngle")?.to_radians()),
+            depth_to_tip: bool_property(properties, "DrillForDepth").unwrap_or(false),
+        },
+        _ => return None,
+    };
+    let tapered = bool_property(properties, "Tapered").unwrap_or(false);
+    let taper_angle = tapered
+        .then(|| {
+            positive("TaperedAngle")
+                .filter(|value| *value < 180.0)
+                .map(|value| cadmpeg_ir::features::Angle(value.to_radians()))
+        })
+        .flatten();
+    if tapered && taper_angle.is_none() {
+        return None;
+    }
+    let thread_type = integer_property(properties, "ThreadType").unwrap_or(0);
+    let specification = if thread_type == 0 {
+        None
+    } else {
+        let threaded = bool_property(properties, "Threaded").unwrap_or(false);
+        Some(Box::new(HoleSpecification {
+            standard: thread_standard(thread_type)?.into(),
+            designation: enumeration_label(properties, "ThreadSize"),
+            class: if threaded {
+                enumeration_label(properties, "ThreadClass")
+            } else {
+                None
+            },
+            fit: if threaded {
+                None
+            } else {
+                enumeration_label(properties, "ThreadFit")
+            },
+            threaded,
+            modeled: bool_property(properties, "ModelThread").unwrap_or(false),
+            cosmetic: bool_property(properties, "CosmeticThread").unwrap_or(false),
+            pitch: positive("ThreadPitch").map(Length),
+            major_diameter: positive("ThreadDiameter").map(Length),
+            hand: match integer_property(properties, "ThreadDirection").unwrap_or(0) {
+                0 => ThreadHand::Right,
+                1 => ThreadHand::Left,
+                _ => return None,
+            },
+            depth: match integer_property(properties, "ThreadDepthType").unwrap_or(0) {
+                0 => HoleThreadDepth::HoleDepth,
+                1 => HoleThreadDepth::Blind {
+                    depth: Length(positive("ThreadDepth")?),
+                },
+                2 => HoleThreadDepth::TappedStandard,
+                _ => return None,
+            },
+            clearance: if bool_property(properties, "UseCustomThreadClearance").unwrap_or(false) {
+                Some(Length(scalar_named(properties, "CustomThreadClearance")?))
+            } else {
+                None
+            },
+        }))
+    };
+    let direction = axis_reference(properties, "Profile", objects, properties_by_owner)
+        .map(|(_, direction)| direction);
+    Some(FeatureDefinition::Hole {
+        profile: Some(profile),
+        profile_filter: Some(profile_filter),
+        face: None,
+        position: None,
+        direction,
+        kind,
+        diameter: Some(Length(diameter)),
+        extent: Some(extent),
+        bottom: Some(bottom),
+        taper_angle,
+        specification,
+    })
+}
+
+fn thread_standard(value: u64) -> Option<&'static str> {
+    [
+        "None",
+        "ISO metric",
+        "ISO metric fine",
+        "UNC",
+        "UNF",
+        "UNEF",
+        "NPT",
+        "BSP",
+        "BSW",
+        "BSF",
+        "ISO tyre",
+    ]
+    .get(usize::try_from(value).ok()?)
+    .copied()
+}
+
+fn enumeration_label(properties: &[&PropertyRecord], name: &str) -> Option<String> {
+    let property = property(properties, name)?;
+    let index = usize::try_from(integer_property(properties, name)?).ok()?;
+    let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
+    document
+        .descendants()
+        .filter(|node| node.has_tag_name("Enum"))
+        .filter_map(|node| node.attribute("value").or_else(|| node.attribute("Value")))
+        .nth(index)
+        .map(str::to_owned)
+}
+
 fn pattern_definition(
     kind: &str,
     properties: &[&PropertyRecord],
@@ -1847,6 +2033,9 @@ fn is_extrusion(kind: &str) -> bool {
         || kind.contains("PartDesign::Pocket")
         || kind.contains("Part::Extrusion")
 }
+fn is_hole(kind: &str) -> bool {
+    kind == "PartDesign::Hole"
+}
 fn is_revolution(kind: &str) -> bool {
     kind.contains("PartDesign::Revolution")
         || kind.contains("PartDesign::Groove")
@@ -1904,6 +2093,7 @@ fn is_design_object(kind: &str) -> bool {
         || is_loft(kind)
         || is_sweep(kind)
         || is_pattern(kind)
+        || is_hole(kind)
         || is_extrusion(kind)
         || is_revolution(kind)
         || is_dress_up(kind)

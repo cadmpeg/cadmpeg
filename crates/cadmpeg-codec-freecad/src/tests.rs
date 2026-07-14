@@ -259,7 +259,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "8");
+    assert_eq!(result.ir.ir_version, "9");
     let feature = |name: &str| {
         &result
             .ir
@@ -674,6 +674,132 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
     ));
     assert_eq!(draft.dependencies.len(), 3);
     assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_branch_complete_threaded_counterdrill_hole() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Sketcher::SketchObject" name="Locations" id="1"/>
+ <Object type="PartDesign::Hole" name="Hole" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Locations"><Properties Count="2">
+  <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+ <Object name="Hole"><Properties Count="25">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Locations"/></Property>
+  <Property name="BaseProfileType" type="App::PropertyInteger"><Integer value="7"/></Property>
+  <Property name="Diameter" type="App::PropertyLength"><Float value="6.8"/></Property>
+  <Property name="HoleCutType" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+  <Property name="HoleCutDiameter" type="App::PropertyLength"><Float value="12"/></Property>
+  <Property name="HoleCutDepth" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="HoleCutCountersinkAngle" type="App::PropertyAngle"><Float value="90"/></Property>
+  <Property name="DepthType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="DrillPoint" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="DrillPointAngle" type="App::PropertyAngle"><Float value="118"/></Property>
+  <Property name="DrillForDepth" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Tapered" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="TaperedAngle" type="App::PropertyAngle"><Float value="60"/></Property>
+  <Property name="ThreadType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="ThreadSize" type="App::PropertyEnumeration"><Integer value="1"/><CustomEnumList count="2"><Enum value="M6"/><Enum value="M8"/></CustomEnumList></Property>
+  <Property name="ThreadClass" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="6H"/></CustomEnumList></Property>
+  <Property name="Threaded" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="ModelThread" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="CosmeticThread" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="ThreadPitch" type="App::PropertyLength"><Float value="1.25"/></Property>
+  <Property name="ThreadDiameter" type="App::PropertyLength"><Float value="8"/></Property>
+  <Property name="ThreadDirection" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="ThreadDepthType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="ThreadDepth" type="App::PropertyLength"><Float value="12"/></Property>
+  <Property name="UseCustomThreadClearance" type="App::PropertyBool"><Bool value="false"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("hole");
+    let hole = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Hole"))
+        .expect("hole feature");
+    let cadmpeg_ir::features::FeatureDefinition::Hole {
+        profile,
+        profile_filter,
+        direction,
+        kind,
+        extent,
+        bottom,
+        taper_angle,
+        specification,
+        ..
+    } = &hole.definition
+    else {
+        panic!("typed hole");
+    };
+    assert!(matches!(
+        profile,
+        Some(cadmpeg_ir::features::ProfileRef::Sketch(_))
+    ));
+    assert_eq!(
+        *profile_filter,
+        Some(cadmpeg_ir::features::HoleProfileFilter {
+            points: true,
+            circles: true,
+            arcs: true,
+        })
+    );
+    assert_eq!(
+        *direction,
+        Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
+    );
+    assert!(matches!(
+        kind,
+        cadmpeg_ir::features::HoleKind::Counterdrill {
+            diameter: cadmpeg_ir::features::Length(12.0),
+            depth: cadmpeg_ir::features::Length(2.0),
+            angle: cadmpeg_ir::features::Angle(angle),
+        } if (*angle - std::f64::consts::FRAC_PI_2).abs() < 1e-12
+    ));
+    assert!(matches!(
+        extent,
+        Some(cadmpeg_ir::features::Extent::ThroughAll)
+    ));
+    assert!(matches!(
+        bottom,
+        Some(cadmpeg_ir::features::HoleBottom::Angled {
+            depth_to_tip: true,
+            ..
+        })
+    ));
+    assert!(taper_angle.is_some());
+    let specification = specification.as_deref().expect("thread specification");
+    assert_eq!(specification.standard, "ISO metric");
+    assert_eq!(specification.designation.as_deref(), Some("M8"));
+    assert_eq!(specification.class.as_deref(), Some("6H"));
+    assert!(specification.threaded && specification.modeled && !specification.cosmetic);
+    assert_eq!(specification.hand, cadmpeg_ir::features::ThreadHand::Left);
+    assert!(matches!(
+        specification.depth,
+        cadmpeg_ir::features::HoleThreadDepth::Blind {
+            depth: cadmpeg_ir::features::Length(12.0)
+        }
+    ));
+    assert_eq!(hole.dependencies.len(), 1);
+    assert!(result.report.losses.is_empty());
+    let findings = cadmpeg_ir::validate(&result.ir, Vec::new()).findings;
+    assert!(
+        findings
+            .iter()
+            .all(|finding| finding.check != cadmpeg_ir::Check::GeometricConsistency),
+        "{findings:#?}"
+    );
 }
 
 #[test]

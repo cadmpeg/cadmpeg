@@ -2158,12 +2158,17 @@ fn feature_operation_geometry_is_validated() {
             op: BooleanOp::Join,
         },
         FeatureDefinition::Hole {
+            profile: None,
+            profile_filter: None,
             face: Some(FaceSelection::Unresolved),
             position: None,
             direction: None,
             kind: HoleKind::Simple,
             diameter: Some(Length(0.0)),
             extent: Some(Extent::ThroughAll),
+            bottom: None,
+            taper_angle: None,
+            specification: None,
         },
         FeatureDefinition::Thicken {
             faces: FaceSelection::Unresolved,

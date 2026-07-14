@@ -653,6 +653,12 @@ pub enum FeatureDefinition {
     },
     /// Drilled or machined hole.
     Hole {
+        /// Sketch or profile supplying one or more hole locations.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile: Option<ProfileRef>,
+        /// Geometry families in the profile that generate hole locations.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_filter: Option<HoleProfileFilter>,
         /// Face the hole is placed on, when known.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         face: Option<FaceSelection>,
@@ -670,6 +676,15 @@ pub enum FeatureDefinition {
         /// How deep the hole extends, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extent: Option<Extent>,
+        /// Shape and depth convention at the blind end of the hole.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bottom: Option<HoleBottom>,
+        /// Included taper angle for a conical hole, when enabled.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        taper_angle: Option<Angle>,
+        /// Standard sizing and thread construction, when specified.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        specification: Option<Box<HoleSpecification>>,
     },
     /// Repetition or reflection of existing features.
     Pattern {
@@ -1355,6 +1370,101 @@ pub enum HoleKind {
         /// Countersink included angle.
         angle: Angle,
     },
+    /// Hole with a conical entry followed by a wider cylindrical recess.
+    Counterdrill {
+        /// Entry-recess diameter.
+        diameter: Length,
+        /// Cylindrical recess depth.
+        depth: Length,
+        /// Included conical entry angle.
+        angle: Angle,
+    },
+}
+
+/// Profile geometry families accepted as hole-location generators.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HoleProfileFilter {
+    /// Profile points generate holes.
+    pub points: bool,
+    /// Profile circles generate holes at their centers.
+    pub circles: bool,
+    /// Profile circular arcs generate holes at their centers.
+    pub arcs: bool,
+}
+
+/// Blind-end construction of a drilled hole.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HoleBottom {
+    /// Flat-bottomed cylindrical end.
+    Flat,
+    /// Conical drill point.
+    Angled {
+        /// Included drill-point angle.
+        included_angle: Angle,
+        /// Whether the declared blind depth reaches the tip instead of the shoulder.
+        depth_to_tip: bool,
+    },
+}
+
+/// Standard sizing and optional physical-thread construction for a hole.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct HoleSpecification {
+    /// Named thread or fastener standard family.
+    pub standard: String,
+    /// Nominal size designation within the standard.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub designation: Option<String>,
+    /// Tolerance or thread class.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class: Option<String>,
+    /// Clearance-hole fit class when the hole is not threaded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fit: Option<String>,
+    /// Whether the hole is internally threaded rather than a clearance hole.
+    pub threaded: bool,
+    /// Whether exact helical thread geometry is modeled.
+    pub modeled: bool,
+    /// Whether cosmetic thread presentation is requested.
+    pub cosmetic: bool,
+    /// Thread pitch in canonical millimeters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pitch: Option<Length>,
+    /// Nominal major thread diameter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub major_diameter: Option<Length>,
+    /// Thread handedness.
+    pub hand: ThreadHand,
+    /// Axial thread-depth construction.
+    pub depth: HoleThreadDepth,
+    /// Additional radial thread clearance used for modeled geometry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clearance: Option<Length>,
+}
+
+/// Thread handedness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ThreadHand {
+    /// Right-hand thread.
+    Right,
+    /// Left-hand thread.
+    Left,
+}
+
+/// Axial extent rule for a hole thread.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HoleThreadDepth {
+    /// Thread follows the complete hole depth.
+    HoleDepth,
+    /// Explicit thread length.
+    Blind {
+        /// Explicit axial thread length.
+        depth: Length,
+    },
+    /// Standard tapped-hole runout is subtracted from the hole depth.
+    TappedStandard,
 }
 
 /// Structural form of a hole entry treatment.
@@ -1363,6 +1473,8 @@ pub enum HoleKind {
 pub enum HoleForm {
     /// Wider, flat-bottomed entry.
     Counterbore,
+    /// Conical entry followed by a cylindrical recess.
+    Counterdrill,
     /// Conical entry.
     Countersink,
 }

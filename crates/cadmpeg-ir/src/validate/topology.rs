@@ -1760,13 +1760,19 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 body_selections.push(bodies);
             }
             FeatureDefinition::Hole {
+                profile,
+                profile_filter,
                 face,
                 kind,
                 diameter,
                 extent,
                 direction,
                 position,
+                bottom,
+                taper_angle,
+                specification,
             } => {
+                profiles.extend(profile);
                 face_selections.extend(face);
                 extents.extend(extent);
                 let kind_valid = match kind {
@@ -1796,13 +1802,58 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             && angle.0 > 0.0
                             && angle.0 < std::f64::consts::PI
                     }
+                    HoleKind::Counterdrill {
+                        diameter,
+                        depth,
+                        angle,
+                    } => {
+                        positive_feature_length(*diameter)
+                            && positive_feature_length(*depth)
+                            && angle.0.is_finite()
+                            && angle.0 > 0.0
+                            && angle.0 < std::f64::consts::PI
+                    }
                 };
                 let position_valid = position.is_none_or(|point| {
                     point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
                 });
+                let filter_valid = profile_filter
+                    .is_none_or(|filter| filter.points || filter.circles || filter.arcs);
+                let bottom_valid = bottom.is_none_or(|bottom| match bottom {
+                    crate::features::HoleBottom::Flat => true,
+                    crate::features::HoleBottom::Angled { included_angle, .. } => {
+                        included_angle.0.is_finite()
+                            && included_angle.0 > 0.0
+                            && included_angle.0 < std::f64::consts::PI
+                    }
+                });
+                let taper_valid = taper_angle.is_none_or(|angle| {
+                    angle.0.is_finite() && angle.0 > 0.0 && angle.0 < std::f64::consts::PI
+                });
+                let specification_valid = specification.as_deref().is_none_or(|specification| {
+                    !specification.standard.is_empty()
+                        && specification.pitch.is_none_or(positive_feature_length)
+                        && specification
+                            .major_diameter
+                            .is_none_or(positive_feature_length)
+                        && specification
+                            .clearance
+                            .is_none_or(|value| value.0.is_finite())
+                        && match specification.depth {
+                            crate::features::HoleThreadDepth::Blind { depth } => {
+                                positive_feature_length(depth)
+                            }
+                            crate::features::HoleThreadDepth::HoleDepth
+                            | crate::features::HoleThreadDepth::TappedStandard => true,
+                        }
+                });
                 if diameter.is_some_and(|value| !positive_feature_length(value))
                     || !kind_valid
                     || !position_valid
+                    || !filter_valid
+                    || !bottom_valid
+                    || !taper_valid
+                    || !specification_valid
                     || direction.is_some_and(|value| !valid_feature_direction(value))
                 {
                     feature_geometry_error(findings, feature, "hole geometry is invalid");

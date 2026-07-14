@@ -2285,6 +2285,8 @@ fn encoder_writes_source_less_native_features() {
             reverse: Some(false),
         },
         FeatureDefinition::Hole {
+            profile: None,
+            profile_filter: None,
             face: Some(FaceSelection::Native("face-g".into())),
             position: Some(Point3::new(3.0, 4.0, 5.0)),
             direction: Some(Vector3::new(0.0, 0.0, -1.0)),
@@ -2296,6 +2298,9 @@ fn encoder_writes_source_less_native_features() {
             extent: Some(Extent::Blind {
                 length: Length(20.0),
             }),
+            bottom: None,
+            taper_angle: None,
+            specification: None,
         },
     ];
     for (index, definition) in definitions.into_iter().enumerate() {
@@ -10580,6 +10585,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
             extent: Some(Extent::Blind {
                 length: Length(12.0),
             }),
+            ..
         }
     ));
 
