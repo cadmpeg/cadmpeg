@@ -407,13 +407,16 @@ The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;
 the last row may terminate directly at the next structural or named record.
 A relation joined to exactly one incidence through `rel_id` and `skamp_id`
-inherits that incidence's ordered section-entity references. This entity join is
+inherits that incidence's ordered section-entity references and locus senses.
+When the incidence contains exactly two items whose senses resolve to section
+loci, those loci define the measured endpoints in stored order. This join is
 independent of whether the relation discriminator has a neutral typed mapping.
 A type-zero relation with sign zero, one, or `f6`, a defined `dimtab_ptr`
-selector, and a nonempty joined incidence is a linear distance over the joined
-entities. The more specific operand-vector and `verhor` forms below refine that
-distance to horizontal or vertical endpoint loci; incomplete operand vectors do
-not discard the entity-level distance.
+selector, and a two-locus joined incidence is the Euclidean distance between the
+joined loci. A nonempty incidence without exactly two resolved loci remains an
+entity-level distance. The more specific operand-vector and `verhor` forms below
+refine that distance to horizontal or vertical endpoint loci; incomplete operand
+vectors do not discard the incidence-backed distance.
 
 Within the three four-slot `relat_ptr` operand vectors, `e5` expands to two
 zero slots and `e6` expands to three zero slots. `e4` is the integer value one,

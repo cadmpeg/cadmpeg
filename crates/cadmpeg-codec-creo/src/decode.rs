@@ -4242,12 +4242,12 @@ fn section_point_locus(
     }
 }
 
-fn relation_incidence_entities(
+fn relation_incidence(
     definition: &crate::feature::FeatureDefinition,
     relation_id: u32,
-) -> Vec<SketchEntityId> {
+) -> Option<&crate::feature::FeatureSkamp> {
     let Some(relations) = &definition.relations else {
-        return Vec::new();
+        return None;
     };
     let incidence_ids = relations
         .triples
@@ -4256,7 +4256,7 @@ fn relation_incidence_entities(
         .filter_map(|triple| triple.skamp_id)
         .collect::<BTreeSet<_>>();
     if incidence_ids.len() != 1 {
-        return Vec::new();
+        return None;
     }
     let incidence_id = *incidence_ids
         .first()
@@ -4267,6 +4267,16 @@ fn relation_incidence_entities(
         .filter(|skamp| skamp.id == incidence_id)
         .collect::<Vec<_>>();
     let [incidence] = incidences.as_slice() else {
+        return None;
+    };
+    Some(*incidence)
+}
+
+fn relation_incidence_entities(
+    definition: &crate::feature::FeatureDefinition,
+    relation_id: u32,
+) -> Vec<SketchEntityId> {
+    let Some(incidence) = relation_incidence(definition, relation_id) else {
         return Vec::new();
     };
     let known = section_entity_external_ids(definition);
@@ -4283,6 +4293,20 @@ fn relation_incidence_entities(
         })
         .collect::<Option<Vec<_>>>()
         .unwrap_or_default()
+}
+
+fn relation_incidence_loci(
+    definition: &crate::feature::FeatureDefinition,
+    relation_id: u32,
+) -> Option<[SketchLocus; 2]> {
+    let incidence = relation_incidence(definition, relation_id)?;
+    let [first, second] = incidence.items.as_slice() else {
+        return None;
+    };
+    Some([
+        section_skamp_locus(definition, first)?,
+        section_skamp_locus(definition, second)?,
+    ])
 }
 
 fn section_dimension_constraints(
@@ -4371,6 +4395,15 @@ fn section_dimension_constraints(
                             }
                         }
                     }
+                }
+                if let Some([first, second]) =
+                    relation_incidence_loci(definition, relation.relation_id)
+                {
+                    return Some(SketchConstraintDefinition::DistanceLoci {
+                        first,
+                        second,
+                        parameter,
+                    });
                 }
                 let entities = relation_incidence_entities(definition, relation.relation_id);
                 (!entities.is_empty()).then_some(SketchConstraintDefinition::Distance {
@@ -9154,11 +9187,34 @@ mod resolved_sketch_tests {
             section_dimension_constraints(&incidence_distance, &SketchId("sketch".into()))[0]
                 .0
                 .definition,
-            SketchConstraintDefinition::Distance {
-                entities: vec![
-                    SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
-                    SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-                ],
+            SketchConstraintDefinition::DistanceLoci {
+                first: SketchLocus::Entity(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string(),
+                )),
+                second: SketchLocus::Entity(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:13".to_string(),
+                )),
+                parameter: ParameterId("creo:featdefs:parameter#40:42".to_string()),
+            }
+        );
+        incidence_distance
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0]
+            .items[0]
+            .sense = 2;
+        assert_eq!(
+            section_dimension_constraints(&incidence_distance, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::DistanceLoci {
+                first: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string(),
+                )),
+                second: SketchLocus::Entity(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:13".to_string(),
+                )),
                 parameter: ParameterId("creo:featdefs:parameter#40:42".to_string()),
             }
         );
