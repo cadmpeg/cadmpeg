@@ -158,6 +158,38 @@ fn directory_data(spans: &mut Vec<ByteSpan>, line: &PhysicalLine, owner: &str) {
     fixed_card_framing(spans, line, owner);
 }
 
+fn terminate_data(spans: &mut Vec<ByteSpan>, line: &PhysicalLine, owner: &str) {
+    for (index, meaning) in [
+        "start_count",
+        "global_count",
+        "directory_count",
+        "parameter_count",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        push(
+            spans,
+            line.offset + (index * 8) as u64,
+            line.offset + ((index + 1) * 8) as u64,
+            ByteSpanClass::Typed,
+            owner,
+            meaning,
+            None,
+        );
+    }
+    push(
+        spans,
+        line.offset + 32,
+        line.offset + 72,
+        ByteSpanClass::Structural,
+        owner,
+        "terminate_padding",
+        None,
+    );
+    fixed_card_framing(spans, line, owner);
+}
+
 fn parameter_data(
     spans: &mut Vec<ByteSpan>,
     line: &PhysicalLine,
@@ -278,20 +310,16 @@ pub(crate) fn build(
                         global_line_index += 1;
                     }
                     Section::Directory => directory_data(&mut spans, line, &owner),
-                    Section::Start | Section::Terminate => {
-                        let (class, meaning, retained) = if section == Section::Start {
-                            (ByteSpanClass::Opaque, "start_text", Some(owner.as_str()))
-                        } else {
-                            (ByteSpanClass::Typed, "terminate_counts", None)
-                        };
+                    Section::Terminate => terminate_data(&mut spans, line, &owner),
+                    Section::Start => {
                         push(
                             &mut spans,
                             line.offset,
                             line.offset + 72,
-                            class,
+                            ByteSpanClass::Opaque,
                             &owner,
-                            meaning,
-                            retained,
+                            "start_text",
+                            Some(owner.as_str()),
                         );
                         fixed_card_framing(&mut spans, line, &owner);
                     }
