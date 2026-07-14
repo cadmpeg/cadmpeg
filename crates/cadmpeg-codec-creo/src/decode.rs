@@ -228,7 +228,10 @@ struct CreoCurveExpressionAssignment {
 struct CreoFeatureOperationState {
     id: String,
     feature_id: u32,
+    state_ordinal: usize,
+    current: bool,
     family: String,
+    display_name_stored: bool,
     status_prefix: Option<String>,
     recipe: Option<&'static str>,
     root_schema_class: Option<u32>,
@@ -237,23 +240,38 @@ struct CreoFeatureOperationState {
 }
 
 fn feature_operation_state_records(scan: &ContainerScan) -> Vec<CreoFeatureOperationState> {
+    let current_offsets = scan
+        .feature_operations
+        .iter()
+        .map(|state| (state.feature_id, state.offset))
+        .collect::<BTreeMap<_, _>>();
+    let mut ordinals = BTreeMap::<u32, usize>::new();
     scan.feature_operation_states
         .iter()
-        .enumerate()
-        .map(|(index, state)| CreoFeatureOperationState {
-            id: format!("creo:mdlstatus:feature_state#{}:{index}", state.feature_id),
-            feature_id: state.feature_id,
-            family: state.kind.clone(),
-            status_prefix: state
-                .status_prefix
-                .map(|prefix| char::from(prefix).to_string()),
-            recipe: state.recipe.map(|recipe| match recipe {
-                crate::feature::FeatureRecipeKind::Extrude => "protextrude",
-                crate::feature::FeatureRecipeKind::Revolve => "protrevolve",
-            }),
-            root_schema_class: state.root_schema_class,
-            parent_feature_id: state.parent_feature_id,
-            offset: state.offset,
+        .map(|state| {
+            let state_ordinal = *ordinals.entry(state.feature_id).or_default();
+            ordinals.insert(state.feature_id, state_ordinal + 1);
+            CreoFeatureOperationState {
+                id: format!(
+                    "creo:mdlstatus:feature_state#{}:{state_ordinal}",
+                    state.feature_id
+                ),
+                feature_id: state.feature_id,
+                state_ordinal,
+                current: current_offsets.get(&state.feature_id) == Some(&state.offset),
+                family: state.kind.clone(),
+                display_name_stored: state.display_name_stored,
+                status_prefix: state
+                    .status_prefix
+                    .map(|prefix| char::from(prefix).to_string()),
+                recipe: state.recipe.map(|recipe| match recipe {
+                    crate::feature::FeatureRecipeKind::Extrude => "protextrude",
+                    crate::feature::FeatureRecipeKind::Revolve => "protrevolve",
+                }),
+                root_schema_class: state.root_schema_class,
+                parent_feature_id: state.parent_feature_id,
+                offset: state.offset,
+            }
         })
         .collect()
 }

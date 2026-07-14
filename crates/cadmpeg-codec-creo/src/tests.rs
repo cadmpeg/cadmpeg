@@ -3309,10 +3309,17 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     assert_eq!(scan.feature_operations[5].status_prefix, Some(b'y'));
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
-    assert_eq!(
-        result.ir.native.namespace("creo").unwrap().arenas["feature_operation_states"].len(),
-        7
-    );
+    let states = &result.ir.native.namespace("creo").unwrap().arenas["feature_operation_states"];
+    assert_eq!(states.len(), 7);
+    let feature_40 = states
+        .iter()
+        .filter(|state| state.fields["feature_id"] == 40)
+        .collect::<Vec<_>>();
+    assert_eq!(feature_40.len(), 2);
+    assert_eq!(feature_40[0].fields["state_ordinal"], 0);
+    assert_eq!(feature_40[0].fields["current"], false);
+    assert_eq!(feature_40[1].fields["state_ordinal"], 1);
+    assert_eq!(feature_40[1].fields["current"], true);
     assert_eq!(result.ir.model.features.len(), 6);
     assert_eq!(
         result.ir.model.features[0].id.as_str(),
