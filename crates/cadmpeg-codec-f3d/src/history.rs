@@ -179,13 +179,22 @@ pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHist
 }
 
 fn bind_snapshot_revision_ids(states: &mut [AsmDeltaState]) {
-    let old_references = states
+    let mut old_references = states
         .iter()
         .flat_map(|state| &state.bulletin_boards)
         .flat_map(|board| &board.changes)
         .filter_map(|change| change.old_ref)
         .collect::<Vec<_>>();
-    if old_references.iter().copied().collect::<HashSet<_>>().len() != old_references.len() {
+    old_references.sort_unstable();
+    if old_references
+        .first()
+        .is_none_or(|first| {
+            old_references
+                .iter()
+                .copied()
+                .ne(*first..*first + old_references.len() as i64)
+        })
+    {
         return;
     }
     let snapshot_records = states
@@ -442,6 +451,69 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_ordinals_bind_the_sorted_revision_interval() {
+        let history_id = "history".to_string();
+        let state_id = "state".to_string();
+        let board_id = "board".to_string();
+        let mut state = AsmDeltaState {
+            id: state_id.clone(),
+            parent: history_id,
+            byte_offset: 0,
+            state_id: 1,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 0,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: vec![AsmBulletinBoard {
+                id: board_id.clone(),
+                parent: state_id.clone(),
+                byte_offset: 0,
+                owner_ref: 0,
+                number: 2,
+                changes: [7, 5, 6]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, old_ref)| AsmEntityChange {
+                        id: format!("change-{index}"),
+                        parent: board_id.clone(),
+                        byte_offset: index as u64,
+                        kind: AsmEntityChangeKind::Update,
+                        old_ref: Some(old_ref),
+                        new_ref: Some(index as i64),
+                    })
+                    .collect(),
+            }],
+            records: (0..3)
+                .map(|index| AsmHistoryRecord {
+                    id: format!("record-{index}"),
+                    parent: state_id.clone(),
+                    revision_id: None,
+                    index,
+                    byte_offset: index,
+                    name: "edge".into(),
+                    entity_references: Vec::new(),
+                    raw_bytes: vec![0x11],
+                })
+                .collect(),
+            entity_versions: Vec::new(),
+        };
+
+        bind_snapshot_revision_ids(std::slice::from_mut(&mut state));
+
+        assert_eq!(
+            state
+                .records
+                .iter()
+                .map(|record| record.revision_id)
+                .collect::<Vec<_>>(),
+            [Some(5), Some(6), Some(7)]
+        );
+    }
 
     #[test]
     fn reverse_history_builds_complete_entity_version_maps() {
