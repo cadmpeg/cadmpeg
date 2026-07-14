@@ -114,6 +114,10 @@ Type 216 Forms 0 through 2 store one Type 212 note, two Type 214 leaders, and tw
 
 Every dimension component is physically dependent and has entity-use flag `01`. All children of one dimension carry the same Directory transformation pointer. The parent transformation or child transformation may be nonzero, but not both. The `annotations` arena preserves dimension kind and form, each component role and identity, native radius center, and parent transformation without deriving semantic PMI.
 
+Type 228 Form 0 stores an optional physically dependent Type 212 note, a positive ordered list of physically dependent annotation geometry, and an ordered list of physically dependent Type 214 leaders. Every defining geometry entity has entity-use flag `01`. The `annotations` arena preserves note, geometry, and leader roles and source order separately.
+
+Type 230 Form 0 stores one exterior definition curve, a predefined fill-pattern code, native pattern anchor, positive line spacing and angle where applicable, and an ordered list of zero or more island definition curves. Definition curves are Type 100 full circles, Type 102 composite curves, Type 104 Form 1 full ellipses, Type 106 Form 63 closed planar curves, Type 112 parametric splines, or Type 126 rational B-splines. Pattern codes `0`, `19`, and `20` through `268` use zero or omitted anchor, spacing, and angle fields; single-line patterns require finite placement data and positive spacing. The `annotations` arena preserves the boundary and island identities, pattern code, native hatch placement, and Directory transformation without generating explicit hatch curves.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.

@@ -552,6 +552,25 @@ enum NativeAnnotation {
         center: [Option<f64>; 2],
         transformation: Option<String>,
     },
+    GeneralSymbol {
+        id: String,
+        source_entity: String,
+        note: Option<String>,
+        geometry: Vec<Option<String>>,
+        leaders: Vec<Option<String>>,
+        transformation: Option<String>,
+    },
+    SectionedArea {
+        id: String,
+        source_entity: String,
+        boundary: Option<String>,
+        fill_pattern: Option<i64>,
+        pattern_anchor: [Option<f64>; 3],
+        pattern_spacing: Option<f64>,
+        pattern_angle: Option<f64>,
+        islands: Vec<Option<String>>,
+        transformation: Option<String>,
+    },
 }
 
 #[derive(Clone)]
@@ -2001,6 +2020,7 @@ pub(crate) fn store(
                     (entry.entity_type, entry.form),
                     (216, 0..=2) | (218 | 222, 0..=1) | (220, 0)
                 )
+                || matches!((entry.entity_type, entry.form), (228 | 230, 0))
         })
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
@@ -2198,7 +2218,53 @@ pub(crate) fn store(
                         ],
                         transformation,
                     },
-                    _ => unreachable!("annotation filter admits known dimension types"),
+                    228 => {
+                        let geometry_count = record
+                            .and_then(|record| record.integer(2))
+                            .and_then(|value| usize::try_from(value).ok())
+                            .unwrap_or_default();
+                        let leader_count_index = 3 + geometry_count;
+                        let leader_count = record
+                            .and_then(|record| record.integer(leader_count_index))
+                            .and_then(|value| usize::try_from(value).ok())
+                            .unwrap_or_default();
+                        NativeAnnotation::GeneralSymbol {
+                            id,
+                            source_entity,
+                            note: annotation_link(1),
+                            geometry: (0..geometry_count)
+                                .map(|offset| entity_link(3 + offset))
+                                .collect(),
+                            leaders: (0..leader_count)
+                                .map(|offset| annotation_link(leader_count_index + 1 + offset))
+                                .collect(),
+                            transformation,
+                        }
+                    }
+                    230 => {
+                        let island_count = record
+                            .and_then(|record| record.integer(8))
+                            .and_then(|value| usize::try_from(value).ok())
+                            .unwrap_or_default();
+                        NativeAnnotation::SectionedArea {
+                            id,
+                            source_entity,
+                            boundary: entity_link(1),
+                            fill_pattern: record.and_then(|record| record.integer(2)),
+                            pattern_anchor: [
+                                record.and_then(|record| record.number(3)),
+                                record.and_then(|record| record.number(4)),
+                                record.and_then(|record| record.number(5)),
+                            ],
+                            pattern_spacing: record.and_then(|record| record.number(6)),
+                            pattern_angle: record.and_then(|record| record.number(7)),
+                            islands: (0..island_count)
+                                .map(|offset| entity_link(9 + offset))
+                                .collect(),
+                            transformation,
+                        }
+                    }
+                    _ => unreachable!("annotation filter admits known entity types"),
                 }
             }
         })

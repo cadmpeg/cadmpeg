@@ -2660,6 +2660,60 @@ fn dimension_forms_file() -> Vec<u8> {
     ])
 }
 
+fn symbol_and_sectioned_area_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "SYMNOTE".into(),
+            status: "00010100",
+            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HS;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "SYMGEOM".into(),
+            status: "00010100",
+            parameters: "100,0,0,0,1,0,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 2,
+            label: "SYMLEAD".into(),
+            status: "00010100",
+            parameters: "214,1,2,1,0,0,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 228,
+            form: 0,
+            label: "SYMBOL".into(),
+            status: "00000100",
+            parameters: "228,1,1,3,1,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "BOUNDARY".into(),
+            status: "00000000",
+            parameters: "100,0,0,0,5,0,5,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "ISLAND".into(),
+            status: "00000000",
+            parameters: "100,0,0,0,1,0,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 230,
+            form: 0,
+            label: "SECTION".into(),
+            status: "00000100",
+            parameters: "230,9,2,0,0,0,1,0.7853981633974483,1,11;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4196,6 +4250,40 @@ fn decode_types_dimension_component_roles_for_every_admitted_form() {
         radius.fields["leaders"][1],
         "iges:presentation:annotation#D9"
     );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_general_symbol_components_and_section_fill_definition() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(symbol_and_sectioned_area_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let annotations = &result.ir.native.namespace("iges").unwrap().arenas["annotations"];
+    let symbol = annotations
+        .iter()
+        .find(|annotation| annotation.fields["kind"] == "general_symbol")
+        .unwrap();
+    assert_eq!(symbol.fields["note"], "iges:presentation:annotation#D1");
+    assert_eq!(symbol.fields["geometry"][0], "iges:entity:directory#3");
+    assert_eq!(
+        symbol.fields["leaders"][0],
+        "iges:presentation:annotation#D5"
+    );
+    let section = annotations
+        .iter()
+        .find(|annotation| annotation.fields["kind"] == "sectioned_area")
+        .unwrap();
+    assert_eq!(section.fields["boundary"], "iges:entity:directory#9");
+    assert_eq!(section.fields["fill_pattern"], 2);
+    assert_eq!(section.fields["pattern_spacing"], 1.0);
+    assert_eq!(section.fields["islands"][0], "iges:entity:directory#11");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

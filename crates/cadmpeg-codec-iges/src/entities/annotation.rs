@@ -372,6 +372,125 @@ fn dimension_valid(
     note_valid && fields_valid && dimension_children_valid(entry, &children, entries)
 }
 
+fn general_symbol_valid(
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> bool {
+    let note_valid = match record.integer(1) {
+        Some(0) => true,
+        Some(_) => pointer(record, 1, entries)
+            .is_some_and(|sequence| child_valid(sequence, 212, |form| form == 0, entries, records)),
+        None => false,
+    };
+    let Some(geometry_count) = record
+        .integer(2)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return false;
+    };
+    let geometry_valid = (0..geometry_count).all(|offset| {
+        pointer(record, 3 + offset, entries).is_some_and(|sequence| {
+            entries
+                .get(&sequence)
+                .is_some_and(|target| target.status.subordinate == 1 && target.status.use_flag == 1)
+        })
+    });
+    let leader_count_index = 3 + geometry_count;
+    let Some(leader_count) = record
+        .integer(leader_count_index)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return false;
+    };
+    let leaders_valid = (0..leader_count).all(|offset| {
+        pointer(record, leader_count_index + 1 + offset, entries).is_some_and(|sequence| {
+            child_valid(
+                sequence,
+                214,
+                |form| matches!(form, 1..=12),
+                entries,
+                records,
+            )
+        })
+    });
+    note_valid
+        && geometry_valid
+        && leaders_valid
+        && exact_parameter_count(record, leader_count_index + 1 + leader_count, entries)
+}
+
+fn section_boundary_type(entry: &DirectoryEntry) -> bool {
+    matches!(
+        (entry.entity_type, entry.form),
+        (100 | 102 | 112 | 126, 0) | (104, 1) | (106, 63)
+    )
+}
+
+fn fill_pattern_valid(pattern: i64) -> bool {
+    matches!(
+        pattern,
+        0..=20 | 22 | 26 | 28..=29 | 32 | 34 | 36 | 38 | 40..=42 | 46 | 50 | 60
+            | 70 | 72 | 80 | 82 | 84 | 86 | 90 | 92 | 94 | 110 | 124 | 134 | 136
+            | 140 | 142 | 152 | 154 | 156..=159 | 172 | 174 | 178 | 210 | 220 | 224
+            | 226 | 234 | 236 | 240 | 244 | 246 | 252 | 254 | 256 | 262 | 264..=266
+            | 268
+    )
+}
+
+fn zero_or_omitted(record: &ParameterRecord, index: usize) -> bool {
+    match record.tokens.get(index).map(|token| &token.value) {
+        None | Some(crate::parameter::TokenValue::Omitted) => true,
+        _ => record.number(index) == Some(0.0),
+    }
+}
+
+fn finite_or_omitted(record: &ParameterRecord, index: usize) -> bool {
+    match record.tokens.get(index).map(|token| &token.value) {
+        None | Some(crate::parameter::TokenValue::Omitted) => true,
+        _ => finite(record, index),
+    }
+}
+
+fn sectioned_area_valid(
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    let boundary_valid = pointer(record, 1, entries)
+        .and_then(|sequence| entries.get(&sequence).copied())
+        .is_some_and(section_boundary_type);
+    let pattern = record.integer(2).filter(|value| fill_pattern_valid(*value));
+    let pattern_parameters_valid = pattern.is_some_and(|pattern| {
+        if matches!(pattern, 0 | 19) || pattern > 19 {
+            (3..=7).all(|index| zero_or_omitted(record, index))
+        } else {
+            finite_or_omitted(record, 3)
+                && finite_or_omitted(record, 4)
+                && finite(record, 5)
+                && record
+                    .number(6)
+                    .is_some_and(|distance| distance.is_finite() && distance > 0.0)
+                && finite_or_omitted(record, 7)
+        }
+    });
+    let Some(island_count) = record
+        .integer(8)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return false;
+    };
+    let islands_valid = (0..island_count).all(|offset| {
+        pointer(record, 9 + offset, entries)
+            .and_then(|sequence| entries.get(&sequence).copied())
+            .is_some_and(section_boundary_type)
+    });
+    boundary_valid
+        && pattern_parameters_valid
+        && islands_valid
+        && exact_parameter_count(record, 9 + island_count, entries)
+}
+
 pub(super) fn project(
     _ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -397,6 +516,7 @@ pub(super) fn project(
                 (entry.entity_type, entry.form),
                 (216, 0..=2) | (218 | 222, 0..=1) | (220, 0)
             )
+            || matches!((entry.entity_type, entry.form), (228 | 230, 0))
     }) {
         handled.insert(entry.sequence);
         let valid = records.get(&entry.sequence).is_some_and(|record| {
@@ -417,16 +537,21 @@ pub(super) fn project(
                     213 => new_general_note_valid(record, &entries),
                     214 => leader_valid(entry, record, &entries),
                     216 | 218 | 220 | 222 => dimension_valid(entry, record, &entries, &records),
+                    228 => general_symbol_valid(record, &entries, &records),
+                    230 => sectioned_area_valid(record, &entries),
                     _ => false,
                 }
         });
         if valid {
             decoded.insert(entry.sequence);
         } else {
-            let message = if matches!(entry.entity_type, 216 | 218 | 220 | 222) {
-                "dimension components, role types, transforms, or Directory status are invalid"
-            } else {
-                "text count, presentation metrics, encoding, placement, or Directory use flag is invalid"
+            let message = match entry.entity_type {
+                216 | 218 | 220 | 222 => {
+                    "dimension components, role types, transforms, or Directory status are invalid"
+                }
+                228 => "symbol note, defining geometry, or leader list is invalid",
+                230 => "section boundary, fill pattern, hatch geometry, or island list is invalid",
+                _ => "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
             };
             losses.push(entity_loss(entry, message));
         }
