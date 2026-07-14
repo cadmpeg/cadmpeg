@@ -1172,6 +1172,25 @@ pub struct FeatureBlockConstructionPayload {
     pub block_source_offsets: Vec<u64>,
 }
 
+/// Ordered three-parameter dimension run of one `BLOCK` feature.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureBlockDimensions {
+    /// Globally unique dimension-set identity.
+    pub id: String,
+    /// Owning `BLOCK` operation label.
+    pub operation_label: String,
+    /// Complete resolved block construction.
+    pub construction: String,
+    /// Bindings selecting the first parameter declaration.
+    pub anchor_bindings: Vec<String>,
+    /// Ordered consecutive parameter declarations.
+    pub declarations: [String; 3],
+    /// Ordered exact numeric expression records.
+    pub expressions: [String; 3],
+    /// Ordered finite dimensions in model millimeters.
+    pub values: [f64; 3],
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -3596,6 +3615,83 @@ pub fn feature_block_construction_payloads(
                 block_payload_offsets,
                 block_byte_lengths,
                 block_source_offsets,
+            })
+        })
+        .collect()
+}
+
+/// Resolve the consecutive three-parameter dimension run of `BLOCK` features.
+pub fn feature_block_dimensions(
+    constructions: &[FeatureBlockConstruction],
+    bindings: &[FeatureParameterBinding],
+    declarations: &[ExpressionDeclaration],
+    expressions: &[Expression],
+) -> Vec<FeatureBlockDimensions> {
+    constructions
+        .iter()
+        .filter_map(|construction| {
+            let mut operation_bindings = bindings
+                .iter()
+                .filter(|binding| binding.operation_label == construction.operation_label)
+                .collect::<Vec<_>>();
+            operation_bindings
+                .sort_by_key(|binding| (binding.input_slot, binding.reference_ordinal));
+            let mut anchors = operation_bindings
+                .iter()
+                .map(|binding| binding.expression_declaration.as_str())
+                .collect::<Vec<_>>();
+            anchors.sort_unstable();
+            anchors.dedup();
+            let [anchor] = anchors.as_slice() else {
+                return None;
+            };
+            let start = declarations
+                .iter()
+                .position(|declaration| declaration.id == *anchor)?;
+            let run: [&ExpressionDeclaration; 3] = declarations
+                .get(start..start + 3)?
+                .iter()
+                .collect::<Vec<_>>()
+                .try_into()
+                .ok()?;
+            let first = run[0].parameter_index;
+            if run.iter().enumerate().any(|(ordinal, declaration)| {
+                declaration.parameter_index != first + ordinal as u32
+                    || declaration.name != format!("p{}", declaration.parameter_index)
+                    || declaration.qualifier.is_some()
+            }) {
+                return None;
+            }
+            let resolved: [(&Expression, f64); 3] = run
+                .iter()
+                .map(|declaration| {
+                    let mut matches = expressions.iter().filter(|expression| {
+                        expression.declaration.as_deref() == Some(&declaration.id)
+                    });
+                    let expression = matches.next()?;
+                    if matches.next().is_some() || expression.unit != ExpressionUnit::Millimeter {
+                        return None;
+                    }
+                    Some((expression, expression.value?))
+                })
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?;
+            Some(FeatureBlockDimensions {
+                id: construction
+                    .id
+                    .replacen("block-construction", "block-dimensions", 1),
+                operation_label: construction.operation_label.clone(),
+                construction: construction.id.clone(),
+                anchor_bindings: operation_bindings
+                    .into_iter()
+                    .map(|binding| binding.id.clone())
+                    .collect(),
+                declarations: run.map(|declaration| declaration.id.clone()),
+                expressions: resolved
+                    .each_ref()
+                    .map(|(expression, _)| expression.id.clone()),
+                values: resolved.map(|(_, value)| value),
             })
         })
         .collect()

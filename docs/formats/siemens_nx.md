@@ -605,6 +605,10 @@ A `BLOCK` payload begins `control:u8, 00 00 01 00 00`, eighteen contiguous canon
 
 The logical `BLOCK` construction payload is the bytewise concatenation of all eighteen resolved member blocks followed by the resolved terminal block. Fields may cross source-block boundaries. The reconstructed payload retains its exact length and hash, ordered block identities, payload-relative block starts, exact block lengths, and absolute source offsets.
 
+A `BLOCK` operation parameter binding selects the first declaration of its dimension run. The run consists of exactly three consecutive, unqualified declarations `pN`, `p(N+1)`, and `p(N+2)` in expression-record order. Each declaration resolves uniquely to one finite millimeter expression. The typed dimension set retains every anchor binding, the three ordered declarations and expression records, and the three values in model millimeters. A nonconsecutive name or index, ambiguity, non-length unit, or unevaluated value rejects the complete dimension set.
+
+The owning `BLOCK` feature links the complete typed dimension set and construction independently. Dimension order is native parameter order; placement and axis roles remain separate from the three scalar dimensions.
+
 A complete block construction requires nineteen contiguous reference ordinals, one uniform control byte, exactly eighteen nonterminal members, one final terminal reference, and unique data-block resolution for every reference. It retains the member lane and terminal reference as distinct fields. Missing, reordered, differently controlled, incorrectly terminated, or unresolved inputs reject the construction atomically.
 
 A body-reference field is `01 02 10, object_index, ff`. `object_index` uses the feature object-index form: `00..7f` is direct, `80..8f` contributes the high index byte and is followed by one low byte, `90` is followed by a big-endian `u16`, and `ff` is null. Every complete non-null field in a bounded operation record is retained in byte order. Exactly one field identifies an unambiguous primary-body writer; records containing zero or multiple fields do not establish that writer role.

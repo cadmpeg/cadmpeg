@@ -2927,6 +2927,12 @@ fn attach_native_object_model(
         &data_block_references,
         &expressions,
     );
+    let feature_block_dimensions = crate::native::feature_block_dimensions(
+        &feature_block_constructions,
+        &feature_parameter_bindings,
+        &expression_declarations,
+        &expressions,
+    );
     let store_headers = crate::native::store_headers(&scan.container);
     let string_values = crate::native::string_values(&scan.container);
     let object_references = crate::native::object_references(&scan.container);
@@ -3263,6 +3269,7 @@ fn attach_native_object_model(
             sketch_construction_inputs: &feature_sketch_construction_inputs,
             sketch_coordinate_pairs: &feature_sketch_payload_coordinate_pairs,
             block_constructions: &feature_block_constructions,
+            block_dimensions: &feature_block_dimensions,
             extrude_32_constructions: &feature_extrude_32_constructions,
             extrude_payload_headers: &feature_extrude_payload_headers,
             operation_body_scalar_triples: &feature_operation_body_scalar_triples,
@@ -3281,7 +3288,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(100);
+    namespace.version = namespace.version.max(102);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3486,6 +3493,9 @@ fn attach_native_object_model(
             &feature_block_construction_payloads,
         )?;
     }
+    if !feature_block_dimensions.is_empty() {
+        namespace.set_arena("feature_block_dimensions", &feature_block_dimensions)?;
+    }
     if !feature_sketch_records.is_empty() {
         namespace.set_arena("feature_sketch_records", &feature_sketch_records)?;
     }
@@ -3634,6 +3644,7 @@ struct FeatureOperationSources<'a> {
     sketch_construction_inputs: &'a [crate::native::FeatureSketchConstructionInputs],
     sketch_coordinate_pairs: &'a [crate::native::FeatureSketchPayloadCoordinatePair],
     block_constructions: &'a [crate::native::FeatureBlockConstruction],
+    block_dimensions: &'a [crate::native::FeatureBlockDimensions],
     extrude_32_constructions: &'a [crate::native::FeatureExtrude32Construction],
     extrude_payload_headers: &'a [crate::native::FeatureExtrudePayloadHeader],
     operation_body_scalar_triples: &'a [crate::native::FeatureOperationBodyScalarTriple],
@@ -3670,6 +3681,7 @@ fn attach_feature_operations(
         sketch_construction_inputs,
         sketch_coordinate_pairs,
         block_constructions,
+        block_dimensions,
         extrude_32_constructions,
         extrude_payload_headers,
         operation_body_scalar_triples,
@@ -3796,6 +3808,10 @@ fn attach_feature_operations(
     let block_constructions_by_operation = block_constructions
         .iter()
         .map(|construction| (construction.operation_label.as_str(), construction))
+        .collect::<BTreeMap<_, _>>();
+    let block_dimensions_by_operation = block_dimensions
+        .iter()
+        .map(|dimensions| (dimensions.operation_label.as_str(), dimensions))
         .collect::<BTreeMap<_, _>>();
     let extrude_32_constructions_by_operation = extrude_32_constructions
         .iter()
@@ -3971,6 +3987,9 @@ fn attach_feature_operations(
         }
         if let Some(construction) = block_constructions_by_operation.get(label.id.as_str()) {
             source_properties.insert("block_construction".to_string(), construction.id.clone());
+        }
+        if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
+            source_properties.insert("block_dimensions".to_string(), dimensions.id.clone());
         }
         if let Some(construction) = extrude_32_constructions_by_operation.get(label.id.as_str()) {
             source_properties.insert(
