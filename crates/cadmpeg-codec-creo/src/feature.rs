@@ -2634,8 +2634,25 @@ fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRel
     (payload.get(after_ref) == Some(&0xe2)).then_some(())?;
     cursor = after_ref + 1;
 
+    let rows = positional_relation_rows(payload, cursor, end, declared_count.saturating_sub(2))?;
+    Some(FeatureRelationTable {
+        declared_count,
+        entity_ref,
+        rows,
+        skamps: feature_skamps(payload, start, end),
+        triples: feature_relation_triples(payload, start, end),
+        offset: table,
+    })
+}
+
+fn positional_relation_rows(
+    payload: &[u8],
+    mut cursor: usize,
+    end: usize,
+    row_count: u32,
+) -> Option<Vec<FeatureRelation>> {
     let mut rows = Vec::new();
-    for _ in 0..declared_count.saturating_sub(2) {
+    for _ in 0..row_count {
         let row_end = payload[cursor..end].iter().position(|byte| *byte == 0xe2)? + cursor;
         let (relation_id, after_id) = psb::compact_int(payload, cursor);
         (after_id > cursor && after_id < row_end).then_some(())?;
@@ -2671,12 +2688,47 @@ fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRel
         });
         cursor = row_end + 1;
     }
+    Some(rows)
+}
+
+fn positional_relation_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+) -> Option<FeatureRelationTable> {
+    let (table, declared_count, mut cursor, reference_bytes) = (start..end).find_map(|table| {
+        (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+        let (declared_count, after_count) = psb::compact_int(payload, table + 1);
+        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let reference_start = after_count + 1;
+        let (class, after_reference) = psb::reference_id(payload, reference_start).ok()?;
+        (class == table_class
+            && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
+        .then(|| {
+            (
+                table,
+                declared_count,
+                after_reference + 2,
+                payload[reference_start..after_reference].to_vec(),
+            )
+        })
+    })?;
+    (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    let (_, next) = psb::reference_id(payload, cursor + 1).ok()?;
+    cursor = next;
+    let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
+    prototype_separator.extend_from_slice(&reference_bytes);
+    prototype_separator.push(0xe2);
+    let prototype_end = find_bytes(payload, &prototype_separator, cursor, end)?;
+    cursor = prototype_end + prototype_separator.len();
+    let rows = positional_relation_rows(payload, cursor, end, declared_count.saturating_sub(2))?;
     Some(FeatureRelationTable {
         declared_count,
-        entity_ref,
+        entity_ref: Some(table_class),
         rows,
-        skamps: feature_skamps(payload, start, end),
-        triples: feature_relation_triples(payload, start, end),
+        skamps: Vec::new(),
+        triples: Vec::new(),
         offset: table,
     })
 }
@@ -3868,6 +3920,7 @@ fn definitions_in_ranges(
     let mut result = Vec::new();
     let mut replay_dimension_class = None;
     let mut replay_variable_class = None;
+    let mut replay_relation_class = None;
     for (index, &(start, id, owner_override)) in starts.iter().enumerate() {
         let end = starts
             .get(index + 1)
@@ -3973,7 +4026,14 @@ fn definitions_in_ranges(
         if owner_override.is_none() {
             replay_dimension_class = dimensions.as_ref().and_then(|table| table.entity_ref);
         }
-        let relations = relation_table(payload, start, end);
+        let relations = relation_table(payload, start, end).or_else(|| {
+            owner_override.and_then(|_| {
+                positional_relation_table(payload, start, end, replay_relation_class?)
+            })
+        });
+        if owner_override.is_none() {
+            replay_relation_class = relations.as_ref().and_then(|table| table.entity_ref);
+        }
         let saved_section = saved_section(
             payload,
             start,
@@ -4493,6 +4553,26 @@ mod tests {
         assert_eq!(section.orientation.reference_type, Some(5));
         assert_eq!(section.orientation.segment_id, Some(3));
         assert_eq!(section.orientation.reference_flip, Some(BinaryFlag::Clear));
+    }
+
+    #[test]
+    fn positional_relation_table_replays_rows_after_its_prototype() {
+        let payload = b"prefix\xf8\x03\xf7\x64\xfb\xe2\xf7\x65\
+            prototype\xf1\xf7\x64\xe2\
+            \x08\x00\x03\x0f\xf6\xe4\x01\xe4\x00\xe4\x0f\x10\x0f\x18\x00\xf6\x00\xe2";
+
+        let relations = positional_relation_table(payload, 0, payload.len(), 100)
+            .expect("positional relat_ptr");
+
+        assert_eq!(relations.declared_count, 3);
+        assert_eq!(relations.entity_ref, Some(100));
+        assert_eq!(relations.rows.len(), 1);
+        assert_eq!(relations.rows[0].relation_id, 8);
+        assert_eq!(relations.rows[0].used, 0);
+        assert_eq!(relations.rows[0].sign, 0);
+        assert_eq!(relations.rows[0].dimension_id, 246);
+        assert_eq!(relations.rows[0].relation_type, 0);
+        assert!(relations.rows[0].operand_vectors.is_some());
     }
 
     #[test]

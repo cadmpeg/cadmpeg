@@ -649,6 +649,12 @@ variable-row class reference. The first row ends with
 the number of variable rows. Each row replays `type`, `key`, `value`, `guess`,
 `known`, `homogeneity`, and `uvar_id` in that order.
 
+The positional relation table repeats the labelled template's `relat_ptr`
+table-class reference and relation-row class reference. Its first row is the
+schema prototype and ends with `f1 f7 <table-class> e2`. The following
+`f8_count - 2` rows replay `id`, `used`, operand vectors `a`, `b`, and `c`,
+`sign`, `idim`, and `type`; each row ends with `e2`.
+
 A positional `gsec3d_ptr` record begins with `07 S2D<N> 00`, followed by
 `flip`, `own_ref_id`, `first_chain_ptr`, `quilt_id`, `plane_id`, and
 `plane_flip`. Its reference-plane array then stores an `f8` extent, table-class
