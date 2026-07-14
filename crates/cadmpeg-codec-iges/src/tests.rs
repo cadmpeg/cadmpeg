@@ -1433,8 +1433,12 @@ fn explicit_open_shell_file() -> Vec<u8> {
 }
 
 fn explicit_tetrahedron_solid_file() -> Vec<u8> {
+    explicit_tetrahedron_solid_file_with_transform(false)
+}
+
+fn explicit_tetrahedron_solid_file_with_transform(transformed: bool) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
-    let entities = vec![
+    let mut entities = vec![
         (116, 0, "POINTA", "00010000", "116,0,0,0,0;"),
         (116, 0, "POINTB", "00010000", "116,1,0,0,0;"),
         (123, 0, "NEGZ", "00010000", "123,0,0,-1;"),
@@ -1506,6 +1510,15 @@ fn explicit_tetrahedron_solid_file() -> Vec<u8> {
         (514, 1, "SHELL", "00010000", "514,4,45,1,47,1,49,1,51,1;"),
         (186, 0, "SOLID", "00000000", "186,53,1,0;"),
     ];
+    if transformed {
+        entities.push((
+            124,
+            0,
+            "PLACE",
+            "00010000",
+            "124,1,0,0,10,0,1,0,20,0,0,1,30;",
+        ));
+    }
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     let mut parameter_sequence = 1_u32;
@@ -1516,6 +1529,11 @@ fn explicit_tetrahedron_solid_file() -> Vec<u8> {
         let form = form.to_string();
         let parameter_start = parameter_sequence.to_string();
         let line_count_string = line_count.to_string();
+        let transform = if transformed && entity_type == "186" {
+            "57"
+        } else {
+            "0"
+        };
         bytes.extend(directory_card(
             [
                 &entity_type,
@@ -1524,7 +1542,7 @@ fn explicit_tetrahedron_solid_file() -> Vec<u8> {
                 "0",
                 "0",
                 "0",
-                "0",
+                transform,
                 "0",
                 status,
             ],
@@ -1568,6 +1586,48 @@ fn explicit_tetrahedron_solid_file() -> Vec<u8> {
         1,
     ));
     bytes
+}
+
+#[test]
+fn decode_applies_manifold_solid_placement_at_body_scope_once() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file_with_transform(true)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let body = result
+        .ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.0 == "iges:model:body#D55")
+        .unwrap();
+    assert_eq!(
+        body.transform.as_ref().unwrap().rows,
+        [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 30.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
+    let points = result
+        .ir
+        .model
+        .points
+        .iter()
+        .filter(|point| point.id.0.starts_with("iges:model:point#D55:"))
+        .map(|point| point.position)
+        .collect::<Vec<_>>();
+    assert!(points.contains(&cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)));
+    assert!(points.contains(&cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
 }
 
 #[test]
