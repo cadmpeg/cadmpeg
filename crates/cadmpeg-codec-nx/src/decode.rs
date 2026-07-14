@@ -2779,6 +2779,11 @@ fn attach_native_object_model(
         crate::native::feature_operation_body_scalar_triples(&scan.container);
     let feature_operation_body_members =
         crate::native::feature_operation_body_members(&scan.container);
+    let feature_operation_body_operands = crate::native::feature_operation_body_operands(
+        &feature_operation_body_members,
+        &feature_body_reference_occurrences,
+        &segment_body_bindings,
+    );
     let feature_operation_body_11_continuations =
         crate::native::feature_operation_body_11_continuations(&scan.container);
     let feature_operation_body_reference_lanes =
@@ -2835,6 +2840,7 @@ fn attach_native_object_model(
         && feature_extrude_payload_scalar_triples.is_empty()
         && feature_operation_body_scalar_triples.is_empty()
         && feature_operation_body_members.is_empty()
+        && feature_operation_body_operands.is_empty()
         && feature_operation_body_11_continuations.is_empty()
         && feature_operation_body_reference_lanes.is_empty()
         && feature_extrude_construction_profiles.is_empty()
@@ -3079,6 +3085,7 @@ fn attach_native_object_model(
             sketch_references: &feature_sketch_references,
             extrude_profile_references: &feature_extrude_profile_references,
             extrude_construction_profiles: &feature_extrude_construction_profiles,
+            operation_body_operands: &feature_operation_body_operands,
             parameter_bindings: &feature_parameter_bindings,
             expressions: &expressions,
             operation_records: &feature_operation_records,
@@ -3092,7 +3099,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(48);
+    namespace.version = namespace.version.max(49);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3166,6 +3173,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_operation_body_members",
             &feature_operation_body_members,
+        )?;
+    }
+    if !feature_operation_body_operands.is_empty() {
+        namespace.set_arena(
+            "feature_operation_body_operands",
+            &feature_operation_body_operands,
         )?;
     }
     if !feature_operation_body_11_continuations.is_empty() {
@@ -3265,6 +3278,7 @@ struct FeatureOperationSources<'a> {
     sketch_references: &'a [crate::native::FeatureSketchReference],
     extrude_profile_references: &'a [crate::native::FeatureExtrudeProfileReference],
     extrude_construction_profiles: &'a [crate::native::FeatureExtrudeConstructionProfile],
+    operation_body_operands: &'a [crate::native::FeatureOperationBodyOperand],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
     expressions: &'a [crate::native::Expression],
     operation_records: &'a [crate::native::FeatureOperationRecord],
@@ -3286,6 +3300,7 @@ fn attach_feature_operations(
         sketch_references,
         extrude_profile_references,
         extrude_construction_profiles,
+        operation_body_operands,
         parameter_bindings,
         expressions,
         operation_records,
@@ -3347,6 +3362,14 @@ fn attach_feature_operations(
         .iter()
         .map(|profile| (profile.operation_label.as_str(), profile))
         .collect::<BTreeMap<_, _>>();
+    let mut operation_body_operands_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureOperationBodyOperand>>::new();
+    for operand in operation_body_operands {
+        operation_body_operands_by_operation
+            .entry(operand.operation_label.as_str())
+            .or_default()
+            .push(operand);
+    }
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
@@ -3408,6 +3431,19 @@ fn attach_feature_operations(
                     if !dependencies.contains(writer) {
                         dependencies.push(writer.clone());
                     }
+                }
+            }
+        }
+        for operand in operation_body_operands_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            if let Some(writer) =
+                last_body_writer.get(&canonical_body(operand.operand_object_index))
+            {
+                if !dependencies.contains(writer) {
+                    dependencies.push(writer.clone());
                 }
             }
         }
@@ -3476,6 +3512,16 @@ fn attach_feature_operations(
             source_properties.insert(
                 "extrude_construction_profile".to_string(),
                 profile.id.clone(),
+            );
+        }
+        for operand in operation_body_operands_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("operation_body_operand.{}", operand.ordinal),
+                operand.operand_object_index.to_string(),
             );
         }
         for binding in parameter_bindings_by_operation

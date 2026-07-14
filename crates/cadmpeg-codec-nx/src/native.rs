@@ -442,6 +442,28 @@ pub struct FeatureOperationBodyMember {
     pub source_offset: u64,
 }
 
+/// Wrapped operation member resolved in the feature-body identity namespace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationBodyOperand {
+    /// Globally unique operand identity.
+    pub id: String,
+    /// Owning operation label.
+    pub operation_label: String,
+    /// Body clause containing the operand.
+    pub body_object_index: u32,
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Zero-based operand order in the wrapped member lane.
+    pub ordinal: u32,
+    /// Serialized operand body object index.
+    pub operand_object_index: u32,
+    /// Segment body bindings naming the same body image.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub segment_body_bindings: Vec<String>,
+    /// Absolute file offset of the compact-index marker.
+    pub source_offset: u64,
+}
+
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureOperationBody11Continuation {
@@ -1318,6 +1340,48 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
         }
     }
     members
+}
+
+/// Resolve wrapped operation members that name known feature-body identities.
+pub fn feature_operation_body_operands(
+    members: &[FeatureOperationBodyMember],
+    references: &[FeatureBodyReferenceOccurrence],
+    bindings: &[SegmentBodyBinding],
+) -> Vec<FeatureOperationBodyOperand> {
+    let known = references
+        .iter()
+        .map(|reference| reference.body_object_index)
+        .chain(
+            bindings
+                .iter()
+                .flat_map(|binding| [binding.body_object_index, binding.body_alias_object_index]),
+        )
+        .collect::<BTreeSet<_>>();
+    members
+        .iter()
+        .filter(|member| {
+            member.member_index != member.body_object_index && known.contains(&member.member_index)
+        })
+        .map(|member| FeatureOperationBodyOperand {
+            id: member
+                .id
+                .replacen("operation-body-member", "operation-body-operand", 1),
+            operation_label: member.operation_label.clone(),
+            body_object_index: member.body_object_index,
+            body_reference_ordinal: member.body_reference_ordinal,
+            ordinal: member.ordinal,
+            operand_object_index: member.member_index,
+            segment_body_bindings: bindings
+                .iter()
+                .filter(|binding| {
+                    binding.body_object_index == member.member_index
+                        || binding.body_alias_object_index == member.member_index
+                })
+                .map(|binding| binding.id.clone())
+                .collect(),
+            source_offset: member.source_offset,
+        })
+        .collect()
 }
 
 /// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.

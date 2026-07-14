@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 48);
+    assert_eq!(namespace.version, 49);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1654,6 +1654,50 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
     assert!(
         crate::native::feature_extrude_construction_profiles(&references, &[mismatched]).is_empty()
     );
+}
+
+#[test]
+fn nx_operation_body_operands_require_known_distinct_body_identities() {
+    use crate::native::{
+        FeatureBodyReferenceOccurrence, FeatureOperationBodyMember, SegmentBodyBinding,
+    };
+    let member = |ordinal, member_index| FeatureOperationBodyMember {
+        id: format!("nx:feature-history:operation-body-member#0-{ordinal}"),
+        operation_label: "operation".to_string(),
+        body_reference_ordinal: 0,
+        body_object_index: 10,
+        ordinal,
+        member_index,
+        source_offset: u64::from(ordinal),
+    };
+    let members = [member(0, 20), member(1, 30), member(2, 10)];
+    let references = [FeatureBodyReferenceOccurrence {
+        id: "reference".to_string(),
+        operation_label: "earlier".to_string(),
+        ordinal: 0,
+        body_object_index: 20,
+        source_offset: 0,
+    }];
+    let bindings = [SegmentBodyBinding {
+        id: "binding".to_string(),
+        stream_link: "stream".to_string(),
+        stream_ordinal: 0,
+        stream_kind: "partition".to_string(),
+        body_object_index: 40,
+        body_alias_object_index: 30,
+        stream_role: 0,
+        source_offset: 0,
+    }];
+    let operands = crate::native::feature_operation_body_operands(&members, &references, &bindings);
+    assert_eq!(
+        operands
+            .iter()
+            .map(|operand| operand.operand_object_index)
+            .collect::<Vec<_>>(),
+        [20, 30]
+    );
+    assert!(operands[0].segment_body_bindings.is_empty());
+    assert_eq!(operands[1].segment_body_bindings, ["binding"]);
 }
 
 #[test]
@@ -4421,7 +4465,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 48);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 49);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
