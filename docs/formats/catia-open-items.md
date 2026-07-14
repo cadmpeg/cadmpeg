@@ -13,7 +13,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 ## Design records
 
-- The field grammar inside `7C0B` value-block payloads and its binding to adjacent `7C02` class/field names are unspecified.
+- The grouping of `7C0B` tokens into stored values and the relation from those values to `7C09` design-object fields are unresolved.
 
 ## Standard nested `V5_CFV2`
 
