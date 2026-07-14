@@ -19,13 +19,18 @@ fn push(
     if start == end {
         return;
     }
+    let retained_record = if class == ByteSpanClass::Opaque {
+        Some(format!("iges:opaque:bytes#{start}-{end}"))
+    } else {
+        retained_record.map(str::to_owned)
+    };
     spans.push(ByteSpan {
         start,
         end,
         class,
         owner: owner.into(),
         meaning: meaning.into(),
-        retained_record: retained_record.map(str::to_owned),
+        retained_record,
     });
 }
 

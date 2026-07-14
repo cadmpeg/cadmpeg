@@ -8,7 +8,7 @@ use crate::global::Global;
 use crate::graph::ReferenceEdge;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{ByteLedger, ByteSpanClass, CadIr};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -20,6 +20,17 @@ pub(crate) struct NativeCard {
     line_ending: Vec<u8>,
     section: Option<String>,
     sequence: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct NativeOpaqueBytes {
+    id: String,
+    owner: String,
+    meaning: String,
+    source_span: [u64; 2],
+    byte_length: u64,
+    sha256: String,
+    bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1202,6 +1213,7 @@ pub(crate) fn store(
     parameters: &[ParameterRecord],
     references: &BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &Global,
+    byte_ledger: &ByteLedger,
 ) -> Result<(), CodecError> {
     let cards = scan
         .lines
@@ -1216,6 +1228,25 @@ pub(crate) fn store(
                 .section
                 .map(|section| format!("{section:?}").to_lowercase()),
             sequence: line.sequence,
+        })
+        .collect::<Vec<_>>();
+    let opaque_bytes = byte_ledger
+        .spans
+        .iter()
+        .filter(|span| span.class == ByteSpanClass::Opaque)
+        .map(|span| {
+            let start = usize::try_from(span.start).unwrap_or(scan.source.len());
+            let end = usize::try_from(span.end).unwrap_or(scan.source.len());
+            let bytes = scan.source.get(start..end).unwrap_or_default().to_vec();
+            NativeOpaqueBytes {
+                id: span.retained_record.clone().unwrap_or_default(),
+                owner: span.owner.clone(),
+                meaning: span.meaning.clone(),
+                source_span: [span.start, span.end],
+                byte_length: span.end.saturating_sub(span.start),
+                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
+                bytes,
+            }
         })
         .collect::<Vec<_>>();
     let by_directory = parameters
@@ -3482,6 +3513,7 @@ pub(crate) fn store(
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
+    namespace.set_arena("opaque_bytes", &opaque_bytes)?;
     namespace.set_arena("entities", &entities)?;
     namespace.set_arena("directions", &directions)?;
     namespace.set_arena("transformations", &transforms)?;

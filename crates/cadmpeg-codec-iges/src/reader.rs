@@ -55,6 +55,7 @@ pub(crate) fn decode(
     let directory = directory::parse(&scan)?;
     let parameters = parameter::assemble(&scan, &directory, &global)?;
     let references = graph::build(&directory);
+    let byte_ledger = byte_ledger::build(&scan, &global, &parameters);
 
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(source_meta(&global));
@@ -74,8 +75,9 @@ pub(crate) fn decode(
         &parameters,
         &references,
         &global,
+        &byte_ledger,
     )?;
-    ir.byte_ledger = byte_ledger::build(&scan, &global, &parameters);
+    ir.byte_ledger = byte_ledger;
 
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;

@@ -127,7 +127,10 @@ fn decode_names_forms_outside_the_closed_envelope() {
         parameters: "430,0;".into(),
     }]);
     let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     assert!(result.report.losses.iter().any(|loss| {
         loss.message
@@ -7043,7 +7046,10 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
     let source_length = u64::try_from(bytes.len()).unwrap();
 
     let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
         .unwrap();
 
     assert_eq!(result.ir.source.as_ref().unwrap().format, "iges");
@@ -7074,7 +7080,10 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
     assert!(result.ir.byte_ledger.spans.iter().any(|span| {
         span.class == cadmpeg_ir::ByteSpanClass::Opaque
             && span.meaning == "parameter_comment"
-            && span.retained_record.as_deref() == Some("iges:physical:card#6")
+            && span
+                .retained_record
+                .as_deref()
+                .is_some_and(|id| id.starts_with("iges:opaque:bytes#"))
     }));
     let native = result.ir.native.namespace("iges").unwrap();
     assert_eq!(native.version, 2);
@@ -7082,6 +7091,29 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
     assert_eq!(native.arenas["entities"].len(), 1);
     assert!(native.arenas["colors"].is_empty());
     assert_eq!(native.arenas["display_attributes"].len(), 1);
+    for span in result
+        .ir
+        .byte_ledger
+        .spans
+        .iter()
+        .filter(|span| span.class == cadmpeg_ir::ByteSpanClass::Opaque)
+    {
+        let retained = native.arenas["opaque_bytes"]
+            .iter()
+            .find(|record| Some(record.id.as_str()) == span.retained_record.as_deref())
+            .unwrap();
+        assert_eq!(
+            retained.fields["source_span"],
+            serde_json::json!([span.start, span.end])
+        );
+        assert_eq!(retained.fields["byte_length"], span.end - span.start);
+        assert_eq!(
+            retained.fields["sha256"],
+            cadmpeg_ir::hash::sha256_hex(
+                &bytes[usize::try_from(span.start).unwrap()..usize::try_from(span.end).unwrap()]
+            )
+        );
+    }
     assert_eq!(native.arenas["entities"][0].id, "iges:entity:directory#1");
     assert_eq!(result.ir.model.points.len(), 1);
     assert_eq!(result.ir.model.points[0].position.x, 1.0);
