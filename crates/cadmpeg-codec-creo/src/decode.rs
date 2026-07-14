@@ -10301,6 +10301,29 @@ mod resolved_sketch_tests {
             solve_carriers(&[first_sphere, second_sphere, sphere_circle_tangent]),
             Some([2.0, 5.0_f64.sqrt(), 0.0])
         );
+        let external_tangent_sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [5.0, 0.0, 0.0],
+            ref_direction: [0.0, 1.0, 0.0],
+            radius: 3.0,
+        });
+        assert_eq!(
+            solve_carriers(&[sphere, external_tangent_sphere, equator]),
+            Some([2.0, 0.0, 0.0])
+        );
+        let enclosing_sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [0.0, 0.0, 0.0],
+            ref_direction: [0.0, 1.0, 0.0],
+            radius: 5.0,
+        });
+        let internally_tangent_sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [3.0, 0.0, 0.0],
+            ref_direction: [0.0, 1.0, 0.0],
+            radius: 2.0,
+        });
+        assert_eq!(
+            solve_carriers(&[enclosing_sphere, internally_tangent_sphere, equator]),
+            Some([5.0, 0.0, 0.0])
+        );
         assert!(matches!(
             carrier_intersection_curve(cylinder, sphere),
             Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_sphere_circle"))
@@ -10996,6 +11019,25 @@ fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
     }
 }
 
+fn tangent_sphere_point(first: SphereEquation, second: SphereEquation) -> Option<[f64; 3]> {
+    let delta: [f64; 3] = std::array::from_fn(|index| second.center[index] - first.center[index]);
+    let distance = dot(delta, delta).sqrt();
+    if distance <= 1e-12 || first.radius <= 0.0 || second.radius <= 0.0 {
+        return None;
+    }
+    let external = first.radius + second.radius;
+    let internal = (first.radius - second.radius).abs();
+    let scale = external.max(distance).max(1.0);
+    if (distance - external).abs() > 1e-9 * scale && (distance - internal).abs() > 1e-9 * scale {
+        return None;
+    }
+    let axial = (distance * distance + first.radius * first.radius - second.radius * second.radius)
+        / (2.0 * distance);
+    Some(std::array::from_fn(|index| {
+        first.center[index] + axial * delta[index] / distance
+    }))
+}
+
 fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
     let mut candidates = Vec::new();
     for first in 0..carriers.len() {
@@ -11076,7 +11118,9 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                     }
                 } else if let ([plane], [first, second]) = (planes.as_slice(), spheres.as_slice()) {
                     if cylinders.is_empty() && cones.is_empty() && tori.is_empty() {
-                        if let Some((geometry, _)) = carrier_intersection_curve(
+                        if let Some(point) = tangent_sphere_point(*first, *second) {
+                            candidates.push(point);
+                        } else if let Some((geometry, _)) = carrier_intersection_curve(
                             CarrierEquation::Sphere(*first),
                             CarrierEquation::Sphere(*second),
                         ) {

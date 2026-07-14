@@ -550,6 +550,10 @@ A cylinder coaxial with a torus intersects it in one tangent circle when the cyl
 
 A sphere whose center lies on a torus axis reduces their intersection to two circles in the axial meridian plane: one centered on the axis with the sphere radius and one centered at the torus major radius with the tube radius. External tangency or non-concentric internal tangency of those meridian circles produces one point with positive radial coordinate and therefore one model-space circle about the torus axis. Secant meridian circles produce multiple model-space circles and remain unresolved without a native branch binding.
 
+Two externally or non-concentrically internally tangent spheres have one common
+point on their center line. That point is a unique topological vertex when it
+also lies on every other incident carrier; it is not a zero-radius curve.
+
 Two coaxial tori reduce their intersection to their tube circles in a shared axial meridian plane. External tangency or non-concentric internal tangency of the tube circles produces one point with positive radial coordinate and therefore one model-space circle about the common axis. Secant tube circles produce multiple model-space circles and remain unresolved without a native branch binding.
 
 A circular cone and a coaxial sphere intersect in one circle when substitution of the cone radial function into the sphere equation produces one repeated axial root. For cone radius `r0`, slope `k = tan(a)`, and sphere center at axial coordinate `c` from the cone origin, the axial equation is `(1 + k²)t² + 2(r0 k - c)t + r0² + c² - Rs² = 0`. A zero discriminant gives the single tangent circle at axial coordinate `t`; its radius is `|r0 + kt|`. Positive discriminants produce two circles and remain unresolved without a native branch binding.
