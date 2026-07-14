@@ -788,7 +788,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
 #[test]
 fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("SKETCH", &[], None),
+        crate::decode::non_boolean_feature_definition("SKETCH", &[], None, None),
         cadmpeg_ir::features::FeatureDefinition::Sketch {
             space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: None,
@@ -798,6 +798,7 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
         crate::decode::non_boolean_feature_definition(
             "SIMPLE HOLE",
             &["Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer"],
+            None,
             None,
         ),
         cadmpeg_ir::features::FeatureDefinition::Hole {
@@ -823,16 +824,16 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
         }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("SIMPLE HOLE", &["unrelated"], None),
+        crate::decode::non_boolean_feature_definition("SIMPLE HOLE", &["unrelated"], None, None),
         cadmpeg_ir::features::FeatureDefinition::Hole { extent: None, .. }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("DATUM_PLANE", &[], None),
+        crate::decode::non_boolean_feature_definition("DATUM_PLANE", &[], None, None),
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
             if kind == "DATUM_PLANE"
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("BLOCK", &[], Some([10.0, 20.0, 30.0])),
+        crate::decode::non_boolean_feature_definition("BLOCK", &[], Some([10.0, 20.0, 30.0]), None,),
         cadmpeg_ir::features::FeatureDefinition::Block {
             dimensions: [
                 cadmpeg_ir::features::Length(10.0),
@@ -963,6 +964,96 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         &[],
     )
     .is_empty());
+}
+
+#[test]
+fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() {
+    use crate::native::{
+        FeatureSimpleHoleConstructionGroup, FeatureSimpleHoleTemplate, SimpleHoleEndTreatment,
+        SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
+    };
+    use cadmpeg_ir::document::{CadIr, Model, IR_VERSION};
+    use cadmpeg_ir::geometry::Surface;
+    use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::native::Native;
+    use cadmpeg_ir::topology::{Face, Sense};
+    use cadmpeg_ir::units::{Tolerances, Units};
+    use cadmpeg_ir::{Annotations, SourceObjectAssociation};
+
+    let operations = ["hole-a".to_string(), "hole-b".to_string()];
+    let templates = operations
+        .iter()
+        .map(|operation| FeatureSimpleHoleTemplate {
+            id: format!("template-{operation}"),
+            operation_label: operation.clone(),
+            payload_string: format!("string-{operation}"),
+            family: SimpleHoleFamily::GeneralHole,
+            form: SimpleHoleForm::Simple,
+            extent: SimpleHoleExtent::Through,
+            start_treatment: SimpleHoleEndTreatment::Chamfer,
+            end_treatment: SimpleHoleEndTreatment::Chamfer,
+        })
+        .collect::<Vec<_>>();
+    let group = FeatureSimpleHoleConstructionGroup {
+        id: "group".into(),
+        first_data_blocks: ["a".into(), "b".into()],
+        second_data_blocks: ["c".into(), "d".into()],
+        operation_labels: operations.to_vec(),
+        scalar_lanes: vec!["lane-a".into(), "lane-b".into()],
+        block_references: vec!["refs-a".into(), "refs-b".into()],
+    };
+    let mut model = Model::default();
+    for ordinal in 0..2 {
+        let surface = SurfaceId(format!("surface-{ordinal}"));
+        model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(ordinal as f64, 0.0, 0.0),
+                axis: Vector3::new(0.0, 1.0, 0.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.55,
+            },
+            source_object: None::<SourceObjectAssociation>,
+        });
+        model.faces.push(Face {
+            id: FaceId(format!("face-{ordinal}")),
+            shell: ShellId("shell".into()),
+            surface,
+            sense: Sense::Reversed,
+            loops: vec![
+                LoopId(format!("loop-{ordinal}-0")),
+                LoopId(format!("loop-{ordinal}-1")),
+            ],
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+    }
+    let ir = CadIr {
+        ir_version: IR_VERSION.into(),
+        source: None,
+        units: Units::default(),
+        tolerances: Tolerances::default(),
+        model,
+        annotations: Annotations::default(),
+        native: Native::default(),
+    };
+    assert_eq!(
+        crate::decode::simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group)),
+        std::collections::BTreeMap::from([
+            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
+            ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+        ])
+    );
+
+    let mut mismatched = ir;
+    let SurfaceGeometry::Cylinder { radius, .. } = &mut mismatched.model.surfaces[1].geometry
+    else {
+        unreachable!()
+    };
+    *radius = 3.0;
+    assert!(crate::decode::simple_hole_diameters(&mismatched, &templates, &[group]).is_empty());
 }
 
 #[test]

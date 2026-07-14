@@ -6042,6 +6042,8 @@ fn attach_feature_operations(
     for triples in operation_body_scalar_triples_by_operation.values_mut() {
         triples.sort_by_key(|triple| triple.body_reference_ordinal);
     }
+    let simple_hole_diameters =
+        simple_hole_diameters(ir, simple_hole_templates, simple_hole_construction_groups);
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
@@ -6482,6 +6484,7 @@ fn attach_feature_operations(
                             &label.value,
                             &operation_payload_strings,
                             block_dimension_values,
+                            simple_hole_diameters.get(label.id.as_str()).copied(),
                         )
                     })
             },
@@ -6681,6 +6684,7 @@ pub(crate) fn non_boolean_feature_definition(
     kind: &str,
     payload_strings: &[&str],
     block_dimensions: Option<[f64; 3]>,
+    hole_diameter: Option<Length>,
 ) -> FeatureDefinition {
     if let ("BLOCK", Some(dimensions)) = (kind, block_dimensions) {
         return FeatureDefinition::Block {
@@ -6699,7 +6703,7 @@ pub(crate) fn non_boolean_feature_definition(
             direction: None,
             kind: simple_hole_kind(payload_strings),
             exit_kind: simple_hole_exit_kind(payload_strings),
-            diameter: None,
+            diameter: hole_diameter,
             extent: simple_hole_extent(payload_strings),
         },
         _ => FeatureDefinition::Native {
@@ -6708,6 +6712,74 @@ pub(crate) fn non_boolean_feature_definition(
             properties: BTreeMap::new(),
         },
     }
+}
+
+/// Derive a shared simple-hole diameter only when the active B-rep supplies a
+/// complete bijection between one native construction group and through-bore
+/// cylinder walls. The group does not encode face identities, so differing
+/// radii or any unmatched bore wall reject the projection atomically.
+pub(crate) fn simple_hole_diameters(
+    ir: &CadIr,
+    templates: &[crate::native::FeatureSimpleHoleTemplate],
+    groups: &[crate::native::FeatureSimpleHoleConstructionGroup],
+) -> BTreeMap<String, Length> {
+    let [group] = groups else {
+        return BTreeMap::new();
+    };
+    let template_operations = templates
+        .iter()
+        .filter(|template| {
+            template.form == crate::native::SimpleHoleForm::Simple
+                && template.extent == crate::native::SimpleHoleExtent::Through
+        })
+        .map(|template| template.operation_label.as_str())
+        .collect::<BTreeSet<_>>();
+    let group_operations = group
+        .operation_labels
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    if template_operations.len() != templates.len()
+        || group_operations.len() != group.operation_labels.len()
+        || template_operations != group_operations
+    {
+        return BTreeMap::new();
+    }
+
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, &surface.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let radii = ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
+        .filter_map(|face| match surfaces.get(&face.surface)? {
+            SurfaceGeometry::Cylinder { radius, .. } if radius.is_finite() && *radius > 0.0 => {
+                Some(*radius)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let Some(radius) = radii.first().copied() else {
+        return BTreeMap::new();
+    };
+    if radii.len() != group.operation_labels.len()
+        || radii
+            .iter()
+            .any(|candidate| candidate.to_bits() != radius.to_bits())
+    {
+        return BTreeMap::new();
+    }
+    group
+        .operation_labels
+        .iter()
+        .cloned()
+        .map(|operation| (operation, Length(radius * 2.0)))
+        .collect()
 }
 
 fn simple_hole_extent(payload_strings: &[&str]) -> Option<cadmpeg_ir::features::Extent> {
