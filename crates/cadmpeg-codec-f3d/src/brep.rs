@@ -7,10 +7,11 @@
 //! surfaces, 3D curves, and pcurves for spline and procedural records.
 //!
 //! Faces retain their loops and trims when a referenced surface has no decoded
-//! shape; the emitted [`SurfaceGeometry::Unknown`] links to the corresponding
-//! [`UnknownRecord`]. Edges retain vertices and parameter ranges when their 3D
-//! curve carrier is unavailable. [`Stats`] records these transfer losses for
-//! the decode report.
+//! shape; a decoded construction produces a [`SurfaceGeometry::Procedural`]
+//! carrier, while an undecoded record produces [`SurfaceGeometry::Unknown`]
+//! linked to the corresponding [`UnknownRecord`]. Edges retain vertices and
+//! parameter ranges when their 3D curve carrier is unavailable. [`Stats`]
+//! records these transfer losses for the decode report.
 //!
 //! ASM model-space lengths become millimetres. Unit vectors, ratios, angles,
 //! knots, weights, and UV parameters keep their native scale.
@@ -34,8 +35,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    AttributeId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId,
-    ShellId, SurfaceId, UnknownId, VertexId,
+    AttributeId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId,
+    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{
@@ -797,8 +798,8 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     // Pass 2: keep every face whose surface reference resolves to a record,
     // then pull its supporting graph in by shell-reachability. A face on a
     // decoded analytic surface gets that carrier; a face on a spline/procedural
-    // surface keeps its topology and gets an unknown-geometry carrier linking to
-    // the preserved bytes.
+    // surface keeps its topology and gets a construction-backed or unknown
+    // carrier.
     let mut kept_faces: HashSet<i64> = HashSet::new();
     let mut kept_loops: HashSet<i64> = HashSet::new();
     let mut kept_coedges: HashSet<i64> = HashSet::new();
@@ -846,16 +847,35 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             }
         }
         if !surface_geo.contains_key(&surf_ref) && procedural_surface_defs.contains_key(&surf_ref) {
+            let construction_is_exact_carrier = matches!(
+                procedural_surface_defs
+                    .get(&surf_ref)
+                    .map(|procedural| &procedural.definition),
+                Some(
+                    nurbs::DecodedProceduralSurfaceDefinition::Extrusion { .. }
+                        | nurbs::DecodedProceduralSurfaceDefinition::Helix(_)
+                )
+            );
             surface_geo.insert(
                 surf_ref,
                 (
-                    SurfaceGeometry::Unknown {
-                        record: Some(UnknownId(unknown_record_id(surf_rec))),
+                    if construction_is_exact_carrier {
+                        SurfaceGeometry::Procedural {
+                            construction: ProceduralSurfaceId(format!(
+                                "f3d:brep:procedural_surface#{surf_ref}"
+                            )),
+                        }
+                    } else {
+                        SurfaceGeometry::Unknown {
+                            record: Some(UnknownId(unknown_record_id(surf_rec))),
+                        }
                     },
                     false,
                 ),
             );
-            undecoded_carriers.insert(surf_ref);
+            if !construction_is_exact_carrier {
+                undecoded_carriers.insert(surf_ref);
+            }
         }
         if surface_geo.contains_key(&surf_ref) {
             kept_surfaces.insert(surf_ref);

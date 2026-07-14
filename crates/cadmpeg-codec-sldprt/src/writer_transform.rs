@@ -315,6 +315,12 @@ fn transform_surface(
             .control_points
             .iter_mut()
             .for_each(|point| *point = transform_point(transform, *point)),
+        SurfaceGeometry::Procedural { .. } => {
+            return Err(CodecError::NotImplemented(
+                "SLDPRT cannot transform a procedural surface without its construction graph"
+                    .into(),
+            ));
+        }
         SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "SLDPRT cannot transform an opaque surface".into(),

@@ -1371,7 +1371,9 @@ fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
                 .sqrt();
             (((radial - major_radius).powi(2) + axial * axial).sqrt() - *minor_radius).abs()
         }
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => return false,
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. } => return false,
     };
     residual <= TOLERANCE
 }

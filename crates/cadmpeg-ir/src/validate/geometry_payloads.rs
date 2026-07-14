@@ -342,6 +342,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check_knots(findings, &s.id.0, &n.u_knots, "u");
                 check_knots(findings, &s.id.0, &n.v_knots, "v");
             }
+            SurfaceGeometry::Procedural { .. } => {}
             // An unknown surface carries no numeric geometry to bounds-check; its
             // record link is checked in `check_references`. A face resting on it
             // is legal (topology known, shape opaque).

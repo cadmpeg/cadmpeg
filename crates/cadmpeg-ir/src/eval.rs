@@ -5,12 +5,16 @@
 //! points using the carriers' own parameterizations: conic parameters are
 //! angles from the reference/major direction, line parameters are signed
 //! distances along the unit direction, and B-splines evaluate by Cox–de Boor
-//! over their stored knot vectors. Carriers without a typed parameterization
-//! ([`CurveGeometry::Unknown`], [`SurfaceGeometry::Unknown`], parabolas, and
-//! hyperbolas) evaluate to `None`.
+//! over their stored knot vectors. [`model_surface_point`] resolves construction-
+//! backed carriers that require other model entities. Carriers without a typed
+//! parameterization ([`CurveGeometry::Unknown`], [`SurfaceGeometry::Unknown`],
+//! parabolas, and hyperbolas) evaluate to `None`.
 
-use crate::geometry::{CurveGeometry, NurbsSurface, PcurveGeometry, SurfaceGeometry};
+use crate::geometry::{
+    CurveGeometry, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
+};
 use crate::math::{Point2, Point3, Vector3};
+use crate::CadIr;
 
 fn cross(a: Vector3, b: Vector3) -> Vector3 {
     Vector3::new(
@@ -407,7 +411,40 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
             ))
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point(nurbs, u, v),
-        SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
+/// Evaluate a surface carrier with access to construction and child-carrier
+/// arenas in `ir`.
+pub fn model_surface_point(
+    ir: &CadIr,
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+) -> Option<Point3> {
+    let SurfaceGeometry::Procedural { construction } = geometry else {
+        return surface_point(geometry, u, v);
+    };
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.id == *construction)?;
+    match &procedural.definition {
+        ProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            direction,
+            ..
+        } => {
+            let curve = ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *directrix)?;
+            curve_point(&curve.geometry, u).map(|point| offset(point, &[(v, *direction)]))
+        }
+        _ => None,
     }
 }
 

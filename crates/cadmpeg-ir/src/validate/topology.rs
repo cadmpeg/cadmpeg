@@ -21,6 +21,7 @@ pub(super) struct IdSets {
     vertices: HashSet<String>,
     points: HashSet<String>,
     surfaces: HashSet<String>,
+    procedural_surfaces: HashSet<String>,
     curves: HashSet<String>,
     pcurves: HashSet<String>,
     appearances: HashSet<String>,
@@ -40,6 +41,12 @@ impl IdSets {
             vertices: ir.model.vertices.iter().map(|e| e.id.0.clone()).collect(),
             points: ir.model.points.iter().map(|e| e.id.0.clone()).collect(),
             surfaces: ir.model.surfaces.iter().map(|e| e.id.0.clone()).collect(),
+            procedural_surfaces: ir
+                .model
+                .procedural_surfaces
+                .iter()
+                .map(|e| e.id.0.clone())
+                .collect(),
             curves: ir.model.curves.iter().map(|e| e.id.0.clone()).collect(),
             pcurves: ir.model.pcurves.iter().map(|e| e.id.0.clone()).collect(),
             appearances: ir
@@ -251,10 +258,46 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         }
     }
     for s in &ir.model.surfaces {
-        if let SurfaceGeometry::Unknown { record: Some(u) } = &s.geometry {
-            if !ids.unknowns.contains(&u.0) {
+        match &s.geometry {
+            SurfaceGeometry::Procedural { construction } => {
+                if !ids.procedural_surfaces.contains(&construction.0) {
+                    ref_error(
+                        findings,
+                        &s.id.0,
+                        "procedural surface construction",
+                        &construction.0,
+                    );
+                } else if !ir
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .any(|procedural| procedural.id == *construction && procedural.surface == s.id)
+                {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "procedural surface construction `{construction}` does not produce surface `{}`",
+                            s.id
+                        ),
+                        entity: Some(s.id.0.clone()),
+                    });
+                } else if ir.model.procedural_surfaces.iter().any(|procedural| {
+                    procedural.id == *construction && procedural.cache_fit_tolerance.is_some()
+                }) {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: "construction-backed surface cannot carry a cache-fit tolerance"
+                            .into(),
+                        entity: Some(s.id.0.clone()),
+                    });
+                }
+            }
+            SurfaceGeometry::Unknown { record: Some(u) } if !ids.unknowns.contains(&u.0) => {
                 ref_error(findings, &s.id.0, "unknown record", &u.0);
             }
+            _ => {}
         }
     }
     for curve in &ir.model.curves {

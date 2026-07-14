@@ -200,7 +200,9 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 SurfaceGeometry::Cone { .. } => counts.cones += 1,
                 SurfaceGeometry::Sphere { .. } => counts.spheres += 1,
                 SurfaceGeometry::Torus { .. } => counts.tori += 1,
-                SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
+                SurfaceGeometry::Nurbs(_)
+                | SurfaceGeometry::Procedural { .. }
+                | SurfaceGeometry::Unknown { .. } => {}
             }
             let id = SurfaceId(format!("nx:s{si}:surf#{fi}"));
             annotations
@@ -885,6 +887,7 @@ fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Point2 {
         SurfaceGeometry::Sphere { .. }
         | SurfaceGeometry::Torus { .. }
         | SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
     }
 }
@@ -1147,6 +1150,7 @@ fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
         SurfaceGeometry::Sphere { .. } => "SPHERE",
         SurfaceGeometry::Torus { .. } => "TORUS",
         SurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
+        SurfaceGeometry::Procedural { .. } => "PROCEDURAL_SURFACE",
         SurfaceGeometry::Unknown { .. } => "UNKNOWN_SURFACE",
     }
 }

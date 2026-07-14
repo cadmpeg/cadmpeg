@@ -64,14 +64,21 @@ fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecE
                     procedural.id, procedural.surface
                 ))
             })?;
-        if !matches!(
-            surface.geometry,
-            SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. }
-        ) {
-            return Err(CodecError::NotImplemented(format!(
-                "source-less F3D procedural surface {} cannot retain its construction on analytic carrier {}",
-                procedural.id, surface.id
-            )));
+        match &surface.geometry {
+            SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
+            SurfaceGeometry::Procedural { construction } if *construction == procedural.id => {}
+            SurfaceGeometry::Procedural { construction } => {
+                return Err(CodecError::Malformed(format!(
+                    "surface {} links construction {construction} but is produced by {}",
+                    surface.id, procedural.id
+                )));
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less F3D procedural surface {} cannot retain its construction on analytic carrier {}",
+                    procedural.id, surface.id
+                )));
+            }
         }
     }
 
@@ -2177,7 +2184,7 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 native_nurbs_surface(&mut records, surface)?;
             }
         }
-        SurfaceGeometry::Unknown { .. } => {
+        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
             if !native_cacheless_procedural_surface(&mut records, target, &model.surfaces[0])? {
                 return Err(CodecError::NotImplemented(
                     "source-less F3D generation does not support this surface carrier".into(),
@@ -3565,7 +3572,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 );
                 records.extend_from_slice(&[0x0b; 5]);
             }
-            SurfaceGeometry::Unknown { .. } => {
+            SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
                 if !native_cacheless_procedural_surface(&mut records, target, surface)? {
                     return Err(CodecError::NotImplemented(format!(
                         "source-less multi-face F3D does not support surface carrier {}",
@@ -9173,9 +9180,10 @@ fn native_embedded_surface(
             native_ident(bytes, "spline")?;
             native_nurbs_surface(bytes, surface)?;
         }
-        SurfaceGeometry::Unknown { .. } => {
+        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
-                "source-less F3D embedded unknown support surfaces are unsupported".into(),
+                "source-less F3D embedded procedural or unknown support surfaces are unsupported"
+                    .into(),
             ));
         }
     }

@@ -101,7 +101,7 @@ A wire edge appears in exactly one shell's `wire_edges` and in no coedge. A free
 
 ## Geometry and canonical parameterization
 
-Surface carriers are plane, cylinder, cone, sphere, torus, NURBS, or unknown. Curve carriers are line, circle, ellipse, parabola, hyperbola, NURBS, or unknown. Pcurves are line or NURBS curves in a surface's `(u, v)` space. A subdivision surface is a Catmull–Clark control cage with vertices, edges, directed face edge uses, endpoint sharpness, edge tags, vertex tags, and sector coefficients.
+Surface carriers are plane, cylinder, cone, sphere, torus, NURBS, procedural, or unknown. A procedural carrier names the exact construction that produces the surface; the construction must name that same surface. Curve carriers are line, circle, ellipse, parabola, hyperbola, NURBS, or unknown. Pcurves are line or NURBS curves in a surface's `(u, v)` space. A subdivision surface is a Catmull–Clark control cage with vertices, edges, directed face edge uses, endpoint sharpness, edge tags, vertex tags, and sector coefficients.
 
 Free surface, curve, subdivision-surface, and tessellation carriers may carry a `SourceObjectAssociation`. The association records the source format and native object identifier, effective name, color, visibility, layer, and outermost-to-innermost instance path. These fields preserve source-object identity and display metadata when no topology entity owns the carrier.
 
@@ -120,6 +120,7 @@ Analytic surfaces carry the frame needed to interpret parameters: plane `u_axis`
 | sphere                 | `u` is azimuth in radians; `v` is latitude in `[-π/2, π/2]`                                          |
 | torus                  | `u` is major azimuth and `v` is minor azimuth, both in `[0, 2π]`                                     |
 | NURBS curve or surface | parameters are the stored knot-domain coordinates                                                    |
+| procedural surface     | parameters are defined by the referenced construction                                                 |
 
 `Edge.param_range` uses the canonical parameterization of its curve. Full circles are anchored to `[0, 2π]`. Periodic ranges may cross a seam by using an end value greater than the start value in the unwrapped domain. Pcurve coordinates use the corresponding surface conventions.
 
@@ -135,11 +136,11 @@ NURBS surfaces store degrees, full knot vectors, pole counts, u-major control po
 
 ## Procedural carriers
 
-Procedural entities retain construction semantics beside a solved carrier. `cache_fit_tolerance`, when present, is the maximum millimeter deviation between the procedural definition and solved carrier.
+Procedural entities retain construction semantics beside a solved carrier or as the exact definition of a procedural carrier. `cache_fit_tolerance`, when present, is the maximum millimeter deviation between the procedural definition and a solved carrier.
 
 Procedural surface definitions are:
 
-- `extrusion`: directrix and sweep direction;
+- `extrusion`: directrix, its parameter interval, and sweep direction; `S(u,v) = directrix(u) + v direction`;
 - `revolution`: directrix, axis, `angular_interval`, `parameter_interval`, and `transposed`;
 - `sum`: ordered curves `first` and `second` with `basepoint`; the surface is `basepoint + first(u) + second(v)`;
 - `sweep`: profile and spine;

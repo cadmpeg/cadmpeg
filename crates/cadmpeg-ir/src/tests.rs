@@ -103,6 +103,51 @@ fn unknown_surface_without_record_is_legal() {
 }
 
 #[test]
+fn procedural_surface_carrier_requires_its_exact_owner() {
+    let mut ir = unit_cube();
+    let surface = ir.model.surfaces[0].id.clone();
+    let construction = ProceduralSurfaceId("synthetic:cube:procedural-surface#0".into());
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+        construction: construction.clone(),
+    };
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: construction.clone(),
+        surface: surface.clone(),
+        definition: ProceduralSurfaceDefinition::Exact {
+            parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
+            extension: 0,
+        },
+        cache_fit_tolerance: None,
+    });
+    let report = validate(&ir, Vec::new());
+    assert!(report.is_ok(), "{:?}", report.findings);
+
+    ir.model.procedural_surfaces[0].cache_fit_tolerance = Some(0.01);
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding
+            .message
+            .contains("construction-backed surface cannot carry a cache-fit tolerance")
+    }));
+    ir.model.procedural_surfaces[0].cache_fit_tolerance = None;
+
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+        construction: ProceduralSurfaceId("synthetic:missing".into()),
+    };
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding
+            .message
+            .contains("references missing procedural surface construction")
+    }));
+
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural { construction };
+    ir.model.procedural_surfaces[0].surface = ir.model.surfaces[1].id.clone();
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("does not produce surface")));
+}
+
+#[test]
 fn unknown_surface_dangling_record_is_flagged() {
     let mut ir = unit_cube();
     // Link a record id that is not in the unknowns arena.

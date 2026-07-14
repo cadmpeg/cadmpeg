@@ -6182,6 +6182,24 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         matches!(directrix_geometry, Some(CurveGeometry::Nurbs(_))),
         "unexpected extrusion directrix: {directrix_geometry:?}"
     );
+    let u = 0.5;
+    let v = 0.25;
+    let directrix_point =
+        cadmpeg_ir::eval::curve_point(directrix_geometry.expect("typed extrusion directrix"), u)
+            .expect("directrix evaluation");
+    let surface_geometry = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == procedural.surface)
+        .map(|surface| &surface.geometry)
+        .expect("extrusion surface carrier");
+    let surface_point = cadmpeg_ir::eval::model_surface_point(&decoded.ir, surface_geometry, u, v)
+        .expect("procedural extrusion evaluation");
+    assert_eq!(surface_point.x, directrix_point.x + v * direction.x);
+    assert_eq!(surface_point.y, directrix_point.y + v * direction.y);
+    assert_eq!(surface_point.z, directrix_point.z + v * direction.z);
     assert!(matches!(
         decoded
             .ir
@@ -6190,21 +6208,13 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
             .iter()
             .find(|surface| surface.id == procedural.surface)
             .map(|surface| &surface.geometry),
-        Some(SurfaceGeometry::Unknown { .. })
+        Some(SurfaceGeometry::Procedural { construction }) if *construction == procedural.id
     ));
 
     let expected_definition = procedural.definition.clone();
-    let surface_id = procedural.surface.clone();
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    source_less
-        .model
-        .surfaces
-        .iter_mut()
-        .find(|surface| surface.id == surface_id)
-        .expect("cache-less extrusion carrier")
-        .geometry = SurfaceGeometry::Unknown { record: None };
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -6229,7 +6239,8 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
             .iter()
             .find(|surface| surface.id == round_trip.ir.model.procedural_surfaces[0].surface)
             .map(|surface| &surface.geometry),
-        Some(SurfaceGeometry::Unknown { .. })
+        Some(SurfaceGeometry::Procedural { construction })
+            if *construction == round_trip.ir.model.procedural_surfaces[0].id
     ));
 
     source_less.model.procedural_surfaces[0].cache_fit_tolerance = Some(0.01);
@@ -11948,15 +11959,18 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
         let surface = source_less
             .model
             .surfaces
-            .iter_mut()
+            .iter()
             .find(|surface| surface.id == surface_id)
             .unwrap();
         assert!(
-            matches!(surface.geometry, SurfaceGeometry::Unknown { .. }),
+            matches!(
+                &surface.geometry,
+                SurfaceGeometry::Procedural { construction }
+                    if *construction == source_less.model.procedural_surfaces[0].id
+            ),
             "unexpected helix carrier: {:?}",
             surface.geometry
         );
-        surface.geometry = SurfaceGeometry::Unknown { record: None };
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)

@@ -125,6 +125,11 @@ pub enum SurfaceGeometry {
     },
     /// Free-form NURBS surface.
     Nurbs(NurbsSurface),
+    /// Exact surface defined by a procedural construction in the same model.
+    Procedural {
+        /// Construction that produces this carrier.
+        construction: ProceduralSurfaceId,
+    },
     /// Surface geometry that has no typed neutral representation.
     ///
     /// `record` links to retained source bytes when available.
@@ -269,12 +274,12 @@ pub struct Curve {
     pub source_object: Option<SourceObjectAssociation>,
 }
 
-/// A neutral surface construction linked to its solved carrier.
+/// A neutral surface construction linked to the carrier it produces.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ProceduralSurface {
     /// Stable construction identity.
     pub id: ProceduralSurfaceId,
-    /// Solved surface produced by this construction.
+    /// Surface produced by this construction.
     pub surface: SurfaceId,
     /// Neutral construction definition.
     pub definition: ProceduralSurfaceDefinition,

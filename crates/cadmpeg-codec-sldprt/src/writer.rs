@@ -2133,7 +2133,9 @@ pub(super) fn surface_values(
                 reference.z,
             ],
         ),
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support this surface carrier".into(),
             ))
@@ -2410,7 +2412,9 @@ pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math:
             ref_direction,
             ..
         } => *ref_direction,
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
             x: 1.0,
             y: 0.0,
             z: 0.0,

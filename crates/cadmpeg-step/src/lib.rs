@@ -666,11 +666,14 @@ impl<'a> Builder<'a> {
             .iter()
             .find(|f| f.id.as_str() == face_id)?;
         let surface_id = face.surface.0.clone();
-        // A face resting on an unknown (opaque) surface cannot become an
-        // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
-        // loss rather than fabricate placeholder geometry.
+        // A construction-backed or unknown surface without a direct STEP form
+        // cannot become an ADVANCED_FACE. Skip it and aggregate the loss rather
+        // than fabricate placeholder geometry.
         if let Some(surf) = self.surfaces.get(surface_id.as_str()) {
-            if matches!(surf.geometry, SurfaceGeometry::Unknown { .. }) {
+            if matches!(
+                surf.geometry,
+                SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. }
+            ) {
                 self.unknown_surface_faces.insert(face_id.to_string());
                 return None;
             }
@@ -865,9 +868,9 @@ impl<'a> Builder<'a> {
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
-                    "{} face(s) rest on an unknown (undecoded) surface and were omitted \
-                     from the STEP shell (an ADVANCED_FACE requires a surface); their \
-                     topology remains in the IR",
+                    "{} face(s) rest on a construction-backed or unknown surface without \
+                     a direct STEP representation and were omitted from the STEP shell; \
+                     their topology remains in the IR",
                     self.unknown_surface_faces.len()
                 ),
             );
