@@ -6,7 +6,8 @@ use std::collections::{BTreeMap, HashMap};
 use crate::native::{ObjectRecord, ProductNodeRecord, PropertyRecord};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::products::{
-    Component, ComponentId, ComponentKind, ComponentReference, Occurrence, OccurrenceId,
+    Component, ComponentId, ComponentKind, ComponentReference, CopyOnChangePolicy, Occurrence,
+    OccurrenceId,
 };
 
 pub(crate) fn transfer(
@@ -56,6 +57,30 @@ pub(crate) fn transfer(
             link_transform: scalar(&owned, "LinkTransform").and_then(parse_bool),
             element_transforms: parse_placement_list(&owned, entries)?,
             element_scales: parse_vector_list(&owned, entries)?,
+            linked_subelements: prototype_link
+                .map(|link| link.subelements.clone())
+                .unwrap_or_default(),
+            claim_child: scalar(&owned, "LinkClaimChild").and_then(parse_bool),
+            copy_on_change: owned
+                .iter()
+                .find(|property| property.name == "LinkCopyOnChange")
+                .and_then(|property| enumeration_value(property)),
+            copy_on_change_source: linked_object(&owned, "LinkCopyOnChangeSource"),
+            copy_on_change_group: linked_object(&owned, "LinkCopyOnChangeGroup"),
+            copy_on_change_touched: scalar(&owned, "LinkCopyOnChangeTouched").and_then(parse_bool),
+            scale: vector(&owned, "ScaleVector").or_else(|| {
+                scalar(&owned, "Scale")
+                    .and_then(|value| value.parse().ok())
+                    .map(|value| [value; 3])
+            }),
+            element_visibility: bool_list(&owned, "VisibilityList"),
+            element_objects: owned
+                .iter()
+                .find(|property| property.name == "ElementList")
+                .into_iter()
+                .flat_map(|property| &property.links)
+                .filter_map(|link| link.object.clone())
+                .collect(),
         });
     }
     Ok(output)
@@ -86,6 +111,9 @@ pub(crate) fn transfer_neutral(
         if record.external_document.is_none() {
             component_objects.extend(record.prototype.iter().cloned());
         }
+        component_objects.extend(record.copy_on_change_source.iter().cloned());
+        component_objects.extend(record.copy_on_change_group.iter().cloned());
+        component_objects.extend(record.element_objects.iter().cloned());
     }
     component_objects.sort();
     component_objects.dedup();
@@ -123,11 +151,13 @@ pub(crate) fn transfer_neutral(
                 record.local_transform.unwrap_or_else(identity),
                 element_transform.unwrap_or_else(identity),
             );
-            let scale = record
+            let element_scale = record
                 .element_scales
                 .get(index)
                 .copied()
                 .unwrap_or([1.0; 3]);
+            let base_scale = record.scale.unwrap_or([1.0; 3]);
+            let scale = std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
             let resolved_transform = resolve_container_transform(
                 parent_by_object.get(record.object.as_str()).copied(),
                 records,
@@ -162,6 +192,17 @@ pub(crate) fn transfer_neutral(
                 local_transform,
                 resolved_transform,
                 scale,
+                linked_subelements: record.linked_subelements.clone(),
+                visible: record.element_visibility.get(index).copied(),
+                element_component: record
+                    .element_objects
+                    .get(index)
+                    .map(|object| component_id(object)),
+                claim_child: record.claim_child,
+                copy_on_change: record.copy_on_change.as_deref().map(copy_on_change_policy),
+                copy_on_change_source: record.copy_on_change_source.as_deref().map(&component_id),
+                copy_on_change_group: record.copy_on_change_group.as_deref().map(&component_id),
+                copy_on_change_touched: record.copy_on_change_touched,
                 link_transform: record.link_transform,
                 native_ref: Some(record.object.clone()),
             });
@@ -219,16 +260,26 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
         .transpose()
         .map_err(|_| CodecError::Malformed(format!("{} has negative element count", record.id)))?
         .unwrap_or_else(|| {
-            record
-                .element_transforms
-                .len()
-                .max(record.element_scales.len())
-                .max(1)
+            [
+                record.element_transforms.len(),
+                record.element_scales.len(),
+                record.element_visibility.len(),
+                record.element_objects.len(),
+                1,
+            ]
+            .into_iter()
+            .max()
+            .expect("nonempty lengths")
         });
     if count == 0
-        || [record.element_transforms.len(), record.element_scales.len()]
-            .into_iter()
-            .any(|length| length != 0 && length != count)
+        || [
+            record.element_transforms.len(),
+            record.element_scales.len(),
+            record.element_visibility.len(),
+            record.element_objects.len(),
+        ]
+        .into_iter()
+        .any(|length| length != 0 && length != count)
     {
         return Err(CodecError::Malformed(format!(
             "{} has inconsistent link-array counts",
@@ -236,6 +287,16 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
         )));
     }
     Ok(count)
+}
+
+fn copy_on_change_policy(value: &str) -> CopyOnChangePolicy {
+    match value.to_ascii_lowercase().as_str() {
+        "disabled" | "0" => CopyOnChangePolicy::Disabled,
+        "enabled" | "1" => CopyOnChangePolicy::Enabled,
+        "owned" | "2" => CopyOnChangePolicy::Owned,
+        "tracking" | "3" => CopyOnChangePolicy::Tracking,
+        _ => CopyOnChangePolicy::Native(value.to_owned()),
+    }
 }
 
 fn resolve_container_transform(
@@ -411,6 +472,65 @@ fn parse_bool(value: &str) -> Option<bool> {
         "false" | "0" => Some(false),
         _ => None,
     }
+}
+
+fn enumeration_value(property: &PropertyRecord) -> Option<String> {
+    let index = property
+        .values
+        .iter()
+        .find(|value| value.tag == "Integer")?
+        .attributes
+        .get("value")?
+        .parse::<usize>()
+        .ok()?;
+    property
+        .values
+        .iter()
+        .filter(|value| value.tag == "Enum")
+        .nth(index)
+        .and_then(|value| value.attributes.get("value"))
+        .cloned()
+        .or_else(|| Some(index.to_string()))
+}
+
+fn linked_object(properties: &[&PropertyRecord], name: &str) -> Option<String> {
+    properties
+        .iter()
+        .find(|property| property.name == name)?
+        .links
+        .first()?
+        .object
+        .clone()
+}
+
+fn vector(properties: &[&PropertyRecord], name: &str) -> Option<[f64; 3]> {
+    let value = properties
+        .iter()
+        .find(|property| property.name == name)?
+        .values
+        .iter()
+        .find(|value| value.attributes.contains_key("valueX"))?;
+    Some([
+        value.attributes.get("valueX")?.parse().ok()?,
+        value.attributes.get("valueY")?.parse().ok()?,
+        value.attributes.get("valueZ")?.parse().ok()?,
+    ])
+}
+
+fn bool_list(properties: &[&PropertyRecord], name: &str) -> Vec<bool> {
+    properties
+        .iter()
+        .find(|property| property.name == name)
+        .into_iter()
+        .flat_map(|property| &property.values)
+        .filter(|value| value.tag == "Bool")
+        .filter_map(|value| {
+            value
+                .attributes
+                .get("value")
+                .and_then(|value| parse_bool(value))
+        })
+        .collect()
 }
 
 pub(crate) fn placement_matrix(property: &PropertyRecord) -> Option<[[f64; 4]; 4]> {

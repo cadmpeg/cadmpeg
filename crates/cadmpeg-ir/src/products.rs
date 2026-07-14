@@ -73,6 +73,22 @@ pub enum ComponentReference {
     Unresolved,
 }
 
+/// Copy-on-change ownership behavior of a link.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "policy", content = "native_policy", rename_all = "snake_case")]
+pub enum CopyOnChangePolicy {
+    /// Link follows its prototype without making an owned copy.
+    Disabled,
+    /// Copy is created when a marked prototype property changes.
+    Enabled,
+    /// Link currently owns a changed copy.
+    Owned,
+    /// Owned copy continues tracking its original source.
+    Tracking,
+    /// Future policy retained without reinterpretation.
+    Native(String),
+}
+
 /// One placed use, including an element of a link array.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Occurrence {
@@ -92,6 +108,30 @@ pub struct Occurrence {
     pub resolved_transform: [[f64; 4]; 4],
     /// Per-axis instance scale.
     pub scale: [f64; 3],
+    /// Persisted prototype subelement selection.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub linked_subelements: Vec<String>,
+    /// Per-element visibility override.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<bool>,
+    /// Explicit application object representing this array element.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element_component: Option<ComponentId>,
+    /// Whether this link claims its prototype in the source tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claim_child: Option<bool>,
+    /// Copy-on-change ownership policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_on_change: Option<CopyOnChangePolicy>,
+    /// Original component tracked by copy-on-change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_on_change_source: Option<ComponentId>,
+    /// Internal component holding owned copies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_on_change_group: Option<ComponentId>,
+    /// Whether the tracked source was persisted as changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_on_change_touched: Option<bool>,
     /// Whether the prototype placement participates in evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link_transform: Option<bool>,

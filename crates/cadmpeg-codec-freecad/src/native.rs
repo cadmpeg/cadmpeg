@@ -59,7 +59,7 @@ mod tests {
 }
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 14;
+pub const VERSION: u32 = 15;
 
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -269,6 +269,24 @@ pub struct ProductNodeRecord {
     pub element_transforms: Vec<[[f64; 4]; 4]>,
     /// Ordered per-element scale vectors for a link array.
     pub element_scales: Vec<[f64; 3]>,
+    /// Subelement paths selected on the linked prototype.
+    pub linked_subelements: Vec<String>,
+    /// Whether the link claims its prototype as a tree child.
+    pub claim_child: Option<bool>,
+    /// Persisted copy-on-change policy name or numeric code.
+    pub copy_on_change: Option<String>,
+    /// Original object tracked by copy-on-change.
+    pub copy_on_change_source: Option<String>,
+    /// Internal ownership group for copy-on-change copies.
+    pub copy_on_change_group: Option<String>,
+    /// Whether the tracked source has changed.
+    pub copy_on_change_touched: Option<bool>,
+    /// Base scale vector applied to every occurrence element.
+    pub scale: Option<[f64; 3]>,
+    /// Per-element visibility overrides in array order.
+    pub element_visibility: Vec<bool>,
+    /// Explicit per-element application objects in array order.
+    pub element_objects: Vec<String>,
 }
 
 /// One persisted GUI view provider linked to an application object when available.

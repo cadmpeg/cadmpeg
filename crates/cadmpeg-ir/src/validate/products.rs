@@ -62,6 +62,14 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .parent
             .as_ref()
             .is_none_or(|parent| components.contains_key(parent.0.as_str()));
+        let auxiliary_components = [
+            occurrence.element_component.as_ref(),
+            occurrence.copy_on_change_source.as_ref(),
+            occurrence.copy_on_change_group.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .all(|component| components.contains_key(component.0.as_str()));
         let finite = occurrence
             .local_transform
             .iter()
@@ -69,7 +77,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .chain(occurrence.resolved_transform.iter().flatten())
             .chain(occurrence.scale.iter())
             .all(|value| value.is_finite());
-        if !valid_prototype || !valid_parent || !finite {
+        if !valid_prototype || !valid_parent || !auxiliary_components || !finite {
             invalid(
                 findings,
                 &occurrence.id.0,

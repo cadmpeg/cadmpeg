@@ -419,6 +419,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .placement_property
                 .as_ref()
                 .is_some_and(|property| !property_ids.contains(property.as_str()))
+            || [
+                node.copy_on_change_source.as_ref(),
+                node.copy_on_change_group.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            .chain(node.element_objects.iter())
+            .any(|object| !object_ids.contains(object.as_str()))
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
@@ -435,9 +443,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
         let invalid_array_count = node.element_count.is_some_and(|count| {
             count < 0
-                || [node.element_transforms.len(), node.element_scales.len()]
-                    .into_iter()
-                    .any(|length| length != 0 && i64::try_from(length).ok() != Some(count))
+                || [
+                    node.element_transforms.len(),
+                    node.element_scales.len(),
+                    node.element_visibility.len(),
+                    node.element_objects.len(),
+                ]
+                .into_iter()
+                .any(|length| length != 0 && i64::try_from(length).ok() != Some(count))
         });
         let non_finite_array = node
             .element_transforms

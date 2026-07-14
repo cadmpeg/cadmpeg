@@ -166,6 +166,12 @@ links keep the document token and target object without attempting to open the d
 local targets, duplicate occurrence parents, invalid array counts, non-finite transforms, and
 container cycles are validation errors; external targets remain intentionally unresolved.
 
+Link semantics remain distinct from placement. Prototype subelement paths, tree-child claiming,
+base and per-element scale, explicit element objects, and per-element visibility are retained on
+neutral occurrences. Copy-on-change is typed as disabled, enabled, owned, tracking, or an explicit
+future native policy, with its source, ownership group, and touched state resolved independently.
+All array-valued fields must either be absent or match `ElementCount`.
+
 Native namespace version 5 extends occurrences with ordered link-array element placements and
 scale vectors. Each side entry begins with a little-endian element count followed by either all
 single-precision or all double-precision components; exact entry length selects the precision.

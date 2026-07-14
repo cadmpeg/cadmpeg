@@ -609,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "43");
+    assert_eq!(result.ir.ir_version, "44");
     let feature = |name: &str| {
         &result
             .ir
@@ -2806,22 +2806,34 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
 #[test]
 fn recovers_product_prototypes_occurrences_and_placements() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="3">
+<Objects Count="5">
  <Object type="App::Part" name="Assembly" id="1"/>
  <Object type="Part::Feature" name="Prototype" id="2"/>
  <Object type="App::Link" name="Occurrence" id="3"/>
+ <Object type="Part::Feature" name="ElementA" id="4"/>
+ <Object type="Part::Feature" name="ElementB" id="5"/>
 </Objects>
-<ObjectData Count="3">
+<ObjectData Count="5">
  <Object name="Assembly"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Occurrence"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Prototype"><Properties Count="0"/></Object>
- <Object name="Occurrence"><Properties Count="6">
-  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+ <Object name="Occurrence"><Properties Count="14">
+  <Property name="LinkedObject" type="App::PropertyXLinkSub"><XLink file="" name="Prototype" count="1"><Sub value="Face1"/></XLink></Property>
   <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="2"/></Property>
   <Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="PlacementList"/></Property>
   <Property name="ScaleList" type="App::PropertyVectorList"><VectorList file="ScaleList"/></Property>
+  <Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="2" valueY="3" valueZ="4"/></Property>
+  <Property name="VisibilityList" type="App::PropertyBoolList"><BoolList count="2"><Bool value="true"/><Bool value="false"/></BoolList></Property>
+  <Property name="ElementList" type="App::PropertyLinkList"><LinkList count="2"><Link value="ElementA"/><Link value="ElementB"/></LinkList></Property>
+  <Property name="LinkClaimChild" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="2"/><CustomEnumList count="4"><Enum value="Disabled"/><Enum value="Enabled"/><Enum value="Owned"/><Enum value="Tracking"/></CustomEnumList></Property>
+  <Property name="LinkCopyOnChangeSource" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkCopyOnChangeGroup" type="App::PropertyLink"><Link value="Assembly"/></Property>
+  <Property name="LinkCopyOnChangeTouched" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
+ <Object name="ElementA"><Properties Count="0"/></Object>
+ <Object name="ElementB"><Properties Count="0"/></Object>
 </ObjectData></Document>"#;
     let mut placements = 2_u32.to_le_bytes().to_vec();
     for value in [
@@ -2865,7 +2877,7 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(occurrence.element_transforms.len(), 2);
     assert_eq!(occurrence.element_transforms[1][0][3], 4.0);
     assert_eq!(occurrence.element_scales, vec![[1.0; 3], [2.0; 3]]);
-    assert_eq!(result.ir.model.components.len(), 2);
+    assert_eq!(result.ir.model.components.len(), 4);
     let component = result
         .ir
         .model
@@ -2886,7 +2898,27 @@ fn recovers_product_prototypes_occurrences_and_placements() {
         result.ir.model.occurrences[1].resolved_transform[0][3],
         18.0
     );
-    assert_eq!(result.ir.model.occurrences[1].scale, [2.0; 3]);
+    assert_eq!(result.ir.model.occurrences[0].scale, [2.0, 3.0, 4.0]);
+    assert_eq!(result.ir.model.occurrences[1].scale, [4.0, 6.0, 8.0]);
+    assert_eq!(result.ir.model.occurrences[0].linked_subelements, ["Face1"]);
+    assert_eq!(result.ir.model.occurrences[0].visible, Some(true));
+    assert_eq!(result.ir.model.occurrences[1].visible, Some(false));
+    assert!(result.ir.model.occurrences[0].element_component.is_some());
+    assert_eq!(result.ir.model.occurrences[0].claim_child, Some(true));
+    assert_eq!(
+        result.ir.model.occurrences[0].copy_on_change,
+        Some(cadmpeg_ir::CopyOnChangePolicy::Owned)
+    );
+    assert!(result.ir.model.occurrences[0]
+        .copy_on_change_source
+        .is_some());
+    assert!(result.ir.model.occurrences[0]
+        .copy_on_change_group
+        .is_some());
+    assert_eq!(
+        result.ir.model.occurrences[0].copy_on_change_touched,
+        Some(true)
+    );
     assert!(matches!(
         &result.ir.model.occurrences[0].prototype,
         cadmpeg_ir::ComponentReference::Local { component }
@@ -4061,7 +4093,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 14);
+    assert_eq!(namespace.version, 15);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
         .expect("carrier census");
