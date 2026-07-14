@@ -2993,6 +2993,8 @@ struct MeshSelectionSearch<'a> {
     selected: Vec<Option<(usize, Vec<Vec<bool>>)>>,
     states: usize,
     solution: Option<(StandardTopology, Vec<usize>)>,
+    ambiguous: bool,
+    exhausted: bool,
 }
 
 fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssignment>]) {
@@ -3043,7 +3045,11 @@ impl MeshSelectionSearch<'_> {
     fn search(&mut self, quotient: &MeshQuotient) {
         const MAX_SELECTION_STATES: usize = 512;
 
-        if self.solution.is_some() || self.states >= MAX_SELECTION_STATES {
+        if self.ambiguous || self.exhausted {
+            return;
+        }
+        if self.states >= MAX_SELECTION_STATES {
+            self.exhausted = true;
             return;
         }
         self.states += 1;
@@ -3120,7 +3126,7 @@ impl MeshSelectionSearch<'_> {
             let Some(selected_assignments) = selected_assignments else {
                 return;
             };
-            self.solution = reconstruct_mesh_selection(
+            let candidate = reconstruct_mesh_selection(
                 self.edge_rows.to_vec(),
                 self.vertex_points.to_vec(),
                 &selected_assignments,
@@ -3160,6 +3166,13 @@ impl MeshSelectionSearch<'_> {
                     point_assignment.into_iter().collect::<Option<Vec<_>>>()?,
                 ))
             });
+            if let Some(candidate) = candidate {
+                match &self.solution {
+                    Some(solution) if *solution != candidate => self.ambiguous = true,
+                    None => self.solution = Some(candidate),
+                    Some(_) => {}
+                }
+            }
             return;
         };
         if supported == 0 {
@@ -3176,7 +3189,7 @@ impl MeshSelectionSearch<'_> {
                 self.selected[face] = Some((assignment_index, directions));
                 self.search(&next_quotient);
                 self.selected[face] = None;
-                if self.solution.is_some() || self.states >= MAX_SELECTION_STATES {
+                if self.ambiguous || self.exhausted {
                     return;
                 }
             }
@@ -3271,9 +3284,13 @@ pub fn parse_standard_mesh_endpoint_candidates(
         selected: vec![None; face_count],
         states: 0,
         solution: None,
+        ambiguous: false,
+        exhausted: false,
     };
     search.search(&quotient);
-    search.solution
+    (!search.ambiguous && !search.exhausted)
+        .then_some(search.solution)
+        .flatten()
 }
 
 fn parse_fbb_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize, usize)> {
