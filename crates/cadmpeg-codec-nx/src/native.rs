@@ -982,6 +982,28 @@ pub enum ExpressionUnit {
     Degree,
 }
 
+/// Named parameter declaration in a bounded NX expression object record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExpressionDeclaration {
+    /// Globally unique declaration identity.
+    pub id: String,
+    /// Persistent OM object identifier.
+    pub object_id: u32,
+    /// Owning entry in the native OM record directory.
+    pub record: String,
+    /// Exact NX parameter name.
+    pub name: String,
+    /// Decimal source parameter identifier following `p`.
+    pub parameter_index: u32,
+    /// Qualified role following the parameter identifier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qualifier: Option<String>,
+    /// Directory entry containing the declaration record.
+    pub source_entry: String,
+    /// Absolute file offset of the declaration-name marker.
+    pub source_offset: u64,
+}
+
 /// Explicit numeric expression serialized in one NX OM entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Expression {
@@ -991,6 +1013,9 @@ pub struct Expression {
     pub object_id: Option<u32>,
     /// Owning entry in the native OM record directory, when externally bounded.
     pub record: Option<String>,
+    /// Exact-name declaration record for this parameter, when unique.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declaration: Option<String>,
     /// NX parameter name.
     pub name: String,
     /// Decimal source parameter identifier following the leading `p`.
@@ -1897,8 +1922,60 @@ pub fn persistent_handles(
         .collect()
 }
 
+/// Decode named parameter declarations from expression-class OM records.
+pub fn expression_declarations(container: &Container) -> Vec<ExpressionDeclaration> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            if !section
+                .types
+                .iter()
+                .any(|definition| definition.name == "UGS::EXP_expression")
+            {
+                return Vec::new();
+            }
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            section
+                .records
+                .into_iter()
+                .enumerate()
+                .filter_map(|(record_ordinal, record)| {
+                    let object_id = record.object_id?;
+                    let declaration = crate::om::expression_declaration_name(record.bytes)?;
+                    let record_id =
+                        format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
+                    Some(ExpressionDeclaration {
+                        id: format!(
+                            "nx:om-expression-declarations-{section_ordinal}:declaration#{record_ordinal}"
+                        ),
+                        object_id,
+                        record: record_id,
+                        name: declaration.value.to_string(),
+                        parameter_index: declaration.parameter_index,
+                        qualifier: declaration.qualifier.map(str::to_string),
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset
+                            + record.offset as u64
+                            + declaration.offset as u64,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
 /// Decode explicit numeric expressions from all indexed OM sections.
 pub fn expressions(container: &Container) -> Vec<Expression> {
+    let declarations = expression_declarations(container);
+    let mut declarations_by_name = BTreeMap::<(&str, &str), Vec<&ExpressionDeclaration>>::new();
+    for declaration in &declarations {
+        declarations_by_name
+            .entry((declaration.source_entry.as_str(), declaration.name.as_str()))
+            .or_default()
+            .push(declaration);
+    }
     let mut indexed = BTreeMap::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
@@ -1931,12 +2008,21 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
             let indexed_record = indexed
                 .get(&(entry.name.clone(), expression.offset))
                 .cloned();
+            let declaration = declarations_by_name
+                .get(&(entry.name.as_str(), expression.name))
+                .and_then(|candidates| {
+                    let [declaration] = candidates.as_slice() else {
+                        return None;
+                    };
+                    Some(declaration.id.clone())
+                });
             expressions.push(Expression {
                 id: format!("nx:om-entry-{entry_index}:expression#{}", expression.offset),
                 object_id: indexed_record
                     .as_ref()
                     .and_then(|(object_id, _)| *object_id),
                 record: indexed_record.map(|(_, record)| record),
+                declaration,
                 name: expression.name.to_string(),
                 parameter_index: expression.parameter_index,
                 qualifier: expression.qualifier.map(str::to_string),

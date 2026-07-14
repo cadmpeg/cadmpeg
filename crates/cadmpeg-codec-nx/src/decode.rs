@@ -2774,6 +2774,7 @@ fn attach_native_object_model(
         &feature_input_blocks,
     );
     let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
+    let expression_declarations = crate::native::expression_declarations(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
     let fields = crate::native::field_definitions(&scan.container);
@@ -2802,6 +2803,7 @@ fn attach_native_object_model(
         && feature_input_blocks.is_empty()
         && feature_sketch_records.is_empty()
         && feature_boolean_operations.is_empty()
+        && expression_declarations.is_empty()
         && expressions.is_empty()
         && classes.is_empty()
         && fields.is_empty()
@@ -2887,6 +2889,12 @@ fn attach_native_object_model(
             .tag("FEATURE_BODY_REFERENCE");
         annotations.exactness(&reference.id, Exactness::ByteExact);
     }
+    for reference in &feature_body_reference_occurrences {
+        annotations
+            .note(&reference.id, annotation_stream, reference.source_offset)
+            .tag("FEATURE_BODY_REFERENCE_OCCURRENCE");
+        annotations.exactness(&reference.id, Exactness::ByteExact);
+    }
     for input in &feature_input_blocks {
         annotations
             .note(&input.id, annotation_stream, input.source_offset)
@@ -2898,6 +2906,16 @@ fn attach_native_object_model(
             .note(&operation.id, annotation_stream, operation.source_offset)
             .tag("FEATURE_BOOLEAN_OPERATION");
         annotations.exactness(&operation.id, Exactness::ByteExact);
+    }
+    for declaration in &expression_declarations {
+        annotations
+            .note(
+                &declaration.id,
+                annotation_stream,
+                declaration.source_offset,
+            )
+            .tag("EXPRESSION_DECLARATION");
+        annotations.exactness(&declaration.id, Exactness::ByteExact);
     }
     for header in &store_headers {
         annotations
@@ -3003,6 +3021,7 @@ fn attach_native_object_model(
             labels: &feature_operation_labels,
             booleans: &feature_boolean_operations,
             body_references: &feature_body_references,
+            body_reference_occurrences: &feature_body_reference_occurrences,
             input_blocks: &feature_input_blocks,
             operation_records: &feature_operation_records,
             payload_strings: &feature_payload_strings,
@@ -3015,7 +3034,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(31);
+    namespace.version = namespace.version.max(32);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3064,6 +3083,9 @@ fn attach_native_object_model(
     if !feature_boolean_operations.is_empty() {
         namespace.set_arena("feature_boolean_operations", &feature_boolean_operations)?;
     }
+    if !expression_declarations.is_empty() {
+        namespace.set_arena("expression_declarations", &expression_declarations)?;
+    }
     if !expressions.is_empty() {
         namespace.set_arena("expressions", &expressions)?;
     }
@@ -3111,6 +3133,7 @@ struct FeatureOperationSources<'a> {
     labels: &'a [crate::native::FeatureOperationLabel],
     booleans: &'a [crate::native::FeatureBooleanOperation],
     body_references: &'a [crate::native::FeatureBodyReference],
+    body_reference_occurrences: &'a [crate::native::FeatureBodyReferenceOccurrence],
     input_blocks: &'a [crate::native::FeatureInputBlock],
     operation_records: &'a [crate::native::FeatureOperationRecord],
     payload_strings: &'a [crate::native::FeaturePayloadString],
@@ -3126,6 +3149,7 @@ fn attach_feature_operations(
         labels,
         booleans,
         body_references,
+        body_reference_occurrences,
         input_blocks,
         operation_records,
         payload_strings,
@@ -3146,6 +3170,14 @@ fn attach_feature_operations(
             )
         })
         .collect::<BTreeMap<_, _>>();
+    let mut body_reference_occurrences_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureBodyReferenceOccurrence>>::new();
+    for reference in body_reference_occurrences {
+        body_reference_occurrences_by_operation
+            .entry(reference.operation_label.as_str())
+            .or_default()
+            .push(reference);
+    }
     let mut last_body_writer = BTreeMap::<u32, FeatureId>::new();
     let body_alias_roots = crate::native::body_alias_roots(body_bindings).unwrap_or_default();
     let canonical_body =
@@ -3222,6 +3254,16 @@ fn attach_feature_operations(
             });
         if let Some(body) = body_references.get(label.id.as_str()) {
             source_properties.insert("primary_body_object_index".to_string(), body.to_string());
+        }
+        for reference in body_reference_occurrences_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("body_reference.{}", reference.ordinal),
+                reference.body_object_index.to_string(),
+            );
         }
         for (slot, value) in label.object_indices.iter().enumerate() {
             source_properties.insert(

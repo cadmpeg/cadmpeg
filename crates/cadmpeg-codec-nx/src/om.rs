@@ -236,6 +236,19 @@ pub struct OperationPayloadString<'a> {
     pub value: &'a str,
 }
 
+/// Self-framed NX parameter name in one bounded expression declaration record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExpressionDeclarationName<'a> {
+    /// Byte offset of the `04` marker within the containing byte range.
+    pub offset: usize,
+    /// Exact `p<decimal>[_qualifier]` name.
+    pub value: &'a str,
+    /// Decimal parameter identifier following `p`.
+    pub parameter_index: u32,
+    /// Qualified role following the parameter identifier.
+    pub qualifier: Option<&'a str>,
+}
+
 /// Primary body-object reference carried by one bounded operation record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationBodyReference {
@@ -538,6 +551,51 @@ pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPa
         at = end + 1;
     }
     strings
+}
+
+/// Decode the unique `04, length, p<decimal>[_qualifier], 00` declaration name.
+pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclarationName<'_>> {
+    let mut matches = Vec::new();
+    for at in 0..bytes.len().saturating_sub(4) {
+        if bytes[at] != 0x04 {
+            continue;
+        }
+        let declared = usize::from(bytes[at + 1]);
+        if declared < 4 {
+            continue;
+        }
+        let Some(end) = at.checked_add(declared) else {
+            continue;
+        };
+        let Some(raw) = bytes.get(at + 2..end) else {
+            continue;
+        };
+        if bytes.get(end) != Some(&0) {
+            continue;
+        }
+        let Ok(value) = std::str::from_utf8(raw) else {
+            continue;
+        };
+        if !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        {
+            continue;
+        }
+        let (Some(parameter_index), qualifier) = parameter_name(value) else {
+            continue;
+        };
+        matches.push(ExpressionDeclarationName {
+            offset: at,
+            value,
+            parameter_index,
+            qualifier,
+        });
+    }
+    let [declaration] = matches.as_slice() else {
+        return None;
+    };
+    Some(*declaration)
 }
 
 /// Decode the unique `01 02 10 index ff` primary-body field in one operation.

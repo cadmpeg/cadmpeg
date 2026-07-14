@@ -140,6 +140,7 @@ fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
         id: format!("nx:test:expression#{name}"),
         object_id: None,
         record: None,
+        declaration: None,
         name: name.into(),
         parameter_index: None,
         qualifier: None,
@@ -173,6 +174,7 @@ fn nx_formula_dependencies_resolve_to_section_parameters() {
         id: format!("nx:test:expression#{key}"),
         object_id: Some(key),
         record: None,
+        declaration: None,
         name: name.into(),
         parameter_index: Some(index),
         qualifier: qualifier.map(str::to_string),
@@ -204,6 +206,7 @@ fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
         id: format!("nx:test:expression#{key}"),
         object_id: Some(key),
         record: None,
+        declaration: None,
         name: name.into(),
         parameter_index: Some(key),
         qualifier: None,
@@ -264,7 +267,7 @@ fn record(tag: u8, len: usize) -> Vec<u8> {
 fn indexed_om_section() -> Vec<u8> {
     let mut bytes = vec![0xaa; 32];
     let base = 8usize;
-    let class_name = b"UGS::ModlFeature";
+    let class_name = b"UGS::EXP_expression";
     bytes[base] = (class_name.len() + 1) as u8;
     bytes[base + 1..base + 1 + class_name.len()].copy_from_slice(class_name);
     bytes[base + 1 + class_name.len()] = 0x81;
@@ -274,7 +277,11 @@ fn indexed_om_section() -> Vec<u8> {
     bytes.push(0x80);
     let root = b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables";
     let text = b"(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; ";
-    let mut expression = vec![0x99, 0x04, (text.len() + 2) as u8];
+    let declaration_name = b"p8_CircularPattern_pattern_Circular_Dir_offset_angle";
+    let mut expression = vec![0x04, (declaration_name.len() + 2) as u8];
+    expression.extend_from_slice(declaration_name);
+    expression.push(0);
+    expression.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
     expression.extend_from_slice(text);
     expression.push(0);
     expression.extend_from_slice(b"\x66\x32\x03\x0cSKETCH_001\0");
@@ -392,7 +399,7 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
     assert_eq!(sections[0].fields[0].name, "m_target");
     assert_eq!(
         sections[0].records[1].bytes,
-        b"\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00\x66\x32\x03\x0cSKETCH_001\0\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0\x01\x02\x90\x00\x00"
+        b"\x04\x36p8_CircularPattern_pattern_Circular_Dir_offset_angle\x00\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00\x66\x32\x03\x0cSKETCH_001\0\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0\x01\x02\x90\x00\x00"
     );
 }
 
@@ -419,7 +426,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 31);
+    assert_eq!(namespace.version, 32);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -756,6 +763,10 @@ fn decode_retains_role_scoped_om_record_area_header() {
     let feature = result.ir.model.features.first().expect("neutral feature");
     assert_eq!(feature.name.as_deref(), Some("UNITE"));
     assert_eq!(feature.native_ref.as_deref(), Some(labels[0].id.as_str()));
+    assert_eq!(
+        feature.source_properties.get("body_reference.0"),
+        Some(&"6466".to_string())
+    );
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Combine {
@@ -1150,7 +1161,7 @@ fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
     let sections = crate::om::indexed_sections(&bytes);
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].types.len(), 1);
-    assert_eq!(sections[0].types[0].name, "UGS::ModlFeature");
+    assert_eq!(sections[0].types[0].name, "UGS::EXP_expression");
     assert_eq!(sections[0].types[0].trailing_code, 0x81);
     assert_eq!(sections[0].types[0].offset, 8);
 }
@@ -1179,6 +1190,18 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     assert_eq!(expressions[0].unit, crate::om::ExpressionUnit::Degree);
     assert_eq!(expressions[0].expression, "120");
     assert_eq!(expressions[0].value, Some(120.0));
+    let declaration = crate::om::expression_declaration_name(section.records[1].bytes).unwrap();
+    assert_eq!(
+        declaration.value,
+        "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
+    );
+    assert_eq!(declaration.parameter_index, 8);
+    assert_eq!(
+        declaration.qualifier,
+        Some("CircularPattern_pattern_Circular_Dir_offset_angle")
+    );
+    assert!(crate::om::expression_declaration_name(b"\x04\x04p1\0\x04\x04p2\0").is_none());
+    assert!(crate::om::expression_declaration_name(b"\x04\x05p1-\0").is_none());
 }
 
 #[test]
@@ -3716,7 +3739,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 31);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 32);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -3732,6 +3755,20 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(expressions[0].expression, "120");
     assert_eq!(expressions[0].value, Some(120.0));
     assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
+    let declarations = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<crate::native::ExpressionDeclaration>("expression_declarations")
+        .unwrap();
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].object_id, 0x102);
+    assert_eq!(declarations[0].parameter_index, 8);
+    assert_eq!(
+        expressions[0].declaration.as_deref(),
+        Some(declarations[0].id.as_str())
+    );
     let om_records = result
         .ir
         .native_unknowns("nx")
@@ -3919,7 +3956,7 @@ fn decode_retains_length_framed_nx_class_definition() {
         .arena_as::<crate::native::ClassDefinition>("class_definitions")
         .unwrap();
     assert_eq!(classes.len(), 1);
-    assert_eq!(classes[0].name, "UGS::ModlFeature");
+    assert_eq!(classes[0].name, "UGS::EXP_expression");
     assert_eq!(classes[0].ordinal, 0);
     assert_eq!(classes[0].trailing_code, 0x81);
     assert_eq!(classes[0].source_entry, "/Root/UG_PART/UG_PART");
