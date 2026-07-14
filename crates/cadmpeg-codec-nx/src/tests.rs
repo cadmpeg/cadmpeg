@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 134);
+    assert_eq!(namespace.version, 135);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6452,7 +6452,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 134);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 135);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -8255,6 +8255,17 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
     let edge = result.ir.model.edges.first().expect("edge");
     assert_eq!(edge.curve.as_ref(), Some(&result.ir.model.curves[0].id));
     assert_eq!(edge.param_range, Some([0.25, 0.75]));
+    let records = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::ParasolidTrimmedCurveRecord>("parasolid_trimmed_curve_records")
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].basis_xmt, 9);
+    assert_eq!(records[0].points, [[0.0; 3]; 2]);
+    assert_eq!(records[0].parameters, [0.000_25, 0.000_75]);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 

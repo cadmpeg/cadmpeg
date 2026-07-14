@@ -3122,6 +3122,8 @@ fn attach_native_object_model(
         crate::native::parasolid_blend_surface_records(&scan.streams);
     let parasolid_offset_surface_records =
         crate::native::parasolid_offset_surface_records(&scan.streams);
+    let parasolid_trimmed_curve_records =
+        crate::native::parasolid_trimmed_curve_records(&scan.streams);
     let parasolid_intersection_records =
         crate::native::parasolid_intersection_records(&scan.streams);
     let parasolid_attribute_definitions =
@@ -3385,6 +3387,7 @@ fn attach_native_object_model(
         && segment_body_lineage_statuses.is_empty()
         && parasolid_blend_surface_records.is_empty()
         && parasolid_offset_surface_records.is_empty()
+        && parasolid_trimmed_curve_records.is_empty()
         && parasolid_intersection_records.is_empty()
         && parasolid_attribute_definitions.is_empty()
         && parasolid_entity_51_records.is_empty()
@@ -3507,6 +3510,13 @@ fn attach_native_object_model(
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("OFFSET_SURF");
+        annotations.exactness(&record.id, Exactness::ByteExact);
+    }
+    for record in &parasolid_trimmed_curve_records {
+        let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
+        annotations
+            .note(&record.id, source_stream, record.inflated_offset)
+            .tag("TRIMMED_CURVE");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
     for record in &parasolid_intersection_records {
@@ -3916,7 +3926,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(134);
+    namespace.version = namespace.version.max(135);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3942,6 +3952,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "parasolid_offset_surface_records",
             &parasolid_offset_surface_records,
+        )?;
+    }
+    if !parasolid_trimmed_curve_records.is_empty() {
+        namespace.set_arena(
+            "parasolid_trimmed_curve_records",
+            &parasolid_trimmed_curve_records,
         )?;
     }
     if !parasolid_intersection_records.is_empty() {

@@ -53,6 +53,48 @@ pub fn parasolid_offset_surface_records(streams: &[Stream]) -> Vec<ParasolidOffs
     records
 }
 
+/// Complete typed source record for one Parasolid trimmed curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidTrimmedCurveRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Cross-reference index of the trimmed curve.
+    pub xmt: u32,
+    /// Cross-reference index of the basis curve.
+    pub basis_xmt: u32,
+    /// Stored start and end points in millimetres.
+    pub points: [[f64; 3]; 2],
+    /// Stored start and end parameters in basis-curve units.
+    pub parameters: [f64; 2],
+    /// Record tag offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Decode complete typed source records for Parasolid trimmed curves.
+pub fn parasolid_trimmed_curve_records(streams: &[Stream]) -> Vec<ParasolidTrimmedCurveRecord> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind.is_parasolid() {
+            continue;
+        }
+        for trim in crate::topology::trimmed_curves(&stream.inflated) {
+            records.push(ParasolidTrimmedCurveRecord {
+                id: format!("nx:s{stream_ordinal}:trimmed-curve-record#{}", trim.xmt),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: trim.xmt,
+                basis_xmt: trim.basis,
+                points: trim.points,
+                parameters: trim.parameters,
+                inflated_offset: trim.pos as u64,
+            });
+        }
+    }
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    records
+}
+
 /// Complete typed source record for one Parasolid surface-intersection curve.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidIntersectionRecord {

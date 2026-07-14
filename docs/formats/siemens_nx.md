@@ -516,6 +516,8 @@ torus:    Y = A×X;  P = C_mm + (R + r·cos v)·(cos u · X + sin u · Y) + r·s
 
 **TRIMMED_CURVE (133):** basis_curve ref `+19` (large-index capable → shifts later fields +2), `point_1 +21`, `point_2 +45`, `parm_1:f64 +69`, `parm_2:f64 +77`. The curve is `basis(t)` restricted to `[parm_1, parm_2]`; parameters are in the basis's native units: LINE uses meters of arc length from the stored point (×1000 for mm), CIRCLE uses radians, and B_CURVE uses knot units. Unscaled meter spans on a LINE basis place the trim interval 1000× too small.
 
+The typed source record retains the basis reference, both stored model-space points in millimetres, both parameters in basis units, and the inflated-stream offset. Topological transfer aliases the wrapper to its terminal basis carrier and applies the validated parameter range to the owning edge.
+
 TRIMMED_CURVE and SP_CURVE references form an XMT graph, not a record-order stack. A wrapper may reference another wrapper serialized later; resolve wrapper chains to a terminal curve carrier independent of record order.
 
 **SP_CURVE (137):** surface ref `+19`, b_curve ref `+21`, original ref `+23`, `tolerance_to_original:f64 +25` (after ref shifts). It represents a curve-on-surface: a 2D B-curve in the surface parameter space. `tolerance_to_original` uses the same missing-tolerance sentinel as FACE and EDGE; the sentinel transfers as no tolerance.

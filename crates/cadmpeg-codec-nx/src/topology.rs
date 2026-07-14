@@ -346,8 +346,12 @@ pub struct TrimmedCurve {
     pub xmt: u32,
     /// Cross-reference index of the untrimmed basis curve record.
     pub basis: u32,
+    /// Stored start and end points in millimetres.
+    pub points: [[f64; 3]; 2],
     /// `[start, end]` parameter range of the trim, in the basis curve's own parameterization.
     pub parameters: [f64; 2],
+    /// Record type-tag offset in the inflated stream.
+    pub pos: usize,
 }
 
 /// A type-137 curve-on-surface wrapper.
@@ -620,6 +624,11 @@ pub fn trimmed_curves(stream: &[u8]) -> Vec<TrimmedCurve> {
         .filter_map(|node| {
             let mut at = node.compact_tail_offset()?;
             let basis = read_and_advance(&node.bytes, &mut at)?;
+            let mut point_0 = be::vec3_at(&node.bytes, at)?;
+            let mut point_1 = be::vec3_at(&node.bytes, at + 24)?;
+            for coordinate in point_0.iter_mut().chain(point_1.iter_mut()) {
+                *coordinate *= 1000.0;
+            }
             let p0 = node.bytes.get(at + 48..at + 56)?;
             let p1 = node.bytes.get(at + 56..at + 64)?;
             let p0 = f64::from_be_bytes(p0.try_into().ok()?);
@@ -627,7 +636,9 @@ pub fn trimmed_curves(stream: &[u8]) -> Vec<TrimmedCurve> {
             (basis > 1 && p0.is_finite() && p1.is_finite()).then_some(TrimmedCurve {
                 xmt: node.xmt,
                 basis,
+                points: [point_0, point_1],
                 parameters: [p0, p1],
+                pos: node.pos,
             })
         })
         .collect()
