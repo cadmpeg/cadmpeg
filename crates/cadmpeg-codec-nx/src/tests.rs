@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 125);
+    assert_eq!(namespace.version, 126);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -3057,6 +3057,67 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
     let mut unresolved = references;
     unresolved[7].data_block = None;
     assert!(crate::native::feature_block_constructions(&unresolved).is_empty());
+}
+
+#[test]
+fn nx_block_payload_points_require_exactly_two_named_scalars() {
+    use crate::native::{
+        feature_block_payload_points, FeatureBlockPayloadName, FeatureBlockPayloadNamedRecord,
+        FeatureBlockPayloadScalar,
+    };
+
+    let operation_label = "operation".to_string();
+    let construction_payload = "payload".to_string();
+    let name = FeatureBlockPayloadName {
+        id: "name".to_string(),
+        operation_label: operation_label.clone(),
+        construction_payload: construction_payload.clone(),
+        ordinal: 0,
+        type_code: Some(131),
+        payload_leading: false,
+        value: "Point7".to_string(),
+        payload_offset: 10,
+        source_offset: 100,
+    };
+    let scalar = |id: &str, ordinal: u32, value: f64| FeatureBlockPayloadScalar {
+        id: id.to_string(),
+        operation_label: operation_label.clone(),
+        construction_payload: construction_payload.clone(),
+        ordinal,
+        field_code: 100,
+        value,
+        payload_offset: 20 + u64::from(ordinal) * 13,
+        source_offset: 110 + u64::from(ordinal) * 13,
+    };
+    let scalars = [scalar("first", 0, 1.25), scalar("second", 1, -2.5)];
+    let record = FeatureBlockPayloadNamedRecord {
+        id: "record".to_string(),
+        operation_label,
+        construction_payload,
+        name_field: name.id.clone(),
+        scalar_fields: scalars.iter().map(|scalar| scalar.id.clone()).collect(),
+        payload_start_offset: 10,
+        payload_end_offset: 50,
+    };
+
+    let points = feature_block_payload_points(
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&name),
+        &scalars,
+    );
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].name, "Point7");
+    assert_eq!(points[0].coordinates, [1.25, -2.5]);
+
+    let mut incomplete = record.clone();
+    incomplete.scalar_fields.pop();
+    assert!(
+        feature_block_payload_points(&[incomplete], std::slice::from_ref(&name), &scalars,)
+            .is_empty()
+    );
+    let mut malformed = name;
+    malformed.value = "Point0".to_string();
+    assert!(feature_block_payload_points(&[record], &[malformed], &scalars).is_empty());
 }
 
 #[test]
@@ -6358,7 +6419,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 125);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 126);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

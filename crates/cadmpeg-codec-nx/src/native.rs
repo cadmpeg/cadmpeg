@@ -1442,6 +1442,86 @@ pub struct FeatureBlockConstructionPayload {
     pub block_source_offsets: Vec<u64>,
 }
 
+/// One complete shifted-binary64 field in a reconstructed `BLOCK` payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureBlockPayloadScalar {
+    /// Globally unique scalar-field identity.
+    pub id: String,
+    /// Owning `BLOCK` operation label.
+    pub operation_label: String,
+    /// Reconstructed payload containing the field.
+    pub construction_payload: String,
+    /// Zero-based field order in the reconstructed payload.
+    pub ordinal: u32,
+    /// Serialized field discriminator following `PYf`.
+    pub field_code: u8,
+    /// Exact finite shifted-binary64 value.
+    pub value: f64,
+    /// Payload-relative `PYf` marker offset.
+    pub payload_offset: u64,
+    /// Absolute source offset of the `PYf` marker.
+    pub source_offset: u64,
+}
+
+/// One complete compact-code name field in a reconstructed `BLOCK` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBlockPayloadName {
+    /// Globally unique name-field identity.
+    pub id: String,
+    /// Owning `BLOCK` operation label.
+    pub operation_label: String,
+    /// Reconstructed payload containing the field.
+    pub construction_payload: String,
+    /// Zero-based name order in the reconstructed payload.
+    pub ordinal: u32,
+    /// Non-null compact type code, absent for the payload-leading form.
+    pub type_code: Option<u32>,
+    /// Whether the field uses the type-free payload-leading form.
+    pub payload_leading: bool,
+    /// Exact printable field value.
+    pub value: String,
+    /// Payload-relative name marker offset.
+    pub payload_offset: u64,
+    /// Absolute source offset of the name marker.
+    pub source_offset: u64,
+}
+
+/// Name-delimited interval in a reconstructed `BLOCK` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBlockPayloadNamedRecord {
+    /// Globally unique interval identity.
+    pub id: String,
+    /// Owning `BLOCK` operation label.
+    pub operation_label: String,
+    /// Reconstructed payload containing the interval.
+    pub construction_payload: String,
+    /// Name field opening the interval.
+    pub name_field: String,
+    /// Complete scalar fields in payload order within the interval.
+    pub scalar_fields: Vec<String>,
+    /// Inclusive payload-relative start.
+    pub payload_start_offset: u64,
+    /// Exclusive payload-relative end.
+    pub payload_end_offset: u64,
+}
+
+/// Exactly two-scalar `Point<positive decimal>` record in a `BLOCK` payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureBlockPayloadPoint {
+    /// Globally unique typed-point identity.
+    pub id: String,
+    /// Owning `BLOCK` operation label.
+    pub operation_label: String,
+    /// Name-delimited payload interval carrying the point.
+    pub named_record: String,
+    /// Exact `Point<positive decimal>` source name.
+    pub name: String,
+    /// Ordered scalar fields carrying the two coordinates.
+    pub scalar_fields: [String; 2],
+    /// Ordered finite native coordinate values.
+    pub coordinates: [f64; 2],
+}
+
 /// Ordered three-parameter dimension run of one `BLOCK` feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureBlockDimensions {
@@ -4127,6 +4207,182 @@ pub fn feature_block_construction_payloads(
             })
         })
         .collect()
+}
+
+/// Decode exact framed scalar fields across reconstructed `BLOCK` payloads.
+pub fn feature_block_payload_scalars(
+    container: &Container,
+    payloads: &[FeatureBlockConstructionPayload],
+) -> Vec<FeatureBlockPayloadScalar> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            crate::om::sketch_payload_scalar_fields(&bytes)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, field)| {
+                    let source_offset = joined_payload_source_offset(
+                        field.offset as u64,
+                        &starts,
+                        &lengths,
+                        &sources,
+                    )?;
+                    Some(FeatureBlockPayloadScalar {
+                        id: format!("{}-scalar-{ordinal}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        construction_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        field_code: field.field_code,
+                        value: field.value,
+                        payload_offset: field.offset as u64,
+                        source_offset,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Decode exact compact-code name fields across reconstructed `BLOCK` payloads.
+pub fn feature_block_payload_names(
+    container: &Container,
+    payloads: &[FeatureBlockConstructionPayload],
+) -> Vec<FeatureBlockPayloadName> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            crate::om::sketch_payload_named_fields(&bytes)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, field)| {
+                    let source_offset = joined_payload_source_offset(
+                        field.offset as u64,
+                        &starts,
+                        &lengths,
+                        &sources,
+                    )?;
+                    Some(FeatureBlockPayloadName {
+                        id: format!("{}-name-{ordinal}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        construction_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        type_code: field.type_code,
+                        payload_leading: field.payload_leading,
+                        value: field.value.to_string(),
+                        payload_offset: field.offset as u64,
+                        source_offset,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Join complete `BLOCK` payload names to scalar fields in their intervals.
+pub fn feature_block_payload_named_records(
+    payloads: &[FeatureBlockConstructionPayload],
+    names: &[FeatureBlockPayloadName],
+    scalars: &[FeatureBlockPayloadScalar],
+) -> Vec<FeatureBlockPayloadNamedRecord> {
+    let mut records = Vec::new();
+    for payload in payloads {
+        let mut payload_names = names
+            .iter()
+            .filter(|name| name.construction_payload == payload.id)
+            .collect::<Vec<_>>();
+        payload_names.sort_by_key(|name| name.payload_offset);
+        for (ordinal, name) in payload_names.iter().enumerate() {
+            let end = payload_names
+                .get(ordinal + 1)
+                .map_or(payload.byte_len, |next| next.payload_offset);
+            let mut scalar_fields = scalars
+                .iter()
+                .filter(|scalar| {
+                    scalar.construction_payload == payload.id
+                        && scalar.payload_offset > name.payload_offset
+                        && scalar.payload_offset < end
+                })
+                .collect::<Vec<_>>();
+            scalar_fields.sort_by_key(|scalar| scalar.payload_offset);
+            records.push(FeatureBlockPayloadNamedRecord {
+                id: format!("{}-record-{ordinal}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                name_field: name.id.clone(),
+                scalar_fields: scalar_fields
+                    .into_iter()
+                    .map(|scalar| scalar.id.clone())
+                    .collect(),
+                payload_start_offset: name.payload_offset,
+                payload_end_offset: end,
+            });
+        }
+    }
+    records
+}
+
+/// Type exact two-scalar `Point<positive decimal>` `BLOCK` payload intervals.
+pub fn feature_block_payload_points(
+    records: &[FeatureBlockPayloadNamedRecord],
+    names: &[FeatureBlockPayloadName],
+    scalars: &[FeatureBlockPayloadScalar],
+) -> Vec<FeatureBlockPayloadPoint> {
+    let names = names
+        .iter()
+        .map(|name| (name.id.as_str(), name))
+        .collect::<BTreeMap<_, _>>();
+    let scalars = scalars
+        .iter()
+        .map(|scalar| (scalar.id.as_str(), scalar))
+        .collect::<BTreeMap<_, _>>();
+    records
+        .iter()
+        .filter_map(|record| {
+            let name = names.get(record.name_field.as_str())?;
+            parse_sketch_point_name(&name.value)?;
+            let [first_id, second_id] = record.scalar_fields.as_slice() else {
+                return None;
+            };
+            let first = scalars.get(first_id.as_str())?;
+            let second = scalars.get(second_id.as_str())?;
+            Some(FeatureBlockPayloadPoint {
+                id: format!("{}-point", record.id),
+                operation_label: record.operation_label.clone(),
+                named_record: record.id.clone(),
+                name: name.value.clone(),
+                scalar_fields: [first.id.clone(), second.id.clone()],
+                coordinates: [first.value, second.value],
+            })
+        })
+        .collect()
+}
+
+fn joined_payload_source_offset(
+    relative: u64,
+    starts: &[u64],
+    lengths: &[u64],
+    sources: &[u64],
+) -> Option<u64> {
+    starts
+        .iter()
+        .zip(lengths)
+        .zip(sources)
+        .find_map(|((start, length), source)| {
+            (relative >= *start && relative < start.saturating_add(*length))
+                .then_some(source + relative - start)
+        })
 }
 
 /// Resolve the consecutive three-parameter dimension run of `BLOCK` features.
