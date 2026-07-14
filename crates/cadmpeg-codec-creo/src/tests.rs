@@ -3294,6 +3294,20 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     assert_eq!(scan.feature_operation_states.len(), 7);
     assert_eq!(scan.feature_operation_states[0].feature_id, 40);
     assert_eq!(scan.feature_operation_states[0].kind, "Protrusion");
+    assert_eq!(
+        scan.feature_operation_states[0].stored_name.as_deref(),
+        Some("xProtrusion id 40")
+    );
+    assert_eq!(
+        scan.feature_operation_states[0]
+            .identifier_keyword
+            .as_deref(),
+        Some("id")
+    );
+    assert_eq!(
+        scan.feature_operation_states[0].state_offset + 1,
+        scan.feature_operation_states[0].offset
+    );
     assert_eq!(scan.feature_operation_states[5].feature_id, 40);
     assert_eq!(scan.feature_operation_states[5].kind, "Hole");
     assert_eq!(scan.feature_operations.len(), 6);
@@ -3318,6 +3332,8 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     assert_eq!(feature_40.len(), 2);
     assert_eq!(feature_40[0].fields["state_ordinal"], 0);
     assert_eq!(feature_40[0].fields["current"], false);
+    assert_eq!(feature_40[0].fields["stored_name"], "xProtrusion id 40");
+    assert_eq!(feature_40[0].fields["identifier_keyword"], "id");
     assert_eq!(feature_40[1].fields["state_ordinal"], 1);
     assert_eq!(feature_40[1].fields["current"], true);
     assert_eq!(result.ir.model.features.len(), 6);

@@ -1002,6 +1002,7 @@ fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
+                    record.state_offset += section.offset;
                     record
                 }),
         );
@@ -1029,6 +1030,7 @@ fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOpe
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
+                    record.state_offset += section.offset;
                     record
                 }),
         );

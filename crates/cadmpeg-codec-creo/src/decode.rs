@@ -232,11 +232,14 @@ struct CreoFeatureOperationState {
     current: bool,
     family: String,
     display_name_stored: bool,
+    stored_name: Option<String>,
+    identifier_keyword: Option<String>,
     status_prefix: Option<String>,
     recipe: Option<&'static str>,
     root_schema_class: Option<u32>,
     parent_feature_id: Option<u32>,
     offset: usize,
+    state_offset: usize,
 }
 
 fn feature_operation_state_records(scan: &ContainerScan) -> Vec<CreoFeatureOperationState> {
@@ -261,6 +264,8 @@ fn feature_operation_state_records(scan: &ContainerScan) -> Vec<CreoFeatureOpera
                 current: current_offsets.get(&state.feature_id) == Some(&state.offset),
                 family: state.kind.clone(),
                 display_name_stored: state.display_name_stored,
+                stored_name: state.stored_name.clone(),
+                identifier_keyword: state.identifier_keyword.clone(),
                 status_prefix: state
                     .status_prefix
                     .map(|prefix| char::from(prefix).to_string()),
@@ -271,6 +276,7 @@ fn feature_operation_state_records(scan: &ContainerScan) -> Vec<CreoFeatureOpera
                 root_schema_class: state.root_schema_class,
                 parent_feature_id: state.parent_feature_id,
                 offset: state.offset,
+                state_offset: state.state_offset,
             }
         })
         .collect()
@@ -13534,15 +13540,15 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                 .sections
                 .iter()
                 .find(|section| {
-                    state.offset >= section.offset
-                        && state.offset < section.offset.saturating_add(section.length)
+                    state.state_offset >= section.offset
+                        && state.state_offset < section.offset.saturating_add(section.length)
                 })
                 .map_or("MdlStatus", |section| section.name.as_str());
             annotate(
                 &mut annotations,
                 &state.id,
                 section,
-                state.offset as u64,
+                state.state_offset as u64,
                 "feature_operation_state",
                 Exactness::ByteExact,
             );

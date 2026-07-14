@@ -29,6 +29,11 @@ pub struct FeatureOperation {
     pub kind: String,
     /// Whether `kind` came from a stored `<Kind> id <N>` display name.
     pub display_name_stored: bool,
+    /// Exact stored operation name excluding its NUL terminator. Recipe-only
+    /// states have no stored name.
+    pub stored_name: Option<String>,
+    /// Stored identifier keyword, preserving `id` versus `ID`.
+    pub identifier_keyword: Option<String>,
     /// Optional one-byte state prefix immediately preceding the family name.
     pub status_prefix: Option<u8>,
     /// Procedural recipe name stored in the same current-state record.
@@ -39,6 +44,8 @@ pub struct FeatureOperation {
     pub parent_feature_id: Option<u32>,
     /// Byte offset of the operation name in the original stream.
     pub offset: usize,
+    /// Byte offset including the optional state prefix.
+    pub state_offset: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,7 +134,9 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
         while offset < separator && std::str::from_utf8(&payload[offset..separator]).is_err() {
             offset += 1;
         }
-        let family = &payload[offset..separator];
+        let state_offset = offset;
+        let stored_family = &payload[offset..separator];
+        let family = stored_family;
         if family.is_empty() || family.first() == Some(&b' ') || family.last() == Some(&b' ') {
             continue;
         }
@@ -173,11 +182,22 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             feature_id,
             kind: String::from_utf8_lossy(family).into_owned(),
             display_name_stored: true,
+            stored_name: Some(
+                String::from_utf8_lossy(
+                    &payload[state_offset..separator + separator_bytes.len() + end],
+                )
+                .into_owned(),
+            ),
+            identifier_keyword: Some(
+                String::from_utf8_lossy(&separator_bytes[1..separator_bytes.len() - 1])
+                    .into_owned(),
+            ),
             status_prefix,
             recipe,
             root_schema_class: bound_recipe.map(|binding| binding.root_schema_class),
             parent_feature_id: bound_recipe.map(|binding| binding.parent_feature_id),
             offset,
+            state_offset,
         });
     }
     for (feature_id, binding) in &bound_recipes {
@@ -195,11 +215,14 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             }
             .to_string(),
             display_name_stored: false,
+            stored_name: None,
+            identifier_keyword: None,
             status_prefix: None,
             recipe: Some(binding.kind),
             root_schema_class: Some(binding.root_schema_class),
             parent_feature_id: Some(binding.parent_feature_id),
             offset: binding.offset,
+            state_offset: binding.offset,
         });
     }
     result.sort_by_key(|operation| operation.offset);

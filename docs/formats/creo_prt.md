@@ -545,7 +545,9 @@ an uppercase operation-family name is a state prefix, not part of the family
 name. Multiple operation names with the same feature identifier are ordered
 stored states; the last occurrence is the current state. Decoding the current
 state does not discard the preceding state records. State ordinals are local to
-one feature identifier and increase in byte order from zero.
+one feature identifier and increase in byte order from zero. A stored state
+retains the prefix-inclusive name bytes, the `id`/`ID` spelling, and the offset
+of the optional prefix; a recipe-only state has no stored operation name.
 
 Within one current-state record, `protextrude` identifies a linear section
 sweep and `protrevolve` identifies a rotational section sweep. The recipe name
