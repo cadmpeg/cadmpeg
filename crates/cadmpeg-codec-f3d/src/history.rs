@@ -7,11 +7,12 @@
 
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
-    AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation, AsmHistoricalTopology,
-    AsmHistory, AsmHistoryRecord,
+    AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalEntityDelta, AsmHistoricalRelation,
+    AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
+    AsmHistoryRecord,
 };
 use cadmpeg_ir::le::int_at;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
@@ -160,6 +161,7 @@ pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHist
             entity_versions: Vec::new(),
             record_table_complete: false,
             topology: None,
+            transition: None,
         });
     }
     bind_snapshot_revision_ids(&mut states);
@@ -339,6 +341,98 @@ fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width
             state.record_table_complete = true;
             state.topology = Some(topology);
         }
+        bind_historical_transitions(states);
+    }
+}
+
+fn bind_historical_transitions(states: &mut [AsmDeltaState]) {
+    let by_node = states
+        .iter()
+        .enumerate()
+        .map(|(ordinal, state)| (state.node_index, ordinal))
+        .collect::<HashMap<_, _>>();
+    if by_node.len() != states.len() {
+        return;
+    }
+    let transitions = states
+        .iter()
+        .map(|state| {
+            let previous = match state.next_ref {
+                Some(node) => Some(states.get(*by_node.get(&node)?)?),
+                None => None,
+            };
+            historical_transition(state, previous)
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(transitions) = transitions {
+        for (state, transition) in states.iter_mut().zip(transitions) {
+            state.transition = Some(transition);
+        }
+    }
+}
+
+fn historical_transition(
+    current: &AsmDeltaState,
+    previous: Option<&AsmDeltaState>,
+) -> Option<AsmHistoricalTransition> {
+    let current_topology = current.topology.as_ref()?;
+    let previous_topology = previous.and_then(|state| state.topology.as_ref());
+    let current_versions = current
+        .entity_versions
+        .iter()
+        .map(|version| (version.entity_ref, version.record_ref))
+        .collect::<BTreeMap<_, _>>();
+    let previous_versions = previous
+        .map(|state| {
+            state
+                .entity_versions
+                .iter()
+                .map(|version| (version.entity_ref, version.record_ref))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let delta = |current: &[i64], previous: &[i64]| {
+        entity_delta(current, previous, &current_versions, &previous_versions)
+    };
+    let empty = AsmHistoricalTopology::default();
+    let previous_topology = previous_topology.unwrap_or(&empty);
+    Some(AsmHistoricalTransition {
+        previous_state_id: previous.map(|state| state.state_id),
+        records: entity_delta(
+            &current_versions.keys().copied().collect::<Vec<_>>(),
+            &previous_versions.keys().copied().collect::<Vec<_>>(),
+            &current_versions,
+            &previous_versions,
+        ),
+        topology: AsmHistoricalTopologyDelta {
+            bodies: delta(&current_topology.bodies, &previous_topology.bodies),
+            regions: delta(&current_topology.regions, &previous_topology.regions),
+            shells: delta(&current_topology.shells, &previous_topology.shells),
+            faces: delta(&current_topology.faces, &previous_topology.faces),
+            loops: delta(&current_topology.loops, &previous_topology.loops),
+            coedges: delta(&current_topology.coedges, &previous_topology.coedges),
+            edges: delta(&current_topology.edges, &previous_topology.edges),
+            vertices: delta(&current_topology.vertices, &previous_topology.vertices),
+        },
+    })
+}
+
+fn entity_delta(
+    current: &[i64],
+    previous: &[i64],
+    current_versions: &BTreeMap<i64, i64>,
+    previous_versions: &BTreeMap<i64, i64>,
+) -> AsmHistoricalEntityDelta {
+    let current = current.iter().copied().collect::<BTreeSet<_>>();
+    let previous = previous.iter().copied().collect::<BTreeSet<_>>();
+    AsmHistoricalEntityDelta {
+        inserted: current.difference(&previous).copied().collect(),
+        deleted: previous.difference(&current).copied().collect(),
+        updated: current
+            .intersection(&previous)
+            .copied()
+            .filter(|entity| current_versions.get(entity) != previous_versions.get(entity))
+            .collect(),
     }
 }
 
@@ -776,6 +870,64 @@ mod tests {
     }
 
     #[test]
+    fn historical_transition_separates_membership_and_revision_changes() {
+        let state = |state_id, versions: &[(i64, i64)], topology| AsmDeltaState {
+            id: format!("state-{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: versions
+                .iter()
+                .map(|&(entity_ref, record_ref)| AsmEntityVersion {
+                    entity_ref,
+                    record_ref,
+                })
+                .collect(),
+            record_table_complete: true,
+            topology: Some(topology),
+            transition: None,
+        };
+        let previous = state(
+            10,
+            &[(1, 10), (4, 40), (8, 80)],
+            AsmHistoricalTopology {
+                bodies: vec![1],
+                faces: vec![4],
+                edges: vec![8],
+                ..AsmHistoricalTopology::default()
+            },
+        );
+        let current = state(
+            11,
+            &[(1, 11), (2, 2), (4, 40), (7, 70)],
+            AsmHistoricalTopology {
+                bodies: vec![1, 2],
+                faces: vec![4],
+                edges: vec![7],
+                ..AsmHistoricalTopology::default()
+            },
+        );
+
+        let transition = historical_transition(&current, Some(&previous)).unwrap();
+        assert_eq!(transition.previous_state_id, Some(10));
+        assert_eq!(transition.topology.bodies.inserted, [2]);
+        assert_eq!(transition.topology.bodies.updated, [1]);
+        assert!(transition.topology.faces.updated.is_empty());
+        assert_eq!(transition.topology.edges.inserted, [7]);
+        assert_eq!(transition.topology.edges.deleted, [8]);
+        assert_eq!(transition.records.updated, [1]);
+    }
+
+    #[test]
     fn snapshot_ordinals_bind_the_sorted_revision_interval() {
         let history_id = "history".to_string();
         let state_id = "state".to_string();
@@ -826,6 +978,7 @@ mod tests {
             entity_versions: Vec::new(),
             record_table_complete: false,
             topology: None,
+            transition: None,
         };
 
         bind_snapshot_revision_ids(std::slice::from_mut(&mut state));
@@ -898,6 +1051,7 @@ mod tests {
             ],
             record_table_complete: false,
             topology: None,
+            transition: None,
         };
         let active = ["asmheader", "edge"]
             .into_iter()
@@ -966,6 +1120,7 @@ mod tests {
                 entity_versions: Vec::new(),
                 record_table_complete: false,
                 topology: None,
+                transition: None,
             }
         };
         let mut states = vec![

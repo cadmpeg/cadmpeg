@@ -48,6 +48,9 @@ pub(crate) struct AsmDeltaState {
     /// this historical state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub topology: Option<AsmHistoricalTopology>,
+    /// Forward change from the state reached by `next_ref` to this state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition: Option<AsmHistoricalTransition>,
 }
 
 /// Record revision occupying one stable entity slot at an ASM history state.
@@ -58,7 +61,7 @@ pub(crate) struct AsmEntityVersion {
 }
 
 /// Stable entity-slot membership of one re-derived historical B-rep.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct AsmHistoricalTopology {
     pub bodies: Vec<i64>,
     pub regions: Vec<i64>,
@@ -112,6 +115,42 @@ pub(crate) struct AsmHistoricalEdge {
     pub edge: i64,
     pub start_vertex: i64,
     pub end_vertex: i64,
+}
+
+/// Forward stable-slot changes from an older ASM state to a newer state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalTransition {
+    /// Older state identity; absent only at the end of the reverse-history chain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_state_id: Option<i64>,
+    /// Changes across the complete normalized `RecordTable`.
+    pub records: AsmHistoricalEntityDelta,
+    /// Changes restricted to each normalized topology family.
+    pub topology: AsmHistoricalTopologyDelta,
+}
+
+/// Stable entity slots inserted, deleted, or assigned a different record revision.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalEntityDelta {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inserted: Vec<i64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleted: Vec<i64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub updated: Vec<i64>,
+}
+
+/// Per-family topology changes between two complete historical states.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalTopologyDelta {
+    pub bodies: AsmHistoricalEntityDelta,
+    pub regions: AsmHistoricalEntityDelta,
+    pub shells: AsmHistoricalEntityDelta,
+    pub faces: AsmHistoricalEntityDelta,
+    pub loops: AsmHistoricalEntityDelta,
+    pub coedges: AsmHistoricalEntityDelta,
+    pub edges: AsmHistoricalEntityDelta,
+    pub vertices: AsmHistoricalEntityDelta,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
