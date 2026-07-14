@@ -3908,7 +3908,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
                 .collect()
         },
     );
-    let face_count: usize = fbb_groups(brep).into_iter().sum();
+    let face_count = topology::standard_face_count(brep).unwrap_or_default();
     let records = geometry::standard_surface_records(brep, face_count).unwrap_or_else(|| {
         geometry::surface_prefixes(brep)
             .into_iter()
@@ -4102,7 +4102,9 @@ fn attach_standard_faces(
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
 ) {
-    let groups = fbb_groups(brep);
+    let groups = topology::standard_face_count(brep)
+        .into_iter()
+        .collect::<Vec<_>>();
     let face_count: usize = groups.iter().sum();
     if face_count == 0 || face_count != bindings.len() {
         return;
@@ -4241,25 +4243,6 @@ fn attach_standard_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBui
             .map(|vertex| vertex.id.clone())
             .collect(),
     });
-}
-
-fn fbb_groups(brep: &[u8]) -> Vec<usize> {
-    const MARKER: &[u8; 4] = b"\x30\x04\x04\xff";
-    let mut groups = Vec::new();
-    let mut at = 0usize;
-    while at + 8 <= brep.len() {
-        if &brep[at..at + 4] != MARKER {
-            at += 1;
-            continue;
-        }
-        let mut count = 0usize;
-        while at + 8 <= brep.len() && &brep[at..at + 4] == MARKER {
-            count += 1;
-            at += 8;
-        }
-        groups.push(count);
-    }
-    groups
 }
 
 fn attach_standard_topology(
@@ -4652,7 +4635,7 @@ fn attach_standard_topology(
     {
         return false;
     }
-    let face_groups = fbb_groups(brep);
+    let face_groups = vec![topology.face_count()];
     if topology.orient_solid_body_cycles(&face_groups).is_none() {
         return false;
     }

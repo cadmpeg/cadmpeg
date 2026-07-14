@@ -210,6 +210,14 @@ impl StandardTopology {
     }
 }
 
+/// Number of face rows in the governing standard topology spine. The spine is
+/// the largest contiguous stride-eight FBB run; shorter marker runs are not
+/// members of this face population.
+#[must_use]
+pub fn standard_face_count(bytes: &[u8]) -> Option<usize> {
+    largest_fbb_run(bytes).map(|(_, count, _)| count)
+}
+
 fn unique_coordinate_bijection(
     domains: &[HashSet<usize>],
     points: &[[f64; 3]],
@@ -4908,10 +4916,10 @@ mod motif_tests {
         bind_edge_port_candidates, deduplicate_mesh_quotient_assignments,
         mesh_assignment_can_merge, mesh_edge_points_compatible, motif_port_points,
         parse_trim_chain, propagate_edge_port_points, prune_edge_candidates_by_port_domains,
-        reconstruct_incidence, reconstruct_incidence_candidates, unique_coordinate_bijection,
-        Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate,
-        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
-        TrimRecord, UnionFind,
+        reconstruct_incidence, reconstruct_incidence_candidates, standard_face_count,
+        unique_coordinate_bijection, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
+        FaceTopology, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshQuotient,
+        MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -4936,6 +4944,18 @@ mod motif_tests {
         assert_eq!(records[0].handles, [0, 1, 2]);
         assert_eq!(records[1].handles, [3, 4, 5]);
         assert!(parse_trim_chain(&bytes, bytes.len(), 2, 3).is_none());
+    }
+
+    #[test]
+    fn standard_face_population_ignores_shorter_fbb_marker_runs() {
+        let row = [0x30, 0x04, 0x04, 0xff, 0xff, 0xff, 0xd2, 0xd2];
+        let mut bytes = row.to_vec();
+        bytes.push(0);
+        bytes.extend_from_slice(&row);
+        bytes.extend_from_slice(&row);
+        bytes.extend_from_slice(&row);
+
+        assert_eq!(standard_face_count(&bytes), Some(3));
     }
 
     fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
