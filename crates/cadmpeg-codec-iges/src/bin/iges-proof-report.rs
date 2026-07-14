@@ -200,6 +200,15 @@ fn decoder_exists(root: &Path, decoder: &str) -> bool {
         .is_some_and(|source| source.contains(&format!("fn {function}(")))
 }
 
+fn test_function_mentions_fixture(source: &str, test: &str, filename: &str) -> bool {
+    let Some(start) = source.find(&format!("fn {test}()")) else {
+        return false;
+    };
+    let tail = &source[start..];
+    let end = tail.find("\n#[test]").unwrap_or(tail.len());
+    tail[..end].contains(filename)
+}
+
 fn public_output_digests(bytes: &[u8], filename: &str) -> Result<PublicOutputDigests, String> {
     let inspect = IgesCodec
         .inspect(&mut Cursor::new(bytes))
@@ -240,7 +249,16 @@ fn valid_public_fixture(
     fixture: &PublicFixture,
     manifest: &BTreeMap<String, CorpusFile>,
 ) -> Result<(), String> {
-    if fixture.filename.is_empty()
+    let fixture_path = Path::new(&fixture.filename);
+    let extension_is_iges = fixture_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "igs" | "iges"));
+    if fixture_path
+        .file_name()
+        .and_then(|filename| filename.to_str())
+        != Some(fixture.filename.as_str())
+        || !extension_is_iges
         || fixture.fixture_classes.is_empty()
         || fixture.assertions.is_empty()
         || fixture.tests.is_empty()
@@ -373,11 +391,14 @@ fn build_report(root: &Path) -> Result<Report, String> {
 
     let manifest_path = root.join("corpus/manifest.toml");
     let manifest = if manifest_path.exists() {
-        read_toml::<CorpusManifest>(&manifest_path)?
-            .file
-            .into_iter()
-            .map(|file| (file.filename.clone(), file))
-            .collect::<BTreeMap<_, _>>()
+        let mut manifest = BTreeMap::new();
+        for file in read_toml::<CorpusManifest>(&manifest_path)?.file {
+            let filename = file.filename.clone();
+            if manifest.insert(filename.clone(), file).is_some() {
+                return Err(format!("duplicate corpus manifest filename {filename}"));
+            }
+        }
+        manifest
     } else {
         BTreeMap::new()
     };
@@ -468,9 +489,9 @@ fn build_report(root: &Path) -> Result<Report, String> {
             ));
         }
         for test in &fixture.tests {
-            if !test_source.contains(&format!("fn {test}()")) {
+            if !test_function_mentions_fixture(&test_source, test, &fixture.filename) {
                 evidence_errors.push(format!(
-                    "public fixture {} names missing test {}",
+                    "public fixture {} names missing test {} or the test does not name the fixture",
                     fixture.filename, test
                 ));
             }
@@ -751,7 +772,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_report, public_output_digests, serialized_report, workspace_root};
+    use super::{
+        build_report, public_output_digests, serialized_report, test_function_mentions_fixture,
+        workspace_root,
+    };
 
     fn card(data: &[u8], section: u8, sequence: u32) -> Vec<u8> {
         let mut result = vec![b' '; 80];
@@ -785,6 +809,30 @@ mod tests {
         assert_eq!(digests.inspect.len(), 64);
         assert_eq!(digests.ir.len(), 64);
         assert_eq!(digests.report.len(), 64);
+    }
+
+    #[test]
+    fn public_test_mapping_requires_the_exact_fixture_name() {
+        let source = r#"
+#[test]
+fn verifies_public_fixture() {
+    verify("public-part.igs");
+}
+
+#[test]
+fn unrelated_test() {}
+"#;
+
+        assert!(test_function_mentions_fixture(
+            source,
+            "verifies_public_fixture",
+            "public-part.igs"
+        ));
+        assert!(!test_function_mentions_fixture(
+            source,
+            "verifies_public_fixture",
+            "other.igs"
+        ));
     }
 
     #[test]
