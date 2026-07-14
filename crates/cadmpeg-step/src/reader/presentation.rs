@@ -67,21 +67,30 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
         });
         typed.insert(layer_id);
     }
-    for (&style_id, style) in &exchange.records {
-        if !matches!(
-            style.simple_name(),
-            Some("STYLED_ITEM") | Some("OVER_RIDING_STYLED_ITEM")
-        ) {
-            continue;
-        }
-        let Some(target_step) = final_target(style, exchange) else {
+    let mut styles = exchange
+        .records
+        .iter()
+        .filter_map(|(&id, record)| {
+            matches!(
+                record.simple_name(),
+                Some("STYLED_ITEM" | "OVER_RIDING_STYLED_ITEM")
+            )
+            .then_some(id)
+        })
+        .collect::<Vec<_>>();
+    styles.sort_by_key(|id| style_depth(*id, exchange, &mut BTreeSet::new()).unwrap_or(u32::MAX));
+    for style_id in styles {
+        let style = &exchange.records[&style_id];
+        let Some(target_step) = style.parameter(2).and_then(ValueExt::reference) else {
             warnings.push(format!("STYLED_ITEM #{style_id} has no resolved target"));
             continue;
         };
         let mut visited = BTreeSet::new();
         let Some((color_id, color, name)) = style
-            .parameters()
-            .iter()
+            .parameter(1)
+            .and_then(ValueExt::list)
+            .into_iter()
+            .flatten()
             .flat_map(references)
             .find_map(|reference| find_color(reference, exchange, &mut visited))
         else {
@@ -131,6 +140,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             channels: BTreeMap::new(),
         });
         typed.insert(style_id);
+        if let Some(overridden) = overridden_style(style) {
+            typed.insert(overridden);
+        }
         typed.extend(visited);
         typed.insert(color_id);
     }
@@ -216,21 +228,23 @@ fn presentation_item(id: u64, exchange: &Exchange, ir: &CadIr) -> PresentationIt
     }
 }
 
-fn final_target(style: &RawRecord, exchange: &Exchange) -> Option<u64> {
-    let target = style
-        .parameters()
-        .iter()
-        .rev()
-        .find_map(ValueExt::reference)?;
-    let record = exchange.records.get(&target)?;
-    if matches!(
-        record.simple_name(),
-        Some("STYLED_ITEM") | Some("OVER_RIDING_STYLED_ITEM")
-    ) {
-        final_target(record, exchange)
-    } else {
-        Some(target)
+fn overridden_style(style: &RawRecord) -> Option<u64> {
+    (style.simple_name() == Some("OVER_RIDING_STYLED_ITEM"))
+        .then(|| style.parameter(3).and_then(ValueExt::reference))?
+}
+
+fn style_depth(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Option<u32> {
+    if !active.insert(id) {
+        return None;
     }
+    let style = exchange.records.get(&id)?;
+    let depth = if let Some(base) = overridden_style(style) {
+        style_depth(base, exchange, active)?.checked_add(1)?
+    } else {
+        0
+    };
+    active.remove(&id);
+    Some(depth)
 }
 
 fn find_color(

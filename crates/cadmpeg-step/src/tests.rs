@@ -529,9 +529,9 @@ fn decode_builds_a_valid_connected_sheet_brep() {
     assert_eq!(
         result.ir.model.faces[0].color,
         Some(cadmpeg_ir::topology::Color {
-            r: 0.2,
-            g: 0.4,
-            b: 0.6,
+            r: 0.9,
+            g: 0.1,
+            b: 0.1,
             a: 1.0,
         })
     );
