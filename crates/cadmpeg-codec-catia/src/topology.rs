@@ -3321,15 +3321,50 @@ impl MeshQuotient {
         }
 
         fn boundary_options(
-            quotient: &MeshQuotient,
+            quotient: MeshQuotient,
             boundary: &[MeshBoundaryEdgeCandidate],
             edge_candidates: &[Vec<[usize; 2]>],
         ) -> Vec<(Vec<bool>, MeshQuotient)> {
+            fn advance(
+                boundary: &[MeshBoundaryEdgeCandidate],
+                at: usize,
+                reversed: bool,
+                directions: &mut Vec<bool>,
+                mut quotient: MeshQuotient,
+                edge_candidates: &[Vec<[usize; 2]>],
+                output: &mut Vec<(Vec<bool>, MeshQuotient)>,
+            ) {
+                if at > 0 {
+                    let Some(previous_end) = edge_end(boundary[at - 1], directions[at - 1]) else {
+                        return;
+                    };
+                    let Some(current_start) = edge_start(boundary[at], reversed) else {
+                        return;
+                    };
+                    let Some(root) = quotient.merge(previous_end, current_start) else {
+                        return;
+                    };
+                    if !quotient.propagate_component_edge_domains(root, edge_candidates) {
+                        return;
+                    }
+                }
+                directions.push(reversed);
+                walk(
+                    boundary,
+                    at + 1,
+                    directions,
+                    quotient,
+                    edge_candidates,
+                    output,
+                );
+                directions.pop();
+            }
+
             fn walk(
                 boundary: &[MeshBoundaryEdgeCandidate],
                 at: usize,
                 directions: &mut Vec<bool>,
-                quotient: &MeshQuotient,
+                mut quotient: MeshQuotient,
                 edge_candidates: &[Vec<[usize; 2]>],
                 output: &mut Vec<(Vec<bool>, MeshQuotient)>,
             ) {
@@ -3337,7 +3372,6 @@ impl MeshQuotient {
                     return;
                 }
                 if at == boundary.len() {
-                    let mut quotient = quotient.clone();
                     let Some(last_end) = edge_end(boundary[at - 1], directions[at - 1]) else {
                         return;
                     };
@@ -3352,36 +3386,35 @@ impl MeshQuotient {
                     }
                     return;
                 }
-                let choices = boundary[at]
-                    .reversed
-                    .map_or([Some(false), Some(true)], |value| [Some(value), None]);
-                for reversed in choices.into_iter().flatten() {
-                    let mut quotient = quotient.clone();
-                    if at > 0 {
-                        let Some(previous_end) = edge_end(boundary[at - 1], directions[at - 1])
-                        else {
-                            continue;
-                        };
-                        let Some(current_start) = edge_start(boundary[at], reversed) else {
-                            continue;
-                        };
-                        let Some(root) = quotient.merge(previous_end, current_start) else {
-                            continue;
-                        };
-                        if !quotient.propagate_component_edge_domains(root, edge_candidates) {
-                            continue;
-                        }
-                    }
-                    directions.push(reversed);
-                    walk(
+                if let Some(reversed) = boundary[at].reversed {
+                    advance(
                         boundary,
-                        at + 1,
+                        at,
+                        reversed,
                         directions,
-                        &quotient,
+                        quotient,
                         edge_candidates,
                         output,
                     );
-                    directions.pop();
+                } else {
+                    advance(
+                        boundary,
+                        at,
+                        false,
+                        directions,
+                        quotient.clone(),
+                        edge_candidates,
+                        output,
+                    );
+                    advance(
+                        boundary,
+                        at,
+                        true,
+                        directions,
+                        quotient,
+                        edge_candidates,
+                        output,
+                    );
                 }
             }
 
@@ -3405,7 +3438,7 @@ impl MeshQuotient {
             let mut next = Vec::new();
             for (directions, quotient) in options {
                 for (boundary_directions, quotient) in
-                    boundary_options(&quotient, boundary, edge_candidates)
+                    boundary_options(quotient, boundary, edge_candidates)
                 {
                     let mut directions = directions.clone();
                     directions.push(boundary_directions);
