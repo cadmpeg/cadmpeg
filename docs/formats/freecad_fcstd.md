@@ -156,6 +156,11 @@ does not inherit a format-wide placeholder loss.
 GUI records retain view-provider identity separately from application-object identity. Visibility,
 display modes, materials, colors, line and point styles, cameras, view state, tree state, clipping,
 thumbnail references, and display assets remain presentation records linked to their owners.
+Native namespace version 3 adds ordered `gui_view_providers` and `gui_properties` arenas. A provider
+retains its name, optional application-object link, expansion state, order, and exact XML. Each GUI
+property retains its owner, runtime type, status, ordered value elements, referenced side entries,
+exact XML, and byte range. GUI-only providers remain valid named records rather than being attached
+to an unrelated application object.
 
 For shape-bearing objects, the view provider's shape color, transparency, visibility, and material
 scalars produce an object appearance and explicit body bindings. Packed colors decode as red,

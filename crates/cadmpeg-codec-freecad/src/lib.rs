@@ -80,11 +80,24 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
+    let gui_providers =
+        match namespace.arena_as::<native::GuiViewProviderRecord>("gui_view_providers") {
+            Ok(records) => records,
+            Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+        };
+    let gui_properties = match namespace.arena_as::<native::GuiPropertyRecord>("gui_properties") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
 
     let mut findings = Vec::new();
     let object_ids = objects
         .iter()
         .map(|record| record.id.as_str())
+        .collect::<HashSet<_>>();
+    let entry_names = entries
+        .iter()
+        .map(|entry| entry.name.as_str())
         .collect::<HashSet<_>>();
     let property_ids = properties
         .iter()
@@ -110,6 +123,37 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     Some(object.id.clone()),
                 ));
             }
+        }
+    }
+    let gui_provider_ids = gui_providers
+        .iter()
+        .map(|provider| provider.id.as_str())
+        .collect::<HashSet<_>>();
+    for provider in &gui_providers {
+        if provider
+            .object
+            .as_ref()
+            .is_some_and(|object| !object_ids.contains(object.as_str()))
+        {
+            findings.push(finding(
+                Check::ReferentialIntegrity,
+                format!("{} references a missing application object", provider.id),
+                Some(provider.id.clone()),
+            ));
+        }
+    }
+    for property in &gui_properties {
+        if !gui_provider_ids.contains(property.owner.as_str())
+            || property
+                .side_entries
+                .iter()
+                .any(|entry| !entry_names.contains(entry.as_str()))
+        {
+            findings.push(finding(
+                Check::ReferentialIntegrity,
+                format!("{} has a missing GUI owner or side entry", property.id),
+                Some(property.id.clone()),
+            ));
         }
     }
     for extension in &extensions {
@@ -146,10 +190,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             }
         }
     }
-    let entry_names = entries
-        .iter()
-        .map(|entry| entry.name.as_str())
-        .collect::<HashSet<_>>();
     for (expected_table_index, table) in string_tables.iter().enumerate() {
         if table.index != expected_table_index || table.declared_count != table.entries.len() {
             findings.push(finding(
@@ -532,7 +572,7 @@ impl Codec for FcstdCodec {
                 .map(|payload| (payload.property.as_str(), payload.id.as_str()))
                 .collect::<HashMap<_, _>>();
             element_map::bind_topology(&mut element_maps, &payload_ids, &ir);
-            if let Some(gui_bytes) = scan.data.get("GuiDocument.xml") {
+            let gui_graph = if let Some(gui_bytes) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
                     &mut ir,
                     gui_bytes,
@@ -541,8 +581,16 @@ impl Codec for FcstdCodec {
                     &graph.properties,
                     &shape_payloads,
                     &element_maps,
-                )?;
-            }
+                )?
+            } else {
+                gui::Graph::default()
+            };
+            ir.native
+                .namespace_mut("fcstd")
+                .set_arena("gui_view_providers", &gui_graph.providers)?;
+            ir.native
+                .namespace_mut("fcstd")
+                .set_arena("gui_properties", &gui_graph.properties)?;
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena("element_maps", &element_maps)?;

@@ -10,7 +10,16 @@ use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::topology::Color;
 
 use crate::brep::ShapePayloadRecord;
-use crate::native::{ElementMapRecord, ObjectRecord, PropertyRecord};
+use crate::native::{
+    ElementMapRecord, GuiPropertyRecord, GuiViewProviderRecord, ObjectRecord, PropertyRecord,
+    ValueRecord,
+};
+
+#[derive(Default)]
+pub(crate) struct Graph {
+    pub(crate) providers: Vec<GuiViewProviderRecord>,
+    pub(crate) properties: Vec<GuiPropertyRecord>,
+}
 
 pub(crate) fn transfer(
     ir: &mut CadIr,
@@ -20,7 +29,7 @@ pub(crate) fn transfer(
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     element_maps: &[ElementMapRecord],
-) -> Result<(), CodecError> {
+) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
@@ -29,6 +38,8 @@ pub(crate) fn transfer(
         .iter()
         .map(|object| (object.name.as_str(), object.id.as_str()))
         .collect::<HashMap<_, _>>();
+    let mut native_providers = Vec::new();
+    let mut native_properties = Vec::new();
     let payloads_by_owner = payloads
         .iter()
         .filter_map(|payload| {
@@ -59,13 +70,29 @@ pub(crate) fn transfer(
             )));
         }
     }
-    for provider in providers {
+    for (provider_order, provider) in providers.into_iter().enumerate() {
         let Some(name) = provider.attribute("name") else {
             return Err(CodecError::Malformed("ViewProvider has no name".into()));
         };
         let Some(object_id) = objects_by_name.get(name).copied() else {
+            append_native_provider(
+                text,
+                provider,
+                provider_order,
+                None,
+                &mut native_providers,
+                &mut native_properties,
+            )?;
             continue;
         };
+        append_native_provider(
+            text,
+            provider,
+            provider_order,
+            Some(object_id),
+            &mut native_providers,
+            &mut native_properties,
+        )?;
         let property_nodes = provider
             .descendants()
             .filter(|node| node.has_tag_name("Property"))
@@ -182,6 +209,88 @@ pub(crate) fn transfer(
                 channels: BTreeMap::new(),
             });
         }
+    }
+    Ok(Graph {
+        providers: native_providers,
+        properties: native_properties,
+    })
+}
+
+fn append_native_provider(
+    text: &str,
+    provider: roxmltree::Node<'_, '_>,
+    order: usize,
+    object: Option<&str>,
+    providers: &mut Vec<GuiViewProviderRecord>,
+    properties: &mut Vec<GuiPropertyRecord>,
+) -> Result<(), CodecError> {
+    let name = provider
+        .attribute("name")
+        .ok_or_else(|| CodecError::Malformed("ViewProvider has no name".into()))?;
+    let id = format!("fcstd:gui:view-provider:{name}");
+    providers.push(GuiViewProviderRecord {
+        id: id.clone(),
+        object: object.map(str::to_owned),
+        name: name.to_owned(),
+        expanded: provider.attribute("expanded").and_then(parse_bool),
+        order,
+        raw_xml: text[provider.range()].to_owned(),
+    });
+    let Some(container) = provider
+        .children()
+        .find(|node| node.has_tag_name("Properties"))
+    else {
+        return Err(CodecError::Malformed(format!(
+            "ViewProvider {name} has no Properties"
+        )));
+    };
+    for (property_order, property) in container
+        .children()
+        .filter(|node| node.has_tag_name("Property"))
+        .enumerate()
+    {
+        let property_name = property.attribute("name").ok_or_else(|| {
+            CodecError::Malformed(format!("ViewProvider {name} property has no name"))
+        })?;
+        let type_name = property.attribute("type").ok_or_else(|| {
+            CodecError::Malformed(format!("ViewProvider {name}.{property_name} has no type"))
+        })?;
+        let values = property
+            .descendants()
+            .filter(|value| value.is_element() && *value != property)
+            .enumerate()
+            .map(|(value_order, value)| ValueRecord {
+                tag: value.tag_name().name().to_owned(),
+                order: value_order,
+                attributes: value
+                    .attributes()
+                    .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
+                    .collect(),
+                text: value.text().map(str::to_owned),
+                raw_xml: text[value.range()].to_owned(),
+            })
+            .collect::<Vec<_>>();
+        let side_entries = values
+            .iter()
+            .flat_map(|value| value.attributes.iter())
+            .filter(|(attribute, _)| matches!(attribute.as_str(), "file" | "File"))
+            .map(|(_, value)| value.clone())
+            .collect();
+        properties.push(GuiPropertyRecord {
+            id: format!("{id}:property:{property_name}"),
+            owner: id.clone(),
+            name: property_name.to_owned(),
+            type_name: type_name.to_owned(),
+            status: property
+                .attribute("status")
+                .and_then(|value| value.parse().ok()),
+            order: property_order,
+            values,
+            side_entries,
+            raw_xml: text[property.range()].to_owned(),
+            byte_start: property.range().start as u64,
+            byte_end: property.range().end as u64,
+        });
     }
     Ok(())
 }

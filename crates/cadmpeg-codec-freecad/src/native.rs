@@ -5,7 +5,51 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
+
+/// One persisted GUI view provider linked to an application object when available.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GuiViewProviderRecord {
+    /// Stable native identity.
+    pub id: String,
+    /// Application object identity, or `None` for a GUI-only provider.
+    pub object: Option<String>,
+    /// Persisted provider name.
+    pub name: String,
+    /// Persisted tree-expansion state.
+    pub expanded: Option<bool>,
+    /// Source order in `ViewProviderData`.
+    pub order: usize,
+    /// Exact provider XML.
+    pub raw_xml: String,
+}
+
+/// One persisted property owned by a GUI view provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GuiPropertyRecord {
+    /// Stable native identity.
+    pub id: String,
+    /// Owning view-provider identity.
+    pub owner: String,
+    /// Persisted property name.
+    pub name: String,
+    /// Runtime property type.
+    pub type_name: String,
+    /// Native status bits.
+    pub status: Option<u64>,
+    /// Source order within the provider.
+    pub order: usize,
+    /// Ordered value elements.
+    pub values: Vec<ValueRecord>,
+    /// Referenced archive entries.
+    pub side_entries: Vec<String>,
+    /// Exact property XML.
+    pub raw_xml: String,
+    /// Inclusive byte offset in `GuiDocument.xml`.
+    pub byte_start: u64,
+    /// Exclusive byte offset in `GuiDocument.xml`.
+    pub byte_end: u64,
+}
 
 /// One physical archive span.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

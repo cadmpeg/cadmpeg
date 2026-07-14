@@ -534,6 +534,24 @@ Co 1001000 +2 0 *
     let color = result.ir.model.bodies[0].color.expect("shape color");
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
+    let namespace = result.ir.native.namespace("fcstd").expect("native");
+    assert_eq!(namespace.version, 3);
+    let gui_providers = namespace
+        .arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
+        .expect("GUI providers");
+    let gui_properties = namespace
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    assert_eq!(gui_providers.len(), 1);
+    assert_eq!(
+        gui_providers[0].object.as_deref(),
+        Some("fcstd:object:Shape")
+    );
+    assert_eq!(gui_properties.len(), 3);
+    assert!(gui_properties
+        .iter()
+        .all(|property| property.raw_xml.starts_with("<Property")));
+    assert!(crate::validate_native(&result.ir).is_empty());
     assert!(result
         .ir
         .model
