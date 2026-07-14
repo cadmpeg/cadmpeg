@@ -145,7 +145,7 @@ When a qualified curve operand identifier selects no coordinate-bearing curve ha
 
 Operand-cell tags `d6 80`, `cc 80`, `b6 8a`, `cb 8d`, `9d 92`, and `69 bd` address point or constrained-point handles. Tags `7b 83` and `7c bc` address point-qualified geometry handles. Tags `e1 80`, `86 83`, `fe 83`, `da 8d`, and `87 bc` address line-or-circle handles. Tags `cc 80`, `fe 83`, `b6 8a`, `9d 92`, and `69 bd` are used by circular dimensions.
 
-A point operand projects to a typed sketch constraint only when its marker identifies exactly one profile locus. A coordinate shared by multiple profile loci does not select one by ordering.
+A point operand projects to a typed sketch constraint only when its marker identifies exactly one profile locus. A coordinate shared by multiple profile loci does not select one by ordering. A referenced coordinate-bearing point handle remains a distinct point locus when its coordinate coincides with profile geometry.
 
 When exactly one operand of a horizontal-points or vertical-points relation identifies a profile locus, the other operand identifies the sole distinct locus in the complete owning sketch with the same vertical or horizontal coordinate, respectively. Zero or multiple aligned loci leave the relation unresolved.
 

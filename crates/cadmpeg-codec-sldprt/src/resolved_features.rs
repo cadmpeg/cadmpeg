@@ -5549,14 +5549,6 @@ pub(crate) fn project_relation_point_geometry(
                 .next()
                 .expect("one transformed position");
             let position = Point2::new(position.0 as f64 * QUANTUM, position.1 as f64 * QUANTUM);
-            let occupied = entities
-                .iter()
-                .filter(|entity| entity.sketch == *sketch)
-                .flat_map(sketch_entity_loci)
-                .any(|(candidate, _)| quantize(candidate, QUANTUM) == quantize(position, QUANTUM));
-            if occupied {
-                continue;
-            }
             entities.push(SketchEntity {
                 id: SketchEntityId(format!(
                     "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
@@ -7329,6 +7321,11 @@ fn profile_loci_by_marker(
         .collect::<HashMap<_, _>>();
     let transforms =
         marker_transform_candidates_by_feature(features, sketches, sketch_entities, lanes);
+    let marker_ids = lanes
+        .iter()
+        .flat_map(|lane| &lane.sketch_entities)
+        .map(|marker| marker.id.as_str())
+        .collect::<HashSet<_>>();
     for entity in sketch_entities {
         for (point, locus) in sketch_entity_loci(entity) {
             profile_loci
@@ -7357,23 +7354,21 @@ fn profile_loci_by_marker(
                     true,
                 )
             };
-            marker
-                .starts_with("sldprt:feature-input:sketch-entity#")
-                .then(|| {
-                    let locus = if entity.id.0.contains("sketch-entity#compact:")
-                        && matches!(entity.geometry, SketchGeometry::Line { .. })
-                    {
-                        SketchLocus::Start(entity.id.clone())
-                    } else {
-                        SketchLocus::Entity(entity.id.clone())
-                    };
-                    let marker = if qualified_point {
-                        qualified_point_marker_key(marker)
-                    } else {
-                        marker.clone()
-                    };
-                    (marker, vec![locus])
-                })
+            marker_ids.contains(marker.as_str()).then(|| {
+                let locus = if entity.id.0.contains("sketch-entity#compact:")
+                    && matches!(entity.geometry, SketchGeometry::Line { .. })
+                {
+                    SketchLocus::Start(entity.id.clone())
+                } else {
+                    SketchLocus::Entity(entity.id.clone())
+                };
+                let marker = if qualified_point {
+                    qualified_point_marker_key(marker)
+                } else {
+                    marker.clone()
+                };
+                (marker, vec![locus])
+            })
         })
         .collect::<HashMap<String, Vec<SketchLocus>>>();
     for lane in lanes {
@@ -7476,13 +7471,6 @@ fn profile_loci_by_marker(
                         }
                         marker_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
                         marker_loci.dedup();
-                        if matches!(
-                            marker.kind,
-                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                        ) && marker_loci.len() > 1
-                        {
-                            marker_loci.truncate(1);
-                        }
                         (!marker_loci.is_empty()).then_some(marker_loci)
                     })
                     .collect::<Vec<_>>();
@@ -8404,7 +8392,9 @@ fn marker_entities_inner(
     for candidates in linked {
         entities.retain(|entity| candidates.contains(entity));
     }
-    entities.into_iter().collect()
+    let mut entities = entities.into_iter().collect::<Vec<_>>();
+    entities.sort();
+    entities
 }
 
 #[cfg(test)]
@@ -9539,6 +9529,12 @@ mod profile_join_tests {
             parameter("distance-c", "scalar-c", 7.0),
         ];
 
+        project_relation_point_geometry(
+            &mut entities,
+            &[],
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&lane),
+        );
         project_relation_solved_point_geometry(
             &mut entities,
             &[],
@@ -9935,7 +9931,7 @@ mod profile_join_tests {
                 },
             },
             SketchEntity {
-                id: second,
+                id: second.clone(),
                 sketch: sketch.clone(),
                 construction: false,
                 native_ref: None,
@@ -10011,7 +10007,7 @@ mod profile_join_tests {
         assert!(joins.contains_key("marker-a"));
         assert!(joins.contains_key("marker-b"));
         assert!(joins.contains_key("marker-c"));
-        assert_eq!(joins["marker-b"].len(), 1);
+        assert_eq!(joins["marker-b"].len(), 2);
         assert!(!joins.contains_key("display"));
         let mut markers = lane
             .sketch_entities
@@ -10051,20 +10047,18 @@ mod profile_join_tests {
         );
         let mut nested_horizontal = nested_reference.clone();
         nested_horizontal.kind = SketchInputKind::Relation(SketchRelationKind::HorizontalPoints);
-        assert_eq!(
+        assert!(matches!(
             typed_marker_relation_definition(&nested_horizontal, &markers, &joins),
-            Some(SketchConstraintDefinition::HorizontalPoints {
-                first: joins["marker-a"][0].clone(),
-                second: joins["marker-b"][0].clone(),
-            })
-        );
+            Some(SketchConstraintDefinition::Native { ref native_kind, .. })
+                if native_kind == "sldprt:marker-relation:25"
+        ));
         let mut nested_native = nested_reference.clone();
         nested_native.kind = SketchInputKind::Native(28);
         assert_eq!(
             typed_marker_relation_definition(&nested_native, &markers, &joins),
             Some(SketchConstraintDefinition::Native {
                 native_kind: "sldprt:marker-relation:28".into(),
-                entities: vec![first.clone()],
+                entities: vec![first.clone(), second.clone()],
                 parameter: None,
                 operands: vec![
                     SketchNativeOperand {
@@ -10834,12 +10828,15 @@ mod profile_join_tests {
         qualified_curve.id = "sldprt:feature-input:sketch-entity#qualified-curve".into();
         qualified_curve.offset = 86;
         qualified_curve.kind = SketchInputKind::LineOrCircle;
+        let mut coincident_point = marker("coincident-point", Some([0.002, 0.001]));
+        coincident_point.offset = 87;
         markers.extend([
             endpoint_a,
             endpoint_b,
             relation_line.clone(),
             support_handle.clone(),
             qualified_curve.clone(),
+            coincident_point.clone(),
         ]);
         let mut native_payload = vec![0; 108];
         for offset in [0, 27, 54] {
@@ -10920,6 +10917,34 @@ mod profile_join_tests {
                         entity_ref: Some(support_handle.id),
                     }],
                 },
+                FeatureInputRelationInstance {
+                    id: "coincident-point-relation".into(),
+                    parent: "lane".into(),
+                    ordinal: 3,
+                    offset: 97,
+                    family: FeatureInputRelationFamily::PointPointDistance,
+                    class_ref: "class".into(),
+                    feature_ref: "feature-native".into(),
+                    scalar_refs: Vec::new(),
+                    parameter_scalar_ref: None,
+                    display_scalar_ref: None,
+                    operands: vec![
+                        FeatureInputOperand {
+                            offset: 98,
+                            reference_ref: "coincident-reference".into(),
+                            kind: FeatureInputOperandKind::Native(0x837b),
+                            entity_index: 18,
+                            entity_ref: Some(coincident_point.id.clone()),
+                        },
+                        FeatureInputOperand {
+                            offset: 99,
+                            reference_ref: "coincident-pair-reference".into(),
+                            kind: FeatureInputOperandKind::Native(0x837b),
+                            entity_index: 17,
+                            entity_ref: Some(relation_point.id.clone()),
+                        },
+                    ],
+                },
             ],
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
@@ -10939,6 +10964,14 @@ mod profile_join_tests {
                 && matches!(
                     entity.geometry,
                     SketchGeometry::Point { position } if position == Point2::new(6.0, 5.0)
+                )
+        }));
+        assert!(entities.iter().any(|entity| {
+            entity.construction
+                && entity.native_ref.as_deref() == Some("coincident-point")
+                && matches!(
+                    entity.geometry,
+                    SketchGeometry::Point { position } if position == Point2::new(1.0, 2.0)
                 )
         }));
         assert!(entities.iter().any(|entity| {

@@ -2829,7 +2829,7 @@ fn encoder_writes_source_less_curved_sketches() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketch_entities.len(), 22);
+    assert_eq!(decoded.ir.model.sketch_entities.len(), 26);
     assert!(decoded
         .ir
         .model
