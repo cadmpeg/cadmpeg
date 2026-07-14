@@ -570,6 +570,76 @@ fn transfers_part_and_partdesign_analytic_primitives() {
 }
 
 #[test]
+fn transfers_uniform_and_anisotropic_part_scale() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Box" name="Source" id="1"/>
+ <Object type="Part::Scale" name="Uniform" id="2"/>
+ <Object type="Part::Scale" name="Anisotropic" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Source"><Properties Count="3">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="1"/></Property>
+ </Properties></Object>
+ <Object name="Uniform"><Properties Count="3">
+  <Property name="Base" type="App::PropertyLink"><Link value="Source"/></Property>
+  <Property name="Uniform" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="UniformScale" type="App::PropertyFloat"><Float value="-2"/></Property>
+ </Properties></Object>
+ <Object name="Anisotropic"><Properties Count="5">
+  <Property name="Base" type="App::PropertyLink"><Link value="Source"/></Property>
+  <Property name="Uniform" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="XScale" type="App::PropertyFloat"><Float value="2"/></Property>
+  <Property name="YScale" type="App::PropertyFloat"><Float value="3"/></Property>
+  <Property name="ZScale" type="App::PropertyFloat"><Float value="4"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("Part scale");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    };
+    assert!(matches!(
+        definition("Uniform"),
+        cadmpeg_ir::features::FeatureDefinition::Scale {
+            center: Some(cadmpeg_ir::features::ScaleCenter::ModelOrigin),
+            factors: cadmpeg_ir::features::ScaleFactors {
+                uniform: Some(-2.0),
+                x: None,
+                y: None,
+                z: None
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("Anisotropic"),
+        cadmpeg_ir::features::FeatureDefinition::Scale {
+            factors: cadmpeg_ir::features::ScaleFactors {
+                uniform: None,
+                x: Some(2.0),
+                y: Some(3.0),
+                z: Some(4.0)
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="5">

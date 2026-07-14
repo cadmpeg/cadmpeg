@@ -349,6 +349,11 @@ tangent-edge extension, and curvilinear correspondence flag. Standalone sweep li
 solid-versus-sheet result remain explicit. Invalid enumeration values, a zero binormal, or a
 missing auxiliary path leave the operation attributable and native.
 
+Part scale operations retain their source-shape selection and model-origin scale center. Uniform
+mode carries one factor; anisotropic mode carries independent x, y, and z factors. Finite nonzero
+negative factors remain valid reflections. Missing sources, zero factors, and non-finite factors
+remain attributable native operations.
+
 Part extrusions retain their normalized direction, independent forward and reverse lengths, and
 equal forward/reverse taper when both sides are active. PartDesign pads and pockets distinguish
 blind, through-all, first-intersection, last-intersection, face-selected, and shape-selected

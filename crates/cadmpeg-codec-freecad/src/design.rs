@@ -12,9 +12,9 @@ use cadmpeg_ir::features::{
     FeatureTreeNodeRole, HelicalSweepConstruction, HelicalSweepLaw, HoleBottom, HoleKind,
     HoleProfileFilter, HoleSpecification, HoleThreadDepth, Length, ParameterId, ParameterValue,
     PathRef, PatternKind, PatternScaleCenter, PatternStage, PatternStageCombination,
-    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, ShellJoin,
-    ShellMode, SketchSpace, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
-    ThreadHand,
+    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, ScaleCenter,
+    ScaleFactors, ShellJoin, ShellMode, SketchSpace, SweepMode, SweepOrientation,
+    SweepTransformation, SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -172,6 +172,12 @@ pub(crate) fn transfer(
                 &properties_by_owner,
             )
             .unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            })
+        } else if object.type_name == "Part::Scale" {
+            scale_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
                 kind: object.type_name.clone(),
                 parameters: native_parameters(&owned),
                 properties: BTreeMap::new(),
@@ -1750,6 +1756,35 @@ fn dress_up_edge_selection(properties: &[&PropertyRecord]) -> EdgeSelection {
     })
 }
 
+fn scale_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+    let base = property(properties, "Base")?;
+    if base.links.is_empty() {
+        return None;
+    }
+    let factor =
+        |name| scalar_named(properties, name).filter(|factor| factor.is_finite() && *factor != 0.0);
+    let factors = if bool_property(properties, "Uniform").unwrap_or(true) {
+        ScaleFactors {
+            uniform: Some(factor("UniformScale")?),
+            x: None,
+            y: None,
+            z: None,
+        }
+    } else {
+        ScaleFactors {
+            uniform: None,
+            x: Some(factor("XScale")?),
+            y: Some(factor("YScale")?),
+            z: Some(factor("ZScale")?),
+        }
+    };
+    Some(FeatureDefinition::Scale {
+        bodies: BodySelection::Native(base.id.clone()),
+        center: Some(ScaleCenter::ModelOrigin),
+        factors,
+    })
+}
+
 fn fillet_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let edges = dress_up_edge_selection(properties);
     if matches!(edges, EdgeSelection::Unresolved) {
@@ -2896,6 +2931,7 @@ fn is_design_object(kind: &str) -> bool {
         || is_helical_sweep(kind)
         || is_binder(kind)
         || is_pattern(kind)
+        || kind == "Part::Scale"
         || is_hole(kind)
         || is_extrusion(kind)
         || is_revolution(kind)
