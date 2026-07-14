@@ -1232,6 +1232,7 @@ fn decode_variable_scalar(
     let variable_dict = match prefix {
         0x64 | 0xad => Some([0x3f, 0xd9]),
         0x69 => Some([0x3f, 0xde]),
+        0x7e => Some([0x3f, 0xf3]),
         0x80 => Some([0x3f, 0xf5]),
         0x97 => Some([0x40, 0x0c]),
         0x9c => Some([0x40, 0x11]),
@@ -1239,6 +1240,7 @@ fn decode_variable_scalar(
         0x9f => Some([0x40, 0x14]),
         0xa0 => Some([0x40, 0x15]),
         0xb3 => Some([0xbf, 0xe0]),
+        0xc6 => Some([0xbf, 0xf3]),
         0xc8 => Some([0xbf, 0xf5]),
         0xcb => Some([0xbf, 0xf8]),
         0xcc => Some([0xbf, 0xf9]),
@@ -1361,8 +1363,17 @@ fn variable_table(
         let delimiter = payload[cursor..end].iter().position(|&byte| byte == 0xe2)?;
         cursor += delimiter + 1;
     }
+    variable_table_from_rows(declared_count, entity_ref, rows, table)
+}
+
+fn variable_table_from_rows(
+    declared_count: u32,
+    entity_ref: Option<u32>,
+    rows: Vec<FeatureVariableRow>,
+    offset: usize,
+) -> Option<FeatureVariableTable> {
     (!rows.is_empty()).then(|| {
-        let mut coordinates = std::collections::BTreeMap::<u32, (Option<f64>, Option<f64>)>::new();
+        let mut coordinates = BTreeMap::<u32, (Option<f64>, Option<f64>)>::new();
         for row in &rows {
             let point = coordinates.entry(row.key).or_insert((None, None));
             match row.variable_type {
@@ -1379,9 +1390,86 @@ fn variable_table(
                 .into_iter()
                 .map(|(point_id, (u, v))| FeatureSectionPoint { point_id, u, v })
                 .collect(),
-            offset: table,
+            offset,
         }
     })
+}
+
+fn positional_variable_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+    cache: &scalar::ScalarCache,
+) -> Option<FeatureVariableTable> {
+    let (table, declared_count, mut cursor, reference_bytes) = (start..end).find_map(|table| {
+        (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+        let (declared_count, after_count) = psb::compact_int(payload, table + 1);
+        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (class, after_reference) = psb::reference_id(payload, after_count + 1).ok()?;
+        (class == table_class
+            && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
+        .then(|| {
+            (
+                table,
+                declared_count,
+                after_reference + 2,
+                payload[after_count + 1..after_reference].to_vec(),
+            )
+        })
+    })?;
+    (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    let (_, after_row_class) = psb::reference_id(payload, cursor + 1).ok()?;
+    cursor = after_row_class;
+
+    let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
+    let mut rows = Vec::with_capacity(row_limit.min(1024));
+    let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
+    prototype_separator.extend_from_slice(&reference_bytes);
+    prototype_separator.push(0xe2);
+    while cursor < end && rows.len() < row_limit {
+        let row_offset = cursor;
+        let (variable_type, next) = psb::compact_int(payload, cursor);
+        cursor = next;
+        let (key, next) = psb::compact_int(payload, cursor);
+        cursor = next;
+        let (value, next, dimension_driven) = decode_variable_scalar(payload, cursor, end, cache);
+        cursor = next;
+        let (guess, next, _) = decode_variable_scalar(payload, cursor, end, cache);
+        cursor = next;
+        let mut trailing = Vec::with_capacity(3);
+        while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
+            if payload[cursor] >= 0xc0 {
+                return None;
+            }
+            let (field, next) = psb::compact_int(payload, cursor);
+            (next > cursor).then_some(())?;
+            trailing.push(field);
+            cursor = next;
+        }
+        rows.push(FeatureVariableRow {
+            variable_type,
+            key,
+            value,
+            guess,
+            uvar_id: trailing.get(2).copied(),
+            dimension_driven,
+            offset: row_offset,
+        });
+        if rows.len() < row_limit {
+            if rows.len() == 1 {
+                (payload.get(cursor..cursor + prototype_separator.len())
+                    == Some(prototype_separator.as_slice()))
+                .then_some(())?;
+                cursor += prototype_separator.len();
+            } else {
+                (payload.get(cursor) == Some(&0xe2)).then_some(())?;
+                cursor += 1;
+            }
+        }
+    }
+    (rows.len() == row_limit).then_some(())?;
+    variable_table_from_rows(declared_count, Some(table_class), rows, table)
 }
 
 fn segment_int(payload: &[u8], offset: usize) -> (Option<u32>, usize) {
@@ -3700,6 +3788,7 @@ fn definitions_in_ranges(
     let cache = scalar::ScalarCache::from_section(payload);
     let mut result = Vec::new();
     let mut replay_dimension_class = None;
+    let mut replay_variable_class = None;
     for (index, &(start, id, owner_override)) in starts.iter().enumerate() {
         let end = starts
             .get(index + 1)
@@ -3775,7 +3864,14 @@ fn definitions_in_ranges(
             }
         }
         outlines.sort_by_key(|outline| outline.offset);
-        let variables = variable_table(payload, start, end, &cache);
+        let variables = variable_table(payload, start, end, &cache).or_else(|| {
+            owner_override.and_then(|_| {
+                positional_variable_table(payload, start, end, replay_variable_class?, &cache)
+            })
+        });
+        if owner_override.is_none() {
+            replay_variable_class = variables.as_ref().and_then(|table| table.entity_ref);
+        }
         let segments = segment_table(payload, start, end)
             .or_else(|| owner_override.and_then(|_| positional_segment_table(payload, start, end)));
         let trim_entities = trim_entity_table(payload, start, end, segments.as_ref());
@@ -4249,6 +4345,55 @@ mod tests {
         assert_eq!(dimensions.rows.len(), 1);
         assert_eq!(dimensions.rows[0].value, Some(3.0));
         assert_eq!(dimensions.rows[0].external_id, 43);
+    }
+
+    #[test]
+    fn positional_variable_table_joins_coordinate_rows() {
+        let payload = b"prefix\xf8\x02\xf7\x77\xfb\xe2\xf7\x78\
+            \x01\x07\x18\x18\x01\x00\x09\xf1\xf7\x77\xe2\
+            \x02\x07\x18\x18\x01\x00\x0a";
+        let cache = scalar::ScalarCache::from_section(payload);
+
+        let variables = positional_variable_table(payload, 0, payload.len(), 119, &cache)
+            .expect("positional var_arr");
+
+        assert_eq!(variables.declared_count, 2);
+        assert_eq!(variables.entity_ref, Some(119));
+        assert_eq!(variables.rows.len(), 2);
+        assert_eq!(variables.rows[0].uvar_id, Some(9));
+        assert_eq!(variables.rows[1].uvar_id, Some(10));
+        assert_eq!(variables.points.len(), 1);
+        assert_eq!(variables.points[0].point_id, 7);
+        assert_eq!(variables.points[0].u, Some(0.0));
+        assert_eq!(variables.points[0].v, Some(0.0));
+    }
+
+    #[test]
+    fn variable_coordinate_7e_and_c6_are_the_f3_dict_sign_pair() {
+        let positive = [0x7e, 0x6b, 0x37, 0x21, 0xad, 0xb3, 0xb7];
+        let negative = [0xc6, 0x6b, 0x37, 0x21, 0xad, 0xb3, 0xb7];
+        let cache = scalar::ScalarCache::from_section(&positive);
+
+        assert_eq!(
+            decode_variable_scalar(&positive, 0, positive.len(), &cache),
+            (
+                Some(f64::from_be_bytes([
+                    0x3f, 0xf3, 0x6b, 0x37, 0x21, 0xad, 0xb3, 0xb7
+                ])),
+                7,
+                false
+            )
+        );
+        assert_eq!(
+            decode_variable_scalar(&negative, 0, negative.len(), &cache),
+            (
+                Some(f64::from_be_bytes([
+                    0xbf, 0xf3, 0x6b, 0x37, 0x21, 0xad, 0xb3, 0xb7
+                ])),
+                7,
+                false
+            )
+        );
     }
 
     #[test]

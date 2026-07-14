@@ -125,9 +125,10 @@ byte0 = 0x3F when byte1 >= 0x80, otherwise 0x40
 Known prefixes include `71→3F E6`, `74→3F E9`, `76→3F EB`, `81→3F F6`, `8b→40 00`, `90→40 05`, `91→40 06`, `a1→40 16`, `a2→40 17`, and `b7→3F E4`. The negative saved-spline tangent form `b3` maps to `BF E0`. In the `var_arr` coordinate lane, `d7` is the sign counterpart of `90` and maps to `C0 05 <tail6>`.
 
 The `var_arr` coordinate lane also defines the sign pairs
-`80→3F F5`/`c8→BF F5` and `97→40 0C`/`dd→C0 0C`. Each prefix is followed by
-the remaining six IEEE bytes. Its negative sub-unit form `d5 <tail6>`
-reconstructs `BF <tail6> 00`.
+`7e→3F F3`/`c6→BF F3`, `80→3F F5`/`c8→BF F5`, and
+`97→40 0C`/`dd→C0 0C`. Each prefix is followed by the remaining six IEEE
+bytes. Its negative sub-unit form `d5 <tail6>` reconstructs
+`BF <tail6> 00`.
 
 Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leading byte `40` and implicit trailing `00`; `9e <tail6>` and `a3 <tail6>` for positive and negative forms paired with the section-local `46` cache; `b9`, `d1`, `d3`, `de`, and `df` for negative sub-unit forms with leading byte `BF`; and `41`, `4b`, `66`, `67`, `68`, `77`, and `82..8f` for positive sub-unit forms with leading byte `3F`. A paired form finds the `46 <byte1> <tail6>` token with the same six-byte tail and reconstructs `40 <byte1> <tail6>` for `9e` or `C0 <byte1> <tail6>` for `a3`.
 
@@ -640,6 +641,13 @@ table-class reference in an unlabeled `f8 <count> f7 <table-class> fb e2`
 header. The following entity reference selects the dimension-row class. The
 first row follows that reference; later rows follow
 `f3 f7 <table-class> e2`. All rows use the labelled dimension field order.
+
+The positional variable table repeats the labelled template's `var_arr`
+table-class reference in the same unlabeled array header and then stores its
+variable-row class reference. The first row ends with
+`f1 f7 <table-class> e2`; later rows are separated by `e2`. Its `f8` extent is
+the number of variable rows. Each row replays `type`, `key`, `value`, `guess`,
+`known`, `homogeneity`, and `uvar_id` in that order.
 
 `order_table` entries are `ext_id`, `int_id`, and orientation-flag tuples. `ext_id` references a section entity and `int_id` is a one-byte generated-entity order index. In a feature-generated table, a line entity with `int_id = N` maps to table position `N - 1`. Arc entities map in `int_id` order to cylinder entries in generated-table order only when the feature's arc count equals its cylinder-entry count; `int_id - 1` does not index arc-generated cylinders.
 
