@@ -32,7 +32,7 @@ The schema-33103 sheet discriminator is unresolved. `0x1d/flo2` belongs to the f
 - Keywords operation families outside the typed neutral feature set are unresolved.
 - Compact extrusion end-spec termination codes other than blind `0`, through-all `1`, and to-face `4` are unresolved. The mapping from an `moSingleFaceRef_w` native component path to a B-rep face is unresolved.
 - Compact extrusion Boolean operation values other than inline `00` join and `02` cut are unresolved. Sparse objects without the inline operation remain unresolved outside the `moExtrusion_c` join form `1`, `moICE_c` join form `3`, and `moICE_c` cut forms `1`, `2`, `10`, and `11`.
-- The operation, target-body, and tool-body carriers for compact `moCombineBodies_c` objects without corresponding Keywords attributes are unresolved.
+- The operation carrier for compact `moCombineBodies_c` objects without a corresponding Keywords attribute is unresolved. The mapping from its target and tool component paths to B-rep bodies is unresolved.
 - The delete/keep mode discriminator and the mapping from compact `moDeleteBody_c` feature-local body identifiers to B-rep bodies are unresolved.
 - The mapping from compact `moCompEdge_c` feature-local edge identifiers and heterogeneous component paths to B-rep edges is unresolved.
 - The mapping from `moCompSurfaceBody_c` feature-local component identifiers to B-rep faces is unresolved.

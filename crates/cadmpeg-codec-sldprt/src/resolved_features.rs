@@ -244,10 +244,10 @@ pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
 #[cfg(test)]
 mod marker_tests {
     use super::{
-        arc_angle_relation_kind, compact_body_selection_at, compact_body_selection_vector,
-        compact_edge_selection_at, compact_extrusion_through_all_at, compact_extrusion_to_face_at,
-        compact_surface_selection_at, marker_coordinates, marker_is_geometry_locus,
-        marker_local_id, marker_local_links, named_scalars,
+        arc_angle_relation_kind, compact_body_path_at, compact_body_selection_at,
+        compact_body_selection_vector, compact_edge_selection_at, compact_extrusion_through_all_at,
+        compact_extrusion_to_face_at, compact_surface_selection_at, marker_coordinates,
+        marker_is_geometry_locus, marker_local_id, marker_local_links, named_scalars,
         native_scalar_matches_discrete_parameter, object_names, unique_locus,
         unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
@@ -530,6 +530,31 @@ mod marker_tests {
             compact_edge_selection_at(&payload, marker),
             Some(vec![2, 3])
         );
+    }
+
+    #[test]
+    fn compact_body_path_requires_type_three_vector() {
+        let marker = 12;
+        let mut payload = vec![0; 100];
+        payload[..4].copy_from_slice(&2u32.to_le_bytes());
+        payload[4..8].copy_from_slice(&[0, 3, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        let first = marker + 18;
+        payload[first..first + 4].copy_from_slice(&[0x32, 0x80, 0, 0]);
+        payload[first + 4..first + 16].copy_from_slice(&[1; 12]);
+        payload[first + 16..first + 20].copy_from_slice(&6u32.to_le_bytes());
+        let second = first + 28;
+        payload[second..second + 4].copy_from_slice(&[0x3b, 0x80, 0, 0]);
+        payload[second + 4..second + 16].copy_from_slice(&[2; 12]);
+        payload[second + 16..second + 20].copy_from_slice(&7u32.to_le_bytes());
+        assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
+
+        payload[..4].copy_from_slice(&3u32.to_le_bytes());
+        payload[second + 20..second + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+        assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
+
+        payload[4] = 2;
+        assert_eq!(compact_body_path_at(&payload, marker), None);
     }
 
     #[test]
@@ -1275,9 +1300,17 @@ fn compact_homogeneous_edge_ids(
 
 fn compact_heterogeneous_edge_path_ids(
     payload: &[u8],
-    mut cursor: usize,
+    cursor: usize,
     count: usize,
 ) -> Option<Vec<u32>> {
+    compact_heterogeneous_edge_path(payload, cursor, count).map(|(ids, _)| ids)
+}
+
+fn compact_heterogeneous_edge_path(
+    payload: &[u8],
+    mut cursor: usize,
+    count: usize,
+) -> Option<(Vec<u32>, usize)> {
     let entry_at = |offset: usize| {
         let instance = payload.get(offset..offset + 4)?;
         (instance[0..2] != [0, 0]
@@ -1303,7 +1336,11 @@ fn compact_heterogeneous_edge_path_ids(
                 4 => payload.get(cursor..cursor + 4) == Some(&[0; 4]),
                 8 => matches!(
                     payload.get(cursor..cursor + 8),
-                    Some([0, 0, 0, 0, 0, 0, 0, 0] | [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])
+                    Some(
+                        [0, 0, 0, 0, 0, 0, 0, 0]
+                            | [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]
+                            | [0xa0, 0x86, 0x01, 0x00, 0, 0, 0, 0]
+                    )
                 ),
                 _ => false,
             })
@@ -1314,7 +1351,7 @@ fn compact_heterogeneous_edge_path_ids(
         };
         cursor += gap;
     }
-    Some(ids)
+    Some((ids, cursor))
 }
 
 fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<Vec<u32>> {
@@ -2639,6 +2676,103 @@ pub(crate) fn enrich_history_extrusion_terminations(
             }
         }
     }
+}
+
+/// Add target and tool body paths carried by compact combine objects.
+pub(crate) fn enrich_history_combine_selections(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    for lane in lanes {
+        let mut objects = histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter_map(|feature| {
+                Some((
+                    feature_object_name(feature, lane)?.offset,
+                    feature.id.clone(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        objects.sort_unstable_by_key(|object| object.0);
+        let mut selections = HashMap::new();
+        for (index, (start, feature_id)) in objects.iter().enumerate() {
+            let Some(feature) = histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|feature| feature.id == *feature_id)
+            else {
+                continue;
+            };
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                != NativeClassKind::Combine
+            {
+                continue;
+            }
+            let Ok(start) = usize::try_from(*start) else {
+                continue;
+            };
+            let end = objects
+                .get(index + 1)
+                .and_then(|object| usize::try_from(object.0).ok())
+                .unwrap_or(lane.native_payload.len());
+            let paths = (start.saturating_add(12)
+                ..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
+                .filter_map(|marker| {
+                    compact_body_path_at(&lane.native_payload, marker).map(|_| marker)
+                })
+                .collect::<Vec<_>>();
+            if let [target, tools] = paths.as_slice() {
+                selections.insert(feature_id.clone(), (*target, *tools));
+            }
+        }
+        let lane_key = lane
+            .id
+            .rsplit_once('#')
+            .map_or(lane.id.as_str(), |(_, key)| key);
+        for feature in histories
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+        {
+            let Some(&(target, tools)) = selections.get(&feature.id) else {
+                continue;
+            };
+            feature
+                .properties
+                .entry("Target".into())
+                .or_insert_with(|| format!("sldprt:feature-input:body-path:{lane_key}:{target}"));
+            feature
+                .properties
+                .entry("Tools".into())
+                .or_insert_with(|| format!("sldprt:feature-input:body-path:{lane_key}:{tools}"));
+        }
+    }
+}
+
+pub(crate) fn compact_body_path_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
+    if marker < 12
+        || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+        || payload.get(marker - 8..marker - 4) != Some(&[0, 3, 0, 0])
+        || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
+    {
+        return None;
+    }
+    let count = usize::try_from(u32::from_le_bytes(
+        payload.get(marker - 12..marker - 8)?.try_into().ok()?,
+    ))
+    .ok()?;
+    if count == 0 {
+        return None;
+    }
+    compact_heterogeneous_edge_path(payload, marker + 18, count)
+        .map(|(ids, _)| ids)
+        .or_else(|| {
+            let (ids, end) = (count > 1)
+                .then(|| compact_heterogeneous_edge_path(payload, marker + 18, count - 1))
+                .flatten()?;
+            (payload.get(end..end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]))
+                .then_some(ids)
+        })
 }
 
 pub(crate) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {
