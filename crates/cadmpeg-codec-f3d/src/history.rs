@@ -755,11 +755,20 @@ fn recipe_boundary_count_candidates(
         .copied()
         .filter(|edge| {
             let counts = edge_incident_loop_counts(*edge, topology);
-            required
-                .iter()
-                .all(|required| required.is_none_or(|count| counts.contains(&count)))
+            incident_loop_counts_satisfy_sides(&counts, &required)
         })
         .collect()
+}
+
+fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Option<i64>]) -> bool {
+    let mut available = counts.to_vec();
+    required.iter().flatten().all(|required| {
+        let Some(index) = available.iter().position(|count| count == required) else {
+            return false;
+        };
+        available.remove(index);
+        true
+    })
 }
 
 fn edge_incident_loop_counts(edge: i64, topology: &AsmHistoricalTopology) -> Vec<i64> {
@@ -776,7 +785,6 @@ fn edge_incident_loop_counts(edge: i64, topology: &AsmHistoricalTopology) -> Vec
         .filter_map(|relation| i64::try_from(relation.member_refs.len()).ok())
         .collect::<Vec<_>>();
     counts.sort_unstable();
-    counts.dedup();
     counts
 }
 
@@ -1605,6 +1613,19 @@ mod tests {
         assert_eq!(topology.coedge_topology[0].edge, 7);
         assert_eq!(topology.coedge_topology[0].radial_next, 6);
         assert_eq!(edge_incident_loop_counts(7, &topology), [1]);
+        assert!(incident_loop_counts_satisfy_sides(
+            &[4, 5],
+            &[Some(5), Some(4)]
+        ));
+        assert!(!incident_loop_counts_satisfy_sides(
+            &[5, 6],
+            &[Some(5), Some(5)]
+        ));
+        assert!(incident_loop_counts_satisfy_sides(
+            &[5, 5],
+            &[Some(5), Some(5)]
+        ));
+        assert!(incident_loop_counts_satisfy_sides(&[5], &[None, Some(5)]));
         assert_eq!(topology.edge_vertices[0].start_vertex, 8);
         assert_eq!(topology.edge_vertices[0].end_vertex, 9);
         assert_eq!(topology.face_surfaces[0].carrier, 20);
