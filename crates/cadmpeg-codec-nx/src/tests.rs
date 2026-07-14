@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 102);
+    assert_eq!(namespace.version, 103);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -543,7 +543,7 @@ fn feature_body_selection_resolves_complete_segment_bindings_atomically() {
 #[test]
 fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("SKETCH", &[]),
+        crate::decode::non_boolean_feature_definition("SKETCH", &[], None),
         cadmpeg_ir::features::FeatureDefinition::Sketch {
             space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: None,
@@ -553,6 +553,7 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
         crate::decode::non_boolean_feature_definition(
             "SIMPLE HOLE",
             &["Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer"],
+            None,
         ),
         cadmpeg_ir::features::FeatureDefinition::Hole {
             face: None,
@@ -564,13 +565,24 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
         }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("SIMPLE HOLE", &["unrelated"]),
+        crate::decode::non_boolean_feature_definition("SIMPLE HOLE", &["unrelated"], None),
         cadmpeg_ir::features::FeatureDefinition::Hole { extent: None, .. }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("DATUM_PLANE", &[]),
+        crate::decode::non_boolean_feature_definition("DATUM_PLANE", &[], None),
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
             if kind == "DATUM_PLANE"
+    ));
+    assert!(matches!(
+        crate::decode::non_boolean_feature_definition("BLOCK", &[], Some([10.0, 20.0, 30.0])),
+        cadmpeg_ir::features::FeatureDefinition::Block {
+            dimensions: [
+                cadmpeg_ir::features::Length(10.0),
+                cadmpeg_ir::features::Length(20.0),
+                cadmpeg_ir::features::Length(30.0),
+            ],
+            placement: None,
+        }
     ));
 }
 
@@ -5364,7 +5376,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 102);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 103);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

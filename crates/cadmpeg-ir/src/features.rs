@@ -289,6 +289,14 @@ pub enum FeatureDefinition {
         /// Unit z-axis.
         z_axis: Vector3,
     },
+    /// Rectangular solid primitive constructed from three local dimensions.
+    Block {
+        /// Ordered local x, y, and z dimensions.
+        dimensions: [Length; 3],
+        /// Local-to-model placement; absent until the native frame is resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        placement: Option<crate::transform::Transform>,
+    },
     /// Parametric model-space curve defined by coordinate expressions.
     EquationCurve {
         /// Independent parameter symbol used by the coordinate expressions.

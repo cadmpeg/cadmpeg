@@ -1900,6 +1900,25 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "coordinate-system frame is invalid");
                 }
             }
+            FeatureDefinition::Block {
+                dimensions,
+                placement,
+            } => {
+                if dimensions
+                    .iter()
+                    .any(|dimension| !dimension.0.is_finite() || dimension.0 <= 0.0)
+                    || placement.as_ref().is_some_and(|placement| {
+                        placement
+                            .rows
+                            .iter()
+                            .flatten()
+                            .any(|value| !value.is_finite())
+                            || placement.rows[3] != [0.0, 0.0, 0.0, 1.0]
+                    })
+                {
+                    feature_geometry_error(findings, feature, "block geometry is invalid");
+                }
+            }
             FeatureDefinition::EquationCurve {
                 parameter,
                 x_expression,

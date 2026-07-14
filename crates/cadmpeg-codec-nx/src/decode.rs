@@ -3288,7 +3288,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(102);
+    namespace.version = namespace.version.max(103);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -4138,8 +4138,17 @@ fn attach_feature_operations(
         let operation_payload_strings = payload_strings_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
+        let block_dimension_values = block_dimensions_by_operation
+            .get(label.id.as_str())
+            .map(|dimensions| dimensions.values);
         let definition = booleans.get(label.id.as_str()).map_or_else(
-            || non_boolean_feature_definition(&label.value, operation_payload_strings),
+            || {
+                non_boolean_feature_definition(
+                    &label.value,
+                    operation_payload_strings,
+                    block_dimension_values,
+                )
+            },
             |operation| FeatureDefinition::Combine {
                 target: feature_body_selection(
                     &[operation.target_object_index],
@@ -4237,7 +4246,14 @@ pub(crate) fn simple_hole_native_properties(
 pub(crate) fn non_boolean_feature_definition(
     kind: &str,
     payload_strings: &[&str],
+    block_dimensions: Option<[f64; 3]>,
 ) -> FeatureDefinition {
+    if let ("BLOCK", Some(dimensions)) = (kind, block_dimensions) {
+        return FeatureDefinition::Block {
+            dimensions: dimensions.map(Length),
+            placement: None,
+        };
+    }
     match kind {
         "SKETCH" => FeatureDefinition::Sketch {
             space: SketchSpace::Planar,

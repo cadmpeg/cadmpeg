@@ -2435,6 +2435,10 @@ fn feature_operation_geometry_is_validated() {
             y_axis: Vector3::new(1.0, 0.0, 0.0),
             z_axis: Vector3::new(0.0, 0.0, 1.0),
         },
+        FeatureDefinition::Block {
+            dimensions: [Length(10.0), Length(0.0), Length(30.0)],
+            placement: None,
+        },
         FeatureDefinition::EquationCurve {
             parameter: String::new(),
             x_expression: "t".into(),
@@ -2524,6 +2528,7 @@ fn feature_operation_geometry_is_validated() {
         "ruled surface is invalid",
         "scale transform is invalid",
         "coordinate-system frame is invalid",
+        "block geometry is invalid",
         "equation curve is invalid",
         "projection direction is invalid",
         "composite curve is empty",

@@ -3773,6 +3773,12 @@ pub fn sync_neutral_features(
                 merged.extend(properties.clone());
                 (kind.clone(), parameters.clone(), merged)
             }
+            FeatureDefinition::Block { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} cannot encode a neutral block primitive",
+                    feature.id
+                )));
+            }
             FeatureDefinition::DatumPrincipalPlane { plane } => {
                 let record = existing.as_deref().ok_or_else(|| {
                     CodecError::NotImplemented(format!(
@@ -6957,6 +6963,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",
         FeatureDefinition::DatumPoint { .. } => "ReferencePoint",
         FeatureDefinition::DatumCoordinateSystem { .. } => "CoordinateSystem",
+        FeatureDefinition::Block { .. } => "Block",
         FeatureDefinition::EquationCurve { .. } => "EquationDrivenCurve",
         FeatureDefinition::ProjectedCurve { .. } => "ProjectedCurve",
         FeatureDefinition::CompositeCurve { .. } => "CompositeCurve",

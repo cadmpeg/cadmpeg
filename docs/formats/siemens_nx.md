@@ -609,6 +609,8 @@ A `BLOCK` operation parameter binding selects the first declaration of its dimen
 
 The owning `BLOCK` feature links the complete typed dimension set and construction independently. Dimension order is native parameter order; placement and axis roles remain separate from the three scalar dimensions.
 
+A `BLOCK` feature with a complete typed dimension set projects as a neutral rectangular block with ordered local x, y, and z dimensions. Its placement remains absent until the native local-to-model frame is complete; absent placement does not imply the identity transform.
+
 A complete block construction requires nineteen contiguous reference ordinals, one uniform control byte, exactly eighteen nonterminal members, one final terminal reference, and unique data-block resolution for every reference. It retains the member lane and terminal reference as distinct fields. Missing, reordered, differently controlled, incorrectly terminated, or unresolved inputs reject the construction atomically.
 
 A body-reference field is `01 02 10, object_index, ff`. `object_index` uses the feature object-index form: `00..7f` is direct, `80..8f` contributes the high index byte and is followed by one low byte, `90` is followed by a big-endian `u16`, and `ff` is null. Every complete non-null field in a bounded operation record is retained in byte order. Exactly one field identifies an unambiguous primary-body writer; records containing zero or multiple fields do not establish that writer role.
