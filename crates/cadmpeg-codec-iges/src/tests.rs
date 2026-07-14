@@ -2888,6 +2888,60 @@ fn flow_associativity_forms_file() -> Vec<u8> {
     ])
 }
 
+fn recalculable_dimension_associativity_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "DIMNOTE".into(),
+            status: "00010100",
+            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HD;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 2,
+            label: "ARROW1".into(),
+            status: "00010100",
+            parameters: "214,1,2,1,0,0,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 2,
+            label: "ARROW2".into(),
+            status: "00010100",
+            parameters: "214,1,2,1,0,4,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "GEOM1".into(),
+            status: "00000000",
+            parameters: "110,0,0,0,0,4,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "GEOM2".into(),
+            status: "00000000",
+            parameters: "110,4,0,0,4,4,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 216,
+            form: 0,
+            label: "DIMENS".into(),
+            status: "00000100",
+            parameters: "216,1,3,5,0,0,1,13,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 21,
+            label: "RECALCD".into(),
+            status: "00010200",
+            parameters: "402,1,2,11,4,0,7,0,0,0,0,9,1,4,0,0;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4577,6 +4631,45 @@ fn decode_preserves_signal_and_piping_flow_class_order() {
     assert!(pipe.fields["function_flag"].is_null());
     assert_eq!(pipe.fields["connections"][0], "iges:entity:directory#11");
     assert_eq!(pipe.fields["continuations"][0], "iges:entity:directory#17");
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_preserves_recalculable_dimension_geometry_points() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(recalculable_dimension_associativity_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let associativity = result.ir.native.namespace("iges").unwrap().arenas["associativities"]
+        .iter()
+        .find(|value| value.fields["kind"] == "recalculable_dimension")
+        .unwrap();
+    assert_eq!(
+        associativity.fields["dimension"],
+        "iges:entity:directory#11"
+    );
+    assert_eq!(associativity.fields["orientation_flag"], 4);
+    assert_eq!(
+        associativity.fields["geometry"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(
+        associativity.fields["geometry"][0]["geometry"],
+        "iges:entity:directory#7"
+    );
+    assert_eq!(associativity.fields["geometry"][0]["location_flag"], 0);
+    assert_eq!(
+        associativity.fields["geometry"][1]["geometry"],
+        "iges:entity:directory#9"
+    );
+    assert_eq!(associativity.fields["geometry"][1]["location_flag"], 1);
+    assert_eq!(associativity.fields["geometry"][1]["point"][0], 4.0);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

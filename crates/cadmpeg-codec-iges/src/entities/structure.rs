@@ -322,6 +322,73 @@ fn predefined_associativity_valid(
                             .all(|offset| existing_pointer(record, 4 + offset, entries).is_some())
                 })
         }
+        21 => {
+            let geometry_count = record
+                .integer(2)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0);
+            let dimension = existing_pointer(record, 3, entries);
+            let dimension_entry = dimension.and_then(|sequence| entries.get(&sequence).copied());
+            let orientation_valid = record.integer(4).is_some_and(|orientation| {
+                dimension_entry.is_some_and(|dimension| match dimension.entity_type {
+                    202 => matches!(orientation, 0..=3),
+                    216 => matches!(orientation, 4..=8),
+                    218 => matches!(orientation, 6..=7),
+                    206 | 220 | 222 => orientation == 0,
+                    _ => false,
+                })
+            });
+            let angle_valid = record.number(5).is_some_and(f64::is_finite);
+            let geometry_valid = geometry_count.is_some_and(|count| {
+                end == 6 + count * 5
+                    && (0..count).all(|offset| {
+                        let start = 6 + offset * 5;
+                        let pointer_valid = match record.integer(start) {
+                            Some(0) => offset + 1 == count,
+                            Some(_) => existing_pointer(record, start, entries).is_some(),
+                            None => false,
+                        };
+                        pointer_valid
+                            && record
+                                .integer(start + 1)
+                                .is_some_and(|location| matches!(location, 0..=5))
+                            && (start + 2..=start + 4)
+                                .all(|index| record.number(index).is_some_and(f64::is_finite))
+                    })
+            });
+            let arrow_cardinality_valid = dimension_entry.is_none_or(|dimension| {
+                if dimension.entity_type != 216 {
+                    return true;
+                }
+                let arrow_count = records
+                    .get(&dimension.sequence)
+                    .map(|dimension_record| {
+                        [2, 3]
+                            .into_iter()
+                            .filter_map(|index| existing_pointer(dimension_record, index, entries))
+                            .filter(|sequence| {
+                                entries.get(sequence).is_some_and(|leader| leader.form != 4)
+                            })
+                            .count()
+                    })
+                    .unwrap_or_default();
+                arrow_count != 2 || geometry_count == Some(2)
+            });
+            let back_pointer_owners = records
+                .iter()
+                .filter_map(|(sequence, owner)| {
+                    has_association_back_pointer(owner, entry.sequence, entries)
+                        .then_some(*sequence)
+                })
+                .collect::<Vec<_>>();
+            record.integer(1) == Some(1)
+                && orientation_valid
+                && angle_valid
+                && geometry_valid
+                && arrow_cardinality_valid
+                && dimension.is_some_and(|dimension| back_pointer_owners == [dimension])
+                && entry.status.subordinate == 1
+        }
         _ => false,
     }
 }
@@ -769,7 +836,7 @@ pub(super) fn project(
 
     for entry in directory
         .iter()
-        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 5 | 9 | 12 | 13 | 16))
+        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 5 | 9 | 12 | 13 | 16 | 21))
     {
         handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {

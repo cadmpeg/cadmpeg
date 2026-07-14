@@ -347,6 +347,13 @@ struct NativeExternalIndexEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeDimensionGeometryItem {
+    geometry: Option<String>,
+    location_flag: Option<i64>,
+    point: [Option<f64>; 3],
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum NativeAssociativity {
     Definition {
@@ -398,6 +405,14 @@ enum NativeAssociativity {
         names: Vec<Option<Vec<u8>>>,
         name_displays: Vec<Option<String>>,
         continuations: Vec<Option<String>>,
+    },
+    RecalculableDimension {
+        id: String,
+        source_entity: String,
+        dimension: Option<String>,
+        orientation_flag: Option<i64>,
+        angle: Option<f64>,
+        geometry: Vec<NativeDimensionGeometryItem>,
     },
 }
 
@@ -1712,7 +1727,8 @@ pub(crate) fn store(
         directory
             .iter()
             .filter(|entry| {
-                entry.entity_type == 402 && matches!(entry.form, 5 | 9 | 12 | 13 | 16 | 18 | 20)
+                entry.entity_type == 402
+                    && matches!(entry.form, 5 | 9 | 12 | 13 | 16 | 18 | 20 | 21)
             })
             .map(|entry| {
                 let record = by_directory.get(&entry.sequence).copied();
@@ -1860,6 +1876,34 @@ pub(crate) fn store(
                             names,
                             name_displays,
                             continuations,
+                        }
+                    }
+                    21 => {
+                        let count = record
+                            .and_then(|record| record.integer(2))
+                            .and_then(|value| usize::try_from(value).ok())
+                            .unwrap_or_default();
+                        NativeAssociativity::RecalculableDimension {
+                            id,
+                            source_entity,
+                            dimension: entity_link(3),
+                            orientation_flag: record.and_then(|record| record.integer(4)),
+                            angle: record.and_then(|record| record.number(5)),
+                            geometry: (0..count)
+                                .map(|offset| {
+                                    let start = 6 + offset * 5;
+                                    NativeDimensionGeometryItem {
+                                        geometry: entity_link(start),
+                                        location_flag: record
+                                            .and_then(|record| record.integer(start + 1)),
+                                        point: [
+                                            record.and_then(|record| record.number(start + 2)),
+                                            record.and_then(|record| record.number(start + 3)),
+                                            record.and_then(|record| record.number(start + 4)),
+                                        ],
+                                    }
+                                })
+                                .collect(),
                         }
                     }
                     _ => unreachable!("filtered predefined associativity form"),
