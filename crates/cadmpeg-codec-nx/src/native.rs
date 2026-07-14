@@ -153,6 +153,35 @@ pub struct FeatureOperationLabel {
     pub source_offset: u64,
 }
 
+/// Feature-history Boolean operation kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureBooleanKind {
+    /// Add tool bodies to the target.
+    Unite,
+    /// Remove tool bodies from the target.
+    Subtract,
+    /// Retain target/tool intersections.
+    Intersect,
+}
+
+/// Ordered target/tool binding from a feature-history Boolean operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBooleanOperation {
+    /// Globally unique Boolean identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Boolean operation kind.
+    pub kind: FeatureBooleanKind,
+    /// Object index of the target body.
+    pub target_object_index: u32,
+    /// Ordered object indices of the tool bodies.
+    pub tool_object_indices: Vec<u32>,
+    /// Absolute file offset of the operation label tag.
+    pub source_offset: u64,
+}
+
 /// Decode internally pointed record areas from linked OM sections.
 pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
     let links = segment_om_links(container);
@@ -220,6 +249,52 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
         ));
     }
     labels
+}
+
+/// Decode ordered Boolean target/tool bindings from feature-history sections.
+pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOperation> {
+    let sections = container.om_sections();
+    let mut operations = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let labels = section.operation_labels();
+        for operation in section.boolean_operations() {
+            let Some(ordinal) = labels
+                .iter()
+                .position(|label| label.offset == operation.offset)
+            else {
+                continue;
+            };
+            let kind = match operation.kind {
+                crate::om::BooleanOperationKind::Unite => FeatureBooleanKind::Unite,
+                crate::om::BooleanOperationKind::Subtract => FeatureBooleanKind::Subtract,
+                crate::om::BooleanOperationKind::Intersect => FeatureBooleanKind::Intersect,
+            };
+            let operation_label = format!("{}:operation-label#{ordinal}", link.id);
+            operations.push(FeatureBooleanOperation {
+                id: format!("{operation_label}:boolean"),
+                operation_label,
+                kind,
+                target_object_index: operation.target,
+                tool_object_indices: operation.tools,
+                source_offset: entry_offset + operation.offset as u64,
+            });
+        }
+    }
+    operations
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.

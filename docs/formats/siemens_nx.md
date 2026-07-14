@@ -86,6 +86,14 @@ through 4095 use `80..8f low:u8` and decode as `(prefix - 80) * 256 + low`.
 Larger values use `90 value:u16 BE`; `ff` is null. `name` contains printable
 ASCII bytes and `length = name_length + 2`.
 
+`UNITE`, `SUBTRACT`, and `INTERSECT` labels are followed by the fixed Boolean
+header `31 00 00 01 00 14 2f a4 7a e1 47 ae 14 7b 03 00 00 e0 7f ff ff ff 01 01`,
+then a target list and a tool list separated and terminated by `00`. Each list
+is encoded as `01 count:u8 refs`, contains `count - 1` object indices using the
+operation-header index encoding, and contains no null indices. The target list
+contains exactly one reference. The tool list contains at least one reference
+and preserves tool order.
+
 ### 2.1 Stream inventory
 
 | Stream                       | Role                                                                           |

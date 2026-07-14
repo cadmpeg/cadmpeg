@@ -2706,6 +2706,7 @@ fn attach_native_object_model(
     let segment_stream_links = crate::native::segment_stream_links(&scan.container, &scan.streams);
     let om_record_areas = crate::native::om_record_areas(&scan.container);
     let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
+    let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
     let fields = crate::native::field_definitions(&scan.container);
@@ -2726,6 +2727,7 @@ fn attach_native_object_model(
         && segment_stream_links.is_empty()
         && om_record_areas.is_empty()
         && feature_operation_labels.is_empty()
+        && feature_boolean_operations.is_empty()
         && expressions.is_empty()
         && classes.is_empty()
         && fields.is_empty()
@@ -2773,6 +2775,12 @@ fn attach_native_object_model(
             .note(&label.id, annotation_stream, label.source_offset)
             .tag("FEATURE_OPERATION_LABEL");
         annotations.exactness(&label.id, Exactness::ByteExact);
+    }
+    for operation in &feature_boolean_operations {
+        annotations
+            .note(&operation.id, annotation_stream, operation.source_offset)
+            .tag("FEATURE_BOOLEAN_OPERATION");
+        annotations.exactness(&operation.id, Exactness::ByteExact);
     }
     for header in &store_headers {
         annotations
@@ -2874,7 +2882,7 @@ fn attach_native_object_model(
     }
     attach_expression_parameters(ir, &expressions, annotations);
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(17);
+    namespace.version = namespace.version.max(18);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -2889,6 +2897,9 @@ fn attach_native_object_model(
     }
     if !feature_operation_labels.is_empty() {
         namespace.set_arena("feature_operation_labels", &feature_operation_labels)?;
+    }
+    if !feature_boolean_operations.is_empty() {
+        namespace.set_arena("feature_boolean_operations", &feature_boolean_operations)?;
     }
     if !expressions.is_empty() {
         namespace.set_arena("expressions", &expressions)?;

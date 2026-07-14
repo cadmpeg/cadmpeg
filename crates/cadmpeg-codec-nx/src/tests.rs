@@ -322,7 +322,7 @@ fn size_framed_om_section_with_record_area() -> Vec<u8> {
     bytes.extend_from_slice(&13u32.to_le_bytes());
     bytes.extend_from_slice(&14u32.to_le_bytes());
     bytes.extend_from_slice(&44u32.to_le_bytes());
-    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0feature-records\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x01\x82\x40\x90\x17\xd3\xff\x03\x07UNITE\0");
+    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0feature-records\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x01\x82\x40\x90\x17\xd3\xff\x03\x07UNITE\0\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x42\x00\x01\x03\x90\x19\x4c\x7f\x00");
     let payload_len = (bytes.len() - 16) as u32;
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
     bytes
@@ -373,7 +373,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 17);
+    assert_eq!(namespace.version, 18);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -499,6 +499,17 @@ fn decode_retains_role_scoped_om_record_area_header() {
         [Some(1), Some(576), Some(6099), None]
     );
     assert_eq!(labels[0].section_link, areas[0].section_link);
+    let booleans = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::FeatureBooleanOperation>("feature_boolean_operations")
+        .unwrap();
+    assert_eq!(booleans.len(), 1);
+    assert_eq!(booleans[0].kind, crate::native::FeatureBooleanKind::Unite);
+    assert_eq!(booleans[0].target_object_index, 6466);
+    assert_eq!(booleans[0].tool_object_indices, [6476, 127]);
 }
 
 #[test]
@@ -575,6 +586,23 @@ fn om_operation_labels_require_the_complete_frame() {
     let mut invalid = bytes.to_vec();
     invalid[15] = 0x91;
     assert_eq!(crate::om::operation_labels(&invalid, 0).len(), 1);
+}
+
+#[test]
+fn om_boolean_operations_decode_counted_target_and_tools() {
+    let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x0aSUBTRACT\0\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x5e\x00\x01\x05\x90\x19\x5f\x90\x19\x44\x90\x19\x43\x90\x19\x60\x00";
+    let operations = crate::om::boolean_operations(bytes, 100);
+    assert_eq!(operations.len(), 1);
+    assert_eq!(
+        operations[0].kind,
+        crate::om::BooleanOperationKind::Subtract
+    );
+    assert_eq!(operations[0].target, 6494);
+    assert_eq!(operations[0].tools, [6495, 6468, 6467, 6496]);
+
+    let mut invalid = bytes.to_vec();
+    *invalid.last_mut().unwrap() = 1;
+    assert!(crate::om::boolean_operations(&invalid, 0).is_empty());
 }
 
 #[test]
@@ -3226,7 +3254,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 17);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 18);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

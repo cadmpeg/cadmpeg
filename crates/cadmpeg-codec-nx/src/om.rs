@@ -206,6 +206,30 @@ pub struct OperationLabel<'a> {
     pub object_indices: [Option<u32>; 4],
 }
 
+/// Boolean operation kind stored after an operation label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BooleanOperationKind {
+    /// Add tool bodies to the target.
+    Unite,
+    /// Remove tool bodies from the target.
+    Subtract,
+    /// Retain target/tool intersections.
+    Intersect,
+}
+
+/// One feature-history Boolean with object-index operands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BooleanOperation {
+    /// Absolute offset of the operation label tag.
+    pub offset: usize,
+    /// Boolean operation kind.
+    pub kind: BooleanOperationKind,
+    /// Object index of the target body.
+    pub target: u32,
+    /// Ordered object indices of the tool bodies.
+    pub tools: Vec<u32>,
+}
+
 impl<'a> IndexedSection<'a> {
     /// Return the section base used by its external record offsets.
     pub const fn base_offset(&self) -> usize {
@@ -314,6 +338,17 @@ impl<'a> Section<'a> {
         };
         operation_labels(bytes, base_offset)
     }
+
+    /// Decode fully framed Boolean operations from the pointed record area.
+    pub fn boolean_operations(&self) -> Vec<BooleanOperation> {
+        let Some(bytes) = self.record_area else {
+            return Vec::new();
+        };
+        let Some(base_offset) = self.record_area_offset else {
+            return Vec::new();
+        };
+        boolean_operations(bytes, base_offset)
+    }
 }
 
 /// Decode complete feature-operation headers and their label frames.
@@ -392,6 +427,60 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
         0xff => Some((None, at + 1)),
         _ => None,
     }
+}
+
+/// Decode Boolean target and tool lists following complete operation labels.
+pub fn boolean_operations(bytes: &[u8], base_offset: usize) -> Vec<BooleanOperation> {
+    const BODY_HEADER: &[u8] = &[
+        0x31, 0x00, 0x00, 0x01, 0x00, 0x14, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0x03,
+        0x00, 0x00, 0xe0, 0x7f, 0xff, 0xff, 0xff, 0x01, 0x01,
+    ];
+    operation_labels(bytes, base_offset)
+        .into_iter()
+        .filter_map(|label| {
+            let kind = match label.value {
+                "UNITE" => BooleanOperationKind::Unite,
+                "SUBTRACT" => BooleanOperationKind::Subtract,
+                "INTERSECT" => BooleanOperationKind::Intersect,
+                _ => return None,
+            };
+            let at = label.offset.checked_sub(base_offset)?;
+            let label_end = at.checked_add(usize::from(*bytes.get(at + 1)?))? + 1;
+            if bytes.get(label_end..label_end + BODY_HEADER.len()) != Some(BODY_HEADER) {
+                return None;
+            }
+            let (targets, next) =
+                counted_feature_object_indices(bytes, label_end + BODY_HEADER.len())?;
+            if targets.len() != 1 || bytes.get(next) != Some(&0) {
+                return None;
+            }
+            let (tools, end) = counted_feature_object_indices(bytes, next + 1)?;
+            if tools.is_empty() || bytes.get(end) != Some(&0) {
+                return None;
+            }
+            Some(BooleanOperation {
+                offset: label.offset,
+                kind,
+                target: targets[0],
+                tools,
+            })
+        })
+        .collect()
+}
+
+fn counted_feature_object_indices(bytes: &[u8], at: usize) -> Option<(Vec<u32>, usize)> {
+    if bytes.get(at) != Some(&0x01) {
+        return None;
+    }
+    let count = usize::from(*bytes.get(at + 1)?).checked_sub(1)?;
+    let mut cursor = at + 2;
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        let (value, next) = feature_object_index(bytes, cursor)?;
+        values.push(value?);
+        cursor = next;
+    }
+    Some((values, cursor))
 }
 
 /// Decode count-framed runs of same-section record references.
