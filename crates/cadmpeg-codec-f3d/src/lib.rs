@@ -1050,7 +1050,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .map(|identity| identity.id.as_str())
             .collect::<Vec<_>>();
         let expected_history =
-            history::historical_identity_kind(&native.asm_histories, member.local_id);
+            history::historical_selection_identity_kind(&native.asm_histories, member.local_id);
         let history_matches = expected_history.as_ref().map(|(kind, _)| *kind)
             == member.historical_entity_kind
             && expected_history
