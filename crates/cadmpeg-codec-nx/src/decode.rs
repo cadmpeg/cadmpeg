@@ -4847,6 +4847,7 @@ pub(crate) fn offset_surface_feature_definition(
         }
     }
     let distance = distance?;
+    supports.sort();
     Some((
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Native(format!("{prefix}offset-support-surfaces")),

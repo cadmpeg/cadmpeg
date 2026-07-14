@@ -635,7 +635,7 @@ Bodies named by validated segment binding tuples exist at the start of retained 
 An `OFFSET` operation with exactly one segment-bound output image resolves as a
 surface-offset feature when that image contains at least one OFFSET_SURF and
 every OFFSET_SURF construction in the image carries the same bit-exact signed
-distance. The ordered distinct base-surface identities form the native face
+distance. The distinct base-surface identities form the native face
 selection. An unbound output or multiple distance bit patterns leave the
 operation native.
 
