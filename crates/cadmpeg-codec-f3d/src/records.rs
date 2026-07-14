@@ -452,10 +452,25 @@ pub struct DesignDimensionRecipeRecord {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub prefix_bytes: Vec<u8>,
+    /// Persistent Design selector/reference tails decoded from the prefix.
+    pub references: Vec<DesignDimensionRecipeReference>,
     /// Byte offset of the first i32 after the recipe-family name.
     pub program_offset: u64,
     /// Complete little-endian i32 program through the indexed-record boundary.
     pub program: Vec<i32>,
+}
+
+/// One persistent Design selector/reference tail in a dimension recipe.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignDimensionRecipeReference {
+    /// ASCII persistent-subentity selector token.
+    pub token: String,
+    /// Byte offset of the token bytes.
+    pub token_offset: u64,
+    /// Persistent Design reference paired with `token`.
+    pub design_reference: i64,
+    /// Byte offset of `design_reference`.
+    pub design_reference_offset: u64,
 }
 
 /// Paired-locus frame nested under a dimensional parameter companion.

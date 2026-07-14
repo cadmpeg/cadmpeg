@@ -1882,6 +1882,7 @@ mod tests {
                 frame_length: 100,
                 prefix_offset: 300,
                 prefix_bytes: Vec::new(),
+                references: Vec::new(),
                 program_offset: 320,
                 program: vec![-1],
             });

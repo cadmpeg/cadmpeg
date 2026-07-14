@@ -1554,10 +1554,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let program_end = record
             .program_offset
             .checked_add((record.program.len() as u64).saturating_mul(4));
+        let decoded_references =
+            design::decode_dimension_recipe_references(&record.prefix_bytes, record.prefix_offset);
         let valid = record.class_tag.len() == 3
             && record.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && record.frame_length >= 11
             && !record.prefix_bytes.is_empty()
+            && decoded_references == record.references
             && record.prefix_offset == record.byte_offset.saturating_add(11)
             && !record.program.is_empty()
             && record.program_offset >= record.byte_offset.saturating_add(11)
