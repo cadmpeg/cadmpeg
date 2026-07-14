@@ -6692,6 +6692,14 @@ fn resolved_marker_locus(
         .links
         .iter()
         .filter(|link| link.entity_ref != marker_id)
+        .filter(|link| {
+            !matches!(
+                markers_by_id
+                    .get(link.entity_ref.as_str())
+                    .map(|marker| marker.kind),
+                Some(SketchInputKind::Relation(_))
+            )
+        })
         .filter_map(|link| {
             resolved_marker_locus(
                 &link.entity_ref,
@@ -8543,6 +8551,42 @@ mod profile_join_tests {
         assert_eq!(
             marker_entities(&ambiguous.id, &markers, &loci),
             vec![SketchEntityId("line-a".into())]
+        );
+    }
+
+    #[test]
+    fn point_handle_does_not_inherit_a_constraint_sibling_locus() {
+        let mut point = marker("point", None);
+        point.links = vec![SketchInputLink {
+            local_id: 0,
+            entity_ref: "relation".into(),
+        }];
+        let mut relation = marker("relation", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
+        relation.links = vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: point.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 3,
+                entity_ref: "known".into(),
+            },
+        ];
+        let known = marker("known", None);
+        let markers = HashMap::from([
+            (point.id.as_str(), &point),
+            (relation.id.as_str(), &relation),
+            (known.id.as_str(), &known),
+        ]);
+        let loci = HashMap::from([(
+            known.id.clone(),
+            vec![SketchLocus::Start(SketchEntityId("line".into()))],
+        )]);
+
+        assert_eq!(
+            resolved_marker_locus(&point.id, &markers, &loci, &mut HashSet::new()),
+            None
         );
     }
 
