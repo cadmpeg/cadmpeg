@@ -188,11 +188,11 @@ owning native property, and the operation records distinguish additive, subtract
 independent-body semantics. Object dependency links establish construction dependencies, and a
 feature's cached shape property links its neutral operation to every transferred result body from
 that payload. PartDesign body containers are structural history nodes: their group links establish
-feature-tree parentage, while the tip link remains separate active-result state. Suppressed, active,
-frozen, invalid, touched, mapping, support, tip, and visibility properties remain individually
-named state rather than being collapsed into one enabled flag. This is a typed tracer subset;
-complete support-frame composition and the remaining Part and PartDesign operation families are
-still required by the L4 gate.
+ordered feature-tree membership and reciprocal parentage, while the tip link identifies one owned
+member as the active result. Suppressed, active, frozen, invalid, touched, mapping, support, and
+visibility properties remain individually named state rather than being collapsed into one enabled
+flag. Validation rejects duplicate members, inconsistent parentage, missing members, and an active
+tip outside the body's ordered membership.
 
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a

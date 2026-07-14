@@ -91,10 +91,16 @@ pub(crate) fn transfer(
             append_spreadsheet_parameters(&mut ir.model.parameters, object, &owned)?;
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::Equations,
+                children: Vec::new(),
+                active_child: None,
             }
         } else if is_body(&object.type_name) {
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::SolidBodies,
+                children: linked_feature_ids(&owned, "Group", &feature_ids),
+                active_child: linked_feature_ids(&owned, "Tip", &feature_ids)
+                    .into_iter()
+                    .next(),
             }
         } else if is_datum(&object.type_name) {
             datum_definition(&object.type_name, &owned).unwrap_or_else(|| {
@@ -3573,6 +3579,19 @@ fn feature_base_definition(
     Some(FeatureDefinition::DerivedGeometry {
         source: feature_ids.get(source)?.clone(),
     })
+}
+
+fn linked_feature_ids(
+    properties: &[&PropertyRecord],
+    name: &str,
+    feature_ids: &HashMap<&str, FeatureId>,
+) -> Vec<FeatureId> {
+    property(properties, name)
+        .into_iter()
+        .flat_map(|property| &property.links)
+        .filter_map(|link| link.object.as_deref())
+        .filter_map(|object| feature_ids.get(object).cloned())
+        .collect()
 }
 fn is_sketch(kind: &str) -> bool {
     kind.contains("Sketcher::SketchObject")

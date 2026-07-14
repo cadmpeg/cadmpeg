@@ -5744,19 +5744,22 @@ fn decode_types_non_modeling_feature_tree_nodes() {
     assert!(matches!(
         definitions[0],
         FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::Annotations
+            role: FeatureTreeNodeRole::Annotations,
+            ..
         }
     ));
     assert!(matches!(
         definitions[1],
         FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::Equations
+            role: FeatureTreeNodeRole::Equations,
+            ..
         }
     ));
     assert!(matches!(
         definitions[2],
         FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::SolidBodies
+            role: FeatureTreeNodeRole::SolidBodies,
+            ..
         }
     ));
     assert!(matches!(definitions[3], FeatureDefinition::Native { .. }));
@@ -5770,7 +5773,8 @@ fn decode_types_non_modeling_feature_tree_nodes() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::Annotations
+            role: FeatureTreeNodeRole::Annotations,
+            ..
         }
     ));
 }
@@ -5803,13 +5807,15 @@ fn decode_binds_duplicate_feature_names_by_native_object_id() {
     assert!(matches!(
         decoded.ir.model.features[0].definition,
         FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::Equations
+            role: FeatureTreeNodeRole::Equations,
+            ..
         }
     ));
     assert!(matches!(
         decoded.ir.model.features[1].definition,
         FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::SolidBodies
+            role: FeatureTreeNodeRole::SolidBodies,
+            ..
         }
     ));
 }

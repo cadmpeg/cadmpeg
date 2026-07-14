@@ -1065,7 +1065,11 @@ fn project_definition(
     native_by_source: &HashMap<&str, &str>,
 ) -> FeatureDefinition {
     if let Some(role) = feature_tree_node_role(feature) {
-        return FeatureDefinition::TreeNode { role };
+        return FeatureDefinition::TreeNode {
+            role,
+            children: Vec::new(),
+            active_child: None,
+        };
     }
     let class = classify(feature);
     if class == Some(FeatureClass::Sketch) {
@@ -3784,7 +3788,17 @@ pub fn sync_neutral_features(
             .flat_map(|history| &mut history.features)
             .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
         let (kind, parameters, mut properties) = match &feature.definition {
-            FeatureDefinition::TreeNode { role } => {
+            FeatureDefinition::TreeNode {
+                role,
+                children,
+                active_child,
+            } => {
+                if !children.is_empty() || active_child.is_some() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses explicit tree membership",
+                        feature.id
+                    )));
+                }
                 if existing
                     .as_deref()
                     .is_some_and(|record| feature_tree_node_role(record) != Some(*role))

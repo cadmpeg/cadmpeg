@@ -243,6 +243,12 @@ pub enum FeatureDefinition {
     TreeNode {
         /// Structural or presentation role of the node.
         role: FeatureTreeNodeRole,
+        /// Ordered features owned by this node.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        children: Vec<FeatureId>,
+        /// Active child, when the source design identifies one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        active_child: Option<FeatureId>,
     },
     /// Built-in world-origin reference plane.
     DatumPrincipalPlane {

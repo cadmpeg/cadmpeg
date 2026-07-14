@@ -2538,8 +2538,55 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "face construction is invalid");
                 }
             }
-            FeatureDefinition::TreeNode { .. }
-            | FeatureDefinition::DatumPrincipalPlane { .. }
+            FeatureDefinition::TreeNode {
+                children,
+                active_child,
+                ..
+            } => {
+                let mut seen = HashSet::new();
+                for child in children {
+                    let child_record = ir
+                        .model
+                        .features
+                        .iter()
+                        .find(|candidate| candidate.id == *child);
+                    match child_record {
+                        None => ref_error(findings, &feature.id.0, "tree child", &child.0),
+                        Some(_) if !seen.insert(child) => findings.push(Finding {
+                            check: Check::Counts,
+                            severity: Severity::Error,
+                            message: format!("tree node repeats child `{}`", child.0),
+                            entity: Some(feature.id.0.clone()),
+                        }),
+                        Some(child_record) if child_record.parent.as_ref() != Some(&feature.id) => {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: format!(
+                                    "tree child `{}` does not name its owning parent",
+                                    child.0
+                                ),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                        }
+                        Some(_) => {}
+                    }
+                }
+                if let Some(active_child) = active_child {
+                    if !children.contains(active_child) {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "active tree child `{}` is not an owned child",
+                                active_child.0
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
+                }
+            }
+            FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }

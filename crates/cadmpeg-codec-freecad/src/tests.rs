@@ -535,7 +535,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "37");
+    assert_eq!(result.ir.ir_version, "38");
     let feature = |name: &str| {
         &result
             .ir
@@ -1679,6 +1679,87 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("source feature")));
+}
+
+#[test]
+fn transfers_ordered_body_membership_and_active_tip() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="PartDesign::Body" name="Body" id="1"/>
+ <Object type="PartDesign::Feature" name="First" id="2"/>
+ <Object type="PartDesign::Feature" name="Second" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Body"><Properties Count="2">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
+  <Property name="Tip" type="App::PropertyLink"><Link value="Second"/></Property>
+ </Properties></Object>
+ <Object name="First"><Properties Count="0"/></Object>
+ <Object name="Second"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("body state");
+    let body = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Body"))
+        .expect("body");
+    let cadmpeg_ir::features::FeatureDefinition::TreeNode {
+        children,
+        active_child,
+        ..
+    } = &body.definition
+    else {
+        panic!("body tree node");
+    };
+    assert_eq!(
+        children
+            .iter()
+            .map(|child| child.0.as_str())
+            .collect::<Vec<_>>(),
+        ["fcstd:design:feature#First", "fcstd:design:feature#Second"]
+    );
+    assert_eq!(active_child.as_ref(), children.get(1));
+    for child in children {
+        assert_eq!(
+            result
+                .ir
+                .model
+                .features
+                .iter()
+                .find(|feature| feature.id == *child)
+                .and_then(|feature| feature.parent.as_ref()),
+            Some(&body.id)
+        );
+    }
+    assert!(result.report.losses.is_empty());
+    assert_valid_document(&result.ir);
+
+    let mut corrupted = result.ir.clone();
+    let body = corrupted
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("Body"))
+        .expect("body");
+    let cadmpeg_ir::features::FeatureDefinition::TreeNode { active_child, .. } =
+        &mut body.definition
+    else {
+        panic!("body tree node");
+    };
+    *active_child = Some(cadmpeg_ir::features::FeatureId(
+        "fcstd:design:feature#Outside".into(),
+    ));
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("active tree child")));
 }
 
 #[test]
