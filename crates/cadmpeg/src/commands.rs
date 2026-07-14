@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
-use cadmpeg_ir::codec::Encoder;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate, CadIr};
 
@@ -445,20 +444,12 @@ fn export_ir(
     rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
 ) -> Result<ExportReport> {
     let mut bytes = Vec::new();
-    let report = if format == Format::Rhino {
-        cadmpeg_codec_rhino::RhinoEncoder::new(
-            rhino_version.unwrap_or(cadmpeg_codec_rhino::RhinoArchiveVersion::V8),
-        )
-        .encode(ir, &mut bytes)?
-    } else {
-        if rhino_version.is_some() {
-            bail!("--rhino-version requires Rhino output");
-        }
-        registry
-            .encoder_by_id(format.name())
-            .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))?
-            .encode(ir, &mut bytes)?
-    };
+    if rhino_version.is_some() && format != Format::Rhino {
+        bail!("--rhino-version requires Rhino output");
+    }
+    let report = registry
+        .encode_by_id(format.name(), rhino_version, ir, &mut bytes)
+        .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))??;
     if let Some(path) = out {
         write_output(input, path, &bytes, force)?;
         eprintln!(
