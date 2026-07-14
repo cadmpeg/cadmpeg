@@ -843,8 +843,55 @@ fn feature_body_lineage_excludes_tools_consumed_after_their_latest_writer() {
     }];
 
     assert_eq!(
-        crate::native::terminal_feature_body_indices(&labels, &references, &booleans),
+        crate::native::terminal_feature_body_indices(&labels, &references, &booleans, &[]),
         Some([10].into_iter().collect())
+    );
+}
+
+#[test]
+fn feature_body_lineage_treats_segment_tuple_indices_as_one_identity() {
+    use crate::native::{
+        FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
+        SegmentBodyBinding,
+    };
+
+    let label = |ordinal: u32, value: &str| FeatureOperationLabel {
+        id: format!("operation#{ordinal}"),
+        section_link: "history#0".to_string(),
+        ordinal,
+        value: value.to_string(),
+        object_indices: [None; 4],
+        source_offset: ordinal as u64,
+    };
+    let labels = [label(0, "EXTRUDE"), label(1, "UNITE")];
+    let references = [FeatureBodyReference {
+        id: "reference#150".to_string(),
+        operation_label: "operation#0".to_string(),
+        body_object_index: 150,
+        source_offset: 0,
+    }];
+    let booleans = [FeatureBooleanOperation {
+        id: "boolean#0".to_string(),
+        operation_label: "operation#1".to_string(),
+        kind: FeatureBooleanKind::Unite,
+        target_object_index: 10,
+        tool_object_indices: vec![94],
+        source_offset: 0,
+    }];
+    let bindings = [SegmentBodyBinding {
+        id: "binding#0".to_string(),
+        stream_link: "stream#0".to_string(),
+        stream_ordinal: 0,
+        stream_kind: "partition".to_string(),
+        body_object_index: 94,
+        body_alias_object_index: 150,
+        stream_role: 19,
+        source_offset: 0,
+    }];
+
+    assert_eq!(
+        crate::native::terminal_feature_body_indices(&labels, &references, &booleans, &bindings,),
+        Some(std::collections::BTreeSet::new())
     );
 }
 

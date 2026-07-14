@@ -486,6 +486,7 @@ pub fn terminal_feature_body_indices(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
     booleans: &[FeatureBooleanOperation],
+    bindings: &[SegmentBodyBinding],
 ) -> Option<BTreeSet<u32>> {
     let sections = labels
         .iter()
@@ -499,29 +500,61 @@ pub fn terminal_feature_body_indices(
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
         .collect::<BTreeMap<_, _>>();
+    let aliases = body_alias_roots(bindings)?;
+    let canonical = |identity: u32| aliases.get(&identity).copied().unwrap_or(identity);
     let mut last_writers = BTreeMap::<u32, usize>::new();
     for reference in references {
         let position = *positions.get(reference.operation_label.as_str())?;
-        last_writers.insert(reference.body_object_index, position);
+        last_writers.insert(canonical(reference.body_object_index), position);
     }
     let mut consumed = BTreeSet::new();
     for operation in booleans {
         let position = *positions.get(operation.operation_label.as_str())?;
         for tool in &operation.tool_object_indices {
+            let tool = canonical(*tool);
             if last_writers
-                .get(tool)
+                .get(&tool)
                 .is_some_and(|writer| *writer < position)
             {
-                consumed.insert(*tool);
+                consumed.insert(tool);
             }
         }
     }
+    let terminal_roots = last_writers
+        .into_keys()
+        .filter(|body| !consumed.contains(body))
+        .collect::<BTreeSet<_>>();
     Some(
-        last_writers
-            .into_keys()
-            .filter(|body| !consumed.contains(body))
+        references
+            .iter()
+            .map(|reference| reference.body_object_index)
+            .chain(
+                bindings.iter().flat_map(|binding| {
+                    [binding.body_object_index, binding.body_alias_object_index]
+                }),
+            )
+            .filter(|identity| terminal_roots.contains(&canonical(*identity)))
             .collect(),
     )
+}
+
+/// Map each segment body identity to the smaller identity in its alias pair.
+/// Conflicting pairs make body-image identity ambiguous and invalidate the map.
+pub(crate) fn body_alias_roots(bindings: &[SegmentBodyBinding]) -> Option<BTreeMap<u32, u32>> {
+    let mut roots = BTreeMap::new();
+    for binding in bindings {
+        let pair = [binding.body_object_index, binding.body_alias_object_index];
+        let root = *pair.iter().min().expect("two aliases");
+        for identity in pair {
+            if roots
+                .insert(identity, root)
+                .is_some_and(|existing| existing != root)
+            {
+                return None;
+            }
+        }
+    }
+    Some(roots)
 }
 
 /// Resolve operation-header object indices to unique offset-only data blocks.

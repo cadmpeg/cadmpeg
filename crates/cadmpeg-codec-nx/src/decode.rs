@@ -1079,9 +1079,12 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, scan: &Scan) -> bool {
     if booleans.is_empty() {
         return false;
     }
-    let Some(terminal) =
-        crate::native::terminal_feature_body_indices(&labels, &body_references, &booleans)
-    else {
+    let Some(terminal) = crate::native::terminal_feature_body_indices(
+        &labels,
+        &body_references,
+        &booleans,
+        &bindings,
+    ) else {
         return false;
     };
     let written = body_references
@@ -3105,6 +3108,9 @@ fn attach_feature_operations(
         })
         .collect::<BTreeMap<_, _>>();
     let mut last_body_writer = BTreeMap::<u32, FeatureId>::new();
+    let body_alias_roots = crate::native::body_alias_roots(body_bindings).unwrap_or_default();
+    let canonical_body =
+        |identity: u32| body_alias_roots.get(&identity).copied().unwrap_or(identity);
     let mut input_blocks_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureInputBlock>>::new();
     for input in input_blocks {
@@ -3141,13 +3147,13 @@ fn attach_feature_operations(
         let id = FeatureId(format!("nx:feature-history:feature#{key}"));
         let mut dependencies = Vec::new();
         if let Some(body) = body_references.get(label.id.as_str()) {
-            if let Some(writer) = last_body_writer.get(body) {
+            if let Some(writer) = last_body_writer.get(&canonical_body(*body)) {
                 dependencies.push(writer.clone());
             }
         }
         if let Some(operation) = booleans.get(label.id.as_str()) {
             for body in &operation.tool_object_indices {
-                if let Some(writer) = last_body_writer.get(body) {
+                if let Some(writer) = last_body_writer.get(&canonical_body(*body)) {
                     if !dependencies.contains(writer) {
                         dependencies.push(writer.clone());
                     }
@@ -3227,7 +3233,7 @@ fn attach_feature_operations(
             native_ref: Some(label.id.clone()),
         });
         if let Some(body) = body_references.get(label.id.as_str()) {
-            last_body_writer.insert(*body, id);
+            last_body_writer.insert(canonical_body(*body), id);
         }
     }
 }
