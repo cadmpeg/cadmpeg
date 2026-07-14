@@ -510,7 +510,7 @@ torus:    Y = A×X;  P = C_mm + (R + r·cos v)·(cos u · X + sin u · Y) + r·s
 
 **UV validation.** The first and last evaluated UV samples reproduce the term endpoints within `1e-6` mm.
 
-**Type-59 BLEND_BOUND (`0x003b`)** contains `boundary_index` (0/1) and `blend_surface_ref` to a BLEND_SURF construction surface. The `0xff` after the tag is an envelope escape. For participating support `A`, `B.support_refs[1 - boundary_index] == A`. `B.support_refs[boundary_index]` identifies the support that closes the blend rolling-ball law at the cap.
+**Type-59 BLEND_BOUND (`0x003b`)** contains the XMT, five common-header references, sense, `boundary_index` (0/1), and `blend_surface_ref` to a BLEND_SURF construction surface. The optional `0xff` after the tag is an envelope escape. The typed source record retains every field, the escape form, and the inflated-stream offset. For participating support `A`, `B.support_refs[1 - boundary_index] == A`. `B.support_refs[boundary_index]` identifies the support that closes the blend rolling-ball law at the cap.
 
 ### 6.4 TRIMMED_CURVE (133) and SP_CURVE (137)
 

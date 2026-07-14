@@ -3120,6 +3120,7 @@ fn attach_native_object_model(
         crate::native::segment_body_bindings(&scan.container, &scan.streams);
     let parasolid_blend_surface_records =
         crate::native::parasolid_blend_surface_records(&scan.streams);
+    let parasolid_blend_bound_records = crate::native::parasolid_blend_bound_records(&scan.streams);
     let parasolid_offset_surface_records =
         crate::native::parasolid_offset_surface_records(&scan.streams);
     let parasolid_trimmed_curve_records =
@@ -3388,6 +3389,7 @@ fn attach_native_object_model(
         && segment_body_bindings.is_empty()
         && segment_body_lineage_statuses.is_empty()
         && parasolid_blend_surface_records.is_empty()
+        && parasolid_blend_bound_records.is_empty()
         && parasolid_offset_surface_records.is_empty()
         && parasolid_trimmed_curve_records.is_empty()
         && parasolid_surface_curve_records.is_empty()
@@ -3506,6 +3508,13 @@ fn attach_native_object_model(
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("BLEND_SURF");
+        annotations.exactness(&record.id, Exactness::ByteExact);
+    }
+    for record in &parasolid_blend_bound_records {
+        let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
+        annotations
+            .note(&record.id, source_stream, record.inflated_offset)
+            .tag("BLEND_BOUND");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
     for record in &parasolid_offset_surface_records {
@@ -3936,7 +3945,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(136);
+    namespace.version = namespace.version.max(137);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3956,6 +3965,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "parasolid_blend_surface_records",
             &parasolid_blend_surface_records,
+        )?;
+    }
+    if !parasolid_blend_bound_records.is_empty() {
+        namespace.set_arena(
+            "parasolid_blend_bound_records",
+            &parasolid_blend_bound_records,
         )?;
     }
     if !parasolid_offset_surface_records.is_empty() {

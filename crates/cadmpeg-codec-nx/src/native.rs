@@ -140,6 +140,54 @@ pub fn parasolid_surface_curve_records(streams: &[Stream]) -> Vec<ParasolidSurfa
     records
 }
 
+/// Complete typed source record for one Parasolid blend-bound bridge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidBlendBoundRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Cross-reference index of the bridge.
+    pub xmt: u32,
+    /// Five ordered common-header references.
+    pub header_references: [u32; 5],
+    /// Serialized orientation sense.
+    pub sense: bool,
+    /// Zero- or one-valued blend boundary index.
+    pub boundary_index: u32,
+    /// Cross-reference index of the blend surface.
+    pub blend_surface_xmt: u32,
+    /// Whether the record tag uses the `0xff` envelope escape.
+    pub escaped: bool,
+    /// Record tag offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Decode complete typed source records for Parasolid blend-bound bridges.
+pub fn parasolid_blend_bound_records(streams: &[Stream]) -> Vec<ParasolidBlendBoundRecord> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind.is_parasolid() {
+            continue;
+        }
+        for bound in crate::intersection::blend_bounds(&stream.inflated) {
+            records.push(ParasolidBlendBoundRecord {
+                id: format!("nx:s{stream_ordinal}:blend-bound-record#{}", bound.xmt),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: bound.xmt,
+                header_references: bound.header_references,
+                sense: bound.sense,
+                boundary_index: bound.boundary_index,
+                blend_surface_xmt: bound.blend_surface,
+                escaped: bound.escaped,
+                inflated_offset: bound.pos as u64,
+            });
+        }
+    }
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    records
+}
+
 /// Complete typed source record for one Parasolid surface-intersection curve.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidIntersectionRecord {

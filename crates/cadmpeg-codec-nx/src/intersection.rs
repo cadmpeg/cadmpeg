@@ -13,6 +13,25 @@ const INLINE_TERM_TAIL: &[u8] = b"\x00\x00\x00\x01\x01\x63\x43\x5a";
 const INLINE_UV_TAIL: &[u8] = b"\x00\x00\x00\x02\x01\x66\x01";
 type SupportUv = [Option<Vec<[f64; 2]>>; 2];
 
+/// A complete type-59 second-support bridge record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlendBound {
+    /// Cross-reference index of the bridge record.
+    pub xmt: u32,
+    /// Five ordered common-header references.
+    pub header_references: [u32; 5],
+    /// Serialized orientation sense.
+    pub sense: bool,
+    /// Zero- or one-valued blend boundary index.
+    pub boundary_index: u32,
+    /// Cross-reference index of the blend surface.
+    pub blend_surface: u32,
+    /// Whether the record tag uses the `0xff` envelope escape.
+    pub escaped: bool,
+    /// Type-tag offset in the inflated stream.
+    pub pos: usize,
+}
+
 /// A decoded surface-intersection construction and its solved chart cache.
 #[derive(Debug, Clone)]
 pub struct IntersectionCurve {
@@ -205,6 +224,14 @@ fn enrich(
 }
 
 fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {
+    blend_bounds(stream)
+        .into_iter()
+        .map(|bound| (bound.xmt, bound.blend_surface))
+        .collect()
+}
+
+/// Decode complete type-59 second-support bridge records.
+pub fn blend_bounds(stream: &[u8]) -> Vec<BlendBound> {
     let mut out = BTreeMap::new();
     for tag in find_tags(stream, [0, 59]) {
         for escape in [0usize, 1] {
@@ -226,9 +253,14 @@ fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {
                 *reference = value;
                 at += consumed;
             }
-            if !valid || header[0] != 1 || !matches!(stream.get(at), Some(b'+' | b'-')) {
+            if !valid || header[0] != 1 {
                 continue;
             }
+            let sense = match stream.get(at) {
+                Some(b'+') => true,
+                Some(b'-') => false,
+                _ => continue,
+            };
             at += 1;
             let Some((boundary, consumed)) = read_xmt(stream, at) else {
                 continue;
@@ -237,12 +269,20 @@ fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {
                 continue;
             };
             if boundary <= 1 && surface > 1 {
-                out.entry(xmt).or_insert(surface);
+                out.entry(xmt).or_insert(BlendBound {
+                    xmt,
+                    header_references: header,
+                    sense,
+                    boundary_index: boundary,
+                    blend_surface: surface,
+                    escaped: escape == 1,
+                    pos: tag,
+                });
                 break;
             }
         }
     }
-    out
+    out.into_values().collect()
 }
 
 fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {

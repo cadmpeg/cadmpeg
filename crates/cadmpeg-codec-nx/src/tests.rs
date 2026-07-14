@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 136);
+    assert_eq!(namespace.version, 137);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6452,7 +6452,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 136);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 137);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -8048,6 +8048,20 @@ fn decode_resolves_intersection_second_support_through_blend_bound() {
     let stream = blend_bound_charted_intersection_curve_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let records = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::ParasolidBlendBoundRecord>("parasolid_blend_bound_records")
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].header_references, [1; 5]);
+    assert!(records[0].sense);
+    assert_eq!(records[0].boundary_index, 0);
+    assert_eq!(records[0].blend_surface_xmt, 13);
+    assert!(!records[0].escaped);
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir.model.procedural_curves[0].definition
