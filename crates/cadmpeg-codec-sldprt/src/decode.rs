@@ -888,6 +888,7 @@ fn project_design_history(
     ir.model.features = crate::history::project_features(&semantic_projection);
     crate::resolved_features::project_compact_body_selections(&mut ir.model.features, lanes);
     crate::resolved_features::project_compact_edge_selections(&mut ir.model.features, lanes);
+    crate::resolved_features::project_compact_surface_selections(&mut ir.model.features, lanes);
     crate::resolved_features::project_adjacent_extrusion_profiles(
         &mut ir.model.features,
         &semantic_projection,

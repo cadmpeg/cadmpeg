@@ -3211,6 +3211,7 @@ pub fn prepare_features_for_write(
     if baseline_neutral.is_none() && baseline_native.is_none() {
         validate_compact_body_selection_edits(&ir.model.features, native.as_ref())?;
         validate_compact_edge_selection_edits(&ir.model.features, native.as_ref())?;
+        validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
         return sync_neutral_features(
             &ir.model.features,
             &ir.model.parameters,
@@ -3236,6 +3237,7 @@ pub fn prepare_features_for_write(
         (true, false) => {
             validate_compact_body_selection_edits(&ir.model.features, native.as_ref())?;
             validate_compact_edge_selection_edits(&ir.model.features, native.as_ref())?;
+            validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
             sync_neutral_features(
                 &ir.model.features,
                 &ir.model.parameters,
@@ -3266,6 +3268,10 @@ fn project_features_with_native_inputs(
         &native.feature_input_lanes,
     );
     crate::resolved_features::project_compact_edge_selections(
+        &mut features,
+        &native.feature_input_lanes,
+    );
+    crate::resolved_features::project_compact_surface_selections(
         &mut features,
         &native.feature_input_lanes,
     );
@@ -3355,6 +3361,46 @@ fn validate_compact_edge_selection_edits(
         if edges != &expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a compact edge selection",
+                feature.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_compact_surface_selection_edits(
+    features: &[cadmpeg_ir::features::Feature],
+    native: Option<&crate::native::SldprtNative>,
+) -> Result<(), CodecError> {
+    let Some(native) = native else { return Ok(()) };
+    let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputSurfaceSelection>>::new();
+    for selection in native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| &lane.surface_selections)
+    {
+        selections
+            .entry(selection.feature_ref.as_str())
+            .or_default()
+            .push(selection);
+    }
+    for feature in features {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
+            continue;
+        };
+        let FeatureDefinition::Thicken { faces, .. } = &feature.definition else {
+            continue;
+        };
+        let expected =
+            FaceSelection::Native(crate::resolved_features::compact_surface_selection_value(
+                &selection.local_component_ids,
+            ));
+        if faces != &expected {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} changes a compact surface selection",
                 feature.id
             )));
         }

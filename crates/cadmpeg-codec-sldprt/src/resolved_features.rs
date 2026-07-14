@@ -6,8 +6,9 @@ use crate::records::{
     FeatureInputBodySelection, FeatureInputClass, FeatureInputClassRole, FeatureInputEdgeSelection,
     FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputReference, FeatureInputRelationBinding, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
-    SketchInputKind, SketchInputLink, SketchRelationKind,
+    FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole,
+    FeatureInputSurfaceSelection, SketchInputEntity, SketchInputKind, SketchInputLink,
+    SketchRelationKind,
 };
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
@@ -86,6 +87,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 relation_instances: Vec::new(),
                 body_selections: Vec::new(),
                 edge_selections: Vec::new(),
+                surface_selections: Vec::new(),
                 references,
                 sketch_entities,
             })
@@ -243,10 +245,10 @@ pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
 mod marker_tests {
     use super::{
         arc_angle_relation_kind, compact_body_selection_at, compact_body_selection_vector,
-        compact_edge_selection_at, marker_coordinates, marker_is_geometry_locus, marker_local_id,
-        marker_local_links, named_scalars, native_scalar_matches_discrete_parameter, object_names,
-        unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
-        SCALAR_HEADER,
+        compact_edge_selection_at, compact_surface_selection_at, marker_coordinates,
+        marker_is_geometry_locus, marker_local_id, marker_local_links, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, unique_locus,
+        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::SketchRelationKind;
     use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
@@ -498,6 +500,32 @@ mod marker_tests {
             "15",
             8.371160993642741e298
         ));
+    }
+
+    #[test]
+    fn compact_surface_selection_ends_with_its_entry_signature() {
+        let mut payload = Vec::new();
+        payload.extend(6u32.to_le_bytes());
+        payload.extend([0x04, 0x02, 0, 0]);
+        payload.extend(0x1234u32.to_le_bytes());
+        payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+        payload.extend([0, 0]);
+        let signature = [0x34, 0x80, 0x37, 0, 0x89, 0, 0, 0, 0xe2, 0x56, 0xdf, 0x5e];
+        for (index, id) in [2u32, 1, 11].into_iter().enumerate() {
+            payload.extend((0x8c20u32 + index as u32).to_le_bytes());
+            payload.extend(signature);
+            payload.extend(id.to_le_bytes());
+            if index == 0 {
+                payload.extend(1u32.to_le_bytes());
+            }
+        }
+        payload.extend([0; 24]);
+        assert_eq!(
+            compact_surface_selection_at(&payload, 12),
+            Some(vec![2, 1, 11])
+        );
+        payload[12 + 18 + 24 + 4] ^= 1;
+        assert_eq!(compact_surface_selection_at(&payload, 12), Some(vec![2]));
     }
 }
 
@@ -801,6 +829,7 @@ pub(crate) fn bind_scalar_operands(
         lane.relation_instances = relation_instances(histories, lane);
         lane.body_selections = compact_body_selections(histories, lane);
         lane.edge_selections = compact_edge_selections(histories, lane);
+        lane.surface_selections = compact_surface_selections(histories, lane);
     }
 }
 
@@ -949,6 +978,101 @@ fn compact_edge_selections(
         });
     }
     result
+}
+
+fn compact_surface_selections(
+    histories: &[crate::records::FeatureHistory],
+    lane: &FeatureInputLane,
+) -> Vec<FeatureInputSurfaceSelection> {
+    let mut classes = lane
+        .classes
+        .iter()
+        .filter(|class| class.name == "moCompSurfaceBody_c");
+    let Some(class) = classes.next() else {
+        return Vec::new();
+    };
+    if classes.next().is_some() {
+        return Vec::new();
+    }
+    let Some(token_offset) = usize::try_from(class.offset)
+        .ok()
+        .and_then(|offset| offset.checked_add(6 + class.name.len()))
+    else {
+        return Vec::new();
+    };
+    let Some(token) = lane.native_payload.get(token_offset..token_offset + 2) else {
+        return Vec::new();
+    };
+    let mut objects = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| Some((feature_object_name(feature, lane)?, feature)))
+        .collect::<Vec<_>>();
+    objects.sort_by_key(|(name, _)| name.offset);
+    let lane_key = lane
+        .id
+        .rsplit_once('#')
+        .map_or(lane.id.as_str(), |(_, key)| key);
+    let mut result = Vec::new();
+    for (index, &(name, feature)) in objects.iter().enumerate() {
+        if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            != NativeClassKind::Thicken
+        {
+            continue;
+        }
+        let Some(start) = usize::try_from(name.offset).ok() else {
+            continue;
+        };
+        let end = objects
+            .get(index + 1)
+            .and_then(|(next, _)| usize::try_from(next.offset).ok())
+            .unwrap_or(lane.native_payload.len());
+        let candidates = (start..end.saturating_sub(105))
+            .filter(|offset| lane.native_payload.get(*offset..*offset + 2) == Some(token))
+            .filter_map(|offset| {
+                let marker = offset + 103;
+                compact_surface_selection_at(&lane.native_payload, marker).map(|ids| (marker, ids))
+            })
+            .collect::<Vec<_>>();
+        let [(offset, local_component_ids)] = candidates.as_slice() else {
+            continue;
+        };
+        result.push(FeatureInputSurfaceSelection {
+            id: format!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"),
+            parent: lane.id.clone(),
+            ordinal: result.len() as u32,
+            offset: *offset as u64,
+            object_name_ref: name.id.clone(),
+            feature_ref: feature.id.clone(),
+            local_component_ids: local_component_ids.clone(),
+        });
+    }
+    result
+}
+
+pub(crate) fn compact_surface_selection_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
+    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
+        || payload.get(marker - 12..marker - 8)? != 6u32.to_le_bytes()
+        || payload.get(marker - 8..marker - 4)? != [0x04, 0x02, 0, 0]
+        || payload.get(marker + 16..marker + 18)? != [0, 0]
+    {
+        return None;
+    }
+    let mut cursor = marker + 18;
+    let signature = payload.get(cursor + 4..cursor + 16)?.to_vec();
+    let mut ids = Vec::new();
+    while ids.len() < 6 && payload.get(cursor + 4..cursor + 16) == Some(signature.as_slice()) {
+        ids.push(u32::from_le_bytes(
+            payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
+        ));
+        cursor += 20;
+        if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice())
+            && payload.get(cursor + 8..cursor + 20) == Some(signature.as_slice())
+        {
+            cursor += 4;
+        }
+    }
+    (!ids.is_empty()).then_some(ids)
 }
 
 fn unique_repeated_edge_selection(
@@ -2220,6 +2344,48 @@ pub(crate) fn project_compact_edge_selections(
     }
 }
 
+pub(crate) fn project_compact_surface_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    lanes: &[FeatureInputLane],
+) {
+    let selections = lanes.iter().flat_map(|lane| &lane.surface_selections).fold(
+        HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new(),
+        |mut map, selection| {
+            map.entry(selection.feature_ref.as_str())
+                .or_default()
+                .push(selection);
+            map
+        },
+    );
+    for feature in features {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
+            continue;
+        };
+        let FeatureDefinition::Thicken { faces, .. } = &mut feature.definition else {
+            continue;
+        };
+        if matches!(faces, cadmpeg_ir::features::FaceSelection::Unresolved) {
+            *faces = cadmpeg_ir::features::FaceSelection::Native(compact_surface_selection_value(
+                &selection.local_component_ids,
+            ));
+        }
+    }
+}
+
+pub(crate) fn compact_surface_selection_value(ids: &[u32]) -> String {
+    let mut value = String::from("sldprt:feature-input:surface-component-ids:");
+    for (index, id) in ids.iter().enumerate() {
+        if index != 0 {
+            value.push(',');
+        }
+        write!(&mut value, "{id}").expect("writing to String cannot fail");
+    }
+    value
+}
+
 pub(crate) fn project_adjacent_extrusion_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
@@ -3418,6 +3584,7 @@ mod profile_join_tests {
             relation_instances: Vec::new(),
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![marker_a, marker_b, marker_c, display, reference],
         };
@@ -5142,6 +5309,7 @@ fn source_less_lanes(
                 relation_instances: Vec::new(),
                 body_selections: Vec::new(),
                 edge_selections: Vec::new(),
+                surface_selections: Vec::new(),
                 references: Vec::new(),
                 sketch_entities: Vec::new(),
             });

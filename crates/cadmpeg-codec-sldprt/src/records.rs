@@ -208,6 +208,9 @@ pub struct FeatureInputLane {
     /// Compact edge-selection vectors owned by feature objects in this lane.
     #[serde(default)]
     pub edge_selections: Vec<FeatureInputEdgeSelection>,
+    /// Compact surface-component selections owned by feature objects in this lane.
+    #[serde(default)]
+    pub surface_selections: Vec<FeatureInputSurfaceSelection>,
     /// Native entity-reference cells in byte order.
     #[serde(default)]
     pub references: Vec<FeatureInputReference>,
@@ -252,6 +255,25 @@ pub struct FeatureInputEdgeSelection {
     pub feature_ref: String,
     /// Ordered feature-local edge identifiers.
     pub local_edge_ids: Vec<u32>,
+}
+
+/// One compact feature-local surface-component selection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureInputSurfaceSelection {
+    /// Globally unique deterministic identifier.
+    pub id: String,
+    /// Owning feature-input lane record id.
+    pub parent: String,
+    /// Position among surface selections in stream order.
+    pub ordinal: u32,
+    /// Byte offset of the vector marker.
+    pub offset: u64,
+    /// Feature-input name record owning this selection.
+    pub object_name_ref: String,
+    /// Native history feature owning this selection.
+    pub feature_ref: String,
+    /// Ordered feature-local component identifiers in the surface-body reference.
+    pub local_component_ids: Vec<u32>,
 }
 
 /// A declared sketch-relation family and its attached scalar record.

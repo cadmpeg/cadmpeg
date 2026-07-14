@@ -35,4 +35,5 @@ The schema-33103 sheet discriminator is unresolved. `0x1d/flo2` belongs to the f
 - The operation, target-body, and tool-body carriers for compact `moCombineBodies_c` objects without corresponding Keywords attributes are unresolved.
 - The delete/keep mode discriminator and the mapping from compact `moDeleteBody_c` feature-local body identifiers to B-rep bodies are unresolved.
 - The mapping from compact `moCompEdge_c` feature-local edge identifiers to B-rep edges is unresolved. Multiple repeated edge vectors in one feature-object interval are unresolved.
+- The mapping from `moCompSurfaceBody_c` feature-local component identifiers to B-rep faces is unresolved.
 - The reference fields that bind `moSweep_c` general-curve-reference children to neutral paths, composite-profile forms not carried by a unique enclosed planar profile stream, and the Boolean operation discriminator for solid sweep objects without Keywords attributes are unresolved.
