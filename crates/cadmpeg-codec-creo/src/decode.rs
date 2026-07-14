@@ -2408,20 +2408,6 @@ fn insert_feature_parameter(parameters: &mut BTreeMap<String, String>, base: &st
 
 fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String, String> {
     let mut parameters = BTreeMap::new();
-    for choice in scan
-        .feature_choices
-        .iter()
-        .filter(|choice| choice.feature_id == feature_id)
-    {
-        let (value, end) = crate::psb::compact_int(&choice.payload, 0);
-        if end == choice.payload.len() && end != 0 {
-            insert_feature_parameter(
-                &mut parameters,
-                &format!("choice.{}", choice.label),
-                value.to_string(),
-            );
-        }
-    }
     for field in scan
         .feature_choice_fields
         .iter()
