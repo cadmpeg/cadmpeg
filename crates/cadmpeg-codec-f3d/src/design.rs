@@ -6986,19 +6986,32 @@ fn edge_recipe_side(runs: &[&[i32]]) -> Option<DesignTopologyRecipeSide> {
 }
 
 fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> {
-    words
+    let entries = words
         .chunks_exact(8)
         .map(|entry| {
-            Some(DesignTopologyRecipeEntry {
-                selector: entry[0],
-                boundary_edge_count: std::num::NonZeroU32::new(u32::try_from(entry[1]).ok()?)?,
-                topology_triplets: [
-                    edge_recipe_topology_triplet(&entry[2..5])?,
-                    edge_recipe_topology_triplet(&entry[5..8])?,
-                ],
-            })
+            let selector = entry[0];
+            if !(0..=2).contains(&selector) {
+                return None;
+            }
+            let boundary_edge_count = std::num::NonZeroU32::new(u32::try_from(entry[1]).ok()?)?;
+            let topology_triplets = [
+                edge_recipe_topology_triplet(&entry[2..5])?,
+                edge_recipe_topology_triplet(&entry[5..8])?,
+            ];
+            topology_triplets
+                .iter()
+                .all(|triplet| triplet.outer.get() <= boundary_edge_count.get())
+                .then_some(DesignTopologyRecipeEntry {
+                    selector,
+                    boundary_edge_count,
+                    topology_triplets,
+                })
         })
-        .collect()
+        .collect::<Option<Vec<_>>>()?;
+    entries
+        .windows(2)
+        .all(|pair| pair[0].selector < pair[1].selector)
+        .then_some(entries)
 }
 
 fn edge_recipe_topology_triplet(words: &[i32]) -> Option<DesignTopologyRecipeTriplet> {
@@ -11327,6 +11340,16 @@ mod relation_tests {
         assert_eq!(
             structured.sides[1].entries[0].topology_triplets[1].middle,
             1
+        );
+        assert!(super::edge_recipe_entries(&[3, 5, 1, 1, 1, 2, 1, 2]).is_none());
+        assert!(super::edge_recipe_entries(&[1, 5, 6, 5, 6, 2, 1, 2]).is_none());
+        assert!(
+            super::edge_recipe_entries(&[1, 5, 1, 1, 1, 2, 1, 2, 1, 5, 2, 1, 2, 3, 2, 3,])
+                .is_none()
+        );
+        assert!(
+            super::edge_recipe_entries(&[2, 5, 1, 1, 1, 2, 1, 2, 1, 5, 2, 1, 2, 3, 2, 3,])
+                .is_none()
         );
         let extended = super::edge_recipe_structure(&[
             -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 2, -1, 1, -1, 0, -1, 0, 0, -1, 4, 3, -1, 0, -1, 1,

@@ -1183,7 +1183,7 @@ pub struct DesignTopologyRecipeSide {
 /// One eight-word topology entry in an edge-recipe side clause.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignTopologyRecipeEntry {
-    /// Side-local selector.
+    /// Clause-local selector in `0..=2`, strictly increasing within one clause.
     pub selector: i32,
     /// Number of boundary edges on the referenced face loop.
     pub boundary_edge_count: NonZeroU32,
@@ -1194,7 +1194,8 @@ pub struct DesignTopologyRecipeEntry {
 /// One three-word invariant in an edge-recipe entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignTopologyRecipeTriplet {
-    /// Equal positive first and third words.
+    /// Equal positive first and third words, not exceeding the containing
+    /// entry's boundary-edge count.
     pub outer: NonZeroU32,
     /// Middle word, equal to `outer` or one less.
     pub middle: u32,
