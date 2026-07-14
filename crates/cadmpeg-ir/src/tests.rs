@@ -326,11 +326,11 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
 
 #[test]
 fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
-    use crate::features::ParameterId;
+    use crate::features::{Length, ParameterId};
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+        SketchEntityId, SketchGeometry, SketchId, SketchLocus, SketchOffsetPair,
     };
 
     let entity = SketchEntityId("synthetic:test:entity#0".into());
@@ -345,6 +345,13 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         SketchConstraintDefinition::Midpoint {
             point: SketchLocus::End(entity.clone()),
             entity: entity.clone(),
+        },
+        SketchConstraintDefinition::Offset {
+            pairs: vec![SketchOffsetPair {
+                source: entity.clone(),
+                result: entity.clone(),
+            }],
+            signed_distance: Length(-2.0),
         },
         SketchConstraintDefinition::Concentric {
             first: entity.clone(),

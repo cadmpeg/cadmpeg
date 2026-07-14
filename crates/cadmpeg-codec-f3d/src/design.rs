@@ -1149,6 +1149,7 @@ pub fn project_sketch_constraints(
             let definition = exact
                 .then(|| exact_atomic_constraint(relation.constraint_kinds[0], &member_entities))
                 .flatten()
+                .or_else(|| exact_offset_constraint(relation, scope, &projected))
                 .unwrap_or_else(|| Definition::Native {
                     native_kind: relation_kind_name(relation),
                     entities: member_entities
@@ -1710,6 +1711,107 @@ fn exact_atomic_constraint(
         }),
         _ => None,
     }
+}
+
+fn exact_offset_constraint(
+    relation: &SketchRelation,
+    scope: &str,
+    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::features::Length;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchOffsetPair};
+
+    if relation.unknown_constraint_bits != 0
+        || relation.constraint_kinds != [SketchConstraintKind::Perpendicular]
+        || relation.return_members.len() < 4
+        || !relation.return_members.len().is_multiple_of(2)
+        || relation.resolved_return_members.len() != relation.return_members.len()
+    {
+        return None;
+    }
+    let mut pairs = Vec::new();
+    let mut signed_distance: Option<f64> = None;
+    for operands in relation.resolved_return_members.chunks_exact(2) {
+        let (source_record_index, result_record_index) = match operands {
+            [SketchRelationOperand::Curve {
+                record_index: source_record_index,
+                secondary_id: 0,
+                ..
+            }, SketchRelationOperand::Curve {
+                record_index: result_record_index,
+                secondary_id,
+                ..
+            }] if *secondary_id != 0 => (*source_record_index, *result_record_index),
+            _ => return None,
+        };
+        let source = projected.get(&(scope, source_record_index))?;
+        let result = projected.get(&(scope, result_record_index))?;
+        let distance = parallel_line_offset(&source.geometry, &result.geometry)?;
+        if distance.abs() <= 1.0e-9 {
+            return None;
+        }
+        if let Some(expected) = signed_distance {
+            let scale = 1.0 + distance.abs().max(expected.abs());
+            if (distance - expected).abs() > scale * 1.0e-9 {
+                return None;
+            }
+        } else {
+            signed_distance = Some(distance);
+        }
+        pairs.push(SketchOffsetPair {
+            source: source.id.clone(),
+            result: result.id.clone(),
+        });
+    }
+    Some(Definition::Offset {
+        pairs,
+        signed_distance: Length(signed_distance?),
+    })
+}
+
+fn parallel_line_offset(
+    source: &cadmpeg_ir::sketches::SketchGeometry,
+    result: &cadmpeg_ir::sketches::SketchGeometry,
+) -> Option<f64> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let SketchGeometry::Line {
+        start: source_start,
+        end: source_end,
+    } = source
+    else {
+        return None;
+    };
+    let SketchGeometry::Line {
+        start: result_start,
+        end: result_end,
+    } = result
+    else {
+        return None;
+    };
+    let source_du = source_end.u - source_start.u;
+    let source_dv = source_end.v - source_start.v;
+    let result_du = result_end.u - result_start.u;
+    let result_dv = result_end.v - result_start.v;
+    let source_length = source_du.hypot(source_dv);
+    let result_length = result_du.hypot(result_dv);
+    if source_length <= 1.0e-12 || result_length <= 1.0e-12 {
+        return None;
+    }
+    let parallel_error =
+        (source_du * result_dv - source_dv * result_du).abs() / (source_length * result_length);
+    if parallel_error > 1.0e-9 {
+        return None;
+    }
+    let normal_u = -source_dv / source_length;
+    let normal_v = source_du / source_length;
+    let distance_at = |point: &Point2| {
+        (point.u - source_start.u) * normal_u + (point.v - source_start.v) * normal_v
+    };
+    let start_distance = distance_at(result_start);
+    let end_distance = distance_at(result_end);
+    let scale = 1.0 + start_distance.abs().max(end_distance.abs());
+    ((start_distance - end_distance).abs() <= scale * 1.0e-9).then_some(start_distance)
 }
 
 fn reflected_symmetry<'a>(
@@ -6010,16 +6112,16 @@ mod relation_tests {
     use super::{
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
         bind_face_operand_candidates, bind_sketch_graph, companion_owned_interval,
-        decode_fillet_radius_groups, exact_atomic_constraint, find_dimension_locus_groups,
-        find_dimension_locus_pair, identity_matrix, neutral_sketch_id, next_indexed_record_offset,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
-        remove_dimension_frame_relations,
+        decode_fillet_radius_groups, exact_atomic_constraint, exact_offset_constraint,
+        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix, neutral_sketch_id,
+        next_indexed_record_offset, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design, remove_dimension_frame_relations,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -6037,7 +6139,7 @@ mod relation_tests {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId,
     };
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     fn lp_utf16(out: &mut Vec<u8>, value: &str) {
         let units = value.encode_utf16().collect::<Vec<_>>();
@@ -7326,6 +7428,95 @@ mod relation_tests {
             &[&first, &off_axis, &second],
         )
         .is_none());
+    }
+
+    #[test]
+    fn aggregate_offset_relation_projects_ordered_pairs_and_signed_distance() {
+        let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let source_horizontal = entity(
+            "generated:line#source-horizontal",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(10.0, 0.0),
+            },
+        );
+        let result_horizontal = entity(
+            "generated:line#result-horizontal",
+            SketchGeometry::Line {
+                start: Point2::new(2.0, -2.0),
+                end: Point2::new(8.0, -2.0),
+            },
+        );
+        let source_vertical = entity(
+            "generated:line#source-vertical",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(0.0, 10.0),
+            },
+        );
+        let result_vertical = entity(
+            "generated:line#result-vertical",
+            SketchGeometry::Line {
+                start: Point2::new(2.0, 2.0),
+                end: Point2::new(2.0, 8.0),
+            },
+        );
+        let curve = |record_index, secondary_id| SketchRelationOperand::Curve {
+            record_index,
+            primary_id: u64::from(record_index),
+            secondary_id,
+        };
+        let relation = SketchRelation {
+            id: "f3d:native:sketch-relation#0".into(),
+            record_index: 10,
+            class_tag: "300".into(),
+            byte_offset: 0,
+            state_offset: 100,
+            owner_reference: 1,
+            owner_entity_id: "0_1".into(),
+            auxiliary_references: vec![0],
+            auxiliary_reference_offsets: vec![80],
+            members: vec![1, 2, 3, 4],
+            resolved_members: Vec::new(),
+            member_offsets: vec![25, 40, 55, 70],
+            owner_reference_offset: 90,
+            state: 0x20,
+            constraint_kinds: vec![SketchConstraintKind::Perpendicular],
+            unknown_constraint_bits: 0,
+            return_members: vec![1, 3, 2, 4],
+            resolved_return_members: vec![curve(1, 0), curve(3, 30), curve(2, 0), curve(4, 40)],
+            return_member_offsets: vec![120, 131, 142, 153],
+            raw_bytes: Vec::new(),
+        };
+        let projected = HashMap::from([
+            (("native", 1), &source_horizontal),
+            (("native", 2), &source_vertical),
+            (("native", 3), &result_horizontal),
+            (("native", 4), &result_vertical),
+        ]);
+
+        let definition = exact_offset_constraint(&relation, "native", &projected).unwrap();
+        let SketchConstraintDefinition::Offset {
+            pairs,
+            signed_distance,
+        } = definition
+        else {
+            panic!("expected neutral offset constraint")
+        };
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0].source, source_horizontal.id);
+        assert_eq!(pairs[0].result, result_horizontal.id);
+        assert_eq!(pairs[1].source, source_vertical.id);
+        assert_eq!(pairs[1].result, result_vertical.id);
+        assert!((signed_distance.0 + 2.0).abs() <= 1.0e-9);
     }
 
     #[test]

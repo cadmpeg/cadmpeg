@@ -195,6 +195,15 @@ pub struct SketchNativeOperand {
     pub native_ref: Option<String>,
 }
 
+/// One progenitor/result pair in a sketch offset relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchOffsetPair {
+    /// Source entity whose stored direction defines the signed offset normal.
+    pub source: SketchEntityId,
+    /// Entity produced at the shared signed offset distance.
+    pub result: SketchEntityId,
+}
+
 /// Neutral geometric and dimensional sketch relations.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -215,6 +224,13 @@ pub enum SketchConstraintDefinition {
         point: SketchLocus,
         /// Bounded entity whose midpoint is used.
         entity: SketchEntityId,
+    },
+    /// One or more entities offset from their progenitors by one signed distance.
+    Offset {
+        /// Ordered progenitor/result pairs.
+        pairs: Vec<SketchOffsetPair>,
+        /// Distance along each source entity's stored left normal.
+        signed_distance: Length,
     },
     /// Circular or elliptical entities share a center.
     Concentric {

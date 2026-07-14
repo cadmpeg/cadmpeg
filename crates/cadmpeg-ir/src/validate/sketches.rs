@@ -202,6 +202,12 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             Constraint::Coincident { entities } => entities.len() >= 2,
             Constraint::CoincidentLoci { loci } => loci.len() >= 2,
             Constraint::Distance { entities, .. } => !entities.is_empty(),
+            Constraint::Offset {
+                pairs,
+                signed_distance,
+            } => {
+                !pairs.is_empty() && signed_distance.0.is_finite() && signed_distance.0.abs() > 0.0
+            }
             Constraint::Native {
                 native_kind,
                 entities,
@@ -242,6 +248,25 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     &constraint.id.0,
                     "sketch constraint locus is incompatible with its entity",
                 );
+            }
+        }
+        if let Constraint::Offset { pairs, .. } = &constraint.definition {
+            for pair in pairs {
+                let valid = entity_geometry
+                    .get(&pair.source)
+                    .zip(entity_geometry.get(&pair.result))
+                    .is_none_or(|(source, result)| {
+                        matches!(source, SketchGeometry::Line { .. })
+                            && matches!(result, SketchGeometry::Line { .. })
+                    });
+                if !valid {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "sketch offset pair requires two line entities",
+                    );
+                }
             }
         }
     }

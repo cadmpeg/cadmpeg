@@ -1133,6 +1133,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             Definition::Midpoint { point, entity } => {
                 (vec![locus_entity(point).clone(), entity.clone()], None)
             }
+            Definition::Offset { pairs, .. } => (
+                pairs
+                    .iter()
+                    .flat_map(|pair| [pair.source.clone(), pair.result.clone()])
+                    .collect(),
+                None,
+            ),
             Definition::Symmetric {
                 first,
                 second,
