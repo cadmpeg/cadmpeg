@@ -247,7 +247,7 @@ mod marker_tests {
         arc_angle_relation_kind, compact_body_path_at, compact_body_selection_at,
         compact_body_selection_vector, compact_body_state_ids, compact_edge_selection_at,
         compact_extrusion_through_all_at, compact_extrusion_to_face_at,
-        compact_general_curve_ref_at, compact_line_region_addresses,
+        compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
         compact_reference_plane_source, compact_surface_selection_at, component_profile_source_at,
         coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
         marker_local_id, marker_local_links, named_scalars,
@@ -306,6 +306,30 @@ mod marker_tests {
         );
         payload[22] = 1;
         assert_eq!(compact_line_region_addresses(&payload), None);
+    }
+
+    #[test]
+    fn compact_line_chain_is_an_ordered_one_based_vertex_roster() {
+        let mut payload = Vec::new();
+        payload.extend(4u16.to_le_bytes());
+        for address in [3u32, 2, 1, 4] {
+            payload.extend(address.to_le_bytes());
+        }
+        payload.extend(1u32.to_le_bytes());
+        payload.extend(0u16.to_le_bytes());
+        payload.extend(6u32.to_le_bytes());
+        payload.extend([0xff; 4]);
+        payload.extend([0; 8]);
+        payload.extend(5u32.to_le_bytes());
+        payload.extend(5u32.to_le_bytes());
+        payload.extend([0xff, 0xfe, 0xff, 0, 0, 0]);
+        payload.extend([0xff; 4]);
+        assert_eq!(
+            compact_line_chain_addresses(&payload),
+            Some(vec![3, 2, 1, 4])
+        );
+        payload[24] = 4;
+        assert_eq!(compact_line_chain_addresses(&payload), None);
     }
 
     #[test]
@@ -3272,7 +3296,7 @@ pub(crate) fn project_compact_sketch_profiles(
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
-    let principal_planes = histories
+    let plane_frames = histories
         .iter()
         .flat_map(|history| &history.features)
         .filter_map(|feature| {
@@ -3280,12 +3304,18 @@ pub(crate) fn project_compact_sketch_profiles(
             let neutral = features
                 .iter()
                 .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))?;
-            let cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } =
-                neutral.definition
-            else {
-                return None;
+            let frame = match neutral.definition {
+                cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } => {
+                    principal_sketch_frame(plane)?
+                }
+                cadmpeg_ir::features::FeatureDefinition::DatumPlane {
+                    origin,
+                    normal,
+                    u_axis,
+                } => (origin, normal, u_axis),
+                _ => return None,
             };
-            Some((source, plane))
+            Some((source, frame))
         })
         .collect::<HashMap<_, _>>();
 
@@ -3317,58 +3347,75 @@ pub(crate) fn project_compact_sketch_profiles(
             let Some(interval) = lane.native_payload.get(start..end) else {
                 continue;
             };
-            let Some(addresses) = compact_line_region_addresses(interval) else {
+            let region_addresses = compact_line_region_addresses(interval);
+            let chain_addresses = compact_line_chain_addresses(interval);
+            let Some(addresses) = region_addresses.as_ref().or(chain_addresses.as_ref()) else {
                 continue;
             };
-            let line_classes = lane
-                .classes
+            let owned_markers = lane
+                .sketch_entities
                 .iter()
-                .filter(|class| {
-                    class.name == "sgLineHandle"
+                .filter(|marker| marker.feature_ref.as_deref() == Some(native_feature.id.as_str()))
+                .collect::<Vec<_>>();
+            let markers = if region_addresses.is_some() {
+                let line_classes = lane
+                    .classes
+                    .iter()
+                    .filter(|class| {
+                        class.name == "sgLineHandle"
+                            && usize::try_from(class.offset)
+                                .is_ok_and(|offset| offset >= start && offset < end)
+                    })
+                    .collect::<Vec<_>>();
+                let [line_class] = line_classes.as_slice() else {
+                    continue;
+                };
+                if lane.classes.iter().any(|class| {
+                    class.name == "sgArcHandle"
                         && usize::try_from(class.offset)
                             .is_ok_and(|offset| offset >= start && offset < end)
-                })
-                .collect::<Vec<_>>();
-            let [line_class] = line_classes.as_slice() else {
-                continue;
+                }) {
+                    continue;
+                }
+                let Some(first_marker) = owned_markers
+                    .iter()
+                    .copied()
+                    .filter(|marker| marker.offset <= line_class.offset)
+                    .max_by_key(|marker| marker.offset)
+                else {
+                    continue;
+                };
+                owned_markers
+                    .iter()
+                    .copied()
+                    .skip_while(|marker| marker.offset < first_marker.offset)
+                    .take_while(|marker| marker.coordinates_m.is_some())
+                    .collect::<Vec<_>>()
+            } else {
+                let runs = owned_markers
+                    .split(|marker| {
+                        marker.coordinates_m.is_none()
+                            || !matches!(
+                                marker.kind,
+                                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                            )
+                    })
+                    .filter(|run| run.len() == addresses.len())
+                    .collect::<Vec<_>>();
+                let [run] = runs.as_slice() else {
+                    continue;
+                };
+                run.to_vec()
             };
-            if lane.classes.iter().any(|class| {
-                class.name == "sgArcHandle"
-                    && usize::try_from(class.offset)
-                        .is_ok_and(|offset| offset >= start && offset < end)
-            }) {
-                continue;
-            }
-            let Some(first_marker) = lane
-                .sketch_entities
-                .iter()
-                .filter(|marker| {
-                    marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
-                        && marker.offset <= line_class.offset
-                })
-                .max_by_key(|marker| marker.offset)
-            else {
-                continue;
-            };
-            let markers = lane
-                .sketch_entities
-                .iter()
-                .filter(|marker| {
-                    marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
-                        && marker.offset >= first_marker.offset
-                })
-                .take_while(|marker| marker.coordinates_m.is_some())
-                .collect::<Vec<_>>();
             if markers.len() != addresses.len() || markers.len() < 3 {
                 continue;
             }
-            let Some(source_id) = compact_reference_plane_source(&lane.native_payload) else {
+            let Some(source_id) = compact_reference_plane_source(interval)
+                .or_else(|| compact_reference_plane_source(&lane.native_payload))
+            else {
                 continue;
             };
-            let Some((origin, normal, u_axis)) = principal_planes
-                .get(&source_id)
-                .and_then(|plane| principal_sketch_frame(*plane))
-            else {
+            let Some(&(origin, normal, u_axis)) = plane_frames.get(&source_id) else {
                 continue;
             };
             let lane_key = lane
@@ -3487,28 +3534,106 @@ fn compact_line_region_addresses(payload: &[u8]) -> Option<Vec<u16>> {
     (addresses.iter().copied().collect::<HashSet<_>>() == expected).then_some(addresses)
 }
 
+fn compact_line_chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
+    let matches = (0..payload.len()).filter_map(|offset| {
+        let bytes = payload.get(offset..)?;
+        let count = usize::from(u16::from_le_bytes(bytes.get(..2)?.try_into().ok()?));
+        if count < 3 || count > 64 {
+            return None;
+        }
+        let addresses_end = 2usize.checked_add(count.checked_mul(4)?)?;
+        let trailer = bytes.get(addresses_end..addresses_end.checked_add(40)?)?;
+        if u32::from_le_bytes(trailer.get(..4)?.try_into().ok()?) != 1
+            || trailer.get(4..6)? != [0, 0]
+            || u32::from_le_bytes(trailer.get(6..10)?.try_into().ok()?)
+                != u32::try_from(count + 2).ok()?
+            || trailer.get(10..14)? != [0xff; 4]
+            || trailer.get(14..22)?.iter().any(|byte| *byte != 0)
+            || u32::from_le_bytes(trailer.get(22..26)?.try_into().ok()?)
+                != u32::try_from(count + 1).ok()?
+            || u32::from_le_bytes(trailer.get(26..30)?.try_into().ok()?)
+                != u32::try_from(count + 1).ok()?
+            || trailer.get(30..36)? != [0xff, 0xfe, 0xff, 0, 0, 0]
+            || trailer.get(36..40)? != [0xff; 4]
+        {
+            return None;
+        }
+        let addresses = (0..count)
+            .filter_map(|index| {
+                let offset = 2 + index * 4;
+                u16::try_from(u32::from_le_bytes(
+                    bytes.get(offset..offset + 4)?.try_into().ok()?,
+                ))
+                .ok()
+            })
+            .collect::<Vec<_>>();
+        let expected = (1..=u16::try_from(count).ok()?).collect::<HashSet<_>>();
+        (addresses.len() == count && addresses.iter().copied().collect::<HashSet<_>>() == expected)
+            .then_some(addresses)
+    });
+    let mut matches = matches.collect::<Vec<_>>();
+    matches.dedup();
+    let [addresses] = matches.as_slice() else {
+        return None;
+    };
+    Some(addresses.clone())
+}
+
 fn compact_reference_plane_source(payload: &[u8]) -> Option<u32> {
     const CLASS: &[u8] = b"moCompRefPlane_c";
     let class_count = payload
         .windows(CLASS.len())
         .filter(|bytes| *bytes == CLASS)
         .count();
-    if class_count != 1 {
-        return None;
-    }
-    let mut matches = payload.windows(67).filter_map(|bytes| {
+    let declared = (class_count == 1)
+        .then(|| {
+            payload.windows(67).filter_map(|bytes| {
+                let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+                (source != 0
+                    && bytes.get(8..12) == Some(&[0, 0, 3, 0])
+                    && bytes.get(12..39)?.iter().all(|byte| *byte == 0)
+                    && bytes.get(39..47) == Some(&1.0f64.to_le_bytes())
+                    && bytes.get(47..63)
+                        == Some(&[
+                            0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00,
+                            0x00, 0x00, 0x00, 0x65,
+                        ]))
+                .then_some(source)
+            })
+        })
+        .into_iter()
+        .flatten();
+    let component = payload.windows(138).filter_map(|bytes| {
         let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+        let scalar = |offset| {
+            let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+            value.is_finite().then_some(value)
+        };
+        let basis = [
+            Vector3::new(scalar(15)?, scalar(23)?, scalar(31)?),
+            Vector3::new(scalar(39)?, scalar(47)?, scalar(55)?),
+            Vector3::new(scalar(63)?, scalar(71)?, scalar(79)?),
+        ];
+        let norm = |vector: Vector3| {
+            (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt()
+        };
+        let dot =
+            |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
         (source != 0
-            && bytes.get(8..12) == Some(&[0, 0, 3, 0])
-            && bytes.get(12..39)?.iter().all(|byte| *byte == 0)
-            && bytes.get(39..47) == Some(&1.0f64.to_le_bytes())
-            && bytes.get(47..63)
-                == Some(&[
-                    0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00, 0x00,
-                    0x00, 0x00, 0x65,
-                ]))
+            && bytes.get(8..14)?.iter().all(|byte| *byte == 0)
+            && bytes.get(14) == Some(&1)
+            && basis
+                .iter()
+                .all(|vector| (norm(*vector) - 1.0).abs() <= 1.0e-9)
+            && dot(basis[0], basis[1]).abs() <= 1.0e-9
+            && dot(basis[0], basis[2]).abs() <= 1.0e-9
+            && dot(basis[1], basis[2]).abs() <= 1.0e-9
+            && bytes.get(122..126) == Some(&4u32.to_le_bytes())
+            && bytes.get(126..130) == Some(&[0xff; 4]))
         .then_some(source)
     });
+    let matches = declared.chain(component).collect::<HashSet<_>>();
+    let mut matches = matches.into_iter();
     let source = matches.next()?;
     matches.next().is_none().then_some(source)
 }
