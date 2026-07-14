@@ -864,8 +864,8 @@ pub struct OffsetStoreNamedPoint {
     pub id: String,
     /// Exact `Point<positive decimal>` source name.
     pub name: String,
-    /// Two consecutive source blocks carrying the object.
-    pub data_blocks: [String; 2],
+    /// Minimal consecutive source-block span carrying the object.
+    pub data_blocks: Vec<String>,
     /// Ordered finite native scalar values.
     pub values: [f64; 2],
     /// Absolute source offsets of the two scalar markers.
@@ -2932,27 +2932,39 @@ pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedP
         }
         let section_key = format!("nx:om-data-blocks-{section_ordinal}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (ordinal, pair) in section.records.windows(2).enumerate() {
-            let Some(point) = crate::om::offset_store_named_point(pair[0].bytes, pair[1].bytes)
-            else {
+        for ordinal in 0..section.records.len() {
+            let remaining = section.records[ordinal..]
+                .iter()
+                .map(|record| record.bytes)
+                .collect::<Vec<_>>();
+            let Some(point) = crate::om::offset_store_named_point(&remaining) else {
                 continue;
             };
-            let first_source = entry_offset + pair[0].offset as u64;
-            let second_source = entry_offset + pair[1].offset as u64;
+            let records = &section.records[ordinal..ordinal + point.block_count];
+            let first_source = entry_offset + records[0].offset as u64;
+            let value_source_offset = |payload_offset: usize| {
+                let mut relative = payload_offset;
+                for record in records {
+                    if relative < record.bytes.len() {
+                        return Some(entry_offset + record.offset as u64 + relative as u64);
+                    }
+                    relative -= record.bytes.len();
+                }
+                None
+            };
             points.push(OffsetStoreNamedPoint {
                 id: format!(
                     "nx:offset-store:named-point#{section_ordinal}-{}",
                     ordinal + 1
                 ),
                 name: point.name,
-                data_blocks: [
-                    format!("{section_key}:block#{}", ordinal + 1),
-                    format!("{section_key}:block#{}", ordinal + 2),
-                ],
+                data_blocks: (0..point.block_count)
+                    .map(|relative| format!("{section_key}:block#{}", ordinal + relative + 1))
+                    .collect(),
                 values: point.values,
                 value_source_offsets: [
-                    first_source + point.value_offsets[0] as u64,
-                    second_source + (point.value_offsets[1] - pair[0].bytes.len()) as u64,
+                    value_source_offset(point.value_offsets[0]).expect("first scalar in span"),
+                    value_source_offset(point.value_offsets[1]).expect("second scalar in span"),
                 ],
                 source_offset: first_source,
             });

@@ -269,7 +269,7 @@ pub struct SketchPayloadNamedField<'a> {
     pub value: &'a str,
 }
 
-/// Exact type-free named point record spanning two consecutive store blocks.
+/// Exact type-free named point record spanning consecutive store blocks.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OffsetStoreNamedPoint {
     /// Exact `Point<positive decimal>` name.
@@ -278,32 +278,37 @@ pub struct OffsetStoreNamedPoint {
     pub values: [f64; 2],
     /// Scalar marker offsets in the concatenated two-block payload.
     pub value_offsets: [usize; 2],
+    /// Minimal number of consecutive blocks containing both scalar frames.
+    pub block_count: usize,
 }
 
-/// Decode one named point whose first and second scalar fields occupy successive blocks.
-pub fn offset_store_named_point(first: &[u8], second: &[u8]) -> Option<OffsetStoreNamedPoint> {
-    let mut bytes = Vec::with_capacity(first.len() + second.len());
-    bytes.extend_from_slice(first);
-    bytes.extend_from_slice(second);
-    let names = sketch_payload_named_fields(&bytes);
-    let [name] = names.as_slice() else {
-        return None;
-    };
-    if !name.payload_leading || parse_positive_decimal_suffix(name.value, "Point").is_none() {
-        return None;
+/// Decode the minimal consecutive-block span beginning with a named two-scalar point.
+pub fn offset_store_named_point(blocks: &[&[u8]]) -> Option<OffsetStoreNamedPoint> {
+    let mut bytes = Vec::new();
+    for (block_ordinal, block) in blocks.iter().enumerate() {
+        bytes.extend_from_slice(block);
+        let names = sketch_payload_named_fields(&bytes);
+        let [name] = names.as_slice() else {
+            return None;
+        };
+        if !name.payload_leading || parse_positive_decimal_suffix(name.value, "Point").is_none() {
+            return None;
+        }
+        let scalars = sketch_payload_scalar_fields(&bytes);
+        match scalars.as_slice() {
+            [] | [_] => {}
+            [first_scalar, second_scalar] => {
+                return Some(OffsetStoreNamedPoint {
+                    name: name.value.to_string(),
+                    values: [first_scalar.value, second_scalar.value],
+                    value_offsets: [first_scalar.offset, second_scalar.offset],
+                    block_count: block_ordinal + 1,
+                });
+            }
+            _ => return None,
+        }
     }
-    let scalars = sketch_payload_scalar_fields(&bytes);
-    let [first_scalar, second_scalar] = scalars.as_slice() else {
-        return None;
-    };
-    if first_scalar.offset >= first.len() || second_scalar.offset < first.len() {
-        return None;
-    }
-    Some(OffsetStoreNamedPoint {
-        name: name.value.to_string(),
-        values: [first_scalar.value, second_scalar.value],
-        value_offsets: [first_scalar.offset, second_scalar.offset],
-    })
+    None
 }
 
 fn parse_positive_decimal_suffix(value: &str, prefix: &str) -> Option<u32> {

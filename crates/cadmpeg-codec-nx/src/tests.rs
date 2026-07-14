@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 111);
+    assert_eq!(namespace.version, 112);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1264,7 +1264,7 @@ fn om_sketch_name_field_decodes_type_free_payload_leading_form() {
 }
 
 #[test]
-fn om_offset_store_named_point_requires_two_block_scalar_distribution() {
+fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     let first = [
         0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'7', 0x00, 0x50, 0x59, 0x66, 0x58, 0x00, 0x30,
         0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
@@ -1273,20 +1273,32 @@ fn om_offset_store_named_point_requires_two_block_scalar_distribution() {
         0x45, 0x04, 0x00, 0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33,
         0x07,
     ];
-    let point = crate::om::offset_store_named_point(&first, &second).unwrap();
+    let point = crate::om::offset_store_named_point(&[&first, &second]).unwrap();
     assert_eq!(point.name, "Point7");
     assert!(point
         .values
         .iter()
         .all(|value| (*value - 57.15).abs() < 1.0e-12));
     assert_eq!(point.value_offsets, [9, first.len() + 3]);
+    assert_eq!(point.block_count, 2);
 
     let mut same_block = first.to_vec();
     same_block.extend_from_slice(&second);
-    assert!(crate::om::offset_store_named_point(&same_block, &[]).is_none());
+    assert_eq!(
+        crate::om::offset_store_named_point(&[&same_block])
+            .unwrap()
+            .block_count,
+        1
+    );
+    assert_eq!(
+        crate::om::offset_store_named_point(&[&first[..9], &first[9..], &second])
+            .unwrap()
+            .block_count,
+        3
+    );
     let mut zero = first;
     zero[7] = b'0';
-    assert!(crate::om::offset_store_named_point(&zero, &second).is_none());
+    assert!(crate::om::offset_store_named_point(&[&zero, &second]).is_none());
 }
 
 #[test]
@@ -5525,7 +5537,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 111);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 112);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
