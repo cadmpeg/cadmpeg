@@ -5184,6 +5184,12 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::TrimBodies { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses a body-level trim operation",
+                    feature.id
+                )));
+            }
             FeatureDefinition::FilledSurface {
                 boundary,
                 support_faces,
@@ -7000,6 +7006,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::OffsetSurface { .. } => "OffsetSurface",
         FeatureDefinition::KnitSurface { .. } => "KnitSurface",
         FeatureDefinition::SewBodies { .. } => "Feature",
+        FeatureDefinition::TrimBodies { .. } => "Feature",
         FeatureDefinition::FilledSurface { .. } => "FilledSurface",
         FeatureDefinition::TrimSurface { .. } => "TrimSurface",
         FeatureDefinition::ExtendSurface { .. } => "ExtendSurface",

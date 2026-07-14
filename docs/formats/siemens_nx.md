@@ -672,6 +672,13 @@ bindings; otherwise the ordered native object-index selection is retained
 atomically. The operation record does not assign a gap tolerance, so the
 neutral tolerance remains absent.
 
+A `TRIM BODY` operation with one unambiguous primary body and one or more body
+operands projects as a neutral body-trim feature. The primary body is the
+target; wrapped-member order defines the ordered tool-body selection. Target
+and tools resolve atomically through surviving segment body bindings and
+otherwise retain their native object-index selections. The body clauses do not
+assign which side is retained, so the neutral retained side is unresolved.
+
 Bodies named by validated segment binding tuples exist at the start of retained feature history. A `SEW` or `TRIM BODY` body operand consumes that body image when the body's latest decoded writer precedes the operation. Boolean tool operands follow the same ordering rule. A later writer supersedes earlier consumption. Terminal body selection is applied only when every emitted partition has one unambiguous terminal status and at least one, but not every, emitted body remains terminal.
 
 An `OFFSET` operation with exactly one segment-bound output image resolves as a

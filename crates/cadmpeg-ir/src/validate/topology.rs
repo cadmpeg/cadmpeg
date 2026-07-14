@@ -1730,6 +1730,10 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 body_selections.push(targets);
                 face_selections.push(tools);
             }
+            FeatureDefinition::TrimBodies { targets, tools, .. } => {
+                body_selections.push(targets);
+                body_selections.push(tools);
+            }
             FeatureDefinition::DeleteBody { bodies, .. } => {
                 body_selections.push(bodies);
             }

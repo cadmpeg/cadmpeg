@@ -579,6 +579,15 @@ pub enum FeatureDefinition {
         /// Whether the side opposite the default tool orientation is removed.
         reverse: bool,
     },
+    /// Removes one side of target bodies using ordered sheet or solid bodies.
+    TrimBodies {
+        /// Bodies modified by the operation.
+        targets: BodySelection,
+        /// Sheet or solid bodies defining the trimming boundary.
+        tools: BodySelection,
+        /// Side retained by the trim.
+        keep: BodyTrimSide,
+    },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {
         /// Bodies selected by the operation.
@@ -822,6 +831,18 @@ pub enum SketchSpace {
     Planar,
     /// Geometry is spatial and cannot resolve into the planar sketch arena.
     Spatial,
+}
+
+/// Side retained by a body-trim operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BodyTrimSide {
+    /// The source records establish a trim without assigning its retained side.
+    Unresolved,
+    /// Retain the side selected by the tool orientation.
+    Forward,
+    /// Retain the side opposite the tool orientation.
+    Reverse,
 }
 
 /// Selection interpretation for a delete/keep-body operation.

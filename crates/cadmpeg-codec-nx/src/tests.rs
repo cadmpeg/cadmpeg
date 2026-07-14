@@ -745,6 +745,47 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
 }
 
 #[test]
+fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
+    use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition};
+    use cadmpeg_ir::ids::BodyId;
+    use std::collections::BTreeMap;
+
+    let operands = [crate::native::FeatureOperationBodyOperand {
+        id: "operand#0".to_string(),
+        operation_label: "operation#0".to_string(),
+        body_object_index: 10,
+        body_reference_ordinal: 0,
+        ordinal: 0,
+        operand_object_index: 20,
+        segment_body_bindings: vec!["binding#0".to_string()],
+        source_offset: 0,
+    }];
+    let references = operands.iter().collect::<Vec<_>>();
+    let target = BodyId("body#10".to_string());
+    let tool = BodyId("body#20".to_string());
+    let bodies = BTreeMap::from([(10, vec![target.clone()]), (20, vec![tool.clone()])]);
+
+    assert_eq!(
+        crate::decode::trim_body_feature_definition(10, &references, &bodies),
+        Some(FeatureDefinition::TrimBodies {
+            targets: BodySelection::Resolved {
+                bodies: vec![target],
+                native: "nx:om-object-index#10".to_string(),
+            },
+            tools: BodySelection::Resolved {
+                bodies: vec![tool],
+                native: "nx:om-object-indices#20".to_string(),
+            },
+            keep: BodyTrimSide::Unresolved,
+        })
+    );
+    assert_eq!(
+        crate::decode::trim_body_feature_definition(10, &[], &bodies),
+        None
+    );
+}
+
+#[test]
 fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("SKETCH", &[], None),

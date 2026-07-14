@@ -20,8 +20,8 @@ use cadmpeg_ir::eval::{
     pcurve_uv, surface_point,
 };
 use cadmpeg_ir::features::{
-    Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
-    FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
+    Angle, BodySelection, BodyTrimSide, BooleanOp, ConfigurationId, DesignConfiguration,
+    DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
     FeatureTreeNodeRole, HoleForm, HoleKind, Length, ParameterId, ParameterValue, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
@@ -6450,6 +6450,17 @@ fn attach_feature_operations(
                 )
             })
             .flatten();
+        let trim_body_projection = (label.value == "TRIM BODY")
+            .then(|| {
+                trim_body_feature_definition(
+                    *body_references.get(label.id.as_str())?,
+                    operation_body_operands_by_operation
+                        .get(label.id.as_str())?
+                        .as_slice(),
+                    &bodies_by_object_index,
+                )
+            })
+            .flatten();
         let offset_projection = (label.value == "OFFSET")
             .then(|| offset_surface_feature_definition(ir, &outputs))
             .flatten();
@@ -6463,7 +6474,8 @@ fn attach_feature_operations(
         }
         let definition = booleans.get(label.id.as_str()).map_or_else(
             || {
-                sew_projection
+                trim_body_projection
+                    .or(sew_projection)
                     .or_else(|| offset_projection.map(|(definition, _)| definition))
                     .unwrap_or_else(|| {
                         non_boolean_feature_definition(
@@ -6779,6 +6791,37 @@ pub(crate) fn sew_body_feature_definition(
             ),
         ),
         gap_tolerance: None,
+    })
+}
+
+pub(crate) fn trim_body_feature_definition(
+    target_object_index: u32,
+    operands: &[&crate::native::FeatureOperationBodyOperand],
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
+) -> Option<FeatureDefinition> {
+    let tool_object_indices = operands
+        .iter()
+        .map(|operand| operand.operand_object_index)
+        .collect::<Vec<_>>();
+    (!tool_object_indices.is_empty()).then(|| FeatureDefinition::TrimBodies {
+        targets: feature_body_selection(
+            &[target_object_index],
+            bodies_by_object_index,
+            format!("nx:om-object-index#{target_object_index}"),
+        ),
+        tools: feature_body_selection(
+            &tool_object_indices,
+            bodies_by_object_index,
+            format!(
+                "nx:om-object-indices#{}",
+                tool_object_indices
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        ),
+        keep: BodyTrimSide::Unresolved,
     })
 }
 
