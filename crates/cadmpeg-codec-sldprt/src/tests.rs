@@ -1857,6 +1857,26 @@ fn helix_polyline_fit_recovers_axis_radius_and_rise() {
 }
 
 #[test]
+fn spatial_vertex_record_decodes_model_coordinates() {
+    let mut payload = vec![0x55; 7];
+    payload.extend([
+        0xff, 0xfe, 0xff, 0x06, b'V', 0x00, b'e', 0x00, b'r', 0x00, b't', 0x00, b'e', 0x00, b'x',
+        0x00,
+    ]);
+    payload.extend([0x00; 27]);
+    payload.extend([0x0e, 0x00]);
+    for value in [1.25f64, -2.5, 3.75] {
+        payload.extend(value.to_le_bytes());
+    }
+    assert_eq!(
+        crate::resolved_features::spatial_vertex_coordinates(&payload),
+        vec![cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)]
+    );
+    payload[7 + 43] = 0x1e;
+    assert!(crate::resolved_features::spatial_vertex_coordinates(&payload).is_empty());
+}
+
+#[test]
 fn inspect_enumerates_every_structure() {
     let f = synthetic_sldprt();
     let mut cur = Cursor::new(f);
@@ -17059,10 +17079,7 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
         .unwrap();
     assert!(matches!(
         decoded.ir.model.features[0].definition,
-        FeatureDefinition::Sketch {
-            space: SketchSpace::Spatial,
-            sketch: None,
-        }
+        FeatureDefinition::SpatialSketch { sketch: None }
     ));
     assert!(matches!(
         decoded.ir.model.features[1].definition,
@@ -17073,11 +17090,7 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
     ));
 
     decoded.ir.model.features[0].name = Some("Renamed spatial path".into());
-    let FeatureDefinition::Sketch { space, .. } = &mut decoded.ir.model.features[1].definition
-    else {
-        panic!("typed planar sketch");
-    };
-    *space = SketchSpace::Spatial;
+    decoded.ir.model.features[1].definition = FeatureDefinition::SpatialSketch { sketch: None };
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -17092,10 +17105,7 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
     assert_eq!(native[1].kind, "3DSketch");
     assert!(regenerated.ir.model.features.iter().all(|feature| matches!(
         feature.definition,
-        FeatureDefinition::Sketch {
-            space: SketchSpace::Spatial,
-            sketch: None,
-        }
+        FeatureDefinition::SpatialSketch { sketch: None }
     )));
 }
 

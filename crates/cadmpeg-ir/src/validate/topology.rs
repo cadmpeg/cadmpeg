@@ -1061,6 +1061,18 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         .iter()
         .map(|entity| entity.id.0.as_str())
         .collect::<HashSet<_>>();
+    let spatial_sketches = ir
+        .model
+        .spatial_sketches
+        .iter()
+        .map(|sketch| sketch.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let spatial_sketch_entities = ir
+        .model
+        .spatial_sketch_entities
+        .iter()
+        .map(|entity| entity.id.0.as_str())
+        .collect::<HashSet<_>>();
     let sketch_entity_owners = ir
         .model
         .sketch_entities
@@ -1088,6 +1100,34 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
     for entity in &ir.model.sketch_entities {
         if !sketches.contains(entity.sketch.0.as_str()) {
             ref_error(findings, &entity.id.0, "sketch", &entity.sketch.0);
+        }
+    }
+    for sketch in &ir.model.spatial_sketches {
+        for entity in &sketch.entities {
+            if !spatial_sketch_entities.contains(entity.0.as_str()) {
+                ref_error(findings, &sketch.id.0, "spatial sketch entity", &entity.0);
+            } else if ir
+                .model
+                .spatial_sketch_entities
+                .iter()
+                .find(|candidate| candidate.id == *entity)
+                .is_some_and(|candidate| candidate.sketch != sketch.id)
+            {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!(
+                        "spatial sketch entity `{}` is listed by a non-owner sketch",
+                        entity.0
+                    ),
+                    entity: Some(sketch.id.0.clone()),
+                });
+            }
+        }
+    }
+    for entity in &ir.model.spatial_sketch_entities {
+        if !spatial_sketches.contains(entity.sketch.0.as_str()) {
+            ref_error(findings, &entity.id.0, "spatial sketch", &entity.sketch.0);
         }
     }
     for constraint in &ir.model.sketch_constraints {
@@ -1844,6 +1884,18 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                 }
             }
+            FeatureDefinition::SpatialSketch { sketch } => {
+                if let Some(sketch) = sketch {
+                    if !ir
+                        .model
+                        .spatial_sketches
+                        .iter()
+                        .any(|value| value.id == *sketch)
+                    {
+                        ref_error(findings, &feature.id.0, "owned spatial sketch", &sketch.0);
+                    }
+                }
+            }
             FeatureDefinition::DatumCoordinateSystem {
                 origin,
                 x_axis,
@@ -2252,6 +2304,7 @@ fn check_feature_sketch_references(
     use crate::features::{FeatureDefinition, PathRef, ProfileRef};
 
     let mut owners = HashMap::new();
+    let mut spatial_owners = HashMap::new();
     for feature in &ir.model.features {
         if let FeatureDefinition::Sketch {
             sketch: Some(sketch),
@@ -2266,6 +2319,22 @@ fn check_feature_sketch_references(
                     check: Check::ReferentialIntegrity,
                     severity: Severity::Error,
                     message: format!("sketch `{}` has multiple owning features", sketch.0),
+                    entity: Some(feature.id.0.clone()),
+                });
+            }
+        }
+        if let FeatureDefinition::SpatialSketch {
+            sketch: Some(sketch),
+        } = &feature.definition
+        {
+            if spatial_owners
+                .insert(sketch.0.as_str(), feature.id.0.as_str())
+                .is_some()
+            {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!("spatial sketch `{}` has multiple owning features", sketch.0),
                     entity: Some(feature.id.0.clone()),
                 });
             }

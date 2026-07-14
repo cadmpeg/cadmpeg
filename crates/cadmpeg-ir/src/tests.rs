@@ -234,11 +234,15 @@ fn current_json_without_sketch_arenas_defaults_to_empty() {
     model.remove("sketches");
     model.remove("sketch_entities");
     model.remove("sketch_constraints");
+    model.remove("spatial_sketches");
+    model.remove("spatial_sketch_entities");
 
     let decoded: CadIr = serde_json::from_value(value).unwrap();
     assert!(decoded.model.sketches.is_empty());
     assert!(decoded.model.sketch_entities.is_empty());
     assert!(decoded.model.sketch_constraints.is_empty());
+    assert!(decoded.model.spatial_sketches.is_empty());
+    assert!(decoded.model.spatial_sketch_entities.is_empty());
 }
 
 #[test]
@@ -2272,6 +2276,57 @@ fn spatial_sketch_cannot_own_planar_geometry() {
         .findings
         .iter()
         .any(|finding| { finding.message == "spatial sketch owns planar sketch geometry" }));
+}
+
+#[test]
+fn spatial_sketch_line_round_trips_and_validates() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId};
+    use crate::sketches::{
+        SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
+        SpatialSketchId,
+    };
+
+    let mut ir = unit_cube();
+    let sketch_id = SpatialSketchId("synthetic:test:spatial-sketch#line".into());
+    let entity_id = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
+    ir.model.spatial_sketches.push(SpatialSketch {
+        id: sketch_id.clone(),
+        name: Some("Path".into()),
+        configuration: None,
+        entities: vec![entity_id.clone()],
+        native_ref: None,
+    });
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: entity_id,
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry: SpatialSketchGeometry::Line {
+            start: Point3::new(1.0, 2.0, 3.0),
+            end: Point3::new(4.0, 5.0, 6.0),
+        },
+    });
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#spatial-sketch".into()),
+        ordinal: 0,
+        name: Some("Path".into()),
+        suppressed: false,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::SpatialSketch {
+            sketch: Some(sketch_id),
+        },
+        native_ref: None,
+    });
+
+    let json = serde_json::to_string(&ir).unwrap();
+    let decoded: crate::CadIr = serde_json::from_str(&json).unwrap();
+    assert!(validate(&decoded, Vec::new()).findings.is_empty());
 }
 
 #[test]

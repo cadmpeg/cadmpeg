@@ -21,6 +21,8 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
+    SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
+    SpatialSketchId,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -41,6 +43,9 @@ const SCALAR_HEADER: &[u8] = &[
     0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
 ];
 const SKETCH_POINT_TOLERANCE: f64 = 1.0e-9;
+const SPATIAL_VERTEX_PREFIX: &[u8] = &[
+    0xff, 0xfe, 0xff, 0x06, b'V', 0x00, b'e', 0x00, b'r', 0x00, b't', 0x00, b'e', 0x00, b'x', 0x00,
+];
 
 pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
     scan.blocks
@@ -91,6 +96,110 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 references,
                 sketch_entities,
             })
+        })
+        .collect()
+}
+
+/// Project spatial sketches whose feature object contains one bounded line.
+pub(crate) fn spatial_sketches(
+    model_features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> (Vec<SpatialSketch>, Vec<SpatialSketchEntity>) {
+    let records = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let mut sketches = Vec::new();
+    let mut entities = Vec::new();
+    for feature in model_features {
+        if !matches!(feature.definition, FeatureDefinition::SpatialSketch { .. }) {
+            continue;
+        }
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(record) = records.get(native_ref).copied() else {
+            continue;
+        };
+        let mut candidates = Vec::new();
+        for lane in lanes {
+            let Some(name) = feature_object_name(record, lane) else {
+                continue;
+            };
+            let Some(start) = usize::try_from(name.offset).ok() else {
+                continue;
+            };
+            let end = histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .filter_map(|candidate| feature_object_name(candidate, lane))
+                .filter(|candidate| candidate.offset > name.offset)
+                .map(|candidate| candidate.offset)
+                .min()
+                .and_then(|offset| usize::try_from(offset).ok())
+                .unwrap_or(lane.native_payload.len());
+            let Some(object) = lane.native_payload.get(start..end) else {
+                continue;
+            };
+            let vertices = spatial_vertex_coordinates(object);
+            if let [start, end] = vertices.as_slice() {
+                candidates.push((lane, *start, *end));
+            }
+        }
+        let [(lane, start, end)] = candidates.as_slice() else {
+            continue;
+        };
+        if start == end {
+            continue;
+        }
+        let sketch_id = SpatialSketchId(feature.id.0.replacen(
+            ":model:feature#",
+            ":model:spatial-sketch#",
+            1,
+        ));
+        let entity_id = SpatialSketchEntityId(format!("{}:entity:0", sketch_id.0));
+        sketches.push(SpatialSketch {
+            id: sketch_id.clone(),
+            name: feature.name.clone(),
+            configuration: lane.configuration.clone(),
+            entities: vec![entity_id.clone()],
+            native_ref: Some(lane.id.clone()),
+        });
+        entities.push(SpatialSketchEntity {
+            id: entity_id,
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry: SpatialSketchGeometry::Line {
+                start: *start,
+                end: *end,
+            },
+        });
+        feature.definition = FeatureDefinition::SpatialSketch {
+            sketch: Some(sketch_id),
+        };
+    }
+    (sketches, entities)
+}
+
+pub(crate) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
+    payload
+        .windows(SPATIAL_VERTEX_PREFIX.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == SPATIAL_VERTEX_PREFIX).then_some(offset))
+        .filter_map(|offset| {
+            (payload.get(offset + 43..offset + 45)? == [0x0e, 0x00]).then_some(())?;
+            let point = Point3::new(
+                f64::from_le_bytes(payload.get(offset + 45..offset + 53)?.try_into().ok()?),
+                f64::from_le_bytes(payload.get(offset + 53..offset + 61)?.try_into().ok()?),
+                f64::from_le_bytes(payload.get(offset + 61..offset + 69)?.try_into().ok()?),
+            );
+            [point.x, point.y, point.z]
+                .into_iter()
+                .all(f64::is_finite)
+                .then_some(point)
         })
         .collect()
 }
@@ -13110,6 +13219,8 @@ pub fn sketch_hash(ir: &cadmpeg_ir::CadIr) -> String {
         &ir.model.sketches,
         &ir.model.sketch_entities,
         &ir.model.sketch_constraints,
+        &ir.model.spatial_sketches,
+        &ir.model.spatial_sketch_entities,
     ))
 }
 
@@ -13156,8 +13267,15 @@ pub fn prepare_sketches_for_write(
         if ir.model.sketches.is_empty()
             && ir.model.sketch_entities.is_empty()
             && ir.model.sketch_constraints.is_empty()
+            && ir.model.spatial_sketches.is_empty()
+            && ir.model.spatial_sketch_entities.is_empty()
         {
             return Ok(());
+        }
+        if !ir.model.spatial_sketches.is_empty() || !ir.model.spatial_sketch_entities.is_empty() {
+            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
+                "source-less SLDPRT spatial sketch writing is not implemented".into(),
+            ));
         }
         validate_source_less_constraints(ir)?;
         let native = native.get_or_insert_with(crate::native::SldprtNative::default);
@@ -13183,6 +13301,24 @@ pub fn prepare_sketches_for_write(
     if native_changed {
         return Err(cadmpeg_ir::codec::CodecError::Malformed(
             "conflicting neutral and native SLDPRT sketch edits".into(),
+        ));
+    }
+    let retained = native.as_ref().ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::NotImplemented(
+            "SLDPRT spatial sketch write-back requires retained feature-input lanes".into(),
+        )
+    })?;
+    let mut features = crate::history::project_features(&retained.feature_histories);
+    let (expected_spatial, expected_entities) = spatial_sketches(
+        &mut features,
+        &retained.feature_histories,
+        &retained.feature_input_lanes,
+    );
+    if ir.model.spatial_sketches != expected_spatial
+        || ir.model.spatial_sketch_entities != expected_entities
+    {
+        return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
+            "SLDPRT spatial sketch geometry editing is not implemented".into(),
         ));
     }
     patch_line_profiles(

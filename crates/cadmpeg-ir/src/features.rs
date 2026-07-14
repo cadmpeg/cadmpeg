@@ -381,6 +381,12 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sketch: Option<crate::sketches::SketchId>,
     },
+    /// Solved spatial-sketch node in the construction history.
+    SpatialSketch {
+        /// Neutral spatial sketch owned by this history node, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sketch: Option<crate::sketches::SpatialSketchId>,
+    },
     /// Linear extrusion of a profile.
     Extrude {
         /// Profile swept along `direction` (or the profile's own normal, when

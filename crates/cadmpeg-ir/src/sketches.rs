@@ -19,6 +19,11 @@ macro_rules! string_id {
 
 string_id!(SketchId, "Identifies a neutral planar sketch.");
 string_id!(SketchEntityId, "Identifies solved geometry in a sketch.");
+string_id!(SpatialSketchId, "Identifies a neutral spatial sketch.");
+string_id!(
+    SpatialSketchEntityId,
+    "Identifies solved geometry in a spatial sketch."
+);
 string_id!(
     SketchConstraintId,
     "Identifies a geometric sketch constraint."
@@ -80,6 +85,104 @@ pub struct SketchEntity {
     pub endpoint_refs: Vec<String>,
     /// Solved two-dimensional geometry.
     pub geometry: SketchGeometry,
+}
+
+/// A spatial sketch and its ordered 3D entities.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketch {
+    /// Globally unique spatial-sketch id.
+    pub id: SpatialSketchId,
+    /// Source display name, when recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Source configuration key, when scoped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configuration: Option<String>,
+    /// Ordered solved entities owned by this sketch.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entities: Vec<SpatialSketchEntityId>,
+    /// Identifier of the full-fidelity native input lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+}
+
+/// Solved geometry belonging to one spatial sketch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchEntity {
+    /// Globally unique entity id.
+    pub id: SpatialSketchEntityId,
+    /// Owning spatial sketch.
+    pub sketch: SpatialSketchId,
+    /// Whether the entity is construction geometry.
+    #[serde(default)]
+    pub construction: bool,
+    /// Source-native geometry record represented by this entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+    /// Solved three-dimensional geometry.
+    pub geometry: SpatialSketchGeometry,
+}
+
+/// Solved three-dimensional spatial-sketch geometry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SpatialSketchGeometry {
+    /// Isolated point.
+    Point {
+        /// Solved model-space position.
+        position: Point3,
+    },
+    /// Bounded line segment.
+    Line {
+        /// Stored segment start.
+        start: Point3,
+        /// Stored segment end.
+        end: Point3,
+    },
+    /// Full circle in an oriented plane.
+    Circle {
+        /// Circle center in model coordinates.
+        center: Point3,
+        /// Unit plane normal.
+        normal: Vector3,
+        /// Positive circle radius.
+        radius: Length,
+    },
+    /// Circular arc in an oriented plane.
+    Arc {
+        /// Arc center in model coordinates.
+        center: Point3,
+        /// Unit plane normal.
+        normal: Vector3,
+        /// Unit radial axis for zero angle.
+        u_axis: Vector3,
+        /// Positive arc radius.
+        radius: Length,
+        /// Start angle about `normal` from `u_axis`.
+        start_angle: Angle,
+        /// End angle about `normal` from `u_axis`.
+        end_angle: Angle,
+    },
+    /// NURBS curve in model coordinates.
+    Nurbs {
+        /// Polynomial degree.
+        degree: u32,
+        /// Full nondecreasing knot vector.
+        knots: Vec<f64>,
+        /// Model-space control points in parameter order.
+        control_points: Vec<Point3>,
+        /// Positive per-pole weights for a rational curve.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        weights: Option<Vec<f64>>,
+        /// Whether the curve is periodic.
+        #[serde(default)]
+        periodic: bool,
+    },
+    /// Source-native geometry not yet reduced to a neutral family.
+    Native {
+        /// Source geometry family.
+        native_kind: String,
+    },
 }
 
 /// Solved two-dimensional sketch geometry.

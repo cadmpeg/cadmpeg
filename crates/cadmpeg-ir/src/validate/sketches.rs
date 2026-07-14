@@ -3,7 +3,9 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::sketches::{SketchConstraintDefinition as Constraint, SketchGeometry, SketchLocus};
+use crate::sketches::{
+    SketchConstraintDefinition as Constraint, SketchGeometry, SketchLocus, SpatialSketchGeometry,
+};
 use std::collections::HashMap;
 
 fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
@@ -17,6 +19,15 @@ fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
 
 fn finite2(point: crate::math::Point2) -> bool {
     point.u.is_finite() && point.v.is_finite()
+}
+
+fn finite3(point: crate::math::Point3) -> bool {
+    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+}
+
+fn valid_vector(vector: crate::math::Vector3) -> bool {
+    let norm = vector.norm();
+    norm.is_finite() && norm > 0.0
 }
 
 pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -186,6 +197,93 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SketchGeometry::Native { native_kind } => {
                 if native_kind.is_empty() {
                     finding(findings, Check::Counts, id, "empty native sketch kind");
+                }
+            }
+        }
+    }
+
+    for entity in &ir.model.spatial_sketch_entities {
+        let id = &entity.id.0;
+        match &entity.geometry {
+            SpatialSketchGeometry::Point { position } => {
+                if !finite3(*position) {
+                    finding(
+                        findings,
+                        Check::Bounds,
+                        id,
+                        "spatial sketch point is not finite",
+                    );
+                }
+            }
+            SpatialSketchGeometry::Line { start, end } => {
+                if !finite3(*start) || !finite3(*end) || start == end {
+                    finding(findings, Check::Bounds, id, "invalid spatial sketch line");
+                }
+            }
+            SpatialSketchGeometry::Circle {
+                center,
+                normal,
+                radius,
+            } => {
+                if !finite3(*center) || !valid_vector(*normal) || nonpositive(radius.0) {
+                    finding(findings, Check::Bounds, id, "invalid spatial sketch circle");
+                }
+            }
+            SpatialSketchGeometry::Arc {
+                center,
+                normal,
+                u_axis,
+                radius,
+                start_angle,
+                end_angle,
+            } => {
+                let perpendicular = normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z;
+                if !finite3(*center)
+                    || !valid_vector(*normal)
+                    || !valid_vector(*u_axis)
+                    || perpendicular.abs() > 1.0e-9
+                    || nonpositive(radius.0)
+                    || !start_angle.0.is_finite()
+                    || !end_angle.0.is_finite()
+                {
+                    finding(findings, Check::Bounds, id, "invalid spatial sketch arc");
+                }
+            }
+            SpatialSketchGeometry::Nurbs {
+                degree,
+                knots,
+                control_points,
+                weights,
+                ..
+            } => {
+                let expected = control_points.len().checked_add(*degree as usize + 1);
+                if *degree == 0
+                    || control_points.len() <= *degree as usize
+                    || expected != Some(knots.len())
+                    || knots.iter().any(|value| !value.is_finite())
+                    || knots.windows(2).any(|pair| pair[0] > pair[1])
+                    || control_points.iter().any(|point| !finite3(*point))
+                    || weights.as_ref().is_some_and(|weights| {
+                        weights.len() != control_points.len()
+                            || weights.iter().any(|weight| nonpositive(*weight))
+                    })
+                {
+                    finding(
+                        findings,
+                        Check::ParameterDomain,
+                        id,
+                        "invalid spatial sketch NURBS",
+                    );
+                }
+            }
+            SpatialSketchGeometry::Native { native_kind } => {
+                if native_kind.is_empty() {
+                    finding(
+                        findings,
+                        Check::Counts,
+                        id,
+                        "empty native spatial sketch kind",
+                    );
                 }
             }
         }

@@ -78,7 +78,8 @@ pub use report::{
 };
 pub use sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand, SpatialSketch,
+    SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
 };
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,

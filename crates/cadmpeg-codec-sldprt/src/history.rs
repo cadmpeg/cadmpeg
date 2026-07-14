@@ -1194,13 +1194,13 @@ fn project_definition(
     }
     let class = classify(feature);
     if class == Some(FeatureClass::Sketch) {
-        return FeatureDefinition::Sketch {
-            space: if feature.kind.eq_ignore_ascii_case("3DSketch") {
-                SketchSpace::Spatial
-            } else {
-                SketchSpace::Planar
-            },
-            sketch: None,
+        return if feature.kind.eq_ignore_ascii_case("3DSketch") {
+            FeatureDefinition::SpatialSketch { sketch: None }
+        } else {
+            FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: None,
+            }
         };
     }
     if class == Some(FeatureClass::ReferencePlane) && is_offset_plane(feature) {
@@ -3473,6 +3473,11 @@ fn project_features_with_native_inputs(
         &histories,
         &native.feature_input_lanes,
     );
+    let _ = crate::resolved_features::spatial_sketches(
+        &mut features,
+        &histories,
+        &native.feature_input_lanes,
+    );
     features
 }
 
@@ -5179,6 +5184,25 @@ pub fn sync_neutral_features(
                         .as_deref()
                         .map(|record| record.parameters.clone())
                         .unwrap_or_default(),
+                    feature.source_properties.clone(),
+                )
+            }
+            FeatureDefinition::SpatialSketch { .. } => {
+                let record = existing.as_deref().ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained spatial-sketch record",
+                        feature.id
+                    ))
+                })?;
+                if !feature_family(record, "Sketch") {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                (
+                    "3DSketch".into(),
+                    record.parameters.clone(),
                     feature.source_properties.clone(),
                 )
             }
@@ -7701,7 +7725,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::CompositeCurve { .. } => "CompositeCurve",
         FeatureDefinition::Helix { .. } | FeatureDefinition::HelixNativeAxis { .. } => "Helix",
         FeatureDefinition::Wrap { .. } => "Wrap",
-        FeatureDefinition::Sketch { .. } => "Sketch",
+        FeatureDefinition::Sketch { .. } | FeatureDefinition::SpatialSketch { .. } => "Sketch",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",
         FeatureDefinition::Sweep {

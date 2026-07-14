@@ -156,6 +156,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::Sketch { sketch, .. } => {
                 sketch.is_none() && feature.dependencies.is_empty()
             }
+            FeatureDefinition::SpatialSketch { sketch } => sketch.is_none(),
             FeatureDefinition::HelixNativeAxis { .. } => true,
             FeatureDefinition::Extrude {
                 profile,
@@ -448,6 +449,10 @@ fn build_geometry_ir(
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut ir.annotations);
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions);
+    let (spatial_sketches, spatial_sketch_entities) =
+        crate::resolved_features::spatial_sketches(&mut ir.model.features, &histories, &lanes);
+    ir.model.spatial_sketches = spatial_sketches;
+    ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::bind_extrusion_operations(&mut ir.model.features, &histories, &lanes);
     crate::resolved_features::bind_sweep_operations(&mut ir.model.features, &histories, &lanes);
     crate::pmi::apply_to_parameters(
@@ -1047,6 +1052,10 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         attributes,
     });
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions);
+    let (spatial_sketches, spatial_sketch_entities) =
+        crate::resolved_features::spatial_sketches(&mut ir.model.features, &histories, &lanes);
+    ir.model.spatial_sketches = spatial_sketches;
+    ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
