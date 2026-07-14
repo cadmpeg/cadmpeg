@@ -1432,6 +1432,12 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. }
             if parameters.get("dimension_count").map(String::as_str) == Some("1")
     ));
+    assert_eq!(
+        result.ir.model.features[0].source_content,
+        [cadmpeg_ir::features::FeatureSourceContent::Parameter(
+            parameter.id.clone()
+        )]
+    );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }

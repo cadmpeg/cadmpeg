@@ -16,8 +16,8 @@ use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, DesignParameter, DimensionDisplay, Extent, Feature,
-    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, Length, ParameterId,
-    ParameterValue, ProfileRef, RevolutionAxis, RevolutionConstruction,
+    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, FeatureSourceContent,
+    Length, ParameterId, ParameterValue, ProfileRef, RevolutionAxis, RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition,
@@ -3346,7 +3346,7 @@ fn transfer_feature_dimensions(
                 crate::feature::DimensionUnit::SchemaDefined => ParameterValue::Real(value),
             };
             ir.model.parameters.push(DesignParameter {
-                id,
+                id: id.clone(),
                 owner: owner.clone(),
                 ordinal: ordinal as u32,
                 name: format!("d{}", dimension.external_id),
@@ -3358,6 +3358,16 @@ fn transfer_feature_dimensions(
                 pmi: None,
                 native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
             });
+            if let Some(feature) = ir
+                .model
+                .features
+                .iter_mut()
+                .find(|feature| feature.id == owner)
+            {
+                feature
+                    .source_content
+                    .push(FeatureSourceContent::Parameter(id));
+            }
         }
     }
 }
