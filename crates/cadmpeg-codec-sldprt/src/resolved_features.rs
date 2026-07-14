@@ -244,8 +244,9 @@ mod marker_tests {
     use super::{
         arc_angle_relation_kind, compact_body_selection_at, compact_body_selection_vector,
         compact_edge_selection_at, marker_coordinates, marker_is_geometry_locus, marker_local_id,
-        marker_local_links, named_scalars, object_names, unique_locus, unique_marker_candidate,
-        COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
+        marker_local_links, named_scalars, native_scalar_matches_discrete_parameter, object_names,
+        unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
+        SCALAR_HEADER,
     };
     use crate::records::SketchRelationKind;
     use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
@@ -466,6 +467,37 @@ mod marker_tests {
         assert_eq!(compact_edge_selection_at(&payload, 12), Some(vec![4, 0, 5]));
         payload[12 + 18 + 28 + 4] ^= 1;
         assert_eq!(compact_edge_selection_at(&payload, 12), None);
+    }
+
+    #[test]
+    fn native_scalar_must_match_an_existing_discrete_parameter() {
+        let feature = crate::records::Feature {
+            id: "feature".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: None,
+            parent_source_id: None,
+            ordinal: 0,
+            name: "Pattern".into(),
+            kind: "Pattern".into(),
+            input_class: Some("moLPattern_c".into()),
+            suppressed: false,
+            parameters: Default::default(),
+            dimension_properties: Default::default(),
+            properties: Default::default(),
+            text: None,
+            content: Vec::new(),
+        };
+        assert!(native_scalar_matches_discrete_parameter(
+            &feature, "D1", "15", 15.0
+        ));
+        assert!(!native_scalar_matches_discrete_parameter(
+            &feature,
+            "D1",
+            "15",
+            8.371160993642741e298
+        ));
     }
 }
 
@@ -1425,6 +1457,13 @@ pub(crate) fn enrich_history_parameters(
             continue;
         }
         let feature = &mut histories[history_index].features[feature_index];
+        if unit == ScalarUnit::Native
+            && feature.parameters.get(&name).is_some_and(|expression| {
+                !native_scalar_matches_discrete_parameter(feature, &name, expression, first)
+            })
+        {
+            continue;
+        }
         let expression = match unit {
             ScalarUnit::Native => crate::history::format_native_scalar(
                 feature,
@@ -1440,6 +1479,23 @@ pub(crate) fn enrich_history_parameters(
         } else {
             feature.parameters.entry(name).or_insert(expression);
         }
+    }
+}
+
+fn native_scalar_matches_discrete_parameter(
+    feature: &crate::records::Feature,
+    name: &str,
+    expression: &str,
+    value: f64,
+) -> bool {
+    match crate::history::parse_native_parameter_literal(feature, name, expression) {
+        Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
+            value.is_finite() && value == expected as f64
+        }
+        Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
+            value == if expected { 1.0 } else { 0.0 }
+        }
+        _ => true,
     }
 }
 
@@ -2058,7 +2114,19 @@ pub(crate) fn bind_parameter_scalars(
                 } else {
                     driving
                 };
-                if let [scalar] = candidates.as_slice() {
+                let compatible = candidates
+                    .into_iter()
+                    .filter(|scalar| match parameter.value.as_ref() {
+                        Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
+                            scalar.value.is_finite() && scalar.value == *expected as f64
+                        }
+                        Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
+                            scalar.value == if *expected { 1.0 } else { 0.0 }
+                        }
+                        _ => true,
+                    })
+                    .collect::<Vec<_>>();
+                if let [scalar] = compatible.as_slice() {
                     parameter.native_ref = Some(scalar.id.clone());
                     let evaluated = match parameter.value.as_ref() {
                         Some(cadmpeg_ir::features::ParameterValue::Length(_)) => {
