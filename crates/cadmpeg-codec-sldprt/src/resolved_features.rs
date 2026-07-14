@@ -5759,20 +5759,10 @@ fn typed_relation_definition(
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
                     known.clone(),
-                    unique_compact_profile_distance_locus(
-                        sketch,
-                        &known,
-                        parameter,
-                        sketch_entities,
-                    )?,
+                    unique_profile_distance_locus(sketch, &known, parameter, sketch_entities)?,
                 ),
                 (None, Some(known)) => (
-                    unique_compact_profile_distance_locus(
-                        sketch,
-                        &known,
-                        parameter,
-                        sketch_entities,
-                    )?,
+                    unique_profile_distance_locus(sketch, &known, parameter, sketch_entities)?,
                     known,
                 ),
                 (None, None) => return None,
@@ -5851,7 +5841,7 @@ fn typed_relation_definition(
     }
 }
 
-fn unique_compact_profile_distance_locus(
+fn unique_profile_distance_locus(
     sketch: &SketchId,
     known: &SketchLocus,
     parameter: &cadmpeg_ir::features::DesignParameter,
@@ -5860,34 +5850,29 @@ fn unique_compact_profile_distance_locus(
     let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
         return None;
     };
-    let known_entity = locus_entity(known);
-    if !known_entity.0.contains("sketch-entity#compact:") {
-        return None;
-    }
     let point = |locus: &SketchLocus| {
         let entity = sketch_entities
             .iter()
             .find(|entity| entity.id == locus_entity(locus))?;
-        match (&entity.geometry, locus) {
-            (SketchGeometry::Line { start, .. }, SketchLocus::Start(_)) => Some(*start),
-            (SketchGeometry::Line { end, .. }, SketchLocus::End(_)) => Some(*end),
-            _ => None,
-        }
+        sketch_entity_loci(entity)
+            .into_iter()
+            .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
     };
     let known_point = point(known)?;
     let mut candidates = sketch_entities
         .iter()
         .filter(|entity| entity.sketch == *sketch)
-        .filter(|entity| entity.id.0.contains("sketch-entity#compact:"))
-        .filter_map(|entity| {
-            let SketchGeometry::Line { start, .. } = entity.geometry else {
-                return None;
-            };
-            let candidate = SketchLocus::Start(entity.id.clone());
-            let measured = (start.u - known_point.u).hypot(start.v - known_point.v);
+        .flat_map(sketch_entity_loci)
+        .filter_map(|(candidate_point, candidate)| {
+            let measured =
+                (candidate_point.u - known_point.u).hypot(candidate_point.v - known_point.v);
             (candidate != *known && same_dimension_length(measured, distance.0))
                 .then_some(candidate)
-        });
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    candidates.dedup();
+    let mut candidates = candidates.into_iter();
     let candidate = candidates.next()?;
     candidates.next().is_none().then_some(candidate)
 }
@@ -7151,7 +7136,8 @@ mod profile_join_tests {
         select_marker_transforms_by_frame, sketch_frame_marker_transform,
         type_display_relation_parameters, typed_marker_relation_definition,
         typed_relation_definition, unique_compatible_marker_transform,
-        unique_linked_endpoint_locus, unique_marker_transform, MarkerTransform,
+        unique_linked_endpoint_locus, unique_marker_transform, unique_profile_distance_locus,
+        MarkerTransform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
@@ -7336,6 +7322,58 @@ mod profile_join_tests {
         assert_eq!(
             profile_loci_by_marker(&[feature], &[sketch], &[entity], &[lane])["line"],
             vec![SketchLocus::Entity(line_id)]
+        );
+    }
+
+    #[test]
+    fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
+        let sketch = SketchId("sketch".into());
+        let point = |id: &str, u: f64, v: f64| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(u, v),
+            },
+        };
+        let known = point("known", 0.0, 0.0);
+        let candidate = point("candidate", 3.0, 4.0);
+        let parameter = DesignParameter {
+            id: ParameterId("distance".into()),
+            owner: FeatureId("feature".into()),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "5mm".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(5.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let known_locus = SketchLocus::Entity(known.id.clone());
+        assert_eq!(
+            unique_profile_distance_locus(
+                &sketch,
+                &known_locus,
+                &parameter,
+                &[known.clone(), candidate.clone()],
+            ),
+            Some(SketchLocus::Entity(candidate.id.clone()))
+        );
+
+        let ambiguous = point("ambiguous", -3.0, -4.0);
+        assert_eq!(
+            unique_profile_distance_locus(
+                &sketch,
+                &known_locus,
+                &parameter,
+                &[known, candidate, ambiguous],
+            ),
+            None
         );
     }
 
