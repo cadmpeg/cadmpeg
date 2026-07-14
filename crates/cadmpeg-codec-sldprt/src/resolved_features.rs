@@ -4202,6 +4202,13 @@ fn profile_loci_by_marker(
                     .collect::<Vec<_>>();
                 marker_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
                 marker_loci.dedup();
+                if matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                ) && marker_loci.len() > 1
+                {
+                    marker_loci.truncate(1);
+                }
                 let loci = result.entry(marker.id.clone()).or_default();
                 for locus in marker_loci {
                     if !loci.contains(&locus) {
@@ -5290,6 +5297,7 @@ mod profile_join_tests {
         assert!(joins.contains_key("marker-a"));
         assert!(joins.contains_key("marker-b"));
         assert!(joins.contains_key("marker-c"));
+        assert_eq!(joins["marker-b"].len(), 1);
         assert!(!joins.contains_key("display"));
         let mut markers = lane
             .sketch_entities

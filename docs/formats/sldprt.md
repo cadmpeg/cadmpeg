@@ -191,6 +191,8 @@ For an axis-aligned sketch plane, a geometry-handle coordinate stores the two mo
 
 A materialized point or centered sketch entity whose native reference is a feature-input sketch marker binds that marker directly to the entity or center locus, respectively. Native identity takes part independently of coordinate-frame binding.
 
+When a point or constrained-point marker maps to a shared profile coordinate, its incident start and end loci are geometrically equivalent. The lexicographically first locus is the canonical operand. Line-or-circle and arc markers retain every compatible entity at a shared coordinate.
+
 Point-distance operands select explicit profile loci. Line-distance and angular operands select the profile entity shared by their linked endpoint markers. A relation with resolved operands and one driving scalar maps to the corresponding neutral distance, horizontal-distance, vertical-distance, angle, radius, or diameter constraint. A relation marker without coordinates or linked local identifiers has no constraint operands and does not produce a sketch constraint.
 
 `Helix/Spiral` history records use positional dimensions when explicit axis placement is absent: `D3` is the initial radius, `D4` is the signed total axial rise, `D5` is the positive revolution count, and `D7` is the start angle. The history record owns the unresolved construction axis.
