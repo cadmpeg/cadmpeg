@@ -686,7 +686,7 @@ A `BLOCK` operation parameter binding selects the first declaration of its dimen
 
 The owning `BLOCK` feature links the complete typed dimension set and construction independently. Dimension order is native parameter order; placement and axis roles remain separate from the three scalar dimensions.
 
-A `BLOCK` feature with a complete typed dimension set projects as a neutral rectangular block with ordered local x, y, and z dimensions. Its placement remains absent until the native local-to-model frame is complete; absent placement does not imply the identity transform.
+A `BLOCK` feature with a complete typed dimension set projects as a neutral rectangular block with ordered local x, y, and z dimensions. The feature source content references all three exact expression parameters once in dimension order after any independently positioned payload content; an expression already present through a direct input binding is not duplicated. Its placement remains absent until the native local-to-model frame is complete; absent placement does not imply the identity transform.
 
 A complete block construction requires nineteen contiguous reference ordinals, one uniform control byte, exactly eighteen nonterminal members, one final terminal reference, and unique data-block resolution for every reference. It retains the member lane and terminal reference as distinct fields. Missing, reordered, differently controlled, incorrectly terminated, or unresolved inputs reject the construction atomically.
 

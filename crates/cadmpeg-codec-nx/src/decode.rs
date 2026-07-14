@@ -3945,7 +3945,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(141);
+    namespace.version = namespace.version.max(142);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -5202,6 +5202,21 @@ fn attach_feature_operations(
         }
         if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
             source_properties.insert("block_dimensions".to_string(), dimensions.id.clone());
+            for (dimension_ordinal, (declaration, expression)) in dimensions
+                .declarations
+                .iter()
+                .zip(&dimensions.expressions)
+                .enumerate()
+            {
+                source_properties.insert(
+                    format!("block_dimension_declaration.{dimension_ordinal}"),
+                    declaration.clone(),
+                );
+                source_properties.insert(
+                    format!("block_dimension_expression.{dimension_ordinal}"),
+                    expression.clone(),
+                );
+            }
         }
         for (ordinal, point) in block_payload_points_by_operation
             .get(label.id.as_str())
@@ -5474,8 +5489,11 @@ fn attach_feature_operations(
         let operation_parameter_uses = parameter_uses_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
-        let source_content =
+        let mut source_content =
             feature_source_content(operation_payload_string_records, operation_parameter_uses);
+        if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
+            append_feature_expression_content(&mut source_content, &dimensions.expressions);
+        }
         if !source_content.is_empty() {
             annotations.derived(&id, "source_content");
         }
@@ -5567,6 +5585,21 @@ pub(crate) fn feature_source_content(
     }
     content.sort_by_key(|(offset, _)| *offset);
     content.into_iter().map(|(_, content)| content).collect()
+}
+
+pub(crate) fn append_feature_expression_content<const N: usize>(
+    content: &mut Vec<FeatureSourceContent>,
+    expressions: &[String; N],
+) {
+    for expression in expressions {
+        let Some(parameter) = expression_parameter_id(expression) else {
+            continue;
+        };
+        let item = FeatureSourceContent::Parameter(parameter);
+        if !content.contains(&item) {
+            content.push(item);
+        }
+    }
 }
 
 pub(crate) fn simple_hole_native_properties(

@@ -319,6 +319,31 @@ fn nx_feature_source_content_orders_parameter_occurrences_with_text() {
     ));
 }
 
+#[test]
+fn nx_block_source_content_includes_complete_ordered_dimension_run() {
+    use cadmpeg_ir::features::{FeatureSourceContent, ParameterId};
+
+    let mut content = vec![FeatureSourceContent::Parameter(ParameterId(
+        "nx:test:parameter#20".into(),
+    ))];
+    crate::decode::append_feature_expression_content(
+        &mut content,
+        &[
+            "nx:test:expression#20".into(),
+            "nx:test:expression#21".into(),
+            "nx:test:expression#22".into(),
+        ],
+    );
+    assert_eq!(
+        content,
+        [
+            FeatureSourceContent::Parameter(ParameterId("nx:test:parameter#20".into())),
+            FeatureSourceContent::Parameter(ParameterId("nx:test:parameter#21".into())),
+            FeatureSourceContent::Parameter(ParameterId("nx:test:parameter#22".into())),
+        ]
+    );
+}
+
 /// Write three big-endian doubles into `rec` starting at `at`.
 fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
     for (i, v) in xyz.iter().enumerate() {
@@ -519,7 +544,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 141);
+    assert_eq!(namespace.version, 142);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6434,7 +6459,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 141);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 142);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
