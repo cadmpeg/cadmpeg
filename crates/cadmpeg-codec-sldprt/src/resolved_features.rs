@@ -1797,8 +1797,9 @@ pub(crate) fn project_relation_bindings(
             entities.dedup();
             let definition = typed_relation_definition(
                 relation,
-                parameter_id.clone(),
-                parameter.and_then(|parameter| parameter.display),
+                parameter,
+                sketch,
+                sketch_entities,
                 &markers_by_id,
                 &loci_by_marker,
             )
@@ -2107,8 +2108,9 @@ fn linked_single_entities(
 
 fn typed_relation_definition(
     relation: &FeatureInputRelationInstance,
-    parameter: Option<cadmpeg_ir::features::ParameterId>,
-    display: Option<cadmpeg_ir::features::DimensionDisplay>,
+    parameter: Option<&cadmpeg_ir::features::DesignParameter>,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
@@ -2117,22 +2119,23 @@ fn typed_relation_definition(
         PointPointHorizontalDistance, PointPointVerticalDistance,
     };
     let parameter = parameter?;
+    let parameter_id = parameter.id.clone();
     let marker = |index: usize| relation.operands.get(index)?.entity_ref.as_deref();
     match relation.family {
         PointPointDistance => Some(SketchConstraintDefinition::DistanceLoci {
             first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
             second: marker_point_locus(marker(1)?, markers_by_id, loci_by_marker)?,
-            parameter,
+            parameter: parameter_id,
         }),
         PointPointHorizontalDistance => Some(SketchConstraintDefinition::HorizontalDistance {
             first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
             second: marker_point_locus(marker(1)?, markers_by_id, loci_by_marker)?,
-            parameter,
+            parameter: parameter_id,
         }),
         PointPointVerticalDistance => Some(SketchConstraintDefinition::VerticalDistance {
             first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
             second: marker_point_locus(marker(1)?, markers_by_id, loci_by_marker)?,
-            parameter,
+            parameter: parameter_id,
         }),
         PointLineDistance => Some(SketchConstraintDefinition::DistanceLoci {
             first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
@@ -2141,33 +2144,72 @@ fn typed_relation_definition(
                 markers_by_id,
                 loci_by_marker,
             )?),
-            parameter,
+            parameter: parameter_id,
         }),
         LineLineDistance => Some(SketchConstraintDefinition::Distance {
             entities: vec![
                 single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?,
                 single_marker_entity(marker(1)?, markers_by_id, loci_by_marker)?,
             ],
-            parameter,
+            parameter: parameter_id,
         }),
         Angle => Some(SketchConstraintDefinition::Angle {
             first: single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?,
             second: single_marker_entity(marker(1)?, markers_by_id, loci_by_marker)?,
-            parameter,
+            parameter: parameter_id,
         }),
         CircleDiameter => {
-            let entity = single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?;
-            match display {
+            let entity = marker(0)
+                .and_then(|marker| single_marker_entity(marker, markers_by_id, loci_by_marker))
+                .or_else(|| unique_dimensioned_circle_entity(sketch, sketch_entities, parameter))?;
+            match parameter.display {
                 Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
-                    Some(SketchConstraintDefinition::Radius { entity, parameter })
+                    Some(SketchConstraintDefinition::Radius {
+                        entity,
+                        parameter: parameter_id,
+                    })
                 }
                 Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => {
-                    Some(SketchConstraintDefinition::Diameter { entity, parameter })
+                    Some(SketchConstraintDefinition::Diameter {
+                        entity,
+                        parameter: parameter_id,
+                    })
                 }
                 None => None,
             }
         }
     }
+}
+
+fn unique_dimensioned_circle_entity(
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    parameter: &cadmpeg_ir::features::DesignParameter,
+) -> Option<SketchEntityId> {
+    let cadmpeg_ir::features::ParameterValue::Length(value) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let expected_radius = match parameter.display {
+        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
+        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+        None => return None,
+    };
+    let mut matches = sketch_entities.iter().filter_map(|entity| {
+        if entity.sketch != *sketch {
+            return None;
+        }
+        let radius = match &entity.geometry {
+            SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => radius.0,
+            _ => return None,
+        };
+        same_dimension_length(radius, expected_radius).then_some(entity.id.clone())
+    });
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
+}
+
+fn same_dimension_length(left: f64, right: f64) -> bool {
+    (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
 }
 
 fn marker_point_locus(
@@ -2671,7 +2713,8 @@ mod profile_join_tests {
         SketchRelationKind,
     };
     use cadmpeg_ir::features::{
-        DimensionDisplay, Feature, FeatureDefinition, FeatureId, ParameterId, SketchSpace,
+        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
+        ParameterId, ParameterValue, SketchSpace,
     };
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{
@@ -2976,11 +3019,27 @@ mod profile_join_tests {
                 })
                 .collect(),
         };
+        let parameter = |id: &str, display| DesignParameter {
+            id: ParameterId(id.into()),
+            owner: FeatureId("feature".into()),
+            ordinal: 0,
+            name: id.into(),
+            expression: String::new(),
+            display,
+            value: Some(ParameterValue::Length(Length(2.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let sketch_id = SketchId("sketch".into());
+        let distance = parameter("distance", None);
         assert!(matches!(
             typed_relation_definition(
                 &relation,
-                Some(ParameterId("distance".into())),
-                None,
+                Some(&distance),
+                &sketch_id,
+                &[],
                 &markers,
                 &joins,
             ),
@@ -3000,33 +3059,83 @@ mod profile_join_tests {
             }],
             ..relation
         };
+        let radius = parameter("circle", Some(DimensionDisplay::Radius));
         assert!(matches!(
             typed_relation_definition(
                 &circle,
-                Some(ParameterId("circle".into())),
-                Some(DimensionDisplay::Radius),
+                Some(&radius),
+                &sketch_id,
+                &[],
                 &markers,
                 &joins,
             ),
             Some(SketchConstraintDefinition::Radius { parameter, .. })
                 if parameter.0 == "circle"
         ));
+        let diameter = parameter("circle", Some(DimensionDisplay::Diameter));
         assert!(matches!(
             typed_relation_definition(
                 &circle,
-                Some(ParameterId("circle".into())),
-                Some(DimensionDisplay::Diameter),
+                Some(&diameter),
+                &sketch_id,
+                &[],
                 &markers,
                 &joins,
             ),
             Some(SketchConstraintDefinition::Diameter { parameter, .. })
                 if parameter.0 == "circle"
         ));
+        let undisplayed = parameter("circle", None);
         assert_eq!(
             typed_relation_definition(
                 &circle,
-                Some(ParameterId("circle".into())),
-                None,
+                Some(&undisplayed),
+                &sketch_id,
+                &[],
+                &markers,
+                &joins,
+            ),
+            None
+        );
+        let unresolved_circle = FeatureInputRelationInstance {
+            operands: vec![FeatureInputOperand {
+                entity_ref: None,
+                ..circle.operands[0].clone()
+            }],
+            ..circle
+        };
+        let circle_entity = SketchEntity {
+            id: SketchEntityId("dimensioned-circle".into()),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+            },
+        };
+        assert!(matches!(
+            typed_relation_definition(
+                &unresolved_circle,
+                Some(&radius),
+                &sketch_id,
+                std::slice::from_ref(&circle_entity),
+                &markers,
+                &joins,
+            ),
+            Some(SketchConstraintDefinition::Radius { entity, .. })
+                if entity == circle_entity.id
+        ));
+        let mut duplicate_circle = circle_entity.clone();
+        duplicate_circle.id = SketchEntityId("duplicate-circle".into());
+        assert_eq!(
+            typed_relation_definition(
+                &unresolved_circle,
+                Some(&radius),
+                &sketch_id,
+                &[circle_entity, duplicate_circle],
                 &markers,
                 &joins,
             ),
