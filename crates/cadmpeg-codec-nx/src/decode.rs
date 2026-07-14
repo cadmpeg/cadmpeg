@@ -7152,12 +7152,15 @@ pub(crate) fn blend_feature_definition(
         }
         let ProceduralSurfaceDefinition::Blend {
             radius,
-            cross_section: BlendCrossSection::Circular,
+            cross_section,
             ..
         } = &procedural.definition
         else {
             continue;
         };
+        if *cross_section != BlendCrossSection::Circular {
+            return None;
+        }
         surfaces.push(procedural.surface.clone());
         laws.push(radius);
     }

@@ -1225,6 +1225,22 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         }
     ));
     assert!(crate::decode::blend_feature_definition(&ir, &[]).is_none());
+
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("nx:s4:blend-construction#3".into()),
+        surface: SurfaceId("nx:s4:blend-surf#3".into()),
+        definition: ProceduralSurfaceDefinition::Blend {
+            supports: [None, None],
+            spine: None,
+            radius: BlendRadiusLaw::Constant { signed_radius: 7.0 },
+            cross_section: BlendCrossSection::Conic,
+            native: None,
+        },
+        cache_fit_tolerance: None,
+    });
+    assert!(
+        crate::decode::blend_feature_definition(&ir, &[BodyId("nx:s4:body#3".into())]).is_none()
+    );
 }
 
 #[test]
