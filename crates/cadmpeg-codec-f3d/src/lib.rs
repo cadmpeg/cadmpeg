@@ -464,20 +464,23 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 let role_is_valid = match scope.kind.as_str() {
                     "Extrude" => match group.extrude_role {
                         Some(records::DesignExtrudeOperandRole::Bodies) => {
-                            group.role == 0x0000_0008_0000_0000
+                            group.role == 0x0000_0008_0000_0000 && group.extrude_face_role.is_none()
                         }
                         Some(records::DesignExtrudeOperandRole::Profile) => {
                             group.role == 0x0000_0041_0000_0000
+                                && group.extrude_face_role.is_none()
                                 && scope.extrude_profile.as_ref().is_some_and(|profile| {
                                     group.members.as_slice() == [profile.record_index]
                                 })
                         }
                         Some(records::DesignExtrudeOperandRole::Faces) => {
-                            group.role == 0x0000_0011_0000_0000
+                            group.role == 0x0000_0011_0000_0000 && group.extrude_face_role.is_some()
                         }
                         None => false,
                     },
-                    "Fillet" | "Chamfer" => group.extrude_role.is_none(),
+                    "Fillet" | "Chamfer" => {
+                        group.extrude_role.is_none() && group.extrude_face_role.is_none()
+                    }
                     _ => false,
                 };
                 matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer")
@@ -626,9 +629,39 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 scope.extrude_start,
                 Some(records::DesignExtrudeStart::FromFace)
             ));
+            let mut face_groups = native
+                .design_construction_operand_groups
+                .iter()
+                .filter(|group| {
+                    design_stream(&group.id) == native_stream
+                        && group.scope_record_index == scope.record_index
+                        && group.extrude_role == Some(records::DesignExtrudeOperandRole::Faces)
+                })
+                .collect::<Vec<_>>();
+            face_groups.sort_by_key(|group| group.scope_reference_ordinal);
+            let expected_face_roles = match (scope.extrude_start, scope.extrude_extent) {
+                (
+                    Some(records::DesignExtrudeStart::FromFace),
+                    Some(records::DesignExtrudeExtent::OneSidedToFace),
+                ) => vec![
+                    records::DesignExtrudeFaceRole::Start,
+                    records::DesignExtrudeFaceRole::Termination,
+                ],
+                (Some(records::DesignExtrudeStart::FromFace), _) => {
+                    vec![records::DesignExtrudeFaceRole::Start]
+                }
+                (_, Some(records::DesignExtrudeExtent::OneSidedToFace)) => {
+                    vec![records::DesignExtrudeFaceRole::Termination]
+                }
+                _ => Vec::new(),
+            };
             if !extent_matches_operands
                 || !start_matches_operands
                 || face_operand_group_count != expected_face_group_count
+                || face_groups
+                    .iter()
+                    .map(|group| group.extrude_face_role)
+                    .ne(expected_face_roles.iter().copied().map(Some))
             {
                 findings.push(Finding {
                     check: Check::NativeLinks,

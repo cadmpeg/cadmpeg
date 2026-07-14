@@ -12,7 +12,7 @@ use crate::records::{
     DesignConfigurationKind, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
     DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
-    DesignExtrudeExtent, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
     DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind,
     DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
@@ -2859,6 +2859,7 @@ pub fn decode_construction_operand_groups(
         .iter()
         .filter(|scope| matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer"))
     {
+        let scope_group_start = out.len();
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -2885,9 +2886,29 @@ pub fn decode_construction_operand_groups(
                 out.push(group);
             }
         }
+        if scope.kind == "Extrude" {
+            assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
+        }
     }
     out.sort_by_key(|group| group.id.clone());
     Ok(out)
+}
+
+fn assign_extrude_face_roles(
+    scope: &DesignParameterScope,
+    groups: &mut [DesignConstructionOperandGroup],
+) {
+    let mut face_groups = groups
+        .iter_mut()
+        .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Faces));
+    if scope.extrude_start == Some(DesignExtrudeStart::FromFace) {
+        if let Some(group) = face_groups.next() {
+            group.extrude_face_role = Some(DesignExtrudeFaceRole::Start);
+        }
+    }
+    for group in face_groups {
+        group.extrude_face_role = Some(DesignExtrudeFaceRole::Termination);
+    }
 }
 
 /// Pair Fillet construction-operand groups with their radius inputs.
@@ -3053,6 +3074,7 @@ fn parse_construction_operand_group(
         identity_record_offset: u64::try_from(position + 7).ok()?,
         role,
         extrude_role,
+        extrude_face_role: None,
         role_offset: u64::try_from(position + 17).ok()?,
         opaque_index,
         opaque_index_offset: u64::try_from(position + 35).ok()?,
@@ -5597,20 +5619,20 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod relation_tests {
     use super::{
-        bind_dimension_loci, bind_extrude_selection_geometry, bind_face_operand_candidates,
-        bind_sketch_graph, decode_fillet_radius_groups, find_dimension_locus_pair, identity_matrix,
-        next_indexed_record_offset, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design,
+        assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
+        bind_face_operand_candidates, bind_sketch_graph, decode_fillet_radius_groups,
+        find_dimension_locus_pair, identity_matrix, next_indexed_record_offset,
+        parse_construction_operand_group, parse_construction_operand_identity,
+        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
-        DesignDimensionLocusPair, DesignEntityHeader, DesignExtrudeExtent,
+        DesignDimensionLocusPair, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
         DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
         DesignExtrudeStart, DesignObjectKind, DesignParameterKind, DesignParameterOwner,
         DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, PersistentSubentityTag,
@@ -6221,6 +6243,7 @@ mod relation_tests {
             identity_record_offset: 1043,
             role: 0x0000_0008_0000_0000,
             extrude_role: Some(DesignExtrudeOperandRole::Bodies),
+            extrude_face_role: None,
             role_offset: 1053,
             opaque_index: 180,
             opaque_index_offset: 1071,
@@ -7179,6 +7202,7 @@ mod relation_tests {
             identity_record_offset: 1044,
             role: 0x0000_0008_0000_0000,
             extrude_role: Some(DesignExtrudeOperandRole::Bodies),
+            extrude_face_role: None,
             role_offset: 1054,
             opaque_index: 180,
             opaque_index_offset: 1072,
@@ -7208,6 +7232,17 @@ mod relation_tests {
         face_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
         face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces);
         face_group.role = 0x0000_0011_0000_0000;
+        let mut ordered_faces = [face_group.clone(), face_group.clone()];
+        scope.extrude_start = Some(DesignExtrudeStart::FromFace);
+        assign_extrude_face_roles(&scope, &mut ordered_faces);
+        assert_eq!(
+            ordered_faces.map(|group| group.extrude_face_role),
+            [
+                Some(DesignExtrudeFaceRole::Start),
+                Some(DesignExtrudeFaceRole::Termination)
+            ]
+        );
+        scope.extrude_start = Some(DesignExtrudeStart::ProfilePlane);
         assert!(project_extrude(
             &scope,
             &[(0, &along), (1, &taper)],
@@ -7439,6 +7474,7 @@ mod relation_tests {
             identity_record_offset: 1100 + u64::from(ordinal) * 200,
             role: 0x0000_0008_0000_0000,
             extrude_role: None,
+            extrude_face_role: None,
             role_offset: 1110 + u64::from(ordinal) * 200,
             opaque_index: 100,
             opaque_index_offset: 1128 + u64::from(ordinal) * 200,

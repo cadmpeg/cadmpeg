@@ -683,6 +683,16 @@ pub enum DesignExtrudeOperandRole {
     Faces,
 }
 
+/// Semantic use of an ordered Extrude face-operand group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignExtrudeFaceRole {
+    /// Face supporting a selected-face start.
+    Start,
+    /// Face terminating a one-sided to-face extent.
+    Termination,
+}
+
 /// Counted construction-operand group owned by a feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignConstructionOperandGroup {
@@ -713,6 +723,9 @@ pub struct DesignConstructionOperandGroup {
     /// Extrude-specific semantic role of `role`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_role: Option<DesignExtrudeOperandRole>,
+    /// Start or termination role when `extrude_role` is `faces`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_face_role: Option<DesignExtrudeFaceRole>,
     /// Byte offset of `role`.
     pub role_offset: u64,
     /// Opaque repeated nonzero u32.
