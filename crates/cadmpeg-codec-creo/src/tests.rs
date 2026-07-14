@@ -2029,7 +2029,8 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.pcurves.len(), 1);
     let pcurve = &scan.pcurves[0];
@@ -2037,6 +2038,14 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     assert_eq!(pcurve.faces, [10, 11]);
     assert_eq!(pcurve.face_0_endpoints, [[0.0, 1.0], [1.0, 0.0]]);
     assert_eq!(pcurve.face_1_endpoints, [[3.0, 0.0], [3.0, 1.0]]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let records = &result.ir.native.namespace("creo").unwrap().arenas["pcurve_endpoints"];
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].id, "creo:visibgeom:pcurve_endpoints#7");
+    assert_eq!(records[0].fields["faces"][0], 10);
+    assert_eq!(records[0].fields["faces"][1], 11);
+    assert_eq!(records[0].fields["source_form"], "positional");
 }
 
 #[test]

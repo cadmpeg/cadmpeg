@@ -222,6 +222,54 @@ struct CreoCurveExpressionAssignment {
     offset: usize,
 }
 
+#[derive(Serialize)]
+struct CreoPcurveEndpointRecord {
+    id: String,
+    curve_id: u32,
+    faces: [u32; 2],
+    face_0_endpoints: [[f64; 2]; 2],
+    face_1_endpoints: [[f64; 2]; 2],
+    source_form: &'static str,
+}
+
+fn pcurve_endpoint_records(scan: &ContainerScan) -> Vec<(CreoPcurveEndpointRecord, usize)> {
+    let mut records = scan
+        .pcurves
+        .iter()
+        .map(|pcurve| {
+            (
+                CreoPcurveEndpointRecord {
+                    id: format!("creo:visibgeom:pcurve_endpoints#{}", pcurve.curve_id),
+                    curve_id: pcurve.curve_id,
+                    faces: pcurve.faces,
+                    face_0_endpoints: pcurve.face_0_endpoints,
+                    face_1_endpoints: pcurve.face_1_endpoints,
+                    source_form: "positional",
+                },
+                pcurve.offset,
+            )
+        })
+        .collect::<Vec<_>>();
+    records.extend(scan.bound_prototype_pcurves.iter().map(|pcurve| {
+        (
+            CreoPcurveEndpointRecord {
+                id: format!(
+                    "creo:visibgeom:prototype_pcurve_endpoints#{}",
+                    pcurve.curve_id
+                ),
+                curve_id: pcurve.curve_id,
+                faces: pcurve.faces,
+                face_0_endpoints: pcurve.face_0_endpoints,
+                face_1_endpoints: pcurve.face_1_endpoints,
+                source_form: "prototype",
+            },
+            pcurve.offset,
+        )
+    }));
+    records.sort_by_key(|(_, offset)| *offset);
+    records
+}
+
 fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionRecord> {
     scan.curve_expressions
         .iter()
@@ -6848,6 +6896,26 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     }
     transfer_curve_expression_features(scan, &mut ir, &mut annotations);
     transfer_feature_dimensions(scan, &mut ir, &mut annotations);
+    let pcurve_endpoints = pcurve_endpoint_records(scan);
+    if !pcurve_endpoints.is_empty() {
+        for (record, offset) in &pcurve_endpoints {
+            annotate(
+                &mut annotations,
+                &record.id,
+                "VisibGeom",
+                *offset as u64,
+                "pcurve_endpoint_frames",
+                Exactness::Derived,
+            );
+        }
+        let records = pcurve_endpoints
+            .iter()
+            .map(|(record, _)| record)
+            .collect::<Vec<_>>();
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("pcurve_endpoints", &records)?;
+    }
     let sketches = sketch_records(scan);
     if !sketches.is_empty() {
         for sketch in &sketches {
