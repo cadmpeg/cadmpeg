@@ -21,13 +21,14 @@ use cadmpeg_ir::features::{
     RevolutionAxis, RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
-    RegionId, ShellId, SurfaceId, UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
@@ -204,6 +205,7 @@ struct CreoCurveExpressionLocalSystem {
     dimensions: u8,
     count: u8,
     body: Vec<u8>,
+    explicit_slots: Option<[f64; 12]>,
     offset: usize,
 }
 
@@ -282,6 +284,7 @@ fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionReco
                     dimensions: frame.dimensions,
                     count: frame.count,
                     body: frame.body.clone(),
+                    explicit_slots: frame.explicit_slots,
                     offset: frame.offset,
                 }
             }),
@@ -315,6 +318,81 @@ fn curve_expression_record_id(record: &crate::curve::CurveExpressionRecord) -> S
         record.entity_id,
         record.offset
     )
+}
+
+fn curve_expression_helix_definition(
+    record: &crate::curve::CurveExpressionRecord,
+) -> Option<ProceduralCurveDefinition> {
+    let helix = crate::curve::expression_helix(record)?;
+    let slots = record.local_system.as_ref()?.explicit_slots?;
+    let u = Vector3::new(slots[0], slots[1], slots[2]);
+    let v = Vector3::new(slots[6], slots[7], slots[8]);
+    let u_norm = u.norm();
+    let v_norm = v.norm();
+    let scale = u_norm.max(v_norm).max(1.0);
+    if !u_norm.is_finite()
+        || !v_norm.is_finite()
+        || u_norm <= 1e-12
+        || v_norm <= 1e-12
+        || (u_norm - v_norm).abs() > 1e-9 * scale
+        || (u.x * v.x + u.y * v.y + u.z * v.z).abs() > 1e-9 * u_norm * v_norm
+        || slots[3..6].iter().any(|value| value.abs() > 1e-12)
+    {
+        return None;
+    }
+    let u = Vector3::new(u.x / u_norm, u.y / u_norm, u.z / u_norm);
+    let v = Vector3::new(v.x / v_norm, v.y / v_norm, v.z / v_norm);
+    let axis = Vector3::new(
+        u.y * v.z - u.z * v.y,
+        u.z * v.x - u.x * v.z,
+        u.x * v.y - u.y * v.x,
+    );
+    let origin = Point3::new(slots[9], slots[10], slots[11]);
+    let (sin, cos) = helix.start_angle.sin_cos();
+    let major_direction = Vector3::new(
+        u.x * cos + v.x * sin,
+        u.y * cos + v.y * sin,
+        u.z * cos + v.z * sin,
+    );
+    let tangent_direction = Vector3::new(
+        -u.x * sin + v.x * cos,
+        -u.y * sin + v.y * cos,
+        -u.z * sin + v.z * cos,
+    );
+    let minor_direction = if helix.clockwise {
+        Vector3::new(
+            -tangent_direction.x,
+            -tangent_direction.y,
+            -tangent_direction.z,
+        )
+    } else {
+        tangent_direction
+    };
+    Some(ProceduralCurveDefinition::Helix {
+        angle_range: [0.0, helix.revolutions * std::f64::consts::TAU],
+        center: Point3::new(
+            origin.x + axis.x * helix.z_start,
+            origin.y + axis.y * helix.z_start,
+            origin.z + axis.z * helix.z_start,
+        ),
+        major: Vector3::new(
+            major_direction.x * helix.radius,
+            major_direction.y * helix.radius,
+            major_direction.z * helix.radius,
+        ),
+        minor: Vector3::new(
+            minor_direction.x * helix.radius,
+            minor_direction.y * helix.radius,
+            minor_direction.z * helix.radius,
+        ),
+        pitch: Vector3::new(
+            axis.x * helix.height / helix.revolutions,
+            axis.y * helix.height / helix.revolutions,
+            axis.z * helix.height / helix.revolutions,
+        ),
+        apex_factor: 0.0,
+        axis,
+    })
 }
 
 fn transfer_curve_expression_features(
@@ -409,7 +487,46 @@ fn transfer_curve_expression_features(
             "curve_expression_feature",
             Exactness::Derived,
         );
-        let definition = crate::curve::expression_helix(record).map_or_else(
+        let helix = crate::curve::expression_helix(record);
+        let placed_helix = curve_expression_helix_definition(record);
+        if let Some(procedural_definition) = placed_helix {
+            let curve_id = CurveId(format!(
+                "creo:depdb:curve_expression_curve#{}-{}",
+                record.entity_id, record.offset
+            ));
+            let procedural_id = ProceduralCurveId(format!(
+                "creo:depdb:curve_expression_helix#{}-{}",
+                record.entity_id, record.offset
+            ));
+            annotate(
+                annotations,
+                &curve_id.0,
+                "DEPDB_DATA",
+                record.offset as u64,
+                "curve_expression_carrier",
+                Exactness::Unknown,
+            );
+            annotate(
+                annotations,
+                &procedural_id.0,
+                "DEPDB_DATA",
+                record.offset as u64,
+                "curve_expression_helix",
+                Exactness::Derived,
+            );
+            ir.model.curves.push(Curve {
+                id: curve_id.clone(),
+                geometry: CurveGeometry::Unknown { record: None },
+                source_object: None,
+            });
+            ir.model.procedural_curves.push(ProceduralCurve {
+                id: procedural_id,
+                curve: curve_id,
+                definition: procedural_definition,
+                cache_fit_tolerance: None,
+            });
+        }
+        let definition = helix.map_or_else(
             || IrFeatureDefinition::Native {
                 kind: "CurveFromEquation".to_string(),
                 parameters: BTreeMap::from([

@@ -61,7 +61,7 @@ pub struct CurveExpressionRecord {
 }
 
 /// Count-bounded `local_sys` payload carried by a curve-equation entity.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CurveExpressionLocalSystem {
     /// Tuple dimensionality from the `f9` wrapper.
     pub dimensions: u8,
@@ -69,6 +69,9 @@ pub struct CurveExpressionLocalSystem {
     pub count: u8,
     /// Exact stateful scalar body through the next named field.
     pub body: Vec<u8>,
+    /// Twelve explicit scalar slots, absent when the body uses inheritance or
+    /// contains a scalar form that is not decoded.
+    pub explicit_slots: Option<[f64; 12]>,
     /// Byte offset of the `local_sys` named-record header.
     pub offset: usize,
 }
@@ -95,6 +98,8 @@ pub struct CurveExpressionHelix {
     pub radius: f64,
     /// Signed axial rise from `t = 0` through `t = 1`.
     pub height: f64,
+    /// Native axial coordinate at `t = 0`.
+    pub z_start: f64,
     /// Positive angular travel in revolutions.
     pub revolutions: f64,
     /// Angular position at `t = 0`, in radians.
@@ -345,6 +350,7 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
     }
     labels.sort_unstable_by_key(|(offset, _, _)| *offset);
 
+    let cache = scalar::ScalarCache::from_section(payload);
     let mut records = Vec::new();
     for (index, &(offset, label_len, backup)) in labels.iter().enumerate() {
         let end = labels
@@ -366,10 +372,14 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
                 .windows(1)
                 .position(|window| window[0] == psb::token::NAMED_RECORD)
                 .map_or(end, |relative| body_start + relative);
+            let body = payload[body_start..body_end].to_vec();
             Some(CurveExpressionLocalSystem {
                 dimensions,
                 count,
-                body: payload[body_start..body_end].to_vec(),
+                explicit_slots: ((dimensions, count) == (4, 3))
+                    .then(|| explicit_local_system_slots(&body, &cache))
+                    .flatten(),
+                body,
                 offset,
             })
         });
@@ -426,6 +436,21 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
         }
     }
     records
+}
+
+fn explicit_local_system_slots(body: &[u8], cache: &scalar::ScalarCache) -> Option<[f64; 12]> {
+    let mut values = Vec::with_capacity(12);
+    let mut cursor = 0;
+    while cursor < body.len() && values.len() < 12 {
+        let (value, next) = scalar::decode_in_row_lane(body, cursor, cache)?;
+        values.push(value);
+        cursor = next;
+    }
+    (cursor == body.len() && values.len() == 12).then(|| {
+        values
+            .try_into()
+            .expect("twelve bounded local-system slots")
+    })
 }
 
 fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAssignment> {
@@ -664,6 +689,7 @@ pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressio
     (revolutions > 0.0).then_some(CurveExpressionHelix {
         radius: radius_start,
         height: z_end - z_start,
+        z_start,
         revolutions,
         start_angle: theta_start.to_radians(),
         clockwise: angular_travel < 0.0,
@@ -1422,6 +1448,7 @@ mod tests {
             Some(CurveExpressionHelix {
                 radius: 5.0,
                 height: 20.0,
+                z_start: -2.0,
                 revolutions: 2.0,
                 start_angle: std::f64::consts::FRAC_PI_2,
                 clockwise: false,
