@@ -314,6 +314,19 @@ pub struct ExtrudePayloadScalarTriple {
     pub scalars: [PayloadScalar; 3],
 }
 
+/// One three-scalar clause anchored to an ordered operation body reference.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OperationBodyScalarTriple {
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Serialized body object index.
+    pub body_object_index: u32,
+    /// Branch discriminator following the body-reference terminator.
+    pub branch: u8,
+    /// Three scalar atoms in byte order.
+    pub scalars: [PayloadScalar; 3],
+}
+
 /// Structured `32` branch following an extrusion body reference.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtrudePayload32Branch {
@@ -820,6 +833,41 @@ pub fn extrude_payload_scalar_triple(
     Some(ExtrudePayloadScalarTriple {
         scalars: scalars.try_into().ok()?,
     })
+}
+
+/// Decode complete three-scalar clauses following ordered operation body fields.
+pub fn operation_body_scalar_triples(
+    record: OperationRecord<'_>,
+) -> Vec<OperationBodyScalarTriple> {
+    operation_body_references(record)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(ordinal, reference)| {
+            let token = reference.offset.checked_sub(record.offset)?;
+            let (_, end) = feature_object_index(record.bytes, token)?;
+            if record.bytes.get(end) != Some(&0xff) {
+                return None;
+            }
+            let branch = *record.bytes.get(end + 1)?;
+            let mut at = end + 2;
+            let mut scalars = Vec::with_capacity(3);
+            for _ in 0..3 {
+                let (value, encoding, width) = payload_scalar(record.bytes.get(at..)?)?;
+                scalars.push(PayloadScalar {
+                    offset: record.offset + at,
+                    value,
+                    encoding,
+                });
+                at += width;
+            }
+            Some(OperationBodyScalarTriple {
+                body_reference_ordinal: ordinal as u32,
+                body_object_index: reference.object_index,
+                branch,
+                scalars: scalars.try_into().ok()?,
+            })
+        })
+        .collect()
 }
 
 /// Decode the structured `32` branch following an extrusion body field.

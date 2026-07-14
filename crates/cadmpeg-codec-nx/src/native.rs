@@ -402,6 +402,27 @@ pub struct FeatureExtrudePayloadScalarTriple {
     pub source_offsets: [u64; 3],
 }
 
+/// Three typed scalars anchored to an ordered operation body reference.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureOperationBodyScalarTriple {
+    /// Globally unique scalar-clause identity.
+    pub id: String,
+    /// Owning operation label.
+    pub operation_label: String,
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Serialized body object index.
+    pub body_object_index: u32,
+    /// Branch discriminator following the body-reference terminator.
+    pub branch: u8,
+    /// Ordered finite scalar values.
+    pub values: [f64; 3],
+    /// Ordered serialized width forms.
+    pub encodings: [FeaturePayloadScalarEncoding; 3],
+    /// Absolute file offsets of the three scalar markers.
+    pub source_offsets: [u64; 3],
+}
+
 /// Structured `32` branch following an extrusion body-reference field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureExtrudePayload32Branch {
@@ -1104,6 +1125,62 @@ pub fn feature_extrude_payload_scalar_triples(
                     .scalars
                     .map(|scalar| entry_offset + scalar.offset as u64),
             });
+        }
+    }
+    triples
+}
+
+/// Decode typed scalar clauses anchored to operation body-reference fields.
+pub fn feature_operation_body_scalar_triples(
+    container: &Container,
+) -> Vec<FeatureOperationBodyScalarTriple> {
+    let sections = container.om_sections();
+    let mut triples = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            for triple in crate::om::operation_body_scalar_triples(record) {
+                let encoding = |encoding| match encoding {
+                    crate::om::PayloadScalarEncoding::Zero => FeaturePayloadScalarEncoding::Zero,
+                    crate::om::PayloadScalarEncoding::Binary32 => {
+                        FeaturePayloadScalarEncoding::Binary32
+                    }
+                    crate::om::PayloadScalarEncoding::Binary64 => {
+                        FeaturePayloadScalarEncoding::Binary64
+                    }
+                };
+                triples.push(FeatureOperationBodyScalarTriple {
+                    id: format!(
+                        "nx:feature-history:operation-body-scalar-triple#{section_key}-{operation_ordinal}-{}",
+                        triple.body_reference_ordinal
+                    ),
+                    operation_label: format!(
+                        "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                    ),
+                    body_reference_ordinal: triple.body_reference_ordinal,
+                    body_object_index: triple.body_object_index,
+                    branch: triple.branch,
+                    values: triple.scalars.map(|scalar| scalar.value),
+                    encodings: triple.scalars.map(|scalar| encoding(scalar.encoding)),
+                    source_offsets: triple
+                        .scalars
+                        .map(|scalar| entry_offset + scalar.offset as u64),
+                });
+            }
         }
     }
     triples
