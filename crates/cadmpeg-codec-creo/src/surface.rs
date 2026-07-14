@@ -220,8 +220,11 @@ pub struct SurfaceParameterRecord {
 /// One scalar token located within a positional surface parameter body.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfaceParameterScalar {
-    /// Decoded scalar value.
-    pub value: f64,
+    /// Decoded scalar value, or `None` for a structurally framed token whose
+    /// numeric mapping is not defined.
+    pub value: Option<f64>,
+    /// Exact source bytes occupied by the token.
+    pub raw: Vec<u8>,
     /// Byte offset relative to the start of the parameter body.
     pub offset: usize,
     /// Number of source bytes occupied by the token.
@@ -733,11 +736,20 @@ fn scalar_tokens(
     while cursor < body.len() {
         if let Some((value, next)) = decode_row_scalar(kind, body, cursor, cache) {
             tokens.push(SurfaceParameterScalar {
-                value,
+                value: Some(value),
+                raw: body[cursor..next].to_vec(),
                 offset: cursor,
                 length: next - cursor,
             });
             cursor = next;
+        } else if matches!(body.get(cursor), Some(0x73 | 0xbb)) && cursor + 7 <= body.len() {
+            tokens.push(SurfaceParameterScalar {
+                value: None,
+                raw: body[cursor..cursor + 7].to_vec(),
+                offset: cursor,
+                length: 7,
+            });
+            cursor += 7;
         } else {
             cursor += 1;
         }
@@ -824,7 +836,10 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
         let scalar_tokens = scalar_tokens(row.kind, &body, &cache);
         records.push(SurfaceParameterRecord {
             surface_id: row.id,
-            scalar_values: scalar_tokens.iter().map(|token| token.value).collect(),
+            scalar_values: scalar_tokens
+                .iter()
+                .filter_map(|token| token.value)
+                .collect(),
             scalar_tokens,
             body,
             boundary,
@@ -1363,6 +1378,22 @@ mod tests {
             \xe0\x02radius2\0\xe4\xe3";
 
         assert!(rows(payload).is_empty());
+    }
+
+    #[test]
+    fn opaque_seven_byte_surface_scalar_owns_its_tail() {
+        let body = [0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0];
+        let tokens = scalar_tokens(
+            SurfaceKind::TorusOrSphere,
+            &body,
+            &scalar::ScalarCache::default(),
+        );
+
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].value, None);
+        assert_eq!(tokens[0].offset, 0);
+        assert_eq!(tokens[0].length, 7);
+        assert_eq!(tokens[0].raw, body);
     }
 
     #[test]
