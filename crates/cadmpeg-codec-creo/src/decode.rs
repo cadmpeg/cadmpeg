@@ -610,19 +610,77 @@ fn resolved_section_segment_geometry(
         .or_else(|| saved_section_arc_geometry(definition, segment))
 }
 
+struct SectionIntersectionCarrier {
+    geometry: SketchGeometry,
+    line_is_bounded: bool,
+}
+
+fn section_axis_line_carrier(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    let points = &definition.variables.as_ref()?.points;
+    let endpoint = |id| points.iter().find(|point| point.point_id == id);
+    let [first, second] = segment.point_ids.map(endpoint);
+    let (Some(first), Some(second)) = (first, second) else {
+        return None;
+    };
+    let scale = first
+        .u
+        .into_iter()
+        .chain(first.v)
+        .chain(second.u)
+        .chain(second.v)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    if segment.directions[0] == Some(0) {
+        let (Some(first_u), Some(second_u)) = (first.u, second.u) else {
+            return None;
+        };
+        ((first_u - second_u).abs() <= 1e-9 * scale).then(|| SketchGeometry::Line {
+            start: cadmpeg_ir::math::Point2::new(first_u, -scale),
+            end: cadmpeg_ir::math::Point2::new(first_u, scale),
+        })
+    } else if segment.directions[1] == Some(0) {
+        let (Some(first_v), Some(second_v)) = (first.v, second.v) else {
+            return None;
+        };
+        ((first_v - second_v).abs() <= 1e-9 * scale).then(|| SketchGeometry::Line {
+            start: cadmpeg_ir::math::Point2::new(-scale, first_v),
+            end: cadmpeg_ir::math::Point2::new(scale, first_v),
+        })
+    } else {
+        None
+    }
+}
+
 fn section_segment_intersection_carrier(
     definition: &crate::feature::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
-) -> Option<SketchGeometry> {
-    resolved_section_segment_geometry(definition, points, segment).or_else(|| {
-        let ([center_u, center_v], radius) = saved_section_arc_carrier(definition, segment)?;
-        Some(SketchGeometry::Arc {
+) -> Option<SectionIntersectionCarrier> {
+    if let Some(geometry) = resolved_section_segment_geometry(definition, points, segment) {
+        return Some(SectionIntersectionCarrier {
+            line_is_bounded: matches!(geometry, SketchGeometry::Line { .. }),
+            geometry,
+        });
+    }
+    if let Some(geometry) = section_axis_line_carrier(definition, segment) {
+        return Some(SectionIntersectionCarrier {
+            geometry,
+            line_is_bounded: false,
+        });
+    }
+    let ([center_u, center_v], radius) = saved_section_arc_carrier(definition, segment)?;
+    Some(SectionIntersectionCarrier {
+        geometry: SketchGeometry::Arc {
             center: cadmpeg_ir::math::Point2::new(center_u, center_v),
             radius: Length(radius),
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::TAU),
-        })
+        },
+        line_is_bounded: false,
     })
 }
 
@@ -860,8 +918,17 @@ fn resolved_trim_vertex_coordinates(
         let (Some(first), Some(second)) = (geometry(*first_id), geometry(*second_id)) else {
             continue;
         };
-        if let Some(coordinate) = intersect_section_lines(&first, &second)
-            .or_else(|| intersect_section_line_arc(&first, &second))
+        let line_arc_is_bounded = match (&first.geometry, &second.geometry) {
+            (SketchGeometry::Line { .. }, SketchGeometry::Arc { .. }) => first.line_is_bounded,
+            (SketchGeometry::Arc { .. }, SketchGeometry::Line { .. }) => second.line_is_bounded,
+            _ => false,
+        };
+        if let Some(coordinate) = intersect_section_lines(&first.geometry, &second.geometry)
+            .or_else(|| {
+                line_arc_is_bounded
+                    .then(|| intersect_section_line_arc(&first.geometry, &second.geometry))
+                    .flatten()
+            })
         {
             coordinates.insert(vertex, coordinate);
         }
@@ -2781,6 +2848,63 @@ mod resolved_sketch_tests {
     }
 
     #[test]
+    fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
+        let segment = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [Some(0), None, Some(0)],
+            point_ids: [7, 9],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 12,
+            offset: 40,
+        };
+        let definition = crate::feature::FeatureDefinition {
+            id: 5,
+            owner_feature_id: Some(6),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(crate::feature::FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                points: vec![
+                    crate::feature::FeatureSectionPoint {
+                        point_id: 7,
+                        u: Some(2.0),
+                        v: None,
+                    },
+                    crate::feature::FeatureSectionPoint {
+                        point_id: 9,
+                        u: Some(2.0),
+                        v: Some(8.0),
+                    },
+                ],
+                offset: 0,
+            }),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        assert_eq!(
+            section_axis_line_carrier(&definition, &segment),
+            Some(SketchGeometry::Line {
+                start: cadmpeg_ir::math::Point2::new(2.0, -8.0),
+                end: cadmpeg_ir::math::Point2::new(2.0, 8.0),
+            })
+        );
+    }
+
+    #[test]
     fn intersects_evaluated_section_carriers() {
         let horizontal = SketchGeometry::Line {
             start: cadmpeg_ir::math::Point2::new(-2.0, 1.0),
@@ -3028,7 +3152,8 @@ mod resolved_sketch_tests {
             .rows[0];
         assert!(saved_section_arc_geometry(&trimmed, segment).is_none());
         assert_eq!(
-            section_segment_intersection_carrier(&trimmed, &BTreeMap::new(), segment),
+            section_segment_intersection_carrier(&trimmed, &BTreeMap::new(), segment)
+                .map(|carrier| carrier.geometry),
             Some(SketchGeometry::Arc {
                 center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
                 radius: Length(2.0),

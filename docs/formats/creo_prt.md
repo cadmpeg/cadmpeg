@@ -341,6 +341,10 @@ A `segtab` line whose two endpoint identifiers each have complete type-1 and
 type-2 `var_arr` values is the bounded segment between those two `[u, v]`
 points. It is construction geometry when its `ext_id` is absent from
 `ent_tab`.
+For relation-backed endpoint ordinates, `dir[0] = 0` and two equal defined
+endpoint `u` values define a vertical carrier; `dir[1] = 0` and two equal
+defined endpoint `v` values define a horizontal carrier. The carrier remains
+unbounded until the trim-vertex graph supplies both endpoints.
 
 The `ent_tab` start and end vertex identifiers orient each trimmed entity.
 Connected components of this incidence graph are profile chains. A component
