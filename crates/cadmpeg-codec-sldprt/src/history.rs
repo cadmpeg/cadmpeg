@@ -657,7 +657,13 @@ fn expression_identifier_tokens(expression: &str) -> Vec<ExpressionIdentifier> {
 pub fn bind_unique_sketch_feature(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
+    histories: &[FeatureHistory],
 ) {
+    let native_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
     let feature_indices = features
         .iter()
         .enumerate()
@@ -719,6 +725,49 @@ pub fn bind_unique_sketch_feature(
             sketch: Some(sketch.clone()),
         };
     }
+    let mut aliases = Vec::new();
+    for index in &feature_indices {
+        let FeatureDefinition::Sketch { sketch: None, .. } = &features[*index].definition else {
+            continue;
+        };
+        let Some(base_name) = features[*index]
+            .name
+            .as_deref()
+            .and_then(sketch_alias_base_name)
+        else {
+            continue;
+        };
+        let candidates = bindings
+            .iter()
+            .filter(|(base_index, _, base_native_ref, _)| {
+                let alias_native = features[*index]
+                    .native_ref
+                    .as_deref()
+                    .and_then(|native_ref| native_features.get(native_ref));
+                let base_native = native_features.get(base_native_ref.as_str());
+                features[*base_index].name.as_deref() == Some(base_name)
+                    && alias_native.zip(base_native).is_some_and(|(alias, base)| {
+                        alias.xml_tag == base.xml_tag
+                            && alias.input_class == base.input_class
+                            && alias.parameters == base.parameters
+                            && alias.content == base.content
+                    })
+            })
+            .collect::<Vec<_>>();
+        let [(base_index, base_dependency, _, sketch)] = candidates.as_slice() else {
+            continue;
+        };
+        let Some(native_ref) = features[*index].native_ref.clone() else {
+            continue;
+        };
+        aliases.push((
+            *base_index,
+            (*base_dependency).clone(),
+            native_ref,
+            (*sketch).clone(),
+        ));
+    }
+    bindings.extend(aliases);
     for feature in features {
         for (_, dependency, native_ref, sketch) in &bindings {
             if bind_definition_sketch(&mut feature.definition, native_ref, sketch)
@@ -728,6 +777,13 @@ pub fn bind_unique_sketch_feature(
             }
         }
     }
+}
+
+fn sketch_alias_base_name(name: &str) -> Option<&str> {
+    let (base, suffix) = name.rsplit_once('<')?;
+    let ordinal = suffix.strip_suffix('>')?;
+    (!base.is_empty() && !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit()))
+        .then_some(base)
 }
 
 /// Assign stable neutral regeneration ordinals with every structural parent and

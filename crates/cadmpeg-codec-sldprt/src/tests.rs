@@ -16447,6 +16447,132 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
 }
 
 #[test]
+fn matching_numbered_sketch_alias_binds_the_base_geometry() {
+    use std::collections::BTreeMap;
+
+    use cadmpeg_ir::features::{
+        BooleanOp, Extent, FeatureDefinition, FeatureId, ProfileRef, SketchSpace,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::sketches::{Sketch, SketchId};
+
+    let sketch_id = SketchId("sketch".into());
+    let sketch = Sketch {
+        id: sketch_id.clone(),
+        name: Some("Profile".into()),
+        configuration: None,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        profiles: Vec::new(),
+        native_ref: None,
+    };
+    let neutral =
+        |id: &str, name: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+            id: FeatureId(id.into()),
+            ordinal: 0,
+            name: Some(name.into()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("Sketch".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: Some(native_ref.into()),
+        };
+    let mut features = vec![
+        neutral(
+            "base",
+            "Profile",
+            "native-base",
+            FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: None,
+            },
+        ),
+        neutral(
+            "alias",
+            "Profile<3>",
+            "native-alias",
+            FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: None,
+            },
+        ),
+        neutral(
+            "different",
+            "Profile<4>",
+            "native-different",
+            FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: None,
+            },
+        ),
+        neutral(
+            "consumer",
+            "Boss",
+            "native-consumer",
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Native("native-alias".into()),
+                direction: None,
+                extent: Extent::Unresolved,
+                draft: None,
+                op: BooleanOp::Join,
+            },
+        ),
+    ];
+    let native = |id: &str, name: &str, depth: &str| crate::records::Feature {
+        id: id.into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: None,
+        parent_source_id: None,
+        ordinal: 0,
+        name: name.into(),
+        kind: "Sketch".into(),
+        input_class: Some("moProfileFeature_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::from([("Depth".into(), depth.into())]),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: vec![crate::records::FeatureContent::Dimension("Depth".into())],
+    };
+    let history = crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            native("native-base", "Profile", "2mm"),
+            native("native-alias", "Profile<3>", "2mm"),
+            native("native-different", "Profile<4>", "3mm"),
+        ],
+    };
+
+    crate::history::bind_unique_sketch_feature(&mut features, &[sketch], &[history]);
+
+    assert!(matches!(
+        &features[1].definition,
+        FeatureDefinition::Sketch { sketch: None, .. }
+    ));
+    assert!(matches!(
+        &features[2].definition,
+        FeatureDefinition::Sketch { sketch: None, .. }
+    ));
+    assert!(matches!(
+        &features[3].definition,
+        FeatureDefinition::Extrude { profile: ProfileRef::Sketch(id), .. } if id == &sketch_id
+    ));
+    assert_eq!(features[3].dependencies, vec![FeatureId("base".into())]);
+}
+
+#[test]
 fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
     use cadmpeg_ir::features::{FeatureDefinition, PathRef, ProfileRef};
 
