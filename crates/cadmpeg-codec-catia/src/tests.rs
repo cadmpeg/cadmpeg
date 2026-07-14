@@ -3024,6 +3024,7 @@ fn a5_edge_binding_resolves_cylinder_by_endpoint_lifts() {
         blocks[0].supports[1],
         Some(A5SupportBinding::Cylinder { .. })
     ));
+    assert!(blocks[0].endpoint_loci.is_some());
 }
 
 #[test]
@@ -3072,6 +3073,7 @@ fn a5_edge_binding_resolves_cone_by_endpoint_lifts() {
         blocks[0].supports[0],
         Some(A5SupportBinding::Cone { .. })
     ));
+    assert!(blocks[0].endpoint_loci.is_some());
 }
 
 #[test]

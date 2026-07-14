@@ -1003,6 +1003,9 @@ pub struct ResolvedA5EdgeBlock {
     pub block: A5EdgeBlock,
     /// Carrier binding for each pcurve side.
     pub supports: [Option<A5SupportBinding>; 2],
+    /// Unordered 3D endpoint loci when at least one uniquely bound side can be
+    /// lifted and every liftable side agrees.
+    pub endpoint_loci: Option<[Point3; 2]>,
 }
 
 /// Group ordered `(a5 03 20, a5 03 20, b2 03 23)` consolidated edge blocks.
@@ -1131,9 +1134,43 @@ pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
                     supports[partner] = Some(winner.clone());
                 }
             }
-            ResolvedA5EdgeBlock { block, supports }
+            let endpoint_loci =
+                resolved_support_endpoints(&block, &supports, &standalone, &embedded, &cones);
+            ResolvedA5EdgeBlock {
+                block,
+                supports,
+                endpoint_loci,
+            }
         })
         .collect()
+}
+
+fn resolved_support_endpoints(
+    block: &A5EdgeBlock,
+    supports: &[Option<A5SupportBinding>; 2],
+    cylinders: &[B2Cylinder],
+    embedded: &[B2EmbeddedCylinder],
+    cones: &[B2Cone],
+) -> Option<[Point3; 2]> {
+    let candidates = supports
+        .iter()
+        .zip(&block.pcurves)
+        .filter_map(|(binding, pcurve)| {
+            let points = support_points(binding.as_ref()?, pcurve, cylinders, embedded, cones)?;
+            Some([*points.first()?, *points.last()?])
+        })
+        .collect::<Vec<_>>();
+    let first = *candidates.first()?;
+    candidates
+        .iter()
+        .all(|candidate| {
+            let direct = point_distance(first[0], candidate[0]) <= 2e-3
+                && point_distance(first[1], candidate[1]) <= 2e-3;
+            let reversed = point_distance(first[0], candidate[1]) <= 2e-3
+                && point_distance(first[1], candidate[0]) <= 2e-3;
+            direct || reversed
+        })
+        .then_some(first)
 }
 
 fn support_points(

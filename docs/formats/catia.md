@@ -302,6 +302,8 @@ A 2D spline in a support surface's parameter space. Its payload stores `degU`, `
 
 `b2 03 20` is the B-family form with the same support reference, degree, knot-site parameters, U/V values, first derivatives, second derivatives, and native range. Wide `a6/a7` and `b3/b4` records use identical payload grammars.
 
+For a co-parametric edge block, each uniquely bound analytic carrier lifts the first and last pcurve sites to the shared 3D endpoint loci. When both sides are liftable, their unordered endpoint pairs agree within `2e-3` mm; disagreement invalidates the endpoint result rather than selecting one side.
+
 ### 6.4 Consolidated guide and topology metadata
 
 - **`a5 03 39`** stores `K`, degree, repeated `K`, distinct knots, three `K × 6 × f64le` blocks, and a 48-byte tail. Each position-site pair is two triples `(P,Q)` satisfying `|Q−P|=1`; `P` is a guide-curve point and `Q−P` is its unit reference direction. The next two blocks contain first and second derivatives of all six channels.
