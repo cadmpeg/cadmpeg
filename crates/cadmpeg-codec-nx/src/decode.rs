@@ -3214,7 +3214,6 @@ fn attach_native_object_model(
             block_constructions: &feature_block_constructions,
             extrude_32_constructions: &feature_extrude_32_constructions,
             parameter_bindings: &feature_parameter_bindings,
-            expressions: &expressions,
             operation_records: &feature_operation_records,
             payload_strings: &feature_payload_strings,
             simple_hole_templates: &feature_simple_hole_templates,
@@ -3229,7 +3228,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(77);
+    namespace.version = namespace.version.max(79);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3519,7 +3518,6 @@ struct FeatureOperationSources<'a> {
     block_constructions: &'a [crate::native::FeatureBlockConstruction],
     extrude_32_constructions: &'a [crate::native::FeatureExtrude32Construction],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
-    expressions: &'a [crate::native::Expression],
     operation_records: &'a [crate::native::FeatureOperationRecord],
     payload_strings: &'a [crate::native::FeaturePayloadString],
     simple_hole_templates: &'a [crate::native::FeatureSimpleHoleTemplate],
@@ -3549,7 +3547,6 @@ fn attach_feature_operations(
         block_constructions,
         extrude_32_constructions,
         parameter_bindings,
-        expressions,
         operation_records,
         payload_strings,
         simple_hole_templates,
@@ -3826,6 +3823,15 @@ fn attach_feature_operations(
                 ),
                 binding.expression_declaration.clone(),
             );
+            if let Some(expression) = &binding.expression {
+                source_properties.insert(
+                    format!(
+                        "input_parameter_expression.{}.{}",
+                        binding.input_slot, binding.reference_ordinal
+                    ),
+                    expression.clone(),
+                );
+            }
         }
         let operation_payload_strings = payload_strings_by_operation
             .get(label.id.as_str())
@@ -3863,16 +3869,6 @@ fn attach_feature_operations(
             .tag("FEATURE_OPERATION");
         annotations.exactness(&id, Exactness::Derived);
         let mut source_content = Vec::new();
-        source_content.extend(
-            feature_parameter_content(
-                parameter_bindings_by_operation
-                    .get(label.id.as_str())
-                    .map_or([].as_slice(), Vec::as_slice),
-                expressions,
-            )
-            .into_iter()
-            .map(FeatureSourceContent::Parameter),
-        );
         source_content.extend(
             operation_payload_strings
                 .iter()
@@ -3934,32 +3930,6 @@ pub(crate) fn simple_hole_native_properties(
         );
     }
     properties
-}
-
-pub(crate) fn feature_parameter_content(
-    bindings: &[&crate::native::FeatureParameterBinding],
-    expressions: &[crate::native::Expression],
-) -> Vec<ParameterId> {
-    let parameters_by_expression = expressions
-        .iter()
-        .filter_map(|expression| {
-            let (section, key) = expression.id.rsplit_once(":expression#")?;
-            Some((
-                expression.id.as_str(),
-                ParameterId(format!("{section}:parameter#{key}")),
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let mut seen = BTreeSet::new();
-    bindings
-        .iter()
-        .filter_map(|binding| {
-            parameters_by_expression
-                .get(binding.expression.as_deref()?)
-                .filter(|parameter| seen.insert((*parameter).clone()))
-                .cloned()
-        })
-        .collect()
 }
 
 pub(crate) fn non_boolean_feature_definition(

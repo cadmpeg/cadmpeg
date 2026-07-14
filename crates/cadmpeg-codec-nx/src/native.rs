@@ -1850,7 +1850,12 @@ pub fn feature_sketch_payload_scalars(
                             })
                             .expect("field lies in joined payload");
                         FeatureSketchPayloadScalar {
-                            id: format!("{construction_payload}:scalar#{ordinal}"),
+                            id: format!(
+                                "nx:feature-history:sketch-payload-scalar#{}-{ordinal}",
+                                construction_payload
+                                    .rsplit_once('#')
+                                    .map_or("unknown", |(_, key)| key)
+                            ),
                             operation_label: construction.operation_label.clone(),
                             construction_payload: construction_payload.clone(),
                             ordinal: ordinal as u32,
@@ -1904,7 +1909,12 @@ pub fn feature_sketch_payload_names(
                         })
                         .expect("field lies in joined payload");
                     FeatureSketchPayloadName {
-                        id: format!("{construction_payload}:name#{ordinal}"),
+                        id: format!(
+                            "nx:feature-history:sketch-payload-name#{}-{ordinal}",
+                            construction_payload
+                                .rsplit_once('#')
+                                .map_or("unknown", |(_, key)| key)
+                        ),
                         operation_label: construction.operation_label.clone(),
                         construction_payload: construction_payload.clone(),
                         ordinal: ordinal as u32,
@@ -1946,7 +1956,13 @@ pub fn feature_sketch_payload_named_records(
                 .collect::<Vec<_>>();
             scalar_fields.sort_by_key(|scalar| scalar.payload_offset);
             records.push(FeatureSketchPayloadNamedRecord {
-                id: format!("{}:named-record#{ordinal}", payload.id),
+                id: format!(
+                    "nx:feature-history:sketch-payload-record#{}-{ordinal}",
+                    payload
+                        .id
+                        .rsplit_once('#')
+                        .map_or("unknown", |(_, key)| key)
+                ),
                 operation_label: payload.operation_label.clone(),
                 construction_payload: payload.id.clone(),
                 name_field: name.id.clone(),
@@ -1987,7 +2003,10 @@ pub fn feature_sketch_points(
             let first = scalars.get(first_id.as_str())?;
             let second = scalars.get(second_id.as_str())?;
             Some(FeatureSketchPoint {
-                id: format!("{}:point", record.id),
+                id: format!(
+                    "nx:feature-history:sketch-point#{}",
+                    record.id.rsplit_once('#').map_or("unknown", |(_, key)| key)
+                ),
                 operation_label: record.operation_label.clone(),
                 named_record: record.id.clone(),
                 name: name.value.clone(),
@@ -2821,8 +2840,15 @@ pub fn feature_parameter_bindings(
             let Some(expression_declaration) = &reference.target_expression_declaration else {
                 continue;
             };
+            let operation_key = input
+                .operation_label
+                .rsplit_once('#')
+                .map_or(input.operation_label.as_str(), |(_, key)| key);
             bindings.push(FeatureParameterBinding {
-                id: format!("{}:parameter#{}", input.id, reference.ordinal),
+                id: format!(
+                    "nx:feature-history:parameter-binding#{operation_key}-{}-{}",
+                    input.input_slot, reference.ordinal
+                ),
                 operation_label: input.operation_label.clone(),
                 input_slot: input.input_slot,
                 input_block: input.data_block.clone(),

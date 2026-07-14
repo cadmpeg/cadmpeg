@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 77);
+    assert_eq!(namespace.version, 79);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -841,6 +841,10 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
         std::slice::from_ref(&expression),
     );
     assert_eq!(bindings.len(), 1);
+    assert_eq!(
+        bindings[0].id,
+        "nx:feature-history:parameter-binding#0-7-0-0"
+    );
     assert_eq!(bindings[0].input_slot, 0);
     assert_eq!(bindings[0].reference_ordinal, 0);
     assert_eq!(bindings[0].object_id, 201);
@@ -859,59 +863,6 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
         crate::native::feature_parameter_bindings(&[input], &references, &[expression, duplicate]);
     assert_eq!(ambiguous.len(), 1);
     assert_eq!(ambiguous[0].expression, None);
-}
-
-#[test]
-fn nx_feature_parameter_content_resolves_declarations_in_binding_order() {
-    use crate::native::{Expression, ExpressionUnit, FeatureParameterBinding};
-
-    let expression = |ordinal: u32, declaration: Option<&str>| Expression {
-        id: format!("nx:om-entry-9:expression#{ordinal}"),
-        object_id: None,
-        record: None,
-        declaration: declaration.map(str::to_string),
-        name: format!("p{ordinal}"),
-        parameter_index: Some(ordinal),
-        qualifier: None,
-        unit: ExpressionUnit::Millimeter,
-        expression: ordinal.to_string(),
-        value: Some(f64::from(ordinal)),
-        source_entry: "/Root/UG_PART/UG_PART".to_string(),
-        source_offset: u64::from(ordinal),
-    };
-    let expressions = [
-        expression(4, Some("declaration#4")),
-        expression(7, Some("declaration#7")),
-        expression(8, None),
-    ];
-    let binding = |ordinal: u32, declaration: &str| FeatureParameterBinding {
-        id: format!("binding#{ordinal}"),
-        operation_label: "operation#0".to_string(),
-        input_block: "block#0".to_string(),
-        input_slot: 0,
-        reference_ordinal: ordinal,
-        object_id: ordinal,
-        expression_declaration: declaration.to_string(),
-        expression: expressions
-            .iter()
-            .find(|expression| expression.declaration.as_deref() == Some(declaration))
-            .map(|expression| expression.id.clone()),
-        source_offset: u64::from(ordinal),
-    };
-    let bindings = [
-        binding(0, "declaration#7"),
-        binding(1, "declaration#4"),
-        binding(2, "declaration#7"),
-        binding(3, "missing"),
-    ];
-    let references = bindings.iter().collect::<Vec<_>>();
-    assert_eq!(
-        crate::decode::feature_parameter_content(&references, &expressions),
-        [
-            cadmpeg_ir::features::ParameterId("nx:om-entry-9:parameter#7".to_string()),
-            cadmpeg_ir::features::ParameterId("nx:om-entry-9:parameter#4".to_string()),
-        ]
-    );
 }
 
 #[test]
@@ -5161,7 +5112,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 77);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 79);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
