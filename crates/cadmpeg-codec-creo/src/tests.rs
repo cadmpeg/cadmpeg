@@ -485,6 +485,27 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
 }
 
 #[test]
+fn scan_decodes_cone_half_angle_in_its_positive_dict_lane() {
+    let mut payload = visibgeom_payload(0, 0);
+    payload.extend_from_slice(b"srf_prim_ptr(cone)\0");
+    payload.extend_from_slice(b"\xe0\x01half_angle\0\x74\x21\xfb\x54\x44\x2d\x23");
+    payload.extend_from_slice(b"\xe0\x00parent_feats\0\xf8\x01\x04");
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    let prototype = scan
+        .surface_prototype_records
+        .iter()
+        .find(|record| record.family == crate::surface::SurfacePrototypeFamily::Cone)
+        .expect("cone prototype");
+    assert_eq!(
+        prototype.field("half_angle").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::ScalarSequence(vec![
+            f64::from_be_bytes([0x3f, 0xe9, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23]),
+        ]))
+    );
+}
+
+#[test]
 fn scan_collects_feature_owners_from_rows_and_parent_lists() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

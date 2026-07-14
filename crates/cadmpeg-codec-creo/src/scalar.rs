@@ -131,6 +131,32 @@ pub fn decode_in_surface_row_lane(
     decode_in_row_lane(data, offset, cache)
 }
 
+/// Decode one scalar in the positive seven-byte DICT lane.
+///
+/// The enclosing record grammar must establish this lane. Several prefix
+/// bytes have different meanings in positional row and generic scalar lanes.
+pub fn decode_positive_dict(data: &[u8], offset: usize) -> Option<(f64, usize)> {
+    let (byte_0, byte_1) = match *data.get(offset)? {
+        0x71 => (0x3f, 0xe6),
+        0x74 => (0x3f, 0xe9),
+        0x76 => (0x3f, 0xeb),
+        0x81 => (0x3f, 0xf6),
+        0x8b => (0x40, 0x00),
+        0x90 => (0x40, 0x05),
+        0x91 => (0x40, 0x06),
+        0xa1 => (0x40, 0x16),
+        0xa2 => (0x40, 0x17),
+        0xb7 => (0x3f, 0xe4),
+        _ => return None,
+    };
+    let tail = data.get(offset + 1..offset + 7)?;
+    let mut raw = [0; 8];
+    raw[0] = byte_0;
+    raw[1] = byte_1;
+    raw[2..].copy_from_slice(tail);
+    Some((f64::from_be_bytes(raw), offset + 7))
+}
+
 /// Decode one scalar with a defined byte-to-IEEE mapping.
 ///
 /// Returns the value and first unread offset. Returns `None` when the prefix
@@ -275,6 +301,27 @@ mod tests {
             ))
         );
         assert_eq!(decode_in_surface_row_lane(&data, 7, &cache), Some((1.0, 8)));
+    }
+
+    #[test]
+    fn positive_dict_lane_decodes_cone_half_angles() {
+        let forty_five_degrees = [0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23];
+        let other_angle = [0xb7, 0x5e, 0x8a, 0x1c, 0xf2, 0x17, 0x1e];
+
+        assert_eq!(
+            decode_positive_dict(&forty_five_degrees, 0),
+            Some((
+                f64::from_be_bytes([0x3f, 0xe9, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_positive_dict(&other_angle, 0),
+            Some((
+                f64::from_be_bytes([0x3f, 0xe4, 0x5e, 0x8a, 0x1c, 0xf2, 0x17, 0x1e]),
+                7
+            ))
+        );
     }
 
     #[test]

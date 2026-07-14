@@ -499,7 +499,12 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
         if matches!(body[cursor], 0xe0..=0xe3 | 0xf1 | 0xf7 | 0xfb) {
             break;
         }
-        let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) else {
+        let decoded = if name == "half_angle" {
+            scalar::decode_positive_dict(body, cursor)
+        } else {
+            scalar::decode_in_lane(body, cursor, cache)
+        };
+        let Some((value, next)) = decoded else {
             values.clear();
             break;
         };
@@ -1027,11 +1032,15 @@ pub fn prototypes(payload: &[u8]) -> Vec<SurfacePrototype> {
             find_in(payload, label, start, end)
                 .and_then(|pos| scalar::decode(payload, pos + label.len()).map(|(value, _)| value))
         };
+        let half_angle = find_in(payload, b"half_angle\0", start, end).and_then(|pos| {
+            scalar::decode_positive_dict(payload, pos + b"half_angle\0".len())
+                .map(|(value, _)| value)
+        });
         prototypes.push(SurfacePrototype {
             kind,
             radius: scalar_at(b"radius\0"),
             radius2: scalar_at(b"radius2\0"),
-            half_angle: scalar_at(b"half_angle\0"),
+            half_angle,
             offset: record,
         });
     }
@@ -1107,7 +1116,7 @@ mod tests {
     #[test]
     fn decodes_named_prototype_scalars_without_promoting_them_to_instances() {
         let payload = b"srf_prim_ptr\0geom_type\0\x24radius\0\x2a\xf4\0\
-                        srf_prim_ptr\0geom_type\0\x25half_angle\0\x29\xe8\0";
+                        srf_prim_ptr\0geom_type\0\x25half_angle\0\x74\x21\xfb\x54\x44\x2d\x23";
         assert_eq!(
             prototypes(payload),
             vec![
@@ -1122,7 +1131,9 @@ mod tests {
                     kind: SurfaceKind::Cone,
                     radius: None,
                     radius2: None,
-                    half_angle: Some(0.75),
+                    half_angle: Some(f64::from_be_bytes([
+                        0x3f, 0xe9, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23,
+                    ])),
                     offset: 34
                 },
             ]
