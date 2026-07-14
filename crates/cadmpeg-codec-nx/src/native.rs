@@ -521,6 +521,27 @@ pub struct FeatureDatumPlanePayloadScalarPair {
     pub value_source_offsets: [u64; 2],
 }
 
+/// Resolved typed descriptor of one datum-plane construction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDatumPlaneDescriptor {
+    /// Globally unique descriptor identity.
+    pub id: String,
+    /// Owning `DATUM_PLANE` operation label.
+    pub operation_label: String,
+    /// Header carrying the descriptor reference.
+    pub datum_plane_header: String,
+    /// Zero-based descriptor-lane order.
+    pub ordinal: u32,
+    /// Resolved source block.
+    pub data_block: String,
+    /// Lowercase hexadecimal identity preceding the delimiter.
+    pub identity: String,
+    /// Exact descriptor suffix beginning with `?`.
+    pub suffix: Vec<u8>,
+    /// Absolute source offset of the descriptor block.
+    pub source_offset: u64,
+}
+
 /// Datum-plane construction lane containing a reused block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1952,6 +1973,38 @@ pub fn feature_datum_plane_payload_scalar_pairs(
                     })
                 })
                 .collect()
+        })
+        .collect()
+}
+
+/// Decode atomically resolved datum-plane descriptor blocks.
+pub fn feature_datum_plane_descriptors(
+    container: &Container,
+    headers: &[FeatureDatumPlaneHeader],
+) -> Vec<FeatureDatumPlaneDescriptor> {
+    let blocks = offset_data_block_bytes(container);
+    headers
+        .iter()
+        .flat_map(|header| {
+            header
+                .descriptor_data_blocks
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, data_block)| {
+                    let (bytes, source_offset) = blocks.get(data_block)?.to_owned();
+                    let descriptor = crate::om::datum_plane_descriptor_block(bytes)?;
+                    Some(FeatureDatumPlaneDescriptor {
+                        id: format!("{}-descriptor-{ordinal}", header.id),
+                        operation_label: header.operation_label.clone(),
+                        datum_plane_header: header.id.clone(),
+                        ordinal: ordinal as u32,
+                        data_block: data_block.clone(),
+                        identity: descriptor.identity,
+                        suffix: descriptor.suffix,
+                        source_offset,
+                    })
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }

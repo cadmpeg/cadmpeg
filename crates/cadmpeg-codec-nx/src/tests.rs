@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 90);
+    assert_eq!(namespace.version, 91);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1470,6 +1470,22 @@ fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {
 
     bytes[10] ^= 1;
     assert!(crate::om::datum_plane_object_scalar_pairs(&bytes).is_empty());
+}
+
+#[test]
+fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
+    let mut bytes = *b"793487222121a5474a9125451b8e31f5?A\xf0\x1e\xff\x02\x01\x33";
+    let descriptor = crate::om::datum_plane_descriptor_block(&bytes).unwrap();
+    assert_eq!(descriptor.identity, "793487222121a5474a9125451b8e31f5");
+    assert_eq!(descriptor.suffix, b"?A\xf0\x1e\xff\x02\x01\x33");
+
+    let short_bytes = *b"a75c5f0ed880dd1443b3c5c57908aae?A\xf0\x1f\xff\x02\x01\x66\x33";
+    let short = crate::om::datum_plane_descriptor_block(&short_bytes).unwrap();
+    assert_eq!(short.identity.len(), 31);
+
+    bytes[0] = b'G';
+    assert!(crate::om::datum_plane_descriptor_block(&bytes).is_none());
+    assert!(crate::om::datum_plane_descriptor_block(&bytes[..39]).is_none());
 }
 
 #[test]
@@ -5265,7 +5281,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 90);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 91);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

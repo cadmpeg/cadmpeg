@@ -494,6 +494,15 @@ pub struct DatumPlaneObjectScalarPair {
     pub value_offsets: [usize; 2],
 }
 
+/// Exact 40-byte datum-plane descriptor block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatumPlaneDescriptorBlock {
+    /// Lowercase hexadecimal identity preceding the delimiter.
+    pub identity: String,
+    /// Exact descriptor suffix beginning with `?`.
+    pub suffix: Vec<u8>,
+}
+
 /// Fixed scalar header in one bounded extrusion payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrudePayloadHeader {
@@ -1800,6 +1809,26 @@ pub fn datum_plane_object_scalar_pairs(bytes: &[u8]) -> Vec<DatumPlaneObjectScal
             })
         })
         .collect()
+}
+
+/// Decode one complete datum-plane descriptor block.
+pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<DatumPlaneDescriptorBlock> {
+    if bytes.len() != 40 {
+        return None;
+    }
+    let delimiter = bytes.iter().position(|byte| *byte == b'?')?;
+    let identity = bytes.get(..delimiter)?;
+    if identity.is_empty()
+        || !identity
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+    {
+        return None;
+    }
+    Some(DatumPlaneDescriptorBlock {
+        identity: std::str::from_utf8(identity).ok()?.to_string(),
+        suffix: bytes[delimiter..].to_vec(),
+    })
 }
 
 fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<u32>> {
