@@ -444,7 +444,7 @@ pub struct FeatureOperationBodyMember {
 
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureTrimBody11Continuation {
+pub struct FeatureOperationBody11Continuation {
     /// Globally unique continuation identity.
     pub id: String,
     /// Owning operation label.
@@ -457,8 +457,8 @@ pub struct FeatureTrimBody11Continuation {
     pub continuation_index: u32,
     /// Absolute file offset of the continuation compact-index marker.
     pub continuation_source_offset: u64,
-    /// Terminal object index, equal to `body_object_index`.
-    pub terminal_body_object_index: u32,
+    /// Object index in the terminal field.
+    pub terminal_object_index: u32,
     /// Absolute file offset of the terminal object-index marker.
     pub terminal_source_offset: u64,
 }
@@ -1271,9 +1271,9 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
 }
 
 /// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.
-pub fn feature_trim_body_11_continuations(
+pub fn feature_operation_body_11_continuations(
     container: &Container,
-) -> Vec<FeatureTrimBody11Continuation> {
+) -> Vec<FeatureOperationBody11Continuation> {
     let sections = container.om_sections();
     let mut continuations = Vec::new();
     for link in segment_om_links(container)
@@ -1294,9 +1294,9 @@ pub fn feature_trim_body_11_continuations(
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
             continuations.extend(
-                crate::om::trim_body_11_continuations(record)
+                crate::om::operation_body_11_continuations(record)
                     .into_iter()
-                    .map(|continuation| FeatureTrimBody11Continuation {
+                    .map(|continuation| FeatureOperationBody11Continuation {
                         id: format!(
                             "nx:feature-history:trim-body-11-continuation#{section_key}-{operation_ordinal}-{}",
                             continuation.body_reference_ordinal
@@ -1309,7 +1309,7 @@ pub fn feature_trim_body_11_continuations(
                         continuation_index: continuation.continuation_index,
                         continuation_source_offset: entry_offset
                             + continuation.continuation_offset as u64,
-                        terminal_body_object_index: continuation.terminal_body_object_index,
+                        terminal_object_index: continuation.terminal_object_index,
                         terminal_source_offset: entry_offset + continuation.terminal_offset as u64,
                     }),
             );

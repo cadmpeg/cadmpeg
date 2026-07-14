@@ -344,7 +344,7 @@ pub struct OperationBodyMember {
 
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TrimBody11Continuation {
+pub struct OperationBody11Continuation {
     /// Zero-based body-reference occurrence order.
     pub body_reference_ordinal: u32,
     /// Serialized body object index.
@@ -353,8 +353,8 @@ pub struct TrimBody11Continuation {
     pub continuation_index: u32,
     /// Absolute offset of the continuation compact-index marker.
     pub continuation_offset: usize,
-    /// Terminal object index, equal to `body_object_index`.
-    pub terminal_body_object_index: u32,
+    /// Object index in the terminal field.
+    pub terminal_object_index: u32,
     /// Absolute offset of the terminal object-index marker.
     pub terminal_offset: usize,
 }
@@ -965,7 +965,9 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
 }
 
 /// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.
-pub fn trim_body_11_continuations(record: OperationRecord<'_>) -> Vec<TrimBody11Continuation> {
+pub fn operation_body_11_continuations(
+    record: OperationRecord<'_>,
+) -> Vec<OperationBody11Continuation> {
     if record.label.value != "TRIM BODY" {
         return Vec::new();
     }
@@ -1022,21 +1024,19 @@ pub fn trim_body_11_continuations(record: OperationRecord<'_>) -> Vec<TrimBody11
             }
             at += 3;
             let terminal_at = at;
-            let (Some(terminal_body_object_index), next) = feature_object_index(record.bytes, at)?
+            let (Some(terminal_object_index), next) = feature_object_index(record.bytes, at)?
             else {
                 return None;
             };
-            if terminal_body_object_index != reference.object_index
-                || record.bytes.get(next..next + 2) != Some(&[0x00, 0x00])
-            {
+            if record.bytes.get(next..next + 2) != Some(&[0x00, 0x00]) {
                 return None;
             }
-            Some(TrimBody11Continuation {
+            Some(OperationBody11Continuation {
                 body_reference_ordinal: body_ordinal as u32,
                 body_object_index: reference.object_index,
                 continuation_index,
                 continuation_offset: record.offset + continuation_at,
-                terminal_body_object_index,
+                terminal_object_index,
                 terminal_offset: record.offset + terminal_at,
             })
         })

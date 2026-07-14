@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 44);
+    assert_eq!(namespace.version, 45);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1482,7 +1482,7 @@ fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
 }
 
 #[test]
-fn om_trim_body_branch_11_decodes_witnessed_continuation_atomically() {
+fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
     let label = crate::om::OperationLabel {
         header_offset: 100,
         offset: 119,
@@ -1498,22 +1498,33 @@ fn om_trim_body_branch_11_decodes_witnessed_continuation_atomically() {
         payload: bytes,
         label,
     };
-    let continuations = crate::om::trim_body_11_continuations(record);
+    let continuations = crate::om::operation_body_11_continuations(record);
     assert_eq!(continuations.len(), 1);
     let continuation = continuations[0];
     assert_eq!(continuation.body_reference_ordinal, 0);
     assert_eq!(continuation.body_object_index, 114);
     assert_eq!(continuation.continuation_index, 67);
     assert_eq!(continuation.continuation_offset, 126);
-    assert_eq!(continuation.terminal_body_object_index, 114);
+    assert_eq!(continuation.terminal_object_index, 114);
     assert_eq!(continuation.terminal_offset, 131);
 
-    let mut wrong_witness = bytes.to_vec();
-    wrong_witness[31] = 0x71;
+    let mut distinct_terminal = bytes.to_vec();
+    distinct_terminal[31] = 0x71;
+    assert_eq!(
+        crate::om::operation_body_11_continuations(crate::om::OperationRecord {
+            bytes: &distinct_terminal,
+            payload: &distinct_terminal,
+            ..record
+        })[0]
+            .terminal_object_index,
+        113
+    );
+
+    let truncated = &bytes[..bytes.len() - 1];
     assert!(
-        crate::om::trim_body_11_continuations(crate::om::OperationRecord {
-            bytes: &wrong_witness,
-            payload: &wrong_witness,
+        crate::om::operation_body_11_continuations(crate::om::OperationRecord {
+            bytes: truncated,
+            payload: truncated,
             ..record
         })
         .is_empty()
@@ -4285,7 +4296,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 44);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 45);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

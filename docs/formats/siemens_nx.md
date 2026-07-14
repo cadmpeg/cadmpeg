@@ -565,7 +565,7 @@ The same three-scalar clause framing applies independently to every complete bod
 
 A branch-`11` body clause may continue with a wrapped member lane `01, count:u8, (2e, compact_index, 00)[count-1]`, where `count >= 2` and compact indices use the non-null compact-index form. The lane is atomic and retains body-reference occurrence order, member order, decoded index, and source offset.
 
-For `TRIM BODY`, the branch-`11` member lane is followed by `01, 02, compact_index, 00, 00, 01, object_index, 00, 00`. The compact index and terminal object index are non-null. The terminal object index equals the body object index anchoring the clause. The continuation is atomic and retains both decoded indices and their source offsets.
+For `TRIM BODY`, the branch-`11` member lane is followed by `01, 02, compact_index, 00, 00, 01, object_index, 00, 00`. The compact index and terminal object index are non-null. The continuation is atomic and retains the anchoring body index, continuation index, terminal object index, and their source offsets.
 
 The structured extrusion branch begins `32 00 00` after its unique body-reference field, followed by one shifted-IEEE binary64 scalar. A counted fixed-width lane follows as `01, count:u8, atom[count-1]`, where `count >= 2` and each atom is an uninterpreted `u32 BE`. Two counted compact-index lanes follow, each framed `01, count:u8, index[count-1]` with `count >= 2`. Compact indices use `00..7f` as direct values, `80..fe, low:u8` as `(marker-80)*256+low`, and `ff` as null; null is invalid in these lanes. The branch ends `00 01, object_index, 00 00`, using the feature object-index form.
 
