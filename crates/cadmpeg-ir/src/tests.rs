@@ -536,6 +536,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch.clone()),
             direction: None,
+            start: crate::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Blind {
                 length: Length(10.0),
             },
@@ -615,10 +616,12 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Faces(vec![FaceId("synthetic:test:face#profile-missing".into())]),
             direction: None,
+            start: crate::features::ExtrudeStart::ProfilePlane,
             extent: Extent::ToFace {
                 face: FaceSelection::Faces(vec![FaceId(
                     "synthetic:test:face#termination-missing".into(),
                 )]),
+                offset: None,
             },
             op: BooleanOp::NewBody,
             draft: None,
@@ -2122,6 +2125,7 @@ fn feature_extents_round_trip_through_json() {
         Extent::ThroughAll,
         Extent::ToFace {
             face: FaceSelection::Faces(vec![FaceId("synthetic:test:face#0".into())]),
+            offset: None,
         },
         Extent::Angle {
             angle: Angle(std::f64::consts::PI),
@@ -2171,6 +2175,7 @@ fn feature_extent_magnitudes_are_validated() {
             definition: FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("profile".into()),
                 direction: None,
+                start: crate::features::ExtrudeStart::ProfilePlane,
                 extent,
                 op: BooleanOp::NewBody,
                 draft: None,
@@ -2218,6 +2223,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id.clone()),
             direction: None,
+            start: crate::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Blind {
                 length: Length(1.0),
             },

@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::features::{
-    ChamferSpec, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind,
-    RadiusSpec,
+    ChamferSpec, ExtrudeStart, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length,
+    PatternKind, RadiusSpec,
 };
 use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
@@ -1387,10 +1387,35 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         let mut body_selections = Vec::new();
         match &feature.definition {
             FeatureDefinition::Extrude {
-                profile, extent, ..
+                profile,
+                start,
+                extent,
+                ..
             } => {
                 profiles.push(profile);
                 extents.push(extent);
+                match start {
+                    ExtrudeStart::ProfilePlane => {}
+                    ExtrudeStart::OffsetProfilePlane { offset } => {
+                        if !offset.0.is_finite() {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "extrusion start offset is invalid",
+                            );
+                        }
+                    }
+                    ExtrudeStart::FromFace { face, offset } => {
+                        face_selections.push(face);
+                        if offset.is_some_and(|offset| !offset.0.is_finite()) {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "extrusion start offset is invalid",
+                            );
+                        }
+                    }
+                }
             }
             FeatureDefinition::Revolve { construction, .. } => {
                 profiles.extend(&construction.profile);
@@ -2028,7 +2053,8 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 Extent::TwoSidedAngles { first, second } => {
                     first.0.is_finite() && first.0 > 0.0 && second.0.is_finite() && second.0 > 0.0
                 }
-                Extent::ThroughAll | Extent::ToFace { .. } => true,
+                Extent::ThroughAll => true,
+                Extent::ToFace { offset, .. } => offset.is_none_or(|offset| offset.0.is_finite()),
             };
             if !valid_magnitude {
                 findings.push(Finding {
@@ -2040,6 +2066,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             if let Extent::ToFace {
                 face: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
+                ..
             } = extent
             {
                 check_ids(

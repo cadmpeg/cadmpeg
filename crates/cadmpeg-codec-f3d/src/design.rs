@@ -587,13 +587,10 @@ fn project_extrude(
     placements: &[DesignSketchPlacement],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        BooleanOp, Extent, FaceSelection, FeatureDefinition, Length, ProfileRef,
+        BooleanOp, Extent, ExtrudeStart, FaceSelection, FeatureDefinition, Length, ProfileRef,
     };
 
     scope.extrude_profile.as_ref()?;
-    if scope.extrude_start? != DesignExtrudeStart::ProfilePlane {
-        return None;
-    }
     let scope_groups = construction_groups
         .iter()
         .filter(|group| {
@@ -622,12 +619,20 @@ fn project_extrude(
         Some(parameter) => Some(design_length(parameter)?),
         None => None,
     };
-    for source_kind in ["ProfileOffset", "Side1Offset", "Side2Offset"] {
-        if let Some(parameter) = unique(source_kind)? {
-            if design_length(parameter)?.0 != 0.0 {
-                return None;
-            }
-        }
+    let profile_offset = match unique("ProfileOffset")? {
+        Some(parameter) => Some(design_length(parameter)?),
+        None => None,
+    };
+    let side_one_offset = match unique("Side1Offset")? {
+        Some(parameter) => Some(design_length(parameter)?),
+        None => None,
+    };
+    let side_two_offset = match unique("Side2Offset")? {
+        Some(parameter) => Some(design_length(parameter)?),
+        None => None,
+    };
+    if side_two_offset.is_some() {
+        return None;
     }
     let side_two_draft = match unique("Side2TaperAngle")? {
         Some(parameter) => Some(design_angle(parameter)?),
@@ -636,9 +641,46 @@ fn project_extrude(
     if side_two_draft.is_some_and(|angle| angle.0 != 0.0) {
         return None;
     }
+    let start_groups = face_groups
+        .iter()
+        .filter(|group| group.extrude_face_role == Some(DesignExtrudeFaceRole::Start))
+        .copied()
+        .collect::<Vec<_>>();
+    let termination_groups = face_groups
+        .iter()
+        .filter(|group| group.extrude_face_role == Some(DesignExtrudeFaceRole::Termination))
+        .copied()
+        .collect::<Vec<_>>();
+    if start_groups.len() + termination_groups.len() != face_groups.len() {
+        return None;
+    }
+    let start = match scope.extrude_start? {
+        DesignExtrudeStart::ProfilePlane if start_groups.is_empty() => {
+            if profile_offset.is_some() {
+                return None;
+            }
+            ExtrudeStart::ProfilePlane
+        }
+        DesignExtrudeStart::OffsetProfilePlane if start_groups.is_empty() => {
+            ExtrudeStart::OffsetProfilePlane {
+                offset: profile_offset?,
+            }
+        }
+        DesignExtrudeStart::FromFace => {
+            let [start] = start_groups.as_slice() else {
+                return None;
+            };
+            let offset = profile_offset?;
+            ExtrudeStart::FromFace {
+                face: FaceSelection::Native(start.id.clone()),
+                offset: (offset.0 != 0.0).then_some(offset),
+            }
+        }
+        _ => return None,
+    };
     let (extent, reverse_direction) = match (scope.extrude_extent?, along, against) {
         (DesignExtrudeExtent::OneSidedDistance, Some(along), None)
-            if along.0 != 0.0 && face_groups.is_empty() =>
+            if along.0 != 0.0 && termination_groups.is_empty() && side_one_offset.is_none() =>
         {
             (
                 Extent::Blind {
@@ -648,7 +690,11 @@ fn project_extrude(
             )
         }
         (DesignExtrudeExtent::TwoSidedDistance, Some(along), Some(against))
-            if along.0 != 0.0 && against.0 != 0.0 && face_groups.is_empty() =>
+            if along.0 != 0.0
+                && against.0 != 0.0
+                && start_groups.is_empty()
+                && termination_groups.is_empty()
+                && side_one_offset.is_none() =>
         {
             (
                 Extent::TwoSided {
@@ -659,15 +705,14 @@ fn project_extrude(
             )
         }
         (DesignExtrudeExtent::OneSidedToFace, None, None) => {
-            let [termination] = face_groups.as_slice() else {
+            let offset = side_one_offset?;
+            let [termination] = termination_groups.as_slice() else {
                 return None;
             };
-            if termination.extrude_face_role != Some(DesignExtrudeFaceRole::Termination) {
-                return None;
-            }
             (
                 Extent::ToFace {
                     face: FaceSelection::Native(termination.id.clone()),
+                    offset: (offset.0 != 0.0).then_some(offset),
                 },
                 scope.extrude_direction_reversed?,
             )
@@ -705,6 +750,7 @@ fn project_extrude(
     Some(FeatureDefinition::Extrude {
         profile: ProfileRef::Native(scope.id.clone()),
         direction,
+        start,
         extent,
         op,
         draft,
@@ -7195,7 +7241,9 @@ mod relation_tests {
 
     #[test]
     fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
-        use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FaceSelection, ProfileRef};
+        use cadmpeg_ir::features::{
+            Angle, BooleanOp, Extent, ExtrudeStart, FaceSelection, ProfileRef,
+        };
 
         let parameter = |source_kind: &str, unit: &str, value| {
             parse_design_parameter(&parameter_record(
@@ -7264,6 +7312,7 @@ mod relation_tests {
                 extent: Extent::Blind { length: Length(5.5) },
                 op: BooleanOp::NewBody,
                 draft: Some(Angle(0.2)),
+                ..
             } if profile == &scope.id
         ));
 
@@ -7338,6 +7387,24 @@ mod relation_tests {
             &[],
         )
         .is_none());
+        scope.extrude_start = Some(DesignExtrudeStart::OffsetProfilePlane);
+        let offset_start = project_extrude(
+            &scope,
+            &[(0, &along), (1, &profile_offset)],
+            std::slice::from_ref(&body_group),
+            &[],
+        )
+        .expect("typed offset-profile-plane Extrude");
+        assert!(matches!(
+            offset_start,
+            FeatureDefinition::Extrude {
+                start: ExtrudeStart::OffsetProfilePlane {
+                    offset: Length(1.0)
+                },
+                ..
+            }
+        ));
+        scope.extrude_start = Some(DesignExtrudeStart::ProfilePlane);
 
         scope.extrude_operation = Some(DesignExtrudeOperation::NewBody);
         let against = parameter("AgainstDistance", "mm", -0.05);
@@ -7403,12 +7470,12 @@ mod relation_tests {
         scope.extrude_extent = Some(DesignExtrudeExtent::OneSidedToFace);
         scope.extrude_direction_reversed = Some(true);
         face_group.extrude_face_role = Some(DesignExtrudeFaceRole::Termination);
-        let side_offset = parameter("Side1Offset", "mm", 0.0);
+        let side_offset = parameter("Side1Offset", "mm", 0.025);
         let to_face = project_extrude(
             &scope,
             &[(0, &side_offset), (1, &taper)],
-            &[body_group, face_group.clone()],
-            &[placement],
+            &[body_group.clone(), face_group.clone()],
+            std::slice::from_ref(&placement),
         )
         .expect("typed reversed to-face Extrude");
         assert!(matches!(
@@ -7420,10 +7487,37 @@ mod relation_tests {
                     z: 0.0
                 }),
                 extent: Extent::ToFace {
-                    face: FaceSelection::Native(ref id)
+                    face: FaceSelection::Native(ref id),
+                    offset: Some(Length(0.25)),
                 },
                 ..
             } if id == &face_group.id
+        ));
+
+        scope.extrude_start = Some(DesignExtrudeStart::FromFace);
+        let mut start_group = face_group.clone();
+        start_group.id = "f3d:Design/BulkStream.dat:operand-group#103".into();
+        start_group.extrude_face_role = Some(DesignExtrudeFaceRole::Start);
+        let from_face = project_extrude(
+            &scope,
+            &[
+                (0, &parameter("ProfileOffset", "mm", 0.0)),
+                (1, &side_offset),
+                (2, &taper),
+            ],
+            &[body_group, start_group.clone(), face_group],
+            &[placement],
+        )
+        .expect("typed selected-face start Extrude");
+        assert!(matches!(
+            from_face,
+            FeatureDefinition::Extrude {
+                start: ExtrudeStart::FromFace {
+                    face: FaceSelection::Native(ref id),
+                    offset: None,
+                },
+                ..
+            } if id == &start_group.id
         ));
     }
 

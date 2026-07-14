@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
     ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
-    FaceMotion, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
+    ExtrudeStart, FaceMotion, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
     FeatureTreeNodeRole, FilletGroup, FlexForm, FlexMode, HoleForm, HoleKind, Length, ParameterId,
     ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
     RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
@@ -773,10 +773,16 @@ pub fn bind_topology_selections(
         }
         match &mut feature.definition {
             FeatureDefinition::Extrude {
-                profile, extent, ..
+                profile,
+                start,
+                extent,
+                ..
             } => {
                 resolve_profile_ref(profile, &face_ids);
-                if let Extent::ToFace { face } = extent {
+                if let ExtrudeStart::FromFace { face, .. } = start {
+                    resolve_face_selection(face, &face_ids);
+                }
+                if let Extent::ToFace { face, .. } = extent {
                     resolve_face_selection(face, &face_ids);
                 }
             }
@@ -1315,6 +1321,7 @@ fn project_extrude(
         Some("ThroughAll") => Extent::ThroughAll,
         Some("ToFace") => Extent::ToFace {
             face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
+            offset: None,
         },
         Some(_) => return None,
     };
@@ -1342,6 +1349,7 @@ fn project_extrude(
     Some(FeatureDefinition::Extrude {
         profile: ProfileRef::Native(profile),
         direction,
+        start: ExtrudeStart::ProfilePlane,
         extent,
         op,
         draft,
@@ -4555,10 +4563,17 @@ pub fn sync_neutral_features(
             FeatureDefinition::Extrude {
                 profile,
                 direction,
+                start,
                 extent,
                 op,
                 draft,
             } => {
+                if *start != ExtrudeStart::ProfilePlane {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses an unsupported extrusion start condition",
+                        feature.id
+                    )));
+                }
                 if *op == BooleanOp::Unresolved && existing.is_none() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} requires retained extrusion operation data",
@@ -4633,7 +4648,9 @@ pub fn sync_neutral_features(
                     Extent::ThroughAll => {
                         properties.insert("EndCondition".into(), "ThroughAll".into());
                     }
-                    Extent::ToFace { face } if face_selection_value(face).is_some() => {
+                    Extent::ToFace { face, offset: None }
+                        if face_selection_value(face).is_some() =>
+                    {
                         let selection = face_selection_value(face).expect("guarded above");
                         properties.insert("EndCondition".into(), "ToFace".into());
                         properties.insert("Face".into(), selection);

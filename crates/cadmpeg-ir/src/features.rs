@@ -386,6 +386,9 @@ pub enum FeatureDefinition {
         /// profile plane; `None` to extrude along the profile's own normal.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         direction: Option<Vector3>,
+        /// Plane or face from which the extrusion begins.
+        #[serde(default)]
+        start: ExtrudeStart,
         /// How far the extrusion travels.
         extent: Extent,
         /// Boolean combination with existing bodies.
@@ -1031,6 +1034,28 @@ pub struct AxisAngle {
     pub angle: Angle,
 }
 
+/// Start condition of a linear extrusion.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExtrudeStart {
+    /// Begin on the profile's own plane.
+    #[default]
+    ProfilePlane,
+    /// Begin on a plane parallel to the profile plane at a signed offset.
+    OffsetProfilePlane {
+        /// Signed offset along the profile normal in canonical millimeters.
+        offset: Length,
+    },
+    /// Begin on a selected face, optionally displaced along the extrusion direction.
+    FromFace {
+        /// Face defining the start plane.
+        face: FaceSelection,
+        /// Signed displacement from the selected face.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        offset: Option<Length>,
+    },
+}
+
 /// Termination of a linear or angular feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -1058,6 +1083,9 @@ pub enum Extent {
     ToFace {
         /// Face terminating the operation.
         face: FaceSelection,
+        /// Signed displacement from the terminating face.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        offset: Option<Length>,
     },
     /// Fixed angular extent.
     Angle {

@@ -1782,6 +1782,7 @@ fn encoder_writes_source_less_line_sketches() {
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id),
             direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Blind {
                 length: Length(12.0),
             },
@@ -5629,6 +5630,7 @@ fn decode_extracts_parametric_history() {
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             draft: None,
+            ..
         } if profile == &history.features[0].id
     ));
     assert_eq!(
@@ -7129,6 +7131,7 @@ fn decode_resolves_feature_topology_selections() {
             profile: ProfileRef::Faces(profile_faces),
             extent: Extent::ToFace {
                 face: FaceSelection::Resolved { faces, native },
+                ..
             },
             ..
         } if profile_faces == &[base.ir.model.faces[0].id.clone()]
@@ -7165,7 +7168,7 @@ fn decode_resolves_feature_topology_selections() {
         *tools = BodySelection::Bodies(vec![body_id.clone()]);
     }
     if let FeatureDefinition::Extrude {
-        extent: Extent::ToFace { face },
+        extent: Extent::ToFace { face, .. },
         ..
     } = &mut decoded.ir.model.features[3].definition
     {
@@ -7411,6 +7414,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             extent: Extent::Blind { length: Length(2.0) },
             op: BooleanOp::Join,
             draft: None,
+            ..
         } if profile == &profile_native
     ));
     assert!(matches!(
@@ -7517,11 +7521,13 @@ fn semantic_writer_round_trips_extrusion_to_face() {
     assert_eq!(
         extent,
         &Extent::ToFace {
-            face: FaceSelection::Native("face:12".into())
+            face: FaceSelection::Native("face:12".into()),
+            offset: None,
         }
     );
     *extent = Extent::ToFace {
         face: FaceSelection::Native("face:13".into()),
+        offset: None,
     };
 
     let mut encoded = Vec::new();
@@ -7538,7 +7544,8 @@ fn semantic_writer_round_trips_extrusion_to_face() {
         &regenerated.ir.model.features[1].definition,
         FeatureDefinition::Extrude {
             extent: Extent::ToFace {
-                face: FaceSelection::Native(face)
+                face: FaceSelection::Native(face),
+                ..
             },
             ..
         } if face == "face:13"
