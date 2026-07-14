@@ -2807,6 +2807,164 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
     rows
 }
 
+fn named_array_class(payload: &[u8], label: &[u8], start: usize, end: usize) -> Option<u32> {
+    let label = find_bytes(payload, label, start, end)? + label.len();
+    let array =
+        (label..end).find(|offset| payload.get(*offset) == Some(&psb::token::ARRAY_OPEN))?;
+    let (_, after_count) = psb::compact_int(payload, array + 1);
+    (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    psb::reference_id(payload, after_count + 1)
+        .ok()
+        .map(|(class, _)| class)
+}
+
+fn positional_array_header(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+) -> Option<(usize, u32, usize, Vec<u8>)> {
+    let candidates = (start..end)
+        .filter_map(|offset| {
+            (payload.get(offset) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+            let (count, after_count) = psb::compact_int(payload, offset + 1);
+            (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let reference_start = after_count + 1;
+            let (class, after_class) = psb::reference_id(payload, reference_start).ok()?;
+            (class == table_class
+                && payload.get(after_class..after_class + 2) == Some(&[0xfb, 0xe2]))
+            .then(|| {
+                (
+                    offset,
+                    count,
+                    after_class + 2,
+                    payload[after_count..after_class].to_vec(),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+fn consume_positional_separator(
+    payload: &[u8],
+    cursor: usize,
+    end: usize,
+    class_encoding: &[u8],
+    class_prefixes: &[u8],
+) -> Option<usize> {
+    if payload.get(cursor) == Some(&0xe2) {
+        return Some(cursor + 1);
+    }
+    let length = class_encoding.len() + 2;
+    (cursor + length <= end
+        && payload
+            .get(cursor)
+            .is_some_and(|prefix| class_prefixes.contains(prefix))
+        && payload.get(cursor + 1..cursor + 1 + class_encoding.len()) == Some(class_encoding)
+        && payload.get(cursor + length - 1) == Some(&0xe2))
+    .then_some(cursor + length)
+}
+
+fn positional_feature_skamps(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+) -> Vec<FeatureSkamp> {
+    let Some((_, count, mut cursor, table_class_encoding)) =
+        positional_array_header(payload, start, end, table_class)
+    else {
+        return Vec::new();
+    };
+    if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+        return Vec::new();
+    }
+    let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
+        return Vec::new();
+    };
+    cursor = after_row_class;
+    let mut rows = Vec::new();
+    while rows.len() < usize::try_from(count).unwrap_or(usize::MAX) {
+        let row_offset = cursor;
+        let Some(id) = next_solver_int(payload, &mut cursor) else {
+            return Vec::new();
+        };
+        let Some(kind) = next_solver_int(payload, &mut cursor) else {
+            return Vec::new();
+        };
+        let Some(flags) = next_solver_int(payload, &mut cursor) else {
+            return Vec::new();
+        };
+        let Some(status) = next_solver_int(payload, &mut cursor) else {
+            return Vec::new();
+        };
+        if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+            return Vec::new();
+        }
+        let (item_count, after_item_count) = psb::compact_int(payload, cursor + 1);
+        if payload.get(after_item_count) != Some(&psb::token::ENTITY_REF) {
+            return Vec::new();
+        }
+        let item_class_start = after_item_count + 1;
+        let Ok((_, after_item_class)) = psb::reference_id(payload, item_class_start) else {
+            return Vec::new();
+        };
+        let item_class_encoding = &payload[after_item_count..after_item_class];
+        if payload.get(after_item_class..after_item_class + 2) != Some(&[0xfb, 0xe2])
+            || payload.get(after_item_class + 2) != Some(&psb::token::ENTITY_REF)
+        {
+            return Vec::new();
+        }
+        let Ok((_, after_item_row_class)) = psb::reference_id(payload, after_item_class + 3) else {
+            return Vec::new();
+        };
+        cursor = after_item_row_class;
+        let mut items = Vec::new();
+        while items.len() < usize::try_from(item_count).unwrap_or(usize::MAX) {
+            let Some(entity_id) = next_solver_int(payload, &mut cursor) else {
+                return Vec::new();
+            };
+            let Some(sense) = next_solver_int(payload, &mut cursor) else {
+                return Vec::new();
+            };
+            items.push(FeatureSkampItem { entity_id, sense });
+            if items.len() < usize::try_from(item_count).unwrap_or(usize::MAX) {
+                let Some(next) = consume_positional_separator(
+                    payload,
+                    cursor,
+                    end,
+                    item_class_encoding,
+                    &[0xf1],
+                ) else {
+                    return Vec::new();
+                };
+                cursor = next;
+            }
+        }
+        rows.push(FeatureSkamp {
+            id,
+            kind,
+            flags,
+            status,
+            items,
+            offset: row_offset,
+        });
+        if rows.len() < usize::try_from(count).unwrap_or(usize::MAX) {
+            let Some(next) =
+                consume_positional_separator(payload, cursor, end, &table_class_encoding, &[0xf3])
+            else {
+                return Vec::new();
+            };
+            cursor = next;
+        }
+    }
+    rows
+}
+
 fn feature_relation_triples(
     payload: &[u8],
     start: usize,
@@ -2870,6 +3028,48 @@ fn feature_relation_triples(
             skamp_id,
             offset: row_offset,
         });
+    }
+    rows
+}
+
+fn positional_relation_triples(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+) -> Vec<FeatureRelationTriple> {
+    let Some((_, count, mut cursor, class_encoding)) =
+        positional_array_header(payload, start, end, table_class)
+    else {
+        return Vec::new();
+    };
+    if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+        return Vec::new();
+    }
+    let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
+        return Vec::new();
+    };
+    cursor = after_row_class;
+    let mut rows = Vec::new();
+    while rows.len() < usize::try_from(count).unwrap_or(usize::MAX) {
+        let offset = cursor;
+        let relation_id = next_solver_int(payload, &mut cursor);
+        let equation_id = next_solver_int(payload, &mut cursor);
+        let skamp_id = next_solver_int(payload, &mut cursor);
+        rows.push(FeatureRelationTriple {
+            relation_id,
+            equation_id,
+            skamp_id,
+            offset,
+        });
+        if rows.len() < usize::try_from(count).unwrap_or(usize::MAX) {
+            let Some(next) =
+                consume_positional_separator(payload, cursor, end, &class_encoding, &[0xf1])
+            else {
+                return Vec::new();
+            };
+            cursor = next;
+        }
     }
     rows
 }
@@ -4247,6 +4447,8 @@ fn definitions_in_ranges(
     let mut replay_dimension_class = None;
     let mut replay_variable_class = None;
     let mut replay_relation_class = None;
+    let mut replay_skamp_class = None;
+    let mut replay_triples_class = None;
     let mut replay_trim_entity_classes = None;
     let mut replay_trim_vertex_classes = None;
     let mut replay_order_class = None;
@@ -4254,6 +4456,10 @@ fn definitions_in_ranges(
         let end = starts
             .get(index + 1)
             .map_or(payload.len(), |&(offset, _, _, _)| offset);
+        let schema_end = starts[index + 1..]
+            .iter()
+            .find(|(_, _, _, positional)| !positional)
+            .map_or(payload.len(), |(offset, _, _, _)| *offset);
         let mut parameter_frames = Vec::new();
         for &(label, kind) in &[
             (
@@ -4410,13 +4616,22 @@ fn definitions_in_ranges(
         if !positional {
             replay_dimension_class = dimensions.as_ref().and_then(|table| table.entity_ref);
         }
-        let relations = relation_table(payload, start, end).or_else(|| {
+        let mut relations = relation_table(payload, start, end).or_else(|| {
             positional
                 .then(|| positional_relation_table(payload, start, end, replay_relation_class?))
                 .flatten()
         });
         if !positional {
             replay_relation_class = relations.as_ref().and_then(|table| table.entity_ref);
+            replay_skamp_class = named_array_class(payload, b"skamp_ptr\0", start, schema_end);
+            replay_triples_class = named_array_class(payload, b"triples_ptr\0", start, schema_end);
+        } else if let Some(table) = &mut relations {
+            table.skamps = replay_skamp_class.map_or_else(Vec::new, |table_class| {
+                positional_feature_skamps(payload, start, end, table_class)
+            });
+            table.triples = replay_triples_class.map_or_else(Vec::new, |table_class| {
+                positional_relation_triples(payload, start, end, table_class)
+            });
         }
         let saved_section = saved_section(
             payload,
@@ -4539,8 +4754,25 @@ fn definition_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
 /// definition-space parameter frames.
 pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
-    let starts = definition_starts(payload);
+    let mut starts = definition_starts(payload);
+    let retained_offsets = starts
+        .iter()
+        .map(|(offset, _, _, _)| *offset)
+        .collect::<BTreeSet<_>>();
+    let replay_markers = s2d_replay_starts(payload);
+    let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
+    starts.extend(
+        replay_markers
+            .into_iter()
+            .filter(|offset| !claimed_markers.contains(offset))
+            .map(|offset| (offset, 0, None, true)),
+    );
+    starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
+    starts.dedup_by_key(|entry| entry.0);
     definitions_in_ranges(payload, &starts)
+        .into_iter()
+        .filter(|definition| retained_offsets.contains(&definition.offset))
+        .collect()
 }
 
 fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
@@ -4559,13 +4791,12 @@ fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
         .collect()
 }
 
-/// Decode unlabeled positional `S2D` replay instances without assigning an
-/// owner. Callers must retain only instances with an independently proven
-/// owner.
-pub fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
-    let mut starts = definition_starts(payload);
-    let replay_markers = s2d_replay_starts(payload);
-    let claimed_markers = starts
+fn claimed_s2d_replay_markers(
+    payload: &[u8],
+    starts: &[(usize, u32, Option<u32>, bool)],
+    replay_markers: &[usize],
+) -> BTreeSet<usize> {
+    starts
         .iter()
         .enumerate()
         .filter(|(_, (_, _, _, positional))| *positional)
@@ -4578,7 +4809,16 @@ pub fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
                 .copied()
                 .find(|marker| marker >= start && *marker < end)
         })
-        .collect::<BTreeSet<_>>();
+        .collect()
+}
+
+/// Decode unlabeled positional `S2D` replay instances without assigning an
+/// owner. Callers must retain only instances with an independently proven
+/// owner.
+pub fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
+    let mut starts = definition_starts(payload);
+    let replay_markers = s2d_replay_starts(payload);
+    let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
     let pending_offsets = replay_markers
         .into_iter()
         .filter(|offset| !claimed_markers.contains(offset))
@@ -5086,6 +5326,16 @@ mod tests {
     }
 
     #[test]
+    fn unlabeled_replay_boundary_ends_the_preceding_definition() {
+        let payload = b"feat_defs_917\0template\xe3S2D0004\0replay";
+
+        let decoded = definitions(payload);
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].body, b"feat_defs_917\0template");
+    }
+
+    #[test]
     fn positional_saved_section_starts_an_owned_definition() {
         let payload = b"feat_defs_917\0\xe0\x01feat_id\0\x28\xe0\x00gsec2d_ptr\0\
             template\0\xe0\x01feat_id\0\x2a\xe0\x00ref_model_info\0\
@@ -5266,6 +5516,40 @@ mod tests {
         assert_eq!(relations.rows[0].dimension_id, 246);
         assert_eq!(relations.rows[0].relation_type, 0);
         assert!(relations.rows[0].operand_vectors.is_some());
+    }
+
+    #[test]
+    fn positional_skamp_table_replays_counted_nested_items() {
+        let payload = b"\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\
+            \x06\x03\xf1\xf7\x60\xe2\x07\x02\xf3\xf7\x58\xe2\
+            \x02\x01\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00";
+
+        let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+        assert_eq!(skamps.len(), 2);
+        assert_eq!(skamps[0].id, 1);
+        assert_eq!(skamps[0].kind, 0);
+        assert_eq!(skamps[0].items.len(), 2);
+        assert_eq!(skamps[0].items[0].entity_id, 6);
+        assert_eq!(skamps[0].items[1].sense, 2);
+        assert_eq!(skamps[1].kind, 1);
+        assert_eq!(skamps[1].items[0].entity_id, 8);
+    }
+
+    #[test]
+    fn positional_triples_replay_nullable_relation_joins() {
+        let payload = b"\xf8\x02\xf7\x64\xfb\xe2\xf7\x65\
+            \x01\xf6\x04\xf1\xf7\x64\xe2\x02\xf6\x05";
+
+        let triples = positional_relation_triples(payload, 0, payload.len(), 100);
+
+        assert_eq!(triples.len(), 2);
+        assert_eq!(triples[0].relation_id, Some(1));
+        assert_eq!(triples[0].equation_id, None);
+        assert_eq!(triples[0].skamp_id, Some(4));
+        assert_eq!(triples[1].relation_id, Some(2));
+        assert_eq!(triples[1].skamp_id, Some(5));
     }
 
     #[test]

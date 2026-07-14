@@ -751,6 +751,19 @@ schema prototype and ends with `f1 f7 <table-class> e2`. The following
 `f8_count - 2` rows replay `id`, `used`, operand vectors `a`, `b`, and `c`,
 `sign`, `idim`, and `type`; each row ends with `e2`.
 
+The positional solver-incidence table repeats the labelled `skamp_ptr` table
+class in `f8 <count> f7 <table-class> fb e2`. Each row replays `id`, `type`,
+`flags`, and `status`, followed by a counted nested item array. The nested
+array repeats its own table and row classes and stores ordered `ent_id`/`sense`
+pairs. `f1 f7 <item-table-class> e2` separates nested items, and
+`f3 f7 <table-class> e2` separates incidence rows.
+
+The positional relation-join table repeats the labelled `triples_ptr` table
+class and stores exactly its `f8` count of `rel_id`, `eqn_id`, and `skamp_id`
+triples. Each field independently uses `f6` for null.
+`f1 f7 <table-class> e2` separates the prototype from the following triples;
+bare `e2` separates later triples.
+
 A positional `gsec3d_ptr` record begins with `07 S2D<N> 00`, followed by
 `flip`, `own_ref_id`, `first_chain_ptr`, `quilt_id`, `plane_id`, and
 `plane_flip`. Its reference-plane array then stores an `f8` extent, table-class
