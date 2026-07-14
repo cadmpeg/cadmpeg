@@ -611,7 +611,6 @@ fn decode_and_write_singular_vertex_loops() {
         .all(|loop_| loop_.coedges.is_empty() && loop_.vertex.is_some()));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-
     let mut encoded = Vec::new();
     write_step(&result.ir, &mut encoded, &StepWriteOptions::default()).expect("write vertex loops");
     assert_eq!(
@@ -1189,7 +1188,7 @@ fn decode_transfers_ap242_semantic_pmi() {
     use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
 
     let bytes = include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21");
-    let result = StepCodec::default()
+    let mut result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode AP242 semantic PMI");
 
@@ -1257,6 +1256,17 @@ fn decode_transfers_ap242_semantic_pmi() {
     ));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+    let semantic = dimension.id.clone();
+    result.ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
+        id: cadmpeg_ir::ids::PmiId("test:pmi:presentation".into()),
+        name: Some("width note".into()),
+        targets: Vec::new(),
+        definition: PmiDefinition::Presentation {
+            text: Some("12 mm".into()),
+            placement: Some(cadmpeg_ir::transform::Transform::identity()),
+            semantics: vec![semantic],
+        },
+    });
     let options = StepWriteOptions {
         schema: StepSchema::Ap242Edition3,
         ..StepWriteOptions::default()
@@ -1270,13 +1280,17 @@ fn decode_transfers_ap242_semantic_pmi() {
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written semantic PMI");
-    assert_eq!(roundtrip.ir.model.pmi.len(), 5);
+    assert_eq!(roundtrip.ir.model.pmi.len(), 6);
     assert!(roundtrip.ir.model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::DatumSystem { references }
             if references.len() == 1
                 && references[0].modifiers
                     == ["maximum_material_requirement", "distance:0.2"]
+    )));
+    assert!(roundtrip.ir.model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::Presentation { semantics, .. } if semantics.len() == 1
     )));
     assert!(roundtrip.ir.model.pmi.iter().any(|annotation| matches!(
         annotation.definition,
@@ -1314,6 +1328,32 @@ fn decode_transfers_ap242_presentation_pmi() {
     assert_eq!(transform.rows[2][3], 30.0);
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+    let options = StepWriteOptions {
+        schema: StepSchema::Ap242Edition3,
+        ..StepWriteOptions::default()
+    };
+    let mut output = Vec::new();
+    let report = write_step(&result.ir, &mut output, &options).expect("write presentation PMI");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("PMI annotation")));
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written presentation PMI");
+    assert_eq!(roundtrip.ir.model.pmi.len(), 1);
+    assert!(matches!(
+        &roundtrip.ir.model.pmi[0].definition,
+        PmiDefinition::Presentation {
+            text: Some(text),
+            placement: Some(transform),
+            ..
+        } if text == "inspect surface"
+            && transform.rows[0][3] == 10.0
+            && transform.rows[1][3] == 20.0
+            && transform.rows[2][3] == 30.0
+    ));
 }
 
 fn export(ir: &CadIr) -> String {

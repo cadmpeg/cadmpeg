@@ -1860,6 +1860,65 @@ impl<'a> Builder<'a> {
                 | PmiDefinition::Presentation { .. } => {}
             }
         }
+        let mut presentation_items = Vec::new();
+        for annotation in &annotations {
+            let PmiDefinition::Presentation {
+                text,
+                placement,
+                semantics,
+            } = &annotation.definition
+            else {
+                continue;
+            };
+            let (Some(text), Some(placement)) = (text.as_deref(), placement.as_ref()) else {
+                continue;
+            };
+            if !annotation.targets.is_empty() || !is_rigid_transform(&placement.rows) {
+                continue;
+            }
+            let rows = placement.rows;
+            let placement = geometry::placement(
+                &mut self.emitter,
+                cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
+                cadmpeg_ir::math::Vector3::new(rows[0][2], rows[1][2], rows[2][2]),
+                cadmpeg_ir::math::Vector3::new(rows[0][0], rows[1][0], rows[2][0]),
+            );
+            let literal = self.emitter.emit(
+                "TEXT_LITERAL",
+                &format!(
+                    "{},{},{placement},'left',.RIGHT.,$",
+                    string(annotation.name.as_deref().unwrap_or("")),
+                    string(text)
+                ),
+            );
+            let semantic_refs = semantics
+                .iter()
+                .filter_map(|semantic| annotation_refs.get(semantic).copied())
+                .collect::<Vec<_>>();
+            if semantic_refs.len() != semantics.len() {
+                continue;
+            }
+            let occurrence = self.emitter.emit(
+                "ANNOTATION_TEXT_OCCURRENCE",
+                &format!(
+                    "{},{},{literal}",
+                    string(annotation.name.as_deref().unwrap_or("")),
+                    refs(&semantic_refs)
+                ),
+            );
+            presentation_items.push(occurrence);
+            annotation_refs.insert(annotation.id.clone(), occurrence);
+            self.written_pmi += 1;
+        }
+        if !presentation_items.is_empty() {
+            self.emitter.emit(
+                "DRAUGHTING_MODEL",
+                &format!(
+                    "'PMI presentation',{}, {context}",
+                    refs(&presentation_items)
+                ),
+            );
+        }
     }
 
     fn emit_pmi_measure(&mut self, value: cadmpeg_ir::PmiValue) -> Ref {
