@@ -146,6 +146,11 @@ When a dress-up subelement selector has not resolved through persistent topology
 native `Base` property remains the edge selection; the decoder does not infer an edge from a
 transient label.
 
+Decode loss reporting is attributable at the native record boundary. Each design operation or
+sketch geometry family that remains only in the native lane produces its own blocking note carrying
+the object or property identity and `Document.xml` provenance. Successfully neutralized geometry
+does not inherit a format-wide placeholder loss.
+
 ## Presentation and application records
 
 GUI records retain view-provider identity separately from application-object identity. Visibility,

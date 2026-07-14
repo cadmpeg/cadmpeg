@@ -538,13 +538,7 @@ impl Codec for FcstdCodec {
         let losses = if options.container_only {
             Vec::new()
         } else {
-            vec![LossNote {
-                category: LossCategory::Geometry,
-                severity: Severity::Blocking,
-                message: "FCStd persistence and exact-shape decoding are not implemented yet"
-                    .into(),
-                provenance: None,
-            }]
+            semantic_losses(&ir)
         };
         Ok(DecodeResult::new(
             ir,
@@ -557,6 +551,52 @@ impl Codec for FcstdCodec {
             },
         ))
     }
+}
+
+fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
+    let mut losses = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } = &feature.definition
+            else {
+                return None;
+            };
+            Some(LossNote {
+                category: LossCategory::Other,
+                severity: Severity::Blocking,
+                message: format!(
+                    "FCStd design operation {kind} is retained natively but has no neutral semantics"
+                ),
+                provenance: Some(cadmpeg_ir::LossProvenance {
+                    format: "fcstd".into(),
+                    stream: "Document.xml".into(),
+                    offset: 0,
+                    tag: feature.native_ref.clone(),
+                }),
+            })
+        })
+        .collect::<Vec<_>>();
+    losses.extend(ir.model.sketch_entities.iter().filter_map(|entity| {
+        let cadmpeg_ir::sketches::SketchGeometry::Native { native_kind } = &entity.geometry else {
+            return None;
+        };
+        Some(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Blocking,
+            message: format!(
+                "FCStd sketch geometry {native_kind} is retained natively but is not neutralized"
+            ),
+            provenance: Some(cadmpeg_ir::LossProvenance {
+                format: "fcstd".into(),
+                stream: "Document.xml".into(),
+                offset: 0,
+                tag: entity.native_ref.clone(),
+            }),
+        })
+    }));
+    losses
 }
 
 #[derive(Default)]

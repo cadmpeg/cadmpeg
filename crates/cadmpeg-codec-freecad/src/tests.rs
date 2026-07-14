@@ -106,6 +106,32 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
 }
 
 #[test]
+fn reports_attributable_native_design_blockers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="PartDesign::FeatureCustom" name="Custom" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Custom"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("native feature");
+    assert_eq!(result.report.losses.len(), 1);
+    assert_eq!(
+        result.report.losses[0].severity,
+        cadmpeg_ir::Severity::Blocking
+    );
+    assert_eq!(
+        result.report.losses[0]
+            .provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("fcstd:object:Custom")
+    );
+}
+
+#[test]
 fn transfers_sketch_pad_and_pocket_design_history() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
