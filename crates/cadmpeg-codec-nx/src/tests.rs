@@ -594,7 +594,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 144);
+    assert_eq!(namespace.version, 145);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -811,9 +811,9 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
 #[test]
 fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
     use crate::native::{
-        FeatureSimpleHoleRepeatedScalarLane, FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
-        FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
-        SimpleHoleForm,
+        FeatureSimpleHoleConstructionGroup, FeatureSimpleHoleRepeatedScalarLane,
+        FeatureSimpleHoleRepeatedScalarLaneBlockReferences, FeatureSimpleHoleTemplate,
+        SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
     };
     let operation = "nx:feature-history:operation-label#1-4";
     let template = FeatureSimpleHoleTemplate {
@@ -841,16 +841,31 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         first_reference_offsets: [20, 22],
         second_reference_offsets: [40, 42],
     };
-    let properties =
-        crate::decode::simple_hole_native_properties(operation, &[template], &[lane], &[blocks]);
+    let group = FeatureSimpleHoleConstructionGroup {
+        id: "group".into(),
+        first_data_blocks: blocks.first_data_blocks.clone(),
+        second_data_blocks: blocks.second_data_blocks.clone(),
+        operation_labels: vec![operation.into(), "other-operation".into()],
+        scalar_lanes: vec!["lane".into(), "other-lane".into()],
+        block_references: vec!["blocks".into(), "other-blocks".into()],
+    };
+    let properties = crate::decode::simple_hole_native_properties(
+        operation,
+        &[template],
+        &[lane],
+        &[blocks],
+        &[group],
+    );
     assert_eq!(properties["simple_hole_template"], "template");
     assert_eq!(properties["simple_hole_repeated_scalar_lane"], "lane");
     assert_eq!(
         properties["simple_hole_repeated_scalar_lane_block_references"],
         "blocks"
     );
+    assert_eq!(properties["simple_hole_construction_group"], "group");
     assert!(crate::decode::simple_hole_native_properties(
         "nx:feature-history:operation-label#1-5",
+        &[],
         &[],
         &[],
         &[],
@@ -3154,6 +3169,54 @@ fn om_block_construction_field_decodes_ordered_canonical_references() {
             ..record
         })
         .is_none()
+    );
+}
+
+#[test]
+fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
+    use crate::native::{
+        feature_simple_hole_construction_groups, FeatureSimpleHoleRepeatedScalarLane,
+        FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
+    };
+    let lane = |operation: &str| FeatureSimpleHoleRepeatedScalarLane {
+        id: format!("lane-{operation}"),
+        operation_label: operation.into(),
+        values: vec![25.4],
+        first_witness_offsets: vec![1],
+        second_witness_offsets: vec![2],
+    };
+    let reference =
+        |operation: &str, last: &str| FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
+            id: format!("reference-{operation}"),
+            operation_label: operation.into(),
+            first_data_blocks: ["block-1".into(), "block-2".into()],
+            second_data_blocks: ["block-3".into(), last.into()],
+            first_reference_offsets: [3, 4],
+            second_reference_offsets: [5, 6],
+        };
+    let lanes = [
+        lane("operation#1-2"),
+        lane("operation#1-3"),
+        lane("operation#1-4"),
+    ];
+    let references = [
+        reference("operation#1-2", "block-4"),
+        reference("operation#1-3", "block-4"),
+        reference("operation#1-4", "block-5"),
+    ];
+    let groups = feature_simple_hole_construction_groups(&lanes, &references);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(
+        groups[0].operation_labels,
+        ["operation#1-2", "operation#1-3"]
+    );
+    assert_eq!(
+        groups[0].scalar_lanes,
+        ["lane-operation#1-2", "lane-operation#1-3"]
+    );
+    assert_eq!(
+        groups[0].block_references,
+        ["reference-operation#1-2", "reference-operation#1-3"]
     );
 }
 
@@ -6536,7 +6599,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 144);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 145);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

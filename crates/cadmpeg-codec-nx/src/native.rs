@@ -952,6 +952,23 @@ pub struct FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
     pub second_reference_offsets: [u64; 2],
 }
 
+/// Distinct simple-hole operations sharing one four-block construction identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSimpleHoleConstructionGroup {
+    /// Globally unique group identity.
+    pub id: String,
+    /// Shared first-witness block pair.
+    pub first_data_blocks: [String; 2],
+    /// Shared repeated-witness block pair.
+    pub second_data_blocks: [String; 2],
+    /// Operation labels in feature-history order.
+    pub operation_labels: Vec<String>,
+    /// Scalar lanes aligned with `operation_labels`.
+    pub scalar_lanes: Vec<String>,
+    /// Block-reference lanes aligned with `operation_labels`.
+    pub block_references: Vec<String>,
+}
+
 /// Construction family named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -2463,6 +2480,55 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
         }
     }
     references
+}
+
+/// Group distinct simple-hole operations that address the same four construction blocks.
+pub fn feature_simple_hole_construction_groups(
+    lanes: &[FeatureSimpleHoleRepeatedScalarLane],
+    references: &[FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
+) -> Vec<FeatureSimpleHoleConstructionGroup> {
+    let lanes = lanes
+        .iter()
+        .map(|lane| (lane.operation_label.as_str(), lane))
+        .collect::<BTreeMap<_, _>>();
+    let mut grouped = BTreeMap::<([String; 2], [String; 2]), Vec<_>>::new();
+    for reference in references {
+        let Some(lane) = lanes.get(reference.operation_label.as_str()) else {
+            continue;
+        };
+        grouped
+            .entry((
+                reference.first_data_blocks.clone(),
+                reference.second_data_blocks.clone(),
+            ))
+            .or_default()
+            .push((reference, *lane));
+    }
+    grouped
+        .into_values()
+        .filter(|members| members.len() > 1)
+        .map(|members| {
+            let first = members[0].0;
+            let key = first
+                .operation_label
+                .rsplit_once('#')
+                .map_or("unknown", |(_, key)| key);
+            FeatureSimpleHoleConstructionGroup {
+                id: format!("nx:feature-history:simple-hole-construction-group#{key}"),
+                first_data_blocks: first.first_data_blocks.clone(),
+                second_data_blocks: first.second_data_blocks.clone(),
+                operation_labels: members
+                    .iter()
+                    .map(|(reference, _)| reference.operation_label.clone())
+                    .collect(),
+                scalar_lanes: members.iter().map(|(_, lane)| lane.id.clone()).collect(),
+                block_references: members
+                    .iter()
+                    .map(|(reference, _)| reference.id.clone())
+                    .collect(),
+            }
+        })
+        .collect()
 }
 
 pub(crate) fn parse_simple_hole_template(

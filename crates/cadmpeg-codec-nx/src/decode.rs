@@ -3168,6 +3168,11 @@ fn attach_native_object_model(
         crate::native::feature_simple_hole_repeated_scalar_lanes(&scan.container);
     let feature_simple_hole_repeated_scalar_lane_block_references =
         crate::native::feature_simple_hole_repeated_scalar_lane_block_references(&scan.container);
+    let feature_simple_hole_construction_groups =
+        crate::native::feature_simple_hole_construction_groups(
+            &feature_simple_hole_repeated_scalar_lanes,
+            &feature_simple_hole_repeated_scalar_lane_block_references,
+        );
     let feature_body_references = crate::native::feature_body_references(&scan.container);
     let feature_body_reference_occurrences =
         crate::native::feature_body_reference_occurrences(&scan.container);
@@ -3409,6 +3414,7 @@ fn attach_native_object_model(
         && feature_simple_hole_templates.is_empty()
         && feature_simple_hole_repeated_scalar_lanes.is_empty()
         && feature_simple_hole_repeated_scalar_lane_block_references.is_empty()
+        && feature_simple_hole_construction_groups.is_empty()
         && feature_body_references.is_empty()
         && feature_input_blocks.is_empty()
         && feature_input_block_identity_groups.is_empty()
@@ -3930,6 +3936,7 @@ fn attach_native_object_model(
             simple_hole_repeated_scalar_lanes: &feature_simple_hole_repeated_scalar_lanes,
             simple_hole_repeated_scalar_lane_block_references:
                 &feature_simple_hole_repeated_scalar_lane_block_references,
+            simple_hole_construction_groups: &feature_simple_hole_construction_groups,
             body_bindings: &segment_body_bindings,
         },
         annotations,
@@ -3946,7 +3953,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(144);
+    namespace.version = namespace.version.max(145);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -4086,6 +4093,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_simple_hole_repeated_scalar_lane_block_references",
             &feature_simple_hole_repeated_scalar_lane_block_references,
+        )?;
+    }
+    if !feature_simple_hole_construction_groups.is_empty() {
+        namespace.set_arena(
+            "feature_simple_hole_construction_groups",
+            &feature_simple_hole_construction_groups,
         )?;
     }
     if !feature_body_references.is_empty() {
@@ -4803,6 +4816,7 @@ struct FeatureOperationSources<'a> {
     simple_hole_repeated_scalar_lanes: &'a [crate::native::FeatureSimpleHoleRepeatedScalarLane],
     simple_hole_repeated_scalar_lane_block_references:
         &'a [crate::native::FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
+    simple_hole_construction_groups: &'a [crate::native::FeatureSimpleHoleConstructionGroup],
     body_bindings: &'a [crate::native::SegmentBodyBinding],
 }
 
@@ -4846,6 +4860,7 @@ fn attach_feature_operations(
         simple_hole_templates,
         simple_hole_repeated_scalar_lanes,
         simple_hole_repeated_scalar_lane_block_references,
+        simple_hole_construction_groups,
         body_bindings,
     } = *sources;
     let stream = annotations.stream("nx:container");
@@ -5301,6 +5316,7 @@ fn attach_feature_operations(
             simple_hole_templates,
             simple_hole_repeated_scalar_lanes,
             simple_hole_repeated_scalar_lane_block_references,
+            simple_hole_construction_groups,
         ));
         for (slot, value) in label.object_indices.iter().enumerate() {
             source_properties.insert(
@@ -5608,6 +5624,7 @@ pub(crate) fn simple_hole_native_properties(
     templates: &[crate::native::FeatureSimpleHoleTemplate],
     repeated_lanes: &[crate::native::FeatureSimpleHoleRepeatedScalarLane],
     block_references: &[crate::native::FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
+    construction_groups: &[crate::native::FeatureSimpleHoleConstructionGroup],
 ) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
     if let Some(template) = templates
@@ -5632,6 +5649,17 @@ pub(crate) fn simple_hole_native_properties(
         properties.insert(
             "simple_hole_repeated_scalar_lane_block_references".to_string(),
             references.id.clone(),
+        );
+    }
+    if let Some(group) = construction_groups.iter().find(|group| {
+        group
+            .operation_labels
+            .iter()
+            .any(|label| label == operation_label)
+    }) {
+        properties.insert(
+            "simple_hole_construction_group".to_string(),
+            group.id.clone(),
         );
     }
     properties
