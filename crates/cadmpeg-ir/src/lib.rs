@@ -51,6 +51,7 @@ mod provenance;
 pub mod read;
 pub mod report;
 pub mod sketches;
+pub mod source_fidelity;
 pub mod subd;
 pub mod tessellation;
 pub mod topology;
@@ -82,6 +83,7 @@ pub use sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
 };
+pub use source_fidelity::{SourceFidelity, SOURCE_FIDELITY_VERSION};
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
