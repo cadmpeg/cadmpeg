@@ -21,15 +21,15 @@ use cadmpeg_ir::features::{
     RevolutionAxis, RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition,
-    Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralSurfaceId, RegionId,
-    ShellId, SurfaceId, UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
+    RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
@@ -2413,6 +2413,140 @@ fn oriented_arc_parameterization(reversed: bool, start: f64, end: f64) -> (f64, 
     (axis_sign, [start, end])
 }
 
+fn line_pcurve(start: [f64; 2], end: [f64; 2]) -> PcurveGeometry {
+    PcurveGeometry::Line {
+        origin: Point2::new(start[0], start[1]),
+        direction: Point2::new(end[0] - start[0], end[1] - start[1]),
+    }
+}
+
+fn circular_pcurve(
+    center: [f64; 2],
+    radius: f64,
+    start_angle: f64,
+    end_angle: f64,
+) -> PcurveGeometry {
+    let segment_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2)
+        .ceil()
+        .max(1.0) as usize;
+    let step = (end_angle - start_angle) / segment_count as f64;
+    let mut control_points = Vec::with_capacity(2 * segment_count + 1);
+    let mut weights = Vec::with_capacity(2 * segment_count + 1);
+    for segment in 0..segment_count {
+        let first = start_angle + segment as f64 * step;
+        let second = first + step;
+        let middle = 0.5 * (first + second);
+        let middle_weight = (0.5 * step).cos();
+        if segment == 0 {
+            control_points.push(Point2::new(
+                center[0] + radius * first.cos(),
+                center[1] + radius * first.sin(),
+            ));
+            weights.push(1.0);
+        }
+        control_points.push(Point2::new(
+            center[0] + radius * middle.cos() / middle_weight,
+            center[1] + radius * middle.sin() / middle_weight,
+        ));
+        weights.push(middle_weight);
+        control_points.push(Point2::new(
+            center[0] + radius * second.cos(),
+            center[1] + radius * second.sin(),
+        ));
+        weights.push(1.0);
+    }
+    let mut knots = vec![0.0; 3];
+    for boundary in 1..segment_count {
+        knots.extend([boundary as f64 / segment_count as f64; 2]);
+    }
+    knots.extend([1.0; 3]);
+    PcurveGeometry::Nurbs {
+        degree: 2,
+        knots,
+        control_points,
+        weights: Some(weights),
+        periodic: false,
+    }
+}
+
+fn extrusion_cap_pcurve(
+    geometry: &SketchGeometry,
+    reversed: bool,
+    start: [f64; 2],
+    end: [f64; 2],
+) -> PcurveGeometry {
+    match geometry {
+        SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            let [start_angle, end_angle] = if reversed {
+                [end_angle.0, start_angle.0]
+            } else {
+                [start_angle.0, end_angle.0]
+            };
+            circular_pcurve([center.u, center.v], radius.0, start_angle, end_angle)
+        }
+        _ => line_pcurve(start, end),
+    }
+}
+
+fn extrusion_side_uvs(
+    geometry: &SketchGeometry,
+    reversed: bool,
+    start: [f64; 2],
+    end: [f64; 2],
+    span: ExtrusionSpan,
+) -> [[[f64; 2]; 2]; 4] {
+    let [first, second] = match geometry {
+        SketchGeometry::Arc {
+            start_angle,
+            end_angle,
+            ..
+        } if reversed => [end_angle.0, start_angle.0],
+        SketchGeometry::Arc {
+            start_angle,
+            end_angle,
+            ..
+        } => [start_angle.0, end_angle.0],
+        _ => [0.0, (end[0] - start[0]).hypot(end[1] - start[1])],
+    };
+    [
+        [[first, span.lower], [second, span.lower]],
+        [[second, span.lower], [second, span.upper]],
+        [[first, span.upper], [second, span.upper]],
+        [[first, span.lower], [first, span.upper]],
+    ]
+}
+
+fn add_extrusion_pcurve(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    id: PcurveId,
+    source_offset: usize,
+    geometry: PcurveGeometry,
+) -> PcurveId {
+    annotate(
+        annotations,
+        &id,
+        "FeatDefs",
+        source_offset as u64,
+        "extrusion_trim_pcurve",
+        Exactness::Derived,
+    );
+    ir.model.pcurves.push(Pcurve {
+        id: id.clone(),
+        geometry,
+        wrapper_reversed: None,
+        native_tail_flags: None,
+        parameter_range: Some([0.0, 1.0]),
+        fit_tolerance: None,
+    });
+    id
+}
+
 fn transfer_resolved_extrusion_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -2716,6 +2850,16 @@ fn transfer_resolved_extrusion_breps(
             for ring_index in 0..count {
                 let edge_index = count - 1 - ring_index;
                 let id = bottom_coedges[ring_index].clone();
+                let (geometry, reversed, start, end) = &profile[edge_index];
+                let bottom_pcurve = add_extrusion_pcurve(
+                    ir,
+                    annotations,
+                    PcurveId(format!(
+                        "{prefix}:pcurve:{profile_index}:{edge_index}:bottom-cap"
+                    )),
+                    transform.offset,
+                    extrusion_cap_pcurve(geometry, *reversed, *start, *end),
+                );
                 ir.model.coedges.push(Coedge {
                     id,
                     owner_loop: bottom_loop.clone(),
@@ -2726,9 +2870,19 @@ fn transfer_resolved_extrusion_breps(
                         "{prefix}:coedge:{profile_index}:{edge_index}:side-bottom"
                     )),
                     sense: Sense::Reversed,
-                    pcurve: None,
+                    pcurve: Some(bottom_pcurve),
                 });
                 let id = top_coedges[ring_index].clone();
+                let (geometry, reversed, start, end) = &profile[ring_index];
+                let top_pcurve = add_extrusion_pcurve(
+                    ir,
+                    annotations,
+                    PcurveId(format!(
+                        "{prefix}:pcurve:{profile_index}:{ring_index}:top-cap"
+                    )),
+                    transform.offset,
+                    extrusion_cap_pcurve(geometry, *reversed, *start, *end),
+                );
                 ir.model.coedges.push(Coedge {
                     id,
                     owner_loop: top_loop.clone(),
@@ -2739,7 +2893,7 @@ fn transfer_resolved_extrusion_breps(
                         "{prefix}:coedge:{profile_index}:{ring_index}:side-top"
                     )),
                     sense: Sense::Forward,
-                    pcurve: None,
+                    pcurve: Some(top_pcurve),
                 });
             }
 
@@ -2793,6 +2947,8 @@ fn transfer_resolved_extrusion_breps(
                     (top_edges[index].clone(), Sense::Reversed),
                     (vertical_edges[index].clone(), Sense::Reversed),
                 ];
+                let side_uvs =
+                    extrusion_side_uvs(geometry, profile[index].1, *start, profile[index].3, span);
                 for use_index in 0..4 {
                     let radial_next = match use_index {
                         0 => bottom_coedges[count - 1 - index].clone(),
@@ -2805,6 +2961,15 @@ fn transfer_resolved_extrusion_breps(
                         )),
                         _ => unreachable!(),
                     };
+                    let pcurve = add_extrusion_pcurve(
+                        ir,
+                        annotations,
+                        PcurveId(format!(
+                            "{prefix}:pcurve:{profile_index}:{index}:side:{use_index}"
+                        )),
+                        transform.offset,
+                        line_pcurve(side_uvs[use_index][0], side_uvs[use_index][1]),
+                    );
                     ir.model.coedges.push(Coedge {
                         id: coedges[use_index].clone(),
                         owner_loop: loop_id.clone(),
@@ -2813,7 +2978,7 @@ fn transfer_resolved_extrusion_breps(
                         previous: coedges[(use_index + 3) % 4].clone(),
                         radial_next,
                         sense: edge_uses[use_index].1,
-                        pcurve: None,
+                        pcurve: Some(pcurve),
                     });
                 }
                 ir.model.faces.push(Face {
@@ -5125,6 +5290,25 @@ mod resolved_sketch_tests {
                 5.0 * std::f64::consts::FRAC_PI_2
             ]
         );
+    }
+
+    #[test]
+    fn extrusion_arc_pcurve_is_exact_in_both_directions() {
+        for (start, end, expected_middle) in [
+            (0.0, std::f64::consts::PI, Point2::new(2.0, 5.0)),
+            (std::f64::consts::PI, 0.0, Point2::new(2.0, 5.0)),
+        ] {
+            let pcurve = circular_pcurve([2.0, 2.0], 3.0, start, end);
+            let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("first endpoint");
+            let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("arc midpoint");
+            let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("last endpoint");
+            assert!((first.u - (2.0 + 3.0 * start.cos())).abs() < 1e-12);
+            assert!((first.v - (2.0 + 3.0 * start.sin())).abs() < 1e-12);
+            assert!((middle.u - expected_middle.u).abs() < 1e-12);
+            assert!((middle.v - expected_middle.v).abs() < 1e-12);
+            assert!((last.u - (2.0 + 3.0 * end.cos())).abs() < 1e-12);
+            assert!((last.v - (2.0 + 3.0 * end.sin())).abs() < 1e-12);
+        }
     }
 
     #[test]
