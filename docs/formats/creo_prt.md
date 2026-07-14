@@ -399,13 +399,17 @@ Named procedural-choice fields belong to their containing feature row. Complete 
 
 An unlabeled positional affected-ID replay retains its compact identifiers as one ordered sequence. The sequence does not imply the labeled template's geometry/edge partition. Presence of an `f8` opener is retained independently from the identifiers because later instances can inherit the array extent.
 
-The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are linear protrusion/extrusion definitions, class 913 is a round definition, class 911 is a hole definition, and class 923 is a datum-plane definition.
+The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 913 is a round definition, class 911 is a hole definition, and class 923 is a datum-plane definition. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
 
 A typed schema row that owns a materialized `srf_array` row is an active construction feature. The root schema class supplies its operation family independently of an `MdlStatus` operation name.
 
 A class-923 feature with exactly one resolved plane carrier defines that datum plane by the carrier's model-space origin, normal, and in-plane reference direction.
 
 For a linear section sweep, generated plane carriers parallel to the section normal are cap planes. Their signed offsets are measured from the section origin along the section normal. One distinct nonzero offset defines a blind extrusion from offset zero to that offset; a negative offset reverses the sweep direction. Exactly two offsets with opposite signs define a two-sided extrusion. Equal magnitudes select the symmetric form with total length equal to the sum of the magnitudes. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain.
+
+For a rotational section sweep, the unique nondegenerate section line whose
+two solved endpoints have `u = 0` is the revolution axis. Applying the section
+frame to its endpoints establishes the model-space axis origin and direction.
 
 Evaluating a closed linear section sweep produces one side face per oriented profile entity. A line produces a planar side face and an arc produces a cylindrical side face. Each profile vertex produces an edge parallel to the sweep direction. The two cap loops use the profile edges in opposite directions, and every cap or longitudinal edge has exactly two face uses.
 

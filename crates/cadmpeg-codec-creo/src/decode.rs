@@ -16,7 +16,8 @@ use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, DesignParameter, Extent, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, Length, ParameterId, ParameterValue, ProfileRef,
+    FeatureId as IrFeatureId, Length, ParameterId, ParameterValue, ProfileRef, RevolutionAxis,
+    RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::hash::sha256_hex;
@@ -2603,6 +2604,42 @@ fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Ve
         })
 }
 
+fn resolved_revolution_axis(
+    definition: &crate::feature::FeatureDefinition,
+    transform: &crate::placement::FeatureSectionTransform,
+) -> Option<RevolutionAxis> {
+    let variables = definition.variables.as_ref()?;
+    let segments = definition.segments.as_ref()?;
+    let points = variables
+        .points
+        .iter()
+        .filter_map(|point| Some((point.point_id, [point.u?, point.v?])))
+        .collect::<BTreeMap<_, _>>();
+    let candidates = segments
+        .rows
+        .iter()
+        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
+        .filter_map(|segment| {
+            let start = points.get(&segment.point_ids[0])?;
+            let end = points.get(&segment.point_ids[1])?;
+            if start[0] != 0.0 || end[0] != 0.0 || start == end {
+                return None;
+            }
+            let start = section_point_in_model(transform, *start);
+            let end = section_point_in_model(transform, *end);
+            let direction = normalized(std::array::from_fn(|axis| end[axis] - start[axis]))?;
+            Some(RevolutionAxis {
+                origin: Point3::new(start[0], start[1], start[2]),
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            })
+        })
+        .collect::<Vec<_>>();
+    let [axis] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*axis)
+}
+
 fn schema_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -2610,6 +2647,46 @@ fn schema_feature_definition(
     schema_class: u32,
     kind: &str,
 ) -> IrFeatureDefinition {
+    if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
+        let transforms = scan
+            .feature_section_transforms
+            .iter()
+            .filter(|transform| transform.feature_id == Some(feature_id))
+            .collect::<Vec<_>>();
+        if let [transform] = transforms.as_slice() {
+            let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
+            let profile = ir
+                .model
+                .sketches
+                .iter()
+                .find(|sketch| sketch.id == sketch_id)
+                .map(|sketch| {
+                    if sketch.profiles.is_empty() {
+                        ProfileRef::Native(format!(
+                            "creo:featdefs:sketch#{}",
+                            transform.definition_id
+                        ))
+                    } else {
+                        ProfileRef::Sketch(sketch_id)
+                    }
+                });
+            let axis = scan
+                .feature_definitions
+                .iter()
+                .find(|definition| definition.id == transform.definition_id)
+                .and_then(|definition| resolved_revolution_axis(definition, transform));
+            if profile.is_some() || axis.is_some() {
+                return IrFeatureDefinition::Revolve {
+                    construction: RevolutionConstruction {
+                        profile,
+                        axis,
+                        extent: None,
+                    },
+                    op: BooleanOp::Unresolved,
+                };
+            }
+        }
+    }
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude) {
         let transforms = scan
             .feature_section_transforms
@@ -3617,6 +3694,73 @@ mod resolved_sketch_tests {
         assert_eq!(arc_profile.len(), 1);
         assert!(arc_profile[0].iter().all(|entity| entity.reversed));
     }
+
+    #[test]
+    fn revolution_axis_uses_the_unique_complete_section_centerline() {
+        let definition = crate::feature::FeatureDefinition {
+            id: 40,
+            owner_feature_id: Some(40),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(crate::feature::FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                points: vec![
+                    crate::feature::FeatureSectionPoint {
+                        point_id: 1,
+                        u: Some(0.0),
+                        v: Some(-2.0),
+                    },
+                    crate::feature::FeatureSectionPoint {
+                        point_id: 2,
+                        u: Some(0.0),
+                        v: Some(3.0),
+                    },
+                ],
+                offset: 1,
+            }),
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: vec![crate::feature::FeatureSegment {
+                    kind: crate::feature::FeatureSegmentKind::Line,
+                    directions: [None; 3],
+                    point_ids: [1, 2],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: Some(0),
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 1,
+                    offset: 2,
+                }],
+                offset: 2,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 1,
+        };
+        let transform = crate::placement::FeatureSectionTransform {
+            definition_id: 40,
+            feature_id: Some(40),
+            origin: [5.0, 7.0, 11.0],
+            u_axis: [1.0, 0.0, 0.0],
+            v_axis: [0.0, 0.0, 1.0],
+            normal: [0.0, -1.0, 0.0],
+            offset: 3,
+        };
+
+        let axis = resolved_revolution_axis(&definition, &transform).expect("axis");
+        assert_eq!(axis.origin, Point3::new(5.0, 7.0, 9.0));
+        assert_eq!(axis.direction, Vector3::new(0.0, 0.0, 1.0));
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -4590,7 +4734,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             .feature_rows
             .iter()
             .find(|row| row.feature_id == operation.feature_id)
-            .and_then(|row| row.root_schema_class);
+            .and_then(|row| row.root_schema_class)
+            .or(operation.root_schema_class);
         let definition = schema_class.map_or_else(
             || IrFeatureDefinition::Native {
                 kind: operation.kind.clone(),
