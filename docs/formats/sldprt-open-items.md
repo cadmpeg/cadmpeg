@@ -31,6 +31,7 @@ The schema-33103 sheet discriminator is unresolved. `0x1d/flo2` belongs to the f
 - Marker-to-profile correspondence is unresolved when the feature's coordinate sets admit no unique signed-axis transform or a reference marker's linked loci do not identify one profile entity.
 - Keywords operation families outside the typed neutral feature set are unresolved.
 - The termination carrier for compact extrusion objects with no owned `Depth` or `D1` scalar is unresolved.
+- The Boolean operation carrier for compact extrusion objects without a Keywords `Operation` attribute or operation-specific type token is unresolved outside the `moExtrusion_c` code `1`, join code `3`, and cut code `11` forms.
 - The operation, target-body, and tool-body carriers for compact `moCombineBodies_c` objects without corresponding Keywords attributes are unresolved.
 - The delete/keep mode discriminator and the mapping from compact `moDeleteBody_c` feature-local body identifiers to B-rep bodies are unresolved.
 - The reference fields that bind `moSweep_c` general-curve-reference children to neutral paths, composite-profile forms not carried by a unique enclosed planar profile stream, and the Boolean operation discriminator for solid sweep objects without Keywords attributes are unresolved.
