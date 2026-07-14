@@ -1310,6 +1310,10 @@ fn extend_related_design_records(
         &mut native.design_dimension_recipe_records,
         &native.persistent_subentity_tags,
     );
+    crate::design::bind_dimension_recipe_edge_operands(
+        &mut native.design_dimension_recipe_records,
+        &native.design_edge_operands,
+    );
     Ok(())
 }
 
@@ -1904,6 +1908,7 @@ mod tests {
                 references: Vec::new(),
                 program_offset: 320,
                 program: vec![-1],
+                matching_edge_operand_ids: Vec::new(),
             });
         assert_eq!(unresolved_dimension_companion_count(&recipe_backed), 0);
 

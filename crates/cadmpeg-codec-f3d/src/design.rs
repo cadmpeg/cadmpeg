@@ -4665,6 +4665,7 @@ pub fn decode_dimension_recipe_records(
                 references,
                 program_offset: u64::try_from(program_offset).unwrap_or(u64::MAX),
                 program,
+                matching_edge_operand_ids: Vec::new(),
             });
         }
     }
@@ -4734,6 +4735,43 @@ pub fn bind_dimension_recipe_reference_candidates(
         reference.candidate_faces = dimension_recipe_candidate_faces(reference, tags);
         reference.candidate_edges = dimension_recipe_candidate_edges(reference, tags);
     }
+}
+
+/// Join dimension programs to byte-identical edge-recipe program tails.
+pub fn bind_dimension_recipe_edge_operands(
+    records: &mut [DesignDimensionRecipeRecord],
+    operands: &[DesignEdgeOperand],
+) {
+    for record in records {
+        record.matching_edge_operand_ids =
+            dimension_recipe_matching_edge_operand_ids(record, operands);
+    }
+}
+
+pub(crate) fn dimension_recipe_matching_edge_operand_ids(
+    record: &DesignDimensionRecipeRecord,
+    operands: &[DesignEdgeOperand],
+) -> Vec<String> {
+    let mut ids = operands
+        .iter()
+        .filter(|operand| {
+            let Some(tail) = operand
+                .recipe_program
+                .get(7..)
+                .filter(|tail| !tail.is_empty())
+            else {
+                return false;
+            };
+            record
+                .program
+                .windows(tail.len())
+                .any(|window| window == tail)
+        })
+        .map(|operand| operand.id.clone())
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids.dedup();
+    ids
 }
 
 pub(crate) fn dimension_recipe_candidate_edges(
@@ -11004,6 +11042,32 @@ mod relation_tests {
             edge_operand.candidate_faces,
             [FaceId("f3d:brep:entity#50".into())]
         );
+        let mut embedded_program = vec![99];
+        embedded_program.extend_from_slice(&edge_operand.recipe_program[7..]);
+        embedded_program.push(88);
+        let dimension_recipe = DesignDimensionRecipeRecord {
+            id: "dimension-recipe".into(),
+            companion_record_index: 1,
+            recipe_ordinal: 0,
+            recipe_id: "recipe".into(),
+            byte_offset: 0,
+            class_tag: "423".into(),
+            record_index: 1,
+            frame_length: 4,
+            prefix_offset: 0,
+            prefix_bytes: vec![1],
+            references: Vec::new(),
+            program_offset: 0,
+            program: embedded_program,
+            matching_edge_operand_ids: Vec::new(),
+        };
+        assert_eq!(
+            super::dimension_recipe_matching_edge_operand_ids(
+                &dimension_recipe,
+                std::slice::from_ref(&edge_operand),
+            ),
+            [edge_operand.id.clone()]
+        );
 
         let mut face_bytes = Vec::new();
         header(&mut face_bytes, *b"306", 100);
@@ -12101,6 +12165,7 @@ mod relation_tests {
             references: Vec::new(),
             program_offset: 0,
             program: vec![-1],
+            matching_edge_operand_ids: Vec::new(),
         };
         let constraints = project_dimension_constraints(
             &[placement],

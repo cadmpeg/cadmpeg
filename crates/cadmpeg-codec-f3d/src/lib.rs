@@ -1592,6 +1592,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && record.frame_length >= 11
             && !record.prefix_bytes.is_empty()
             && decoded_references == record.references
+            && design::dimension_recipe_matching_edge_operand_ids(
+                record,
+                &native.design_edge_operands,
+            ) == record.matching_edge_operand_ids
             && record.prefix_offset == record.byte_offset.saturating_add(11)
             && !record.program.is_empty()
             && record.program_offset >= record.byte_offset.saturating_add(11)

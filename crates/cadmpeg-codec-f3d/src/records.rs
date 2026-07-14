@@ -458,6 +458,10 @@ pub struct DesignDimensionRecipeRecord {
     pub program_offset: u64,
     /// Complete little-endian i32 program through the indexed-record boundary.
     pub program: Vec<i32>,
+    /// Edge operands whose complete post-prologue recipe program occurs as a
+    /// contiguous subsequence of this program.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub matching_edge_operand_ids: Vec<String>,
 }
 
 /// One persistent Design selector/reference tail in a dimension recipe.
