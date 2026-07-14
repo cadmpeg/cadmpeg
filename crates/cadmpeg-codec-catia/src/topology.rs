@@ -2442,6 +2442,7 @@ fn reconstruct_mesh_selection(
 struct MeshQuotient {
     union: UnionFind,
     domains: Vec<HashSet<usize>>,
+    members: Vec<Vec<usize>>,
 }
 
 impl MeshQuotient {
@@ -2451,11 +2452,11 @@ impl MeshQuotient {
             .count()
     }
 
-    fn merge(&mut self, left: usize, right: usize) -> Option<()> {
+    fn merge(&mut self, left: usize, right: usize) -> Option<usize> {
         let left = self.union.find(left);
         let right = self.union.find(right);
         if left == right {
-            return Some(());
+            return Some(left);
         }
         let intersection = self.domains[left]
             .intersection(&self.domains[right])
@@ -2467,12 +2468,70 @@ impl MeshQuotient {
         self.union.union(left, right);
         let root = self.union.find(left);
         self.domains[root] = intersection;
-        Some(())
+        let child = if root == left { right } else { left };
+        let child_members = std::mem::take(&mut self.members[child]);
+        self.members[root].extend(child_members);
+        Some(root)
+    }
+
+    fn edge_domains_viable(&mut self, edge_candidates: &[Vec<[usize; 2]>]) -> bool {
+        edge_candidates
+            .iter()
+            .enumerate()
+            .all(|(edge, candidates)| {
+                let start = self.union.find(edge * 2);
+                let end = self.union.find(edge * 2 + 1);
+                if start == end {
+                    return false;
+                }
+                let starts = &self.domains[start];
+                let ends = &self.domains[end];
+                if candidates.is_empty() {
+                    return starts
+                        .iter()
+                        .any(|start| ends.iter().any(|end| start != end));
+                }
+                candidates.iter().any(|pair| {
+                    (starts.contains(&pair[0]) && ends.contains(&pair[1]))
+                        || (starts.contains(&pair[1]) && ends.contains(&pair[0]))
+                })
+            })
+    }
+
+    fn component_edge_domains_viable(
+        &mut self,
+        root: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+    ) -> bool {
+        let edges = self.members[root]
+            .iter()
+            .map(|node| node / 2)
+            .collect::<HashSet<_>>();
+        edges.into_iter().all(|edge| {
+            let start = self.union.find(edge * 2);
+            let end = self.union.find(edge * 2 + 1);
+            if start == end {
+                return false;
+            }
+            let starts = &self.domains[start];
+            let ends = &self.domains[end];
+            let candidates = &edge_candidates[edge];
+            if candidates.is_empty() {
+                return starts
+                    .iter()
+                    .any(|start| ends.iter().any(|end| start != end));
+            }
+            candidates.iter().any(|pair| {
+                (starts.contains(&pair[0]) && ends.contains(&pair[1]))
+                    || (starts.contains(&pair[1]) && ends.contains(&pair[0]))
+            })
+        })
     }
 
     fn assignment_options(
         &self,
         assignment: &MeshFaceBoundaryAssignment,
+        edge_candidates: &[Vec<[usize; 2]>],
     ) -> Vec<(Vec<Vec<bool>>, Self)> {
         const MAX_ORIENTED_OPTIONS: usize = 4_096;
 
@@ -2489,12 +2548,14 @@ impl MeshQuotient {
         fn boundary_options(
             quotient: &MeshQuotient,
             boundary: &[MeshBoundaryEdgeCandidate],
+            edge_candidates: &[Vec<[usize; 2]>],
         ) -> Vec<(Vec<bool>, MeshQuotient)> {
             fn walk(
                 boundary: &[MeshBoundaryEdgeCandidate],
                 at: usize,
                 directions: &mut Vec<bool>,
                 quotient: &MeshQuotient,
+                edge_candidates: &[Vec<[usize; 2]>],
                 output: &mut Vec<(Vec<bool>, MeshQuotient)>,
             ) {
                 if output.len() >= MAX_ORIENTED_OPTIONS {
@@ -2508,8 +2569,10 @@ impl MeshQuotient {
                     let Some(first_start) = edge_start(boundary[0], directions[0]) else {
                         return;
                     };
-                    if quotient.merge(last_end, first_start).is_some() {
-                        output.push((directions.clone(), quotient));
+                    if let Some(root) = quotient.merge(last_end, first_start) {
+                        if quotient.component_edge_domains_viable(root, edge_candidates) {
+                            output.push((directions.clone(), quotient));
+                        }
                     }
                     return;
                 }
@@ -2526,12 +2589,19 @@ impl MeshQuotient {
                         let Some(current_start) = edge_start(boundary[at], reversed) else {
                             continue;
                         };
-                        if quotient.merge(previous_end, current_start).is_none() {
+                        let Some(_) = quotient.merge(previous_end, current_start) else {
                             continue;
-                        }
+                        };
                     }
                     directions.push(reversed);
-                    walk(boundary, at + 1, directions, &quotient, output);
+                    walk(
+                        boundary,
+                        at + 1,
+                        directions,
+                        &quotient,
+                        edge_candidates,
+                        output,
+                    );
                     directions.pop();
                 }
             }
@@ -2540,7 +2610,14 @@ impl MeshQuotient {
                 return Vec::new();
             }
             let mut output = Vec::new();
-            walk(boundary, 0, &mut Vec::new(), quotient, &mut output);
+            walk(
+                boundary,
+                0,
+                &mut Vec::new(),
+                quotient,
+                edge_candidates,
+                &mut output,
+            );
             output
         }
 
@@ -2548,7 +2625,9 @@ impl MeshQuotient {
         for boundary in &assignment.boundaries {
             let mut next = Vec::new();
             for (directions, quotient) in options {
-                for (boundary_directions, quotient) in boundary_options(&quotient, boundary) {
+                for (boundary_directions, quotient) in
+                    boundary_options(&quotient, boundary, edge_candidates)
+                {
                     let mut directions = directions.clone();
                     directions.push(boundary_directions);
                     next.push((directions, quotient));
@@ -2738,7 +2817,9 @@ impl MeshSelectionSearch<'_> {
         };
         for assignment_index in 0..self.assignments[face].len() {
             let assignment = &self.assignments[face][assignment_index];
-            for (directions, next_quotient) in quotient.assignment_options(assignment) {
+            for (directions, next_quotient) in
+                quotient.assignment_options(assignment, self.edge_candidates)
+            {
                 self.selected[face] = Some((assignment_index, directions));
                 self.search(&next_quotient);
                 self.selected[face] = None;
@@ -2811,6 +2892,7 @@ pub fn parse_standard_mesh_endpoint_candidates(
     let mut quotient = MeshQuotient {
         union: UnionFind::new(edge_rows.len() * 2),
         domains,
+        members: (0..edge_rows.len() * 2).map(|node| vec![node]).collect(),
     };
     let port_identities =
         standard_mesh_edge_ports(bytes).or_else(|| standard_edge_port_identities(bytes))?;
@@ -2827,6 +2909,9 @@ pub fn parse_standard_mesh_endpoint_candidates(
                 node_by_identity.insert(identity, node);
             }
         }
+    }
+    if !quotient.edge_domains_viable(edge_candidates) {
+        return None;
     }
     search.search(&quotient);
     search.solution
@@ -3402,7 +3487,7 @@ mod motif_tests {
         bind_edge_port_candidates, deduplicate_mesh_quotient_assignments, motif_port_points,
         parse_trim_chain, propagate_edge_port_points, reconstruct_incidence,
         reconstruct_incidence_candidates, EdgeBoundaryLayout, EdgeRow, MeshBoundaryEdgeCandidate,
-        MeshFaceBoundaryAssignment, TrimRecord,
+        MeshFaceBoundaryAssignment, MeshQuotient, TrimRecord, UnionFind,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -3547,6 +3632,19 @@ mod motif_tests {
         assert_eq!(faces[0].len(), 2);
         assert_eq!(faces[0][0].boundaries[0][0].edge, 0);
         assert_eq!(faces[0][1].boundaries[0][0].edge, 1);
+    }
+
+    #[test]
+    fn quotient_merge_preserves_physical_edge_pair_correlation() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: [vec![0], vec![0, 1], vec![0], vec![2]]
+                .map(|domain| domain.into_iter().collect())
+                .into(),
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        let root = quotient.merge(1, 2).expect("nonempty port intersection");
+        assert!(!quotient.component_edge_domains_viable(root, &[vec![[0, 1]], vec![[0, 2]]],));
     }
 
     #[test]

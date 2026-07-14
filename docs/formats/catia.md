@@ -207,6 +207,8 @@ Assignments with the same ordered physical-edge rows and the same resolved occur
 
 Each physical port initially admits every coordinate row present in one of its edge's endpoint-pair candidates. An edge with no local endpoint predicate admits the complete coordinate-row table. Collapsing two ports intersects their coordinate domains. Reject an empty intersection immediately. A complete quotient is valid only when it has one component per coordinate row and the component domains have one bijective coordinate assignment.
 
+Port-domain intersections preserve physical-edge pair correlation. For every edge with an explicit pair domain, at least one pair must place one member in each of the edge's two current port components. The two ports remain distinct. Check this constraint after each complete boundary-cycle merge and on the complete quotient.
+
 Resolved matched edges constrain trim-cycle corner points by unordered endpoint pairs. Intersect the pair sets at shared corners, then propagate a singleton corner across its edge to the opposite endpoint. An unmatched placement whose start and end corners are bound contributes their unordered point pair to that edge's endpoint domain. A placement-derived domain is complete only when every retained placement has both corners bound; incomplete corner coverage does not narrow the edge.
 
 Endpoint constraints prune complete face assignments atomically. A placement domain intersects the edge's resolved endpoint pair and the complete placement domain on its opposite incident face. Repeat assignment removal and domain intersection to a fixpoint. An unbound placement contributes no endpoint restriction; it does not invalidate its face assignment.
