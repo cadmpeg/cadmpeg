@@ -842,6 +842,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     | "CONVERSION_BASED_UNIT"
                     | "MEASURE_WITH_UNIT"
                     | "LENGTH_MEASURE_WITH_UNIT"
+                    | "PLANE_ANGLE_MEASURE_WITH_UNIT"
                     | "UNCERTAINTY_MEASURE_WITH_UNIT"
                     | "GEOMETRIC_REPRESENTATION_CONTEXT"
                     | "GLOBAL_UNIT_ASSIGNED_CONTEXT"

@@ -2541,19 +2541,20 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let parametric_records: usize = self
+        let source_native_records: usize = self
             .ir
             .native
             .loss_counts()
             .iter()
+            .filter(|loss| loss.kind != "unknowns")
             .map(|loss| loss.count)
             .sum();
-        if parametric_records > 0 {
+        if source_native_records > 0 {
             self.loss(
                 LossCategory::Metadata,
                 Severity::Info,
                 format!(
-                    "{parametric_records} parametric design/history record(s) were not represented in STEP"
+                    "{source_native_records} source-native record(s) were not represented in STEP"
                 ),
             );
         }

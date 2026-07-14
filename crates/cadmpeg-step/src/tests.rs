@@ -238,12 +238,41 @@ fn decode_accounts_for_every_part21_byte() {
 
     assert!(count("bytes_structural") > 0);
     assert!(count("bytes_typed") > 0);
-    assert!(count("bytes_named_opaque") > 0);
+    assert_eq!(count("bytes_named_opaque"), 0);
     assert_eq!(count("bytes_unclassified"), 0);
     assert_eq!(
         count("bytes_structural") + count("bytes_typed") + count("bytes_named_opaque"),
         bytes.len()
     );
+}
+
+#[test]
+fn consumed_unit_and_pmi_wrapper_records_are_strictly_writable() {
+    for source in [
+        include_bytes!("../tests/fixtures/ap242_degree_cone.p21").as_slice(),
+        include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21").as_slice(),
+    ] {
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("decode typed STEP wrappers");
+        assert!(decoded
+            .ir
+            .native_unknowns("step")
+            .expect("STEP unknown arena")
+            .is_empty());
+        let mut bytes = Vec::new();
+        write_step(
+            &decoded.ir,
+            &mut bytes,
+            &StepWriteOptions {
+                schema: StepSchema::Ap242Edition3,
+                unsupported: StepUnsupportedPolicy::Reject,
+                ..StepWriteOptions::default()
+            },
+        )
+        .expect("strictly write typed STEP wrappers");
+        assert!(!bytes.is_empty());
+    }
 }
 
 #[test]
@@ -2104,7 +2133,7 @@ fn procedural_construction_reduction_is_reported() {
 }
 
 #[test]
-fn parametric_history_reduction_is_reported() {
+fn source_native_record_reduction_is_reported() {
     let mut ir = unit_cube();
     ir.native.namespace_mut("f3d").arenas.insert(
         "asm_histories".into(),
@@ -2119,7 +2148,7 @@ fn parametric_history_reduction_is_reported() {
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
     assert!(report.losses.iter().any(|loss| loss
         .message
-        .contains("parametric design/history record(s) were not represented in STEP")));
+        .contains("source-native record(s) were not represented in STEP")));
 }
 
 #[test]

@@ -327,9 +327,61 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             })
         })
     }));
+    mark_characteristic_representations(exchange, &annotations, &mut typed);
     PmiResult {
         typed_records: typed,
         warnings,
+    }
+}
+
+fn mark_characteristic_representations(
+    exchange: &Exchange,
+    annotations: &BTreeMap<u64, usize>,
+    typed: &mut BTreeSet<u64>,
+) {
+    for (&id, record) in &exchange.records {
+        if record.simple_name() != Some("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
+            continue;
+        }
+        let record_references = record
+            .parameters()
+            .iter()
+            .flat_map(references)
+            .collect::<Vec<_>>();
+        if !record_references
+            .iter()
+            .any(|reference| annotations.contains_key(reference))
+        {
+            continue;
+        }
+        typed.insert(id);
+        for representation_id in record_references {
+            let Some(representation) = exchange.records.get(&representation_id) else {
+                continue;
+            };
+            if representation.simple_name() != Some("SHAPE_DIMENSION_REPRESENTATION") {
+                continue;
+            }
+            typed.insert(representation_id);
+            typed.extend(
+                representation
+                    .parameters()
+                    .iter()
+                    .flat_map(references)
+                    .filter(|reference| {
+                        exchange.records.get(reference).is_some_and(|record| {
+                            matches!(
+                                record.simple_name(),
+                                Some(
+                                    "LENGTH_MEASURE_WITH_UNIT"
+                                        | "PLANE_ANGLE_MEASURE_WITH_UNIT"
+                                        | "MEASURE_WITH_UNIT"
+                                )
+                            )
+                        })
+                    }),
+            );
+        }
     }
 }
 
