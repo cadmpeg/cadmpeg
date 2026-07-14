@@ -664,7 +664,7 @@ impl<'a> Builder<'a> {
             );
         }
         let bindings = ir.model.appearance_bindings.clone();
-        let mut direct_unstyled = 0usize;
+        let mut direct_unstyled = BTreeSet::new();
         for binding in bindings {
             if self.written_appearance_bindings.contains(&binding.id) {
                 continue;
@@ -691,7 +691,16 @@ impl<'a> Builder<'a> {
                 AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
-                direct_unstyled += 1;
+                let target_id = match &binding.target {
+                    AppearanceTarget::Face(id) => id.0.clone(),
+                    AppearanceTarget::Surface(id) => id.0.clone(),
+                    AppearanceTarget::Curve(id) => id.0.clone(),
+                    AppearanceTarget::Edge(id) => id.0.clone(),
+                    AppearanceTarget::Point(id) => id.0.clone(),
+                    AppearanceTarget::Tessellation(id) => id.clone(),
+                    AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
+                };
+                direct_unstyled.insert(target_id);
                 continue;
             };
             let name = appearance.name.as_deref().unwrap_or("");
@@ -711,15 +720,19 @@ impl<'a> Builder<'a> {
         // a face override whose face was skipped, or a body whose faces were all
         // skipped (hidden bodies or faces on unknown surfaces).
         let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
-        self.unstyled_colors = face_colors
+        let mut unstyled_targets = face_colors
             .keys()
             .filter(|id| !emitted.contains(**id as &str))
-            .count()
-            + body_colors
+            .map(|id| (*id).to_string())
+            .collect::<BTreeSet<_>>();
+        unstyled_targets.extend(
+            body_colors
                 .keys()
                 .filter(|id| !styled_bodies.contains(**id as &str))
-                .count()
-            + direct_unstyled;
+                .map(|id| (*id).to_string()),
+        );
+        unstyled_targets.extend(direct_unstyled);
+        self.unstyled_colors = unstyled_targets.len();
         if styled.is_empty() {
             return;
         }
@@ -2566,27 +2579,43 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let pcurve_count = self
+        let missing_pcurve_count = self
             .ir
             .model
             .coedges
             .iter()
             .filter_map(|coedge| coedge.pcurve.as_ref())
-            .filter(|id| {
-                self.pcurves.get(id.as_str()).is_none_or(|pcurve| {
-                    pcurve.wrapper_reversed.is_some()
-                        || pcurve.native_tail_flags.is_some()
-                        || pcurve.parameter_range.is_some()
-                        || pcurve.fit_tolerance.is_some()
-                })
-            })
+            .filter(|id| self.pcurves.get(id.as_str()).is_none())
             .count();
-        if pcurve_count > 0 {
+        if missing_pcurve_count > 0 {
             self.loss(
                 LossCategory::Geometry,
+                Severity::Warning,
+                format!(
+                    "{missing_pcurve_count} coedge pcurve reference(s) have no geometry and were not written"
+                ),
+            );
+        }
+        let reduced_pcurve_count = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter_map(|coedge| coedge.pcurve.as_ref())
+            .filter_map(|id| self.pcurves.get(id.as_str()))
+            .filter(|pcurve| {
+                pcurve.wrapper_reversed.is_some()
+                    || pcurve.native_tail_flags.is_some()
+                    || pcurve.parameter_range.is_some()
+                    || pcurve.fit_tolerance.is_some()
+            })
+            .count();
+        if reduced_pcurve_count > 0 {
+            self.loss(
+                LossCategory::Metadata,
                 Severity::Info,
                 format!(
-                    "{pcurve_count} coedge pcurve(s) use unsupported geometry or native-only metadata and were not written"
+                    "{reduced_pcurve_count} emitted coedge pcurve(s) carry native-only metadata not represented in STEP"
                 ),
             );
         }

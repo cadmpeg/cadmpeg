@@ -46,7 +46,7 @@ struct StepOutputArgs {
     /// STEP application protocol and edition for STEP output.
     #[arg(long, value_enum, default_value_t)]
     step_target: StepTarget,
-    /// Reject STEP output before writing when any semantic loss would occur.
+    /// Reject STEP output before writing when any STEP loss note would be reported.
     #[arg(long)]
     reject_step_losses: bool,
 }

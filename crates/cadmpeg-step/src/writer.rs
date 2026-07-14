@@ -122,7 +122,7 @@ pub fn real(v: f64) -> String {
 /// Encode a Rust string as a Part 21 single-quoted string literal.
 ///
 /// Apostrophes are doubled. Non-ASCII and control characters use
-/// `\X2\..\X0\` UTF-16 hexadecimal notation, keeping the encoded file 7-bit.
+/// `\X2\..\X0\` or `\X4\..\X0\` hexadecimal notation, keeping the encoded file 7-bit.
 pub fn string(s: &str) -> String {
     format!("'{}'", crate::strings::encode(s))
 }

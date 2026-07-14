@@ -243,9 +243,34 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
     let mut signed_volume = 0.0;
     let mut volume_centroid = [0.0; 3];
     let mut triangles = 0usize;
+    let mut watertight = true;
+    let mut coordinate_scale = 0.0_f64;
     for mesh in meshes {
+        let mut edge_uses = BTreeMap::<(u32, u32), usize>::new();
         for triangle in &mesh.triangles {
-            let [a, b, c] = triangle.map(|index| mesh.vertices[index as usize]);
+            let [a, b, c] = triangle.map(|index| mesh.vertices.get(index as usize).copied());
+            let (Some(a), Some(b), Some(c)) = (a, b, c) else {
+                return None;
+            };
+            for [first, second] in [
+                [triangle[0], triangle[1]],
+                [triangle[1], triangle[2]],
+                [triangle[2], triangle[0]],
+            ] {
+                *edge_uses
+                    .entry((first.min(second), first.max(second)))
+                    .or_default() += 1;
+            }
+            coordinate_scale = coordinate_scale
+                .max(a.x.abs())
+                .max(a.y.abs())
+                .max(a.z.abs())
+                .max(b.x.abs())
+                .max(b.y.abs())
+                .max(b.z.abs())
+                .max(c.x.abs())
+                .max(c.y.abs())
+                .max(c.z.abs());
             let ab = [b.x - a.x, b.y - a.y, b.z - a.z];
             let ac = [c.x - a.x, c.y - a.y, c.z - a.z];
             let cross = [
@@ -270,11 +295,14 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
             }
             triangles += 1;
         }
+        watertight &= !edge_uses.is_empty() && edge_uses.values().all(|uses| *uses == 2);
     }
     if triangles == 0 || area == 0.0 {
         return None;
     }
-    let centroid = if signed_volume.abs() > f64::EPSILON {
+    let volume_epsilon =
+        f64::EPSILON * coordinate_scale.max(1.0).powi(3) * (triangles as f64).max(1.0);
+    let centroid = if watertight && signed_volume.abs() > volume_epsilon {
         Point3::new(
             volume_centroid[0] / signed_volume,
             volume_centroid[1] / signed_volume,
