@@ -2419,23 +2419,17 @@ fn transfer_resolved_extrusion_breps(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for transform in &scan.feature_section_transforms {
+    for (transform_index, transform) in scan.feature_section_transforms.iter().enumerate() {
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
         if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Extrude) {
             continue;
         }
-        let Some(operation_index) = scan
-            .feature_operations
+        if scan.feature_section_transforms[..transform_index]
             .iter()
-            .position(|operation| operation.feature_id == feature_id)
-        else {
-            continue;
-        };
-        if scan.feature_operations[..operation_index]
-            .iter()
-            .any(|operation| operation.recipe.is_some())
+            .filter_map(|preceding| preceding.feature_id)
+            .any(|preceding| feature_recipe(scan, preceding).is_some())
         {
             continue;
         }
@@ -4799,16 +4793,21 @@ fn extrusion_span(
             offsets.push(offset);
         }
     }
-    match offsets.as_slice() {
-        [offset] if offset.abs() > 1e-12 => Some(ExtrusionSpan {
-            lower: offset.min(0.0),
-            upper: offset.max(0.0),
-        }),
-        [first, second] if first * second < 0.0 => Some(ExtrusionSpan {
-            lower: first.min(*second),
-            upper: first.max(*second),
-        }),
-        _ => None,
+    let lower = offsets
+        .iter()
+        .copied()
+        .filter(|offset| *offset < 0.0)
+        .min_by(f64::total_cmp);
+    let upper = offsets
+        .iter()
+        .copied()
+        .filter(|offset| *offset > 0.0)
+        .max_by(f64::total_cmp);
+    match (lower, upper) {
+        (Some(lower), Some(upper)) => Some(ExtrusionSpan { lower, upper }),
+        (Some(lower), None) => Some(ExtrusionSpan { lower, upper: 0.0 }),
+        (None, Some(upper)) => Some(ExtrusionSpan { lower: 0.0, upper }),
+        (None, None) => None,
     }
 }
 
@@ -5205,6 +5204,27 @@ mod resolved_sketch_tests {
                     length: Length(48.0),
                 },
                 [0.0, 1.0, 0.0],
+            ))
+        );
+    }
+
+    #[test]
+    fn interior_axis_normal_planes_do_not_shorten_blind_extent() {
+        assert_eq!(
+            extrusion_extent_and_direction(
+                [0.0; 3],
+                [0.0, -1.0, 0.0],
+                [
+                    ([0.0, 38.0, 0.0], [0.0, 1.0, 0.0]),
+                    ([3.0, 2.5, 7.0], [0.0, -1.0, 0.0]),
+                    ([-4.0, 5.75, 1.0], [0.0, 1.0, 0.0]),
+                ],
+            ),
+            Some((
+                Extent::Blind {
+                    length: Length(38.0),
+                },
+                [-0.0, 1.0, -0.0],
             ))
         );
     }
