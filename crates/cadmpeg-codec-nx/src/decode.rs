@@ -570,7 +570,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                         ) {
                             for side in 0..2 {
                                 if support_uv[side].is_none() {
-                                    support_uv[side] = Some(ext_support_uv[side].clone());
+                                    support_uv[side].clone_from(&ext_support_uv[side]);
                                 }
                             }
                         }
@@ -1480,7 +1480,7 @@ pub(crate) fn assign_ext11_support_uv(
     points: &[Point3],
     fit_tolerance: f64,
     lanes: &[Option<Vec<[f64; 2]>>; 2],
-) -> Option<[Vec<[f64; 2]>; 2]> {
+) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
     let surface_ids = supports.map(|support| surfaces_by_xmt.get(&support).cloned());
     let [Some(first_surface), Some(second_surface)] = surface_ids else {
         return None;
@@ -1500,7 +1500,7 @@ fn assign_ext11_support_uv_to_surfaces(
     points: &[Point3],
     fit_tolerance: f64,
     lanes: &[Option<Vec<[f64; 2]>>; 2],
-) -> Option<[Vec<[f64; 2]>; 2]> {
+) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
         let Some(values) = lanes[lane]
             .as_deref()
@@ -1523,13 +1523,32 @@ fn assign_ext11_support_uv_to_surfaces(
                 .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
         })
     };
-    let direct = lane_matches_surface(surfaces[0], 0) && lane_matches_surface(surfaces[1], 1);
-    let swapped = lane_matches_surface(surfaces[0], 1) && lane_matches_surface(surfaces[1], 0);
-    match (direct, swapped) {
-        (true, false) => Some([lanes[0].clone()?, lanes[1].clone()?]),
-        (false, true) => Some([lanes[1].clone()?, lanes[0].clone()?]),
-        _ => None,
+    let matches = [
+        [
+            lane_matches_surface(surfaces[0], 0),
+            lane_matches_surface(surfaces[0], 1),
+        ],
+        [
+            lane_matches_surface(surfaces[1], 0),
+            lane_matches_surface(surfaces[1], 1),
+        ],
+    ];
+    let mut assigned = [None, None];
+    for lane in 0..2 {
+        let support_matches = [matches[0][lane], matches[1][lane]];
+        let Some(support) = support_matches
+            .iter()
+            .position(|matches| *matches)
+            .filter(|_| support_matches.iter().filter(|matches| **matches).count() == 1)
+        else {
+            continue;
+        };
+        if assigned[support].is_some() {
+            return None;
+        }
+        assigned[support].clone_from(&lanes[lane]);
     }
+    assigned.iter().any(Option::is_some).then_some(assigned)
 }
 
 pub(crate) type PendingExt11SupportUv = (
@@ -1585,10 +1604,11 @@ pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11S
                 .iter()
                 .find(|surface| surface.id == surfaces[side])
                 .map(|surface| &surface.geometry)?;
+            let values = assigned[side].as_ref()?;
             Some(PcurveGeometry::Nurbs {
                 degree: 1,
                 knots: linear_knots(parameters),
-                control_points: assigned[side]
+                control_points: values
                     .iter()
                     .map(|uv| surface_parameters(surface_geometry, *uv))
                     .collect(),

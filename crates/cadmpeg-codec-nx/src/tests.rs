@@ -4774,6 +4774,22 @@ fn two_support_ext11_charted_intersection_curve_stream(ambiguous: bool) -> Vec<u
     stream
 }
 
+fn partial_ext11_charted_intersection_curve_stream() -> Vec<u8> {
+    let mut stream = two_support_ext11_charted_intersection_curve_stream(false);
+    let chart = stream
+        .windows(8)
+        .position(|window| window == [0, 40, 0, 0, 0, 2, 0, 20])
+        .expect("chart record");
+    for index in 0..2 {
+        put_f64(
+            &mut stream,
+            chart + 60 + index * 88 + 32,
+            -31_415_800_000_000.0,
+        );
+    }
+    stream
+}
+
 fn two_support_charted_intersection_curve_stream() -> Vec<u8> {
     let mut stream = charted_intersection_curve_topology_partition_stream();
     let intersection = stream
@@ -7662,6 +7678,22 @@ fn decode_rejects_ambiguous_ext11_uv_lane_assignment() {
         panic!("typed intersection");
     };
     assert!(context.sides.iter().all(|side| side.pcurve.is_none()));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_assigns_one_non_sentinel_ext11_uv_lane() {
+    let stream = partial_ext11_charted_intersection_curve_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    assert!(context.sides[0].pcurve.is_some());
+    assert!(context.sides[1].pcurve.is_none());
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
