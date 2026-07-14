@@ -6844,6 +6844,23 @@ fn schema_feature_definition(
             spec: ChamferSpec::Unresolved { form: None },
         };
     }
+    if schema_class == 917 {
+        let definitions = scan
+            .feature_definitions
+            .iter()
+            .filter(|definition| definition.owner_feature_id == Some(feature_id))
+            .collect::<Vec<_>>();
+        if let ([definition], Some(sweep)) = (
+            definitions.as_slice(),
+            circular_sweep_geometry(scan, feature_id),
+        ) {
+            return circular_sweep_feature_definition(
+                definition.id,
+                &sweep,
+                section_sweep_boolean_operation(kind, false, preceding_features_establish_body(ir)),
+            );
+        }
+    }
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
         let transforms = scan
             .feature_section_transforms
@@ -7288,6 +7305,83 @@ fn circular_sweep_cylinder_from_cap_outlines(
         axis: Vector3::new(axis[0], axis[1], axis[2]),
         ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
         radius,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct CircularSweepGeometry {
+    cylinder_ids: [u32; 2],
+    direction: [f64; 3],
+    extent: Extent,
+    geometry: SurfaceGeometry,
+}
+
+fn circular_sweep_feature_definition(
+    definition_id: u32,
+    sweep: &CircularSweepGeometry,
+    op: BooleanOp,
+) -> IrFeatureDefinition {
+    IrFeatureDefinition::Extrude {
+        profile: ProfileRef::Native(format!("creo:featdefs:sketch#{definition_id}")),
+        direction: Some(Vector3::new(
+            sweep.direction[0],
+            sweep.direction[1],
+            sweep.direction[2],
+        )),
+        extent: sweep.extent.clone(),
+        op,
+        draft: None,
+    }
+}
+
+fn circular_sweep_geometry(scan: &ContainerScan, feature_id: u32) -> Option<CircularSweepGeometry> {
+    let tables = scan
+        .feature_entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    let [first_plane, second_plane, first_cylinder, second_cylinder] = table.entry_ids.as_slice()
+    else {
+        return None;
+    };
+    let placed_planes = feature_outline_planes(scan, feature_id);
+    let [first, second] = placed_planes.as_slice() else {
+        return None;
+    };
+    if first.0 != *first_plane || second.0 != *second_plane {
+        return None;
+    }
+    let cap = |plane: &(u32, [f64; 3], [f64; 3])| {
+        let envelopes = scan
+            .plane_envelopes
+            .iter()
+            .filter(|envelope| envelope.surface_id == plane.0)
+            .collect::<Vec<_>>();
+        let corners = match envelopes.as_slice() {
+            [envelope] => plane_envelope_corners(&envelope.envelope),
+            _ => None,
+        };
+        (plane.0, plane.1, plane.2, corners)
+    };
+    let cylinder_ids = [*first_cylinder, *second_cylinder];
+    if cylinder_ids.iter().any(|id| {
+        !scan.surface_rows.iter().any(|row| {
+            row.id == *id
+                && row.feature_id == feature_id
+                && row.kind == crate::surface::SurfaceKind::Cylinder
+        })
+    }) {
+        return None;
+    }
+    let (_, direction, extent) = hole_placement([*first, *second])?;
+    Some(CircularSweepGeometry {
+        cylinder_ids,
+        direction,
+        extent,
+        geometry: circular_sweep_cylinder_from_cap_outlines([cap(first), cap(second)])?,
     })
 }
 
@@ -7933,6 +8027,36 @@ mod resolved_sketch_tests {
         assert_eq!(
             section_sweep_boolean_operation("Körper", false, true),
             BooleanOp::Unresolved
+        );
+    }
+
+    #[test]
+    fn circular_sweep_projects_profile_direction_and_extent() {
+        let sweep = CircularSweepGeometry {
+            cylinder_ids: [12, 13],
+            direction: [0.0, 0.0, -1.0],
+            extent: Extent::Blind {
+                length: Length(6.5),
+            },
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(2.0, 3.0, 4.0),
+                axis: Vector3::new(0.0, 0.0, -1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.5,
+            },
+        };
+
+        assert_eq!(
+            circular_sweep_feature_definition(917, &sweep, BooleanOp::Join),
+            IrFeatureDefinition::Extrude {
+                profile: ProfileRef::Native("creo:featdefs:sketch#917".to_string()),
+                direction: Some(Vector3::new(0.0, 0.0, -1.0)),
+                extent: Extent::Blind {
+                    length: Length(6.5),
+                },
+                op: BooleanOp::Join,
+                draft: None,
+            }
         );
     }
 
@@ -13200,53 +13324,10 @@ fn transfer_circular_sweep_cylinders(
         .collect::<BTreeSet<_>>();
     let mut transferred = 0;
     for feature_id in sweep_feature_ids {
-        let tables = scan
-            .feature_entity_tables
-            .iter()
-            .filter(|table| table.feature_id == Some(feature_id))
-            .collect::<Vec<_>>();
-        let [table] = tables.as_slice() else {
+        let Some(sweep) = circular_sweep_geometry(scan, feature_id) else {
             continue;
         };
-        let [first_plane, second_plane, first_cylinder, second_cylinder] =
-            table.entry_ids.as_slice()
-        else {
-            continue;
-        };
-        let placed_planes = feature_outline_planes(scan, feature_id);
-        let [first, second] = placed_planes.as_slice() else {
-            continue;
-        };
-        if first.0 != *first_plane || second.0 != *second_plane {
-            continue;
-        }
-        let cap = |plane: &(u32, [f64; 3], [f64; 3])| {
-            let envelopes = scan
-                .plane_envelopes
-                .iter()
-                .filter(|envelope| envelope.surface_id == plane.0)
-                .collect::<Vec<_>>();
-            let corners = match envelopes.as_slice() {
-                [envelope] => plane_envelope_corners(&envelope.envelope),
-                _ => None,
-            };
-            (plane.0, plane.1, plane.2, corners)
-        };
-        let cylinder_ids = [*first_cylinder, *second_cylinder];
-        if cylinder_ids.iter().any(|id| {
-            !scan.surface_rows.iter().any(|row| {
-                row.id == *id
-                    && row.feature_id == feature_id
-                    && row.kind == crate::surface::SurfaceKind::Cylinder
-            })
-        }) {
-            continue;
-        }
-        let Some(geometry) = circular_sweep_cylinder_from_cap_outlines([cap(first), cap(second)])
-        else {
-            continue;
-        };
-        for cylinder_id in cylinder_ids {
+        for cylinder_id in sweep.cylinder_ids {
             let row = scan
                 .surface_rows
                 .iter()
@@ -13266,7 +13347,7 @@ fn transfer_circular_sweep_cylinders(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: geometry.clone(),
+                geometry: sweep.geometry.clone(),
                 source_object: Some(SourceObjectAssociation {
                     format: "creo".to_string(),
                     object_id: format!("VisibGeom:{cylinder_id}"),

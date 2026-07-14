@@ -670,6 +670,10 @@ midpoint lies on the cylinder axis and half either span is the radius. When both
 cap outlines are complete, their radial midpoints and radii agree. One complete
 cap outline is sufficient because the second placed cap plane fixes the sweep
 direction and axial span independently. Both cylinder uses share this carrier.
+The owning feature definition is the native circular profile. The ordered cap
+planes define the neutral extrusion direction and blind extent. A
+`Protrusion` has join semantics when an earlier modeling feature establishes a
+body; otherwise its Boolean operation remains unresolved.
 
 A typed schema row that owns a materialized `srf_array` row is an active construction feature. The root schema class supplies its operation family independently of an `MdlStatus` operation name.
 
