@@ -9,7 +9,7 @@ use crate::object_graph::{self, AliasLead, HeadToken, ObjectPayload, PayloadSubt
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 3;
+pub const CATIA_NATIVE_VERSION: u32 = 4;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -41,6 +41,12 @@ pub struct CatiaAliasRow {
     pub f1: [u8; 3],
     /// One-based object-graph record ordinal carried by F1.
     pub entity_record_ordinal: u8,
+    /// Primary object graph selected by the valid F1 ordinal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_graph: Option<String>,
+    /// One-based F1 ordinal resolved to its exact `7C09` record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_record: Option<String>,
     /// First trailing fixed-width field.
     pub f2: u32,
     /// Second trailing fixed-width field.
@@ -181,14 +187,34 @@ impl CatiaNative {
             .into_iter()
             .map(CatiaCatalog::from)
             .collect();
-        let alias_rows = object_graph::surface_aliases(bytes)
+        let mut alias_rows = object_graph::surface_aliases(bytes)
             .into_iter()
             .map(CatiaAliasRow::from)
-            .collect();
-        let object_graphs = object_graph::parse_all(bytes)
+            .collect::<Vec<_>>();
+        let object_graphs: Vec<CatiaObjectGraph> = object_graph::parse_all(bytes)
             .into_iter()
             .map(CatiaObjectGraph::from)
             .collect();
+        let maximum_records = object_graphs
+            .iter()
+            .map(|graph| graph.records.len())
+            .max()
+            .unwrap_or(0);
+        let mut primary_graphs = object_graphs
+            .iter()
+            .filter(|graph| graph.records.len() == maximum_records);
+        if let (Some(graph), None) = (primary_graphs.next(), primary_graphs.next()) {
+            for row in &mut alias_rows {
+                let Some(index) = usize::from(row.entity_record_ordinal).checked_sub(1) else {
+                    continue;
+                };
+                let Some(record) = graph.records.get(index) else {
+                    continue;
+                };
+                row.object_graph = Some(graph.id.clone());
+                row.object_record = Some(record.id.clone());
+            }
+        }
         let value_blocks = value_block::parse(bytes)
             .into_iter()
             .map(CatiaValueBlock::from)
@@ -308,6 +334,8 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
             flag: row.flag,
             f1: row.f1,
             entity_record_ordinal: row.entity_record_ordinal,
+            object_graph: None,
+            object_record: None,
             f2: row.f2,
             f3: row.f3,
         }

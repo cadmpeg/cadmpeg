@@ -3371,6 +3371,28 @@ fn native_namespace_retains_surface_alias_core() {
 }
 
 #[test]
+fn native_alias_f1_resolves_primary_object_record() {
+    let graph = object_graph_stream();
+    let mut alias = surface_alias_stream();
+    alias[13..16].copy_from_slice(&[3, 0, 2]);
+    let mut bytes = graph;
+    bytes.extend(alias);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [row] = native.alias_rows.as_slice() else {
+        panic!("one alias row")
+    };
+    assert_eq!(
+        row.object_graph.as_deref(),
+        Some("catia:outer:object-graph#0000000000")
+    );
+    assert_eq!(
+        row.object_record.as_deref(),
+        Some("catia:outer:object-record#0000000028")
+    );
+}
+
+#[test]
 fn unresolved_7cd9_scanner_preserves_bounded_context_and_spacing() {
     let markers = crate::object_graph::markers_7cd9(&marker_7cd9_stream(), 5);
     assert_eq!(markers.len(), 2);

@@ -385,6 +385,14 @@ value_block := 7C 0B <declared_len:u32le> <payload[declared_len-6]> FE 7C 02 ...
 
 `declared_len` measures from the `7C0B` marker through the byte before the terminator. The complete block occupies `declared_len + 1` bytes. The trailing `FE` is followed immediately by the associated `7C02` source-schema catalog.
 
+### 7.4 Outer alias rows
+
+```text
+alias_row := <lead:u32le> 01 00 04 00 <tag:u32le> <flag:u8> <f1:3B> <f2:u32le> <f3:u32le>
+```
+
+The low 24 bits of `tag` are the persistent roster tag; the high byte remains part of the stored word. `f1[2]` is a one-based `7C09` ordinal in the unique object graph with the greatest record population. Ordinal zero and values beyond that graph's record population carry no object-record link. The complete lead, flag, F1, F2, and F3 fields remain attached to the alias row.
+
 ---
 
 ## 8. Zero-entity `a9 03` variant
