@@ -6182,6 +6182,87 @@ fn profile_loci_by_marker(
         .flat_map(|lane| &lane.sketch_entities)
         .map(|marker| (marker.id.as_str(), marker))
         .collect::<HashMap<_, _>>();
+    for marker in markers_by_id.values().copied() {
+        if marker.kind != SketchInputKind::LineOrCircle || result.contains_key(&marker.id) {
+            continue;
+        }
+        let endpoints = line_endpoint_markers(marker, &markers_by_id);
+        let (Some(feature), [first, second]) =
+            (marker.feature_ref.as_deref(), endpoints.as_slice())
+        else {
+            continue;
+        };
+        let (Some(sketch_id), Some(first), Some(second)) = (
+            sketches_by_feature.get(feature),
+            first.coordinates_m,
+            second.coordinates_m,
+        ) else {
+            continue;
+        };
+        let sketch = sketches.iter().find(|sketch| sketch.id == **sketch_id);
+        let first_native = quantize(
+            Point2::new(first[0] * NATIVE_TO_IR, first[1] * NATIVE_TO_IR),
+            QUANTUM,
+        );
+        let second_native = quantize(
+            Point2::new(second[0] * NATIVE_TO_IR, second[1] * NATIVE_TO_IR),
+            QUANTUM,
+        );
+        let endpoint_pairs = sketch
+            .and_then(|sketch| {
+                principal_plane_marker_point(sketch, first, QUANTUM)
+                    .zip(principal_plane_marker_point(sketch, second, QUANTUM))
+            })
+            .into_iter()
+            .chain(
+                transforms
+                    .get(feature)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|transform| {
+                        Some((
+                            transform.apply(first_native)?,
+                            transform.apply(second_native)?,
+                        ))
+                    }),
+            )
+            .collect::<HashSet<_>>();
+        if endpoint_pairs.is_empty() {
+            continue;
+        }
+        let mut matches = HashSet::new();
+        let mut complete = true;
+        for (start, end) in endpoint_pairs {
+            let candidates = sketch_entities
+                .iter()
+                .filter(|entity| entity.sketch == **sketch_id)
+                .filter_map(|entity| {
+                    let SketchGeometry::Line {
+                        start: candidate_start,
+                        end: candidate_end,
+                    } = entity.geometry
+                    else {
+                        return None;
+                    };
+                    let candidate_start = quantize(candidate_start, QUANTUM);
+                    let candidate_end = quantize(candidate_end, QUANTUM);
+                    ((candidate_start == start && candidate_end == end)
+                        || (candidate_start == end && candidate_end == start))
+                        .then_some(entity.id.clone())
+                })
+                .collect::<Vec<_>>();
+            let [entity] = candidates.as_slice() else {
+                complete = false;
+                break;
+            };
+            matches.insert(entity.clone());
+        }
+        if complete {
+            if let [entity] = matches.into_iter().collect::<Vec<_>>().as_slice() {
+                result.insert(marker.id.clone(), vec![SketchLocus::Entity(entity.clone())]);
+            }
+        }
+    }
     let entities_by_id = sketch_entities
         .iter()
         .map(|entity| (&entity.id, entity))
@@ -7178,6 +7259,83 @@ mod profile_join_tests {
         assert_eq!(
             line_endpoint_markers(&line, &markers),
             vec![&first, &second]
+        );
+    }
+
+    #[test]
+    fn endpoint_incidence_binds_an_existing_profile_line() {
+        let sketch_id = SketchId("sketch".into());
+        let line_id = SketchEntityId("profile-line".into());
+        let sketch = Sketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: Vec::new(),
+            native_ref: None,
+        };
+        let feature = Feature {
+            id: FeatureId("feature".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: Some(sketch_id.clone()),
+            },
+            native_ref: Some("feature-native".into()),
+        };
+        let entity = SketchEntity {
+            id: line_id.clone(),
+            sketch: sketch_id,
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            },
+        };
+        let mut line = marker("line", Some([0.0005, 0.0]));
+        line.kind = SketchInputKind::LineOrCircle;
+        let mut first = marker("first", Some([0.0, 0.0]));
+        first.offset = 1;
+        first.links = vec![SketchInputLink {
+            local_id: 4,
+            entity_ref: line.id.clone(),
+        }];
+        let mut second = marker("second", Some([0.001, 0.0]));
+        second.offset = 2;
+        second.links = first.links.clone();
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![line, first, second],
+        };
+
+        assert_eq!(
+            profile_loci_by_marker(&[feature], &[sketch], &[entity], &[lane])["line"],
+            vec![SketchLocus::Entity(line_id)]
         );
     }
 
