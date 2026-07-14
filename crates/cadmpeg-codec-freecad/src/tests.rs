@@ -483,6 +483,12 @@ fn transfers_connected_text_brep_topology() {
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
 </Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Shape" expanded="1"><Properties Count="3">
+<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3368601600"/></Property>
+<Property name="Transparency" type="App::PropertyPercent"><Integer value="25"/></Property>
+<Property name="Visibility" type="App::PropertyBool"><Bool value="false"/></Property>
+</Properties></ViewProvider></ViewProviderData></Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
 Locations 0
 Curve2ds 2
@@ -507,7 +513,11 @@ Sh 1001000 +4 0 *
 So 1001000 +3 0 *
 Co 1001000 +2 0 *
 +1 0 *";
-    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("GuiDocument.xml", gui),
+        ("Shape.brp", brep),
+    ]);
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("connected topology");
@@ -518,6 +528,12 @@ Co 1001000 +2 0 *
     assert_eq!(result.ir.model.edges.len(), 2);
     assert_eq!(result.ir.model.vertices.len(), 2);
     assert_eq!(result.ir.model.pcurves.len(), 2);
+    assert_eq!(result.ir.model.appearances.len(), 1);
+    assert_eq!(result.ir.model.appearance_bindings.len(), 1);
+    assert_eq!(result.ir.model.bodies[0].visible, Some(false));
+    let color = result.ir.model.bodies[0].color.expect("shape color");
+    assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
+    assert!((color.a - 0.75).abs() < 1e-6);
     assert!(result
         .ir
         .model

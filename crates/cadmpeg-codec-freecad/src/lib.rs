@@ -5,6 +5,7 @@ mod brep;
 mod container;
 mod design;
 mod element_map;
+mod gui;
 mod native;
 mod persistence;
 mod topology_transfer;
@@ -526,6 +527,15 @@ impl Codec for FcstdCodec {
             ));
             topology_transfer::transfer(&mut ir, &shape_payloads)?;
             design::transfer(&mut ir, &graph.objects, &graph.properties, &shape_payloads)?;
+            if let Some(gui_bytes) = scan.data.get("GuiDocument.xml") {
+                gui::transfer(
+                    &mut ir,
+                    gui_bytes,
+                    &graph.objects,
+                    &graph.properties,
+                    &shape_payloads,
+                )?;
+            }
             let payload_ids = shape_payloads
                 .iter()
                 .map(|payload| (payload.property.as_str(), payload.id.as_str()))

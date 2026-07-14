@@ -157,6 +157,12 @@ GUI records retain view-provider identity separately from application-object ide
 display modes, materials, colors, line and point styles, cameras, view state, tree state, clipping,
 thumbnail references, and display assets remain presentation records linked to their owners.
 
+For shape-bearing objects, the view provider's shape color, transparency, visibility, and material
+scalars produce an object appearance and explicit body bindings. Packed colors decode as red,
+green, blue, and reserved low byte; the independent transparency percentage determines opacity.
+The effective body display fields mirror this object-level assignment. Per-face diffuse-color lists
+remain a higher-precedence presentation layer and are not inferred from the object color.
+
 Application data without a neutral representation retains its owning object and property,
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,
 lengths, and digests.
