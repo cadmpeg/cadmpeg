@@ -296,6 +296,13 @@ pub enum SketchConstraintDefinition {
         /// Second entity.
         second: SketchEntityId,
     },
+    /// Two entities have equal tangent direction and curvature at contact.
+    Curvature {
+        /// First entity.
+        first: SketchEntityId,
+        /// Second entity.
+        second: SketchEntityId,
+    },
     /// Two entities have equal size.
     Equal {
         /// First entity.

@@ -357,6 +357,10 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             first: entity.clone(),
             second: entity.clone(),
         },
+        SketchConstraintDefinition::Curvature {
+            first: entity.clone(),
+            second: entity.clone(),
+        },
         SketchConstraintDefinition::Collinear {
             first: entity.clone(),
             second: entity.clone(),

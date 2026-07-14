@@ -2805,6 +2805,10 @@ fn exact_atomic_constraint(
             first: entities[0].id.clone(),
             second: entities[1].id.clone(),
         }),
+        SketchConstraintKind::Curvature if entities.len() == 2 => Some(Definition::Curvature {
+            first: entities[0].id.clone(),
+            second: entities[1].id.clone(),
+        }),
         SketchConstraintKind::Equal if entities.len() == 2 => Some(Definition::Equal {
             first: entities[0].id.clone(),
             second: entities[1].id.clone(),
@@ -10038,6 +10042,11 @@ mod relation_tests {
         midpoint.id = "f3d:native:relation#703".into();
         midpoint.state = 0x10;
         midpoint.constraint_kinds = vec![SketchConstraintKind::Parallel];
+        let mut curvature = curve_point_coincidence.clone();
+        curvature.record_index = 704;
+        curvature.id = "f3d:native:relation#704".into();
+        curvature.state = 0x200;
+        curvature.constraint_kinds = vec![SketchConstraintKind::Curvature];
         let constraints = project_sketch_constraints(
             &placements,
             &points,
@@ -10062,6 +10071,7 @@ mod relation_tests {
                 ),
                 curve_point_coincidence,
                 midpoint,
+                curvature,
             ],
             &entities,
         );
@@ -10085,6 +10095,10 @@ mod relation_tests {
         assert!(matches!(
             constraints[3].definition,
             SketchConstraintDefinition::Midpoint { .. }
+        ));
+        assert!(matches!(
+            constraints[4].definition,
+            SketchConstraintDefinition::Curvature { .. }
         ));
     }
 

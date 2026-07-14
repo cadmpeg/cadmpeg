@@ -1131,6 +1131,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             Definition::Parallel { first, second }
             | Definition::Perpendicular { first, second }
             | Definition::Tangent { first, second }
+            | Definition::Curvature { first, second }
             | Definition::Equal { first, second }
             | Definition::Concentric { first, second }
             | Definition::Collinear { first, second } => {
