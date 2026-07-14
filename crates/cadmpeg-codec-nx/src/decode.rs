@@ -1600,6 +1600,37 @@ pub(crate) type PendingExt11SupportUv = (
     [Option<Vec<[f64; 2]>>; 2],
 );
 
+fn missing_support_parameter(value: f64) -> bool {
+    value.to_bits() == MISSING_TOLERANCE.to_bits()
+}
+
+fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> bool {
+    match pcurve {
+        None => true,
+        Some(PcurveGeometry::Nurbs { control_points, .. }) => control_points.iter().any(|point| {
+            !point.u.is_finite()
+                || !point.v.is_finite()
+                || missing_support_parameter(point.u)
+                || missing_support_parameter(point.v)
+        }),
+        Some(PcurveGeometry::Line { origin, direction }) => [origin, direction]
+            .into_iter()
+            .any(|point| !point.u.is_finite() || !point.v.is_finite()),
+    }
+}
+
+fn pcurve_control_point_seed(pcurve: Option<&PcurveGeometry>, index: usize) -> Option<Point2> {
+    let PcurveGeometry::Nurbs { control_points, .. } = pcurve? else {
+        return None;
+    };
+    control_points.get(index).copied().filter(|point| {
+        point.u.is_finite()
+            && point.v.is_finite()
+            && !missing_support_parameter(point.u)
+            && !missing_support_parameter(point.v)
+    })
+}
+
 pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
     for (procedural_id, points, parameters, fit_tolerance, lanes) in pending {
         let Some(procedural_index) = ir
@@ -1618,7 +1649,10 @@ pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11S
                 };
                 (
                     [first.clone(), second.clone()],
-                    context.sides.each_ref().map(|side| side.pcurve.is_none()),
+                    context
+                        .sides
+                        .each_ref()
+                        .map(|side| pcurve_requires_completion(side.pcurve.as_ref())),
                 )
             }
             _ => continue,
@@ -1646,6 +1680,13 @@ pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11S
                 .find(|surface| surface.id == surfaces[side])
                 .map(|surface| &surface.geometry)?;
             let values = assigned[side].as_ref()?;
+            if values
+                .iter()
+                .flatten()
+                .any(|value| !value.is_finite() || missing_support_parameter(*value))
+            {
+                return None;
+            }
             Some(PcurveGeometry::Nurbs {
                 degree: 1,
                 knots: linear_knots(parameters),
@@ -1685,7 +1726,7 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
             continue;
         };
         for side in 0..2 {
-            if context.sides[side].pcurve.is_some() {
+            if !pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
                 continue;
             }
             let Some(surface_id) = &context.sides[side].surface else {
@@ -1700,22 +1741,22 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
                 continue;
             };
             let mut uv = Vec::with_capacity(points.len());
-            for point in points {
+            for (point_index, point) in points.iter().enumerate() {
+                let seed =
+                    pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index)
+                        .or_else(|| uv.last().copied());
                 let parameters = match &surface.geometry {
-                    SurfaceGeometry::Nurbs(nurbs) => {
-                        nurbs_parameters(nurbs, *point, uv.last().copied())
-                    }
+                    SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, *point, seed),
                     SurfaceGeometry::Procedural { .. } => {
-                        offset_surface_parameters(ir, surface_id, *point, uv.last().copied())
-                            .or_else(|| {
-                                blend_surface_parameters_for_fit(
-                                    ir,
-                                    surface_id,
-                                    *point,
-                                    uv.last().copied(),
-                                    *fit_tolerance,
-                                )
-                            })
+                        offset_surface_parameters(ir, surface_id, *point, seed).or_else(|| {
+                            blend_surface_parameters_for_fit(
+                                ir,
+                                surface_id,
+                                *point,
+                                seed,
+                                *fit_tolerance,
+                            )
+                        })
                     }
                     geometry => analytic_surface_parameters(geometry, *point),
                 };
@@ -1772,7 +1813,7 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
         else {
             continue;
         };
-        if context.sides[side].pcurve.is_none() {
+        if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
             context.sides[side].pcurve = Some(pcurve);
         }
     }

@@ -8489,6 +8489,54 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
 }
 
 #[test]
+fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
+    let stream = two_support_ext11_charted_intersection_curve_stream(false);
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let procedural_id = result.ir.model.procedural_curves[0].id.clone();
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &mut result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[0].pcurve.as_mut()
+    else {
+        panic!("NURBS support lane");
+    };
+    control_points[1] = Point2::new(
+        crate::decode::MISSING_TOLERANCE,
+        crate::decode::MISSING_TOLERANCE,
+    );
+    let pending = vec![(
+        procedural_id,
+        vec![
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
+        ],
+        vec![0.0, 0.01],
+        0.01,
+        [None, None],
+    )];
+
+    crate::decode::complete_support_uv(&mut result.ir, &pending);
+
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[0].pcurve.as_ref()
+    else {
+        panic!("NURBS support lane");
+    };
+    assert!(control_points.iter().all(|point| {
+        point.u.to_bits() != crate::decode::MISSING_TOLERANCE.to_bits()
+            && point.v.to_bits() != crate::decode::MISSING_TOLERANCE.to_bits()
+    }));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     let surface = cadmpeg_ir::geometry::NurbsSurface {
         u_degree: 1,
