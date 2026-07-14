@@ -64,6 +64,17 @@ impl Registry {
             .find(|encoder| encoder.id() == id)
             .map(Box::as_ref)
     }
+
+    /// Replace the STEP encoder configuration used by subsequent exports.
+    pub fn set_step_options(&mut self, options: cadmpeg_step::StepWriteOptions) {
+        if let Some(encoder) = self
+            .encoders
+            .iter_mut()
+            .find(|encoder| encoder.id() == "step")
+        {
+            *encoder = Box::new(StepCodec { options });
+        }
+    }
 }
 
 #[cfg(test)]
