@@ -1947,39 +1947,10 @@ fn union_indices(parents: &mut [usize], left: usize, right: usize) {
 
 fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let b5_graph = crate::b5::parse(&scan.data);
-    let mut surfaces: Vec<(usize, u32, SurfaceGeometry, &str)> = geometry::a8_surfaces(&scan.data)
-        .into_iter()
-        .chain(geometry::a5_surfaces(&scan.data))
-        .map(|surface| (surface.pos, surface.object_id, surface.geometry, "freeform"))
-        .collect();
-    surfaces.extend(
-        geometry::b2_cylinders(&scan.data)
-            .into_iter()
-            .filter_map(|surface| {
-                surface
-                    .geometry
-                    .map(|geometry| (surface.pos, 0, geometry, "b2_03_28"))
-            }),
-    );
-    surfaces.extend(
-        geometry::b2_embedded_cylinders(&scan.data)
-            .into_iter()
-            .filter_map(|surface| {
-                surface
-                    .cylinder
-                    .geometry
-                    .map(|geometry| (surface.pos, surface.object_id, geometry, "b2_03_60"))
-            }),
-    );
-    surfaces.extend(geometry::b2_cones(&scan.data).into_iter().map(|surface| {
-        (
-            surface.pos,
-            0,
-            geometry::b2_cone_geometry(&surface),
-            "b2_03_29",
-        )
-    }));
-    if surfaces.is_empty() && b5_graph.is_none() {
+    let mut fallback_surfaces = b5_graph
+        .is_none()
+        .then(|| freeform_surface_carriers(&scan.data));
+    if fallback_surfaces.as_ref().is_some_and(Vec::is_empty) {
         return None;
     }
     let mut ir = CadIr::empty(Units::default());
@@ -1991,6 +1962,9 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
         crate::b5_transfer::transfer(&mut ir, &mut annotations, graph, &payload_id)
     });
     if !topology_transferred {
+        let surfaces = fallback_surfaces
+            .take()
+            .unwrap_or_else(|| freeform_surface_carriers(&scan.data));
         for (index, (pos, object_id, geometry, kind)) in surfaces.iter().enumerate() {
             let id = SurfaceId(format!("catia:a8:surf#{index}"));
             annotate(
@@ -2045,6 +2019,42 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
             notes: container::summarize(scan).notes,
         },
     ))
+}
+
+fn freeform_surface_carriers(data: &[u8]) -> Vec<(usize, u32, SurfaceGeometry, &'static str)> {
+    let mut surfaces: Vec<(usize, u32, SurfaceGeometry, &str)> = geometry::a8_surfaces(data)
+        .into_iter()
+        .chain(geometry::a5_surfaces(data))
+        .map(|surface| (surface.pos, surface.object_id, surface.geometry, "freeform"))
+        .collect();
+    surfaces.extend(
+        geometry::b2_cylinders(data)
+            .into_iter()
+            .filter_map(|surface| {
+                surface
+                    .geometry
+                    .map(|geometry| (surface.pos, 0, geometry, "b2_03_28"))
+            }),
+    );
+    surfaces.extend(
+        geometry::b2_embedded_cylinders(data)
+            .into_iter()
+            .filter_map(|surface| {
+                surface
+                    .cylinder
+                    .geometry
+                    .map(|geometry| (surface.pos, surface.object_id, geometry, "b2_03_60"))
+            }),
+    );
+    surfaces.extend(geometry::b2_cones(data).into_iter().map(|surface| {
+        (
+            surface.pos,
+            0,
+            geometry::b2_cone_geometry(&surface),
+            "b2_03_29",
+        )
+    }));
+    surfaces
 }
 
 fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
