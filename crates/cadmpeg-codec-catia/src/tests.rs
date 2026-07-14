@@ -4002,6 +4002,37 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
 }
 
 #[test]
+fn object_graph_payload_reads_fixed_width_escaped_values() {
+    use crate::object_graph::PayloadField;
+
+    let bytes = object_graph_from_records(&[
+        object_graph_record(
+            &[0x04, 0x01, 0x81, 0x83],
+            &[
+                0x80, 0x78, 0x56, 0x34, 0x12, 0x32, 0xef, 0xcd, 0xab, 0x89, 0xfe,
+            ],
+        ),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
+    ]);
+    let graph = crate::object_graph::parse(&bytes).expect("fixed-width object payload");
+    assert_eq!(
+        graph.records[0].payload.fields,
+        [
+            PayloadField::Atom {
+                value: 0x1234_5678,
+                offset: 0,
+            },
+            PayloadField::Scalar {
+                tag: 0x32,
+                value: 0x89ab_cdef,
+                offset: 5,
+            },
+            PayloadField::Terminator,
+        ]
+    );
+}
+
+#[test]
 fn native_design_objects_follow_payload_references_to_target_owners() {
     let bytes = object_graph_from_records(&[
         object_graph_record(&[0x04, 0x01, 0x81, 0x83], &[0x81, 0x83, 0xfe]),

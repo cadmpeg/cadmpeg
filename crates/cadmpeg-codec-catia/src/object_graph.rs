@@ -532,7 +532,23 @@ fn decode_payload(bytes: &[u8]) -> ObjectPayload {
                     offset,
                 });
             }
-            0x81 | 0x80 | 0x3a | 0x32 | 0x39 | 0x7a => {
+            0x80 | 0x32 if at + 5 <= bytes.len() => {
+                let tag = bytes[at];
+                fields.push(if tag == 0x80 {
+                    PayloadField::Atom {
+                        value: u32_le(bytes, at + 1).expect("checked escaped atom extent"),
+                        offset,
+                    }
+                } else {
+                    PayloadField::Scalar {
+                        tag,
+                        value: u32_le(bytes, at + 1).expect("checked scalar extent"),
+                        offset,
+                    }
+                });
+                at += 5;
+            }
+            0x81 | 0x3a | 0x39 | 0x7a => {
                 let tag = bytes[at];
                 let Some((value, consumed)) = atom(bytes, at + 1) else {
                     fields.push(PayloadField::Atom {
@@ -544,7 +560,6 @@ fn decode_payload(bytes: &[u8]) -> ObjectPayload {
                 };
                 fields.push(match tag {
                     0x81 => PayloadField::Reference { value, offset },
-                    0x80 => PayloadField::Atom { value, offset },
                     _ => PayloadField::Scalar { tag, value, offset },
                 });
                 at += 1 + consumed;
