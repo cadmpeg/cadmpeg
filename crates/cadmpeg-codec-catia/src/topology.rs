@@ -3674,6 +3674,84 @@ impl MeshQuotient {
         if limit == 0 {
             return Vec::new();
         }
+        if assignment.boundaries.iter().any(Vec::is_empty) {
+            return Vec::new();
+        }
+        let unknown = assignment
+            .boundaries
+            .iter()
+            .flatten()
+            .filter(|use_| use_.reversed.is_none())
+            .count();
+        if unknown <= 12 {
+            let mut output = Vec::new();
+            let mut seen = HashSet::new();
+            let combinations = 1usize << unknown;
+            for mask in 0..combinations {
+                if output.len() >= limit {
+                    break;
+                }
+                let mut variable = 0usize;
+                let directions = assignment
+                    .boundaries
+                    .iter()
+                    .map(|boundary| {
+                        boundary
+                            .iter()
+                            .map(|use_| {
+                                use_.reversed.unwrap_or_else(|| {
+                                    let shift = unknown - variable - 1;
+                                    variable += 1;
+                                    mask & (1usize << shift) != 0
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                let mut quotient = self.clone();
+                let viable =
+                    assignment
+                        .boundaries
+                        .iter()
+                        .zip(&directions)
+                        .all(|(boundary, directions)| {
+                            (0..boundary.len()).all(|index| {
+                                let next = (index + 1) % boundary.len();
+                                let Some(left_end) = edge_end(boundary[index], directions[index])
+                                else {
+                                    return false;
+                                };
+                                let Some(right_start) =
+                                    edge_start(boundary[next], directions[next])
+                                else {
+                                    return false;
+                                };
+                                let Some(root) = quotient.merge(left_end, right_start) else {
+                                    return false;
+                                };
+                                quotient.propagate_component_edge_domains(root, edge_candidates)
+                            })
+                        });
+                if !viable {
+                    continue;
+                }
+                let canonical_directions = directions
+                    .iter()
+                    .map(|boundary| {
+                        let complement = boundary.iter().map(|value| !value).collect::<Vec<_>>();
+                        if complement < *boundary {
+                            complement
+                        } else {
+                            boundary.clone()
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                if seen.insert((quotient.signature(), canonical_directions)) {
+                    output.push((directions, quotient));
+                }
+            }
+            return output;
+        }
         let mut output = Vec::new();
         let mut seen = HashSet::new();
         walk(
