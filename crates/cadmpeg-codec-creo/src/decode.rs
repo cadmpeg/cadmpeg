@@ -2594,73 +2594,213 @@ fn segments_intersect(first: [[f64; 2]; 2], second: [[f64; 2]; 2], tolerance: f6
         || (orientations[3].abs() <= second_cross_tolerance && on_segment(second, first[1]))
 }
 
-fn ordered_polygonal_extrusion_profiles(
+fn profile_arc(
+    segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
+) -> Option<([f64; 2], f64, f64, f64)> {
+    let SketchGeometry::Arc {
+        center,
+        radius,
+        start_angle,
+        end_angle,
+    } = &segment.0
+    else {
+        return None;
+    };
+    let forward_delta = (end_angle.0 - start_angle.0).rem_euclid(std::f64::consts::TAU);
+    let delta = if segment.1 {
+        -forward_delta
+    } else {
+        forward_delta
+    };
+    Some((
+        [center.u, center.v],
+        radius.0,
+        (segment.2[1] - center.v).atan2(segment.2[0] - center.u),
+        delta,
+    ))
+}
+
+fn point_on_profile_arc(point: [f64; 2], arc: ([f64; 2], f64, f64, f64), tolerance: f64) -> bool {
+    let (center, radius, start, delta) = arc;
+    let relative = [point[0] - center[0], point[1] - center[1]];
+    let distance = relative[0].hypot(relative[1]);
+    if (distance - radius).abs() > tolerance {
+        return false;
+    }
+    let angle = relative[1].atan2(relative[0]);
+    let travel = if delta >= 0.0 {
+        (angle - start).rem_euclid(std::f64::consts::TAU)
+    } else {
+        (start - angle).rem_euclid(std::f64::consts::TAU)
+    };
+    travel <= delta.abs() + tolerance / radius.max(1.0)
+}
+
+fn line_arc_intersect(line: [[f64; 2]; 2], arc: ([f64; 2], f64, f64, f64), tolerance: f64) -> bool {
+    let direction = [line[1][0] - line[0][0], line[1][1] - line[0][1]];
+    let relative = [line[0][0] - arc.0[0], line[0][1] - arc.0[1]];
+    let a = direction[0].mul_add(direction[0], direction[1] * direction[1]);
+    let b = 2.0 * direction[0].mul_add(relative[0], direction[1] * relative[1]);
+    let c = relative[0].mul_add(relative[0], relative[1] * relative[1]) - arc.1 * arc.1;
+    let discriminant = b.mul_add(b, -(4.0 * a * c));
+    if a <= tolerance * tolerance || discriminant < -tolerance * tolerance {
+        return false;
+    }
+    let root = discriminant.max(0.0).sqrt();
+    [-root, root].into_iter().any(|signed_root| {
+        let parameter = (-b + signed_root) / (2.0 * a);
+        parameter >= -tolerance
+            && parameter <= 1.0 + tolerance
+            && point_on_profile_arc(
+                [
+                    line[0][0] + parameter * direction[0],
+                    line[0][1] + parameter * direction[1],
+                ],
+                arc,
+                tolerance,
+            )
+    })
+}
+
+fn arcs_intersect(
+    first: ([f64; 2], f64, f64, f64),
+    second: ([f64; 2], f64, f64, f64),
+    tolerance: f64,
+) -> bool {
+    let displacement = [second.0[0] - first.0[0], second.0[1] - first.0[1]];
+    let distance = displacement[0].hypot(displacement[1]);
+    if distance <= tolerance && (first.1 - second.1).abs() <= tolerance {
+        let endpoints = |arc: ([f64; 2], f64, f64, f64)| {
+            [
+                [
+                    arc.0[0] + arc.1 * arc.2.cos(),
+                    arc.0[1] + arc.1 * arc.2.sin(),
+                ],
+                [
+                    arc.0[0] + arc.1 * (arc.2 + arc.3).cos(),
+                    arc.0[1] + arc.1 * (arc.2 + arc.3).sin(),
+                ],
+            ]
+        };
+        return endpoints(first)
+            .into_iter()
+            .any(|point| point_on_profile_arc(point, second, tolerance))
+            || endpoints(second)
+                .into_iter()
+                .any(|point| point_on_profile_arc(point, first, tolerance));
+    }
+    if distance <= tolerance
+        || distance > first.1 + second.1 + tolerance
+        || distance < (first.1 - second.1).abs() - tolerance
+    {
+        return false;
+    }
+    let along = (first.1 * first.1 - second.1 * second.1 + distance * distance) / (2.0 * distance);
+    let height_squared = first.1 * first.1 - along * along;
+    if height_squared < -tolerance * tolerance {
+        return false;
+    }
+    let base = [
+        first.0[0] + along * displacement[0] / distance,
+        first.0[1] + along * displacement[1] / distance,
+    ];
+    let height = height_squared.max(0.0).sqrt();
+    let offset = [
+        -height * displacement[1] / distance,
+        height * displacement[0] / distance,
+    ];
+    [-1.0, 1.0].into_iter().any(|sign| {
+        let point = [base[0] + sign * offset[0], base[1] + sign * offset[1]];
+        point_on_profile_arc(point, first, tolerance)
+            && point_on_profile_arc(point, second, tolerance)
+    })
+}
+
+fn profile_segments_intersect(
+    first: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
+    second: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
+    tolerance: f64,
+) -> bool {
+    match (profile_arc(first), profile_arc(second)) {
+        (None, None) => segments_intersect([first.2, first.3], [second.2, second.3], tolerance),
+        (None, Some(arc)) => line_arc_intersect([first.2, first.3], arc, tolerance),
+        (Some(arc), None) => line_arc_intersect([second.2, second.3], arc, tolerance),
+        (Some(first), Some(second)) => arcs_intersect(first, second, tolerance),
+    }
+}
+
+fn profile_strictly_contains(profile: &ExtrusionProfile, point: [f64; 2]) -> bool {
+    let mut winding = 0.0;
+    for segment in profile {
+        let mut accumulate = |first: [f64; 2], second: [f64; 2]| {
+            let first = [first[0] - point[0], first[1] - point[1]];
+            let second = [second[0] - point[0], second[1] - point[1]];
+            winding += first[0]
+                .mul_add(second[1], -(first[1] * second[0]))
+                .atan2(first[0].mul_add(second[0], first[1] * second[1]));
+        };
+        if let Some((center, radius, start, delta)) = profile_arc(segment) {
+            let pieces = (delta.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0) as usize;
+            for piece in 0..pieces {
+                let first = start + delta * piece as f64 / pieces as f64;
+                let second = start + delta * (piece + 1) as f64 / pieces as f64;
+                accumulate(
+                    [
+                        center[0] + radius * first.cos(),
+                        center[1] + radius * first.sin(),
+                    ],
+                    [
+                        center[0] + radius * second.cos(),
+                        center[1] + radius * second.sin(),
+                    ],
+                );
+            }
+        } else {
+            accumulate(segment.2, segment.3);
+        }
+    }
+    winding.abs() > std::f64::consts::PI
+}
+
+fn ordered_extrusion_profiles(
     mut profiles: Vec<ExtrusionProfile>,
 ) -> Option<(Vec<ExtrusionProfile>, f64)> {
-    let polygons = profiles
-        .iter()
-        .map(|profile| {
-            profile
-                .iter()
-                .map(|(geometry, _, start, _)| {
-                    matches!(geometry, SketchGeometry::Line { .. }).then_some(*start)
-                })
-                .collect::<Option<Vec<_>>>()
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let scale = polygons
+    let scale = profiles
         .iter()
         .flatten()
-        .flat_map(|point| point.iter())
+        .flat_map(|(_, _, start, end)| start.iter().chain(end))
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     let tolerance = 1e-9 * scale;
-    for polygon in &polygons {
-        for first in 0..polygon.len() {
-            for second in first + 1..polygon.len() {
-                if second == first + 1 || (first == 0 && second + 1 == polygon.len()) {
+    for profile in &profiles {
+        for first in 0..profile.len() {
+            for second in first + 1..profile.len() {
+                if second == first + 1 || (first == 0 && second + 1 == profile.len()) {
                     continue;
                 }
-                if segments_intersect(
-                    [polygon[first], polygon[(first + 1) % polygon.len()]],
-                    [polygon[second], polygon[(second + 1) % polygon.len()]],
-                    tolerance,
-                ) {
+                if profile_segments_intersect(&profile[first], &profile[second], tolerance) {
                     return None;
                 }
             }
         }
     }
-    for first in 0..polygons.len() {
-        for second in first + 1..polygons.len() {
-            for first_edge in 0..polygons[first].len() {
-                for second_edge in 0..polygons[second].len() {
-                    if segments_intersect(
-                        [
-                            polygons[first][first_edge],
-                            polygons[first][(first_edge + 1) % polygons[first].len()],
-                        ],
-                        [
-                            polygons[second][second_edge],
-                            polygons[second][(second_edge + 1) % polygons[second].len()],
-                        ],
-                        tolerance,
-                    ) {
+    for first in 0..profiles.len() {
+        for second in first + 1..profiles.len() {
+            for first_segment in &profiles[first] {
+                for second_segment in &profiles[second] {
+                    if profile_segments_intersect(first_segment, second_segment, tolerance) {
                         return None;
                     }
                 }
             }
         }
     }
-    let outer = polygons
+    let outer = profiles
         .iter()
         .enumerate()
-        .filter(|(candidate, polygon)| {
-            polygons.iter().enumerate().all(|(index, inner)| {
-                index == *candidate
-                    || inner
-                        .iter()
-                        .all(|point| polygon_strictly_contains(polygon, *point))
+        .filter(|(candidate, profile)| {
+            profiles.iter().enumerate().all(|(index, inner)| {
+                index == *candidate || profile_strictly_contains(profile, inner[0].2)
             })
         })
         .map(|(index, _)| index)
@@ -2668,16 +2808,16 @@ fn ordered_polygonal_extrusion_profiles(
     let [outer] = outer.as_slice() else {
         return None;
     };
-    for first in 0..polygons.len() {
+    for first in 0..profiles.len() {
         if first == *outer {
             continue;
         }
-        for second in first + 1..polygons.len() {
+        for second in first + 1..profiles.len() {
             if second == *outer {
                 continue;
             }
-            if polygon_strictly_contains(&polygons[first], polygons[second][0])
-                || polygon_strictly_contains(&polygons[second], polygons[first][0])
+            if profile_strictly_contains(&profiles[first], profiles[second][0].2)
+                || profile_strictly_contains(&profiles[second], profiles[first][0].2)
             {
                 return None;
             }
@@ -2813,7 +2953,7 @@ fn transfer_resolved_extrusion_breps(
             };
             (profiles, area)
         } else {
-            let Some(result) = ordered_polygonal_extrusion_profiles(profiles) else {
+            let Some(result) = ordered_extrusion_profiles(profiles) else {
                 continue;
             };
             result
@@ -5547,7 +5687,7 @@ mod resolved_sketch_tests {
     }
 
     #[test]
-    fn polygonal_extrusion_profiles_require_one_oppositely_oriented_hole() {
+    fn extrusion_profiles_require_one_oppositely_oriented_hole() {
         let rectangle = |minimum: [f64; 2], maximum: [f64; 2], clockwise: bool| {
             let mut points = [
                 minimum,
@@ -5576,23 +5716,78 @@ mod resolved_sketch_tests {
         };
         let outer = rectangle([-2.0, -2.0], [2.0, 2.0], false);
         let hole = rectangle([-1.0, -1.0], [1.0, 1.0], true);
-        let (profiles, outer_area) =
-            ordered_polygonal_extrusion_profiles(vec![hole.clone(), outer.clone()])
-                .expect("strict outer and hole");
+        let (profiles, outer_area) = ordered_extrusion_profiles(vec![hole.clone(), outer.clone()])
+            .expect("strict outer and hole");
         assert_eq!(profiles[0], outer);
         assert!(outer_area > 0.0);
         assert!(extrusion_profile_signed_area(&profiles[1]).expect("hole area") < 0.0);
 
-        assert!(ordered_polygonal_extrusion_profiles(vec![
+        assert!(ordered_extrusion_profiles(vec![
             rectangle([-2.0, -2.0], [2.0, 2.0], false),
             rectangle([-1.0, -1.0], [1.0, 1.0], false),
         ])
         .is_none());
-        assert!(ordered_polygonal_extrusion_profiles(vec![
+        assert!(ordered_extrusion_profiles(vec![
             rectangle([-2.0, -2.0], [2.0, 2.0], false),
             rectangle([1.0, -1.0], [3.0, 1.0], true),
         ])
         .is_none());
+
+        let circular_hole = [
+            (std::f64::consts::PI, 0.0, [-0.5, 0.0], [0.5, 0.0]),
+            (
+                std::f64::consts::TAU,
+                std::f64::consts::PI,
+                [0.5, 0.0],
+                [-0.5, 0.0],
+            ),
+        ]
+        .into_iter()
+        .map(|(end_angle, start_angle, start, end)| {
+            (
+                SketchGeometry::Arc {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length(0.5),
+                    start_angle: Angle(start_angle),
+                    end_angle: Angle(end_angle),
+                },
+                true,
+                start,
+                end,
+            )
+        })
+        .collect::<ExtrusionProfile>();
+        let (profiles, _) = ordered_extrusion_profiles(vec![
+            circular_hole,
+            rectangle([-2.0, -2.0], [2.0, 2.0], false),
+        ])
+        .expect("arc-bounded hole");
+        assert!(matches!(profiles[1][0].0, SketchGeometry::Arc { .. }));
+    }
+
+    #[test]
+    fn extrusion_profile_intersections_include_analytic_tangency() {
+        let full_upper_circle = ([0.0, 0.0], 1.0, 0.0, std::f64::consts::PI);
+        assert!(line_arc_intersect(
+            [[-2.0, 1.0], [2.0, 1.0]],
+            full_upper_circle,
+            1e-9,
+        ));
+        assert!(!line_arc_intersect(
+            [[-2.0, 1.1], [2.0, 1.1]],
+            full_upper_circle,
+            1e-9,
+        ));
+        assert!(arcs_intersect(
+            full_upper_circle,
+            ([2.0, 0.0], 1.0, std::f64::consts::PI, std::f64::consts::PI),
+            1e-9,
+        ));
+        assert!(!arcs_intersect(
+            full_upper_circle,
+            ([3.0, 0.0], 1.0, std::f64::consts::PI, std::f64::consts::PI),
+            1e-9,
+        ));
     }
 
     #[test]
