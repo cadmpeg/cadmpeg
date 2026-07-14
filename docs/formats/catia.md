@@ -201,6 +201,8 @@ Merging an assignment with the exact interior-handle occurrences produces one or
 
 Selecting one assignment per face and one direction per unresolved occurrence defines the logical-corner quotient independently of coordinate rows. Consecutive uses in a trim cycle share a face-local corner. Each occurrence maps those two corners to the physical edge row's start and end ports according to its direction. Equal physical ports across the two incident occurrences collapse their face-local corners into one logical vertex.
 
+When a face has one surviving positional assignment, intersect the port-corner equations induced by all of that assignment's surviving direction choices. Every equation in the intersection is independent of the unresolved direction choice and is merged into the initial quotient before global selection.
+
 Boundary orientation is a parity problem over the selected face boundaries. The two uses of every physical edge must traverse it in opposite directions after applying an optional reversal to each complete boundary. A partial selection whose boundary-parity graph contains an inconsistent cycle is invalid. Apply the solved boundary reversals to the completed coedge graph before emitting topology.
 
 Initialize the quotient by collapsing equal serialized port identities. Use complete mesh-occurrence components when available; otherwise use equality within each `01 01` or `01 02` table-local namespace. Face-boundary corner equations extend this initial quotient.

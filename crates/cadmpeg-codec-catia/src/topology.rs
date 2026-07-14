@@ -3658,6 +3658,98 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
 }
 
 impl MeshSelectionSearch<'_> {
+    fn propagate_forced_face_equations(&self, quotient: &mut MeshQuotient) -> bool {
+        fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+            use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
+        }
+
+        fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+            use_.edge
+                .checked_mul(2)?
+                .checked_add(usize::from(!reversed))
+        }
+
+        fn equations(
+            assignment: &MeshFaceBoundaryAssignment,
+            directions: &[Vec<bool>],
+        ) -> Option<HashSet<[usize; 2]>> {
+            if assignment.boundaries.len() != directions.len() {
+                return None;
+            }
+            let mut equations = HashSet::new();
+            for (boundary, directions) in assignment.boundaries.iter().zip(directions) {
+                if boundary.is_empty() || boundary.len() != directions.len() {
+                    return None;
+                }
+                for index in 0..boundary.len() {
+                    let left = boundary[index];
+                    let right = boundary[(index + 1) % boundary.len()];
+                    let left_reversed = left.reversed.unwrap_or(directions[index]);
+                    let right_reversed = right
+                        .reversed
+                        .unwrap_or(directions[(index + 1) % boundary.len()]);
+                    let left_end = edge_end(left, left_reversed)?;
+                    let right_start = edge_start(right, right_reversed)?;
+                    equations.insert(if left_end <= right_start {
+                        [left_end, right_start]
+                    } else {
+                        [right_start, left_end]
+                    });
+                }
+            }
+            Some(equations)
+        }
+
+        loop {
+            let mut changed = false;
+            for (face, selected) in self.selected.iter().enumerate() {
+                if selected.is_some() {
+                    continue;
+                }
+                let mut supported = self.assignments[face].iter().filter(|assignment| {
+                    quotient.assignment_has_option(assignment, self.edge_candidates)
+                });
+                let Some(assignment) = supported.next() else {
+                    return false;
+                };
+                if supported.next().is_some() {
+                    continue;
+                }
+                let options = quotient.assignment_options(assignment, self.edge_candidates);
+                let Some((first_directions, _)) = options.first() else {
+                    return false;
+                };
+                let Some(mut common) = equations(assignment, first_directions) else {
+                    return false;
+                };
+                for (directions, _) in options.iter().skip(1) {
+                    let Some(option_equations) = equations(assignment, directions) else {
+                        return false;
+                    };
+                    common.retain(|equation| option_equations.contains(equation));
+                    if common.is_empty() {
+                        break;
+                    }
+                }
+                for [left, right] in common {
+                    if quotient.union.find(left) == quotient.union.find(right) {
+                        continue;
+                    }
+                    let Some(root) = quotient.merge(left, right) else {
+                        return false;
+                    };
+                    if !quotient.propagate_component_edge_domains(root, self.edge_candidates) {
+                        return false;
+                    }
+                    changed = true;
+                }
+            }
+            if !changed {
+                return true;
+            }
+        }
+    }
+
     fn selected_orientable(&self) -> bool {
         let mut constraints = Vec::<Vec<(usize, bool)>>::new();
         let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
@@ -4011,6 +4103,9 @@ pub fn parse_standard_mesh_endpoint_candidates(
         ambiguous: false,
         exhausted: false,
     };
+    if !search.propagate_forced_face_equations(&mut quotient) {
+        return None;
+    }
     search.search(&quotient);
     (!search.ambiguous && !search.exhausted)
         .then_some(search.solution)
@@ -5011,6 +5106,57 @@ mod motif_tests {
         assert!(!search.selected_orientable());
         search.selected[2] = Some((0, vec![vec![false, true]]));
         assert!(search.selected_orientable());
+    }
+
+    #[test]
+    fn mesh_selection_merges_corner_equations_common_to_every_option() {
+        let assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 1,
+                    reversed: Some(false),
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 1,
+                    end: 2,
+                    reversed: Some(false),
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 2,
+                    start: 2,
+                    end: 3,
+                    reversed: Some(false),
+                },
+            ]],
+        };
+        let assignments = vec![vec![assignment]];
+        let candidates = vec![vec![], vec![], vec![]];
+        let search = MeshSelectionSearch {
+            assignments: &assignments,
+            face_work: vec![Some(1)],
+            edge_candidates: &candidates,
+            edge_rows: &[],
+            vertex_points: &[],
+            selected: vec![None],
+            states: 0,
+            solution: None,
+            ambiguous: false,
+            exhausted: false,
+        };
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(6),
+            domains: (0..6).map(|_| HashSet::from([0, 1, 2])).collect(),
+            members: (0..6).map(|node| vec![node]).collect(),
+        };
+
+        assert!(search.propagate_forced_face_equations(&mut quotient));
+        assert_eq!(quotient.union.find(1), quotient.union.find(2));
+        assert_eq!(quotient.union.find(3), quotient.union.find(4));
+        assert_eq!(quotient.union.find(5), quotient.union.find(0));
+        assert_eq!(quotient.root_count(), 3);
     }
 
     #[test]
