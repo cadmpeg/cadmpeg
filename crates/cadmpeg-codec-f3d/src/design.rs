@@ -471,6 +471,37 @@ pub fn project_parameter_design(
             }
         })
         .collect::<Vec<_>>();
+    let mut state_features = HashMap::<(&str, i64), Option<cadmpeg_ir::features::FeatureId>>::new();
+    for scope in scopes {
+        let (Some(stream), Some(state_id)) = (native_stream(&scope.id), scope.history_state_id)
+        else {
+            continue;
+        };
+        state_features
+            .entry((stream, state_id))
+            .and_modify(|feature| *feature = None)
+            .or_insert_with(|| scope_ids.get(&(stream, scope.record_index)).cloned());
+    }
+    for feature in &mut features {
+        let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
+        else {
+            continue;
+        };
+        let Some(previous_state_id) = scope.previous_history_state_id else {
+            continue;
+        };
+        if let Some(Some(predecessor)) = state_features.get(&(
+            native_stream(&scope.id).unwrap_or("f3d:design"),
+            previous_state_id,
+        )) {
+            if predecessor != &feature.id && !feature.dependencies.contains(predecessor) {
+                feature.dependencies.push(predecessor.clone());
+            }
+        }
+    }
     let sketch_features = features
         .iter()
         .filter_map(|feature| match &feature.definition {
@@ -487,9 +518,11 @@ pub fn project_parameter_design(
             ..
         } = &feature.definition
         {
-            feature
-                .dependencies
-                .extend(sketch_features.get(&sketch.0).cloned());
+            if let Some(dependency) = sketch_features.get(&sketch.0) {
+                if dependency != &feature.id && !feature.dependencies.contains(dependency) {
+                    feature.dependencies.push(dependency.clone());
+                }
+            }
         }
     }
     features.sort_by_key(|feature| feature.id.clone());
@@ -594,8 +627,40 @@ pub fn project_parameter_design(
                 .cloned(),
         );
     }
+    assign_feature_ordinals(&mut features);
     parameters.sort_by_key(|parameter| parameter.id.clone());
     (features, parameters)
+}
+
+fn assign_feature_ordinals(features: &mut [cadmpeg_ir::features::Feature]) {
+    let indices = features
+        .iter()
+        .enumerate()
+        .map(|(index, feature)| (feature.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let mut assigned = HashSet::new();
+    let mut order = Vec::with_capacity(features.len());
+    while order.len() < features.len() {
+        let candidate = features
+            .iter()
+            .enumerate()
+            .filter(|(_, feature)| !assigned.contains(&feature.id))
+            .filter(|(_, feature)| {
+                feature.dependencies.iter().all(|dependency| {
+                    !indices.contains_key(dependency) || assigned.contains(dependency)
+                })
+            })
+            .min_by_key(|(_, feature)| (feature.ordinal, feature.id.clone()))
+            .map(|(index, feature)| (index, feature.id.clone()));
+        let Some((index, id)) = candidate else {
+            return;
+        };
+        assigned.insert(id);
+        order.push(index);
+    }
+    for (ordinal, index) in order.into_iter().enumerate() {
+        features[index].ordinal = ordinal as u64;
+    }
 }
 
 fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Length> {
@@ -7945,6 +8010,57 @@ mod relation_tests {
             .find(|feature| feature.id == depth.owner.clone().expect("Depth owner"))
             .expect("target feature");
         assert_eq!(target.dependencies, std::slice::from_ref(&source.id));
+    }
+
+    #[test]
+    fn history_state_identity_orders_cross_family_feature_dependencies() {
+        let scope =
+            |record_index, byte_offset, kind: &str, current, previous| DesignParameterScope {
+                id: format!("f3d:native:scope#{record_index}"),
+                byte_offset,
+                class_tag: "301".into(),
+                record_index,
+                frame_length: 200,
+                kind: kind.into(),
+                kind_offset: byte_offset + 100,
+                extrude_operation: None,
+                extrude_operation_offset: None,
+                extrude_extent: None,
+                extrude_extent_offsets: None,
+                extrude_direction_reversed: None,
+                extrude_direction_reversed_offset: None,
+                extrude_start: None,
+                extrude_start_offset: None,
+                feature_ordinal: 1,
+                feature_ordinal_offset: 0,
+                history_state_id: current,
+                history_state_id_offset: byte_offset + 60,
+                previous_history_state_id: previous,
+                previous_history_state_id_offset: byte_offset + 120,
+                reference_count_offset: byte_offset + 80,
+                reference_members: Vec::new(),
+                reference_member_offsets: Vec::new(),
+                extrude_profile: None,
+                entity_id: None,
+                entity_suffix: None,
+                entity_reference_offset: None,
+                paired_class_tag: "261".into(),
+                paired_byte_offset: byte_offset + 200,
+            };
+        let predecessor = scope(12, 200, "Fillet", Some(10), Some(9));
+        let successor = scope(22, 100, "Chamfer", Some(11), Some(10));
+        let (features, _) =
+            project_parameter_design(&[], &[], &[successor, predecessor], &[], &[], &[]);
+        let predecessor = features
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some("f3d:native:scope#12"))
+            .expect("predecessor feature");
+        let successor = features
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some("f3d:native:scope#22"))
+            .expect("successor feature");
+        assert_eq!(successor.dependencies, [predecessor.id.clone()]);
+        assert!(predecessor.ordinal < successor.ordinal);
     }
 
     #[test]
