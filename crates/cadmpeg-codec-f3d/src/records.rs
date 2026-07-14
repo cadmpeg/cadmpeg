@@ -880,6 +880,10 @@ pub struct DesignEdgeOperand {
     pub recipe_record_byte_offset: u64,
     /// Native construction-recipe arena id.
     pub recipe_id: String,
+    /// Byte offset of the first i32 after the framed recipe-family name.
+    pub recipe_program_offset: u64,
+    /// Complete post-name i32 program ending at the next indexed record.
+    pub recipe_program: Vec<i32>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.

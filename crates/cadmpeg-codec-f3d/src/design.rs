@@ -5201,6 +5201,29 @@ fn parse_edge_operand(
     let [recipe] = matches.as_slice() else {
         return None;
     };
+    let recipe_program_at = usize::try_from(recipe.byte_offset)
+        .ok()?
+        .checked_add(b"edge_recipe_data".len())?;
+    let recipe_program_bytes =
+        bytes.get(recipe_program_at..usize::try_from(next_byte_offset).ok()?)?;
+    if recipe_program_bytes.is_empty()
+        || recipe_program_bytes.len() % 4 != 0
+        || recipe_program_bytes.len() > 64 * 1024
+    {
+        return None;
+    }
+    let recipe_program = recipe_program_bytes
+        .chunks_exact(4)
+        .map(|raw| {
+            i32::from_le_bytes(
+                raw.try_into()
+                    .expect("invariant: chunks_exact(4) yields four-byte slices"),
+            )
+        })
+        .collect::<Vec<_>>();
+    if recipe_program.get(0..7) != Some(&[-1, -1, 2, 0, -1, 1, -1]) {
+        return None;
+    }
     Some(DesignEdgeOperand {
         id: format!(
             "f3d:{}:design-edge-operand#{}",
@@ -5217,6 +5240,8 @@ fn parse_edge_operand(
         recipe_record_index,
         recipe_record_byte_offset: recipe_start,
         recipe_id: recipe.id.clone(),
+        recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
+        recipe_program,
         next_record_index: indexed[4].1,
         next_byte_offset,
     })
@@ -8353,9 +8378,9 @@ mod relation_tests {
         header(&mut bytes, *b"414", 102);
         let recipe_record_at = header(&mut bytes, *b"423", 103);
         let recipe_name_at = bytes.len() + 4;
-        bytes.extend_from_slice(&24u32.to_le_bytes());
-        bytes.extend_from_slice(b"bounded_face_recipe_data");
-        for value in [0i32, -1, 1, -1, -1, 2, 7] {
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(b"edge_recipe_data");
+        for value in [-1i32, -1, 2, 0, -1, 1, -1, 7] {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         let next_at = header(&mut bytes, *b"306", 104);
@@ -8416,16 +8441,33 @@ mod relation_tests {
         assert_eq!(operand.recipe_record_index, 103);
         assert_eq!(operand.recipe_record_byte_offset, recipe_record_at);
         assert_eq!(operand.recipe_id, recipe.id);
+        assert_eq!(operand.recipe_program_offset, recipe_name_at as u64 + 16);
+        assert_eq!(operand.recipe_program, [-1, -1, 2, 0, -1, 1, -1, 7]);
         assert_eq!(operand.next_record_index, 104);
         assert_eq!(operand.next_byte_offset, next_at);
 
+        let mut face_bytes = Vec::new();
+        header(&mut face_bytes, *b"306", 100);
+        let face_paired_at = header(&mut face_bytes, *b"259", 100);
+        header(&mut face_bytes, *b"408", 101);
+        header(&mut face_bytes, *b"414", 102);
+        let face_recipe_record_at = header(&mut face_bytes, *b"423", 103);
+        let face_recipe_name_at = face_bytes.len() + 4;
+        face_bytes.extend_from_slice(&24u32.to_le_bytes());
+        face_bytes.extend_from_slice(b"bounded_face_recipe_data");
+        for value in [0i32, -1, 1, -1, -1, 2, 7] {
+            face_bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let face_next_at = header(&mut face_bytes, *b"306", 104);
         let mut face_scope = scope;
         face_scope.kind = "Extrude".into();
         let mut face_recipe = recipe;
         face_recipe.kind = ConstructionRecipeKind::BoundedFace;
         face_recipe.design_id = Some("303".into());
+        face_recipe.byte_offset = face_recipe_name_at as u64;
+        face_recipe.record_index_offset = Some(face_recipe_record_at + 8);
         let mut operand = parse_face_operand(
-            &bytes,
+            &face_bytes,
             &face_scope,
             0,
             &record,
@@ -8433,15 +8475,21 @@ mod relation_tests {
         )
         .expect("face recipe operand");
         assert_eq!(operand.record_index, 100);
-        assert_eq!(operand.paired_byte_offset, paired_at);
+        assert_eq!(operand.paired_byte_offset, face_paired_at);
         assert_eq!(operand.recipe_record_index, 103);
         assert_eq!(operand.recipe_kind, ConstructionRecipeKind::BoundedFace);
         assert_eq!(operand.recipe_id, face_recipe.id);
-        assert_eq!(operand.recipe_program_offset, recipe_name_at as u64 + 24);
+        assert_eq!(
+            operand.recipe_program_offset,
+            face_recipe_name_at as u64 + 24
+        );
         assert_eq!(operand.recipe_program, [0, -1, 1, -1, -1, 2, 7]);
-        assert_eq!(operand.recipe_node_offsets, [recipe_name_at as u64 + 36]);
+        assert_eq!(
+            operand.recipe_node_offsets,
+            [face_recipe_name_at as u64 + 36]
+        );
         assert_eq!(operand.next_record_index, 104);
-        assert_eq!(operand.next_byte_offset, next_at);
+        assert_eq!(operand.next_byte_offset, face_next_at);
         bind_face_operand_candidates(
             std::slice::from_mut(&mut operand),
             std::slice::from_ref(&face_recipe),
