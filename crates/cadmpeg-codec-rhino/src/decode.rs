@@ -1233,6 +1233,7 @@ impl<'a> DecodeContext<'a> {
                 self.ir.model.points.push(Point {
                     id: point_id.clone(),
                     position,
+                    source_object: Some(association.clone()),
                 });
                 self.ir.model.vertices.push(Vertex {
                     id: vertex_id.clone(),
@@ -1288,6 +1289,7 @@ impl<'a> DecodeContext<'a> {
                     self.ir.model.points.push(Point {
                         id: point_id.clone(),
                         position,
+                        source_object: Some(association.clone()),
                     });
                     self.ir.model.vertices.push(Vertex {
                         id: vertex_id.clone(),
@@ -2066,6 +2068,7 @@ fn stage_extrusion_caps(
             ir.model.points.push(Point {
                 id: point_id.clone(),
                 position: endpoint,
+                source_object: Some(association.clone()),
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),
@@ -2505,6 +2508,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                     crate::curves::error(0, "scaled Brep vertex coordinate is invalid")
                 })?,
             ),
+            source_object: Some(association.clone()),
         });
         staged.vertices.push(Vertex {
             id: vertex_id.clone(),

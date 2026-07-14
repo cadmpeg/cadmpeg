@@ -218,6 +218,21 @@ Application data without a neutral representation retains its owning object and 
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,
 lengths, and digests.
 
+Mesh-kernel properties reference a binary side entry. The current typed record begins with the
+32-bit magic `a0b0c0d0`, the 32-bit version `00010000`, and a 256-byte information field. Both
+integer byte orders are accepted when the magic and version agree. Two 32-bit counts precede
+ordered float32 XYZ points and facets. Each facet contains three zero-based point indices followed
+by three stored neighbour indices. Six float32 bounding-box limits close the record. Counts are
+bounded, point indices must resolve, coordinates and bounds must be finite, and trailing or
+truncated bytes are invalid. Neighbour indices and the complete entry bytes remain native even
+when only the indexed triangle mesh is projected neutrally.
+
+Point-kernel properties reference a side entry containing a little-endian 32-bit point count
+followed by ordered float32 XYZ triples. The property's `Points` element carries the sixteen finite
+row-major transform scalars. Neutral points are transformed once into model space and retain the
+owning application object and property identity. Missing transforms mean identity; malformed
+transforms, non-finite coordinates, excessive counts, truncation, and trailing bytes are rejected.
+
 Native namespace version 8 adds an ordered `applications` census covering every declared object
 exactly once. Each record retains the exact runtime type, its application-domain prefix, ordered
 owned properties, ordered dependencies, and referenced side entries. A record is marked as carrying

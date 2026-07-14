@@ -3,6 +3,7 @@
 
 mod annotation;
 mod application;
+mod application_geometry;
 mod attachment;
 mod brep;
 mod container;
@@ -988,6 +989,8 @@ impl Codec for FcstdCodec {
             ir.model
                 .procedural_surfaces
                 .extend(surface_transfer.procedural);
+            geometry_transferred |=
+                application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
             topology_transfer::transfer(&mut ir, &shape_payloads, &graph.properties)?;
             design::transfer(&mut ir, &graph.objects, &graph.properties, &shape_payloads)?;
             let payload_ids = shape_payloads

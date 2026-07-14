@@ -4249,6 +4249,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
     source_less.model.points.push(cadmpeg_ir::topology::Point {
         id: point_id.clone(),
         position: cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
+        source_object: None,
     });
     let vertex_id = VertexId("generated:vertex#3".into());
     source_less
@@ -5088,6 +5089,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
         source_less.model.points.push(cadmpeg_ir::topology::Point {
             id: point_id.clone(),
             position: cadmpeg_ir::math::Point3::new(x, y, z),
+            source_object: None,
         });
         let vertex_id = VertexId(format!("generated:inner_vertex#{index}"));
         source_less

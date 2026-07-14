@@ -424,6 +424,7 @@ fn decode_graph(
         out.points.push(Point {
             id: PointId(id_point(a)),
             position: cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
+            source_object: None,
         });
     }
 
@@ -484,6 +485,7 @@ fn decode_graph(
             out.points.push(Point {
                 id: PointId(point_id.clone()),
                 position,
+                source_object: None,
             });
             out.vertices.push(Vertex {
                 id: VertexId(vertex_id.clone()),
@@ -1868,6 +1870,7 @@ fn synthesize_sphere_seams(
                 center.y + radius * axis.y,
                 center.z + radius * axis.z,
             ),
+            source_object: None,
         });
         out.vertices.push(Vertex {
             id: vertex_id.clone(),

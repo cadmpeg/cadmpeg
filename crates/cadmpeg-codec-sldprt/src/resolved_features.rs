@@ -1796,6 +1796,7 @@ fn sketch_brep(
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+            source_object: None,
         });
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
@@ -2046,6 +2047,7 @@ fn sketch_vertex(
     ir.model.points.push(Point {
         id: point_id.clone(),
         position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+        source_object: None,
     });
     ir.model.vertices.push(Vertex {
         id: vertex_id.clone(),

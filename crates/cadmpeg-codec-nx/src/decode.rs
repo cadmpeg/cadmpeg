@@ -172,6 +172,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             ir.model.points.push(Point {
                 id: pid.clone(),
                 position: pt.position,
+                source_object: None,
             });
             ir.model.vertices.push(Vertex {
                 id: vid.clone(),

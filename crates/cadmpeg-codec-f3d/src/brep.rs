@@ -3728,6 +3728,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 out.points.push(Point {
                     id: PointId(id(i)),
                     position: scale_point(*p),
+                    source_object: None,
                 });
             }
         }

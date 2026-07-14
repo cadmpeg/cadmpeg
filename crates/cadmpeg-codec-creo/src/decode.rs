@@ -340,6 +340,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: Point3::new(position[0], position[1], position[2]),
+            source_object: None,
         });
         ir.model.vertices.push(Vertex {
             id: vertex,

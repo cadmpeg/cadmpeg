@@ -43,6 +43,9 @@ pub(super) fn check_source_associations(ir: &CadIr, findings: &mut Vec<Finding>)
     for curve in &ir.model.curves {
         check_source(curve.source_object.as_ref(), &curve.id.0, findings);
     }
+    for point in &ir.model.points {
+        check_source(point.source_object.as_ref(), &point.id.0, findings);
+    }
     for mesh in &ir.model.tessellations {
         check_source(mesh.source_object.as_ref(), &mesh.id, findings);
     }

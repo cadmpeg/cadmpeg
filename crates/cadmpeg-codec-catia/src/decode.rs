@@ -138,6 +138,7 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: *point,
+            source_object: None,
         });
         let vertex_id = VertexId(format!("catia:zero-entity:v#{index}"));
         annotate(
@@ -220,6 +221,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: *point,
+            source_object: None,
         });
         let vertex_id = VertexId(format!("catia:e5:v#{index}"));
         annotate(
@@ -948,6 +950,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: *p,
+            source_object: None,
         });
         let vertex_id = VertexId(format!("catia:standard:v#{i}"));
         annotate(

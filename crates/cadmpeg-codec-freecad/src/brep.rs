@@ -9,7 +9,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
 
-use crate::native::{EntryRecord, PropertyFamily, PropertyRecord};
+use crate::native::{EntryRecord, PropertyRecord};
 
 /// Exact-shape side-entry form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -457,7 +457,7 @@ pub fn parse_payloads(
         .collect::<BTreeMap<_, _>>();
     properties
         .iter()
-        .filter(|property| property.family == PropertyFamily::Geometry)
+        .filter(|property| property.type_name.contains("PropertyPartShape"))
         .flat_map(|property| {
             property
                 .side_entries

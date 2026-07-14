@@ -48,10 +48,12 @@ fn edgeless_doc() -> CadIr {
     ir.model.points.push(Point {
         id: PointId("p0".into()),
         position: Point3::new(0.0, 0.0, 0.0),
+        source_object: None,
     });
     ir.model.points.push(Point {
         id: PointId("p1".into()),
         position: Point3::new(1.0, 0.0, 0.0),
+        source_object: None,
     });
     ir.model.vertices.push(Vertex {
         id: VertexId("v0".into()),

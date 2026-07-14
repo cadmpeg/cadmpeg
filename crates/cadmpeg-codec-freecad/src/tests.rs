@@ -259,7 +259,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "14");
+    assert_eq!(result.ir.ir_version, "15");
     let feature = |name: &str| {
         &result
             .ir
@@ -1433,6 +1433,68 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert!(!by_domain["Mesh"].inert_payload);
     assert_eq!(by_domain["Unqualified"].type_name, "LocalType");
     assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
+fn transfers_application_mesh_and_transformed_point_cloud_payloads() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Mesh::Feature" name="Mesh" id="1"/>
+ <Object type="Points::Feature" name="Cloud" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Mesh"><Properties Count="1"><Property name="Mesh" type="Mesh::PropertyMeshKernel"><Mesh file="MeshKernel.bms"/></Property></Properties></Object>
+ <Object name="Cloud"><Properties Count="1"><Property name="Points" type="Points::PropertyPointKernel"><Points file="Cloud" mtrx="1 0 0 10 0 1 0 20 0 0 1 30 0 0 0 1"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let mut mesh = Vec::new();
+    mesh.extend_from_slice(&0xa0b0_c0d0_u32.to_le_bytes());
+    mesh.extend_from_slice(&0x0001_0000_u32.to_le_bytes());
+    mesh.extend_from_slice(&[0; 256]);
+    mesh.extend_from_slice(&3_u32.to_le_bytes());
+    mesh.extend_from_slice(&1_u32.to_le_bytes());
+    for value in [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
+        mesh.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u32, 1, 2, u32::MAX, u32::MAX, u32::MAX] {
+        mesh.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0.0_f32, 1.0, 0.0, 1.0, 0.0, 0.0] {
+        mesh.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut points = 2_u32.to_le_bytes().to_vec();
+    for value in [1.0_f32, 2.0, 3.0, -1.0, -2.0, -3.0] {
+        points.extend_from_slice(&value.to_le_bytes());
+    }
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("MeshKernel.bms", &mesh),
+                ("Cloud", &points),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("application geometry");
+    assert_eq!(result.ir.model.tessellations.len(), 1);
+    let mesh = &result.ir.model.tessellations[0];
+    assert_eq!(mesh.triangles, [[0, 1, 2]]);
+    assert_eq!(
+        mesh.source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("fcstd:object:Mesh")
+    );
+    assert_eq!(result.ir.model.points.len(), 2);
+    assert_eq!(
+        result.ir.model.points[0].position,
+        cadmpeg_ir::math::Point3::new(11.0, 22.0, 33.0)
+    );
+    assert_eq!(
+        result.ir.model.points[1].position,
+        cadmpeg_ir::math::Point3::new(9.0, 18.0, 27.0)
+    );
+    assert!(result.report.geometry_transferred);
+    assert!(result.report.losses.is_empty());
 }
 
 #[test]

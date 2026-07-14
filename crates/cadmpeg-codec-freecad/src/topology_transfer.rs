@@ -689,6 +689,15 @@ impl<'a> Builder<'a> {
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: transform_point(transform, point),
+            source_object: Some(SourceObjectAssociation {
+                format: "fcstd".into(),
+                object_id: self.source_object.clone(),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
         });
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
