@@ -86,16 +86,28 @@ pub fn decode(
     if options.container_only {
         let ir = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return Ok(DecodeResult::new(ir, report));
+        return Ok(decode_result(ir, report));
     }
 
     if let Some((ir, report)) = try_decode_geometry(&scan) {
-        return Ok(DecodeResult::new(ir, report));
+        return Ok(decode_result(ir, report));
     }
 
     let ir = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
-    Ok(DecodeResult::new(ir, report))
+    Ok(decode_result(ir, report))
+}
+
+fn decode_result(mut ir: CadIr, report: DecodeReport) -> DecodeResult {
+    let annotations = std::mem::take(&mut ir.annotations);
+    DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        cadmpeg_ir::SourceFidelity {
+            annotations,
+            ..cadmpeg_ir::SourceFidelity::default()
+        },
+    )
 }
 
 /// Aggregate carrier counts across the decoded streams, for reporting.
