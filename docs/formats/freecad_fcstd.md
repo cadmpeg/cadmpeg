@@ -144,6 +144,13 @@ document token and target name without attempting to open the document. Missing 
 container/prototype cycles are validation errors; external targets remain intentionally unresolved
 records rather than being silently dropped or recursively loaded.
 
+Native namespace version 5 extends occurrences with ordered link-array element placements and
+scale vectors. Each side entry begins with a little-endian element count followed by either all
+single-precision or all double-precision components; exact entry length selects the precision.
+Placement records carry position plus quaternion, while scale records carry three components.
+Zero quaternions, non-finite values, malformed lengths, and non-empty list counts that disagree with
+`ElementCount` are invalid.
+
 Pad, pocket, and linear-extrusion records resolve linked neutral sketches when their profile link
 targets an earlier decoded sketch. Their literal and evaluated length values remain linked to the
 owning native property, and the operation records distinguish additive, subtractive, and

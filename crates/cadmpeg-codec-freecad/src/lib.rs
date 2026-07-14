@@ -192,6 +192,26 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(node.id.clone()),
             ));
         }
+        let invalid_array_count = node.element_count.is_some_and(|count| {
+            count < 0
+                || [node.element_transforms.len(), node.element_scales.len()]
+                    .into_iter()
+                    .any(|length| length != 0 && i64::try_from(length).ok() != Some(count))
+        });
+        let non_finite_array = node
+            .element_transforms
+            .iter()
+            .flatten()
+            .flatten()
+            .chain(node.element_scales.iter().flatten())
+            .any(|value| !value.is_finite());
+        if invalid_array_count || non_finite_array {
+            findings.push(finding(
+                Check::Counts,
+                format!("{} has invalid link-array count or values", node.id),
+                Some(node.id.clone()),
+            ));
+        }
     }
     for extension in &extensions {
         if !object_ids.contains(extension.owner.as_str()) {
@@ -610,7 +630,7 @@ impl Codec for FcstdCodec {
             namespace.set_arena("string_tables", &string_tables)?;
             namespace.set_arena(
                 "product_nodes",
-                &product::transfer(&graph.objects, &graph.properties),
+                &product::transfer(&graph.objects, &graph.properties, &scan.data)?,
             )?;
             let mut curve_transfer = transfer_text_curves(&shape_payloads, &graph.properties);
             let surface_transfer =

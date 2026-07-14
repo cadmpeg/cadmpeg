@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 
 /// One product container, prototype, or placed link occurrence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -30,6 +30,10 @@ pub struct ProductNodeRecord {
     pub element_count: Option<i64>,
     /// Whether the prototype transform participates in occurrence placement.
     pub link_transform: Option<bool>,
+    /// Ordered per-element placements for a link array.
+    pub element_transforms: Vec<[[f64; 4]; 4]>,
+    /// Ordered per-element scale vectors for a link array.
+    pub element_scales: Vec<[f64; 3]>,
 }
 
 /// One persisted GUI view provider linked to an application object when available.

@@ -198,18 +198,32 @@ fn recovers_product_prototypes_occurrences_and_placements() {
 <ObjectData Count="3">
  <Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Occurrence"/></LinkList></Property></Properties></Object>
  <Object name="Prototype"><Properties Count="0"/></Object>
- <Object name="Occurrence"><Properties Count="4">
+ <Object name="Occurrence"><Properties Count="6">
   <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
   <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
-  <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="3"/></Property>
+  <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="2"/></Property>
   <Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="PlacementList"/></Property>
+  <Property name="ScaleList" type="App::PropertyVectorList"><VectorList file="ScaleList"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
+    let mut placements = 2_u32.to_le_bytes().to_vec();
+    for value in [
+        1.0_f64, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 4.0, 5.0, 6.0, 0.0, 0.0, 0.0, 1.0,
+    ] {
+        placements.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut scales = 2_u32.to_le_bytes().to_vec();
+    for value in [1.0_f64, 1.0, 1.0, 2.0, 2.0, 2.0] {
+        scales.extend_from_slice(&value.to_le_bytes());
+    }
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("PlacementList", &placements),
+        ("ScaleList", &scales),
+    ]);
     let result = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("product structure");
     let nodes = result
         .ir
@@ -230,8 +244,11 @@ fn recovers_product_prototypes_occurrences_and_placements() {
         Some("fcstd:object:Prototype")
     );
     assert_eq!(occurrence.local_transform.expect("placement")[0][3], 4.0);
-    assert_eq!(occurrence.element_count, Some(3));
+    assert_eq!(occurrence.element_count, Some(2));
     assert_eq!(occurrence.link_transform, Some(true));
+    assert_eq!(occurrence.element_transforms.len(), 2);
+    assert_eq!(occurrence.element_transforms[1][0][3], 4.0);
+    assert_eq!(occurrence.element_scales, vec![[1.0; 3], [2.0; 3]]);
     assert!(crate::validate_native(&result.ir).is_empty());
 }
 
@@ -639,7 +656,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 4);
+    assert_eq!(namespace.version, 5);
     let gui_providers = namespace
         .arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
         .expect("GUI providers");
