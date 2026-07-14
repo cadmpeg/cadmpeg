@@ -2385,7 +2385,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
         push_generated_topology_row(&mut payload, curve, faces, next);
     }
 
-    let allfeatur = b"\x04\xeb\x04\xe0\x21geoms_affected\0\xf8\x01\x01".to_vec();
+    let allfeatur = b"\x04\xeb\x04\xe0\x21geoms_affected\0\xf8\x01\x63".to_vec();
     let data = build_prt(
         "c",
         &[

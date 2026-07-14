@@ -3849,11 +3849,17 @@ fn transfer_feature_dimensions(
 
 fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
     let generated_surfaces = scan
-        .feature_entity_tables
+        .surface_rows
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
-        .flat_map(|table| &table.surface_ids)
-        .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}")))
+        .filter(|row| row.feature_id == feature_id)
+        .map(|row| SurfaceId(format!("creo:visibgeom:surface#{}", row.id)))
+        .chain(
+            scan.feature_entity_tables
+                .iter()
+                .filter(|table| table.feature_id == Some(feature_id))
+                .flat_map(|table| &table.surface_ids)
+                .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))),
+        )
         .chain(
             scan.feature_affected_ids
                 .iter()
