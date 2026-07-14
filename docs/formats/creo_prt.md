@@ -312,10 +312,16 @@ retains its stored direction from the first corner to the second and defines
 the extrusion vector. The four placed points form a non-rational clamped cubic B-spline with knot vector
 `[0,0,0,0,1,1,1,1]`.
 
-The six-token envelope has either the prefix layout
+The reflected-planar six-token envelope has either the prefix layout
 `_ 46 2f _ 46 2e` or `_ 42 7f..86 _ 18 7f..86`. In the second layout, the
 first and fourth prefixes are one of `46`, `4a`, `d1`, `d3`, `de`, or `df`.
-Other six-scalar sequences after the marker are not directrix envelopes.
+An offset-planar envelope has prefix layout `_ 2d _ _ 2d _`. Its first
+directrix axis is the unique signed unit-slope map from the local coordinate
+range to the frame bounds whose intercept has magnitude 30. Its second axis is
+the unique signed unit-slope map with zero intercept. The remaining frame axis
+is sign-reflected and runs from the first corner to the second. A missing or
+non-unique signed map leaves the envelope opaque. Other six-scalar sequences
+after the marker are not directrix envelopes.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 

@@ -3437,10 +3437,44 @@ fn extruded_nurbs_surface(directrix: &NurbsCurve, sweep: [f64; 3]) -> Option<Nur
     })
 }
 
+fn signed_unit_chart(local: [f64; 2], frame: [f64; 2], offset: f64) -> Option<(f64, f64)> {
+    let close = |left: f64, right: f64| {
+        (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
+    };
+    let mut matches = Vec::new();
+    for sign in [-1.0, 1.0] {
+        let frame = [sign * frame[0], sign * frame[1]];
+        for reversed in [false, true] {
+            let target = if reversed {
+                [frame[1], frame[0]]
+            } else {
+                frame
+            };
+            let slope = if reversed { -1.0 } else { 1.0 };
+            let intercept = target[0] - slope * local[0];
+            if close(target[1], slope * local[1] + intercept)
+                && close(intercept.abs(), offset)
+                && !matches.contains(&(slope, intercept))
+            {
+                matches.push((slope, intercept));
+            }
+        }
+    }
+    let [mapping] = matches.as_slice() else {
+        return None;
+    };
+    Some(*mapping)
+}
+
 fn placed_tabulated_cylinder_directrix(
     replay: &crate::surface::TabulatedCylinderCurveReplay,
     parameters: &crate::surface::SurfaceParameterRecord,
 ) -> Option<(NurbsCurve, [f64; 3])> {
+    #[derive(Clone, Copy)]
+    enum FrameLayout {
+        ReflectedPlanar,
+        OffsetPlanar,
+    }
     if parameters.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
         return None;
     }
@@ -3452,7 +3486,7 @@ fn placed_tabulated_cylinder_directrix(
         .copied()
         .collect::<Option<Vec<_>>>()?;
     let cache = crate::scalar::ScalarCache::default();
-    let values = (|| {
+    let (values, layout) = (|| {
         let marker = parameters
             .body
             .windows(3)
@@ -3477,18 +3511,24 @@ fn placed_tabulated_cylinder_directrix(
                 && matches!(second, 0x46 | 0x4a | 0xd1 | 0xd3 | 0xde | 0xdf)
                 && matches!(z0, 0x7f..=0x86)
                 && matches!(z1, 0x7f..=0x86));
-        (resistor_layout || thyrister_layout).then_some(())?;
-        Some(values)
+        if resistor_layout || thyrister_layout {
+            Some((values, FrameLayout::ReflectedPlanar))
+        } else if matches!(heads.as_slice(), [_, 0x2d, _, _, 0x2d, _]) {
+            Some((values, FrameLayout::OffsetPlanar))
+        } else {
+            None
+        }
     })()
     .or_else(|| {
         let [_, frame] = parameters.scalar_frames.as_slice() else {
             return None;
         };
-        frame
+        let values = frame
             .slots
             .iter()
             .map(|slot| slot.value)
-            .collect::<Option<Vec<_>>>()
+            .collect::<Option<Vec<_>>>()?;
+        Some((values, FrameLayout::ReflectedPlanar))
     })?;
     let [a0, a1, a2, b0, b1, b2] = values.as_slice() else {
         return None;
@@ -3540,30 +3580,57 @@ fn placed_tabulated_cylinder_directrix(
     let [(first_axis, second_axis, sweep_axis)] = assignments.as_slice() else {
         return None;
     };
+    let offset_chart = match layout {
+        FrameLayout::ReflectedPlanar => None,
+        FrameLayout::OffsetPlanar => Some((
+            signed_unit_chart(
+                [local_min[0], local_max[0]],
+                [first[*first_axis], second[*first_axis]],
+                30.0,
+            )?,
+            signed_unit_chart(
+                [local_min[1], local_max[1]],
+                [first[*second_axis], second[*second_axis]],
+                0.0,
+            )?,
+        )),
+    };
     let control_points = points
         .iter()
         .map(|point| {
             let mut placed = [0.0; 3];
-            let chart_first =
-                first[*first_axis].max(second[*first_axis]) - (point[0] - local_min[0]);
-            let chart_second =
-                first[*second_axis].min(second[*second_axis]) + (point[1] - local_min[1]);
-            placed[*first_axis] = if *first_axis < 2 {
-                -chart_first
-            } else {
-                chart_first
-            };
-            placed[*second_axis] = if *second_axis < 2 {
-                -chart_second
-            } else {
-                chart_second
-            };
-            placed[*sweep_axis] = first[*sweep_axis];
+            match offset_chart {
+                Some(((first_slope, first_intercept), (second_slope, second_intercept))) => {
+                    placed[*first_axis] = first_slope * point[0] + first_intercept;
+                    placed[*second_axis] = second_slope * point[1] + second_intercept;
+                    placed[*sweep_axis] = -first[*sweep_axis];
+                }
+                None => {
+                    let chart_first =
+                        first[*first_axis].max(second[*first_axis]) - (point[0] - local_min[0]);
+                    let chart_second =
+                        first[*second_axis].min(second[*second_axis]) + (point[1] - local_min[1]);
+                    placed[*first_axis] = if *first_axis < 2 {
+                        -chart_first
+                    } else {
+                        chart_first
+                    };
+                    placed[*second_axis] = if *second_axis < 2 {
+                        -chart_second
+                    } else {
+                        chart_second
+                    };
+                    placed[*sweep_axis] = first[*sweep_axis];
+                }
+            }
             Point3::new(placed[0], placed[1], placed[2])
         })
         .collect();
     let mut sweep = [0.0; 3];
-    sweep[*sweep_axis] = second[*sweep_axis] - first[*sweep_axis];
+    sweep[*sweep_axis] = match layout {
+        FrameLayout::ReflectedPlanar => second[*sweep_axis] - first[*sweep_axis],
+        FrameLayout::OffsetPlanar => first[*sweep_axis] - second[*sweep_axis],
+    };
     (sweep[*sweep_axis].is_finite() && sweep[*sweep_axis] != 0.0).then_some((
         NurbsCurve {
             degree: 3,
@@ -8185,6 +8252,27 @@ mod resolved_sketch_tests {
         assert_eq!(curve.control_points[0], Point3::new(-13.0, -20.0, 5.0));
         assert_eq!(curve.control_points[3], Point3::new(-10.0, -22.0, 5.0));
         assert_eq!(sweep, [0.0, 0.0, 5.0]);
+    }
+
+    #[test]
+    fn tabulated_cylinder_offset_chart_resolves_signed_unit_axes() {
+        assert_eq!(
+            signed_unit_chart(
+                [33.480_874_469_5, 34.047_445_706_6],
+                [3.480_874_469_5, 4.047_445_706_6],
+                30.0,
+            ),
+            Some((1.0, -30.0))
+        );
+        assert_eq!(
+            signed_unit_chart(
+                [0.576_336_341_1, 0.746_308_064_9],
+                [-0.746_308_064_9, -0.576_336_341_1],
+                0.0,
+            ),
+            Some((-1.0, 0.0))
+        );
+        assert_eq!(signed_unit_chart([1.0, 2.0], [4.0, 5.0], 30.0), None);
     }
 
     #[test]
