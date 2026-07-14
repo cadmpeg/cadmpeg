@@ -361,6 +361,9 @@ does not remove the solver relation.
 The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;
 the last row may terminate directly at the next structural or named record.
+A relation joined to exactly one incidence through `rel_id` and `skamp_id`
+inherits that incidence's ordered section-entity references. This entity join is
+independent of whether the relation discriminator has a neutral typed mapping.
 
 Within the three four-slot `relat_ptr` operand vectors, `e5` expands to two
 zero slots and `e6` expands to three zero slots. `e4` is the integer value one,

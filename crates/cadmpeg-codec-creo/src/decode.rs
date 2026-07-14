@@ -3690,6 +3690,49 @@ fn section_point_locus(
     }
 }
 
+fn relation_incidence_entities(
+    definition: &crate::feature::FeatureDefinition,
+    relation_id: u32,
+) -> Vec<SketchEntityId> {
+    let Some(relations) = &definition.relations else {
+        return Vec::new();
+    };
+    let incidence_ids = relations
+        .triples
+        .iter()
+        .filter(|triple| triple.relation_id == Some(relation_id))
+        .filter_map(|triple| triple.skamp_id)
+        .collect::<BTreeSet<_>>();
+    if incidence_ids.len() != 1 {
+        return Vec::new();
+    }
+    let incidence_id = *incidence_ids
+        .first()
+        .expect("single relation incidence id exists");
+    let incidences = relations
+        .skamps
+        .iter()
+        .filter(|skamp| skamp.id == incidence_id)
+        .collect::<Vec<_>>();
+    let [incidence] = incidences.as_slice() else {
+        return Vec::new();
+    };
+    let known = section_entity_external_ids(definition);
+    incidence
+        .items
+        .iter()
+        .map(|item| {
+            known.contains(&item.entity_id).then(|| {
+                SketchEntityId(format!(
+                    "creo:featdefs:sketch_entity#{}:{}",
+                    definition.id, item.entity_id
+                ))
+            })
+        })
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default()
+}
+
 fn section_dimension_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -3772,7 +3815,7 @@ fn section_dimension_constraints(
             let constraint_definition =
                 typed.unwrap_or_else(|| SketchConstraintDefinition::Native {
                     native_kind: format!("creo:relation:{}", relation.relation_type),
-                    entities: Vec::new(),
+                    entities: relation_incidence_entities(definition, relation.relation_id),
                     parameter,
                     operands: vec![SketchNativeOperand {
                         native_kind: "relat_ptr".to_string(),
@@ -6597,7 +6640,12 @@ mod resolved_sketch_tests {
                 }],
                 offset: 30,
             }],
-            triples: Vec::new(),
+            triples: vec![crate::feature::FeatureRelationTriple {
+                relation_id: Some(7),
+                equation_id: None,
+                skamp_id: Some(5),
+                offset: 31,
+            }],
             offset: 28,
         });
         let constraints =
@@ -6609,6 +6657,12 @@ mod resolved_sketch_tests {
                     "creo:featdefs:sketch_entity#5:42".to_string()
                 )]
         ));
+        assert_eq!(
+            relation_incidence_entities(&constrained, 7),
+            vec![SketchEntityId(
+                "creo:featdefs:sketch_entity#5:42".to_string()
+            )]
+        );
 
         let mut completed = definition;
         completed
