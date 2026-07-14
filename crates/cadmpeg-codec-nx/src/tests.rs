@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 35);
+    assert_eq!(namespace.version, 36);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -576,7 +576,9 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
 
 #[test]
 fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
-    use crate::native::{FeatureInputBlock, FeatureOperationLabel, FeatureOperationRecord};
+    use crate::native::{
+        FeatureInputBlock, FeatureOperationLabel, FeatureOperationRecord, FeatureSketchReference,
+    };
 
     let label = FeatureOperationLabel {
         id: "nx:feature-history:operation-label#0-7".to_string(),
@@ -606,8 +608,19 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         source_offset: 710 + u64::from(slot),
     };
     let inputs = [input(2, 81), input(0, 45)];
+    let reference = |ordinal, index| FeatureSketchReference {
+        id: format!("nx:feature-history:sketch-reference#0-7-{ordinal}"),
+        operation_label: label.id.clone(),
+        ordinal,
+        declared_count: 2,
+        terminal: ordinal == 1,
+        object_index: index,
+        data_block: Some(format!("nx:om-data-blocks-2:block#{index}")),
+        source_offset: 740 + u64::from(ordinal),
+    };
+    let references = [reference(1, 97), reference(0, 96)];
 
-    let sketches = crate::native::feature_sketch_records(&[label], &[record], &inputs);
+    let sketches = crate::native::feature_sketch_records(&[label], &[record], &inputs, &references);
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].ordinal, 7);
     assert_eq!(
@@ -619,6 +632,13 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         [
             "nx:feature-history:input-block#0-7-0",
             "nx:feature-history:input-block#0-7-2"
+        ]
+    );
+    assert_eq!(
+        sketches[0].payload_references,
+        [
+            "nx:feature-history:sketch-reference#0-7-0",
+            "nx:feature-history:sketch-reference#0-7-1"
         ]
     );
 }
@@ -1138,6 +1158,83 @@ fn om_operation_payload_strings_require_complete_utf8_frames() {
     assert_eq!(strings[0].offset, 201);
     assert_eq!(strings[0].value, "BLOCK");
     assert_eq!(strings[1].value, "×");
+}
+
+#[test]
+fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SKETCH",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x01\x00\x01\x05\xf0\xff\xf1\x01\x00\xf1\x01\x01\xf1\x01\x02\x00\x00\xf1\x01\x03\x01\x00\x00\x00";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let field = crate::om::sketch_payload_references(record).unwrap();
+    assert_eq!(field.declared_count, 5);
+    let references: [crate::om::SketchPayloadReference; 5] = field.references.try_into().unwrap();
+    assert_eq!(
+        references.map(|reference| reference.object_index),
+        [255, 256, 257, 258, 259]
+    );
+    assert_eq!(
+        references.map(|reference| reference.offset),
+        [204, 206, 209, 212, 217]
+    );
+    let zero = b"\x01\x00\x00\x00\x00\xf0\x42\x01\x00\x00\x00";
+    let field = crate::om::sketch_payload_references(crate::om::OperationRecord {
+        payload: zero,
+        bytes: zero,
+        ..record
+    })
+    .unwrap();
+    assert_eq!(field.declared_count, 0);
+    assert_eq!(field.references.len(), 1);
+    assert_eq!(field.references[0].object_index, 0x42);
+    let two = b"\x01\x00\x01\x02\xf0\x41\x00\x00\xf0\x42\x01\x00\x00\x00";
+    let field = crate::om::sketch_payload_references(crate::om::OperationRecord {
+        payload: two,
+        bytes: two,
+        ..record
+    })
+    .unwrap();
+    assert_eq!(field.declared_count, 2);
+    assert_eq!(
+        field
+            .references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [0x41, 0x42]
+    );
+
+    let mut noncanonical = payload.to_vec();
+    noncanonical[7] = 0;
+    assert!(
+        crate::om::sketch_payload_references(crate::om::OperationRecord {
+            payload: &noncanonical,
+            bytes: &noncanonical,
+            ..record
+        })
+        .is_none()
+    );
+    assert!(
+        crate::om::sketch_payload_references(crate::om::OperationRecord {
+            label: crate::om::OperationLabel {
+                value: "BLOCK",
+                ..label
+            },
+            ..record
+        })
+        .is_none()
+    );
 }
 
 #[test]
@@ -3826,7 +3923,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 35);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 36);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

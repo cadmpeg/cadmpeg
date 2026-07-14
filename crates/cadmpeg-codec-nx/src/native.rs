@@ -314,7 +314,31 @@ pub struct FeatureSketchRecord {
     pub operation_record: String,
     /// Resolved input bindings in header-slot order.
     pub input_blocks: Vec<String>,
+    /// Ordered references carried by the sketch payload.
+    pub payload_references: Vec<String>,
     /// Absolute file offset of the operation label.
+    pub source_offset: u64,
+}
+
+/// Ordered object reference carried by a bounded sketch-operation payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSketchReference {
+    /// Globally unique sketch-reference identity.
+    pub id: String,
+    /// Owning `SKETCH` operation label.
+    pub operation_label: String,
+    /// Zero-based reference order in the counted field.
+    pub ordinal: u32,
+    /// Effective count encoded by the containing reference field.
+    pub declared_count: u8,
+    /// Whether this is the reference following the `00 00` separator.
+    pub terminal: bool,
+    /// Serialized object index.
+    pub object_index: u32,
+    /// Unique target in the native `data_blocks` arena.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
+    /// Absolute file offset of the width marker.
     pub source_offset: u64,
 }
 
@@ -729,23 +753,7 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
                 let Some(object_index) = object_index else {
                     continue;
                 };
-                let candidates = indexed
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, (_, candidate))| {
-                        candidate
-                            .records
-                            .first()
-                            .is_some_and(|record| record.object_id.is_none())
-                            && candidate.records.get(object_index as usize).is_some()
-                    })
-                    .map(|(section_ordinal, (_, candidate))| {
-                        let block_ordinal =
-                            object_index as usize + usize::from(candidate.control.is_some());
-                        format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}")
-                    })
-                    .collect::<Vec<_>>();
-                let [data_block] = candidates.as_slice() else {
+                let Some(data_block) = unique_offset_data_block(&indexed, object_index) else {
                     continue;
                 };
                 let operation_label =
@@ -757,7 +765,7 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
                     operation_label,
                     input_slot: input_slot as u8,
                     object_index,
-                    data_block: data_block.clone(),
+                    data_block,
                     source_offset: entry_offset + label.object_index_offsets[input_slot] as u64,
                 });
             }
@@ -771,6 +779,7 @@ pub fn feature_sketch_records(
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
     inputs: &[FeatureInputBlock],
+    references: &[FeatureSketchReference],
 ) -> Vec<FeatureSketchRecord> {
     labels
         .iter()
@@ -784,6 +793,11 @@ pub fn feature_sketch_records(
                 .filter(|input| input.operation_label == label.id)
                 .collect::<Vec<_>>();
             input_blocks.sort_by_key(|input| input.input_slot);
+            let mut payload_references = references
+                .iter()
+                .filter(|reference| reference.operation_label == label.id)
+                .collect::<Vec<_>>();
+            payload_references.sort_by_key(|reference| reference.ordinal);
             Some(FeatureSketchRecord {
                 id: label.id.replacen("operation-label", "sketch-record", 1),
                 operation_label: label.id.clone(),
@@ -793,10 +807,88 @@ pub fn feature_sketch_records(
                     .into_iter()
                     .map(|input| input.id.clone())
                     .collect(),
+                payload_references: payload_references
+                    .into_iter()
+                    .map(|reference| reference.id.clone())
+                    .collect(),
                 source_offset: label.source_offset,
             })
         })
         .collect()
+}
+
+/// Decode and resolve the ordered counted-reference field in sketch payloads.
+pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchReference> {
+    let indexed = container.indexed_om_sections();
+    let sections = container.om_sections();
+    let mut references = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let Some(decoded) = crate::om::sketch_payload_references(record) else {
+                continue;
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+            let declared_count = decoded.declared_count;
+            let terminal_ordinal = decoded.references.len() - 1;
+            references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, reference)| {
+                let data_block = unique_offset_data_block(&indexed, reference.object_index);
+                FeatureSketchReference {
+                    id: format!(
+                        "nx:feature-history:sketch-reference#{section_key}-{operation_ordinal}-{ordinal}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    ordinal: ordinal as u32,
+                    declared_count,
+                    terminal: ordinal == terminal_ordinal,
+                    object_index: reference.object_index,
+                    data_block,
+                    source_offset: entry_offset + reference.offset as u64,
+                }
+            }));
+        }
+    }
+    references
+}
+
+fn unique_offset_data_block(
+    indexed: &[(&crate::container::DirEntry, crate::om::IndexedSection<'_>)],
+    object_index: u32,
+) -> Option<String> {
+    let candidates = indexed
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, candidate))| {
+            candidate
+                .records
+                .first()
+                .is_some_and(|record| record.object_id.is_none())
+                && candidate.records.get(object_index as usize).is_some()
+        })
+        .map(|(section_ordinal, (_, candidate))| {
+            let block_ordinal = object_index as usize + usize::from(candidate.control.is_some());
+            format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}")
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 /// Join operation input lanes to uniquely resolved parameter declarations.

@@ -2768,10 +2768,12 @@ fn attach_native_object_model(
     let feature_body_reference_occurrences =
         crate::native::feature_body_reference_occurrences(&scan.container);
     let feature_input_blocks = crate::native::feature_input_blocks(&scan.container);
+    let feature_sketch_references = crate::native::feature_sketch_references(&scan.container);
     let feature_sketch_records = crate::native::feature_sketch_records(
         &feature_operation_labels,
         &feature_operation_records,
         &feature_input_blocks,
+        &feature_sketch_references,
     );
     let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
     let expression_declarations = crate::native::expression_declarations(&scan.container);
@@ -2804,6 +2806,7 @@ fn attach_native_object_model(
         && feature_payload_strings.is_empty()
         && feature_body_references.is_empty()
         && feature_input_blocks.is_empty()
+        && feature_sketch_references.is_empty()
         && feature_sketch_records.is_empty()
         && feature_boolean_operations.is_empty()
         && expression_declarations.is_empty()
@@ -3040,6 +3043,7 @@ fn attach_native_object_model(
             body_references: &feature_body_references,
             body_reference_occurrences: &feature_body_reference_occurrences,
             input_blocks: &feature_input_blocks,
+            sketch_references: &feature_sketch_references,
             parameter_bindings: &feature_parameter_bindings,
             operation_records: &feature_operation_records,
             payload_strings: &feature_payload_strings,
@@ -3052,7 +3056,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(35);
+    namespace.version = namespace.version.max(36);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3094,6 +3098,9 @@ fn attach_native_object_model(
     }
     if !feature_input_blocks.is_empty() {
         namespace.set_arena("feature_input_blocks", &feature_input_blocks)?;
+    }
+    if !feature_sketch_references.is_empty() {
+        namespace.set_arena("feature_sketch_references", &feature_sketch_references)?;
     }
     if !feature_sketch_records.is_empty() {
         namespace.set_arena("feature_sketch_records", &feature_sketch_records)?;
@@ -3159,6 +3166,7 @@ struct FeatureOperationSources<'a> {
     body_references: &'a [crate::native::FeatureBodyReference],
     body_reference_occurrences: &'a [crate::native::FeatureBodyReferenceOccurrence],
     input_blocks: &'a [crate::native::FeatureInputBlock],
+    sketch_references: &'a [crate::native::FeatureSketchReference],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
     operation_records: &'a [crate::native::FeatureOperationRecord],
     payload_strings: &'a [crate::native::FeaturePayloadString],
@@ -3176,6 +3184,7 @@ fn attach_feature_operations(
         body_references,
         body_reference_occurrences,
         input_blocks,
+        sketch_references,
         parameter_bindings,
         operation_records,
         payload_strings,
@@ -3215,6 +3224,14 @@ fn attach_feature_operations(
             .entry(input.operation_label.as_str())
             .or_default()
             .push(input);
+    }
+    let mut sketch_references_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureSketchReference>>::new();
+    for reference in sketch_references {
+        sketch_references_by_operation
+            .entry(reference.operation_label.as_str())
+            .or_default()
+            .push(reference);
     }
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
@@ -3313,6 +3330,19 @@ fn attach_feature_operations(
             source_properties.insert(
                 format!("input_block.{}", input.input_slot),
                 input.data_block.clone(),
+            );
+        }
+        for reference in sketch_references_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("sketch_reference.{}", reference.ordinal),
+                reference
+                    .data_block
+                    .clone()
+                    .unwrap_or_else(|| reference.object_index.to_string()),
             );
         }
         for binding in parameter_bindings_by_operation

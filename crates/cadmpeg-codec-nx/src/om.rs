@@ -236,6 +236,24 @@ pub struct OperationPayloadString<'a> {
     pub value: &'a str,
 }
 
+/// One variable-width object index in the ordered sketch reference field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SketchPayloadReference {
+    /// Absolute offset of the width marker.
+    pub offset: usize,
+    /// Decoded object index.
+    pub object_index: u32,
+}
+
+/// Counted reference field in one bounded sketch-operation payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SketchPayloadReferenceField {
+    /// Effective count encoded by the nonempty flag and optional count byte.
+    pub declared_count: u8,
+    /// Ordered pre-separator references followed by the terminal reference.
+    pub references: Vec<SketchPayloadReference>,
+}
+
 /// Self-framed NX parameter name in one bounded expression declaration record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExpressionDeclarationName<'a> {
@@ -562,6 +580,84 @@ pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPa
         at = end + 1;
     }
     strings
+}
+
+/// Decode the unique counted reference field in a bounded `SKETCH` payload.
+pub fn sketch_payload_references(
+    record: OperationRecord<'_>,
+) -> Option<SketchPayloadReferenceField> {
+    if record.label.value != "SKETCH" {
+        return None;
+    }
+    let mut matches = Vec::new();
+    for start in 0..record.payload.len().saturating_sub(3) {
+        if record.payload.get(start..start + 2) != Some(&[0x01, 0x00]) {
+            continue;
+        }
+        if let Some(references) = sketch_reference_field(record, start) {
+            matches.push(references);
+        }
+    }
+    let [references] = matches.as_slice() else {
+        return None;
+    };
+    Some(references.clone())
+}
+
+fn sketch_reference_field(
+    record: OperationRecord<'_>,
+    start: usize,
+) -> Option<SketchPayloadReferenceField> {
+    let flag = *record.payload.get(start + 2)?;
+    let (declared_count, mut at) = match flag {
+        0 => (0, start + 3),
+        1 => {
+            let count = *record.payload.get(start + 3)?;
+            if count == 0 {
+                return None;
+            }
+            (count, start + 4)
+        }
+        _ => return None,
+    };
+    let leading_count = declared_count.saturating_sub(1) as usize;
+    let mut references = Vec::with_capacity(leading_count + 1);
+    for _ in 0..leading_count {
+        let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+        references.push(SketchPayloadReference {
+            offset: record.payload_offset + at,
+            object_index,
+        });
+        at += width;
+    }
+    if record.payload.get(at..at + 2) != Some(&[0x00, 0x00]) {
+        return None;
+    }
+    at += 2;
+    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    references.push(SketchPayloadReference {
+        offset: record.payload_offset + at,
+        object_index,
+    });
+    at += width;
+    if record.payload.get(at..at + 4) != Some(&[0x01, 0x00, 0x00, 0x00]) {
+        return None;
+    }
+    Some(SketchPayloadReferenceField {
+        declared_count,
+        references,
+    })
+}
+
+fn payload_object_index(bytes: &[u8]) -> Option<(u32, usize)> {
+    match *bytes.first()? {
+        0xf0 => Some((u32::from(*bytes.get(1)?), 2)),
+        0xf1 => {
+            let value = u16::from_be_bytes([*bytes.get(1)?, *bytes.get(2)?]);
+            (value >= 0x0100).then_some((u32::from(value), 3))
+        }
+        _ => None,
+    }
 }
 
 /// Decode the unique `04, length, p<decimal>[_qualifier], 00` declaration name.
