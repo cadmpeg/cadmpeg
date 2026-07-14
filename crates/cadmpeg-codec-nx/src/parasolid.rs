@@ -70,6 +70,10 @@ pub struct AttributeDefinition<'a> {
     pub field_record_references: [u16; 2],
     /// Two field-record header words following the catalog references.
     pub field_record_header_words: [u16; 2],
+    /// Exact 26-byte descriptor prefix following the field-record header.
+    pub field_descriptor_prefix: [u8; 26],
+    /// One serialized field code for every declared field.
+    pub field_codes: &'a [u8],
 }
 
 /// One framed type-81 Parasolid entity/attribute-list record.
@@ -290,11 +294,32 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
             at += 1;
             continue;
         };
+        let field_count = u32::from_be_bytes(field_header[2..6].try_into().expect("four bytes"));
+        let descriptor_start = name_end + 16;
+        let Some(descriptor_end) = descriptor_start.checked_add(26) else {
+            at += 1;
+            continue;
+        };
+        let Some(field_codes_end) = descriptor_end.checked_add(field_count as usize) else {
+            at += 1;
+            continue;
+        };
+        let Some(field_descriptor_prefix) = bytes
+            .get(descriptor_start..descriptor_end)
+            .and_then(|value| value.try_into().ok())
+        else {
+            at += 1;
+            continue;
+        };
+        let Some(field_codes) = bytes.get(descriptor_end..field_codes_end) else {
+            at += 1;
+            continue;
+        };
         definitions.push(AttributeDefinition {
             offset: at,
             xmt: u16::from_be_bytes([identity[0], identity[1]]),
             name,
-            field_count: u32::from_be_bytes(field_header[2..6].try_into().expect("four bytes")),
+            field_count,
             field_record_xmt: u16::from_be_bytes(field_header[6..8].try_into().expect("two bytes")),
             field_record_references: [
                 u16::from_be_bytes(field_header[8..10].try_into().expect("two bytes")),
@@ -304,8 +329,10 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
                 u16::from_be_bytes(field_header[12..14].try_into().expect("two bytes")),
                 u16::from_be_bytes(field_header[14..16].try_into().expect("two bytes")),
             ],
+            field_descriptor_prefix,
+            field_codes,
         });
-        at = name_end;
+        at = field_codes_end;
     }
     definitions
 }

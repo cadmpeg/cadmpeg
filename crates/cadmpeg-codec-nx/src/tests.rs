@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 122);
+    assert_eq!(namespace.version, 123);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -3585,6 +3585,8 @@ fn topology_attribute_class_uses_resolve_one_based_stream_catalog_indices() {
         field_record_xmt: 19,
         field_record_references: [21, 22],
         field_record_header_words: [0, 9000],
+        field_descriptor_prefix: [0; 26],
+        field_codes: vec![1],
         inflated_offset: 100,
     };
     let entity = ParasolidEntity51Record {
@@ -5921,7 +5923,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 122);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 123);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -6265,6 +6267,12 @@ fn parasolid_attribute_definition_requires_declared_printable_name_and_field_rec
     bytes.extend_from_slice(&0x0030u16.to_be_bytes());
     bytes.extend_from_slice(&0x0031u16.to_be_bytes());
     bytes.extend_from_slice(&[0x00, 0x00, 0x23, 0x28]);
+    let descriptor = [
+        0x00, 0x00, 0x00, 0x00, 0x03, 0x06, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+    ];
+    bytes.extend_from_slice(&descriptor);
+    bytes.push(1);
     let definitions = crate::parasolid::attribute_definitions(&bytes);
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].offset, 1);
@@ -6274,6 +6282,11 @@ fn parasolid_attribute_definition_requires_declared_printable_name_and_field_rec
     assert_eq!(definitions[0].field_record_xmt, 0x12b);
     assert_eq!(definitions[0].field_record_references, [0x30, 0x31]);
     assert_eq!(definitions[0].field_record_header_words, [0, 0x2328]);
+    assert_eq!(definitions[0].field_descriptor_prefix, descriptor);
+    assert_eq!(definitions[0].field_codes, [1]);
+
+    let truncated = &bytes[..bytes.len() - 1];
+    assert!(crate::parasolid::attribute_definitions(truncated).is_empty());
 
     bytes[20] = 0;
     assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());

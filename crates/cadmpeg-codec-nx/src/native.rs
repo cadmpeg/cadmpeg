@@ -137,6 +137,10 @@ pub struct ParasolidAttributeDefinition {
     pub field_record_references: [u16; 2],
     /// Two field-record header words following the catalog references.
     pub field_record_header_words: [u16; 2],
+    /// Exact 26-byte descriptor prefix following the field-record header.
+    pub field_descriptor_prefix: [u8; 26],
+    /// One serialized code for every declared field.
+    pub field_codes: Vec<u8>,
     /// Offset of the declaration in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -4412,6 +4416,8 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
                     field_record_xmt: definition.field_record_xmt,
                     field_record_references: definition.field_record_references,
                     field_record_header_words: definition.field_record_header_words,
+                    field_descriptor_prefix: definition.field_descriptor_prefix,
+                    field_codes: definition.field_codes.to_vec(),
                     inflated_offset: definition.offset as u64,
                 })
         })
