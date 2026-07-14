@@ -6,6 +6,7 @@ mod container;
 mod design;
 mod element_map;
 mod gui;
+mod joint;
 mod native;
 mod persistence;
 mod product;
@@ -91,6 +92,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
     let product_nodes = match namespace.arena_as::<native::ProductNodeRecord>("product_nodes") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
+    let joints = match namespace.arena_as::<native::JointRecord>("joints") {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
@@ -210,6 +215,34 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Check::Counts,
                 format!("{} has invalid link-array count or values", node.id),
                 Some(node.id.clone()),
+            ));
+        }
+    }
+    for joint in &joints {
+        let missing_link = !object_ids.contains(joint.object.as_str())
+            || joint.references.iter().any(|reference| {
+                reference.document.is_none()
+                    && reference
+                        .object
+                        .as_ref()
+                        .is_some_and(|object| !object_ids.contains(object.as_str()))
+            });
+        let expected_placements = if joint.kind == "grounded" { 1 } else { 2 };
+        let invalid_frames = joint.placements.len() != expected_placements
+            || joint
+                .placements
+                .iter()
+                .flatten()
+                .flatten()
+                .any(|value| !value.is_finite());
+        if missing_link || invalid_frames {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!(
+                    "{} has missing operands or invalid connector frames",
+                    joint.id
+                ),
+                Some(joint.id.clone()),
             ));
         }
     }
@@ -631,6 +664,10 @@ impl Codec for FcstdCodec {
             namespace.set_arena(
                 "product_nodes",
                 &product::transfer(&graph.objects, &graph.properties, &scan.data)?,
+            )?;
+            namespace.set_arena(
+                "joints",
+                &joint::transfer(&graph.objects, &graph.properties),
             )?;
             let mut curve_transfer = transfer_text_curves(&shape_payloads, &graph.properties);
             let surface_transfer =

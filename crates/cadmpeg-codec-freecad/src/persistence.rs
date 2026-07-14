@@ -280,7 +280,7 @@ fn parse_properties(
             })
             .collect::<Vec<_>>();
         let links = if type_name.contains("PropertyLink") || type_name.contains("PropertyXLink") {
-            values.iter().flat_map(link_targets).collect()
+            parse_link_targets(node, &values)
         } else {
             Vec::new()
         };
@@ -326,6 +326,53 @@ fn parse_properties(
         });
     }
     Ok(())
+}
+
+fn parse_link_targets(
+    property: roxmltree::Node<'_, '_>,
+    values: &[ValueRecord],
+) -> Vec<LinkTarget> {
+    let structured = property
+        .descendants()
+        .filter(|node| matches!(node.tag_name().name(), "Link" | "XLink"))
+        .filter_map(|node| {
+            let attributes = node
+                .attributes()
+                .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
+                .collect::<BTreeMap<_, _>>();
+            let object = attribute_any(
+                &attributes,
+                &["value", "Value", "object", "Object", "name", "Name"],
+            );
+            let document = attribute_any(
+                &attributes,
+                &["document", "Document", "doc", "Doc", "file", "File"],
+            )
+            .filter(|document| !document.is_empty());
+            let subelements = node
+                .attributes()
+                .filter(|attribute| attribute.name().to_ascii_lowercase().contains("sub"))
+                .map(|attribute| attribute.value().to_owned())
+                .chain(
+                    node.children()
+                        .filter(|child| child.has_tag_name("Sub"))
+                        .filter_map(|child| child.attribute("value").map(str::to_owned)),
+                )
+                .collect::<Vec<_>>();
+            (object.is_some() || document.is_some() || !subelements.is_empty()).then_some(
+                LinkTarget {
+                    document,
+                    object,
+                    subelements,
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    if structured.is_empty() {
+        values.iter().flat_map(link_targets).collect()
+    } else {
+        structured
+    }
 }
 
 fn classify_property(type_name: &str) -> PropertyFamily {

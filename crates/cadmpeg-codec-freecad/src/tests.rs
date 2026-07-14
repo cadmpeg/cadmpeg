@@ -253,6 +253,53 @@ fn recovers_product_prototypes_occurrences_and_placements() {
 }
 
 #[test]
+fn recovers_assembly_joint_operands_frames_and_state() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Assembly::AssemblyObject" name="Assembly" id="1"/>
+ <Object type="App::FeaturePython" name="Joint" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Assembly"><Properties Count="0"/></Object>
+ <Object name="Joint"><Properties Count="6">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="2"><Sub value="A.Face1"/><Sub value="A.Edge2"/></XLink></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="1"><Sub value="B.Edge3"/></XLink></Property>
+  <Property name="Placement1" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Placement2" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("joint");
+    let joints = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::JointRecord>("joints")
+        .expect("joints");
+    assert_eq!(joints.len(), 1);
+    assert_eq!(joints[0].kind, "Revolute");
+    assert_eq!(joints[0].references.len(), 2);
+    assert_eq!(
+        joints[0].references[0].object.as_deref(),
+        Some("fcstd:object:Assembly")
+    );
+    assert_eq!(joints[0].references[0].subelements, ["A.Face1", "A.Edge2"]);
+    assert_eq!(joints[0].placements[1][0][3], 2.0);
+    assert_eq!(
+        joints[0].parameters.get("Suppressed").map(String::as_str),
+        Some("true")
+    );
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
 fn transfers_sketch_pad_and_pocket_design_history() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -656,7 +703,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 5);
+    assert_eq!(namespace.version, 6);
     let gui_providers = namespace
         .arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
         .expect("GUI providers");

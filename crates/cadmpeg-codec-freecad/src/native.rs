@@ -5,7 +5,24 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 5;
+pub const VERSION: u32 = 6;
+
+/// One assembly joint or grounded-object constraint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JointRecord {
+    /// Stable joint identity.
+    pub id: String,
+    /// Owning application object.
+    pub object: String,
+    /// Persisted joint family code, or `grounded`.
+    pub kind: String,
+    /// Ordered connector references with their subelement paths.
+    pub references: Vec<LinkTarget>,
+    /// Connector-local coordinate frames in connector order.
+    pub placements: Vec<[[f64; 4]; 4]>,
+    /// Joint scalar, limit, detach, enable, and suppression properties.
+    pub parameters: BTreeMap<String, String>,
+}
 
 /// One product container, prototype, or placed link occurrence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

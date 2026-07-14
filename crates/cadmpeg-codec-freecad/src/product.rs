@@ -180,7 +180,7 @@ fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
-fn placement_matrix(property: &PropertyRecord) -> Option<[[f64; 4]; 4]> {
+pub(crate) fn placement_matrix(property: &PropertyRecord) -> Option<[[f64; 4]; 4]> {
     let value = property
         .values
         .iter()

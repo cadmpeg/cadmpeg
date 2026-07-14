@@ -151,6 +151,13 @@ Placement records carry position plus quaternion, while scale records carry thre
 Zero quaternions, non-finite values, malformed lengths, and non-empty list counts that disagree with
 `ElementCount` are invalid.
 
+Native namespace version 6 adds ordered assembly-joint records. Grounded constraints retain their
+object and grounding frame. Other joints retain the persisted enumeration family, two connector
+targets with each target's ordered subelement path, and both connector-local frames. Angular,
+linear, limit-enable, detach, and suppression values remain independently named parameters. Nested
+`Sub` elements belong to their enclosing cross-link and are not separate object references. Joint
+Python proxy payloads remain inert native properties; decoding never imports their module.
+
 Pad, pocket, and linear-extrusion records resolve linked neutral sketches when their profile link
 targets an earlier decoded sketch. Their literal and evaluated length values remain linked to the
 owning native property, and the operation records distinguish additive, subtractive, and
