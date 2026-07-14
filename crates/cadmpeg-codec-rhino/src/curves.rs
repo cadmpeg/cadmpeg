@@ -247,8 +247,7 @@ pub(crate) fn decode_inner(
         return Err(malformed(range.start, "curve recursion limit exceeded"));
     }
     if class_uuid == CURVE_ON_SURFACE {
-        let construction =
-            crate::curve_on_surface::decode(data, range, scale, archive, depth + 1)?;
+        let construction = crate::curve_on_surface::decode(data, range, scale, archive, depth + 1)?;
         let Some(mut curve) = construction.model_curve else {
             return Err(unsupported(
                 construction.source_range.start,

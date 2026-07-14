@@ -183,16 +183,19 @@ pub(crate) fn decode_at(
             "NURBS cage has trailing bytes",
         ));
     }
-    Ok((Cage {
-        source_range: offset..chunk.next_offset,
-        dimension,
-        rational,
-        orders,
-        counts,
-        knots,
-        control_points,
-        weights,
-    }, chunk.next_offset))
+    Ok((
+        Cage {
+            source_range: offset..chunk.next_offset,
+            dimension,
+            rational,
+            orders,
+            counts,
+            knots,
+            control_points,
+            weights,
+        },
+        chunk.next_offset,
+    ))
 }
 
 #[cfg(test)]

@@ -1249,7 +1249,10 @@ mod tests {
     fn angular_measurement_selects_the_arc_containing_the_dimension_line() {
         let first = [1.0, 0.0];
         let second = [0.0, 1.0];
-        assert_eq!(angular_measurement(first, second, [1.0, 1.0]), std::f64::consts::FRAC_PI_2);
+        assert_eq!(
+            angular_measurement(first, second, [1.0, 1.0]),
+            std::f64::consts::FRAC_PI_2
+        );
         assert_eq!(
             angular_measurement(first, second, [-1.0, -1.0]),
             3.0 * std::f64::consts::FRAC_PI_2

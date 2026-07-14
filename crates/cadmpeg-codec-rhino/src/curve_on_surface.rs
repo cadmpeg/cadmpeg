@@ -52,13 +52,8 @@ pub(crate) fn decode(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let mut warnings = Vec::new();
     let c2 = class(data, &mut reader, archive, &mut warnings)?;
-    let decoded = crate::curves::decode_inner_2d(
-        data,
-        c2.class_uuid,
-        c2.class_data_range,
-        archive,
-        depth,
-    )?;
+    let decoded =
+        crate::curves::decode_inner_2d(data, c2.class_uuid, c2.class_data_range, archive, depth)?;
     let DecodedGeometry::Curve {
         curve: parameter_curve,
     } = decoded
