@@ -219,6 +219,17 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
         "jpeg_thumbnail",
         Exactness::ByteExact,
     );
+    let source = result.ir.source.as_ref().expect("source metadata");
+    assert_eq!(source.attributes["section_count"], "1");
+    assert_eq!(source.attributes["section.0.name"], "THMB_IMG_MAIN");
+    assert_eq!(source.attributes["section.0.raw_name"], "THMB_IMG_MAIN");
+    assert_eq!(source.attributes["section.0.role"], role::THUMBNAIL);
+    assert!(source.attributes["section.0.offset"]
+        .parse::<usize>()
+        .is_ok());
+    assert!(source.attributes["section.0.length"]
+        .parse::<usize>()
+        .is_ok());
 }
 
 #[test]

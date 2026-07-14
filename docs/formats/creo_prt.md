@@ -23,6 +23,11 @@ those bytes is not part of the name.
 
 A body-section header has the byte sequence `#\n#<name>\n`. The preceding section ends at the `#` byte before that sequence. Section names are complete printable runs. A decoder must require both the preceding `#` terminator and a printable name when locating a section boundary. ND-layout section names may include an `ND:0:<Name>:N` decoration or a `ModelView#N` suffix.
 
+The ordered section directory stores each validated section's normalized name,
+raw decorated name, semantic role, header offset, and byte length. It enumerates
+decoded and opaque model data, auxiliary assets, and the thumbnail without
+interpreting payload bytes as additional directory entries.
+
 PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology may describe some geometric concepts, but it does not define PSB byte semantics.
 
 ### 1.1 Layout families

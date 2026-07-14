@@ -12896,6 +12896,14 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert("layout".to_string(), scan.layout.token().to_string());
     attributes.insert("file_size".to_string(), scan.data.len().to_string());
     attributes.insert("section_count".to_string(), scan.sections.len().to_string());
+    for (index, section) in scan.sections.iter().enumerate() {
+        let prefix = format!("section.{index}");
+        attributes.insert(format!("{prefix}.name"), section.name.clone());
+        attributes.insert(format!("{prefix}.raw_name"), section.raw_name.clone());
+        attributes.insert(format!("{prefix}.role"), section.role.to_string());
+        attributes.insert(format!("{prefix}.offset"), section.offset.to_string());
+        attributes.insert(format!("{prefix}.length"), section.length.to_string());
+    }
     if let Some(c) = scan.census.srf_array_count {
         attributes.insert("srf_array_count".to_string(), c.to_string());
     }
