@@ -15,12 +15,12 @@ use std::collections::{BTreeMap, BTreeSet};
 const MAX_TRANSFORM_DEPTH: usize = 64;
 
 #[derive(Clone, Copy)]
-pub(super) struct Affine {
-    rows: [[f64; 4]; 3],
+pub(crate) struct Affine {
+    pub(crate) rows: [[f64; 4]; 3],
 }
 
 impl Affine {
-    const IDENTITY: Self = Self {
+    pub(crate) const IDENTITY: Self = Self {
         rows: [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -28,7 +28,7 @@ impl Affine {
         ],
     };
 
-    fn compose(self, local: Self) -> Self {
+    pub(crate) fn compose(self, local: Self) -> Self {
         let mut rows = [[0.0; 4]; 3];
         for (row, values) in rows.iter_mut().enumerate() {
             for (column, value) in values.iter_mut().enumerate().take(3) {
@@ -99,7 +99,7 @@ fn normalized(vector: Vector3) -> Option<Vector3> {
         .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
 }
 
-pub(super) fn resolve_transform(
+pub(crate) fn resolve_transform(
     sequence: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,

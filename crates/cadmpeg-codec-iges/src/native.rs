@@ -3,6 +3,7 @@
 
 use crate::card::CardScan;
 use crate::directory::DirectoryEntry;
+use crate::entities::geometry::{resolve_transform, Affine};
 use crate::global::Global;
 use crate::graph::ReferenceEdge;
 use crate::parameter::{ParameterRecord, Token, TokenValue};
@@ -368,6 +369,22 @@ struct NativeProductProperty {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeProductOccurrence {
+    id: String,
+    source_instance: String,
+    definition: String,
+    member: Option<String>,
+    instance_path: Vec<String>,
+    local_transform: [[f64; 4]; 3],
+    world_transform: [[f64; 4]; 3],
+}
+
+#[derive(Clone)]
+struct OccurrenceDefinition {
+    members: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -435,6 +452,157 @@ fn record_has_property_pointer(record: &ParameterRecord, property_sequence: u32)
     })
 }
 
+fn placement_affine(
+    instance: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    length_factor: f64,
+) -> Option<(u32, Affine)> {
+    let definition = u32::try_from(record.integer(1)?).ok()?;
+    let translation = Affine {
+        rows: [
+            [
+                1.0,
+                0.0,
+                0.0,
+                record.number(2).unwrap_or(0.0) * length_factor,
+            ],
+            [
+                0.0,
+                1.0,
+                0.0,
+                record.number(3).unwrap_or(0.0) * length_factor,
+            ],
+            [
+                0.0,
+                0.0,
+                1.0,
+                record.number(4).unwrap_or(0.0) * length_factor,
+            ],
+        ],
+    };
+    let x_scale = record.number(5).unwrap_or(1.0);
+    let scales = if instance.entity_type == 420 {
+        [
+            x_scale,
+            record.number(6).unwrap_or(x_scale),
+            record.number(7).unwrap_or(x_scale),
+        ]
+    } else {
+        [x_scale; 3]
+    };
+    let scale = Affine {
+        rows: [
+            [scales[0], 0.0, 0.0, 0.0],
+            [0.0, scales[1], 0.0, 0.0],
+            [0.0, 0.0, scales[2], 0.0],
+        ],
+    };
+    let directory = resolve_transform(
+        instance.transform,
+        entries,
+        records,
+        length_factor,
+        &mut std::collections::BTreeSet::new(),
+    )
+    .ok()?;
+    Some((definition, directory.compose(translation.compose(scale))))
+}
+
+struct OccurrenceExpansion<'a> {
+    entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
+    records: &'a BTreeMap<u32, &'a ParameterRecord>,
+    definitions: &'a BTreeMap<u32, OccurrenceDefinition>,
+    length_factor: f64,
+}
+
+impl OccurrenceExpansion<'_> {
+    fn expand(
+        &self,
+        instance_sequence: u32,
+        parent: Affine,
+        path: &mut Vec<u32>,
+        occurrences: &mut Vec<NativeProductOccurrence>,
+    ) {
+        if path.len() >= 64 || path.contains(&instance_sequence) {
+            return;
+        }
+        let (Some(instance), Some(record)) = (
+            self.entries.get(&instance_sequence).copied(),
+            self.records.get(&instance_sequence).copied(),
+        ) else {
+            return;
+        };
+        let Some((definition_sequence, local)) = placement_affine(
+            instance,
+            record,
+            self.entries,
+            self.records,
+            self.length_factor,
+        ) else {
+            return;
+        };
+        let Some(definition) = self.definitions.get(&definition_sequence) else {
+            return;
+        };
+        let world = parent.compose(local);
+        path.push(instance_sequence);
+        let path_ids = path
+            .iter()
+            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+            .collect::<Vec<_>>();
+        let path_key = path
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join("/");
+        occurrences.push(NativeProductOccurrence {
+            id: format!("iges:product:occurrence#{path_key}"),
+            source_instance: format!("iges:entity:directory#{instance_sequence}"),
+            definition: format!("iges:entity:directory#{definition_sequence}"),
+            member: None,
+            instance_path: path_ids.clone(),
+            local_transform: local.rows,
+            world_transform: world.rows,
+        });
+        for member in &definition.members {
+            if self
+                .entries
+                .get(member)
+                .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
+            {
+                self.expand(*member, world, path, occurrences);
+                continue;
+            }
+            let member_local = self
+                .entries
+                .get(member)
+                .and_then(|entry| {
+                    resolve_transform(
+                        entry.transform,
+                        self.entries,
+                        self.records,
+                        self.length_factor,
+                        &mut std::collections::BTreeSet::new(),
+                    )
+                    .ok()
+                })
+                .unwrap_or(Affine::IDENTITY);
+            occurrences.push(NativeProductOccurrence {
+                id: format!("iges:product:occurrence#{path_key}/D{member}"),
+                source_instance: format!("iges:entity:directory#{instance_sequence}"),
+                definition: format!("iges:entity:directory#{definition_sequence}"),
+                member: Some(format!("iges:entity:directory#{member}")),
+                instance_path: path_ids.clone(),
+                local_transform: member_local.rows,
+                world_transform: world.compose(member_local).rows,
+            });
+        }
+        path.pop();
+    }
+}
+
 pub(crate) fn store(
     ir: &mut CadIr,
     scan: &CardScan,
@@ -461,6 +629,10 @@ pub(crate) fn store(
     let by_directory = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
+        .collect::<BTreeMap<_, _>>();
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
     let entities = directory
         .iter()
@@ -1374,6 +1546,54 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let occurrence_definitions = directory
+        .iter()
+        .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
+        .filter_map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied()?;
+            let count = record
+                .integer(3)
+                .and_then(|value| usize::try_from(value).ok())?;
+            let members = (0..count)
+                .map(|index| {
+                    record
+                        .integer(4 + index)
+                        .and_then(|value| u32::try_from(value).ok())
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some((entry.sequence, OccurrenceDefinition { members }))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let contained_instances = occurrence_definitions
+        .values()
+        .flat_map(|definition| definition.members.iter().copied())
+        .filter(|sequence| {
+            entries
+                .get(sequence)
+                .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut product_occurrences = Vec::new();
+    if let Some(length_factor) = global.length_factor_mm() {
+        let expansion = OccurrenceExpansion {
+            entries: &entries,
+            records: &by_directory,
+            definitions: &occurrence_definitions,
+            length_factor,
+        };
+        for root in directory.iter().filter(|entry| {
+            matches!(entry.entity_type, 408 | 420)
+                && entry.form == 0
+                && !contained_instances.contains(&entry.sequence)
+        }) {
+            expansion.expand(
+                root.sequence,
+                Affine::IDENTITY,
+                &mut Vec::new(),
+                &mut product_occurrences,
+            );
+        }
+    }
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -1403,5 +1623,6 @@ pub(crate) fn store(
     namespace.set_arena("attribute_table_definitions", &attribute_table_definitions)?;
     namespace.set_arena("attribute_table_instances", &attribute_table_instances)?;
     namespace.set_arena("product_properties", &product_properties)?;
+    namespace.set_arena("product_occurrences", &product_occurrences)?;
     Ok(())
 }

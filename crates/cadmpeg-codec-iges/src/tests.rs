@@ -3789,6 +3789,27 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
     );
     assert_eq!(child.fields["translation"][0], 1.0);
     assert_eq!(child.fields["scale"], 0.5);
+    let occurrences = &native.arenas["product_occurrences"];
+    assert_eq!(occurrences.len(), 3);
+    let nested = occurrences
+        .iter()
+        .find(|occurrence| occurrence.id == "iges:product:occurrence#9/5")
+        .unwrap();
+    assert_eq!(nested.fields["instance_path"][0], "iges:entity:directory#9");
+    assert_eq!(nested.fields["instance_path"][1], "iges:entity:directory#5");
+    assert_eq!(nested.fields["world_transform"][0][0], 1.0);
+    assert_eq!(nested.fields["world_transform"][0][3], 12.0);
+    assert_eq!(nested.fields["world_transform"][1][3], 24.0);
+    assert_eq!(nested.fields["world_transform"][2][3], 36.0);
+    let leaf = occurrences
+        .iter()
+        .find(|occurrence| occurrence.id == "iges:product:occurrence#9/5/D1")
+        .unwrap();
+    assert_eq!(leaf.fields["member"], "iges:entity:directory#1");
+    assert_eq!(
+        leaf.fields["world_transform"],
+        nested.fields["world_transform"]
+    );
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -3842,6 +3863,11 @@ fn decode_preserves_network_definition_and_anisotropic_instance() {
     assert_eq!(instance.fields["scale"][0], 2.0);
     assert!(instance.fields["scale"][1].is_null());
     assert!(instance.fields["scale"][2].is_null());
+    let occurrence = &native.arenas["product_occurrences"][0];
+    assert_eq!(occurrence.fields["world_transform"][0][0], 2.0);
+    assert_eq!(occurrence.fields["world_transform"][1][1], 2.0);
+    assert_eq!(occurrence.fields["world_transform"][2][2], 2.0);
+    assert_eq!(occurrence.fields["world_transform"][0][3], 1.0);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
