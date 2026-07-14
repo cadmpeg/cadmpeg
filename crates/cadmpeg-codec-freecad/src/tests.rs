@@ -609,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "49");
+    assert_eq!(result.ir.ir_version, "50");
     let feature = |name: &str| {
         &result
             .ir
@@ -3402,8 +3402,29 @@ fn retains_ordered_document_level_gui_state() {
         .find(|entry| entry.name == "section.bin")
         .expect("section asset");
     assert_eq!(section.referenced_by, [documents[0].states[2].id.clone()]);
+    assert_eq!(result.ir.model.presentation_documents.len(), 1);
+    let presentation = &result.ir.model.presentation_documents[0];
+    assert_eq!(presentation.schema_version, Some(1));
+    assert_eq!(presentation.active_view.as_deref(), Some("Perspective"));
+    let camera = presentation.camera.as_ref().expect("camera state");
+    assert_eq!(camera.position, Some([1.0, 2.0, 3.0]));
+    assert_eq!(camera.orientation, Some([0.0, 0.0, 0.0, 1.0]));
+    assert_eq!(presentation.states[2].assets.len(), 1);
+    assert!(presentation.states[2].assets[0].ends_with("section.bin"));
+    assert!(result.ir.model.view_presentations.is_empty());
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
+
+    let mut corrupted = result.ir.clone();
+    corrupted.model.presentation_documents[0]
+        .camera
+        .as_mut()
+        .expect("camera state")
+        .orientation = Some([0.0; 4]);
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == "invalid document presentation state"));
 }
 
 #[test]
@@ -4322,6 +4343,18 @@ Co 1001000 +2 0 *
         Some(&4.0)
     );
     assert_eq!(result.ir.model.bodies[0].visible, Some(false));
+    assert_eq!(result.ir.model.presentation_documents.len(), 1);
+    assert_eq!(result.ir.model.view_presentations.len(), 1);
+    let view = &result.ir.model.view_presentations[0];
+    assert!(view
+        .object
+        .as_deref()
+        .is_some_and(|id| id.ends_with("Shape")));
+    assert_eq!(view.order, 0);
+    assert_eq!(view.expanded, Some(true));
+    assert_eq!(view.visible, Some(false));
+    assert_eq!(view.line_width, Some(2.5));
+    assert_eq!(view.point_size, Some(4.0));
     let color = result.ir.model.bodies[0].color.expect("shape color");
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
@@ -4354,6 +4387,13 @@ Co 1001000 +2 0 *
         .all(|property| property.raw_xml.starts_with("<Property")));
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
+
+    let mut corrupted = result.ir.clone();
+    corrupted.model.view_presentations[0].line_width = Some(f64::NAN);
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == "invalid view presentation reference, order, or size"));
     assert!(result
         .ir
         .model

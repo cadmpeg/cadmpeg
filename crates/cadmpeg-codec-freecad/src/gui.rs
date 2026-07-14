@@ -7,6 +7,9 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::AppearanceId;
+use cadmpeg_ir::presentation::{
+    CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
+};
 use cadmpeg_ir::topology::Color;
 
 use crate::brep::ShapePayloadRecord;
@@ -293,11 +296,135 @@ pub(crate) fn transfer(
             });
         }
     }
-    Ok(Graph {
+    let graph = Graph {
         documents: vec![document],
         providers: native_providers,
         properties: native_properties,
+    };
+    transfer_neutral_presentation(ir, &graph);
+    Ok(graph)
+}
+
+fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) {
+    for document in &graph.documents {
+        let camera_state = document.states.iter().find(|state| state.kind == "Camera");
+        let camera = camera_state.map(|state| CameraState {
+            position: state
+                .values
+                .iter()
+                .find(|value| value.tag == "Position")
+                .and_then(|value| vector3(&value.attributes)),
+            orientation: state
+                .attributes
+                .get("orientation")
+                .and_then(|value| parse_vector::<4>(value)),
+            properties: state.attributes.clone(),
+        });
+        let active_view = document
+            .states
+            .iter()
+            .find(|state| state.kind == "ActiveView")
+            .and_then(|state| state.attributes.get("name"))
+            .cloned()
+            .or_else(|| document.attributes.get("active").cloned());
+        ir.model.presentation_documents.push(PresentationDocument {
+            id: PresentationId("fcstd:presentation:document#0".into()),
+            schema_version: document.schema_version,
+            active_view,
+            camera,
+            states: document
+                .states
+                .iter()
+                .map(|state| PresentationState {
+                    kind: state.kind.clone(),
+                    order: state.order as u32,
+                    attributes: state.attributes.clone(),
+                    assets: state
+                        .side_entries
+                        .iter()
+                        .map(|entry| crate::native::native_id("entry", entry))
+                        .collect(),
+                })
+                .collect(),
+            native_ref: Some(document.id.clone()),
+        });
+    }
+
+    let properties = graph.properties.iter().fold(
+        HashMap::<&str, Vec<&GuiPropertyRecord>>::new(),
+        |mut map, property| {
+            map.entry(property.owner.as_str())
+                .or_default()
+                .push(property);
+            map
+        },
+    );
+    for provider in &graph.providers {
+        let owned = properties
+            .get(provider.id.as_str())
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let property_value = |name: &str| {
+            owned
+                .iter()
+                .find(|property| property.name == name)
+                .and_then(|property| gui_property_value(property))
+        };
+        ir.model.view_presentations.push(ViewPresentation {
+            id: PresentationId(crate::native::model_id(
+                "presentation-view",
+                &provider.id,
+                "state",
+            )),
+            object: provider.object.clone(),
+            order: provider.order as u32,
+            expanded: provider.expanded,
+            visible: property_value("Visibility").and_then(parse_bool),
+            display_mode: property_value("DisplayMode").map(str::to_owned),
+            selection_style: property_value("SelectionStyle").map(str::to_owned),
+            line_width: property_value("LineWidth").and_then(|value| value.parse().ok()),
+            point_size: property_value("PointSize").and_then(|value| value.parse().ok()),
+            properties: owned
+                .iter()
+                .map(|property| {
+                    (
+                        property.name.clone(),
+                        gui_property_value(property)
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| property.raw_xml.clone()),
+                    )
+                })
+                .collect(),
+            native_ref: Some(provider.id.clone()),
+        });
+    }
+}
+
+fn gui_property_value(property: &GuiPropertyRecord) -> Option<&str> {
+    property.values.iter().find_map(|value| {
+        value
+            .attributes
+            .get("value")
+            .or_else(|| value.attributes.get("Value"))
+            .map(String::as_str)
     })
+}
+
+fn vector3(attributes: &BTreeMap<String, String>) -> Option<[f64; 3]> {
+    Some([
+        attributes.get("x")?.parse().ok()?,
+        attributes.get("y")?.parse().ok()?,
+        attributes.get("z")?.parse().ok()?,
+    ])
+}
+
+fn parse_vector<const N: usize>(value: &str) -> Option<[f64; N]> {
+    let values = value
+        .split_whitespace()
+        .map(str::parse)
+        .collect::<Result<Vec<f64>, _>>()
+        .ok()?;
+    values.try_into().ok()
 }
 
 fn transfer_edge_appearance(

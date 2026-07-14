@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::features::{DesignConfiguration, DesignParameter};
+use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Component, Occurrence};
 use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
 use crate::spreadsheets::Spreadsheet;

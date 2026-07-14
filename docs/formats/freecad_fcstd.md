@@ -247,6 +247,14 @@ does not inherit a format-wide placeholder loss.
 
 ## Presentation and application records
 
+CADIR version 50 adds format-neutral document and view presentation arenas. A GUI archive produces
+one document presentation record; a headless archive produces none. The neutral document record
+contains the schema version, active view, finite camera position and nonzero orientation quaternion,
+ordered document state, and resolved display-asset references. Each view-provider record contains
+its resolved application object, source order, tree expansion and visibility state, display and
+selection modes, nonnegative line and point sizes, and exact-name fallback properties. References,
+orders, and numeric invariants are validated independently of the FCStd native namespace.
+
 GUI records retain view-provider identity separately from application-object identity. Visibility,
 display modes, materials, colors, line and point styles, cameras, view state, tree state, clipping,
 thumbnail references, and display assets remain presentation records linked to their owners.

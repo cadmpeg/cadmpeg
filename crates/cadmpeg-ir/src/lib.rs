@@ -46,6 +46,7 @@ pub mod ids;
 pub mod le;
 pub mod math;
 pub mod native;
+pub mod presentation;
 pub mod products;
 mod provenance;
 pub mod read;
@@ -72,6 +73,9 @@ pub use features::{
     PmiDimensionSubtype, ScaleCenter, ScaleFactors, SketchSpace,
 };
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
+pub use presentation::{
+    CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
+};
 pub use products::{
     AssemblyJoint, Component, ComponentId, ComponentKind, ComponentReference, CopyOnChangePolicy,
     ExternalDocumentReference, ExternalResolution, JointId, JointKind, JointLimits, JointOperand,
