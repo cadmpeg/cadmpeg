@@ -70,6 +70,38 @@ pub enum ReferenceKind {
     RecordOrdinal16,
 }
 
+/// One value in an NX OM compact-index lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactIndex {
+    /// `ff` null/sentinel entry.
+    Null,
+    /// Decoded non-null index.
+    Value(u32),
+}
+
+/// Decode a complete NX OM compact-index lane.
+///
+/// `00..7f` are direct values, `80..fe` introduce one low byte, and `ff` is
+/// null. A dangling two-byte prefix rejects the whole lane.
+pub fn compact_indices(bytes: &[u8]) -> Option<Vec<CompactIndex>> {
+    let mut values = Vec::new();
+    let mut at = 0usize;
+    while at < bytes.len() {
+        let prefix = bytes[at];
+        at += 1;
+        if prefix == 0xff {
+            values.push(CompactIndex::Null);
+        } else if prefix >= 0x80 {
+            let low = u32::from(*bytes.get(at)?);
+            at += 1;
+            values.push(CompactIndex::Value(u32::from(prefix - 0x80) * 256 + low));
+        } else {
+            values.push(CompactIndex::Value(u32::from(prefix)));
+        }
+    }
+    Some(values)
+}
+
 /// One tagged reference occurrence in an externally bounded OM record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReferenceValue {

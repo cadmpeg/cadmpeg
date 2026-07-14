@@ -130,6 +130,12 @@ distinct sections do not identify the same class or member. Entity-record
 ordinals are likewise local to the indexed section whose base governs the
 external boundary array.
 
+A compact-index lane is a concatenation of entries. Bytes `00..7f` encode their
+unsigned value directly. A byte in `80..fe` followed by `low:u8` encodes
+`(prefix - 0x80) * 256 + low`. Byte `ff` encodes a null entry and consumes no
+following byte. A two-byte prefix without its low byte does not form a complete
+lane.
+
 A numeric expression table contains a `hostglobalvariables` root entity. Each expression entity contains:
 
 ```text

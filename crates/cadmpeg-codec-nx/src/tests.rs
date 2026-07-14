@@ -288,6 +288,24 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
 }
 
 #[test]
+fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
+    use crate::om::CompactIndex::{Null, Value};
+
+    assert_eq!(
+        crate::om::compact_indices(&[0x00, 0x7f, 0x80, 0x80, 0x81, 0x00, 0xfe, 0xff, 0xff]),
+        Some(vec![
+            Value(0),
+            Value(127),
+            Value(128),
+            Value(256),
+            Value(32_511),
+            Null,
+        ])
+    );
+    assert_eq!(crate::om::compact_indices(&[0x80]), None);
+}
+
+#[test]
 fn om_size_frame_bounds_its_type_declarations() {
     let bytes = size_framed_om_section();
     let sections = crate::om::sections(&bytes);
