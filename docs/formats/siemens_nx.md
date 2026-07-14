@@ -159,6 +159,7 @@ an unresolved input slot remains absent without reordering the other slots.
 | `/Root/UG_PART/UG_PART`      | canonical part payload: OM sections + Parasolid partition/deltas/plain streams |
 | `/Root/FastLoad/RMFastLoad`  | fast-load object-id table → active-body membership (NX OM per-class form)      |
 | `/Root/FastLoad/JT`          | preview/JT mesh and metadata                                                   |
+| `/Root/images/preview`       | JPEG preview image                                                            |
 | `/Root/*/ExternalReferences` | `EXTREFSTREAM`; child-part names, filesystem paths, occurrence handles         |
 | `/Root/part/attrs`           | `<UgAttributes>` UTF-8 XML key/value part metadata                             |
 | `/Root/qafmetadata`          | UTF-8 XML preview-folder metadata                                              |
@@ -168,6 +169,13 @@ an unresolved input slot remains absent without reordering the other slots.
 `pdmBased`, `title`/`utf8title`, `value`/`utf8value`, `version`, and an XML schema
 type. UTF-8 title and value fields take precedence over their compatibility
 duplicates. JT and LWPA payloads are preview meshes.
+
+`/Root/images/preview` is a JPEG marker stream beginning with SOI `ff d8`.
+The first SOF segment supplies sample precision, non-zero big-endian height and
+width, and a non-zero component count. Its payload length is exactly
+`6 + 3 * component_count`. The bounded entry length and SHA-256 identify the
+preview asset; malformed marker lengths or a scan/EOI marker before SOF do not
+produce preview metadata.
 
 `EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + control-free UTF-8)`. The string table contains child `.prt` names and paths.
 

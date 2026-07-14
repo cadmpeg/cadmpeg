@@ -7144,6 +7144,35 @@ fn decode_retains_nx_arrangement_configurations() {
 }
 
 #[test]
+fn decode_exposes_strict_nx_jpeg_preview_metadata() {
+    let preview = [
+        0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0xb9,
+        0x00, 0xf7, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00, 0xff, 0xd9,
+    ];
+    let file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        ("/Root/images/preview", preview.to_vec()),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let attributes = &result.ir.source.unwrap().attributes;
+    assert_eq!(attributes["jpeg_preview_count"], "1");
+    assert_eq!(attributes["jpeg_preview_0_width"], "247");
+    assert_eq!(attributes["jpeg_preview_0_height"], "185");
+    assert_eq!(attributes["jpeg_preview_0_precision"], "8");
+    assert_eq!(attributes["jpeg_preview_0_components"], "3");
+    assert_eq!(
+        attributes["jpeg_preview_0_byte_len"],
+        preview.len().to_string()
+    );
+
+    let mut malformed = preview;
+    malformed[10..12].copy_from_slice(&16u16.to_be_bytes());
+    assert!(crate::decode::jpeg_dimensions(&malformed).is_none());
+}
+
+#[test]
 fn decode_rejects_ambiguous_nx_arrangement_table_atomically() {
     let file = prt_with_named_payloads(&[
         ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),

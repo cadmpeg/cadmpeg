@@ -4200,6 +4200,35 @@ fn source_meta(scan: &Scan) -> SourceMeta {
             active_ids.len().to_string(),
         );
     }
+    let mut preview_count = 0usize;
+    for entry in scan
+        .container
+        .entries
+        .iter()
+        .filter(|entry| entry.name == "/Root/images/preview")
+    {
+        let Some((offset, size)) = entry.file_span else {
+            continue;
+        };
+        let (Ok(start), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+            continue;
+        };
+        let Some(payload) = scan.container.data.get(start..start.saturating_add(size)) else {
+            continue;
+        };
+        let Some((width, height, precision, components)) = jpeg_dimensions(payload) else {
+            continue;
+        };
+        let prefix = format!("jpeg_preview_{preview_count}");
+        attributes.insert(format!("{prefix}_width"), width.to_string());
+        attributes.insert(format!("{prefix}_height"), height.to_string());
+        attributes.insert(format!("{prefix}_precision"), precision.to_string());
+        attributes.insert(format!("{prefix}_components"), components.to_string());
+        attributes.insert(format!("{prefix}_byte_len"), payload.len().to_string());
+        attributes.insert(format!("{prefix}_sha256"), sha256_hex(payload));
+        preview_count += 1;
+    }
+    attributes.insert("jpeg_preview_count".to_string(), preview_count.to_string());
     for (index, stream) in scan
         .streams
         .iter()
@@ -4229,6 +4258,52 @@ fn source_meta(scan: &Scan) -> SourceMeta {
         format: "nx".to_string(),
         attributes,
     }
+}
+
+pub(crate) fn jpeg_dimensions(payload: &[u8]) -> Option<(u16, u16, u8, u8)> {
+    if payload.get(..2)? != [0xff, 0xd8] {
+        return None;
+    }
+    let mut offset = 2usize;
+    while offset < payload.len() {
+        while payload.get(offset) == Some(&0xff) {
+            offset += 1;
+        }
+        let marker = *payload.get(offset)?;
+        offset += 1;
+        if marker == 0xd9 || marker == 0xda {
+            return None;
+        }
+        if marker == 0x01 || (0xd0..=0xd7).contains(&marker) {
+            continue;
+        }
+        let length = usize::from(u16::from_be_bytes([
+            *payload.get(offset)?,
+            *payload.get(offset + 1)?,
+        ]));
+        if length < 2 {
+            return None;
+        }
+        let segment_start = offset + 2;
+        let segment_end = offset.checked_add(length)?;
+        let segment = payload.get(segment_start..segment_end)?;
+        if matches!(marker, 0xc0..=0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf) {
+            let precision = *segment.first()?;
+            let height = u16::from_be_bytes([*segment.get(1)?, *segment.get(2)?]);
+            let width = u16::from_be_bytes([*segment.get(3)?, *segment.get(4)?]);
+            let components = *segment.get(5)?;
+            if width == 0
+                || height == 0
+                || components == 0
+                || segment.len() != 6 + 3 * usize::from(components)
+            {
+                return None;
+            }
+            return Some((width, height, precision, components));
+        }
+        offset = segment_end;
+    }
+    None
 }
 
 fn build_geometry_report(
