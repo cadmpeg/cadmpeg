@@ -6386,30 +6386,60 @@ fn schema_feature_definition(
 ) -> IrFeatureDefinition {
     if schema_class == 911 {
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
-        let (face, direction, extent) = placement.map_or(
-            (None, None, None),
-            |(entry_surface_id, direction, extent)| {
+        let solved = simple_hole_geometry(scan, feature_id);
+        let (face, position, direction, diameter, extent) = solved.map_or_else(
+            || {
+                placement.map_or(
+                    (None, None, None, None, None),
+                    |(entry_surface_id, direction, extent)| {
+                        (
+                            Some(FaceSelection::Native(format!(
+                                "creo:visibgeom:surface#{entry_surface_id}"
+                            ))),
+                            None,
+                            Some(Vector3::new(direction[0], direction[1], direction[2])),
+                            None,
+                            Some(extent),
+                        )
+                    },
+                )
+            },
+            |hole| {
+                let SurfaceGeometry::Cylinder { origin, radius, .. } = hole.geometry else {
+                    unreachable!("simple hole helper returns a cylinder")
+                };
                 (
                     Some(FaceSelection::Native(format!(
-                        "creo:visibgeom:surface#{entry_surface_id}"
+                        "creo:visibgeom:surface#{}",
+                        hole.entry_surface_id
                     ))),
-                    Some(Vector3::new(direction[0], direction[1], direction[2])),
-                    Some(extent),
+                    Some(origin),
+                    Some(Vector3::new(
+                        hole.direction[0],
+                        hole.direction[1],
+                        hole.direction[2],
+                    )),
+                    Some(Length(2.0 * radius)),
+                    Some(hole.extent),
                 )
             },
         );
         return IrFeatureDefinition::Hole {
             face,
-            position: None,
+            position,
             direction,
-            kind: HoleKind::Unresolved {
-                form: None,
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
+            kind: if diameter.is_some() {
+                HoleKind::Simple
+            } else {
+                HoleKind::Unresolved {
+                    form: None,
+                    counterbore_diameter: None,
+                    counterbore_depth: None,
+                    countersink_diameter: None,
+                    countersink_angle: None,
+                }
             },
-            diameter: None,
+            diameter,
             extent,
         };
     }
@@ -6737,6 +6767,75 @@ fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<SurfaceG
         axis: Vector3::new(axis[0], axis[1], axis[2]),
         ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
         radius: radii[0],
+    })
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SimpleHoleGeometry {
+    entry_surface_id: u32,
+    cylinder_ids: [u32; 2],
+    direction: [f64; 3],
+    extent: Extent,
+    geometry: SurfaceGeometry,
+}
+
+fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleHoleGeometry> {
+    let cap_rows = feature_outline_planes(scan, feature_id)
+        .into_iter()
+        .map(|(id, origin, normal)| {
+            let envelopes = scan
+                .plane_envelopes
+                .iter()
+                .filter(|envelope| envelope.surface_id == id)
+                .collect::<Vec<_>>();
+            let [envelope] = envelopes.as_slice() else {
+                return None;
+            };
+            Some((
+                id,
+                origin,
+                normal,
+                plane_envelope_corners(&envelope.envelope)?,
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let [first, second] = cap_rows.as_slice() else {
+        return None;
+    };
+    let tables = scan
+        .feature_entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    let [entry_plane, termination_plane, first_cylinder, second_cylinder] =
+        table.entry_ids.as_slice()
+    else {
+        return None;
+    };
+    if *entry_plane != first.0 || *termination_plane != second.0 {
+        return None;
+    }
+    let cylinder_ids = [*first_cylinder, *second_cylinder];
+    if cylinder_ids.iter().any(|id| {
+        !scan.surface_rows.iter().any(|row| {
+            row.id == *id
+                && row.feature_id == feature_id
+                && row.kind == crate::surface::SurfaceKind::Cylinder
+        })
+    }) {
+        return None;
+    }
+    let (_, direction, extent) =
+        hole_placement([*first, *second].map(|(id, origin, normal, _)| (id, origin, normal)))?;
+    Some(SimpleHoleGeometry {
+        entry_surface_id: *entry_plane,
+        cylinder_ids,
+        direction,
+        extent,
+        geometry: hole_cylinder_from_cap_outlines([*first, *second])?,
     })
 }
 
@@ -12038,58 +12137,10 @@ fn transfer_hole_cylinders(
         .collect::<BTreeSet<_>>();
     let mut transferred = 0;
     for feature_id in hole_feature_ids {
-        let cap_rows = feature_outline_planes(scan, feature_id)
-            .into_iter()
-            .filter_map(|(id, origin, normal)| {
-                let envelopes = scan
-                    .plane_envelopes
-                    .iter()
-                    .filter(|envelope| envelope.surface_id == id)
-                    .collect::<Vec<_>>();
-                let [envelope] = envelopes.as_slice() else {
-                    return None;
-                };
-                Some((
-                    id,
-                    origin,
-                    normal,
-                    plane_envelope_corners(&envelope.envelope)?,
-                ))
-            })
-            .collect::<Vec<_>>();
-        let [first, second] = cap_rows.as_slice() else {
+        let Some(hole) = simple_hole_geometry(scan, feature_id) else {
             continue;
         };
-        let tables = scan
-            .feature_entity_tables
-            .iter()
-            .filter(|table| table.feature_id == Some(feature_id))
-            .collect::<Vec<_>>();
-        let [table] = tables.as_slice() else {
-            continue;
-        };
-        let [entry_plane, termination_plane, first_cylinder, second_cylinder] =
-            table.entry_ids.as_slice()
-        else {
-            continue;
-        };
-        if *entry_plane != first.0 || *termination_plane != second.0 {
-            continue;
-        }
-        let cylinder_ids = [*first_cylinder, *second_cylinder];
-        if cylinder_ids.iter().any(|id| {
-            !scan.surface_rows.iter().any(|row| {
-                row.id == *id
-                    && row.feature_id == feature_id
-                    && row.kind == crate::surface::SurfaceKind::Cylinder
-            })
-        }) {
-            continue;
-        }
-        let Some(geometry) = hole_cylinder_from_cap_outlines([*first, *second]) else {
-            continue;
-        };
-        for cylinder_id in cylinder_ids {
+        for cylinder_id in hole.cylinder_ids {
             let row = scan
                 .surface_rows
                 .iter()
@@ -12109,7 +12160,7 @@ fn transfer_hole_cylinders(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: geometry.clone(),
+                geometry: hole.geometry.clone(),
                 source_object: Some(SourceObjectAssociation {
                     format: "creo".to_string(),
                     object_id: format!("VisibGeom:{cylinder_id}"),
