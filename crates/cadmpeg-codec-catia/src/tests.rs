@@ -3699,6 +3699,7 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
         degree,
         knots,
+        multiplicities,
         sites,
     } = &procedural.definition
     else {
@@ -3706,6 +3707,7 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
     };
     assert_eq!(*degree, 5);
     assert_eq!(knots, &[0.0, 1.0]);
+    assert_eq!(multiplicities, &[6, 6]);
     assert_eq!(sites.len(), 2);
     assert_eq!(sites[0].first_limit, Point3::new(1.0, 0.0, 0.0));
     assert_eq!(sites[1].second_limit, Point3::new(0.0, 2.0, 0.0));
@@ -4601,6 +4603,7 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
         degree,
         knots,
+        multiplicities,
         sites,
     } = &procedural.definition
     else {
@@ -4608,6 +4611,7 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
     };
     assert_eq!(*degree, 5);
     assert_eq!(knots, &[0.0, 1.0]);
+    assert_eq!(multiplicities, &[6, 6]);
     assert_eq!(sites.len(), 2);
     assert_eq!(sites[1].first_limit, Point3::new(2.0, 0.0, 0.0));
     assert_eq!(sites[1].angle, std::f64::consts::FRAC_PI_2);

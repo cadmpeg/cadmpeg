@@ -469,6 +469,8 @@ pub enum ProceduralSurfaceDefinition {
         degree: u32,
         /// Strictly increasing native parameters, aligned with `sites`.
         knots: Vec<f64>,
+        /// Native knot multiplicities, aligned with `knots`.
+        multiplicities: Vec<u32>,
         /// Complete value, first-derivative, and second-derivative rows.
         sites: Vec<RollingBallJetSite>,
     },

@@ -1359,6 +1359,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let ProceduralSurfaceDefinition::RollingBallJet {
             degree,
             knots,
+            multiplicities,
             sites,
         } = &procedural.definition
         {
@@ -1401,6 +1402,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             });
             if *degree == 0
                 || knots.len() != sites.len()
+                || multiplicities.len() != knots.len()
+                || multiplicities.first() != Some(&(degree + 1))
+                || multiplicities.last() != Some(&(degree + 1))
+                || multiplicities
+                    .iter()
+                    .any(|multiplicity| *multiplicity == 0 || *multiplicity > degree + 1)
                 || knots.len() < 2
                 || knots.iter().any(|knot| !knot.is_finite())
                 || knots.windows(2).any(|pair| pair[0] >= pair[1])

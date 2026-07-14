@@ -2390,6 +2390,7 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
             surface: surface_id,
             definition: ProceduralSurfaceDefinition::RollingBallJet {
                 degree: jet.degree,
+                multiplicities: vec![jet.degree + 1; jet.knots.len()],
                 knots: jet.knots,
                 sites,
             },
@@ -2460,6 +2461,7 @@ fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuil
             surface: surface_id,
             definition: ProceduralSurfaceDefinition::RollingBallJet {
                 degree: jet.degree,
+                multiplicities: jet.multiplicities,
                 knots: jet.knots,
                 sites,
             },
