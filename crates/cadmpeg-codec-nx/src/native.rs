@@ -625,10 +625,16 @@ pub struct FeatureExtrudePayload32Branch {
     pub atoms_be: Vec<u32>,
     /// Compact indices wrapped by the fixed-width atoms.
     pub atom_indices: Vec<u32>,
+    /// Unique offset-only data blocks addressed by the atom indices.
+    pub atom_data_blocks: Vec<Option<String>>,
     /// Ordered values in the first compact-index lane.
     pub first_indices: Vec<u32>,
+    /// Unique offset-only data blocks addressed by the first lane.
+    pub first_data_blocks: Vec<Option<String>>,
     /// Ordered values in the second compact-index lane.
     pub second_indices: Vec<u32>,
+    /// Unique offset-only data blocks addressed by the second lane.
+    pub second_data_blocks: Vec<Option<String>>,
     /// Object index in the terminal field.
     pub terminal_object_index: u32,
     /// Absolute file offset of the `32` branch marker.
@@ -650,6 +656,12 @@ pub struct FeatureExtrude32Construction {
     pub profile_references: Vec<String>,
     /// Ordered uniquely resolved profile blocks.
     pub profile_data_blocks: Vec<String>,
+    /// Ordered uniquely resolved blocks from the fixed-atom lane.
+    pub atom_data_blocks: Vec<String>,
+    /// Ordered uniquely resolved blocks from the first compact-index lane.
+    pub first_data_blocks: Vec<String>,
+    /// Ordered uniquely resolved blocks from the second compact-index lane.
+    pub second_data_blocks: Vec<String>,
 }
 
 /// Ordered construction reference carried by a bounded `BLOCK` payload.
@@ -1817,6 +1829,7 @@ pub fn feature_extrude_construction_profiles(
 pub fn feature_extrude_payload_32_branches(
     container: &Container,
 ) -> Vec<FeatureExtrudePayload32Branch> {
+    let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut branches = Vec::new();
     for link in segment_om_links(container)
@@ -1839,6 +1852,15 @@ pub fn feature_extrude_payload_32_branches(
             let Some(branch) = crate::om::extrude_payload_32_branch(record) else {
                 continue;
             };
+            let resolve = |indices: &[u32]| {
+                indices
+                    .iter()
+                    .map(|index| unique_offset_data_block(&indexed, *index))
+                    .collect::<Vec<_>>()
+            };
+            let atom_data_blocks = resolve(&branch.atom_indices);
+            let first_data_blocks = resolve(&branch.first_indices);
+            let second_data_blocks = resolve(&branch.second_indices);
             branches.push(FeatureExtrudePayload32Branch {
                 id: format!(
                     "nx:feature-history:extrude-payload-32-branch#{section_key}-{operation_ordinal}"
@@ -1850,8 +1872,11 @@ pub fn feature_extrude_payload_32_branches(
                 scalar: branch.scalar,
                 atoms_be: branch.atoms_be,
                 atom_indices: branch.atom_indices,
+                atom_data_blocks,
                 first_indices: branch.first_indices,
+                first_data_blocks,
                 second_indices: branch.second_indices,
+                second_data_blocks,
                 terminal_object_index: branch.terminal_object_index,
                 source_offset: entry_offset + branch.offset as u64,
             });
@@ -1887,6 +1912,15 @@ pub fn feature_extrude_32_constructions(
         else {
             continue;
         };
+        let Some(atom_data_blocks) = branch.atom_data_blocks.iter().cloned().collect() else {
+            continue;
+        };
+        let Some(first_data_blocks) = branch.first_data_blocks.iter().cloned().collect() else {
+            continue;
+        };
+        let Some(second_data_blocks) = branch.second_data_blocks.iter().cloned().collect() else {
+            continue;
+        };
         constructions.push(FeatureExtrude32Construction {
             id: branch
                 .id
@@ -1899,6 +1933,9 @@ pub fn feature_extrude_32_constructions(
                 .map(|reference| reference.id.clone())
                 .collect(),
             profile_data_blocks,
+            atom_data_blocks,
+            first_data_blocks,
+            second_data_blocks,
         });
     }
     constructions
