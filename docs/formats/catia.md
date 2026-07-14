@@ -304,6 +304,8 @@ A 2D spline in a support surface's parameter space. Its payload stores `degU`, `
 
 For a co-parametric edge block, each uniquely bound analytic carrier lifts the first and last pcurve sites to the shared 3D endpoint loci. A NURBS carrier with signed normal offset `d` lifts a site as `S(u,v) + d·normalize(Su(u,v)×Sv(u,v))`; a degenerate tangent pair has no endpoint lift. When both sides are liftable, their unordered endpoint pairs agree within `2e-3` mm; disagreement invalidates the endpoint result rather than selecting one side.
 
+A complete consolidated edge run is the contiguous framed sequence `A:20, A:20, B:23, B:06, B:06, B:5e`. The first two records are its side pcurves, `23` is their shared parameter packet, the two `06` records are the side uses in the same order, and `5e` is the native edge node. In the five-reference `5e` layout the references identify, in order, the 3D curve support, start vertex, end vertex, start endpoint parameter, and end endpoint parameter. An intervening framed record terminates the run.
+
 ### 6.4 Consolidated guide and topology metadata
 
 - **`a5 03 39`** stores `K`, degree, repeated `K`, distinct knots, three `K × 6 × f64le` blocks, and a 48-byte tail. Each position-site pair is two triples `(P,Q)` satisfying `|Q−P|=1`; `P` is a guide-curve point and `Q−P` is its unit reference direction. The next two blocks contain first and second derivatives of all six channels.

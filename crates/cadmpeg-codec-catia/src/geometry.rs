@@ -962,6 +962,18 @@ pub struct A5EdgeBlock {
     pub co_parametric: bool,
 }
 
+/// Complete consolidated edge run serialized as two side pcurves, their shared
+/// parameter packet, two oriented uses, and one native edge node.
+#[derive(Debug, Clone)]
+pub struct A5TopologyEdgeRun {
+    /// Co-parametric side definitions and shared range packet.
+    pub edge: A5EdgeBlock,
+    /// The two serialized edge uses, in side order.
+    pub uses: [B2UseMetadata; 2],
+    /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
+    pub node: B2EdgeNode,
+}
+
 /// Uniquely resolved carrier for one side of a consolidated edge block.
 #[derive(Debug, Clone, PartialEq)]
 pub enum A5SupportBinding {
@@ -1011,26 +1023,30 @@ pub struct ResolvedA5EdgeBlock {
 /// Group ordered `(a5 03 20, a5 03 20, b2 03 23)` consolidated edge blocks.
 #[must_use]
 pub fn a5_edge_blocks(data: &[u8]) -> Vec<A5EdgeBlock> {
-    enum Event {
-        Pcurve(A5Pcurve),
-        Parameters(B2EdgeParameters),
-    }
-    impl Event {
-        fn pos(&self) -> usize {
-            match self {
-                Self::Pcurve(value) => value.pos,
-                Self::Parameters(value) => value.pos,
-            }
-        }
-    }
-
-    let mut events: Vec<Event> = a5_pcurves(data).into_iter().map(Event::Pcurve).collect();
-    events.extend(b2_edge_parameters(data).into_iter().map(Event::Parameters));
-    events.sort_by_key(Event::pos);
-    events
+    let pcurves = a5_pcurves(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    let parameters = b2_edge_parameters(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    consolidated_records(data)
         .windows(3)
-        .filter_map(|window| match window {
-            [Event::Pcurve(first), Event::Pcurve(second), Event::Parameters(parameters)] => {
+        .filter_map(|window| {
+            let [first_record, second_record, parameter_record] = window else {
+                return None;
+            };
+            if first_record.family == ConsolidatedFamily::A
+                && first_record.class == 0x20
+                && second_record.family == ConsolidatedFamily::A
+                && second_record.class == 0x20
+                && parameter_record.family == ConsolidatedFamily::B
+                && parameter_record.class == 0x23
+            {
+                let first = pcurves.get(&first_record.range.start)?;
+                let second = pcurves.get(&second_record.range.start)?;
+                let parameters = parameters.get(&parameter_record.range.start)?;
                 let co_parametric = first.points.len() == second.points.len()
                     && first.range == second.range
                     && first.range == parameters.range;
@@ -1039,8 +1055,59 @@ pub fn a5_edge_blocks(data: &[u8]) -> Vec<A5EdgeBlock> {
                     parameters: parameters.clone(),
                     co_parametric,
                 })
+            } else {
+                None
             }
-            _ => None,
+        })
+        .collect()
+}
+
+/// Decode complete six-record consolidated edge runs. Records separated by any
+/// other framed record do not form a run.
+#[must_use]
+pub fn a5_topology_edge_runs(data: &[u8]) -> Vec<A5TopologyEdgeRun> {
+    let edges = a5_edge_blocks(data)
+        .into_iter()
+        .map(|edge| (edge.pcurves[0].pos, edge))
+        .collect::<BTreeMap<_, _>>();
+    let uses = b2_use_metadata(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    let nodes = b2_edge_nodes(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    consolidated_records(data)
+        .windows(6)
+        .filter_map(|window| {
+            let [pcurve0, pcurve1, parameters, use0, use1, node] = window else {
+                return None;
+            };
+            if pcurve0.family == ConsolidatedFamily::A
+                && pcurve0.class == 0x20
+                && pcurve1.family == ConsolidatedFamily::A
+                && pcurve1.class == 0x20
+                && parameters.family == ConsolidatedFamily::B
+                && parameters.class == 0x23
+                && use0.family == ConsolidatedFamily::B
+                && use0.class == 0x06
+                && use1.family == ConsolidatedFamily::B
+                && use1.class == 0x06
+                && node.family == ConsolidatedFamily::B
+                && node.class == 0x5e
+            {
+                Some(A5TopologyEdgeRun {
+                    edge: edges.get(&pcurve0.range.start)?.clone(),
+                    uses: [
+                        uses.get(&use0.range.start)?.clone(),
+                        uses.get(&use1.range.start)?.clone(),
+                    ],
+                    node: *nodes.get(&node.range.start)?,
+                })
+            } else {
+                None
+            }
         })
         .collect()
 }

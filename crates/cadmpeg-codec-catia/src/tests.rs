@@ -1067,6 +1067,14 @@ fn a5_edge_block_stream() -> Vec<u8> {
     bytes
 }
 
+fn a5_topology_edge_run_stream() -> Vec<u8> {
+    let mut bytes = a5_edge_block_stream();
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 1, 2, 3, 0x84]);
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 4, 5, 6, 0x88]);
+    bytes.extend_from_slice(&b2_edge_node_stream());
+    bytes
+}
+
 fn a5_cylinder_bound_edge_stream() -> Vec<u8> {
     let mut bytes = a5_edge_block_stream();
     bytes.extend_from_slice(&b2_cylinder_stream());
@@ -3008,6 +3016,28 @@ fn a5_edge_block_parser_groups_two_coparametric_pcurves_and_packet() {
     assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
     assert_eq!(blocks[0].pcurves[1].range, [0.0, 1.0]);
     assert_eq!(blocks[0].parameters.range, [0.0, 1.0]);
+}
+
+#[test]
+fn a5_topology_edge_run_preserves_uses_and_native_endpoint_identities() {
+    use crate::geometry::B2UseSense;
+
+    let runs = crate::geometry::a5_topology_edge_runs(&a5_topology_edge_run_stream());
+    assert_eq!(runs.len(), 1);
+    assert!(runs[0].edge.co_parametric);
+    assert_eq!(runs[0].uses[0].sense, Some(B2UseSense::Sense84));
+    assert_eq!(runs[0].uses[1].sense, Some(B2UseSense::Sense88));
+    assert_eq!(runs[0].node.start_vertex_ref, 889);
+    assert_eq!(runs[0].node.end_vertex_ref, 895);
+}
+
+#[test]
+fn a5_edge_block_does_not_cross_an_intervening_framed_record() {
+    let mut bytes = a5_pcurve_stream();
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x01, 0x05, 0x84]);
+    bytes.extend_from_slice(&a5_pcurve_stream());
+    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
+    assert!(crate::geometry::a5_edge_blocks(&bytes).is_empty());
 }
 
 #[test]
