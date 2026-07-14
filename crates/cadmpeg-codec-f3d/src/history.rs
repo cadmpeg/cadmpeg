@@ -11,6 +11,7 @@ use crate::history_records::{
     AsmHistoricalOptionalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
     AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
 };
+use crate::records::{AsmHistoricalEntityKind, DesignExtrudeSelectionMember};
 use cadmpeg_ir::le::int_at;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -644,6 +645,64 @@ fn stable_ref(id: &str) -> Option<i64> {
         .next()?
         .parse::<i64>()
         .ok()
+}
+
+/// Resolve one Design persistent local identity to its invariant stable ASM
+/// history family and the states containing that slot.
+pub(crate) fn historical_identity_kind(
+    histories: &[AsmHistory],
+    local_id: u64,
+) -> Option<(AsmHistoricalEntityKind, Vec<i64>)> {
+    let entity_ref = i64::try_from(local_id).ok()?;
+    let mut kinds = HashSet::new();
+    let mut states = Vec::new();
+    for state in histories.iter().flat_map(|history| &history.states) {
+        let Some(topology) = &state.topology else {
+            continue;
+        };
+        let families: [(AsmHistoricalEntityKind, &[i64]); 12] = [
+            (AsmHistoricalEntityKind::Body, &topology.bodies),
+            (AsmHistoricalEntityKind::Region, &topology.regions),
+            (AsmHistoricalEntityKind::Shell, &topology.shells),
+            (AsmHistoricalEntityKind::Face, &topology.faces),
+            (AsmHistoricalEntityKind::Loop, &topology.loops),
+            (AsmHistoricalEntityKind::Coedge, &topology.coedges),
+            (AsmHistoricalEntityKind::Edge, &topology.edges),
+            (AsmHistoricalEntityKind::Vertex, &topology.vertices),
+            (AsmHistoricalEntityKind::Point, &topology.points),
+            (AsmHistoricalEntityKind::Surface, &topology.surfaces),
+            (AsmHistoricalEntityKind::Curve, &topology.curves),
+            (AsmHistoricalEntityKind::Pcurve, &topology.pcurves),
+        ];
+        for (kind, members) in families {
+            if members.contains(&entity_ref) {
+                kinds.insert(kind);
+                if !states.contains(&state.state_id) {
+                    states.push(state.state_id);
+                }
+            }
+        }
+    }
+    let mut kinds = kinds.into_iter();
+    let kind = kinds.next()?;
+    if kinds.next().is_some() {
+        return None;
+    }
+    Some((kind, states))
+}
+
+pub(crate) fn bind_extrude_selection_history(
+    members: &mut [DesignExtrudeSelectionMember],
+    histories: &[AsmHistory],
+) {
+    for member in members {
+        member.historical_entity_kind = None;
+        member.historical_state_ids.clear();
+        if let Some((kind, states)) = historical_identity_kind(histories, member.local_id) {
+            member.historical_entity_kind = Some(kind);
+            member.historical_state_ids = states;
+        }
+    }
 }
 
 fn affected_body_refs(
@@ -1286,6 +1345,78 @@ mod tests {
             ),
             [FaceId(id(4))]
         );
+    }
+
+    #[test]
+    fn design_identity_resolves_only_one_invariant_history_family() {
+        let state = |state_id, topology| AsmDeltaState {
+            id: format!("state-{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology: Some(topology),
+            transition: None,
+        };
+        let history = AsmHistory {
+            id: "history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            states: vec![
+                state(
+                    3,
+                    AsmHistoricalTopology {
+                        edges: vec![42],
+                        ..AsmHistoricalTopology::default()
+                    },
+                ),
+                state(
+                    5,
+                    AsmHistoricalTopology {
+                        edges: vec![42],
+                        vertices: vec![90],
+                        ..AsmHistoricalTopology::default()
+                    },
+                ),
+            ],
+        };
+        assert_eq!(
+            historical_identity_kind(std::slice::from_ref(&history), 42),
+            Some((AsmHistoricalEntityKind::Edge, vec![3, 5]))
+        );
+        assert_eq!(
+            historical_identity_kind(std::slice::from_ref(&history), 90),
+            Some((AsmHistoricalEntityKind::Vertex, vec![5]))
+        );
+        assert_eq!(
+            historical_identity_kind(std::slice::from_ref(&history), 7),
+            None
+        );
+        let ambiguous = AsmHistory {
+            id: "other-history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            states: vec![state(
+                7,
+                AsmHistoricalTopology {
+                    vertices: vec![42],
+                    ..AsmHistoricalTopology::default()
+                },
+            )],
+        };
+        assert_eq!(historical_identity_kind(&[history, ambiguous], 42), None);
     }
 
     #[test]

@@ -993,6 +993,10 @@ fn extend_related_design_records(
         &mut native.design_extrude_selection_members,
         &native.design_construction_operand_identities,
     );
+    crate::history::bind_extrude_selection_history(
+        &mut native.design_extrude_selection_members,
+        &native.asm_histories,
+    );
     native.design_edge_operands = crate::design::decode_edge_operands(
         scan,
         &native.design_parameter_scopes,

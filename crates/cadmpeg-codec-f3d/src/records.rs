@@ -885,10 +885,48 @@ pub struct DesignExtrudeSelectionMember {
     /// Construction-operand identity chains that terminate at this member.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub operand_identity_ids: Vec<String>,
+    /// Stable ASM history family carrying `local_id`, when family membership
+    /// is unambiguous across every decoded state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub historical_entity_kind: Option<AsmHistoricalEntityKind>,
+    /// ASM history states containing `local_id` in `historical_entity_kind`, in
+    /// history arena order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub historical_state_ids: Vec<i64>,
     /// Identity of the indexed record immediately following this member.
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following this member.
     pub next_byte_offset: u64,
+}
+
+/// Stable ASM entity family named by a Design persistent identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AsmHistoricalEntityKind {
+    /// Body topology slot.
+    Body,
+    /// Region topology slot.
+    Region,
+    /// Shell topology slot.
+    Shell,
+    /// Face topology slot.
+    Face,
+    /// Loop topology slot.
+    Loop,
+    /// Coedge topology slot.
+    Coedge,
+    /// Edge topology slot.
+    Edge,
+    /// Vertex topology slot.
+    Vertex,
+    /// Point carrier slot.
+    Point,
+    /// Surface carrier slot.
+    Surface,
+    /// Curve carrier slot.
+    Curve,
+    /// Parametric-curve carrier slot.
+    Pcurve,
 }
 
 /// Edge-selection operand owned by a Fillet or Chamfer parameter scope.

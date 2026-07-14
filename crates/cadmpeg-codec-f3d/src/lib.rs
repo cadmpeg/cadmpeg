@@ -1049,6 +1049,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .into_iter()
             .map(|identity| identity.id.as_str())
             .collect::<Vec<_>>();
+        let expected_history =
+            history::historical_identity_kind(&native.asm_histories, member.local_id);
+        let history_matches = expected_history.as_ref().map(|(kind, _)| *kind)
+            == member.historical_entity_kind
+            && expected_history
+                .as_ref()
+                .map(|(_, states)| states.as_slice())
+                .unwrap_or_default()
+                == member.historical_state_ids.as_slice();
         let valid = member.class_tag.len() == 3
             && member.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && group.is_some_and(|group| {
@@ -1072,6 +1081,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .iter()
                 .map(String::as_str)
                 .eq(expected_identity_ids)
+            && history_matches
             && member.next_byte_offset == member.byte_offset.saturating_add(190)
             && member.next_record_index != 0
             && member_slots.insert((

@@ -5161,6 +5161,8 @@ fn parse_extrude_selection_member(
         context_id_offset: member.context_id_offset,
         resolved_geometry: None,
         operand_identity_ids: Vec::new(),
+        historical_entity_kind: None,
+        historical_state_ids: Vec::new(),
         next_record_index: member.next_record_index,
         next_byte_offset: member.next_byte_offset,
     })
