@@ -594,18 +594,18 @@ pub struct ExtrudePayloadHeader {
     pub scalars: [f64; 2],
 }
 
-/// Redundantly serialized two-dimensional placement in a simple-hole payload.
+/// Redundantly serialized scalar pair in a simple-hole payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SimpleHolePlacement2d {
-    /// Ordered placement coordinates in model millimeters.
-    pub position: [f64; 2],
-    /// Absolute offsets of the first and repeated coordinate pairs.
+pub struct SimpleHoleRepeatedScalarPair {
+    /// Ordered finite shifted-binary64 values.
+    pub values: [f64; 2],
+    /// Absolute offsets of the first and repeated scalar pairs.
     pub witness_offsets: [[usize; 2]; 2],
 }
 
-/// Two tagged offset-store indices following each simple-hole placement witness.
+/// Two tagged offset-store indices following each repeated scalar-pair witness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SimpleHolePlacementBlockReferences {
+pub struct SimpleHoleRepeatedScalarPairBlockReferences {
     /// Ordered block indices following the first coordinate pair.
     pub first: [u32; 2],
     /// Ordered block indices following the repeated coordinate pair.
@@ -1081,8 +1081,10 @@ pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPa
     strings
 }
 
-/// Decode an exact duplicated shifted-binary64 placement before a hole template.
-pub fn simple_hole_placement_2d(record: OperationRecord<'_>) -> Option<SimpleHolePlacement2d> {
+/// Decode an exact duplicated shifted-binary64 pair before a hole template.
+pub fn simple_hole_repeated_scalar_pair(
+    record: OperationRecord<'_>,
+) -> Option<SimpleHoleRepeatedScalarPair> {
     if record.label.value != "SIMPLE HOLE" {
         return None;
     }
@@ -1113,18 +1115,18 @@ pub fn simple_hole_placement_2d(record: OperationRecord<'_>) -> Option<SimpleHol
     if x0.0.to_bits() != x1.0.to_bits() || y0.0.to_bits() != y1.0.to_bits() {
         return None;
     }
-    Some(SimpleHolePlacement2d {
-        position: [x0.0, y0.0],
+    Some(SimpleHoleRepeatedScalarPair {
+        values: [x0.0, y0.0],
         witness_offsets: [[x0.1, y0.1], [x1.1, y1.1]],
     })
 }
 
 /// Decode the two tagged block indices immediately following each witnessed
-/// simple-hole coordinate pair.
-pub fn simple_hole_placement_block_references(
+/// simple-hole scalar pair.
+pub fn simple_hole_repeated_scalar_pair_block_references(
     record: OperationRecord<'_>,
-) -> Option<SimpleHolePlacementBlockReferences> {
-    let placement = simple_hole_placement_2d(record)?;
+) -> Option<SimpleHoleRepeatedScalarPairBlockReferences> {
+    let pair = simple_hole_repeated_scalar_pair(record)?;
     let decode_pair = |coordinate_offset: usize| {
         let relative = coordinate_offset.checked_sub(record.payload_offset)?;
         let mut at = relative.checked_add(8)?;
@@ -1141,9 +1143,9 @@ pub fn simple_hole_placement_block_references(
             ],
         ))
     };
-    let (first, first_offsets) = decode_pair(placement.witness_offsets[0][1])?;
-    let (second, second_offsets) = decode_pair(placement.witness_offsets[1][1])?;
-    Some(SimpleHolePlacementBlockReferences {
+    let (first, first_offsets) = decode_pair(pair.witness_offsets[0][1])?;
+    let (second, second_offsets) = decode_pair(pair.witness_offsets[1][1])?;
+    Some(SimpleHoleRepeatedScalarPairBlockReferences {
         first,
         second,
         offsets: [first_offsets, second_offsets],

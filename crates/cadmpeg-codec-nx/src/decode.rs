@@ -2779,10 +2779,10 @@ fn attach_native_object_model(
         &feature_operation_records,
         &feature_payload_strings,
     );
-    let feature_simple_hole_placements_2d =
-        crate::native::feature_simple_hole_placements_2d(&scan.container);
-    let feature_simple_hole_placement_block_references =
-        crate::native::feature_simple_hole_placement_block_references(&scan.container);
+    let feature_simple_hole_repeated_scalar_pairs =
+        crate::native::feature_simple_hole_repeated_scalar_pairs(&scan.container);
+    let feature_simple_hole_repeated_scalar_pair_block_references =
+        crate::native::feature_simple_hole_repeated_scalar_pair_block_references(&scan.container);
     let feature_body_references = crate::native::feature_body_references(&scan.container);
     let feature_body_reference_occurrences =
         crate::native::feature_body_reference_occurrences(&scan.container);
@@ -2959,8 +2959,8 @@ fn attach_native_object_model(
         && feature_operation_records.is_empty()
         && feature_payload_strings.is_empty()
         && feature_simple_hole_templates.is_empty()
-        && feature_simple_hole_placements_2d.is_empty()
-        && feature_simple_hole_placement_block_references.is_empty()
+        && feature_simple_hole_repeated_scalar_pairs.is_empty()
+        && feature_simple_hole_repeated_scalar_pair_block_references.is_empty()
         && feature_body_references.is_empty()
         && feature_input_blocks.is_empty()
         && feature_datum_csys_constructions.is_empty()
@@ -3294,8 +3294,9 @@ fn attach_native_object_model(
             operation_records: &feature_operation_records,
             payload_strings: &feature_payload_strings,
             simple_hole_templates: &feature_simple_hole_templates,
-            simple_hole_placements_2d: &feature_simple_hole_placements_2d,
-            simple_hole_placement_block_references: &feature_simple_hole_placement_block_references,
+            simple_hole_repeated_scalar_pairs: &feature_simple_hole_repeated_scalar_pairs,
+            simple_hole_repeated_scalar_pair_block_references:
+                &feature_simple_hole_repeated_scalar_pair_block_references,
             body_bindings: &segment_body_bindings,
         },
         annotations,
@@ -3305,7 +3306,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(106);
+    namespace.version = namespace.version.max(107);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3342,16 +3343,16 @@ fn attach_native_object_model(
             &feature_simple_hole_templates,
         )?;
     }
-    if !feature_simple_hole_placements_2d.is_empty() {
+    if !feature_simple_hole_repeated_scalar_pairs.is_empty() {
         namespace.set_arena(
-            "feature_simple_hole_placements_2d",
-            &feature_simple_hole_placements_2d,
+            "feature_simple_hole_repeated_scalar_pairs",
+            &feature_simple_hole_repeated_scalar_pairs,
         )?;
     }
-    if !feature_simple_hole_placement_block_references.is_empty() {
+    if !feature_simple_hole_repeated_scalar_pair_block_references.is_empty() {
         namespace.set_arena(
-            "feature_simple_hole_placement_block_references",
-            &feature_simple_hole_placement_block_references,
+            "feature_simple_hole_repeated_scalar_pair_block_references",
+            &feature_simple_hole_repeated_scalar_pair_block_references,
         )?;
     }
     if !feature_body_references.is_empty() {
@@ -3678,9 +3679,9 @@ struct FeatureOperationSources<'a> {
     operation_records: &'a [crate::native::FeatureOperationRecord],
     payload_strings: &'a [crate::native::FeaturePayloadString],
     simple_hole_templates: &'a [crate::native::FeatureSimpleHoleTemplate],
-    simple_hole_placements_2d: &'a [crate::native::FeatureSimpleHolePlacement2d],
-    simple_hole_placement_block_references:
-        &'a [crate::native::FeatureSimpleHolePlacementBlockReferences],
+    simple_hole_repeated_scalar_pairs: &'a [crate::native::FeatureSimpleHoleRepeatedScalarPair],
+    simple_hole_repeated_scalar_pair_block_references:
+        &'a [crate::native::FeatureSimpleHoleRepeatedScalarPairBlockReferences],
     body_bindings: &'a [crate::native::SegmentBodyBinding],
 }
 
@@ -3715,8 +3716,8 @@ fn attach_feature_operations(
         operation_records,
         payload_strings,
         simple_hole_templates,
-        simple_hole_placements_2d,
-        simple_hole_placement_block_references,
+        simple_hole_repeated_scalar_pairs,
+        simple_hole_repeated_scalar_pair_block_references,
         body_bindings,
     } = *sources;
     let stream = annotations.stream("nx:container");
@@ -4078,8 +4079,8 @@ fn attach_feature_operations(
         source_properties.extend(simple_hole_native_properties(
             &label.id,
             simple_hole_templates,
-            simple_hole_placements_2d,
-            simple_hole_placement_block_references,
+            simple_hole_repeated_scalar_pairs,
+            simple_hole_repeated_scalar_pair_block_references,
         ));
         for (slot, value) in label.object_indices.iter().enumerate() {
             source_properties.insert(
@@ -4241,8 +4242,8 @@ fn attach_feature_operations(
 pub(crate) fn simple_hole_native_properties(
     operation_label: &str,
     templates: &[crate::native::FeatureSimpleHoleTemplate],
-    placements: &[crate::native::FeatureSimpleHolePlacement2d],
-    block_references: &[crate::native::FeatureSimpleHolePlacementBlockReferences],
+    repeated_pairs: &[crate::native::FeatureSimpleHoleRepeatedScalarPair],
+    block_references: &[crate::native::FeatureSimpleHoleRepeatedScalarPairBlockReferences],
 ) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
     if let Some(template) = templates
@@ -4251,18 +4252,21 @@ pub(crate) fn simple_hole_native_properties(
     {
         properties.insert("simple_hole_template".to_string(), template.id.clone());
     }
-    if let Some(placement) = placements
+    if let Some(pair) = repeated_pairs
         .iter()
-        .find(|placement| placement.operation_label == operation_label)
+        .find(|pair| pair.operation_label == operation_label)
     {
-        properties.insert("simple_hole_placement_2d".to_string(), placement.id.clone());
+        properties.insert(
+            "simple_hole_repeated_scalar_pair".to_string(),
+            pair.id.clone(),
+        );
     }
     if let Some(references) = block_references
         .iter()
         .find(|references| references.operation_label == operation_label)
     {
         properties.insert(
-            "simple_hole_placement_block_references".to_string(),
+            "simple_hole_repeated_scalar_pair_block_references".to_string(),
             references.id.clone(),
         );
     }

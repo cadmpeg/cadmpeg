@@ -256,31 +256,31 @@ pub struct FeatureSimpleHoleTemplate {
     pub end_treatment: SimpleHoleEndTreatment,
 }
 
-/// Exact redundantly witnessed planar placement in a simple-hole payload.
+/// Exact redundantly witnessed scalar pair in a simple-hole payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureSimpleHolePlacement2d {
-    /// Globally unique placement identity.
+pub struct FeatureSimpleHoleRepeatedScalarPair {
+    /// Globally unique repeated-pair identity.
     pub id: String,
     /// Owning `SIMPLE HOLE` operation label.
     pub operation_label: String,
-    /// Ordered two-dimensional coordinates in model millimeters.
-    pub position: [f64; 2],
-    /// Absolute offsets of the first coordinate pair.
+    /// Ordered finite shifted-binary64 values.
+    pub values: [f64; 2],
+    /// Absolute offsets of the first scalar pair.
     pub first_witness_offsets: [u64; 2],
-    /// Absolute offsets of the byte-identical repeated coordinate pair.
+    /// Absolute offsets of the byte-identical repeated scalar pair.
     pub second_witness_offsets: [u64; 2],
 }
 
-/// Offset-store blocks linked after both witnesses of a simple-hole placement.
+/// Offset-store blocks linked after both repeated scalar-pair witnesses.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSimpleHolePlacementBlockReferences {
+pub struct FeatureSimpleHoleRepeatedScalarPairBlockReferences {
     /// Globally unique reference-lane identity.
     pub id: String,
     /// Owning `SIMPLE HOLE` operation label.
     pub operation_label: String,
-    /// Ordered blocks following the first coordinate pair.
+    /// Ordered blocks following the first scalar pair.
     pub first_data_blocks: [String; 2],
-    /// Ordered blocks following the repeated coordinate pair.
+    /// Ordered blocks following the repeated scalar pair.
     pub second_data_blocks: [String; 2],
     /// Absolute offsets of the first pair of tagged-index tokens.
     pub first_reference_offsets: [u64; 2],
@@ -1474,12 +1474,12 @@ pub fn feature_simple_hole_templates(
         .collect()
 }
 
-/// Decode exact duplicated planar placements from simple-hole operations.
-pub fn feature_simple_hole_placements_2d(
+/// Decode exact duplicated scalar pairs from simple-hole operations.
+pub fn feature_simple_hole_repeated_scalar_pairs(
     container: &Container,
-) -> Vec<FeatureSimpleHolePlacement2d> {
+) -> Vec<FeatureSimpleHoleRepeatedScalarPair> {
     let sections = container.om_sections();
-    let mut placements = Vec::new();
+    let mut pairs = Vec::new();
     for link in segment_om_links(container)
         .into_iter()
         .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
@@ -1497,32 +1497,32 @@ pub fn feature_simple_hole_placements_2d(
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
-            let Some(placement) = crate::om::simple_hole_placement_2d(record) else {
+            let Some(pair) = crate::om::simple_hole_repeated_scalar_pair(record) else {
                 continue;
             };
-            placements.push(FeatureSimpleHolePlacement2d {
+            pairs.push(FeatureSimpleHoleRepeatedScalarPair {
                 id: format!(
-                    "nx:feature-history:simple-hole-placement-2d#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:simple-hole-repeated-scalar-pair#{section_key}-{operation_ordinal}"
                 ),
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
                 ),
-                position: placement.position,
-                first_witness_offsets: placement.witness_offsets[0]
+                values: pair.values,
+                first_witness_offsets: pair.witness_offsets[0]
                     .map(|offset| entry_offset + offset as u64),
-                second_witness_offsets: placement.witness_offsets[1]
+                second_witness_offsets: pair.witness_offsets[1]
                     .map(|offset| entry_offset + offset as u64),
             });
         }
     }
-    placements
+    pairs
 }
 
-/// Resolve the tagged block-index pairs following both simple-hole placement
+/// Resolve the tagged block-index pairs following both repeated scalar-pair
 /// witnesses through the unique offset store that owns the operation inputs.
-pub fn feature_simple_hole_placement_block_references(
+pub fn feature_simple_hole_repeated_scalar_pair_block_references(
     container: &Container,
-) -> Vec<FeatureSimpleHolePlacementBlockReferences> {
+) -> Vec<FeatureSimpleHoleRepeatedScalarPairBlockReferences> {
     let sections = container.om_sections();
     let inputs = feature_input_blocks(container);
     let blocks = data_blocks(container)
@@ -1563,7 +1563,9 @@ pub fn feature_simple_hole_placement_block_references(
                 continue;
             }
             let prefix = prefixes.into_iter().next().expect("one checked prefix");
-            let Some(decoded) = crate::om::simple_hole_placement_block_references(record) else {
+            let Some(decoded) =
+                crate::om::simple_hole_repeated_scalar_pair_block_references(record)
+            else {
                 continue;
             };
             let resolve = |indices: [u32; 2]| {
@@ -1578,9 +1580,9 @@ pub fn feature_simple_hole_placement_block_references(
             else {
                 continue;
             };
-            references.push(FeatureSimpleHolePlacementBlockReferences {
+            references.push(FeatureSimpleHoleRepeatedScalarPairBlockReferences {
                 id: format!(
-                    "nx:feature-history:simple-hole-placement-block-references#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:simple-hole-repeated-scalar-pair-block-references#{section_key}-{operation_ordinal}"
                 ),
                 operation_label,
                 first_data_blocks,
