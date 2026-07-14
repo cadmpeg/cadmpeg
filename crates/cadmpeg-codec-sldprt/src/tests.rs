@@ -13410,6 +13410,40 @@ fn decode_projects_compact_solid_sweep_join_operation() {
 }
 
 #[test]
+fn decode_projects_compact_solid_sweep_general_curve_path() {
+    use cadmpeg_ir::features::{FeatureDefinition, PathRef};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Sweep" Type="Localized" id="137"/></Keywords>"#,
+    ));
+    let mut resolved = resolved_feature_classes_with_ids(&[("moSweep_c", "Sweep", 137)]);
+    let path_offset = resolved.len();
+    resolved.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
+    let path_class = b"moGeneralCurveRef_w";
+    resolved.extend_from_slice(&(path_class.len() as u16).to_le_bytes());
+    resolved.extend_from_slice(path_class);
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Sweep {
+            path: Some(PathRef::Native(path)),
+            ..
+        } if path.ends_with(&format!(":{path_offset}"))
+    ));
+}
+
+#[test]
 fn decode_projects_native_surface_sweep_class_without_localized_type() {
     use cadmpeg_ir::features::{FeatureDefinition, SweepMode};
 

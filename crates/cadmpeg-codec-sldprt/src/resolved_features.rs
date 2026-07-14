@@ -246,9 +246,9 @@ mod marker_tests {
     use super::{
         arc_angle_relation_kind, compact_body_path_at, compact_body_selection_at,
         compact_body_selection_vector, compact_edge_selection_at, compact_extrusion_through_all_at,
-        compact_extrusion_to_face_at, compact_surface_selection_at, marker_coordinates,
-        marker_is_geometry_locus, marker_local_id, marker_local_links, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, unique_locus,
+        compact_extrusion_to_face_at, compact_general_curve_ref_at, compact_surface_selection_at,
+        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
+        named_scalars, native_scalar_matches_discrete_parameter, object_names, unique_locus,
         unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::SketchRelationKind;
@@ -317,6 +317,17 @@ mod marker_tests {
 
         payload[88..92].fill(0);
         assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
+    }
+
+    #[test]
+    fn compact_general_curve_reference_requires_the_nested_profile_prefix() {
+        let mut payload = vec![0; 24];
+        payload[2..4].copy_from_slice(&0xe1u16.to_le_bytes());
+        payload[6..8].copy_from_slice(&0x802du16.to_le_bytes());
+        payload[8..18].copy_from_slice(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0]);
+        assert!(compact_general_curve_ref_at(&payload, 2));
+        payload[12] = 1;
+        assert!(!compact_general_curve_ref_at(&payload, 2));
     }
 
     #[test]
@@ -1427,6 +1438,11 @@ pub(crate) fn compact_body_selection_at(payload: &[u8], offset: usize) -> Option
             .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("four-byte chunk")))
             .collect(),
     )
+}
+
+fn compact_general_curve_ref_at(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset + 2..offset + 4) == Some(&[0; 2])
+        && payload.get(offset + 6..offset + 16) == Some(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0])
 }
 
 fn unique_marker_candidate(candidates: &[(String, bool)]) -> Option<&str> {
@@ -2799,6 +2815,85 @@ pub(crate) fn enrich_history_combine_selections(
                 .properties
                 .entry("Tools".into())
                 .or_insert_with(|| format!("sldprt:feature-input:body-path:{lane_key}:{tools}"));
+        }
+    }
+}
+
+/// Add compact general-curve reference identities carried by solid sweeps.
+pub(crate) fn enrich_history_sweep_paths(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    for lane in lanes {
+        let mut objects = histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter_map(|feature| {
+                Some((
+                    feature_object_name(feature, lane)?.offset,
+                    feature.id.clone(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        objects.sort_unstable_by_key(|object| object.0);
+        let mut paths = HashMap::new();
+        for (index, &(start, ref feature_id)) in objects.iter().enumerate() {
+            let Some(feature) = histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|feature| feature.id == *feature_id)
+            else {
+                continue;
+            };
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                != NativeClassKind::Sweep
+                || feature.properties.contains_key("Path")
+            {
+                continue;
+            }
+            let (Ok(start), end) = (
+                usize::try_from(start),
+                objects
+                    .get(index + 1)
+                    .and_then(|object| usize::try_from(object.0).ok())
+                    .unwrap_or(lane.native_payload.len()),
+            ) else {
+                continue;
+            };
+            let mut candidates = lane
+                .classes
+                .iter()
+                .filter(|class| {
+                    class.name == "moGeneralCurveRef_w"
+                        && usize::try_from(class.offset)
+                            .is_ok_and(|offset| offset >= start && offset < end)
+                })
+                .filter_map(|class| usize::try_from(class.offset).ok())
+                .collect::<Vec<_>>();
+            candidates.extend(
+                (start..end.saturating_sub(16))
+                    .filter(|offset| compact_general_curve_ref_at(&lane.native_payload, *offset)),
+            );
+            candidates.sort_unstable();
+            candidates.dedup();
+            if let [offset] = candidates.as_slice() {
+                paths.insert(feature_id.clone(), *offset);
+            }
+        }
+        let lane_key = lane
+            .id
+            .rsplit_once('#')
+            .map_or(lane.id.as_str(), |(_, key)| key);
+        for feature in histories
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+        {
+            let Some(offset) = paths.get(&feature.id) else {
+                continue;
+            };
+            feature.properties.entry("Path".into()).or_insert_with(|| {
+                format!("sldprt:feature-input:general-curve-ref:{lane_key}:{offset}")
+            });
         }
     }
 }

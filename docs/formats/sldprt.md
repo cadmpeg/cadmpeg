@@ -159,6 +159,8 @@ An integer or Boolean Keywords dimension is discrete. A same-named native f64 sc
 
 `moSweep_c` produces a solid sweep. Compact operation code `15` joins the swept result to the existing body. Its Boolean operation remains independently unresolved when no recognized operation carrier is present. `moSweepRefSurface_c` produces a surface sweep.
 
+A solid sweep's `moGeneralCurveRef_w` child identifies its path independently of path-to-sketch or path-to-B-rep resolution. A first class instance begins at its class declaration. A repeated instance contains a two-byte wrapper token, two zero bytes, a two-byte child token, and the compact child prefix `2b 80 02 00 00 00 00 00 00 00`. The wrapper offset is the stable native path identity.
+
 A `moCombineBodies_c` object is a body-Boolean feature independently of whether its Keywords element carries `Operation`, `Target`, or `Tools` attributes. An absent attribute leaves that field unresolved.
 
 Keywords `Configuration` elements carry a non-empty, document-unique `Name`; `Material` carries the configuration material override and the remaining attributes are configuration-local named values. Exactly one configuration name equals `swModel/@swConfigurationName` and selects the active configuration.

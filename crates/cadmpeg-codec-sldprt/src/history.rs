@@ -3260,6 +3260,10 @@ fn project_features_with_native_inputs(
         &mut histories,
         &native.feature_input_lanes,
     );
+    crate::resolved_features::enrich_history_sweep_paths(
+        &mut histories,
+        &native.feature_input_lanes,
+    );
     crate::resolved_features::enrich_history_parameters(
         &mut histories,
         &native.feature_input_lanes,
