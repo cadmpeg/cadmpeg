@@ -453,6 +453,10 @@ Parallel plane references and set flip fields do not use this transform case.
 ## 7. DEPDB layout
 
 DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They do not encode final loops or trim topology. Reconstruct the final B-rep by evaluating the profile and its `protextrude` or `protrevolve` operation. Embedded `1f 9d 10` streams use Unix-compress LZW with header flag `10` and block mode `0`; they contain display, XML, color, and shader data.
+`DEPDB_DATA` carries the same fixed-prefix `srf_array` rows and bounded surface
+parameter records as visible-geometry namespaces. Row acceptance uses the
+stored family, feature, orientation, boundary, and next-surface fields; the
+DEPDB section boundary supplies the namespace bound.
 
 ## 8. Additional record semantics
 

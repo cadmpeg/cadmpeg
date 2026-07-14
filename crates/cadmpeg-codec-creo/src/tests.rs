@@ -2090,12 +2090,14 @@ fn nd_decoration_selects_nd_layout() {
 
 #[test]
 fn depdb_data_with_sparse_sections_selects_depdb() {
-    let data = build_prt(
-        "c",
-        &[("VisibGeom", vec![0x00]), ("DEPDB_DATA", vec![0x00, 0x01])],
-    );
+    let depdb = b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\0next_geom_ptr\0\0".to_vec();
+    let data = build_prt("c", &[("VisibGeom", vec![0x00]), ("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes(data);
     assert_eq!(scan.layout, Layout::Depdb);
+    assert!(scan
+        .surface_rows
+        .iter()
+        .any(|row| row.id == 7 && row.feature_id == 4));
 }
 
 #[test]
