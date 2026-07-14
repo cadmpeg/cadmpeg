@@ -92,6 +92,28 @@ struct NativeDisplayAttributes {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum NativeLineFontDefinition {
+    Template {
+        id: String,
+        source_entity: String,
+        fallback_line_font_number: i64,
+        tangent_oriented: Option<bool>,
+        template: Option<String>,
+        spacing: Option<f64>,
+        scale: Option<f64>,
+    },
+    VisibleBlankPattern {
+        id: String,
+        source_entity: String,
+        fallback_line_font_number: i64,
+        segment_count: Option<i64>,
+        lengths: Vec<Option<f64>>,
+        hexadecimal_pattern: Option<Vec<u8>>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -329,6 +351,49 @@ pub(crate) fn store(
                 .then(|| format!("iges:presentation:color#D{}", entry.color.unsigned_abs())),
         })
         .collect::<Vec<_>>();
+    let line_fonts = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
+        .map(|entry| {
+            let parameters = by_directory.get(&entry.sequence).copied();
+            if entry.form == 1 {
+                NativeLineFontDefinition::Template {
+                    id: format!("iges:presentation:line-font#D{}", entry.sequence),
+                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                    fallback_line_font_number: entry.line_font,
+                    tangent_oriented: parameters.and_then(|record| record.integer(1)).and_then(
+                        |value| match value {
+                            0 => Some(false),
+                            1 => Some(true),
+                            _ => None,
+                        },
+                    ),
+                    template: parameters
+                        .and_then(|record| record.integer(2))
+                        .map(|sequence| format!("iges:entity:directory#{sequence}")),
+                    spacing: parameters.and_then(|record| record.number(3)),
+                    scale: parameters.and_then(|record| record.number(4)),
+                }
+            } else {
+                let count = parameters
+                    .and_then(|record| record.integer(1))
+                    .and_then(|value| usize::try_from(value).ok())
+                    .unwrap_or_default();
+                NativeLineFontDefinition::VisibleBlankPattern {
+                    id: format!("iges:presentation:line-font#D{}", entry.sequence),
+                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                    fallback_line_font_number: entry.line_font,
+                    segment_count: parameters.and_then(|record| record.integer(1)),
+                    lengths: (0..count)
+                        .map(|index| parameters.and_then(|record| record.number(2 + index)))
+                        .collect(),
+                    hexadecimal_pattern: parameters
+                        .and_then(|record| record.string(2 + count))
+                        .map(<[u8]>::to_vec),
+                }
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -338,5 +403,6 @@ pub(crate) fn store(
     namespace.set_arena("copious_data", &copious_data)?;
     namespace.set_arena("colors", &colors)?;
     namespace.set_arena("display_attributes", &display_attributes)?;
+    namespace.set_arena("line_fonts", &line_fonts)?;
     Ok(())
 }

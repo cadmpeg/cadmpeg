@@ -1730,6 +1730,14 @@ fn owned_test_file(entities: &[OwnedTestEntity]) -> Vec<u8> {
 }
 
 fn owned_test_file_with_colors(entities: &[OwnedTestEntity], colors: &[(u32, i64)]) -> Vec<u8> {
+    owned_test_file_with_display(entities, colors, &[])
+}
+
+fn owned_test_file_with_display(
+    entities: &[OwnedTestEntity],
+    colors: &[(u32, i64)],
+    line_fonts: &[(u32, i64)],
+) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -1742,7 +1750,11 @@ fn owned_test_file_with_colors(entities: &[OwnedTestEntity], colors: &[(u32, i64
                 &entity.entity_type.to_string(),
                 &parameter_sequence.to_string(),
                 "0",
-                "0",
+                &line_fonts
+                    .iter()
+                    .find_map(|(entry, line_font)| (*entry == sequence).then_some(*line_font))
+                    .unwrap_or(0)
+                    .to_string(),
                 "0",
                 "0",
                 "0",
@@ -1899,6 +1911,40 @@ fn colored_explicit_vertex_loop_file() -> Vec<u8> {
         },
     ];
     owned_test_file_with_colors(&entities, &[(9, -13), (11, 2), (13, 2)])
+}
+
+fn line_font_definitions_file() -> Vec<u8> {
+    let entities = [
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "TEMPLATE".into(),
+            status: "00000200",
+            parameters: "308,0,4HMARK,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 304,
+            form: 1,
+            label: "SYMBOLS".into(),
+            status: "00000200",
+            parameters: "304,1,1,2,0.5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 304,
+            form: 2,
+            label: "PATTERN".into(),
+            status: "00000200",
+            parameters: "304,5,2,1,2,1,2,2H16;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "LINE".into(),
+            status: "00000000",
+            parameters: "110,0,0,0,1,0,0;".into(),
+        },
+    ];
+    owned_test_file_with_display(&entities, &[], &[(3, 1), (5, 2), (7, -5)])
 }
 
 fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
@@ -2628,6 +2674,51 @@ fn decode_applies_standard_body_color_and_face_color_override() {
     );
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_types_template_and_visible_blank_line_fonts() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(line_font_definitions_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+    let line_fonts = &native.arenas["line_fonts"];
+    assert_eq!(line_fonts.len(), 2);
+    assert_eq!(line_fonts[0].id, "iges:presentation:line-font#D3");
+    assert_eq!(line_fonts[0].fields["kind"], "template");
+    assert_eq!(line_fonts[0].fields["tangent_oriented"], true);
+    assert_eq!(line_fonts[0].fields["template"], "iges:entity:directory#1");
+    assert_eq!(line_fonts[1].fields["kind"], "visible_blank_pattern");
+    assert_eq!(line_fonts[1].fields["segment_count"], 5);
+    assert_eq!(
+        line_fonts[1].fields["hexadecimal_pattern"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![49, 54]
+    );
+    let line_display = native.arenas["display_attributes"]
+        .iter()
+        .find(|record| record.id == "iges:presentation:display-attributes#D7")
+        .unwrap();
+    assert_eq!(line_display.fields["line_font_number"], -5);
+    assert_eq!(
+        line_display.fields["line_font_definition"],
+        "iges:entity:directory#5"
+    );
+    assert!(result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("IGES entity type 308 form 0 retained without neutral projection")));
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("IGES entity type 304 form")));
 }
 
 fn append_tetrahedral_shell(

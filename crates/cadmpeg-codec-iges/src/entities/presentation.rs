@@ -88,6 +88,68 @@ pub(super) fn project(
 
     for entry in directory
         .iter()
+        .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        if entry.status.use_flag != 2 || !(1..=5).contains(&entry.line_font) {
+            losses.push(loss(
+                entry,
+                "line-font definition use flag or fallback pattern is invalid",
+            ));
+            continue;
+        }
+        let valid = if entry.form == 1 {
+            let template = record
+                .integer(2)
+                .and_then(|value| u32::try_from(value).ok());
+            matches!(record.integer(1), Some(0 | 1))
+                && template.is_some_and(|sequence| {
+                    sequence % 2 == 1
+                        && entries
+                            .get(&sequence)
+                            .is_some_and(|target| target.entity_type == 308 && target.form == 0)
+                })
+                && record
+                    .number(3)
+                    .is_some_and(|value| value.is_finite() && value > 0.0)
+                && record
+                    .number(4)
+                    .is_some_and(|value| value.is_finite() && value > 0.0)
+        } else {
+            let count = record
+                .integer(1)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0);
+            count.is_some_and(|count| {
+                let expected_digits = count.div_ceil(4);
+                (0..count).all(|index| {
+                    record
+                        .number(2 + index)
+                        .is_some_and(|value| value.is_finite() && value > 0.0)
+                }) && record.string(2 + count).is_some_and(|pattern| {
+                    pattern.len() == expected_digits
+                        && pattern.iter().all(u8::is_ascii_hexdigit)
+                        && u8::from_str_radix(
+                            std::str::from_utf8(&pattern[..1]).unwrap_or_default(),
+                            16,
+                        )
+                        .is_ok_and(|first| first < (1_u8 << (4 - (expected_digits * 4 - count))))
+                })
+            })
+        };
+        if valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(loss(entry, "line-font definition parameters are invalid"));
+        }
+    }
+
+    for entry in directory
+        .iter()
         .filter(|entry| entry.entity_type == 314 && entry.form == 0)
     {
         handled.insert(entry.sequence);
