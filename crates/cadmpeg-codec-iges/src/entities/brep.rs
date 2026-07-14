@@ -906,10 +906,13 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
-                        let coedge_position = edge_use_indices
+                        let Some(coedge_position) = edge_use_indices
                             .iter()
                             .position(|index| *index == use_index)
-                            .expect("edge use has coedge position");
+                        else {
+                            valid = false;
+                            break;
+                        };
                         let coedge_id = coedge_ids[coedge_position].clone();
                         radial
                             .entry((shell_sequence, edge_key.0, edge_key.1))

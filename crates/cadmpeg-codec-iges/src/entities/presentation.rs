@@ -473,18 +473,15 @@ pub(super) fn project(
         .filter_map(|body| {
             let sequence = source_sequence(&body.id.0)?;
             let entry = entries.get(&sequence)?;
-            resolve(entry.color).map(|appearance| (body.id.clone(), appearance, entry.status.blank))
+            resolve(entry.color)
+                .map(|appearance| (body.id.clone(), sequence, appearance, entry.status.blank))
         })
         .collect::<Vec<_>>();
-    for (body_id, (appearance_id, color), blank) in body_assignments {
-        let sequence = source_sequence(&body_id.0).expect("body assignment has source sequence");
+    for (body_id, sequence, (appearance_id, color), blank) in body_assignments {
         appearance(ir, appearance_id.clone(), None, color);
-        let body = ir
-            .model
-            .bodies
-            .iter_mut()
-            .find(|body| body.id == body_id)
-            .expect("body assignment target still exists");
+        let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == body_id) else {
+            continue;
+        };
         body.color = Some(color);
         body.visible = Some(blank == 0);
         ir.model.appearance_bindings.push(AppearanceBinding {
@@ -511,18 +508,15 @@ pub(super) fn project(
         .filter_map(|face| {
             let sequence = source_sequence(&face.id.0)?;
             let entry = entries.get(&sequence)?;
-            resolve(entry.color).map(|appearance| (face.id.clone(), appearance))
+            resolve(entry.color).map(|appearance| (face.id.clone(), sequence, appearance))
         })
         .collect::<Vec<_>>();
-    for (face_id, (appearance_id, color)) in face_assignments {
-        let sequence = source_sequence(&face_id.0).expect("face assignment has source sequence");
+    for (face_id, sequence, (appearance_id, color)) in face_assignments {
         appearance(ir, appearance_id.clone(), None, color);
-        ir.model
-            .faces
-            .iter_mut()
-            .find(|face| face.id == face_id)
-            .expect("face assignment target still exists")
-            .color = Some(color);
+        let Some(face) = ir.model.faces.iter_mut().find(|face| face.id == face_id) else {
+            continue;
+        };
+        face.color = Some(color);
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: format!("iges:model:appearance-binding#face-D{sequence}"),
             target: AppearanceTarget::Face(face_id),
