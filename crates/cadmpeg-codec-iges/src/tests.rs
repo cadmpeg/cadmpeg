@@ -7063,6 +7063,15 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
             && span.meaning == "parameter_delimiter_or_padding"
     }));
     assert!(result.ir.byte_ledger.spans.iter().any(|span| {
+        span.class == cadmpeg_ir::ByteSpanClass::Typed && span.meaning == "global_value_0"
+    }));
+    assert!(result.ir.byte_ledger.spans.iter().any(|span| {
+        span.class == cadmpeg_ir::ByteSpanClass::Structural && span.meaning == "global_delimiter"
+    }));
+    assert!(result.ir.byte_ledger.spans.iter().any(|span| {
+        span.class == cadmpeg_ir::ByteSpanClass::Structural && span.meaning == "reserved_1"
+    }));
+    assert!(result.ir.byte_ledger.spans.iter().any(|span| {
         span.class == cadmpeg_ir::ByteSpanClass::Opaque
             && span.meaning == "parameter_comment"
             && span.retained_record.as_deref() == Some("iges:physical:card#6")

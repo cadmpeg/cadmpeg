@@ -2,6 +2,7 @@
 //! Parsed Fixed ASCII source-byte ownership.
 
 use crate::card::{CardScan, PhysicalLine, Section};
+use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_ir::{ByteLedger, ByteSpan, ByteSpanClass};
 use std::collections::BTreeMap;
@@ -48,6 +49,108 @@ fn fixed_card_framing(spans: &mut Vec<ByteSpan>, line: &PhysicalLine, owner: &st
         "section_sequence",
         None,
     );
+}
+
+fn global_data(
+    spans: &mut Vec<ByteSpan>,
+    line: &PhysicalLine,
+    global: &Global,
+    line_index: usize,
+    owner: &str,
+) {
+    let assembled_start = line_index.saturating_mul(72);
+    let mut column = 0_usize;
+    while column < 72 {
+        let assembled = assembled_start + column;
+        let value_index = global
+            .value_spans
+            .iter()
+            .position(|span| span.contains(&assembled));
+        let (class, meaning) = if let Some(index) = value_index {
+            (ByteSpanClass::Typed, format!("global_value_{index}"))
+        } else if assembled < global.record_end {
+            (ByteSpanClass::Structural, "global_delimiter".into())
+        } else {
+            (ByteSpanClass::Structural, "global_padding".into())
+        };
+        let mut end = column + 1;
+        while end < 72 {
+            let next = assembled_start + end;
+            let next_value = global
+                .value_spans
+                .iter()
+                .position(|span| span.contains(&next));
+            let same = if let Some(index) = value_index {
+                next_value == Some(index)
+            } else if assembled < global.record_end {
+                next_value.is_none() && next < global.record_end
+            } else {
+                next >= global.record_end
+            };
+            if !same {
+                break;
+            }
+            end += 1;
+        }
+        push(
+            spans,
+            line.offset + column as u64,
+            line.offset + end as u64,
+            class,
+            owner,
+            &meaning,
+            None,
+        );
+        column = end;
+    }
+    fixed_card_framing(spans, line, owner);
+}
+
+fn directory_data(spans: &mut Vec<ByteSpan>, line: &PhysicalLine, owner: &str) {
+    const FIRST: [&str; 9] = [
+        "entity_type",
+        "parameter_start",
+        "structure",
+        "line_font",
+        "level",
+        "view",
+        "transformation",
+        "label_display",
+        "status",
+    ];
+    const SECOND: [&str; 9] = [
+        "entity_type",
+        "line_weight",
+        "color",
+        "parameter_line_count",
+        "form",
+        "reserved_1",
+        "reserved_2",
+        "label",
+        "subscript",
+    ];
+    let meanings = if line.sequence.unwrap_or_default() % 2 == 1 {
+        FIRST
+    } else {
+        SECOND
+    };
+    for (index, meaning) in meanings.into_iter().enumerate() {
+        let class = if meaning.starts_with("reserved_") {
+            ByteSpanClass::Structural
+        } else {
+            ByteSpanClass::Typed
+        };
+        push(
+            spans,
+            line.offset + (index * 8) as u64,
+            line.offset + ((index + 1) * 8) as u64,
+            class,
+            owner,
+            meaning,
+            None,
+        );
+    }
+    fixed_card_framing(spans, line, owner);
 }
 
 fn parameter_data(
@@ -131,13 +234,18 @@ fn parameter_data(
     fixed_card_framing(spans, line, &owner);
 }
 
-pub(crate) fn build(scan: &CardScan, parameters: &[ParameterRecord]) -> ByteLedger {
+pub(crate) fn build(
+    scan: &CardScan,
+    global: &Global,
+    parameters: &[ParameterRecord],
+) -> ByteLedger {
     let parameter_by_line = parameters
         .iter()
         .flat_map(|record| record.line_range.clone().map(move |line| (line, record)))
         .collect::<BTreeMap<_, _>>();
     let mut spans = Vec::new();
     let mut terminated = false;
+    let mut global_line_index = 0_usize;
     for (index, line) in scan.lines.iter().enumerate() {
         let owner = format!("iges:physical:card#{}", index + 1);
         if terminated || line.payload.len() != 80 {
@@ -159,27 +267,31 @@ pub(crate) fn build(scan: &CardScan, parameters: &[ParameterRecord]) -> ByteLedg
                         parameter_data(&mut spans, line, record, &owner);
                     }
                 }
-                Some(section) => {
-                    let (class, meaning, retained) = match section {
-                        Section::Start => {
+                Some(section) => match section {
+                    Section::Global => {
+                        global_data(&mut spans, line, global, global_line_index, &owner);
+                        global_line_index += 1;
+                    }
+                    Section::Directory => directory_data(&mut spans, line, &owner),
+                    Section::Start | Section::Terminate => {
+                        let (class, meaning, retained) = if section == Section::Start {
                             (ByteSpanClass::Opaque, "start_text", Some(owner.as_str()))
-                        }
-                        Section::Global => (ByteSpanClass::Typed, "global_data", None),
-                        Section::Directory => (ByteSpanClass::Typed, "directory_fields", None),
-                        Section::Terminate => (ByteSpanClass::Typed, "terminate_counts", None),
-                        Section::Parameter => unreachable!("handled above"),
-                    };
-                    push(
-                        &mut spans,
-                        line.offset,
-                        line.offset + 72,
-                        class,
-                        &owner,
-                        meaning,
-                        retained,
-                    );
-                    fixed_card_framing(&mut spans, line, &owner);
-                }
+                        } else {
+                            (ByteSpanClass::Typed, "terminate_counts", None)
+                        };
+                        push(
+                            &mut spans,
+                            line.offset,
+                            line.offset + 72,
+                            class,
+                            &owner,
+                            meaning,
+                            retained,
+                        );
+                        fixed_card_framing(&mut spans, line, &owner);
+                    }
+                    Section::Parameter => unreachable!("handled above"),
+                },
                 None => {}
             }
         }

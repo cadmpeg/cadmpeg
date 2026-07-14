@@ -75,7 +75,7 @@ pub(crate) fn decode(
         &references,
         &global,
     )?;
-    ir.byte_ledger = byte_ledger::build(&scan, &parameters);
+    ir.byte_ledger = byte_ledger::build(&scan, &global, &parameters);
 
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;

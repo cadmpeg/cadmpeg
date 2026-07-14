@@ -3,6 +3,7 @@
 
 use crate::card::{CardScan, Section};
 use cadmpeg_ir::codec::CodecError;
+use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Value {
@@ -45,6 +46,8 @@ pub(crate) struct Global {
     pub(crate) parameter_delimiter: u8,
     pub(crate) record_delimiter: u8,
     values: Vec<Value>,
+    pub(crate) value_spans: Vec<Range<usize>>,
+    pub(crate) record_end: usize,
 }
 
 fn malformed(message: impl Into<String>) -> CodecError {
@@ -99,12 +102,12 @@ fn delimited_value(
     start: usize,
     parameter_delimiter: u8,
     record_delimiter: Option<u8>,
-) -> Result<(Value, usize, bool), CodecError> {
+) -> Result<(Value, Range<usize>, usize, bool), CodecError> {
     if bytes.get(start) == Some(&parameter_delimiter) {
-        return Ok((Value::Omitted, start + 1, false));
+        return Ok((Value::Omitted, start..start, start + 1, false));
     }
     if record_delimiter.is_some_and(|delimiter| bytes.get(start) == Some(&delimiter)) {
-        return Ok((Value::Omitted, start + 1, true));
+        return Ok((Value::Omitted, start..start, start + 1, true));
     }
     let (value, end) = if let Some((payload, end)) = hollerith(bytes, start)? {
         (Value::String(payload), end)
@@ -117,8 +120,12 @@ fn delimited_value(
         (Value::Atom(bytes[start..end].to_vec()), end)
     };
     match bytes.get(end).copied() {
-        Some(separator) if separator == parameter_delimiter => Ok((value, end + 1, false)),
-        Some(separator) if record_delimiter == Some(separator) => Ok((value, end + 1, true)),
+        Some(separator) if separator == parameter_delimiter => {
+            Ok((value, start..end, end + 1, false))
+        }
+        Some(separator) if record_delimiter == Some(separator) => {
+            Ok((value, start..end, end + 1, true))
+        }
         _ => Err(malformed("value is not followed by a delimiter")),
     }
 }
@@ -134,11 +141,15 @@ pub(crate) fn parse(scan: &CardScan) -> Result<Global, CodecError> {
         return Err(malformed("section is missing"));
     }
     let (parameter_delimiter, mut cursor) = first_delimiter(&bytes)?;
-    let (record_value, next, ended) = delimited_value(&bytes, cursor, parameter_delimiter, None)?;
+    let mut value_spans = Vec::with_capacity(26);
+    value_spans.push(0..cursor.saturating_sub(1));
+    let (record_value, record_span, next, ended) =
+        delimited_value(&bytes, cursor, parameter_delimiter, None)?;
     if ended {
         return Err(malformed("record ends before the record delimiter field"));
     }
     cursor = next;
+    value_spans.push(record_span);
     let record_delimiter = match record_value {
         Value::Omitted => b';',
         Value::String(value) if value.len() == 1 => value[0],
@@ -152,9 +163,10 @@ pub(crate) fn parse(scan: &CardScan) -> Result<Global, CodecError> {
         Value::String(vec![record_delimiter]),
     ];
     loop {
-        let (value, next, ended) =
+        let (value, span, next, ended) =
             delimited_value(&bytes, cursor, parameter_delimiter, Some(record_delimiter))?;
         values.push(value);
+        value_spans.push(span);
         cursor = next;
         if ended {
             break;
@@ -164,6 +176,8 @@ pub(crate) fn parse(scan: &CardScan) -> Result<Global, CodecError> {
         parameter_delimiter,
         record_delimiter,
         values,
+        value_spans,
+        record_end: cursor,
     })
 }
 
