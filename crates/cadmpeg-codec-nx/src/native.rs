@@ -4337,6 +4337,27 @@ pub struct DataBlockCountedIndexLane {
     pub member_source_offsets: Vec<u64>,
 }
 
+/// Fixed-width nullable `ABR` block-reference lane in contiguous column storage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockAbrReferenceLane {
+    /// Globally unique lane identity.
+    pub id: String,
+    /// Zero-based indexed-section ordinal within the container.
+    pub section_ordinal: u32,
+    /// Zero-based lane order within the section's column storage.
+    pub ordinal: u32,
+    /// Sixteen ordered nullable serialized block indices.
+    pub slot_indices: Vec<Option<u32>>,
+    /// Sixteen ordered nullable same-section block identities.
+    pub slot_data_blocks: Vec<Option<String>>,
+    /// Absolute file offsets of the sixteen compact-index tokens.
+    pub slot_source_offsets: Vec<u64>,
+    /// Directory entry containing the offset-only store.
+    pub source_entry: String,
+    /// Absolute file offset of the opening `11` marker.
+    pub source_offset: u64,
+}
+
 /// Product/version header from one indexed NX OM store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoreHeader {
@@ -5344,6 +5365,61 @@ pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCou
                         .collect::<Vec<_>>()
                 })
                 .collect()
+        })
+        .collect()
+}
+
+/// Decode complete in-range `ABR` reference lanes from offset-store column storage.
+pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbrReferenceLane> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let Some(storage) = section.column_storage else {
+                return Vec::new();
+            };
+            let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
+                return Vec::new();
+            };
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let source_base = entry_offset + storage_offset as u64;
+            let block_count = section.records.len() + 1;
+            crate::om::offset_store_abr_reference_lanes(storage)
+                .into_iter()
+                .filter_map(|lane| {
+                    let slot_data_blocks = lane
+                        .slots
+                        .iter()
+                        .map(|(value, _)| {
+                            value.map_or(Some(None), |value| {
+                                control_index_data_block(section_ordinal, block_count, value)
+                                    .map(Some)
+                            })
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Some((lane, slot_data_blocks))
+                })
+                .enumerate()
+                .map(
+                    |(ordinal, (lane, slot_data_blocks))| DataBlockAbrReferenceLane {
+                        id: format!(
+                            "nx:om-data-block-abr-reference-lanes-{section_ordinal}:lane#{ordinal}"
+                        ),
+                        section_ordinal: section_ordinal as u32,
+                        ordinal: ordinal as u32,
+                        slot_indices: lane.slots.iter().map(|(value, _)| *value).collect(),
+                        slot_data_blocks,
+                        slot_source_offsets: lane
+                            .slots
+                            .iter()
+                            .map(|(_, offset)| source_base + *offset as u64)
+                            .collect(),
+                        source_entry: entry.name.clone(),
+                        source_offset: source_base + lane.offset as u64,
+                    },
+                )
+                .collect::<Vec<_>>()
         })
         .collect()
 }

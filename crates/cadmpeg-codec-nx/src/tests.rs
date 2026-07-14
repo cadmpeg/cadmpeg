@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 104);
+    assert_eq!(namespace.version, 105);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1149,6 +1149,32 @@ fn om_offset_store_counted_index_lane_requires_complete_non_null_members() {
         crate::om::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0x62, 0x01, 0x10,])
             .is_empty()
     );
+}
+
+#[test]
+fn om_offset_store_abr_lane_requires_sixteen_slots_and_exact_terminator() {
+    let mut bytes = vec![0xaa, 0x11];
+    bytes.extend_from_slice(&[0xff; 6]);
+    bytes.extend_from_slice(&[0x82, 0x83]);
+    bytes.extend_from_slice(&[0xff; 9]);
+    bytes.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03, 0xbb]);
+
+    let lanes = crate::om::offset_store_abr_reference_lanes(&bytes);
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(lanes[0].offset, 1);
+    assert_eq!(lanes[0].slots.len(), 16);
+    assert_eq!(lanes[0].slots[6], (Some(643), 8));
+    assert!(lanes[0]
+        .slots
+        .iter()
+        .enumerate()
+        .all(|(slot, (value, _))| slot == 6 || value.is_none()));
+
+    bytes[23] = b'X';
+    assert!(crate::om::offset_store_abr_reference_lanes(&bytes).is_empty());
+    bytes[23] = b'R';
+    bytes.remove(18);
+    assert!(crate::om::offset_store_abr_reference_lanes(&bytes).is_empty());
 }
 
 #[test]
@@ -2812,6 +2838,32 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, None);
     assert_eq!(expressions[0].record, None);
+}
+
+#[test]
+fn native_abr_lane_resolves_nullable_slots_within_its_offset_store() {
+    let mut store = offset_only_indexed_om_section();
+    let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
+    let end_at = index_start + 3 * 4;
+    let end = u32::from_le_bytes(store[end_at..end_at + 4].try_into().unwrap()) as usize;
+    let mut lane = vec![0x11, 0x02];
+    lane.extend_from_slice(&[0xff; 15]);
+    lane.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03]);
+    store.splice(end..end, lane.iter().copied());
+    store[end_at..end_at + 4].copy_from_slice(&((end + lane.len()) as u32).to_le_bytes());
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
+    let container = container::scan_bytes(file).unwrap();
+
+    let lanes = crate::native::data_block_abr_reference_lanes(&container);
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(lanes[0].slot_indices[0], Some(2));
+    assert_eq!(
+        lanes[0].slot_data_blocks[0].as_deref(),
+        Some("nx:om-data-blocks-0:block#2")
+    );
+    assert!(lanes[0].slot_indices[1..].iter().all(Option::is_none));
+    assert_eq!(lanes[0].slot_source_offsets.len(), 16);
+    assert_eq!(lanes[0].slot_source_offsets[0], lanes[0].source_offset + 1);
 }
 
 #[test]
@@ -5407,7 +5459,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 104);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 105);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

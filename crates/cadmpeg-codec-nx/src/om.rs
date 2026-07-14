@@ -134,6 +134,49 @@ pub struct OffsetStoreCountedIndexLane {
     pub members: Vec<(u32, usize)>,
 }
 
+/// Fixed-width nullable block-index lane terminated by the literal `ABR` tag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetStoreAbrReferenceLane {
+    /// Byte offset of the opening `11` marker.
+    pub offset: usize,
+    /// Sixteen ordered nullable compact indices and their byte offsets.
+    pub slots: Vec<(Option<u32>, usize)>,
+}
+
+/// Decode fixed-width `ABR` block-reference lanes from contiguous column storage.
+pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrReferenceLane> {
+    const SLOT_COUNT: usize = 16;
+    const TERMINATOR: [u8; 7] = [0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03];
+    let mut lanes = Vec::new();
+    for start in 0..bytes.len() {
+        if bytes[start] != 0x11 {
+            continue;
+        }
+        let mut at = start + 1;
+        let mut slots = Vec::with_capacity(SLOT_COUNT);
+        for _ in 0..SLOT_COUNT {
+            let Some((value, width)) = bytes.get(at..).and_then(compact_index) else {
+                break;
+            };
+            slots.push((
+                match value {
+                    CompactIndex::Null => None,
+                    CompactIndex::Value(value) => Some(value),
+                },
+                at,
+            ));
+            at += width;
+        }
+        if slots.len() == SLOT_COUNT && bytes.get(at..at + TERMINATOR.len()) == Some(&TERMINATOR) {
+            lanes.push(OffsetStoreAbrReferenceLane {
+                offset: start,
+                slots,
+            });
+        }
+    }
+    lanes
+}
+
 /// Decode complete counted compact-index lanes from one bounded store block.
 ///
 /// A lane is `01, count:u8, anchor, member[count-2], 01 11`, with

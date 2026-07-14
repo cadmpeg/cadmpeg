@@ -2926,6 +2926,8 @@ fn attach_native_object_model(
     let data_block_references = crate::native::data_block_references(&scan.container);
     let data_block_counted_index_lanes =
         crate::native::data_block_counted_index_lanes(&scan.container);
+    let data_block_abr_reference_lanes =
+        crate::native::data_block_abr_reference_lanes(&scan.container);
     let feature_parameter_bindings = crate::native::feature_parameter_bindings(
         &feature_input_blocks,
         &data_block_references,
@@ -3005,6 +3007,7 @@ fn attach_native_object_model(
         && data_block_control_handle_pairs.is_empty()
         && data_block_references.is_empty()
         && data_block_counted_index_lanes.is_empty()
+        && data_block_abr_reference_lanes.is_empty()
         && feature_parameter_bindings.is_empty()
         && store_headers.is_empty()
         && string_values.is_empty()
@@ -3053,6 +3056,12 @@ fn attach_native_object_model(
             )
             .tag("OFFSET_STORE_EXPRESSION_OBJECT");
         annotations.exactness(&declaration.id, Exactness::ByteExact);
+    }
+    for lane in &data_block_abr_reference_lanes {
+        annotations
+            .note(&lane.id, annotation_stream, lane.source_offset)
+            .tag("OFFSET_STORE_ABR_REFERENCE_LANE");
+        annotations.exactness(&lane.id, Exactness::ByteExact);
     }
     for link in &segment_om_links {
         annotations
@@ -3303,7 +3312,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(104);
+    namespace.version = namespace.version.max(105);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3614,6 +3623,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "data_block_counted_index_lanes",
             &data_block_counted_index_lanes,
+        )?;
+    }
+    if !data_block_abr_reference_lanes.is_empty() {
+        namespace.set_arena(
+            "data_block_abr_reference_lanes",
+            &data_block_abr_reference_lanes,
         )?;
     }
     if !feature_parameter_bindings.is_empty() {
