@@ -101,6 +101,137 @@ fn report_unresolved_dimension_companions(report: &mut DecodeReport, native: &F3
     }
 }
 
+#[derive(Debug, Default, PartialEq, Eq)]
+struct DesignProjectionGaps {
+    native_constraints: usize,
+    profile_selections: usize,
+    face_selections: usize,
+    native_edge_selections: usize,
+    unresolved_edge_selections: usize,
+}
+
+fn design_projection_gaps(ir: &CadIr) -> DesignProjectionGaps {
+    use cadmpeg_ir::features::{EdgeSelection, Extent, ExtrudeStart, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+
+    let mut gaps = DesignProjectionGaps {
+        native_constraints: ir
+            .model
+            .sketch_constraints
+            .iter()
+            .filter(|constraint| {
+                matches!(
+                    constraint.definition,
+                    SketchConstraintDefinition::Native { .. }
+                )
+            })
+            .count(),
+        ..DesignProjectionGaps::default()
+    };
+    let mut edge_selection = |selection: &EdgeSelection| match selection {
+        EdgeSelection::Native(_) => gaps.native_edge_selections += 1,
+        EdgeSelection::Unresolved => gaps.unresolved_edge_selections += 1,
+        EdgeSelection::Edges(_) | EdgeSelection::Resolved { .. } => {}
+    };
+    for feature in &ir.model.features {
+        match &feature.definition {
+            FeatureDefinition::Extrude {
+                profile,
+                start,
+                extent,
+                ..
+            } => {
+                if matches!(
+                    profile,
+                    ProfileRef::Native(_) | ProfileRef::SketchSelection { .. }
+                ) {
+                    gaps.profile_selections += 1;
+                }
+                if matches!(
+                    start,
+                    ExtrudeStart::FromFace {
+                        face: FaceSelection::Native(_) | FaceSelection::Unresolved,
+                        ..
+                    }
+                ) {
+                    gaps.face_selections += 1;
+                }
+                if matches!(
+                    extent,
+                    Extent::ToFace {
+                        face: FaceSelection::Native(_) | FaceSelection::Unresolved,
+                        ..
+                    }
+                ) {
+                    gaps.face_selections += 1;
+                }
+            }
+            FeatureDefinition::Fillet { groups } => {
+                for group in groups {
+                    edge_selection(&group.edges);
+                }
+            }
+            FeatureDefinition::Chamfer { groups } => {
+                for group in groups {
+                    edge_selection(&group.edges);
+                }
+            }
+            _ => {}
+        }
+    }
+    gaps
+}
+
+fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr) {
+    let gaps = design_projection_gaps(ir);
+    let mut push = |count: usize, message: String| {
+        if count != 0 {
+            report.losses.push(LossNote {
+                category: LossCategory::Other,
+                severity: Severity::Warning,
+                message,
+                provenance: None,
+            });
+        }
+    };
+    push(
+        gaps.native_constraints,
+        format!(
+            "{} sketch constraint(s) retain native operands because no unique neutral relation was resolved.",
+            gaps.native_constraints
+        ),
+    );
+    push(
+        gaps.profile_selections,
+        format!(
+            "{} feature profile selection(s) retain native selection identities because no unique neutral profile was resolved.",
+            gaps.profile_selections
+        ),
+    );
+    push(
+        gaps.face_selections,
+        format!(
+            "{} feature face selection(s) retain native candidates because no unique topological face was resolved.",
+            gaps.face_selections
+        ),
+    );
+    push(
+        gaps.native_edge_selections,
+        format!(
+            "{} edge-treatment selection(s) retain native construction recipes because no neutral historical edge selection was resolved.",
+            gaps.native_edge_selections
+        ),
+    );
+    push(
+        gaps.unresolved_edge_selections,
+        format!(
+            "{} edge-treatment selection(s) are unresolved because their source edge references were lost.",
+            gaps.unresolved_edge_selections
+        ),
+    );
+}
+
 /// Decode a `.f3d` reader into a document and its loss report.
 pub fn decode(
     reader: &mut dyn ReadSeek,
@@ -324,6 +455,7 @@ pub fn decode(
             native.act_guids = act.guids;
             native.act_root_components = act.root_components;
             report_unresolved_dimension_companions(&mut report, &native);
+            report_design_projection_gaps(&mut report, &ir);
             if !native.lost_edge_references.is_empty() {
                 report.losses.push(LossNote {
                     category: LossCategory::Attribute,
@@ -1577,12 +1709,85 @@ fn resolve_face_appearance_bindings(
 
 #[cfg(test)]
 mod tests {
-    use super::unresolved_dimension_companion_count;
+    use super::{
+        design_projection_gaps, unresolved_dimension_companion_count, DesignProjectionGaps,
+    };
     use crate::native::F3dNative;
     use crate::records::{
         DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignParameter,
         DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
     };
+
+    #[test]
+    fn design_projection_gaps_count_each_retained_selection_family() {
+        use cadmpeg_ir::sketches::{
+            SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchId,
+        };
+
+        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: SketchConstraintId("constraint".into()),
+            sketch: SketchId("sketch".into()),
+            definition: SketchConstraintDefinition::Native {
+                native_kind: "dimension".into(),
+                entities: Vec::new(),
+                parameter: None,
+                operands: Vec::new(),
+            },
+            native_ref: Some("native:constraint".into()),
+        });
+        ir.model.features.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "extrude",
+                "ordinal": 0,
+                "definition": {
+                    "definition": "extrude",
+                    "profile": {
+                        "kind": "sketch_selection",
+                        "value": {"sketch": "sketch", "selections": ["native:profile"]}
+                    },
+                    "start": {"kind": "profile_plane"},
+                    "extent": {
+                        "kind": "to_face",
+                        "face": {"kind": "native", "value": "native:face"}
+                    },
+                    "op": "cut"
+                }
+            }))
+            .expect("Extrude feature"),
+        );
+        ir.model.features.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "fillet",
+                "ordinal": 1,
+                "definition": {
+                    "definition": "fillet",
+                    "groups": [
+                        {
+                            "edges": {"kind": "native", "value": "native:edges"},
+                            "radius": {"kind": "constant", "radius": 1.0}
+                        },
+                        {
+                            "edges": {"kind": "unresolved"},
+                            "radius": {"kind": "constant", "radius": 2.0}
+                        }
+                    ]
+                }
+            }))
+            .expect("Fillet feature"),
+        );
+
+        assert_eq!(
+            design_projection_gaps(&ir),
+            DesignProjectionGaps {
+                native_constraints: 1,
+                profile_selections: 1,
+                face_selections: 1,
+                native_edge_selections: 1,
+                unresolved_edge_selections: 1,
+            }
+        );
+    }
 
     #[test]
     fn payload_bearing_dimension_companion_requires_a_typed_dimension_frame() {
