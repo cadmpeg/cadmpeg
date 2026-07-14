@@ -1433,10 +1433,17 @@ fn explicit_open_shell_file() -> Vec<u8> {
 }
 
 fn explicit_tetrahedron_solid_file() -> Vec<u8> {
-    explicit_tetrahedron_solid_file_with_transform(false)
+    explicit_tetrahedron_solid_file_with_options(false, false)
 }
 
 fn explicit_tetrahedron_solid_file_with_transform(transformed: bool) -> Vec<u8> {
+    explicit_tetrahedron_solid_file_with_options(transformed, false)
+}
+
+fn explicit_tetrahedron_solid_file_with_options(
+    transformed: bool,
+    inconsistent_radial_sense: bool,
+) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut entities = vec![
         (116, 0, "POINTA", "00010000", "116,0,0,0,0;"),
@@ -1496,13 +1503,23 @@ fn explicit_tetrahedron_solid_file_with_transform(transformed: bool) -> Vec<u8> 
             "00010000",
             "508,3,0,35,3,1,0,0,35,6,0,0,0,35,2,0,0;",
         ),
-        (
-            508,
-            1,
-            "LOOP4",
-            "00010000",
-            "508,3,0,35,4,1,0,0,35,6,1,0,0,35,5,0,0;",
-        ),
+        if inconsistent_radial_sense {
+            (
+                508,
+                1,
+                "LOOP4",
+                "00010000",
+                "508,3,0,35,4,1,0,0,35,6,0,0,0,35,5,0,0;",
+            )
+        } else {
+            (
+                508,
+                1,
+                "LOOP4",
+                "00010000",
+                "508,3,0,35,4,1,0,0,35,6,1,0,0,35,5,0,0;",
+            )
+        },
         (510, 1, "FACE1", "00010000", "510,13,1,1,37;"),
         (510, 1, "FACE2", "00010000", "510,15,1,1,39;"),
         (510, 1, "FACE3", "00010000", "510,17,1,1,41;"),
@@ -1586,6 +1603,31 @@ fn explicit_tetrahedron_solid_file_with_transform(transformed: bool) -> Vec<u8> 
         1,
     ));
     bytes
+}
+
+#[test]
+fn decode_rejects_closed_shell_with_inconsistent_radial_sense() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file_with_options(false, true)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .ir
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.id.0 != "iges:model:body#D55"));
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            == "IGES entity type 186 form 0 was not projected: closed shell does not use every edge exactly twice with opposite senses"
+    }));
+    assert_eq!(
+        result.ir.native.namespace("iges").unwrap().arenas["entities"].len(),
+        28
+    );
 }
 
 #[test]
