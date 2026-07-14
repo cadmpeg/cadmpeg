@@ -3839,7 +3839,7 @@ fn typed_marker_relation_definition(
         SketchInputKind::Native(_) => None,
         _ => return None,
     };
-    if kind.is_some() && marker.links.is_empty() && marker.coordinates_m.is_none() {
+    if marker.links.is_empty() && !loci_by_marker.contains_key(&marker.id) {
         return None;
     }
     let native = || {
@@ -5412,6 +5412,11 @@ mod profile_join_tests {
         );
         let mut operandless_vertical = marker("operandless-vertical", None);
         operandless_vertical.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
+        assert_eq!(
+            typed_marker_relation_definition(&operandless_vertical, &markers, &joins),
+            None
+        );
+        operandless_vertical.coordinates_m = Some([0.01, 0.02]);
         assert_eq!(
             typed_marker_relation_definition(&operandless_vertical, &markers, &joins),
             None
