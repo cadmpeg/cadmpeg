@@ -310,8 +310,74 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
     if out.is_empty() {
         out.extend(disc20_bodies(&by_attr));
     }
+    if out.is_empty() {
+        out.extend(schema_36001_extended_root_body(&by_attr));
+    }
     out.sort_by_key(|record| record.attr);
     out
+}
+
+fn schema_36001_extended_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
+    let regions = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x001a && record.flo() == 1)
+        .collect::<Vec<_>>();
+    let [region] = regions.as_slice() else {
+        return Vec::new();
+    };
+    let follows = |record: &EntityRecord, slot: usize, disc: u16| {
+        record
+            .refs
+            .get(slot)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|next| next.disc == disc)
+    };
+    let Some(disc_20) = follows(region, 1, 0x0020) else {
+        return Vec::new();
+    };
+    let Some(disc_28) = follows(disc_20, 1, 0x0028) else {
+        return Vec::new();
+    };
+    let Some(disc_2a) = follows(disc_28, 1, 0x002a) else {
+        return Vec::new();
+    };
+    if follows(disc_2a, 1, 0x002c).is_none() {
+        return Vec::new();
+    }
+    let Some(disc_18) = follows(region, 2, 0x0018) else {
+        return Vec::new();
+    };
+    let Some(shell) = follows(disc_18, 2, 0x0016) else {
+        return Vec::new();
+    };
+    let Some(disc_14) = follows(shell, 2, 0x0014) else {
+        return Vec::new();
+    };
+    let Some(disc_10) = follows(disc_14, 2, 0x0010) else {
+        return Vec::new();
+    };
+    if follows(disc_10, 2, 0x000e).is_none() {
+        return Vec::new();
+    }
+    let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
+    refs.sort_unstable();
+    vec![BodyRecord {
+        attr: region.attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: region.offset,
+        regions: vec![RegionRecord {
+            attr: region.attr,
+            offset: region.offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
 }
 
 fn disc20_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
@@ -453,6 +519,44 @@ mod tests {
         assert_eq!(body.regions[0].shells.len(), 1);
         assert_eq!(body.regions[0].shells[0].attr, 13);
         assert!(by_attr.keys().all(|attr| body.refs.contains(attr)));
+    }
+
+    #[test]
+    fn schema_36001_extended_root_lattice_owns_the_site() {
+        let records = vec![
+            record(10, 0x1a, [1, 11, 12, 1, 1, 1]),
+            record(11, 0x20, [1, 13, 10, 1, 1, 1]),
+            record(12, 0x18, [1, 10, 16, 1, 1, 1]),
+            record(13, 0x28, [1, 14, 11, 1, 1, 1]),
+            record(14, 0x2a, [1, 15, 13, 1, 1, 1]),
+            record(15, 0x2c, [1, 1, 14, 1, 1, 1]),
+            record(16, 0x16, [1, 12, 17, 1, 1, 1]),
+            record(17, 0x14, [1, 16, 18, 1, 1, 1]),
+            record(18, 0x10, [1, 17, 19, 1, 1, 1]),
+            record(19, 0x0e, [1, 18, 1, 1, 1, 1]),
+        ];
+        let by_attr = records
+            .iter()
+            .map(|record| (record.attr, record))
+            .collect::<HashMap<_, _>>();
+
+        let bodies = schema_36001_extended_root_body(&by_attr);
+        let [body] = bodies.as_slice() else {
+            panic!("one schema-36001 body");
+        };
+        assert_eq!(body.attr, 10);
+        assert_eq!(body.kind, BodyKind::Solid);
+        assert_eq!(body.regions.len(), 1);
+        assert_eq!(body.regions[0].shells.len(), 1);
+        assert_eq!(body.regions[0].shells[0].attr, 16);
+        assert!(by_attr.keys().all(|attr| body.refs.contains(attr)));
+
+        let incomplete = records
+            .iter()
+            .filter(|record| record.attr != 19)
+            .map(|record| (record.attr, record))
+            .collect::<HashMap<_, _>>();
+        assert!(schema_36001_extended_root_body(&incomplete).is_empty());
     }
 }
 

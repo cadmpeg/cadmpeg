@@ -325,6 +325,8 @@ In the disc20 face layout, a `0x1a` region reaches one `0x16` shell. Each canoni
 
 Schema 36001 also carries a single-region disc20 layout with one `0x1a` region. Its descending root chain is `0x1a.slot2 -> 0x18`, `0x18.slot2 -> 0x16`, and `0x16.slot2 -> 0x14`. Its ascending chain is `0x1a.slot1 -> 0x1c`, `0x1c.slot1 -> 0x22`, `0x22.slot1 -> 0x24`, `0x24.slot1 -> 0x26`, and `0x26.slot1 -> 0x2e`. When both chains are complete and the region reaches exactly one `0x16` shell, every canonical `0x20/flo1` face in the site belongs to that shell.
 
+A second schema-36001 single-region layout uses one `0x1a/flo1` region. Its upper root chain is `0x1a.slot1 -> 0x20`, `0x20.slot1 -> 0x28`, `0x28.slot1 -> 0x2a`, and `0x2a.slot1 -> 0x2c`. Its lower root chain is `0x1a.slot2 -> 0x18`, `0x18.slot2 -> 0x16`, `0x16.slot2 -> 0x14`, `0x14.slot2 -> 0x10`, and `0x10.slot2 -> 0x0e`. When both chains are complete, every canonical face in the site belongs to the sole `0x16` shell.
+
 ---
 
 ## 7. Geometry carriers
