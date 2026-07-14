@@ -4002,6 +4002,25 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
 }
 
 #[test]
+fn native_design_objects_follow_payload_references_to_target_owners() {
+    let bytes = object_graph_from_records(&[
+        object_graph_record(&[0x04, 0x01, 0x81, 0x83], &[0x81, 0x83, 0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x85], &[0xfe]),
+    ]);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.design_objects.len(), 2);
+    assert_eq!(native.design_objects[0].owner_ordinal, 1);
+    assert_eq!(native.design_objects[0].fields.len(), 2);
+    assert_eq!(
+        native.design_objects[0].dependencies,
+        vec![native.design_objects[1].id.clone()]
+    );
+    assert_eq!(native.design_objects[1].owner_ordinal, 3);
+    assert!(native.design_objects[1].dependencies.is_empty());
+}
+
+#[test]
 fn outer_object_graph_resolves_class_names_from_following_schema() {
     let mut bytes = object_graph_stream();
     let graph_len = bytes.len();

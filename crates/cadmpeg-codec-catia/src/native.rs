@@ -7,11 +7,13 @@ use std::collections::BTreeMap;
 
 use crate::catalog;
 use crate::container;
-use crate::object_graph::{self, AliasLead, HeadToken, ObjectPayload, PayloadSubtype};
+use crate::object_graph::{
+    self, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField, PayloadSubtype,
+};
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 9;
+pub const CATIA_NATIVE_VERSION: u32 = 10;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -214,34 +216,79 @@ pub struct CatiaDesignObject {
     pub owner_record: Option<String>,
     /// Field records carrying this owner ordinal, in serialized order.
     pub fields: Vec<String>,
+    /// Referenced design objects, in first field-reference order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<String>,
 }
 
 fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
     graphs
         .iter()
         .flat_map(|graph| {
-            let mut fields = BTreeMap::<u32, Vec<String>>::new();
+            let mut fields = BTreeMap::<u32, Vec<&CatiaObjectRecord>>::new();
             for record in &graph.records {
                 if let Some(owner) = record.owner_ref {
-                    fields.entry(owner).or_default().push(record.id.clone());
+                    fields.entry(owner).or_default().push(record);
                 }
             }
-            fields.into_iter().map(|(owner_ordinal, fields)| {
+            let owners = fields.keys().copied().collect::<Vec<_>>();
+            fields.into_iter().map(move |(owner_ordinal, records)| {
                 let owner_record = usize::try_from(owner_ordinal)
                     .ok()
                     .and_then(|ordinal| ordinal.checked_sub(1))
                     .and_then(|index| graph.records.get(index))
                     .map(|record| record.id.clone());
+                let mut dependency_owners = Vec::new();
+                for reference in records
+                    .iter()
+                    .flat_map(|record| payload_references(&record.payload))
+                {
+                    let target_owner = usize::try_from(reference)
+                        .ok()
+                        .and_then(|ordinal| ordinal.checked_sub(1))
+                        .and_then(|index| graph.records.get(index))
+                        .and_then(|record| record.owner_ref);
+                    if let Some(target_owner) = target_owner.filter(|target| {
+                        *target != owner_ordinal
+                            && owners.contains(target)
+                            && !dependency_owners.contains(target)
+                    }) {
+                        dependency_owners.push(target_owner);
+                    }
+                }
                 CatiaDesignObject {
                     id: format!("{}:owner#{owner_ordinal}", graph.id),
                     parent: graph.id.clone(),
                     owner_ordinal,
                     owner_record,
-                    fields,
+                    fields: records.iter().map(|record| record.id.clone()).collect(),
+                    dependencies: dependency_owners
+                        .into_iter()
+                        .map(|owner| format!("{}:owner#{owner}", graph.id))
+                        .collect(),
                 }
             })
         })
         .collect()
+}
+
+fn payload_references(payload: &ObjectPayload) -> impl Iterator<Item = u32> + '_ {
+    payload.fields.iter().flat_map(|field| match field {
+        PayloadField::Reference { value, .. } => vec![*value],
+        PayloadField::List { items, .. } => items
+            .iter()
+            .filter_map(|item| match item {
+                ListItem::Reference(value) => Some(*value),
+                ListItem::Atom(_) => None,
+            })
+            .collect(),
+        PayloadField::Atom { .. }
+        | PayloadField::Scalar { .. }
+        | PayloadField::Blob { .. }
+        | PayloadField::BulkTable { .. }
+        | PayloadField::Sentinel { .. }
+        | PayloadField::Terminator => Vec::new(),
+    })
 }
 
 /// CATIA-native records retained outside the format-neutral model.
