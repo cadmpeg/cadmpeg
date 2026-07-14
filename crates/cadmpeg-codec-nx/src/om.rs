@@ -100,19 +100,23 @@ pub fn compact_indices(bytes: &[u8]) -> Option<Vec<CompactIndex>> {
     let mut values = Vec::new();
     let mut at = 0usize;
     while at < bytes.len() {
-        let prefix = bytes[at];
-        at += 1;
-        if prefix == 0xff {
-            values.push(CompactIndex::Null);
-        } else if prefix >= 0x80 {
-            let low = u32::from(*bytes.get(at)?);
-            at += 1;
-            values.push(CompactIndex::Value(u32::from(prefix - 0x80) * 256 + low));
-        } else {
-            values.push(CompactIndex::Value(u32::from(prefix)));
-        }
+        let (value, width) = compact_index(bytes.get(at..)?)?;
+        at += width;
+        values.push(value);
     }
     Some(values)
+}
+
+fn compact_index(bytes: &[u8]) -> Option<(CompactIndex, usize)> {
+    let prefix = *bytes.first()?;
+    if prefix == 0xff {
+        Some((CompactIndex::Null, 1))
+    } else if prefix >= 0x80 {
+        let low = u32::from(*bytes.get(1)?);
+        Some((CompactIndex::Value(u32::from(prefix - 0x80) * 256 + low), 2))
+    } else {
+        Some((CompactIndex::Value(u32::from(prefix)), 1))
+    }
 }
 
 /// One tagged reference occurrence in an externally bounded OM record.
@@ -308,6 +312,23 @@ pub struct PayloadScalar {
 pub struct ExtrudePayloadScalarTriple {
     /// Three scalar atoms in byte order.
     pub scalars: [PayloadScalar; 3],
+}
+
+/// Structured `32` branch following an extrusion body reference.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtrudePayload32Branch {
+    /// Absolute offset of the `32` branch marker.
+    pub offset: usize,
+    /// Finite shifted-IEEE scalar following the branch marker.
+    pub scalar: f64,
+    /// Ordered fixed-width big-endian atoms in the first counted lane.
+    pub atoms_be: Vec<u32>,
+    /// Ordered values in the first compact-index lane.
+    pub first_indices: Vec<u32>,
+    /// Ordered values in the second compact-index lane.
+    pub second_indices: Vec<u32>,
+    /// Object index in the terminal field.
+    pub terminal_object_index: u32,
 }
 
 /// Self-framed NX parameter name in one bounded expression declaration record.
@@ -790,6 +811,81 @@ pub fn extrude_payload_scalar_triple(
     Some(ExtrudePayloadScalarTriple {
         scalars: scalars.try_into().ok()?,
     })
+}
+
+/// Decode the structured `32` branch following an extrusion body field.
+pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudePayload32Branch> {
+    if record.label.value != "EXTRUDE" {
+        return None;
+    }
+    let reference = operation_body_reference(record)?;
+    let token = reference.offset.checked_sub(record.offset)?;
+    let (_, end) = feature_object_index(record.bytes, token)?;
+    if record.bytes.get(end..end + 4) != Some(&[0xff, 0x32, 0x00, 0x00]) {
+        return None;
+    }
+    let branch_at = end + 1;
+    let scalar = shifted_ieee_f64(record.bytes.get(end + 4..end + 12)?)?;
+    let mut at = end + 12;
+    let atoms_be = counted_u32_atoms(record.bytes, &mut at)?;
+    let first_indices = counted_compact_values(record.bytes, &mut at)?;
+    let second_indices = counted_compact_values(record.bytes, &mut at)?;
+    if record.bytes.get(at..at + 2) != Some(&[0x00, 0x01]) {
+        return None;
+    }
+    let (terminal_object_index, next) = feature_object_index(record.bytes, at + 2)?;
+    let terminal_object_index = terminal_object_index?;
+    if record.bytes.get(next..next + 2) != Some(&[0x00, 0x00]) {
+        return None;
+    }
+    Some(ExtrudePayload32Branch {
+        offset: record.offset + branch_at,
+        scalar,
+        atoms_be,
+        first_indices,
+        second_indices,
+        terminal_object_index,
+    })
+}
+
+fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<u32>> {
+    if bytes.get(*at) != Some(&0x01) {
+        return None;
+    }
+    let count = usize::from(*bytes.get(*at + 1)?);
+    if count < 2 {
+        return None;
+    }
+    *at += 2;
+    let mut values = Vec::with_capacity(count - 1);
+    for _ in 1..count {
+        values.push(u32::from_be_bytes(
+            bytes.get(*at..*at + 4)?.try_into().ok()?,
+        ));
+        *at += 4;
+    }
+    Some(values)
+}
+
+fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<Vec<u32>> {
+    if bytes.get(*at) != Some(&0x01) {
+        return None;
+    }
+    let count = usize::from(*bytes.get(*at + 1)?);
+    if count < 2 {
+        return None;
+    }
+    *at += 2;
+    let mut values = Vec::with_capacity(count - 1);
+    for _ in 1..count {
+        let (value, width) = compact_index(bytes.get(*at..)?)?;
+        let CompactIndex::Value(value) = value else {
+            return None;
+        };
+        values.push(value);
+        *at += width;
+    }
+    Some(values)
 }
 
 fn payload_scalar(bytes: &[u8]) -> Option<(f64, PayloadScalarEncoding, usize)> {

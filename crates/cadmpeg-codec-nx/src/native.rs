@@ -402,6 +402,27 @@ pub struct FeatureExtrudePayloadScalarTriple {
     pub source_offsets: [u64; 3],
 }
 
+/// Structured `32` branch following an extrusion body-reference field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureExtrudePayload32Branch {
+    /// Globally unique branch identity.
+    pub id: String,
+    /// Owning `EXTRUDE` operation label.
+    pub operation_label: String,
+    /// Finite shifted-IEEE scalar following the branch marker.
+    pub scalar: f64,
+    /// Ordered fixed-width big-endian atoms in the first counted lane.
+    pub atoms_be: Vec<u32>,
+    /// Ordered values in the first compact-index lane.
+    pub first_indices: Vec<u32>,
+    /// Ordered values in the second compact-index lane.
+    pub second_indices: Vec<u32>,
+    /// Object index in the terminal field.
+    pub terminal_object_index: u32,
+    /// Absolute file offset of the `32` branch marker.
+    pub source_offset: u64,
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1064,6 +1085,51 @@ pub fn feature_extrude_payload_scalar_triples(
         }
     }
     triples
+}
+
+/// Decode structured `32` branches following extrusion body-reference fields.
+pub fn feature_extrude_payload_32_branches(
+    container: &Container,
+) -> Vec<FeatureExtrudePayload32Branch> {
+    let sections = container.om_sections();
+    let mut branches = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let Some(branch) = crate::om::extrude_payload_32_branch(record) else {
+                continue;
+            };
+            branches.push(FeatureExtrudePayload32Branch {
+                id: format!(
+                    "nx:feature-history:extrude-payload-32-branch#{section_key}-{operation_ordinal}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                ),
+                scalar: branch.scalar,
+                atoms_be: branch.atoms_be,
+                first_indices: branch.first_indices,
+                second_indices: branch.second_indices,
+                terminal_object_index: branch.terminal_object_index,
+                source_offset: entry_offset + branch.offset as u64,
+            });
+        }
+    }
+    branches
 }
 
 fn unique_offset_data_block(

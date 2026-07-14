@@ -2775,6 +2775,8 @@ fn attach_native_object_model(
         crate::native::feature_extrude_payload_headers(&scan.container);
     let feature_extrude_payload_scalar_triples =
         crate::native::feature_extrude_payload_scalar_triples(&scan.container);
+    let feature_extrude_payload_32_branches =
+        crate::native::feature_extrude_payload_32_branches(&scan.container);
     let feature_sketch_records = crate::native::feature_sketch_records(
         &feature_operation_labels,
         &feature_operation_records,
@@ -2816,6 +2818,7 @@ fn attach_native_object_model(
         && feature_extrude_profile_references.is_empty()
         && feature_extrude_payload_headers.is_empty()
         && feature_extrude_payload_scalar_triples.is_empty()
+        && feature_extrude_payload_32_branches.is_empty()
         && feature_sketch_records.is_empty()
         && feature_boolean_operations.is_empty()
         && expression_declarations.is_empty()
@@ -3066,7 +3069,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(39);
+    namespace.version = namespace.version.max(40);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3128,6 +3131,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_extrude_payload_scalar_triples",
             &feature_extrude_payload_scalar_triples,
+        )?;
+    }
+    if !feature_extrude_payload_32_branches.is_empty() {
+        namespace.set_arena(
+            "feature_extrude_payload_32_branches",
+            &feature_extrude_payload_32_branches,
         )?;
     }
     if !feature_sketch_records.is_empty() {
