@@ -359,7 +359,11 @@ the next byte is either another A8/B5 frame or the run terminator. Marker bytes
 inside an accepted frame payload do not start peer records. An A8 wrapper may
 own a nested length-closed B5 run; that run is walked recursively within the A8
 payload boundary. Repeated byte-identical typed records with the same object id
-are one object.
+are one object. A unique isolated geometry frame is admitted when a retained
+`5f` or `62` topology record references its object id; an unreferenced isolated
+frame is not part of the topology graph. Surface classes `2c`, `2e`, `30`,
+`37`, `38`, and `3b` retain their identity and payload as opaque carriers, so
+their faces and loops remain connected without assigning unsupported geometry.
 
 - `b5 03 5f` (per-face node): first ref token names the surface (`b5 03 27` plane / `28` cylinder / `2d` revolution / `a8 03 34` bspline), resolved through the object-id map. The bspline subset binds injectively to `a8 03 34`. The `5f` stream rank is the native face ordinal.
 - `b5 03 62` and wide-header `a8 03 62` (loop node): payload `<n_refs> (pcurve_ref edge_ref)* surface_ref <edge_count> <tail>`, `n_refs = 2*edge_count+1`. A cardinality below 128 is one byte `80+n`; larger cardinalities use the same positional-byte token as an object id. Member ref tokens use a positional-byte mask: `08 <lo>`, `10 <mid>`, `18 <lo><mid>`, `20 <page>`, `28 <lo><page>`, `30 <mid><page>`, and `38 <lo><mid><page>`. Omitted id bytes are zero; present bytes occupy bits 0–7, 8–15, and 16–23 respectively. A single byte in `80..ff` names object id `byte - 80`. The remaining tail begins with `05`; its topology metadata does not alter member identity or order.

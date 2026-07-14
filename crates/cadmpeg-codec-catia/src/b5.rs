@@ -83,9 +83,9 @@ pub enum B5Surface {
     },
     /// An identity-bearing surface record whose carrier geometry remains opaque.
     Unknown {
-        /// Source record family (`0xa8`).
+        /// Source record family.
         family: u8,
-        /// Source class (`0x34`).
+        /// Source surface class.
         class: u8,
         /// Exact source payload.
         payload: Vec<u8>,
@@ -267,6 +267,25 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                 .map(|surface| (record.object_id, surface))
         })
         .collect();
+    for surface_id in topology_surface_references(&records) {
+        if surfaces.contains_key(&surface_id) {
+            continue;
+        }
+        let Some(record) = by_id
+            .get(&surface_id)
+            .filter(|record| is_opaque_surface_class(record.class))
+        else {
+            continue;
+        };
+        surfaces.insert(
+            surface_id,
+            B5Surface::Unknown {
+                family: record.family,
+                class: record.class,
+                payload: record.payload.clone(),
+            },
+        );
+    }
     for surface in crate::geometry::a8_surfaces(bytes) {
         if let SurfaceGeometry::Nurbs(nurbs) = surface.geometry {
             surfaces.insert(surface.object_id, B5Surface::Nurbs(nurbs));
@@ -281,6 +300,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         .filter_map(|record| {
             let pcurve = match record.class {
                 0x18 => parse_line_pcurve(record),
+                0x19 => parse_circle_pcurve(record),
                 0x21 => parse_pcurve(record),
                 _ => None,
             }?;
@@ -1573,7 +1593,88 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
         }
         position = at.max(end);
     }
+    let referenced: HashSet<u32> = records
+        .iter()
+        .filter(|record| matches!(record.class, 0x5f | 0x62))
+        .flat_map(record_references)
+        .collect();
+    let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
+    let mut isolated = HashMap::<u32, Option<B5Record>>::new();
+    for offset in 0..bytes.len().saturating_sub(8) {
+        let Some((end, family, class, object_id)) = object_frame(bytes, offset) else {
+            continue;
+        };
+        if existing.contains(&object_id)
+            || !referenced.contains(&object_id)
+            || !is_referenced_geometry_class(family, class)
+        {
+            continue;
+        }
+        let header = if family == 0xa8 { 11 } else { 8 };
+        let candidate = B5Record {
+            offset,
+            family,
+            class,
+            object_id,
+            payload: bytes[offset + header..end].to_vec(),
+        };
+        isolated
+            .entry(object_id)
+            .and_modify(|slot| {
+                if slot.as_ref().is_some_and(|existing| {
+                    existing.family != candidate.family
+                        || existing.class != candidate.class
+                        || existing.payload != candidate.payload
+                }) {
+                    *slot = None;
+                }
+            })
+            .or_insert(Some(candidate));
+    }
+    let mut isolated: Vec<_> = isolated.into_values().flatten().collect();
+    isolated.sort_unstable_by_key(|record| record.offset);
+    records.extend(isolated);
     records
+}
+
+fn record_references(record: &B5Record) -> Vec<u32> {
+    let mut position = 0;
+    let Some(count) = counted_cardinality(&record.payload, &mut position) else {
+        return Vec::new();
+    };
+    (0..count)
+        .map_while(|_| reference(&record.payload, &mut position, record.object_id))
+        .collect()
+}
+
+fn topology_surface_references(records: &[B5Record]) -> HashSet<u32> {
+    records
+        .iter()
+        .filter_map(|record| {
+            let references = record_references(record);
+            match record.class {
+                0x5f => references.first().copied(),
+                0x62 => references.last().copied(),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+fn is_referenced_geometry_class(family: u8, class: u8) -> bool {
+    (family == 0xa8 && class == 0x34)
+        || (family == 0xb5 && (matches!(class, 0x18..=0x21) || is_surface_class(class)))
+}
+
+fn is_surface_class(class: u8) -> bool {
+    matches!(
+        class,
+        0x27 | 0x28 | 0x29 | 0x2b | 0x2c | 0x2d | 0x2e | 0x30 | 0x34 | 0x37 | 0x38 | 0x3b
+    )
+}
+
+fn is_opaque_surface_class(class: u8) -> bool {
+    matches!(class, 0x2c | 0x2e | 0x30 | 0x37 | 0x38 | 0x3b)
 }
 
 fn object_frame(bytes: &[u8], start: usize) -> Option<(usize, u8, u8, u32)> {
@@ -2022,6 +2123,48 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(1, 0x27), (3, 0x5e)]
         );
+    }
+
+    #[test]
+    fn record_walk_admits_unique_isolated_geometry_by_topology_reference() {
+        fn append(bytes: &mut Vec<u8>, class: u8, object_id: u32, payload: &[u8]) {
+            bytes.extend_from_slice(&[
+                0xb5,
+                0x03,
+                class,
+                u8::try_from(payload.len()).expect("test payload fits the B5 length lane"),
+            ]);
+            bytes.extend_from_slice(&object_id.to_le_bytes());
+            bytes.extend_from_slice(payload);
+        }
+
+        let mut bytes = Vec::new();
+        append(&mut bytes, 0x27, 1, &[]);
+        bytes.push(0xff);
+        append(&mut bytes, 0x19, 2, &[]);
+        bytes.push(0xff);
+        append(&mut bytes, 0x62, 4, &[0x83, 0x82, 0x83, 0x81]);
+        append(&mut bytes, 0x5e, 3, &[]);
+        append(&mut bytes, 0x5f, 5, &[0x82, 0x81, 0x84]);
+
+        let parsed = records(&bytes);
+        assert_eq!(
+            parsed
+                .iter()
+                .map(|record| (record.object_id, record.class))
+                .collect::<std::collections::BTreeSet<_>>(),
+            std::collections::BTreeSet::from([
+                (1, 0x27),
+                (2, 0x19),
+                (3, 0x5e),
+                (4, 0x62),
+                (5, 0x5f),
+            ])
+        );
+
+        bytes.push(0xff);
+        append(&mut bytes, 0x19, 2, &[0x01]);
+        assert!(!records(&bytes).iter().any(|record| record.object_id == 2));
     }
 
     #[test]
