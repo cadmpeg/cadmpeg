@@ -542,6 +542,76 @@ fn scan_decodes_allfeatur_root_featdefs_schema_class() {
 }
 
 #[test]
+fn decode_types_class_911_as_unresolved_hole() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x8f, 0xe1,
+    ];
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", geometry),
+            ("AllFeatur", allfeatur),
+            ("MdlStatus", b"Hole id 4\0".to_vec()),
+        ],
+    );
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("hole feature");
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Hole {
+            face: None,
+            position: None,
+            direction: None,
+            kind: cadmpeg_ir::features::HoleKind::Unresolved { form: None, .. },
+            diameter: None,
+            extent: None,
+        }
+    ));
+}
+
+#[test]
+fn decode_types_class_914_as_unresolved_chamfer() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x92, 0xe1,
+    ];
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", geometry),
+            ("AllFeatur", allfeatur),
+            ("MdlStatus", b"Chamfer id 4\0".to_vec()),
+        ],
+    );
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("chamfer feature");
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Chamfer {
+            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+            spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
+        }
+    ));
+}
+
+#[test]
 fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

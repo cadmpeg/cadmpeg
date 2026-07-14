@@ -472,7 +472,7 @@ identifiers belong to the position before the next position begins. The first
 row can carry the field labels; positional rows omit them without changing the
 two positions.
 
-The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 913 is a round definition, class 911 is a hole definition, and class 923 is a datum-plane definition. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
+The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, and class 923 is a datum-plane definition. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
 
 A typed schema row that owns a materialized `srf_array` row is an active construction feature. The root schema class supplies its operation family independently of an `MdlStatus` operation name.
 

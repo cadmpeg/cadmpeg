@@ -15,10 +15,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, Extent, Feature,
-    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, FeatureSourceContent,
-    Length, ParameterId, ParameterValue, ProfileRef, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction,
+    Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
+    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    FeatureSourceContent, HoleKind, Length, ParameterId, ParameterValue, ProfileRef, RadiusSpec,
+    RevolutionAxis, RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition,
@@ -3879,6 +3879,7 @@ fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
     match schema_class {
         911 => Some("Hole"),
         913 => Some("Round"),
+        914 => Some("Chamfer"),
         916 | 917 => Some("Protrusion"),
         923 => Some("Datum Plane"),
         _ => None,
@@ -4024,6 +4025,22 @@ fn schema_feature_definition(
     schema_class: u32,
     kind: &str,
 ) -> IrFeatureDefinition {
+    if schema_class == 911 {
+        return IrFeatureDefinition::Hole {
+            face: None,
+            position: None,
+            direction: None,
+            kind: HoleKind::Unresolved {
+                form: None,
+                counterbore_diameter: None,
+                counterbore_depth: None,
+                countersink_diameter: None,
+                countersink_angle: None,
+            },
+            diameter: None,
+            extent: None,
+        };
+    }
     if schema_class == 913 {
         if let Some(edges) = feature_edge_selection(scan, feature_id) {
             return IrFeatureDefinition::Fillet {
@@ -4031,6 +4048,12 @@ fn schema_feature_definition(
                 radius: RadiusSpec::Unresolved { form: None },
             };
         }
+    }
+    if schema_class == 914 {
+        return IrFeatureDefinition::Chamfer {
+            edges: feature_edge_selection(scan, feature_id).unwrap_or(EdgeSelection::Unresolved),
+            spec: ChamferSpec::Unresolved { form: None },
+        };
     }
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
         let transforms = scan
