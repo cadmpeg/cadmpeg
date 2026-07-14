@@ -10,7 +10,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::variant::Variant;
@@ -3382,6 +3382,39 @@ fn a8_pcurve_parser_retains_mode_five_uv_jet() {
 }
 
 #[test]
+fn decode_object_stream_retains_unbound_a8_pcurve() {
+    let file = object_main_catpart(&a8_pcurve_stream());
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode unbound object-stream pcurve");
+    let pcurve = decoded
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.0 == "catia:a8:pcurve#22136")
+        .expect("typed object-stream pcurve");
+    let PcurveGeometry::Nurbs {
+        degree,
+        control_points,
+        ..
+    } = &pcurve.geometry
+    else {
+        panic!("quintic pcurve NURBS");
+    };
+    assert_eq!(*degree, 5);
+    assert_eq!(
+        control_points.first(),
+        Some(&cadmpeg_ir::math::Point2::new(0.0, 0.0))
+    );
+    assert_eq!(
+        control_points.last(),
+        Some(&cadmpeg_ir::math::Point2::new(1.0, 1.0))
+    );
+    assert_eq!(pcurve.parameter_range, Some([0.0, 1.0]));
+}
+
+#[test]
 fn b5_pcurve_parser_reads_degree5_uv_jet() {
     let a8 = a8_pcurve_stream();
     let payload = &a8[11..];
@@ -3422,6 +3455,29 @@ fn a5_pcurve_parser_reads_compact_support_and_uv_jet() {
     assert_eq!(pcurves[0].extrapolation_sites, 2);
     assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
     assert_eq!(pcurves[0].range, [0.0, 1.0]);
+}
+
+#[test]
+fn decode_standard_retains_unbound_consolidated_pcurve() {
+    let mut file = standard_catpart();
+    file.splice(16..16, a5_pcurve_stream());
+    let file_len = u32::try_from(file.len()).expect("pcurve fixture length");
+    file[8..12].copy_from_slice(&be32(file_len));
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode consolidated pcurve");
+    let pcurve = decoded
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.0.starts_with("catia:consolidated:pcurve#"))
+        .expect("typed consolidated pcurve");
+    assert!(matches!(
+        pcurve.geometry,
+        PcurveGeometry::Nurbs { degree: 5, .. }
+    ));
+    assert_eq!(pcurve.parameter_range, Some([0.0, 1.0]));
 }
 
 #[test]

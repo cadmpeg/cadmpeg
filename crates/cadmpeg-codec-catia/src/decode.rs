@@ -2113,6 +2113,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
         .then(|| freeform_surface_carriers(&scan.data));
     if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
         && geometry::a8_freeform_curves(&scan.data).is_empty()
+        && geometry::a8_pcurves(&scan.data).is_empty()
     {
         return None;
     }
@@ -2145,6 +2146,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
                 source_object: None,
             });
         }
+        append_unbound_pcurve_pools(&mut ir, &mut annotations, &scan.data, true);
     }
     append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
     link_payload_carriers(&mut ir, &mut annotations).ok()?;
@@ -2399,6 +2401,84 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
     }
 
     append_a8_rolling_ball_pools(ir, annotations, data);
+    append_unbound_pcurve_pools(ir, annotations, data, false);
+}
+
+fn append_unbound_pcurve_pools(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    data: &[u8],
+    include_object_stream: bool,
+) {
+    for pcurve in geometry::a5_pcurves(data)
+        .into_iter()
+        .chain(geometry::b2_pcurves(data))
+    {
+        let Some(geometry) = quintic_jet_pcurve(
+            pcurve.degree,
+            &pcurve.knots,
+            &pcurve.points,
+            &pcurve.first_derivatives,
+            &pcurve.second_derivatives,
+        ) else {
+            continue;
+        };
+        let id = PcurveId(format!("catia:consolidated:pcurve#{}", pcurve.pos));
+        annotate(
+            annotations,
+            &id,
+            "consolidated_a_or_b_03_20",
+            pcurve.pos as u64,
+            format!(
+                "support_ref:{:08x}:extrapolation_sites:{}",
+                pcurve.support_id, pcurve.extrapolation_sites
+            ),
+            Exactness::Derived,
+        );
+        ir.model.pcurves.push(Pcurve {
+            id,
+            geometry,
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: Some(pcurve.range),
+            fit_tolerance: None,
+        });
+    }
+
+    if !include_object_stream {
+        return;
+    }
+    for pcurve in geometry::a8_pcurves(data) {
+        let Some(geometry) = quintic_jet_pcurve(
+            pcurve.degree,
+            &pcurve.knots,
+            &pcurve.points,
+            &pcurve.first_derivatives,
+            &pcurve.second_derivatives,
+        ) else {
+            continue;
+        };
+        let id = PcurveId(format!("catia:a8:pcurve#{}", pcurve.object_id));
+        annotate(
+            annotations,
+            &id,
+            "object_stream_a8_03_20",
+            pcurve.pos as u64,
+            format!(
+                "object_id:{:08x}:support_ref:{:08x}:mode:{:02x}:multiplicities:{:?}",
+                pcurve.object_id, pcurve.support_id, pcurve.mode, pcurve.multiplicities
+            ),
+            Exactness::Derived,
+        );
+        ir.model.pcurves.push(Pcurve {
+            id,
+            geometry,
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: Some(pcurve.range),
+            fit_tolerance: None,
+        });
+    }
 }
 
 fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
