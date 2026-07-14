@@ -5774,8 +5774,10 @@ fn build_geometry_report(
         category: LossCategory::Attribute,
         severity: Severity::Warning,
         message: "Standard circles with an exact adjacent-carrier section normal and plane-plane \
-                  lines are transferred as curves. Spline edge curves, persistent object tags, \
-                  materials, and document metadata are not yet transferred."
+                  lines are transferred as curves. Standard spline edges retain exact \
+                  two-surface intersection constructions, but their serialized NURBS caches, \
+                  persistent object tags, materials, and document metadata are not yet \
+                  transferred."
             .to_string(),
         provenance: None,
     });
