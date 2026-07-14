@@ -125,6 +125,8 @@ fn decode_annotation(
     let mut outer = anonymous(data, range.clone(), archive, i32::from(leader))?;
     let mut annotation = crate::dimensions::annotation(data, &mut outer, archive)?;
     annotation.plane = scaled_plane(annotation.plane, scale, range.start)?;
+    annotation.text_rectangle_width = scaled_coordinate(annotation.text_rectangle_width, scale)
+        .ok_or_else(|| structural(range.start, "scaled text rectangle width is invalid"))?;
     let mut points = Vec::new();
     if leader {
         let count = outer.i32()?;
@@ -143,7 +145,14 @@ fn decode_annotation(
                     "leader point is not finite",
                 ));
             }
-            points.push(point);
+            points.push([
+                scaled_coordinate(point[0], scale).ok_or_else(|| {
+                    structural(outer.position() - 16, "scaled leader point is invalid")
+                })?,
+                scaled_coordinate(point[1], scale).ok_or_else(|| {
+                    structural(outer.position() - 8, "scaled leader point is invalid")
+                })?,
+            ]);
         }
     }
     if outer.remaining() != 0 {
@@ -276,7 +285,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                 plane_equation: value.plane.equation,
                 dimstyle_uuid: (!value.dimstyle_id.is_nil()).then(|| value.dimstyle_id.to_string()),
                 annotation_type: value.kind,
-                text_rectangle_width: value.text_rectangle_width * scale,
+                text_rectangle_width: value.text_rectangle_width,
                 text_rotation_radians: value.text_rotation_radians,
                 horizontal_alignment: value.horizontal_alignment,
                 vertical_alignment: value.vertical_alignment,
@@ -289,10 +298,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                 legacy_style_index: None,
                 legacy_text_height: None,
                 legacy_justification: None,
-                leader_points: points
-                    .into_iter()
-                    .map(|p| [p[0] * scale, p[1] * scale])
-                    .collect(),
+                leader_points: points,
                 links: vec![link],
             });
         } else if matches!(object.class_uuid, LEGACY_TEXT | LEGACY_LEADER) {

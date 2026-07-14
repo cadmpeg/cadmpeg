@@ -1002,6 +1002,23 @@ fn parse_light(
     })
 }
 
+fn push_light(
+    lights: &mut Vec<LightRecord>,
+    indexes: &mut BTreeMap<String, usize>,
+    mut light: LightRecord,
+) {
+    if light.source_uuid != Uuid::nil().to_string() {
+        if let Some(index) = indexes.get(&light.source_uuid).copied() {
+            lights[index].links.append(&mut light.links);
+            lights[index].links.sort();
+            lights[index].links.dedup();
+            return;
+        }
+        indexes.insert(light.source_uuid.clone(), lights.len());
+    }
+    lights.push(light);
+}
+
 fn segments(
     reader: &mut BoundedReader<'_>,
     scale: f64,
@@ -1018,7 +1035,7 @@ fn segments(
     for _ in 0..bytes / 12 {
         let length = read_finite(reader, "linetype segment length")?;
         let length = scaled_coordinate(length, scale).ok_or_else(|| {
-            structural(reader.position() - 12, "scaled linetype segment is invalid")
+            structural(reader.position() - 8, "scaled linetype segment is invalid")
         })?;
         values.push(LinetypeSegment {
             length_millimeters: length,
@@ -2150,6 +2167,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let mut groups = Vec::new();
     let mut materials = Vec::new();
     let mut lights = Vec::new();
+    let mut light_indexes = BTreeMap::new();
     let mut linetypes = Vec::new();
     let mut hatch_patterns = Vec::new();
     let mut dimension_styles = Vec::new();
@@ -2187,7 +2205,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                     if let Ok(light) =
                         parse_light(&scan.data, range, scale, record.range.start, None)
                     {
-                        lights.push(light);
+                        push_light(&mut lights, &mut light_indexes, light);
                     }
                 }
             } else if table_type == LINETYPE_TABLE {
@@ -2284,7 +2302,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                 object.range.start,
                 Some(link),
             ) {
-                lights.push(light);
+                push_light(&mut lights, &mut light_indexes, light);
             }
         }
         if let (Some(identity), Some(attributes)) = (&object.identity, &object.attributes) {
