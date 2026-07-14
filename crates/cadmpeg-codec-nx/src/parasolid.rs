@@ -92,7 +92,6 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
             continue;
         };
         if name_len == 0
-            || identity[0] != 0
             || !name_bytes
                 .iter()
                 .all(|byte| byte.is_ascii_graphic() && !byte.is_ascii_control())

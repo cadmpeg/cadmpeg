@@ -3850,13 +3850,13 @@ fn parasolid_extraction_classifies_partition_and_schema() {
 fn parasolid_attribute_definition_requires_declared_printable_name_and_field_record() {
     let mut bytes = vec![0xaa, 0x00, 0x4f, 0xff];
     bytes.extend_from_slice(&16u32.to_be_bytes());
-    bytes.extend_from_slice(&0x002au16.to_be_bytes());
+    bytes.extend_from_slice(&0x012au16.to_be_bytes());
     bytes.extend_from_slice(b"SDL/TYSA_DENSITY");
     bytes.extend_from_slice(&[0x00, 0x50, 0x00, 0x00, 0x00, 0x01]);
     let definitions = crate::parasolid::attribute_definitions(&bytes);
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].offset, 1);
-    assert_eq!(definitions[0].xmt, 0x2a);
+    assert_eq!(definitions[0].xmt, 0x12a);
     assert_eq!(definitions[0].name, "SDL/TYSA_DENSITY");
 
     bytes[20] = 0;
