@@ -1177,7 +1177,7 @@ fn generate_ir_seeds() {
         ("unit_cube_v3.json", cube.as_bytes()),
         ("directed_subd_sum_v3.json", directed_subd_sum.as_bytes()),
     ];
-    let valid_v0 = minimal.replacen(r#""ir_version": "5""#, r#""ir_version": "0""#, 1);
+    let valid_v0 = minimal.replacen(r#""ir_version": "6""#, r#""ir_version": "0""#, 1);
 
     let from_json = Path::new("seeds/ir_from_json");
     replace_seed_directory(from_json);

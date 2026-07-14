@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::annotations::{ExactnessNote, Provenance};
-use crate::CadIr;
+use crate::{CadIr, SourceFidelity};
 
 /// A modified entity and its differing top-level fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
@@ -53,15 +53,6 @@ pub struct ByteLedgerDiff {
     pub spans: ArenaDiff,
 }
 
-impl ByteLedgerDiff {
-    fn is_empty(&self) -> bool {
-        self.source_length_change.is_none()
-            && self.spans.added.is_empty()
-            && self.spans.removed.is_empty()
-            && self.spans.modified.is_empty()
-    }
-}
-
 impl AnnotationDiff {
     fn is_empty(&self) -> bool {
         self.stream_change.is_none()
@@ -81,8 +72,6 @@ pub struct IrDiff {
     pub unit_change: Option<(crate::units::Units, crate::units::Units)>,
     /// `(left, right)` tolerances, present only when the two documents' tolerances differ.
     pub tolerance_change: Option<(crate::units::Tolerances, crate::units::Tolerances)>,
-    /// Changes to source-byte ownership.
-    pub byte_ledger: ByteLedgerDiff,
     /// Changes to annotation streams, provenance, and exactness.
     pub annotations: AnnotationDiff,
     /// Per-arena diffs, one entry per arena compared.
@@ -94,7 +83,6 @@ impl IrDiff {
     pub fn is_empty(&self) -> bool {
         self.unit_change.is_none()
             && self.tolerance_change.is_none()
-            && self.byte_ledger.is_empty()
             && self.annotations.is_empty()
             && self.per_arena.iter().all(|arena| {
                 arena.added.is_empty() && arena.removed.is_empty() && arena.modified.is_empty()
@@ -290,29 +278,32 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
     IrDiff {
         unit_change,
         tolerance_change,
-        byte_ledger: ByteLedgerDiff {
-            source_length_change: (left.byte_ledger.source_length
-                != right.byte_ledger.source_length)
-                .then_some((
-                    left.byte_ledger.source_length,
-                    right.byte_ledger.source_length,
-                )),
-            spans: arena(
-                "byte_ledger.spans",
-                &left.byte_ledger.spans,
-                &right.byte_ledger.spans,
-                |span| span.start.to_string(),
-            ),
-        },
         annotations: annotation_diff(left, right),
         per_arena,
+    }
+}
+
+/// Compare complete source-byte ownership independently from the product IR.
+pub fn diff_byte_ledger(left: &SourceFidelity, right: &SourceFidelity) -> ByteLedgerDiff {
+    ByteLedgerDiff {
+        source_length_change: (left.byte_ledger.source_length != right.byte_ledger.source_length)
+            .then_some((
+                left.byte_ledger.source_length,
+                right.byte_ledger.source_length,
+            )),
+        spans: arena(
+            "byte_ledger.spans",
+            &left.byte_ledger.spans,
+            &right.byte_ledger.spans,
+            |span| span.start.to_string(),
+        ),
     }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::diff;
+    use super::{diff, diff_byte_ledger};
     use crate::annotations::{ExactnessNote, Provenance};
     use crate::examples::unit_cube;
     use crate::provenance::Exactness;
@@ -320,7 +311,7 @@ mod tests {
 
     #[test]
     fn reports_byte_ledger_changes_by_start_offset() {
-        let left = unit_cube();
+        let left = crate::SourceFidelity::default();
         let mut right = left.clone();
         right.byte_ledger = crate::ByteLedger {
             source_length: 2,
@@ -334,10 +325,10 @@ mod tests {
             }],
         };
 
-        let result = diff(&left, &right);
-        assert_eq!(result.byte_ledger.source_length_change, Some((0, 2)));
-        assert_eq!(result.byte_ledger.spans.added, ["0"]);
-        assert!(!result.is_empty());
+        let result = diff_byte_ledger(&left, &right);
+        assert_eq!(result.source_length_change, Some((0, 2)));
+        assert_eq!(result.spans.added, ["0"]);
+        assert!(!result.spans.added.is_empty());
     }
 
     #[test]

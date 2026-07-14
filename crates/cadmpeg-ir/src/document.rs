@@ -9,7 +9,6 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::annotations::Annotations;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
-use crate::byte_ledger::ByteLedger;
 use crate::features::{DesignConfiguration, DesignParameter, Feature};
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
@@ -80,7 +79,7 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "5";
+pub const IR_VERSION: &str = "6";
 
 arena_registry!(declare_model);
 
@@ -118,8 +117,6 @@ pub struct CadIr {
     /// Source-container metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceMeta>,
-    /// Complete ownership of the source byte stream.
-    pub byte_ledger: ByteLedger,
     /// Canonical unit declaration.
     pub units: Units,
     /// Document-wide tolerances.
@@ -190,7 +187,6 @@ impl CadIr {
         Self {
             ir_version: IR_VERSION.to_owned(),
             source: None,
-            byte_ledger: ByteLedger::default(),
             units,
             tolerances: Tolerances::default(),
             model: Model::default(),
@@ -220,7 +216,6 @@ impl CadIr {
 
     /// Sort model, native, and unknown-record arenas by identity.
     pub fn finalize(&mut self) {
-        self.byte_ledger.finalize();
         self.model.finalize();
         self.native.finalize();
     }

@@ -214,7 +214,7 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "5"`. The `model.subds` arena and top-level `byte_ledger` are required, including when they are empty. Version 5 represents loop boundary roles, coedge rings with optional anchored pole-vertex uses or a single unanchored vertex use, and ordered pcurve uses. Version 4 documents migrate by setting each loop's `boundary_role` to `unspecified` and `vertex_uses` to empty and replacing each coedge's optional `pcurve` with an empty or one-element `pcurves` list whose `isoparametric` value is absent. Removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version. See [byte-accounting.md](byte-accounting.md) for ledger serialization, validation, canonicalization, diff, and migration rules.
+Readers accept exactly `ir_version: "6"`. The `model.subds` arena is required, including when empty. Version 6 removes source-byte accounting from the neutral product model; version 5 documents migrate their semantic content by dropping `byte_ledger`. Version 5 introduced loop boundary roles, anchored and unanchored vertex uses, and ordered pcurve uses. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version. Source-fidelity accounting versions independently as described in [byte-accounting.md](byte-accounting.md).
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 
@@ -236,7 +236,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "5",
+  "ir_version": "6",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {

@@ -64,7 +64,6 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     // The identity walk enumerates every entity id in the document; annotation
     // and link targets resolve against that set.
     let all_ids = check_identity_and_order(ir, &mut findings);
-    check_byte_ledger(&ir.byte_ledger, &all_ids, None, &mut findings);
     check_units(ir, &mut findings);
     check_references(ir, &ids, &mut findings);
     check_loops(ir, &mut findings);

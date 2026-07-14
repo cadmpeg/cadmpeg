@@ -81,7 +81,6 @@ pub(crate) fn decode(
         &global,
         &mut source_fidelity,
     )?;
-    ir.byte_ledger = byte_ledger.clone();
     source_fidelity.finalize();
 
     let geometry_transferred = !projection.decoded.is_empty();

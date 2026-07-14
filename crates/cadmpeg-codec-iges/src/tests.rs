@@ -160,9 +160,7 @@ fn repeated_decode_is_canonical_for_ir_report_and_byte_ledger() {
         serde_json::to_vec(&first.report).unwrap(),
         serde_json::to_vec(&second.report).unwrap()
     );
-    assert_eq!(first.ir.byte_ledger, second.ir.byte_ledger);
     assert_eq!(first.source_fidelity, second.source_fidelity);
-    assert_eq!(first.source_fidelity.byte_ledger, first.ir.byte_ledger);
 }
 
 #[test]
@@ -283,7 +281,7 @@ fn decode_classifies_cross_card_hollerith_bytes_as_one_global_value() {
         )
         .unwrap();
     let value_spans = result
-        .ir
+        .source_fidelity
         .byte_ledger
         .spans
         .iter()
@@ -301,8 +299,12 @@ fn decode_classifies_cross_card_hollerith_bytes_as_one_global_value() {
             .sum::<u64>(),
         73
     );
-    assert_eq!(result.ir.byte_ledger.source_length, bytes.len() as u64);
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert_eq!(
+        result.source_fidelity.byte_ledger.source_length,
+        bytes.len() as u64
+    );
+    let validation =
+        cadmpeg_ir::validate_with_source_fidelity(&result.ir, &result.source_fidelity, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7240,31 +7242,29 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
         .unwrap();
 
     assert_eq!(result.ir.source.as_ref().unwrap().format, "iges");
-    assert_eq!(result.ir.byte_ledger.source_length, source_length);
-    assert_eq!(result.ir.byte_ledger.spans.first().unwrap().start, 0);
-    assert_eq!(
-        result.ir.byte_ledger.spans.last().unwrap().end,
-        source_length
-    );
-    assert!(result.ir.byte_ledger.spans.iter().any(|span| {
+    let ledger = &result.source_fidelity.byte_ledger;
+    assert_eq!(ledger.source_length, source_length);
+    assert_eq!(ledger.spans.first().unwrap().start, 0);
+    assert_eq!(ledger.spans.last().unwrap().end, source_length);
+    assert!(ledger.spans.iter().any(|span| {
         span.class == cadmpeg_ir::ByteSpanClass::Typed
             && span.meaning == "parameter_token_0"
             && span.owner == "iges:parameter-record#D1"
     }));
-    assert!(result.ir.byte_ledger.spans.iter().any(|span| {
+    assert!(ledger.spans.iter().any(|span| {
         span.class == cadmpeg_ir::ByteSpanClass::Structural
             && span.meaning == "parameter_delimiter_or_padding"
     }));
-    assert!(result.ir.byte_ledger.spans.iter().any(|span| {
+    assert!(ledger.spans.iter().any(|span| {
         span.class == cadmpeg_ir::ByteSpanClass::Typed && span.meaning == "global_value_0"
     }));
-    assert!(result.ir.byte_ledger.spans.iter().any(|span| {
+    assert!(ledger.spans.iter().any(|span| {
         span.class == cadmpeg_ir::ByteSpanClass::Structural && span.meaning == "global_delimiter"
     }));
-    assert!(result.ir.byte_ledger.spans.iter().any(|span| {
+    assert!(ledger.spans.iter().any(|span| {
         span.class == cadmpeg_ir::ByteSpanClass::Structural && span.meaning == "reserved_1"
     }));
-    assert!(result.ir.byte_ledger.spans.iter().any(|span| {
+    assert!(ledger.spans.iter().any(|span| {
         span.class == cadmpeg_ir::ByteSpanClass::Opaque
             && span.meaning == "parameter_comment"
             && span
@@ -7420,17 +7420,15 @@ fn decode_retains_and_accounts_for_post_terminate_records() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.byte_ledger.source_length, source_length);
-    assert_eq!(
-        result.ir.byte_ledger.spans.last().unwrap().end,
-        source_length
-    );
+    let ledger = &result.source_fidelity.byte_ledger;
+    assert_eq!(ledger.source_length, source_length);
+    assert_eq!(ledger.spans.last().unwrap().end, source_length);
     assert_eq!(
         result.ir.native.namespace("iges").unwrap().arenas["cards"].len(),
         8
     );
     let span = result
-        .ir
+        .source_fidelity
         .byte_ledger
         .spans
         .iter()

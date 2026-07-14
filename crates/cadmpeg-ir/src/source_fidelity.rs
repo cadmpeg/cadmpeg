@@ -144,4 +144,65 @@ mod tests {
             .iter()
             .any(|message| message.contains("digest disagrees")));
     }
+
+    #[test]
+    fn byte_ledger_validation_rejects_a_gap() {
+        let mut sidecar = SourceFidelity::default();
+        sidecar.byte_ledger = ByteLedger {
+            source_length: 4,
+            spans: vec![ByteSpan {
+                start: 1,
+                end: 4,
+                class: ByteSpanClass::Structural,
+                owner: "stream".into(),
+                meaning: "payload".into(),
+                retained_record: None,
+            }],
+        };
+
+        let findings = validate_with_source_fidelity(
+            &CadIr::empty(crate::units::Units::default()),
+            &sidecar,
+            Vec::new(),
+        )
+        .findings;
+        assert!(findings.iter().any(|finding| {
+            finding.check == Check::ByteAccounting
+                && finding.message == "byte ledger has a gap before offset 1"
+        }));
+    }
+
+    #[test]
+    fn finalize_coalesces_equivalent_adjacent_byte_spans() {
+        let mut sidecar = SourceFidelity {
+            byte_ledger: ByteLedger {
+                source_length: 4,
+                spans: vec![
+                    ByteSpan {
+                        start: 0,
+                        end: 2,
+                        class: ByteSpanClass::Typed,
+                        owner: "card:1".into(),
+                        meaning: "data".into(),
+                        retained_record: None,
+                    },
+                    ByteSpan {
+                        start: 2,
+                        end: 4,
+                        class: ByteSpanClass::Typed,
+                        owner: "card:1".into(),
+                        meaning: "data".into(),
+                        retained_record: None,
+                    },
+                ],
+            },
+            ..SourceFidelity::default()
+        };
+
+        sidecar.finalize();
+
+        assert_eq!(sidecar.byte_ledger.spans.len(), 1);
+        assert_eq!(sidecar.byte_ledger.spans[0].start, 0);
+        assert_eq!(sidecar.byte_ledger.spans[0].end, 4);
+    }
 }

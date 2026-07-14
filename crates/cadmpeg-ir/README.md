@@ -15,7 +15,7 @@ cargo add cadmpeg-ir
 
 A `CadIr` document contains:
 
-- required IR version 5 schema, including loop boundary roles, vertex loops, ordered pcurve uses, the `subds` arena, and source-byte ledger;
+- required IR version 6 schema, including loop boundary roles, vertex loops, ordered pcurve uses, and the `subds` arena;
 - canonical units and document tolerances;
 - flat, ID-referenced arenas for topology, geometry, subdivision control cages, construction features,
   tessellation, appearance, and source attributes;
@@ -57,8 +57,8 @@ assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);
 ```
 
 `CadIr::to_canonical_json` emits pretty JSON after the caller establishes
-canonical arena order. `CadIr::from_json` parses only `ir_version: "5"` and
-requires the version-5 schema. `diff` compares units,
+canonical arena order. `CadIr::from_json` parses only `ir_version: "6"` and
+requires the version-6 schema. `diff` compares units,
 tolerances, annotations, and entity arenas by stable identity.
 
 Format crates implement the object-safe `Codec` trait. A consumer can select a
@@ -73,21 +73,21 @@ fn accepts(codec: &dyn Codec, prefix: &[u8]) -> bool {
 }
 ```
 
-`DecodeResult` contains the finalized document and a `DecodeReport`.
+`DecodeResult` contains the finalized document, a `DecodeReport`, and an independently versioned `SourceFidelity` sidecar for source-byte accounting, provenance, and conversion exactness.
 `CodecError` represents operation failure such as wrong format, malformed
 container, unsupported capability, or I/O failure. Successful decoding can
 still be incomplete: `LossNote` records transferred information that was
 approximated or omitted, while `UnknownRecord` retains an uninterpreted source
 record by location, digest, links, and optional bytes.
 
-Entity and field fidelity belongs in `Annotations`. Missing exactness entries
+Entity and field fidelity belongs in sidecar `Annotations`. Missing exactness entries
 mean byte-exact. Other entries distinguish deterministic derivation, inference,
 and unknown origin. Provenance entries identify source streams and byte
 offsets.
 
 ## Scope
 
-IR version 5 covers B-rep topology, analytic and NURBS geometry, Catmull–Clark
+IR version 6 covers B-rep topology, analytic and NURBS geometry, Catmull–Clark
 control cages, procedural construction links including Sum and bounded
 Revolution definitions, tessellation, appearance, attributes, and neutral
 feature records. Native namespaces retain format-specific design and history
@@ -97,7 +97,7 @@ Assembly instancing, component trees, and joint constraints are reserved.
 ## Documentation
 
 - [API documentation][docs]
-- [CAD IR version 5][ir-spec]
+- [CAD IR version 6][ir-spec]
 - [Architecture and crate map][architecture]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]
