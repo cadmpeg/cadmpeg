@@ -181,7 +181,10 @@ long-chunk form; this exception does not apply to V2 and later.
 
 For V2 and later, a long chunk with `TCODE_CRC` set ends with a four-byte
 little-endian CRC32. The declared length includes those four bytes. CRC32 covers
-all body bytes before the CRC and excludes the chunk header and stored CRC.
+the bytes written directly in the chunk body and excludes the chunk header,
+stored CRC, and every complete nested chunk. A leaf chunk therefore checksums
+all body bytes before its CRC. A container resumes its CRC after each nested
+chunk and checksums only the intervening direct fields.
 
 For V1, CRC16 is selected by the legacy chunk cases: legacy geometry chunks,
 `TCODE_SUMMARY`, and the V1 class-UUID chunk. The V1 class-UUID checksum is
@@ -467,7 +470,137 @@ The class-data checksum is likewise selected by its enclosing typecode. The
 class wrapper length includes all child chunk headers, values, bodies, and
 checksums.
 
-### 7.1 Class userdata
+### 7.1 History records
+
+Each `TCODE_HISTORYRECORD_RECORD` contains one class wrapper for class UUID
+`ECD0FD2F-2088-49DC-9641-9CF7A28FFA6B`. Its class-data payload is an anonymous
+chunk with major version 1. Minor version 1 adds the record type; minor version
+2 adds the copy-on-replace flag:
+
+```text
+anonymous version 1.minor
+ON_UUID record_id
+i32 command_version
+ON_UUID command_id
+ON_UuidList descendants
+ON_UuidList antecedents
+anonymous version 1.0 values
+  i32 value_count
+  value_count × history value anonymous chunk
+if minor >= 1: i32 record_type
+if minor >= 2: bool copy_on_replace
+```
+
+An `ON_UuidList` is an anonymous version 1.0 chunk containing an archive array
+of UUIDs. Descendant order is serialized order. Antecedents identify input
+objects and descendants identify output objects. `record_type` is 0 for update
+history parameters and 1 for feature parameters.
+
+Each history value is an anonymous version 1.0 chunk:
+
+```text
+i32 value_type
+i32 value_id
+type-specific payload
+```
+
+The fixed-layout value-type numbers are:
+
+| Value type | Payload                                      |
+| ---------: | -------------------------------------------- |
+|          0 | no payload                                   |
+|          1 | archive array of one-byte booleans           |
+|          2 | archive array of `i32`                       |
+|          3 | archive array of `f64`                       |
+|          4 | archive array of four-byte `ON_Color` values |
+|          5 | archive array of `ON_3dPoint`                |
+|          6 | archive array of `ON_3dVector`               |
+|          7 | archive array of `ON_Xform`                  |
+|          8 | archive array of UTF-16 strings              |
+|          9 | archive array of object references           |
+|         10 | geometry-value anonymous chunk               |
+|         11 | archive array of UUIDs                       |
+|         12 | reserved; no value implementation            |
+|         13 | polyedge-value anonymous chunk               |
+|         14 | SubD-edge-chain-value anonymous chunk        |
+
+Every value is independently bounded by its anonymous chunk. The next value or
+record suffix begins at that chunk's declared end.
+
+An object reference is an anonymous version 1.0 through 1.3 chunk:
+
+```text
+ON_UUID object_id
+ON_ComponentIndex component
+i32 geometry_type
+ON_3dPoint selection_point
+i32 evaluation_type
+ON_ComponentIndex evaluation_component
+4 × f64 evaluation_parameter
+array of instance-reference path items
+if minor >= 1: 2 × ON_Interval evaluation_interval
+if minor >= 2: ON_Interval third_evaluation_interval
+if minor >= 3: i32 object_snap_mode
+```
+
+An instance-reference path item is an anonymous version 1.0 or 1.1 chunk:
+
+```text
+ON_UUID instance_reference_id
+ON_Xform instance_transform
+ON_UUID instance_definition_id
+i32 definition_geometry_index
+if minor >= 1:
+  ON_ComponentIndex component
+  object-evaluation anonymous version 1.0 chunk
+```
+
+A geometry value is an anonymous version 1.0 chunk containing an `i32` count
+followed by that many polymorphic class wrappers. Every wrapper contains its
+geometry class UUID and class-data payload.
+
+A polyedge value is an anonymous version 1.0 chunk containing an `i32` count
+followed by that many polyedge anonymous version 1.0 chunks:
+
+```text
+i32 segment_count
+segment_count × curve-proxy-history anonymous chunk
+archive array of f64 polyedge_parameters
+i32 evaluation_mode
+```
+
+A curve-proxy-history chunk has version 1.0 or 1.1:
+
+```text
+object reference
+bool reversed
+ON_Interval full_real_curve_domain
+ON_Interval sub_real_curve_domain
+ON_Interval proxy_curve_domain
+if minor >= 1:
+  ON_Interval segment_edge_domain
+  ON_Interval segment_trim_domain
+```
+
+A SubD edge-chain value is an anonymous version 1.0 chunk containing an `i32`
+count followed by that many edge-chain anonymous version 1.0 chunks:
+
+```text
+ON_UUID persistent_subd_id
+u32 edge_count
+archive array of u32 persistent_edge_ids
+archive array of u8 persistent_edge_orientations
+```
+
+Both archive-array counts must equal `edge_count`. Orientations are 0 for
+forward and 1 for reversed traversal.
+
+The object-evaluation chunk contains `i32 evaluation_type`, an
+`ON_ComponentIndex`, four `f64` evaluation parameters, and three
+`ON_Interval` values. Path items are ordered from the selected instance
+reference through nested definitions to the referenced definition geometry.
+
+### 7.2 Class userdata
 
 A class userdata chunk begins with a packed version byte.
 
@@ -498,7 +631,7 @@ contains the userdata payload. Older userdata without archive-version fields
 uses the containing archive version below 50 and archive version 5 with
 four-byte chunk lengths at 50 and later. The anonymous child is always bounded.
 
-### 7.2 Strings
+### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
 
@@ -858,12 +991,15 @@ the buffer immediately; no CRC, method, or body follows.
 
 ```
 method 0: stored bytes, exactly uncompressed size
-method 1: zlib/DEFLATE bytes
+method 1: one anonymous long chunk whose body is a complete zlib stream
 ```
 
-The CRC covers the uncompressed bytes. Inflated output has exactly the declared
-size. Unknown methods, zlib failure, truncation, and checksum failure make the
-buffer invalid.
+The outer CRC covers the uncompressed bytes. The anonymous method-1 chunk has
+its own chunk CRC after the compressed stream. The chunk declaration provides
+the compressed-input boundary; the zlib stream consumes its entire chunk body.
+Inflated output has exactly the declared size. Unknown methods, wrong method-1
+chunk type, zlib failure, truncation, trailing compressed bytes, and outer CRC
+failure make the buffer invalid.
 
 ## 11. Class UUID registry
 
@@ -877,6 +1013,8 @@ buffer invalid.
 | `ON_ArcCurve`            | `CF33BE2A-09B4-11D4-BFFB-0010830122F0` |
 | `ON_PolylineCurve`       | `4ED7D4E6-E947-11D3-BFE5-0010830122F0` |
 | `ON_PolyCurve`           | `4ED7D4E0-E947-11D3-BFE5-0010830122F0` |
+| `ON_PolyEdgeCurve`       | `39FF3DD3-FE0F-4807-9D59-185F0D73C0E4` |
+| `ON_PolyEdgeSegment`     | `42F47A87-5B1B-4E31-AB87-4639D78325D6` |
 | `ON_NurbsSurface`        | `4ED7D4DE-E947-11D3-BFE5-0010830122F0` |
 | `ON_PlaneSurface`        | `4ED7D4DF-E947-11D3-BFE5-0010830122F0` |
 | `ON_RevSurface`          | `A16220D3-163B-11D4-8000-0010830122F0` |
@@ -888,14 +1026,36 @@ buffer invalid.
 | `ON_Point`               | `C3101A1D-F157-11D3-BFE7-0010830122F0` |
 | `ON_PointCloud`          | `2488F347-F8FA-11D3-BFEC-0010830122F0` |
 | `ON_PointGrid`           | `4ED7D4E5-E947-11D3-BFE5-0010830122F0` |
+| `ON_Hatch`               | `0559733B-5332-49D1-A936-0532AC76ADE5` |
+| `ON_DetailView`          | `C8C66EFA-B3CB-4E00-9440-2AD66203379E` |
+| `ON_NurbsCage`           | `06936AFB-3D3C-41AC-BF70-C9319FA480A1` |
+| `ON_MorphControl`        | `D379E6D8-7C31-4407-A913-E3B7040D034A` |
+| `ON_Centermark`          | `D46767BA-7E8F-4D9D-9A92-66050219A5B9` |
 | `ON_Layer`               | `95809813-E985-11D3-BFE5-0010830122F0` |
 | `ON_InstanceDefinition`  | `26F8BFF6-2618-417F-A158-153D64A94989` |
 | `ON_InstanceRef`         | `F9CFB638-B9D4-4340-87E3-C56E7865D96A` |
 | `ON_3dmObjectAttributes` | `A828C015-09F5-477C-8665-F0482F5D6996` |
 
-The legacy `TL_RevSurface` UUID `0A8401B6-4D34-4B99-8615-1B4E723DC4E5` is an
-accepted alias for the native revolution payload. `ON_Circle` and `ON_Arc` are
-value types; their object wrapper is `ON_ArcCurve`.
+These registered legacy identities use the current class payload layout:
+
+| Payload family     | Alias UUIDs                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| NURBS curve        | `5EAF1119-0B51-11D4-BFFE-0010830122F0`, `76A709D5-1550-11D4-8000-0010830122F0`                          |
+| NURBS surface      | `4760C817-0BE3-11D4-BFFE-0010830122F0`, `FA4FD4B5-1613-11D4-8000-0010830122F0`                          |
+| polycurve          | `EF638317-154B-11D4-8000-0010830122F0`                                                                  |
+| Brep               | `0705FDEF-3E2A-11D4-800E-0010830122F0`, `2D4CFEDB-3E2A-11D4-800E-0010830122F0`, `F06FC243-A32A-4608-9DD8-A7D2C4CE2A36` |
+| revolution surface | `0A8401B6-4D34-4B99-8615-1B4E723DC4E5`                                                                  |
+
+Alias identity does not add a payload prefix or suffix. It participates in
+the same curve/surface base-class checks used by polymorphic Brep arrays.
+`ON_Circle` and `ON_Arc` are value types; their object wrapper is
+`ON_ArcCurve`.
+
+`ON_CurveProxy`, `ON_SurfaceProxy`, `ON_OffsetSurface`, `ON_PointGrid`,
+`ON_MeshComponentRef`, and `ON_SubDComponentRef` are runtime reference or
+cache classes and have no valid persistent class-data payload. A
+`ON_PolyEdgeSegment` is the archive-bearing proxy-derived exception and uses
+the payload below.
 
 ## 12. Curves and points
 
@@ -997,7 +1157,45 @@ segment count × polymorphic ON_Curve
 ```
 
 Parameter count is segment count plus one. Segment parameters are finite and
-nondecreasing. Each child is a curve.
+strictly increasing. Each child is a curve.
+
+#### 12.6.1 Persistent polyedge references
+
+`ON_PolyEdgeCurve` uses the polycurve payload with every child class equal to
+`ON_PolyEdgeSegment`. A segment is an anonymous version 1.0 chunk:
+
+```text
+UUID referenced object
+ON_ComponentIndex referenced component
+ON_Interval edge domain
+ON_Interval trim domain
+bool proxy reversed
+ON_Interval polyedge segment domain
+ON_Interval referenced curve domain
+```
+
+The segment and parameter counts obey the polycurve invariants. All domains
+are finite. The object UUID and component index persist the source curve,
+Brep edge, or Brep trim selection; the reversal and domain fields define its
+orientation and parameter mapping inside the polyedge.
+
+### 12.7 Curve on surface
+
+`ON_CurveOnSurface` has no version prefix. Its bounded class payload is:
+
+```text
+polymorphic two-dimensional ON_Curve
+i32 model-curve-present
+if present: polymorphic model-space ON_Curve
+polymorphic ON_Surface
+```
+
+The presence value is zero or one. The first curve is in support-surface
+parameter space and remains unscaled. The optional model curve and support
+surface use document length conversion. All three child objects must derive
+from their declared curve or surface families. The model curve is the exact
+stored solved carrier when present; the parameter curve and support surface
+retain the construction relationship independently.
 
 ## 13. NURBS curves and surfaces
 
@@ -1112,7 +1310,52 @@ minor >= 1:
 Version 1.0 uses domains as extents. Domains and extents are independent; the
 domain controls parameterization.
 
-### 13.4 Revolution surface
+### 13.4 Clipping-plane surface
+
+Class UUID `DBC5A584-CE3F-4170-98A8-497069CA5C36` contains an anonymous
+version 1.0 chunk. Its first child is an anonymous chunk containing a plane
+surface payload without an additional child version header. Its second child
+is the clipping-plane record:
+
+```text
+anonymous version 1.0
+  anonymous plane-surface carrier
+  clipping-plane anonymous chunk
+```
+
+The clipping-plane chunk has major version 1 and minor versions 0 through 5:
+
+```text
+ON_UUID first_viewport_id
+ON_UUID plane_id
+ON_Plane plane
+bool enabled
+if minor >= 1: ON_UuidList viewport_ids
+if minor >= 2: f64 depth
+if minor >= 4: bool depth_enabled
+if minor >= 5: ordered participation items followed by u8 zero
+```
+
+Minor 0 uses `first_viewport_id` as the viewport list. In later minors that
+field is retained for layout compatibility and `viewport_ids` is the complete
+list. Minor 2 depth uses the original distance interpretation. Minor 3 changes
+the interpretation without changing its wire type. Before minor 4, a
+nonnegative depth other than the unset positive value enables depth clipping;
+minor 4 carries the explicit flag.
+
+Minor 5 participation items are ordered and optional:
+
+| Item | Payload                                      |
+| ---: | -------------------------------------------- |
+|   10 | `i32 count`, `count` referenced object UUIDs |
+|   11 | `i32 count`, `count` referenced layer `i32`s |
+|   12 | `bool is_exclusion_list`                     |
+|   13 | `bool participation_lists_enabled`           |
+|    0 | terminator                                   |
+
+Each item can occur at most once. Present items occur in ascending item order.
+
+### 13.5 Revolution surface
 
 Packed version `2.0`; majors 1 and 2 are accepted. The presence field is a
 one-byte `char`; transpose is an `i32`:
@@ -1131,7 +1374,7 @@ if present: polymorphic ON_Curve profile
 Major 1 defaults the surface parameter interval to the angular interval. A
 present profile is a curve.
 
-### 13.5 Sum surface
+### 13.6 Sum surface
 
 Packed version `1.0`:
 
@@ -1406,7 +1649,10 @@ not analytic extrusion geometry.
 
 A multiple-profile extrusion stores a polycurve whose segment count is the
 profile count. Profile segments are closed and contain one outer segment
-followed by inner segments in a common profile plane.
+followed by inner segments in a common profile plane. The profile and every
+polycurve segment are two-dimensional curve payloads in extrusion profile
+coordinates. Profile coordinates use document length conversion before the
+profile frame places them at the trimmed path endpoints.
 
 ## 17. SubD
 
@@ -1451,9 +1697,12 @@ u8 render-mesh-present
 Archive IDs are contiguous, one-based, partitioned vertex/edge/face, and
 records occur in archive-ID order. Level zero is the control cage.
 
-A component pointer is `u32 archive ID` followed by `u8 flags`. Bit 0 is
-direction; bits 1 and 2 encode type: `0x2` vertex, `0x4` edge, `0x6` face.
-Archive ID zero is null. Edge and face direction bits reverse traversal.
+A pointer in a vertex, edge, face, or saved-limit-point field is `u32 archive
+ID` followed by `u8 flags`. The field determines the component type, and bit 0
+is the only serialized flag. Archive ID zero is null and has flags zero. Edge
+and face direction bits reverse traversal. Generic component pointers in
+size-tagged additions use bits 1 and 2 for type: `0x2` vertex, `0x4` edge, and
+`0x6` face.
 
 Each component base has archive ID, component ID, subdivision level, then
 pre-V7 saved point/vector fields or V7+ size-tagged additions. Vertex records
@@ -1528,6 +1777,287 @@ ON_BoundingBox bounds
 
 Definition membership comes from the definition UUID array, not object
 attributes. The reference payload carries the transform and bounding box.
+
+### 18.1 Modern dimensions
+
+The linear, angular, and radial dimension class payloads use an anonymous
+version 1.0 family chunk. Its first child is an anonymous common-dimension
+chunk with major version 1 and minor version 0 or 1:
+
+```text
+anonymous common dimension version 1.minor
+  annotation
+  UTF-16 user text
+  f64 obsolete text rotation
+  bool use default text point
+  ON_2dPoint user text point
+  bool flip first arrow
+  bool flip second arrow
+  i32 arrow fit
+  UUID detail measured
+  f64 distance scale
+  if minor >= 1: i32 text fit
+family fields
+```
+
+The annotation is an anonymous chunk with major version 1 and minor versions
+0 through 4:
+
+```text
+anonymous annotation version 1.minor
+  anonymous text-content version 1.0
+  UUID dimension style
+  ON_Plane plane
+  if minor >= 1: i32 annotation type
+  if minor >= 2:
+    anonymous override version 1.1
+      bool override present
+      if present: class wrapper for the override dimension style
+  if minor >= 3: ON_2dVector horizontal direction
+  if minor >= 4: bool allow text scaling
+```
+
+Annotation versions before 3 use horizontal direction `(1,0)`. Annotation
+versions before 4 allow text scaling. The text-content body is a UTF-16 rich
+text string, obsolete plane, rectangle width `f64`, rotation `f64`, horizontal
+alignment `i32`, vertical alignment `i32`, obsolete text height `f64`, and
+wrap `bool`, in that order.
+
+Linear family fields are definition point and dimension-line point as two
+`ON_2dPoint` values. Annotation types 1 and 5 select linear dimensions. The
+measurement is `abs(definition_point.x) * distance_scale`.
+
+Angular family fields are two `ON_2dVector` directions, two `f64` extension
+offsets, and an `ON_2dPoint` dimension-line point. Annotation types 2 and 11
+select angular dimensions. The measured sweep is the counterclockwise angle
+between the directions that contains the dimension-line direction.
+
+Radial family fields are radius point and dimension-line point as two
+`ON_2dPoint` values. Annotation type 3 selects diameter and type 4 selects
+radius. The measurement is the radius-point magnitude times distance scale,
+and diameter multiplies that result by two.
+
+Ordinate family fields are:
+
+```text
+i32 measured direction
+ON_2dPoint definition point
+ON_2dPoint leader point
+f64 first kink offset
+f64 second kink offset
+```
+
+Annotation type 6 selects ordinate. Measured direction 1 measures plane x and
+2 measures plane y. Zero infers x when the absolute leader displacement in x
+does not exceed its displacement in y, and otherwise infers y. Measurement is
+the absolute selected definition-point coordinate times distance scale.
+
+`ON_Centermark` uses the same anonymous family and common-dimension chunks.
+Annotation type 8 selects center mark. Its family suffix is one nonnegative
+`f64` radius. The radius uses document length conversion. Center marks have no
+measured dimension value; the radius controls the persisted mark geometry.
+
+All points and distance-valued fields use document length conversion.
+Directions, angles, and distance scale are unscaled. Coordinates, scales, and
+computed measurements are finite; distance scale is positive.
+
+The legacy V5 linear, angular, and radial dimension classes use an anonymous
+version 1.0 family chunk. Linear and radial families contain one common legacy
+annotation child. Angular dimensions append an `f64` angle and `f64` radius.
+The common annotation is anonymous version 1.0 through 1.3:
+
+```text
+i32 annotation type
+i32 text display mode
+ON_Plane plane
+archive array of ON_2dPoint construction points
+UTF-16 displayed text
+i32 user-positioned-text flag
+i32 initial archive dimension-style index
+f64 text height
+i32 justification
+if minor >= 1: bool allow model-space text scaling
+if minor >= 2: UTF-16 text formula
+if minor >= 3:
+  i32 archive text-style index
+  i32 archive dimension-style index
+```
+
+Linear annotation type 1 is rotated and type 2 is aligned. Its five points are
+the first extension endpoint, first arrow, second extension endpoint, second
+arrow, and user text point. The first extension endpoint becomes the defining
+plane origin. The second endpoint and arrow midpoint define the dimension and
+dimension-line points relative to that origin. Rotated measurement is the
+absolute plane-x difference; aligned measurement is the endpoint distance.
+
+Angular annotation type 3 has four points: user text, first ray, second ray,
+and an interior arc point. The ray points define unit directions. The stored
+radius places the dimension-line point along the arc-point direction, and the
+stored angle is the measurement.
+
+Radial annotation type 4 is diameter and type 5 is radius. Its four points are
+center, arrow, tail, and knee. The center becomes the defining plane origin;
+arrow and tail become relative radius and dimension-line points.
+
+The legacy V5 ordinate class has an anonymous version 1.0 or 1.1 family chunk.
+Its first child is an anonymous version 1.0 wrapper containing the common
+legacy annotation. The suffix is:
+
+```text
+i32 measured direction
+if family minor >= 1:
+  f64 first kink offset
+  f64 second kink offset
+```
+
+Legacy annotation type 8 selects ordinate and has definition and leader points
+in that order. Direction 0 measures x, 1 measures y, and -1 uses the same
+leader-displacement inference rule as a modern unset direction. The plane
+origin is the ordinate reference and measurement is the absolute selected
+definition-point coordinate.
+
+Legacy dimensions may carry userdata class
+`8AD5B9FC-0D5C-47FB-ADFD-74C28B6F661E`. Its anonymous version 1.0 through 1.2
+payload is:
+
+```text
+UUID parent dimension style
+i32 forced arrow position (-1 outside, 0 automatic, 1 inside)
+i32 text rectangle count
+if count = 7: 28 × i32 rectangle coordinates
+if minor >= 1: f64 distance scale
+if minor >= 2: UUID detail measured
+```
+
+The rectangle count is zero or seven. Distance scale is finite and positive.
+Dimension plane origins, plane equation offsets, construction points, angular
+radius, kink offsets, and text height use document length conversion. Style
+indices, flags, directions, stored angles, and distance scale remain unscaled.
+
+### 18.2 Hatches
+
+`ON_Hatch` uses packed version 1.1 before archive 60 and packed version 1.2 in
+archive 60 and later:
+
+```text
+packed version 1.minor
+ON_Plane hatch plane
+f64 pattern scale
+f64 pattern rotation
+i32 referenced hatch-pattern archive index
+i32 loop count
+loop count × hatch loop
+if minor >= 2: ON_2dPoint basepoint
+```
+
+Each hatch loop uses packed version 1.1:
+
+```text
+packed version 1.1
+i32 loop type
+class wrapper containing one plane-space curve
+```
+
+Loop type 0 is outer and type 1 is inner. The loop curve is a two-dimensional
+curve in hatch-plane coordinates. Model-space loop point `p=(x,y,0)` is
+`plane.origin + x*plane.xaxis + y*plane.yaxis`. Plane origin, loop coordinates,
+and basepoint coordinates use document length conversion. Plane axes, pattern
+scale, and pattern rotation are unscaled. Pattern scale is finite and positive;
+pattern rotation and every geometric coordinate are finite. Loop count is
+nonnegative and every loop object derives from the curve family.
+
+### 18.3 Detail views
+
+`ON_DetailView` uses an anonymous chunk with major version 1 and minor version
+0 or 1:
+
+```text
+anonymous detail version 1.minor
+  anonymous view-state version 1.0
+    ON_3dmView payload
+  anonymous boundary version 1.0
+    raw ON_NurbsCurve payload
+  if minor >= 1: f64 page-per-model ratio
+```
+
+The child declarations independently bound extensible view state and boundary
+geometry. The boundary NURBS curve uses the ordinary NURBS curve layout
+without a class wrapper. Its control points use document length conversion.
+The page-per-model ratio is finite and nonnegative; version 1.0 defaults it to
+zero.
+
+### 18.4 NURBS cages
+
+`ON_NurbsCage` uses anonymous version 1.0:
+
+```text
+i32 dimension
+i32 rational flag
+i32 order[3]
+i32 control_count[3]
+(order[0] + control_count[0] - 2) × f64 U knots
+(order[1] + control_count[1] - 2) × f64 V knots
+(order[2] + control_count[2] - 2) × f64 W knots
+for u in 0..control_count[0]:
+  for v in 0..control_count[1]:
+    for w in 0..control_count[2]:
+      (dimension + rational) × f64 control value
+```
+
+Dimension is positive and at most 10000. The rational flag is zero or one.
+Each order is at least two, and each control count is at least its order.
+Knots are finite and nondecreasing independently in all three directions.
+Nonrational control values are Euclidean coordinates. Rational control values
+are homogeneous coordinates followed by a finite nonzero weight; Euclidean
+coordinates divide by that weight. Coordinates use document length conversion.
+Knot values and weights are unscaled.
+
+### 18.5 Morph controls
+
+Current `ON_MorphControl` payloads use anonymous version 2.0 or 2.1:
+
+```text
+i32 variant
+anonymous start-control version 1.0
+anonymous end-control version 1.0
+anonymous captive-UUID-list version 1.0
+anonymous localizer-list version 1.0
+if minor >= 1:
+  f64 tolerance
+  bool quick preview
+  bool preserve structure
+```
+
+Variant 1 stores a raw `ON_NurbsCurve` in each control chunk. Variant 2 stores
+a raw `ON_NurbsSurface` in each control chunk. Variant 3 stores an `ON_Xform`
+in the start chunk and one complete anonymous `ON_NurbsCage` in the end chunk.
+The UUID list is `i32 count` followed by that many UUID values. The localizer
+list is `i32 count` followed by that many localizer chunks.
+
+Each localizer is anonymous version 1.0:
+
+```text
+i32 type
+ON_3dPoint point
+ON_3dVector vector
+ON_Interval distances
+anonymous optional-curve version 1.0
+  bool present
+  if present: raw ON_NurbsCurve
+anonymous optional-surface version 1.0
+  bool present
+  if present: raw ON_NurbsSurface
+```
+
+Localizer types are 0 none, 1 sphere, 2 plane, 3 cylinder, 4 curve, 5 surface,
+and 6 distance. Control points, localizer points, localizer distance intervals,
+transform translation coefficients, and tolerance use document length
+conversion. Vectors, transform linear coefficients, knots, parameters, and
+weights are unscaled. Tolerance is finite and nonnegative.
+
+Legacy morph-control major version 1 is the cage variant. Its field order is a
+complete NURBS cage, captive UUID list, and start `ON_Xform`. It has no
+localizers and defaults tolerance and both option flags to zero or false.
 
 ## 19. Exact gates and invariants
 
@@ -1956,3 +2486,147 @@ ON_BoundingBox
 
 The transform and definition UUID identify the reference. Definition
 membership comes from the member UUID array, not object attributes.
+
+## 20. Product, presentation, and complete-record semantics
+
+### 20.1 External file identity
+
+A file reference is an anonymous chunk version 1.0 or 1.1:
+
+```
+UTF-16 full path
+UTF-16 relative path
+anonymous content-hash chunk version 1.0:
+  u64 referenced byte count
+  u64 hash acquisition time
+  u64 content modification time
+  anonymous SHA-1 chunk version 1.0: 20 digest bytes
+  anonymous SHA-1 chunk version 1.0: 20 digest bytes
+u32 path status
+minor >= 1: UUID embedded-file component
+```
+
+The first SHA-1 identifies the normalized name and the second identifies the
+content. A linked instance definition and a texture image reference use this
+same structure. Linked definitions preserve their structure when the archive
+contains no local member geometry.
+
+### 20.2 Materials, textures, and mappings
+
+A modern material is anonymous version 1.0 followed by model-component
+attributes. An early archive-60 component-attribute child uses anonymous type
+`0x40008000` and a `u32` presence mask: bits 0 through 4 gate UUID, parent UUID,
+archive index, UTF-16 name, and two component-status integers. Later component
+attributes use `0x40008002` and independent status bytes. The remaining
+material fields are six colors, index of refraction, reflectivity, shine,
+transparency, an anonymous texture array, material-channel pairs, shareable and
+lighting flags, Fresnel controls, reflection and refraction glossiness, an RDK
+instance UUID, and the diffuse-texture alpha switch.
+
+Each texture-array element is an `ON_Texture` class wrapper. Its anonymous
+version 1.0 through 1.2 payload is:
+
+```
+UUID texture ID
+u32 mapping channel
+UTF-16 legacy image path
+bool enabled
+u32 texture type, mode, minification filter, magnification filter
+3 × u32 U/V/W wrap mode
+16 × f64 UVW transform
+ON_Color border, ON_Color transparent
+UUID transparency texture
+2 × f64 bump interval
+5 × f64 alpha blend constant and coefficients
+ON_Color RGB blend constant
+4 × f64 RGB blend coefficients
+i32 blend order
+minor >= 1: file reference
+minor >= 2: bool treat as linear
+```
+
+Texture transforms and blend coefficients are dimensionless. Texture mappings
+store mapping and projection enums, primitive and UVW transforms, a primitive
+class object, texture-space enum, and capped flag. Material channels bind a
+material UUID to an integer channel.
+
+### 20.3 Drafting resources and annotations
+
+Linetypes store model-component identity, ordered length/type segments, cap and
+join styles, width and width units, taper points, and the model-distance flag.
+Segment lengths and widths with model units are length values. Hatch patterns
+store identity, fill type, description, and hatch lines. Hatch-line base,
+offset, and dash values are lengths; angle is radians.
+
+Text styles use the legacy packed font format through archive 50 and the
+anonymous model-component form in later archives. Font state includes the raw
+characteristics word, Windows and PostScript names, Windows and Apple weights,
+point size, family and localized names, the ten-byte PANOSE classification,
+and rich-text quartet member. Font point size is not a model length.
+
+Dimension-style anonymous versions 1.0 through 1.9 store the common size,
+format, resolution, prefix, suffix, alternate-unit, suppression, and parent
+fields followed by field-override bits; tolerance values; baseline and text
+mask state; scale and source style; display and plot colors, sources, and
+weights; fixed extension length; text rotation; arrow suppression and custom
+arrow UUIDs; leader curve, landing, content-angle, and alignment state; scale
+value, font, and text-mask child chunks; text locations, alignments,
+orientations, and angle styles; primary and alternate unit/display modes;
+center-mark style; dimension-line, text-fit, and arrow-fit controls; and the
+decimal separator. Sizes, baseline spacing, fixed extension length, leader
+landing length, and plot weights are length values. Scale factors, rotations,
+fractions, rounding values, colors, enums, and override bits are not scaled.
+
+Modern text and leader objects contain the common annotation structure and an
+ordered leader point array. V5 text and leader classes contain outer anonymous
+version 1.0 and the common V5 annotation chunk described in section 18. Text
+dots store packed version, model point, point height, primary and secondary
+text, font face, and independent always-on-top, transparency, bold, and italic
+bits.
+
+### 20.4 Views and document presentation
+
+A view record is an ordered child-chunk list terminated by `TCODE_ENDOFTABLE`.
+The construction-plane child stores packed version 1.0 or 1.1, plane, grid and
+snap spacing, grid counts, UTF-16 name, and depth-buffer flag. The viewport
+child stores packed version 1.0 through 1.5, validity flags, projection, camera
+location and frame vectors, six frustum coordinates, six integer port bounds,
+viewport UUID, five camera/frustum lock flags, target point, camera-frame
+validity, and three dimensionless view-scale values. Camera locations, targets,
+frustum coordinates, construction-plane origins, and grid spacing are length
+values. Camera axes and view scale are not scaled.
+
+View-attributes packed versions 1.1 through 1.9 add view type; page dimensions;
+display-mode UUID; anonymous page settings; projection lock; an array of
+versioned clipping-plane equations, UUIDs, enabled flags, and depths; named-view
+UUID; construction-Z-axis flag; focal-blur values; rendering pixel size; and
+section behavior. Page sizes and margins are millimeters already. A clipping
+plane equation's constant and depth are model lengths.
+
+Trace images store path, width, height, plane, grayscale, hidden, filtered, and
+file-reference state. Wallpaper stores path, grayscale, hidden, and file
+reference. Windows bitmap classes store a Windows bitmap header followed by
+one or two compressed palette/pixel buffers. `ON_WindowsBitmapEx` prefixes the
+bitmap with packed version 1.0 and a UTF-16 file path. Embedded bitmaps store
+component identity, file reference, compression method, uncompressed size, and
+the image buffer.
+
+Global annotation settings store drafting sizes, unit and format enums, font
+face, text and hatch scales, model/layout scaling flags, and optional dimension
+layer identity. Grid defaults store grid/snap spacing, line counts, and grid and
+axis visibility. Render settings store image dimensions, DPI and units,
+ambient and background state, geometry and lighting switches, antialias and
+shadow settings, rendering source and view names, and viewport-aspect lock.
+
+### 20.5 Byte partition and opaque identity
+
+The 32-byte archive header is typed data. Every long chunk consists of a
+structural header, bounded body, and optional structural checksum. Short chunks
+are structural header/value pairs. Table and class end markers and the EOF
+record are structural. Bodies decoded by the preceding sections are typed.
+Every remaining complete table, property, setting, object, userdata, and class
+record is one named opaque record identified by its typecode and, when present,
+class UUID, userdata class UUID, userdata item UUID, plug-in UUID, object UUID,
+or archive offset. These categories partition the archive byte range without
+gaps or overlap. An opaque record's identity includes its exact byte length and
+SHA-256; retained bytes, when present, cover the complete record.

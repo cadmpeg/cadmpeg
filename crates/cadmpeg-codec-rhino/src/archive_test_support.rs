@@ -344,11 +344,15 @@ fn brep_children(class: [u8; 16], payload: Vec<u8>) -> Vec<u8> {
 fn brep_children_many(children: &[([u8; 16], Vec<u8>)]) -> Vec<u8> {
     let mut body = vec![0x10];
     body.extend((children.len() as i32).to_le_bytes());
+    let mut direct = body.clone();
     for (class, payload) in children {
         body.extend(1_i32.to_le_bytes());
+        direct.extend(1_i32.to_le_bytes());
         body.extend(class_wrapper(*class, payload));
     }
-    crc_chunk(0x4000_8000, &body)
+    let mut payload = body;
+    payload.extend(crc32fast::hash(&direct).to_le_bytes());
+    long_chunk(0x4000_8000, &payload)
 }
 
 fn region_array(records: &[Vec<u8>]) -> Vec<u8> {
