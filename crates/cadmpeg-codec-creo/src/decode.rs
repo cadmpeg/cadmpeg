@@ -5011,6 +5011,53 @@ mod resolved_sketch_tests {
     }
 
     #[test]
+    fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
+        let row = |id, kind| crate::surface::SurfaceRow {
+            id,
+            kind,
+            feature_id: 23,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 0,
+        };
+        let rows = vec![
+            row(10, crate::surface::SurfaceKind::Plane),
+            row(11, crate::surface::SurfaceKind::Plane),
+            row(13, crate::surface::SurfaceKind::Cylinder),
+        ];
+        let table = crate::feature::FeatureEntityTable {
+            feature_id: Some(23),
+            entry_ids: vec![10, 11, 12, 13],
+            surface_ids: vec![10, 11, 13],
+            non_surface_entity_ids: vec![12],
+            offset: 47,
+        };
+        assert_eq!(
+            rowless_round_cylinder_pairs(
+                &BTreeSet::from([23]),
+                std::slice::from_ref(&table),
+                &rows,
+            ),
+            vec![(12, 13, 47)]
+        );
+        assert!(rowless_round_cylinder_pairs(
+            &BTreeSet::new(),
+            std::slice::from_ref(&table),
+            &rows,
+        )
+        .is_empty());
+        let mut materialized_rowless = rows;
+        materialized_rowless.push(row(12, crate::surface::SurfaceKind::Cylinder));
+        assert!(rowless_round_cylinder_pairs(
+            &BTreeSet::from([23]),
+            &[table],
+            &materialized_rowless,
+        )
+        .is_empty());
+    }
+
+    #[test]
     fn spline_extrusion_preserves_directrix_basis_and_weights() {
         let directrix = NurbsCurve {
             degree: 2,
@@ -8313,6 +8360,101 @@ fn transfer_carrier_intersection_curves(
     }
 }
 
+fn rowless_round_cylinder_pairs(
+    round_feature_ids: &BTreeSet<u32>,
+    tables: &[crate::feature::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> Vec<(u32, u32, usize)> {
+    tables
+        .iter()
+        .filter_map(|table| {
+            let feature_id = table.feature_id?;
+            round_feature_ids.contains(&feature_id).then_some(())?;
+            let [first, second, rowless, cylinder] = table.entry_ids.as_slice() else {
+                return None;
+            };
+            rows.iter().any(|row| row.id == *first).then_some(())?;
+            rows.iter().any(|row| row.id == *second).then_some(())?;
+            (!rows.iter().any(|row| row.id == *rowless)).then_some(())?;
+            rows.iter()
+                .any(|row| {
+                    row.id == *cylinder
+                        && row.feature_id == feature_id
+                        && row.kind == crate::surface::SurfaceKind::Cylinder
+                })
+                .then_some(())?;
+            Some((*rowless, *cylinder, table.offset))
+        })
+        .collect()
+}
+
+fn transfer_rowless_round_cylinders(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let round_feature_ids = scan
+        .feature_rows
+        .iter()
+        .filter(|row| row.root_schema_class == Some(913))
+        .map(|row| row.feature_id)
+        .collect::<BTreeSet<_>>();
+    let mut transferred = 0;
+    for (rowless_id, sibling_id, offset) in rowless_round_cylinder_pairs(
+        &round_feature_ids,
+        &scan.feature_entity_tables,
+        &scan.surface_rows,
+    ) {
+        let sibling = SurfaceId(format!("creo:visibgeom:surface#{sibling_id}"));
+        let Some(SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        }) = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == sibling)
+            .map(|surface| &surface.geometry)
+        else {
+            continue;
+        };
+        let id = SurfaceId(format!("creo:visibgeom:surface#{rowless_id}"));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "AllFeatur",
+            offset as u64,
+            "round_rowless_sibling_cylinder",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Cylinder {
+                origin: *origin,
+                axis: *axis,
+                ref_direction: *ref_direction,
+                radius: *radius,
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("AllFeatur:{rowless_id}"),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 /// Decode a `.prt` stream into an IR document and loss report.
 ///
 /// The stream is read from its beginning. When `options.container_only` is set,
@@ -8508,14 +8650,16 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     }
     transfer_fc05_cap_circles(scan, &mut ir, &mut annotations);
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
-    transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
-    transfer_plane_brep(scan, &mut ir, &mut annotations);
     let saved_spline_curve_count = transfer_saved_spline_curves(scan, &mut ir, &mut annotations);
     transfer_resolved_sketches(scan, &mut ir, &mut annotations);
     let feature_revolution_surface_count =
         transfer_resolved_revolution_surfaces(scan, &mut ir, &mut annotations);
     let feature_extrusion_surface_count =
         transfer_feature_extrusion_surfaces(scan, &mut ir, &mut annotations);
+    let rowless_round_cylinder_count =
+        transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
+    transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
+    transfer_plane_brep(scan, &mut ir, &mut annotations);
     let feature_extrusion_brep_count =
         transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
     if let Some(source) = &mut ir.source {
@@ -8530,6 +8674,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         source.attributes.insert(
             "transferred_feature_extrusion_surface_count".to_string(),
             feature_extrusion_surface_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_rowless_round_cylinder_count".to_string(),
+            rowless_round_cylinder_count.to_string(),
         );
         source.attributes.insert(
             "transferred_feature_extrusion_brep_count".to_string(),
