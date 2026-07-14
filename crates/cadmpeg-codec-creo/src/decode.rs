@@ -250,6 +250,83 @@ struct CreoFamilyTableRecord {
     offset: usize,
 }
 
+#[derive(Serialize)]
+struct CreoSurfaceParameterRecord {
+    id: String,
+    surface_id: u32,
+    surface_family: &'static str,
+    boundary: &'static str,
+    body: Vec<u8>,
+    slots: Vec<CreoSurfaceParameterSlot>,
+    row_offset: usize,
+    body_offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoSurfaceParameterSlot {
+    value: Option<f64>,
+    raw: Vec<u8>,
+    offset: usize,
+    length: usize,
+}
+
+fn surface_parameter_records(scan: &ContainerScan) -> Vec<CreoSurfaceParameterRecord> {
+    scan.surface_parameters
+        .iter()
+        .filter_map(|record| {
+            let row = scan
+                .surface_rows
+                .iter()
+                .find(|row| row.id == record.surface_id)?;
+            let surface_family = match row.kind {
+                crate::surface::SurfaceKind::Plane => "plane",
+                crate::surface::SurfaceKind::Cylinder => "cylinder",
+                crate::surface::SurfaceKind::Cone => "cone",
+                crate::surface::SurfaceKind::TorusOrSphere => "torus_or_sphere",
+                crate::surface::SurfaceKind::Spline => "spline",
+                crate::surface::SurfaceKind::Fillet => "fillet",
+                crate::surface::SurfaceKind::Extrusion => "extrusion",
+            };
+            let boundary = match record.boundary {
+                crate::surface::SurfaceBodyBoundary::CompoundClose => "compound_close",
+                crate::surface::SurfaceBodyBoundary::NextRow => "next_row",
+                crate::surface::SurfaceBodyBoundary::NamedRecord => "named_record",
+                crate::surface::SurfaceBodyBoundary::SectionEnd => "section_end",
+            };
+            let source_section = scan
+                .sections
+                .iter()
+                .find(|section| {
+                    record.body_offset >= section.offset
+                        && record.body_offset < section.offset + section.length
+                })
+                .map_or("unknown", |section| section.name.as_str())
+                .to_string();
+            Some(CreoSurfaceParameterRecord {
+                id: format!("creo:visibgeom:surface_parameter#{}", record.surface_id),
+                surface_id: record.surface_id,
+                surface_family,
+                boundary,
+                body: record.body.clone(),
+                slots: record
+                    .scalar_tokens
+                    .iter()
+                    .map(|slot| CreoSurfaceParameterSlot {
+                        value: slot.value,
+                        raw: slot.raw.clone(),
+                        offset: slot.offset,
+                        length: slot.length,
+                    })
+                    .collect(),
+                row_offset: record.offset,
+                body_offset: record.body_offset,
+                source_section,
+            })
+        })
+        .collect()
+}
+
 fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTableRecord> {
     let record = scan.family_table?;
     let (pointer_kind, table_entity_id) = match record.pointer {
@@ -13498,6 +13575,22 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     }
     transfer_curve_expression_features(scan, &mut ir, &mut annotations);
     transfer_feature_dimensions(scan, &mut ir, &mut annotations);
+    let surface_parameters = surface_parameter_records(scan);
+    if !surface_parameters.is_empty() {
+        for record in &surface_parameters {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.body_offset as u64,
+                "surface_parameter_frame",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("surface_parameters", &surface_parameters)?;
+    }
     let pcurve_endpoints = pcurve_endpoint_records(scan);
     if !pcurve_endpoints.is_empty() {
         for (record, offset) in &pcurve_endpoints {

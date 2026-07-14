@@ -334,6 +334,31 @@ fn torus_family_does_not_shorten_unframed_negative_world_scalar() {
 }
 
 #[test]
+fn decode_preserves_surface_parameter_slots_in_native_ir() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0]);
+    payload.push(0xe3);
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode surface parameters");
+
+    let records = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"];
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].fields["surface_id"], 7);
+    assert_eq!(records[0].fields["surface_family"], "torus_or_sphere");
+    assert_eq!(records[0].fields["boundary"], "compound_close");
+    assert!(records[0].fields["slots"][0]["value"].is_null());
+    for (index, expected) in [0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0]
+        .into_iter()
+        .enumerate()
+    {
+        assert_eq!(records[0].fields["slots"][0]["raw"][index], expected);
+    }
+    assert_eq!(records[0].fields["slots"][0]["length"], 7);
+}
+
+#[test]
 fn surface_parameter_body_ignores_compound_close_inside_scalar() {
     let mut payload = visibgeom_payload(1, 0);
     let scalar = [0x46, 0x08, 0xe3, 0, 0, 0, 0, 0];

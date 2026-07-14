@@ -238,6 +238,9 @@ Decoded positional parameter scalars retain their source offset and token length
 The unresolved seven-byte `73` and `bb` forms retain their exact bytes as one
 scalar slot. Bytes inside either token cannot open another scalar or terminate
 the row.
+Each bounded positional body transfers to the Creo native
+`surface_parameters` arena with its surface identifier, family, boundary kind,
+exact body bytes, and ordered decoded or opaque scalar slots.
 
 ### 3.4 Planes
 
