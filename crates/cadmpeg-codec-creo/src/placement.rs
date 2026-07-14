@@ -4,7 +4,7 @@
 use crate::datum::DatumPlane;
 use crate::feature::{
     AffectedIdKind, BinaryFlag, FeatureAffectedIds, FeatureDefinition, FeatureEntityTable,
-    FeatureGeometryTable, FeatureGeometryTableKind,
+    FeatureGeometryTable, FeatureGeometryTableKind, FeatureSegmentKind,
 };
 use crate::surface::{
     OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceKind, SurfaceRow,
@@ -188,6 +188,66 @@ fn generated_datum_plane_equation(
     Some(*equation)
 }
 
+fn feature_generated_plane_equation(
+    id: u32,
+    definitions: &[FeatureDefinition],
+    transforms: &[FeatureSectionTransform],
+    sources: &PlacementSources<'_>,
+) -> Option<([f64; 3], f64)> {
+    let feature_id = sources
+        .surface_rows
+        .iter()
+        .find(|row| row.id == id && row.kind == SurfaceKind::Plane)?
+        .feature_id;
+    let transforms = transforms
+        .iter()
+        .filter(|transform| transform.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let [transform] = transforms.as_slice() else {
+        return None;
+    };
+    let definition = definitions
+        .iter()
+        .find(|definition| definition.id == transform.definition_id)?;
+    let segments = definition.segments.as_ref()?;
+    let segments = segments
+        .rows
+        .iter()
+        .filter(|segment| segment.external_id == id && segment.kind == FeatureSegmentKind::Line)
+        .collect::<Vec<_>>();
+    let [segment] = segments.as_slice() else {
+        return None;
+    };
+    let variables = definition.variables.as_ref()?;
+    let point = |point_id| {
+        let point = variables
+            .points
+            .iter()
+            .find(|point| point.point_id == point_id)?;
+        Some([point.u?, point.v?])
+    };
+    let start = point(segment.point_ids[0])?;
+    let end = point(segment.point_ids[1])?;
+    let place = |point: [f64; 2]| {
+        std::array::from_fn(|axis| {
+            transform.origin[axis]
+                + point[0] * transform.u_axis[axis]
+                + point[1] * transform.v_axis[axis]
+        })
+    };
+    let start = place(start);
+    let end = place(end);
+    let direction = std::array::from_fn(|axis| end[axis] - start[axis]);
+    let magnitude = dot(direction, direction).sqrt();
+    (magnitude > 1e-12).then_some(())?;
+    let direction = scale(direction, magnitude.recip());
+    let normal = cross(direction, transform.normal);
+    let magnitude = dot(normal, normal).sqrt();
+    (magnitude > 1e-12).then_some(())?;
+    let normal = scale(normal, magnitude.recip());
+    Some((normal, dot(normal, start)))
+}
+
 /// Resolve feature frames whose sketch and orientation references reduce to
 /// two perpendicular model-space datum planes.
 pub(crate) fn resolve(
@@ -224,11 +284,20 @@ pub(crate) fn resolve(
                 sources.outline_planes,
             );
             if let Some(sketch) = direct_sketch {
-                let reference = direct_reference.or_else(|| {
-                    generated_datum_plane_equation(reference_id, sketch_id, sketch.0, sources)
-                });
+                let reference = direct_reference
+                    .or_else(|| {
+                        generated_datum_plane_equation(reference_id, sketch_id, sketch.0, sources)
+                    })
+                    .or_else(|| {
+                        feature_generated_plane_equation(
+                            reference_id,
+                            definitions,
+                            &result,
+                            sources,
+                        )
+                    });
                 if let Some(reference) = reference {
-                    if dot(sketch.0, reference.0).abs() <= 1e-12
+                    if dot(sketch.0, reference.0).abs() < 1.0 - 1e-12
                         && !candidates.contains(&(sketch, reference))
                     {
                         candidates.push((sketch, reference));
@@ -238,7 +307,7 @@ pub(crate) fn resolve(
                 if let Some(sketch) =
                     generated_datum_plane_equation(sketch_id, reference_id, reference.0, sources)
                 {
-                    if dot(sketch.0, reference.0).abs() <= 1e-12
+                    if dot(sketch.0, reference.0).abs() < 1.0 - 1e-12
                         && !candidates.contains(&(sketch, reference))
                     {
                         candidates.push((sketch, reference));
@@ -264,17 +333,27 @@ pub(crate) fn resolve(
             reference_offset = -reference_offset;
         }
         let normal = sketch_normal;
-        let u_axis = reference_normal;
+        let cosine = dot(normal, reference_normal);
+        let denominator = 1.0 - cosine * cosine;
+        if denominator <= 1e-12 {
+            continue;
+        }
+        let u_axis = scale(
+            add(reference_normal, scale(normal, -cosine)),
+            denominator.sqrt().recip(),
+        );
         let v_axis = cross(normal, u_axis);
         if (dot(v_axis, v_axis) - 1.0).abs() > 1e-12 {
             continue;
         }
+        let sketch_factor = (sketch_offset - cosine * reference_offset) / denominator;
+        let reference_factor = (reference_offset - cosine * sketch_offset) / denominator;
         result.push(FeatureSectionTransform {
             definition_id: definition.id,
             feature_id: definition.owner_feature_id,
             origin: add(
-                scale(sketch_normal, sketch_offset),
-                scale(reference_normal, reference_offset),
+                scale(sketch_normal, sketch_factor),
+                scale(reference_normal, reference_factor),
             ),
             u_axis,
             v_axis,
@@ -289,7 +368,10 @@ pub(crate) fn resolve(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::feature::{FeatureSection3d, FeatureSectionOrientation};
+    use crate::feature::{
+        FeatureSection3d, FeatureSectionOrientation, FeatureSectionPoint, FeatureSegment,
+        FeatureSegmentTable, FeatureVariableTable,
+    };
 
     fn datum(id: u32, normal: [f64; 3], offset: f64) -> DatumPlane {
         DatumPlane {
@@ -357,6 +439,127 @@ mod tests {
                 offset: 100,
             }]
         );
+    }
+
+    #[test]
+    fn resolves_oblique_reference_from_an_earlier_extruded_line() {
+        let source = FeatureDefinition {
+            id: 917,
+            owner_feature_id: Some(40),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                points: vec![
+                    FeatureSectionPoint {
+                        point_id: 8,
+                        u: Some(0.0),
+                        v: Some(0.0),
+                    },
+                    FeatureSectionPoint {
+                        point_id: 9,
+                        u: Some(0.0),
+                        v: Some(1.0),
+                    },
+                ],
+                offset: 10,
+            }),
+            segments: Some(FeatureSegmentTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: vec![FeatureSegment {
+                    kind: FeatureSegmentKind::Line,
+                    directions: [None; 3],
+                    point_ids: [8, 9],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: None,
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 43,
+                    offset: 20,
+                }],
+                offset: 20,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: Some(FeatureSection3d {
+                sketch_plane_entity_id: Some(2),
+                sketch_plane_flip: None,
+                reference_plane_entity_ids: vec![4],
+                reference_plane_datum_geometry_id: Some(4),
+                orientation: FeatureSectionOrientation::default(),
+                dimension_ids: Vec::new(),
+                offset: 30,
+            }),
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 5,
+        };
+        let dependent = FeatureDefinition {
+            id: 579,
+            owner_feature_id: Some(579),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: Some(FeatureSection3d {
+                sketch_plane_entity_id: Some(799),
+                sketch_plane_flip: None,
+                reference_plane_entity_ids: vec![43],
+                reference_plane_datum_geometry_id: None,
+                orientation: FeatureSectionOrientation::default(),
+                dimension_ids: Vec::new(),
+                offset: 40,
+            }),
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 35,
+        };
+        let generated_plane = SurfaceRow {
+            id: 43,
+            kind: SurfaceKind::Plane,
+            feature_id: 40,
+            reversed: false,
+            boundary_type: 1,
+            next_surface: 0,
+            offset: 50,
+        };
+
+        let transforms = resolve(
+            &[source, dependent],
+            &PlacementSources {
+                datums: &[
+                    datum(2, [1.0, 0.0, 0.0], 0.0),
+                    datum(4, [0.0, 0.0, 1.0], 0.0),
+                    datum(799, [0.0, 1.0, 0.0], 1.0),
+                ],
+                surface_rows: &[generated_plane],
+                model_planes: &[],
+                outline_planes: &[],
+                plane_envelopes: &[],
+                geometry_tables: &[],
+                affected_ids: &[],
+            },
+            &[],
+        );
+
+        assert_eq!(transforms.len(), 2);
+        assert_eq!(transforms[1].definition_id, 579);
+        assert_eq!(transforms[1].feature_id, Some(579));
+        assert_eq!(transforms[1].origin, [0.0, 1.0, 0.0]);
+        assert_eq!(transforms[1].u_axis, [0.0, 0.0, 1.0]);
+        assert_eq!(transforms[1].normal, [0.0, 1.0, 0.0]);
     }
 
     #[test]

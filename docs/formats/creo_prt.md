@@ -655,9 +655,11 @@ A positional `gsec3d_ptr` record begins with `07 S2D<N> 00`, followed by
 reference, `fb e2`, and row-class reference. Each row replays `plane_id`,
 `ref_type`, `ext_ref_id`, `seg_id`, `sub_index`, and `flip_flag`; rows after the
 first follow `f2 f7 <table-class> e2` and their nested row payload.
-The in-plane orientation is the unique referenced plane perpendicular to the
-resolved sketch plane; parallel support planes and non-plane references do not
-define the section axis.
+The in-plane orientation is the unique referenced plane not parallel to the
+resolved sketch plane. Its normal projected into the sketch plane defines the
+section `u` axis, and the intersection of the two plane equations defines the
+section origin. Parallel support planes and non-plane references do not define
+the section axis.
 
 `order_table` entries are `ext_id`, `int_id`, and orientation-flag tuples. `ext_id` references a section entity and `int_id` is a one-byte generated-entity order index. In a feature-generated table, a line entity with `int_id = N` maps to table position `N - 1`. Arc entities map in `int_id` order to cylinder entries in generated-table order only when the feature's arc count equals its cylinder-entry count; `int_id - 1` does not index arc-generated cylinders.
 
@@ -665,6 +667,12 @@ Positional `order_table` tuples are separated by `e2`. The final tuple may
 end directly at the following named field without an `e2` separator.
 
 A section arc bound this way supplies a cylinder radius from its `cntrid` and endpoint in `var_arr`; its axis direction is the resolved `gsec3d` extrude axis, and its axis point is the section arc center transformed into model space.
+
+When a plane `srf_array.geom_id` equals a line segment's `ext_id` and both are
+owned by the same section-sweep feature, the plane is the sweep of that line
+along the resolved section normal. Its origin is either transformed line
+endpoint and its normal is the cross product of the transformed line direction
+and sweep direction.
 
 A resolved `gsec3d` frame places every complete `var_arr` section point in model space. It places a `segtab` line as the line through its transformed endpoints and a `segtab` arc as a circle whose center is the transformed `cntrid` point, whose axis is the section normal, and whose parameter-zero direction is the section `u` axis.
 
