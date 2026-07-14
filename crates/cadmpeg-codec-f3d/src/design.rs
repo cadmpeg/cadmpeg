@@ -1488,8 +1488,6 @@ fn historical_member_points(
     member: &DesignExtrudeSelectionMember,
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<Vec<Point3>> {
-    use crate::records::AsmHistoricalEntityKind;
-
     let kind = member.historical_entity_kind?;
     let local_id = i64::try_from(member.local_id).ok()?;
     let mut positions = Vec::new();
@@ -1497,65 +1495,86 @@ fn historical_member_points(
         if !member.historical_state_ids.contains(&state.state_id) {
             continue;
         }
-        let topology = state.topology.as_ref()?;
-        let edge_refs = match kind {
-            AsmHistoricalEntityKind::Coedge => topology
-                .coedge_topology
-                .iter()
-                .filter(|coedge| coedge.coedge == local_id)
-                .map(|coedge| coedge.edge)
-                .collect::<Vec<_>>(),
-            AsmHistoricalEntityKind::Edge => vec![local_id],
-            AsmHistoricalEntityKind::Curve => topology
-                .edge_curves
-                .iter()
-                .filter(|binding| binding.carrier == Some(local_id))
-                .map(|binding| binding.entity)
-                .collect(),
-            AsmHistoricalEntityKind::Loop => topology
-                .coedge_topology
-                .iter()
-                .filter(|coedge| coedge.owner_loop == local_id)
-                .map(|coedge| coedge.edge)
-                .collect(),
-            AsmHistoricalEntityKind::Pcurve => topology
-                .coedge_pcurves
-                .iter()
-                .filter(|binding| binding.carrier == Some(local_id))
-                .filter_map(|binding| {
-                    topology
-                        .coedge_topology
-                        .iter()
-                        .find(|coedge| coedge.coedge == binding.entity)
-                        .map(|coedge| coedge.edge)
-                })
-                .collect(),
-            AsmHistoricalEntityKind::Vertex => {
-                positions.extend(historical_vertex_positions(topology, local_id));
-                Vec::new()
-            }
-            AsmHistoricalEntityKind::Point => {
-                positions.extend(
-                    topology
-                        .point_positions
-                        .iter()
-                        .filter(|point| point.point == local_id)
-                        .map(|point| point.position),
-                );
-                Vec::new()
-            }
-            _ => return None,
+        let Some(topology) = state.topology.as_ref() else {
+            continue;
         };
-        for edge_ref in edge_refs {
-            let edge = topology
-                .edge_vertices
-                .iter()
-                .find(|edge| edge.edge == edge_ref)?;
-            positions.extend(historical_vertex_positions(topology, edge.start_vertex));
-            positions.extend(historical_vertex_positions(topology, edge.end_vertex));
+        if let Some(mut state_positions) = historical_entity_positions(kind, local_id, topology) {
+            positions.append(&mut state_positions);
         }
     }
     positions.dedup_by(|a, b| a == b);
+    (!positions.is_empty()).then_some(positions)
+}
+
+fn historical_entity_positions(
+    kind: crate::records::AsmHistoricalEntityKind,
+    local_id: i64,
+    topology: &crate::history_records::AsmHistoricalTopology,
+) -> Option<Vec<Point3>> {
+    use crate::records::AsmHistoricalEntityKind;
+
+    let mut positions = Vec::new();
+    let edge_refs = match kind {
+        AsmHistoricalEntityKind::Coedge => topology
+            .coedge_topology
+            .iter()
+            .filter(|coedge| coedge.coedge == local_id)
+            .map(|coedge| coedge.edge)
+            .collect::<Vec<_>>(),
+        AsmHistoricalEntityKind::Edge => vec![local_id],
+        AsmHistoricalEntityKind::Curve => topology
+            .edge_curves
+            .iter()
+            .filter(|binding| binding.carrier == Some(local_id))
+            .map(|binding| binding.entity)
+            .collect(),
+        AsmHistoricalEntityKind::Loop => topology
+            .coedge_topology
+            .iter()
+            .filter(|coedge| coedge.owner_loop == local_id)
+            .map(|coedge| coedge.edge)
+            .collect(),
+        AsmHistoricalEntityKind::Pcurve => topology
+            .coedge_pcurves
+            .iter()
+            .filter(|binding| binding.carrier == Some(local_id))
+            .filter_map(|binding| {
+                topology
+                    .coedge_topology
+                    .iter()
+                    .find(|coedge| coedge.coedge == binding.entity)
+                    .map(|coedge| coedge.edge)
+            })
+            .collect(),
+        AsmHistoricalEntityKind::Vertex => {
+            positions.extend(historical_vertex_positions(topology, local_id));
+            Vec::new()
+        }
+        AsmHistoricalEntityKind::Point => {
+            positions.extend(
+                topology
+                    .point_positions
+                    .iter()
+                    .filter(|point| point.point == local_id)
+                    .map(|point| point.position),
+            );
+            Vec::new()
+        }
+        _ => return None,
+    };
+    for edge_ref in edge_refs {
+        let edge = topology
+            .edge_vertices
+            .iter()
+            .find(|edge| edge.edge == edge_ref)?;
+        let start = historical_vertex_positions(topology, edge.start_vertex).collect::<Vec<_>>();
+        let end = historical_vertex_positions(topology, edge.end_vertex).collect::<Vec<_>>();
+        if start.is_empty() || end.is_empty() {
+            return None;
+        }
+        positions.extend(start);
+        positions.extend(end);
+    }
     (!positions.is_empty()).then_some(positions)
 }
 
@@ -8573,6 +8592,58 @@ mod relation_tests {
         );
         assert_eq!(
             super::ordered_unique_profile_matches([Some(vec![3]), None]),
+            None
+        );
+    }
+
+    #[test]
+    fn historical_edge_positions_require_a_complete_state_chain() {
+        let mut topology = crate::history_records::AsmHistoricalTopology {
+            edges: vec![7],
+            vertices: vec![8, 9],
+            points: vec![18, 19],
+            edge_vertices: vec![crate::history_records::AsmHistoricalEdge {
+                edge: 7,
+                start_vertex: 8,
+                end_vertex: 9,
+            }],
+            vertex_points: vec![
+                crate::history_records::AsmHistoricalCarrierBinding {
+                    entity: 8,
+                    carrier: 18,
+                },
+                crate::history_records::AsmHistoricalCarrierBinding {
+                    entity: 9,
+                    carrier: 19,
+                },
+            ],
+            point_positions: vec![
+                crate::history_records::AsmHistoricalPoint {
+                    point: 18,
+                    position: Point3::new(1.0, 2.0, 3.0),
+                },
+                crate::history_records::AsmHistoricalPoint {
+                    point: 19,
+                    position: Point3::new(4.0, 5.0, 6.0),
+                },
+            ],
+            ..crate::history_records::AsmHistoricalTopology::default()
+        };
+        assert_eq!(
+            super::historical_entity_positions(
+                crate::records::AsmHistoricalEntityKind::Edge,
+                7,
+                &topology,
+            ),
+            Some(vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0),])
+        );
+        topology.point_positions.pop();
+        assert_eq!(
+            super::historical_entity_positions(
+                crate::records::AsmHistoricalEntityKind::Edge,
+                7,
+                &topology,
+            ),
             None
         );
     }
