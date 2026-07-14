@@ -2,9 +2,9 @@
 
 ## Repository boundary
 
-- [ ] Every committed format rule is stated in repository terminology and testable without analysis-only inputs.
-- [ ] Original fixtures are authored directly from the format specification.
-- [ ] No analysis-only path, identity, content, transformed artifact, or evidence statement enters source, tests, seeds, documentation, reports, or commit messages.
+- [x] Every committed format rule is stated in repository terminology and testable without analysis-only inputs.
+- [x] Original fixtures are authored directly from the format specification.
+- [x] No analysis-only path, identity, content, transformed artifact, or evidence statement enters source, tests, seeds, documentation, reports, or commit messages.
 - [ ] Public fixtures have independently verified redistribution terms and provenance in the corpus manifest.
 
 ## Phase 0 approvals
@@ -16,13 +16,13 @@
 
 ## Implementation invariants
 
-- [ ] Detection reads a bounded prefix and assigns high confidence only to valid Fixed ASCII framing.
-- [ ] Inspection does not construct geometry.
-- [ ] Card, Global, Directory Entry, Parameter Data, graph, and projection layers remain independently testable.
+- [x] Detection reads a bounded prefix and assigns high confidence only to valid Fixed ASCII framing.
+- [x] Inspection does not construct geometry.
+- [x] Card, Global, Directory Entry, Parameter Data, graph, and projection layers remain independently testable.
 - [ ] Checked arithmetic and configured limits cover counts, offsets, allocation sizes, Hollerith lengths, graph depth, transform depth, retained bytes, and derived tessellation.
 - [ ] Malformed input returns deterministic errors or findings and never panics.
-- [ ] Projection does not reparse source bytes.
-- [ ] Topology candidates validate before attachment.
+- [x] Projection does not reparse source bytes.
+- [x] Topology candidates validate before attachment.
 - [ ] Score changes and their cumulative assertions land in the same commit.
 
 ## Release closure
