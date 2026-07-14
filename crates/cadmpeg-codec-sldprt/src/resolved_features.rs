@@ -5034,18 +5034,12 @@ pub(crate) fn project_relation_point_geometry(
             let Some(sketch) = sketches_by_feature.get(feature) else {
                 continue;
             };
-            let sketch_frame = sketches.iter().find(|candidate| candidate.id == *sketch);
             let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-            let positions = sketch_frame
-                .and_then(|sketch| principal_plane_marker_point(sketch, [u, v], QUANTUM))
+            let positions = transforms
+                .get(feature)
                 .into_iter()
-                .chain(
-                    transforms
-                        .get(feature)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|transform| transform.apply(native)),
-                )
+                .flatten()
+                .filter_map(|transform| transform.apply(native))
                 .collect::<HashSet<_>>();
             if positions.len() != 1 {
                 continue;
@@ -5097,7 +5091,6 @@ pub(crate) fn project_relation_point_geometry(
             let Some(sketch) = sketches_by_feature.get(feature) else {
                 continue;
             };
-            let sketch_frame = sketches.iter().find(|candidate| candidate.id == *sketch);
             let endpoints = line_endpoint_markers(marker, &markers_by_id);
             let [first, second] = endpoints.as_slice() else {
                 continue;
@@ -5113,24 +5106,16 @@ pub(crate) fn project_relation_point_geometry(
                 Point2::new(second[0] * NATIVE_TO_IR, second[1] * NATIVE_TO_IR),
                 QUANTUM,
             );
-            let principal = sketch_frame.and_then(|sketch| {
-                principal_plane_marker_point(sketch, first, QUANTUM)
-                    .zip(principal_plane_marker_point(sketch, second, QUANTUM))
-            });
-            let candidates = principal
+            let candidates = transforms
+                .get(feature)
                 .into_iter()
-                .chain(
-                    transforms
-                        .get(feature)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|transform| {
-                            Some((
-                                transform.apply(first_native)?,
-                                transform.apply(second_native)?,
-                            ))
-                        }),
-                )
+                .flatten()
+                .filter_map(|transform| {
+                    Some((
+                        transform.apply(first_native)?,
+                        transform.apply(second_native)?,
+                    ))
+                })
                 .collect::<HashSet<_>>();
             let candidates = candidates.into_iter().collect::<Vec<_>>();
             let [(start, end)] = candidates.as_slice() else {
@@ -6100,7 +6085,6 @@ fn profile_loci_by_marker(
             let Some(sketch) = sketches_by_feature.get(feature) else {
                 continue;
             };
-            let sketch_frame = sketches.iter().find(|candidate| candidate.id == **sketch);
             let Some(loci) = profile_loci.get(sketch) else {
                 continue;
             };
@@ -6129,14 +6113,9 @@ fn profile_loci_by_marker(
                     .ok()
                     .is_some_and(|offset| marker_is_geometry_locus(&lane.native_payload, offset));
                 let point = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                let translated_points = sketch_frame
-                    .and_then(|sketch| principal_plane_marker_point(sketch, [u, v], QUANTUM))
-                    .into_iter()
-                    .chain(
-                        transforms
-                            .iter()
-                            .filter_map(|transform| transform.apply(point)),
-                    )
+                let translated_points = transforms
+                    .iter()
+                    .filter_map(|transform| transform.apply(point))
                     .collect::<HashSet<_>>();
                 let marker_loci = translated_points
                     .into_iter()
@@ -6234,7 +6213,6 @@ fn profile_loci_by_marker(
         ) else {
             continue;
         };
-        let sketch = sketches.iter().find(|sketch| sketch.id == **sketch_id);
         let first_native = quantize(
             Point2::new(first[0] * NATIVE_TO_IR, first[1] * NATIVE_TO_IR),
             QUANTUM,
@@ -6243,24 +6221,16 @@ fn profile_loci_by_marker(
             Point2::new(second[0] * NATIVE_TO_IR, second[1] * NATIVE_TO_IR),
             QUANTUM,
         );
-        let endpoint_pairs = sketch
-            .and_then(|sketch| {
-                principal_plane_marker_point(sketch, first, QUANTUM)
-                    .zip(principal_plane_marker_point(sketch, second, QUANTUM))
-            })
+        let endpoint_pairs = transforms
+            .get(feature)
             .into_iter()
-            .chain(
-                transforms
-                    .get(feature)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|transform| {
-                        Some((
-                            transform.apply(first_native)?,
-                            transform.apply(second_native)?,
-                        ))
-                    }),
-            )
+            .flatten()
+            .filter_map(|transform| {
+                Some((
+                    transform.apply(first_native)?,
+                    transform.apply(second_native)?,
+                ))
+            })
             .collect::<HashSet<_>>();
         if endpoint_pairs.is_empty() {
             continue;
@@ -6647,63 +6617,17 @@ fn sketch_frame_marker_transform(
     })
 }
 
-fn principal_plane_marker_point(
-    sketch: &cadmpeg_ir::sketches::Sketch,
-    coordinates_m: [f64; 2],
-    quantum: f64,
-) -> Option<(i64, i64)> {
-    const NATIVE_TO_IR: f64 = 1000.0;
-
-    if sketch_frame_marker_transform(sketch, quantum).is_some() {
-        return None;
-    }
-    let normal = [sketch.normal.x, sketch.normal.y, sketch.normal.z];
-    let mut aligned = normal
-        .iter()
-        .enumerate()
-        .filter(|(_, value)| (value.abs() - 1.0).abs() <= 1.0e-8);
-    let (normal_axis, _) = aligned.next()?;
-    if aligned.next().is_some()
-        || normal
-            .iter()
-            .enumerate()
-            .any(|(axis, value)| axis != normal_axis && value.abs() > 1.0e-8)
-    {
-        return None;
-    }
-    let in_plane_axes = (0..3)
-        .filter(|axis| *axis != normal_axis)
-        .collect::<Vec<_>>();
-    let [first_axis, second_axis] = in_plane_axes.as_slice() else {
-        return None;
-    };
-    let origin = [sketch.origin.x, sketch.origin.y, sketch.origin.z];
-    let mut world = origin;
-    world[*first_axis] = coordinates_m[0] * NATIVE_TO_IR;
-    world[*second_axis] = coordinates_m[1] * NATIVE_TO_IR;
-    let delta = [
-        world[0] - origin[0],
-        world[1] - origin[1],
-        world[2] - origin[2],
-    ];
-    let u_axis = [sketch.u_axis.x, sketch.u_axis.y, sketch.u_axis.z];
-    let v_axis = [
-        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
-        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
-        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
-    ];
-    let dot = |axis: [f64; 3]| delta[0] * axis[0] + delta[1] * axis[1] + delta[2] * axis[2];
-    let point = Point2::new(dot(u_axis), dot(v_axis));
-    (point.u.is_finite() && point.v.is_finite()).then(|| quantize(point, quantum))
-}
-
 fn select_marker_transforms_by_frame(
     candidates: &[MarkerTransform],
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
 ) -> Vec<MarkerTransform> {
+    if !candidates.is_empty() {
+        return candidates.to_vec();
+    }
     sketch_frame_marker_transform(sketch, quantum)
-        .map_or_else(|| candidates.to_vec(), |frame| vec![frame])
+        .into_iter()
+        .collect()
 }
 
 fn dimensioned_circle_surface_transforms(
@@ -7179,10 +7103,9 @@ mod profile_join_tests {
     use super::{
         bind_circular_profile_by_dimension, bind_detached_relation_drivers,
         dimensioned_circle_surface_transforms, dimensioned_circle_transform,
-        implicit_circle_marker, line_endpoint_markers, marker_entities,
-        principal_plane_marker_point, profile_loci_by_marker, project_dimensioned_sketch_geometry,
-        project_relation_point_geometry, relation_owner_markers,
-        relation_parameter_by_display_name, resolved_marker_locus,
+        implicit_circle_marker, line_endpoint_markers, marker_entities, profile_loci_by_marker,
+        project_dimensioned_sketch_geometry, project_relation_point_geometry,
+        relation_owner_markers, relation_parameter_by_display_name, resolved_marker_locus,
         select_marker_transforms_by_frame, sketch_frame_marker_transform,
         type_display_relation_parameters, typed_marker_relation_definition,
         typed_relation_definition, unique_compatible_marker_transform,
@@ -7703,33 +7626,11 @@ mod profile_join_tests {
         };
         assert_eq!(
             select_marker_transforms_by_frame(&[other, transform], &sketch, 1.0e-8),
-            vec![transform]
+            vec![other, transform]
         );
         assert_eq!(
             select_marker_transforms_by_frame(&[], &sketch, 1.0e-8),
             vec![transform]
-        );
-    }
-
-    #[test]
-    fn rotated_principal_plane_projects_model_coordinates_into_the_sketch_basis() {
-        let diagonal = std::f64::consts::FRAC_1_SQRT_2;
-        let sketch = Sketch {
-            id: SketchId("sketch".into()),
-            name: None,
-            configuration: None,
-            origin: Point3::new(10.0, 5.0, 2.0),
-            normal: Vector3::new(0.0, -1.0, 0.0),
-            u_axis: Vector3::new(diagonal, 0.0, -diagonal),
-            profiles: Vec::new(),
-            native_ref: None,
-        };
-        assert_eq!(
-            principal_plane_marker_point(&sketch, [0.013, 0.006], 1.0e-8),
-            Some((
-                (-diagonal / 1.0e-8).round() as i64,
-                (7.0 * diagonal / 1.0e-8).round() as i64
-            ))
         );
     }
 
