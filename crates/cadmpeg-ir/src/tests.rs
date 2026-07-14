@@ -2550,7 +2550,7 @@ fn edge_selections_round_trip_through_json() {
 
 #[test]
 fn face_selections_round_trip_through_json() {
-    use crate::features::FaceSelection;
+    use crate::features::{FaceSelection, FeatureId, GeneratedFaceRef};
     use crate::ids::FaceId;
 
     let selections = vec![
@@ -2559,6 +2559,13 @@ fn face_selections_round_trip_through_json() {
         FaceSelection::Resolved {
             faces: vec![FaceId("synthetic:test:face#0".into())],
             native: "face:14".into(),
+        },
+        FaceSelection::Generated {
+            faces: vec![GeneratedFaceRef {
+                feature: FeatureId("synthetic:test:feature#4".into()),
+                local_id: "7".into(),
+            }],
+            native: "persistent:4:7".into(),
         },
         FaceSelection::Native("sldprt:history:feature#14:0".into()),
     ];

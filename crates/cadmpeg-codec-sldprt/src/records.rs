@@ -281,6 +281,9 @@ pub struct FeatureInputSurfaceSelection {
     /// Ordered native history features traversed by the persistent surface path.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub producer_feature_refs: Vec<String>,
+    /// Native history feature owning the terminal face component.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_feature_ref: Option<String>,
     /// Ordered typed entries in the persistent surface-component path.
     #[serde(default)]
     pub components: Vec<FeatureInputComponentPathEntry>,

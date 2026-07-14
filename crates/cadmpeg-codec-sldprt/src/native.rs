@@ -11,7 +11,7 @@ use crate::records::{
 };
 
 /// Current schema version for the SOLIDWORKS native namespace.
-pub const SLDPRT_NATIVE_VERSION: u32 = 9;
+pub const SLDPRT_NATIVE_VERSION: u32 = 10;
 pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
 
 pub(crate) fn native_version_supported(version: u32) -> bool {
@@ -287,6 +287,11 @@ impl SldprtNative {
                         .producer_feature_refs
                         .iter()
                         .any(|producer| !feature_ids.contains(producer.as_str())))
+                || (namespace.version >= 10
+                    && record
+                        .terminal_feature_ref
+                        .as_deref()
+                        .is_none_or(|feature| !feature_ids.contains(feature)))
         }) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "feature-input surface selection {} has unresolved ownership",
@@ -527,7 +532,7 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.surface_selections.sort_by_key(|record| record.ordinal);
-            if namespace.version <= 8 {
+            if namespace.version <= 9 {
                 for record in &mut lane.surface_selections {
                     if namespace.version <= 7 {
                         record.components = usize::try_from(record.offset)
@@ -542,6 +547,11 @@ impl SldprtNative {
                     }
                     record.producer_feature_refs =
                         crate::resolved_features::component_path_features(
+                            &record.components,
+                            &features,
+                        );
+                    record.terminal_feature_ref =
+                        crate::resolved_features::component_path_terminal_feature(
                             &record.components,
                             &features,
                         );
@@ -693,6 +703,10 @@ impl SldprtNative {
                         &record.components,
                         &features,
                     ) != record.producer_feature_refs
+                    || crate::resolved_features::component_path_terminal_feature(
+                        &record.components,
+                        &features,
+                    ) != record.terminal_feature_ref
                     || usize::try_from(record.offset).ok().and_then(|offset| {
                         crate::resolved_features::compact_surface_reference_at(
                             &lane.native_payload,

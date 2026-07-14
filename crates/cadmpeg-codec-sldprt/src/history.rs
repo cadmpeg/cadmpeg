@@ -2996,7 +2996,9 @@ fn write_native_selection(
 
 fn face_selection_value(selection: &FaceSelection) -> Option<String> {
     match selection {
-        FaceSelection::Native(native) | FaceSelection::Resolved { native, .. }
+        FaceSelection::Native(native)
+        | FaceSelection::Resolved { native, .. }
+        | FaceSelection::Generated { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
@@ -3485,6 +3487,10 @@ fn validate_compact_surface_selection_edits(
             .or_default()
             .push(selection);
     }
+    let feature_ids_by_native = features
+        .iter()
+        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature.id.clone())))
+        .collect::<HashMap<_, _>>();
     for feature in features {
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
@@ -3500,9 +3506,23 @@ fn validate_compact_surface_selection_edits(
             } => face,
             _ => continue,
         };
-        let expected = FaceSelection::Native(
-            crate::resolved_features::compact_surface_selection_value(&selection.components),
-        );
+        let native =
+            crate::resolved_features::compact_surface_selection_value(&selection.components);
+        let generated = selection
+            .terminal_feature_ref
+            .as_deref()
+            .and_then(|producer| feature_ids_by_native.get(producer))
+            .zip(selection.components.last());
+        let expected = match generated {
+            Some((feature, component)) => FaceSelection::Generated {
+                faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                    feature: feature.clone(),
+                    local_id: component.local_id.to_string(),
+                }],
+                native,
+            },
+            None => FaceSelection::Native(native),
+        };
         if faces != &expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a compact surface selection",

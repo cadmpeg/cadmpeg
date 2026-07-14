@@ -256,12 +256,13 @@ mod marker_tests {
         compact_edge_selection_at, compact_extrusion_through_all_at, compact_extrusion_to_face_at,
         compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
         compact_reference_plane_source, compact_single_face_reference_path_at,
-        compact_surface_selection_at, component_path_features, component_profile_source_at,
-        coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
-        marker_local_id, marker_local_links, marker_object_index, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers, unique_locus,
-        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
+        compact_surface_selection_at, component_path_features, component_path_terminal_feature,
+        component_profile_source_at, coordinate_marker_local_links, marker_coordinates,
+        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
+        named_scalars, native_scalar_matches_discrete_parameter, object_names,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
+        SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -1272,6 +1273,13 @@ mod marker_tests {
         assert_eq!(
             component_path_features(&mixed, &[feature("producer", "42"), feature("other", "43")]),
             vec!["producer", "other"]
+        );
+        assert_eq!(
+            component_path_terminal_feature(
+                &mixed,
+                &[feature("producer", "42"), feature("other", "43")]
+            ),
+            Some("other".into())
         );
     }
 }
@@ -2505,6 +2513,7 @@ fn compact_surface_selections(
             object_name_ref: name.id.clone(),
             feature_ref: feature.id.clone(),
             producer_feature_refs: component_path_features(&components, &history_features),
+            terminal_feature_ref: component_path_terminal_feature(&components, &history_features),
             components: components.clone(),
         });
     }
@@ -4916,9 +4925,22 @@ pub(crate) fn project_compact_surface_selections(
             cadmpeg_ir::features::FaceSelection::Unresolved
                 | cadmpeg_ir::features::FaceSelection::Native(_)
         ) {
-            *faces = cadmpeg_ir::features::FaceSelection::Native(compact_surface_selection_value(
-                &selection.components,
-            ));
+            let native = compact_surface_selection_value(&selection.components);
+            let generated = selection
+                .terminal_feature_ref
+                .as_ref()
+                .and_then(|producer| feature_ids_by_native.get(producer))
+                .zip(selection.components.last());
+            *faces = match generated {
+                Some((feature, component)) => cadmpeg_ir::features::FaceSelection::Generated {
+                    faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                        feature: feature.clone(),
+                        local_id: component.local_id.to_string(),
+                    }],
+                    native,
+                },
+                None => cadmpeg_ir::features::FaceSelection::Native(native),
+            };
         }
         for producer in selection
             .producer_feature_refs
@@ -5356,6 +5378,25 @@ pub(crate) fn component_path_features(
         }
     }
     result
+}
+
+pub(crate) fn component_path_terminal_feature(
+    components: &[FeatureInputComponentPathEntry],
+    features: &[crate::records::Feature],
+) -> Option<String> {
+    let component = components.last()?;
+    let mut source_id = [0; 4];
+    source_id.copy_from_slice(&component.type_signature[4..8]);
+    let source_id = u32::from_le_bytes(source_id);
+    let mut candidates = features.iter().filter(|feature| {
+        feature
+            .source_id
+            .as_deref()
+            .and_then(|id| id.parse::<u32>().ok())
+            == Some(source_id)
+    });
+    let feature = candidates.next()?;
+    candidates.next().is_none().then(|| feature.id.clone())
 }
 
 pub(crate) fn project_adjacent_extrusion_profiles(

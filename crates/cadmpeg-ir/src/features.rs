@@ -958,6 +958,15 @@ pub enum EdgeSelection {
     Native(String),
 }
 
+/// Persistent identity of a face in one regenerated feature result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GeneratedFaceRef {
+    /// Feature whose regenerated result owns the face.
+    pub feature: FeatureId,
+    /// Feature-local persistent face identity.
+    pub local_id: String,
+}
+
 /// Face operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
@@ -971,6 +980,14 @@ pub enum FaceSelection {
         /// Resolved topological faces.
         faces: Vec<FaceId>,
         /// Format-native selection reference.
+        native: String,
+    },
+    /// Faces in an intermediate regenerated feature result, paired with the
+    /// format-native selection required for rewrite.
+    Generated {
+        /// Feature-local face identities.
+        faces: Vec<GeneratedFaceRef>,
+        /// Format-native persistent selection reference.
         native: String,
     },
     /// Format-native selection reference.

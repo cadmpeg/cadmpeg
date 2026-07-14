@@ -2050,17 +2050,33 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     entity: Some(feature.id.0.clone()),
                 });
             }
-            if let Extent::ToFace {
-                face: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
-            } = extent
-            {
-                check_ids(
-                    findings,
-                    &feature.id.0,
-                    "termination face",
-                    faces.iter().map(|id| id.0.as_str()),
-                    &ids.faces,
-                );
+            if let Extent::ToFace { face } = extent {
+                match face {
+                    FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
+                        check_ids(
+                            findings,
+                            &feature.id.0,
+                            "termination face",
+                            faces.iter().map(|id| id.0.as_str()),
+                            &ids.faces,
+                        );
+                    }
+                    FaceSelection::Generated { faces, native }
+                        if faces.is_empty()
+                            || native.trim().is_empty()
+                            || faces.iter().any(|face| {
+                                face.local_id.trim().is_empty()
+                                    || !feature.dependencies.contains(&face.feature)
+                            }) =>
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "generated termination face is invalid",
+                        );
+                    }
+                    _ => {}
+                }
             }
         }
         for selection in edge_selections {
@@ -2075,14 +2091,32 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for selection in face_selections {
-            if let FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } = selection {
-                check_ids(
-                    findings,
-                    &feature.id.0,
-                    "selected face",
-                    faces.iter().map(|id| id.0.as_str()),
-                    &ids.faces,
-                );
+            match selection {
+                FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
+                    check_ids(
+                        findings,
+                        &feature.id.0,
+                        "selected face",
+                        faces.iter().map(|id| id.0.as_str()),
+                        &ids.faces,
+                    );
+                }
+                FaceSelection::Generated { faces, native } => {
+                    if faces.is_empty()
+                        || native.trim().is_empty()
+                        || faces.iter().any(|face| {
+                            face.local_id.trim().is_empty()
+                                || !feature.dependencies.contains(&face.feature)
+                        })
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "generated face selection is invalid",
+                        );
+                    }
+                }
+                FaceSelection::Unresolved | FaceSelection::Native(_) => {}
             }
         }
         for selection in body_selections {
