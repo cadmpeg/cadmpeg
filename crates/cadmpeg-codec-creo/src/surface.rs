@@ -842,7 +842,11 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
         if matches!(body[cursor], 0xe0..=0xe3 | 0xf1 | 0xf7 | 0xfb) {
             break;
         }
-        let decoded = if name == "half_angle" {
+        let decoded = if matches!(name, "radius" | "radius1" | "radius2")
+            && matches!(body[cursor], 0x0d | 0x0e)
+        {
+            Some((if body[cursor] == 0x0d { 0.25 } else { 0.5 }, cursor + 1))
+        } else if name == "half_angle" {
             scalar::decode_positive_dict(body, cursor).filter(|(value, _)| valid_half_angle(*value))
         } else {
             scalar::decode_in_lane(body, cursor, cache)
@@ -2152,6 +2156,23 @@ mod tests {
         assert_eq!(values[6], Some(0.070_335_614_969_227_37));
         assert_eq!(values[7], Some(0.997_523_383_819_597_8));
         assert_eq!(&values[9..12], &[Some(-180.0), Some(-3.0), Some(40.0)]);
+    }
+
+    #[test]
+    fn named_torus_radii_decode_compact_positive_quarters() {
+        let payload = b"srf_prim_ptr(torus)\0\
+            \xe0\x01radius1\0\x0e\
+            \xe0\x01radius2\0\x0d\xf1\xf7\x0e\xe3";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(
+            records[0].field("radius1").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarSequence(vec![0.5]))
+        );
+        assert_eq!(
+            records[0].field("radius2").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarSequence(vec![0.25]))
+        );
     }
 
     #[test]

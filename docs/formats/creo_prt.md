@@ -330,6 +330,11 @@ Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid
 
 A `srf_prim_ptr(torus)` prototype stores `e1[3], e2[3], e3[3], origin[3], radius1, radius2`. A sphere uses `radius1 = 0` and radius `radius2`; a torus uses nonzero `radius1`. Per-instance row-body overrides use a separate grammar.
 
+In named `radius`, `radius1`, and `radius2` fields, compact tokens `0d` and
+`0e` encode the positive values `0.25` and `0.5`, respectively. These tokens
+belong to the positive radius lane; their generic signed-scalar meanings do not
+apply.
+
 Named prototype `local_sys f9 04 03` coordinate slots use the signed
 directrix-coordinate DICT lattice and fixed-width coordinate forms. Stock-vector
 and zero macros retain their local-system expansion rules. Generic positional
