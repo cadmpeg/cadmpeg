@@ -572,6 +572,17 @@ pub fn standard_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
         .collect()
 }
 
+/// Return the counted physical edge rows in their serialized table order.
+///
+/// Each row retains its table-kind byte, native handle width semantics, and
+/// complete handle sequence even when full topology reconstruction is not yet
+/// possible.
+#[must_use]
+pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
+    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows)
+}
+
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;

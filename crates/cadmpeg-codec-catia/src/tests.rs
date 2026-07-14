@@ -143,6 +143,14 @@ fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
             .collect::<Vec<_>>(),
         vec![1, 1, 2, 2]
     );
+    assert_eq!(
+        crate::topology::standard_edge_rows(&bytes)
+            .expect("edge rows")
+            .iter()
+            .map(|row| row.kind)
+            .collect::<Vec<_>>(),
+        vec![1, 1, 2, 2]
+    );
 }
 
 #[test]
