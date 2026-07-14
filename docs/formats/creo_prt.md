@@ -378,6 +378,10 @@ define the line's held `v`/`u` coordinate, respectively. For type three or type
 nine, a selected point on such a line inherits that held coordinate from either
 line endpoint. The equality propagates in either direction and does not
 overwrite conflicting solved coordinates.
+Type-five and type-seven line incidences propagate perpendicular and parallel
+orientation, respectively, through their connected line component. A
+contradictory incidence cycle or conflicting stored or unary orientation leaves
+the component orientation unresolved.
 A three-item type-fourteen incidence stores a sense-zero line followed by two
 endpoint-selected loci. The loci are symmetric about the line, in stored order.
 When the axis is uniquely horizontal or vertical and its held coordinate is

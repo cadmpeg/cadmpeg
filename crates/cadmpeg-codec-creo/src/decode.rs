@@ -1486,7 +1486,72 @@ fn section_line_fixed_coordinate(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<usize> {
+    let segment = unique_section_skamp_segment(definition, segment.external_id)?;
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    let mut adjacency = BTreeMap::<u32, Vec<(u32, usize)>>::new();
+    for skamp in definition.relations.iter().flat_map(|table| &table.skamps) {
+        let (parity, first, second) = match (skamp.kind, skamp.items.as_slice()) {
+            (5 | 7, [first, second]) if first.sense == 0 && second.sense == 0 => {
+                ((skamp.kind == 5) as usize, first, second)
+            }
+            _ => continue,
+        };
+        let Some(first_segment) = unique_section_skamp_segment(definition, first.entity_id) else {
+            continue;
+        };
+        let Some(second_segment) = unique_section_skamp_segment(definition, second.entity_id)
+        else {
+            continue;
+        };
+        if first_segment.kind != crate::feature::FeatureSegmentKind::Line
+            || second_segment.kind != crate::feature::FeatureSegmentKind::Line
+        {
+            continue;
+        }
+        adjacency
+            .entry(first.entity_id)
+            .or_default()
+            .push((second.entity_id, parity));
+        adjacency
+            .entry(second.entity_id)
+            .or_default()
+            .push((first.entity_id, parity));
+    }
+    let mut parities = BTreeMap::from([(segment.external_id, 0usize)]);
+    let mut pending = std::collections::VecDeque::from([segment.external_id]);
+    while let Some(entity_id) = pending.pop_front() {
+        let parity = parities[&entity_id];
+        for &(neighbor, edge_parity) in adjacency.get(&entity_id).into_iter().flatten() {
+            let neighbor_parity = parity ^ edge_parity;
+            match parities.get(&neighbor) {
+                Some(stored) if *stored != neighbor_parity => return None,
+                Some(_) => {}
+                None => {
+                    parities.insert(neighbor, neighbor_parity);
+                    pending.push_back(neighbor);
+                }
+            }
+        }
+    }
+    let mut coordinates = BTreeSet::new();
+    for (entity_id, parity) in parities {
+        let related = unique_section_skamp_segment(definition, entity_id)?;
+        coordinates.extend(
+            section_line_direct_fixed_coordinates(definition, related)
+                .into_iter()
+                .map(|coordinate| coordinate ^ parity),
+        );
+    }
+    coordinates
+        .first()
+        .copied()
+        .filter(|_| coordinates.len() == 1)
+}
+
+fn section_line_direct_fixed_coordinates(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureSegment,
+) -> BTreeSet<usize> {
     let mut coordinates = segment
         .vertical_horizontal
         .and_then(|selector| match selector {
@@ -1508,9 +1573,6 @@ fn section_line_fixed_coordinate(
             }),
     );
     coordinates
-        .first()
-        .copied()
-        .filter(|_| coordinates.len() == 1)
 }
 
 fn section_skamp_point_on_line(
@@ -8892,7 +8954,29 @@ mod resolved_sketch_tests {
                 ],
                 offset: 89,
             },
+            crate::feature::FeatureSkamp {
+                id: 23,
+                kind: 5,
+                flags: 0,
+                status: 0,
+                items: vec![
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 12,
+                        sense: 0,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 17,
+                        sense: 0,
+                    },
+                ],
+                offset: 90,
+            },
         ];
+        let related_line = unique_section_skamp_segment(&coincident_definition, 17).expect("line");
+        assert_eq!(
+            section_line_fixed_coordinate(&coincident_definition, related_line),
+            Some(0)
+        );
         let coincident_points = resolved_section_points(&coincident_definition);
         assert_eq!(coincident_points.get(&5), Some(&[3.0, 4.0]));
         assert_eq!(coincident_points.get(&4), Some(&[3.0, 9.0]));
