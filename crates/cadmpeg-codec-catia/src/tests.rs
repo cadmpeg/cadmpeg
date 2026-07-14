@@ -4148,6 +4148,22 @@ fn decode_retains_outer_object_graph_order_and_dependencies() {
     assert_eq!(graph.records[1].ordinal, 1);
     assert_eq!(graph.records[1].owner_ref, Some(2));
     assert_eq!(graph.records[1].class_ref, Some(4));
+    assert_eq!(native.design_objects.len(), 1);
+    let object = &native.design_objects[0];
+    assert_eq!(object.parent, graph.id);
+    assert_eq!(object.owner_ordinal, 2);
+    assert_eq!(
+        object.owner_record.as_deref(),
+        Some(graph.records[1].id.as_str())
+    );
+    assert_eq!(
+        object.fields,
+        graph
+            .records
+            .iter()
+            .map(|record| record.id.clone())
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]

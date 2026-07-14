@@ -3,6 +3,7 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use crate::catalog;
 use crate::container;
@@ -10,12 +11,13 @@ use crate::object_graph::{self, AliasLead, HeadToken, ObjectPayload, PayloadSubt
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 8;
+pub const CATIA_NATIVE_VERSION: u32 = 9;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
     "catalog_entries",
     "catalogs",
+    "design_objects",
     "finjpl_segments",
     "object_graph_records",
     "object_graphs",
@@ -198,6 +200,50 @@ pub struct CatiaObjectRecord {
     pub subtype: PayloadSubtype,
 }
 
+/// One serialized design object formed by a shared `7C09` owner ordinal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaDesignObject {
+    /// Globally unique design-object identity.
+    pub id: String,
+    /// Containing [`CatiaObjectGraph`] identity.
+    pub parent: String,
+    /// One-based owner ordinal stored by every field record.
+    pub owner_ordinal: u32,
+    /// Record selected by `owner_ordinal` when it lies inside the graph.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_record: Option<String>,
+    /// Field records carrying this owner ordinal, in serialized order.
+    pub fields: Vec<String>,
+}
+
+fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
+    graphs
+        .iter()
+        .flat_map(|graph| {
+            let mut fields = BTreeMap::<u32, Vec<String>>::new();
+            for record in &graph.records {
+                if let Some(owner) = record.owner_ref {
+                    fields.entry(owner).or_default().push(record.id.clone());
+                }
+            }
+            fields.into_iter().map(|(owner_ordinal, fields)| {
+                let owner_record = usize::try_from(owner_ordinal)
+                    .ok()
+                    .and_then(|ordinal| ordinal.checked_sub(1))
+                    .and_then(|index| graph.records.get(index))
+                    .map(|record| record.id.clone());
+                CatiaDesignObject {
+                    id: format!("{}:owner#{owner_ordinal}", graph.id),
+                    parent: graph.id.clone(),
+                    owner_ordinal,
+                    owner_record,
+                    fields,
+                }
+            })
+        })
+        .collect()
+}
+
 /// CATIA-native records retained outside the format-neutral model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaNative {
@@ -209,6 +255,9 @@ pub struct CatiaNative {
     /// Framed source-schema name catalogs.
     #[serde(default)]
     pub catalogs: Vec<CatiaCatalog>,
+    /// Design objects grouped by their serialized owner ordinal.
+    #[serde(default)]
+    pub design_objects: Vec<CatiaDesignObject>,
     /// Complete bounded outer FINJPL segments.
     #[serde(default)]
     pub finjpl_segments: Vec<CatiaFinjplSegment>,
@@ -229,6 +278,7 @@ impl Default for CatiaNative {
             version: CATIA_NATIVE_VERSION,
             alias_rows: Vec::new(),
             catalogs: Vec::new(),
+            design_objects: Vec::new(),
             finjpl_segments: Vec::new(),
             object_graphs: Vec::new(),
             preview_images: Vec::new(),
@@ -253,6 +303,7 @@ impl CatiaNative {
             .into_iter()
             .map(CatiaObjectGraph::from)
             .collect();
+        let design_objects = design_objects(&object_graphs);
         let maximum_records = object_graphs
             .iter()
             .map(|graph| graph.records.len())
@@ -315,6 +366,7 @@ impl CatiaNative {
             version: CATIA_NATIVE_VERSION,
             alias_rows,
             catalogs,
+            design_objects,
             finjpl_segments,
             object_graphs,
             preview_images,
@@ -347,6 +399,11 @@ impl CatiaNative {
             graph.records.sort_by_key(|record| record.ordinal);
         }
         let value_blocks: Vec<CatiaValueBlock> = namespace.arena_as("value_blocks")?;
+        let design_objects = if namespace.arenas.contains_key("design_objects") {
+            namespace.arena_as("design_objects")?
+        } else {
+            design_objects(&graphs)
+        };
         let finjpl_segments: Vec<CatiaFinjplSegment> =
             if namespace.arenas.contains_key("finjpl_segments") {
                 namespace.arena_as("finjpl_segments")?
@@ -364,6 +421,7 @@ impl CatiaNative {
             version: namespace.version,
             alias_rows,
             catalogs,
+            design_objects,
             finjpl_segments,
             object_graphs: graphs,
             preview_images,
@@ -406,6 +464,7 @@ impl CatiaNative {
             .flat_map(|graph| graph.records.iter().cloned())
             .collect::<Vec<_>>();
         namespace.set_arena("catalogs", &catalogs)?;
+        namespace.set_arena("design_objects", &self.design_objects)?;
         namespace.set_arena("finjpl_segments", &self.finjpl_segments)?;
         namespace.set_arena("alias_rows", &self.alias_rows)?;
         namespace.set_arena("catalog_entries", &entries)?;
@@ -431,6 +490,7 @@ impl CatiaNative {
             version,
             alias_rows,
             mut catalogs,
+            design_objects,
             finjpl_segments,
             mut object_graphs,
             preview_images,
@@ -447,6 +507,7 @@ impl CatiaNative {
 
         namespace.version = version;
         namespace.set_arena_owned("catalogs", catalogs)?;
+        namespace.set_arena_owned("design_objects", design_objects)?;
         namespace.set_arena_owned("catalog_entries", entries)?;
         namespace.set_arena_owned("object_graphs", object_graphs)?;
         namespace.set_arena_owned("object_graph_records", records)?;
