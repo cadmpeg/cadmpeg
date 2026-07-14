@@ -280,6 +280,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 scope.extrude_operation_offset,
                 scope.extrude_extent,
                 scope.extrude_extent_offsets,
+                scope.extrude_direction_reversed,
+                scope.extrude_direction_reversed_offset,
                 scope.extrude_start,
                 scope.extrude_start_offset,
             ) {
@@ -290,6 +292,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     Some(_),
                     Some(extent_offsets),
                     Some(_),
+                    Some(direction_reversed_offset),
+                    Some(_),
                     Some(start_offset),
                 ) => {
                     operation_offset > scope.byte_offset
@@ -299,10 +303,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                 operation_offset.saturating_add(8),
                             ]
                         && start_offset == operation_offset.saturating_add(14)
+                        && direction_reversed_offset == operation_offset.saturating_add(12)
                         && extent_offsets[1] < scope.reference_count_offset
                 }
-                ("Extrude", _, _, _, _, _, _) => false,
-                (_, None, None, None, None, None, None) => true,
+                ("Extrude", _, _, _, _, _, _, _, _) => false,
+                (_, None, None, None, None, None, None, None, None) => true,
                 _ => false,
             }
             && scope.frame_length > 89
@@ -604,13 +609,19 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             let side_one_offset_count = parameter_kind_count("Side1Offset");
             let extent_matches_operands = match scope.extrude_extent {
                 Some(records::DesignExtrudeExtent::OneSidedDistance) => {
-                    along_count == 1 && against_count == 0 && side_one_offset_count == 0
+                    along_count == 1
+                        && against_count == 0
+                        && side_one_offset_count == 0
+                        && scope.extrude_direction_reversed == Some(false)
                 }
                 Some(records::DesignExtrudeExtent::OneSidedToFace) => {
                     along_count == 0 && against_count == 0 && side_one_offset_count == 1
                 }
                 Some(records::DesignExtrudeExtent::TwoSidedDistance) => {
-                    along_count == 1 && against_count == 1 && side_one_offset_count == 0
+                    along_count == 1
+                        && against_count == 1
+                        && side_one_offset_count == 0
+                        && scope.extrude_direction_reversed == Some(false)
                 }
                 None => false,
             };

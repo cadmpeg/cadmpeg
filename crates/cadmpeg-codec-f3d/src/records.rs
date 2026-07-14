@@ -563,6 +563,12 @@ pub struct DesignParameterScope {
     /// Byte offsets of the two u32 enums selecting the Extrude extent form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_extent_offsets: Option<[u64; 2]>,
+    /// Whether a one-sided to-face extent travels opposite the profile normal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_direction_reversed: Option<bool>,
+    /// Byte offset of the Extrude direction-reversal Boolean.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_direction_reversed_offset: Option<u64>,
     /// Extrude starting support from the fixed scope prologue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_start: Option<DesignExtrudeStart>,
