@@ -403,6 +403,11 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             binding.target,
             cadmpeg_ir::appearance::AppearanceTarget::Point(_)
         )));
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("STYLED_ITEM #43")));
     assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Plane { origin, normal, .. }

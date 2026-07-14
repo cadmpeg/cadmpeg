@@ -85,6 +85,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             warnings.push(format!("STYLED_ITEM #{style_id} has no resolved target"));
             continue;
         };
+        let mut null_style_records = BTreeSet::new();
+        if style
+            .parameter(1)
+            .is_some_and(|value| has_null_style(value, exchange, &mut null_style_records))
+        {
+            typed.insert(style_id);
+            typed.extend(null_style_records);
+            continue;
+        }
         let mut visited = BTreeSet::new();
         let Some((color_id, color, name)) = style
             .parameter(1)
@@ -311,6 +320,25 @@ fn find_color(
             .iter()
             .flat_map(references)
             .find_map(|reference| find_color(reference, exchange, visited)),
+    }
+}
+
+fn has_null_style(value: &Value, exchange: &Exchange, visited: &mut BTreeSet<u64>) -> bool {
+    match value {
+        Value::Typed(name, _) if name == "NULL_STYLE" => true,
+        Value::Typed(_, value) => has_null_style(value, exchange, visited),
+        Value::List(values) => values
+            .iter()
+            .any(|value| has_null_style(value, exchange, visited)),
+        Value::Reference(id) if visited.insert(*id) => {
+            exchange.records.get(id).is_some_and(|record| {
+                record
+                    .parameters()
+                    .iter()
+                    .any(|value| has_null_style(value, exchange, visited))
+            })
+        }
+        _ => false,
     }
 }
 
