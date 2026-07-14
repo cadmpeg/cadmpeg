@@ -1956,19 +1956,6 @@ fn saved_section_scalar(
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
         return (Some(f64::from_be_bytes(raw)), offset + 7);
     }
-    let saved_dict = match prefix {
-        0xcc => Some([0xbf, 0xf9]),
-        0xd0 => Some([0xbf, 0xfe]),
-        0xde => Some([0xc0, 0x10]),
-        0xdf => Some([0xc0, 0x11]),
-        _ => None,
-    };
-    if let (Some(head), Some(tail)) = (saved_dict, payload.get(offset + 1..offset + 7)) {
-        let mut raw = [0; 8];
-        raw[..2].copy_from_slice(&head);
-        raw[2..].copy_from_slice(tail);
-        return (Some(f64::from_be_bytes(raw)), offset + 7);
-    }
     if prefix == 0xd5 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0xbf;
@@ -2229,6 +2216,21 @@ fn saved_arc_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (Option<f64>, usize) {
+    let arc_dict = match payload.get(offset).copied() {
+        Some(0xcc) => Some([0xbf, 0xf9]),
+        Some(0xd0) => Some([0xbf, 0xfe]),
+        Some(0xd2) => Some([0xc0, 0x00]),
+        Some(0xd5) => Some([0xc0, 0x03]),
+        Some(0xde) => Some([0xc0, 0x10]),
+        Some(0xdf) => Some([0xc0, 0x11]),
+        _ => None,
+    };
+    if let (Some(head), Some(tail)) = (arc_dict, payload.get(offset + 1..offset + 7)) {
+        let mut raw = [0; 8];
+        raw[..2].copy_from_slice(&head);
+        raw[2..].copy_from_slice(tail);
+        return (Some(f64::from_be_bytes(raw)), offset + 7);
+    }
     let decoded = saved_section_scalar(payload, offset, end, cache);
     if decoded.1 > offset + 1 || decoded.0.is_some() {
         return decoded;
@@ -3406,10 +3408,12 @@ mod tests {
     }
 
     #[test]
-    fn saved_section_negative_dict_forms_supply_ieee_high_bytes() {
+    fn saved_arc_negative_dict_forms_supply_ieee_high_bytes() {
         for (bytes, head) in [
             ([0xcc, 1, 2, 3, 4, 5, 6], [0xbf, 0xf9]),
             ([0xd0, 1, 2, 3, 4, 5, 6], [0xbf, 0xfe]),
+            ([0xd2, 1, 2, 3, 4, 5, 6], [0xc0, 0x00]),
+            ([0xd5, 1, 2, 3, 4, 5, 6], [0xc0, 0x03]),
             ([0xde, 1, 2, 3, 4, 5, 6], [0xc0, 0x10]),
             ([0xdf, 1, 2, 3, 4, 5, 6], [0xc0, 0x11]),
         ] {
@@ -3417,10 +3421,15 @@ mod tests {
                 head[0], head[1], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6],
             ]);
             assert_eq!(
-                saved_section_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
+                saved_arc_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
                 (Some(expected), 7)
             );
         }
+        let d5 = [0xd5, 1, 2, 3, 4, 5, 6];
+        assert_eq!(
+            saved_section_scalar(&d5, 0, d5.len(), &scalar::ScalarCache::default()),
+            (Some(f64::from_be_bytes([0xbf, 1, 2, 3, 4, 5, 6, 0])), 7)
+        );
     }
 
     #[test]
