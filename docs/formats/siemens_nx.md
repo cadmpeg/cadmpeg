@@ -561,8 +561,6 @@ An offset-store block may carry a counted block-index lane `01, declared_count:u
 
 A zero-prefixed offset-store control block begins with an ordered class-selection lane. Each word is `00, class_ordinal:u24 LE`; every ordinal indexes the store-local class registry and occurs once. The lane ends at the first out-of-range word, and every remaining control word is out of range. An empty lane, duplicate ordinal, or later in-range word rejects the class-selection lane atomically. Each retained ordinal resolves to its exact registered class definition and name.
 
-Every word after the class-selection lane is an ordered byte offset from the start of the store's contiguous column-storage region. Each offset must be strictly smaller than the region byte length and resolves to one physical offset-store block plus a byte offset within that block. The control-word order is retained independently of physical block order. An empty tail or any out-of-bounds offset rejects the complete column-offset lane atomically.
-
 A printable OM string value is framed as `66 32 03, declared_len:u8, text[declared_len-2], 00`. The text is non-empty printable ASCII. The marker, declared length, text, and null terminator lie within one externally bounded record.
 
 A feature-history operation record begins at the fixed operation-header marker and ends at the next validated operation header or the record-area boundary. Its label is `03, declared_len:u8, printable_name[declared_len-2], 00`. The operation payload begins immediately after that null terminator and extends through the operation-record boundary. Payload strings use `04, declared_len:u8, utf8_text[declared_len-2], 00`; the text is non-empty valid UTF-8 and contains no control characters.
