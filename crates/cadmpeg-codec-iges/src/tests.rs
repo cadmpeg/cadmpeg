@@ -4858,6 +4858,28 @@ fn decode_bounds_declared_drawing_counts_by_record_tokens() {
 }
 
 #[test]
+fn decode_bounds_declared_solid_counts_by_record_tokens() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 180,
+        form: 0,
+        label: "BADCOUNT".into(),
+        status: "00000000",
+        parameters: "180,9223372036854775807;".into(),
+    }]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("Boolean postfix length")));
+    let trees = &result.ir.native.namespace("iges").unwrap().arenas["boolean_trees"];
+    assert!(trees[0].fields["terms"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn decode_types_attribute_table_tuple_and_row_major_instances() {
     let result = IgesCodec
         .decode(

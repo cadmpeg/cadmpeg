@@ -1668,8 +1668,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.integer(1))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(1))
                 .unwrap_or_default();
             let terms = (0..count)
                 .filter_map(|index| record.and_then(|record| record.integer(2 + index)))
@@ -1724,8 +1723,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.integer(1))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(1))
                 .unwrap_or_default();
             NativeSolidAssembly {
                 id: format!("iges:product:solid-assembly#D{}", entry.sequence),

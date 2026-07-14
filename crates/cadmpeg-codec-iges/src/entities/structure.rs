@@ -1724,11 +1724,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(count) = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0)
-        else {
+        let Some(count) = record.count(1).filter(|count| *count > 0) else {
             losses.push(entity_loss(
                 entry,
                 "solid-assembly item count is not positive",
