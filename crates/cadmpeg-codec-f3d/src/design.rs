@@ -4678,53 +4678,68 @@ pub(crate) fn decode_dimension_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
 ) -> Vec<crate::records::DesignDimensionRecipeReference> {
+    if prefix
+        .get(..10)
+        .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0))
+        || u32_at(prefix, 10) != Some(1)
+        || u32_at(prefix, 14) != Some(3)
+        || u32_at(prefix, 18).is_none_or(|value| value == 0)
+        || u32_at(prefix, 22).is_none_or(|value| value == 0)
+    {
+        return Vec::new();
+    }
     let mut references = Vec::new();
-    for marker_at in 0..prefix.len().saturating_sub(11) {
-        if u32_at(prefix, marker_at) != Some(1) || u32_at(prefix, marker_at + 8) != Some(0) {
-            continue;
+    let mut at = 22usize;
+    while prefix.len().saturating_sub(at) > 4 {
+        if u32_at(prefix, at).is_none_or(|value| value == 0) {
+            return Vec::new();
+        }
+        let token_encoding_at = at + 4;
+        let length_prefixed = lp_ascii(prefix, token_encoding_at).and_then(|(token, marker_at)| {
+            (!token.is_empty()
+                && token.bytes().all(|byte| byte.is_ascii_digit())
+                && u32_at(prefix, marker_at) == Some(0))
+            .then_some((token, token_encoding_at + 4, marker_at + 4))
+        });
+        let packed = prefix
+            .get(token_encoding_at..token_encoding_at + 4)
+            .and_then(|slot| {
+                let length = slot.iter().position(|byte| *byte == 0).unwrap_or(4);
+                (length != 0
+                    && slot[..length].iter().all(u8::is_ascii_digit)
+                    && prefix.get(token_encoding_at + 4) == Some(&0))
+                .then(|| std::str::from_utf8(&slot[..length]).ok())
+                .flatten()
+                .map(|token| (token.to_owned(), token_encoding_at, token_encoding_at + 5))
+            });
+        let Some((token, token_at, marker_at)) = length_prefixed.or(packed) else {
+            return Vec::new();
+        };
+        if u32_at(prefix, marker_at) != Some(1) {
+            return Vec::new();
         }
         let Some(design_reference) = u32_at(prefix, marker_at + 4).filter(|value| *value != 0)
         else {
-            continue;
+            return Vec::new();
         };
-        let length_prefixed = (1usize..=8).find_map(|length| {
-            let token_at = marker_at.checked_sub(4 + length)?;
-            let length_at = token_at.checked_sub(4)?;
-            (u32_at(prefix, length_at) == u32::try_from(length).ok()
-                && u32_at(prefix, marker_at - 4) == Some(0))
-            .then_some((token_at, length))
-        });
-        let packed = marker_at.checked_sub(5).and_then(|token_at| {
-            let slot = prefix.get(token_at..marker_at - 1)?;
-            let length = slot
-                .iter()
-                .position(|byte| *byte == 0)
-                .unwrap_or(slot.len());
-            (length != 0
-                && slot[length..].iter().all(|byte| *byte == 0)
-                && u32_at(prefix, token_at.checked_sub(4)?) == Some(1))
-            .then_some((token_at, length))
-        });
-        let Some((token_at, token_len)) = length_prefixed.or(packed) else {
-            continue;
-        };
-        let Some(token) = prefix
-            .get(token_at..token_at + token_len)
-            .filter(|token| token.iter().all(u8::is_ascii_digit))
-            .and_then(|token| std::str::from_utf8(token).ok())
-        else {
-            continue;
-        };
+        if u32_at(prefix, marker_at + 8) != Some(0) {
+            return Vec::new();
+        }
         references.push(crate::records::DesignDimensionRecipeReference {
-            token: token.to_owned(),
+            token,
             token_offset: prefix_offset.saturating_add(token_at as u64),
             design_reference: i64::from(design_reference),
             design_reference_offset: prefix_offset.saturating_add((marker_at + 4) as u64),
             candidate_faces: Vec::new(),
             candidate_edges: Vec::new(),
         });
+        at = marker_at + 12;
     }
-    references
+    if prefix.get(at..) == Some(&[0, 0, 0, 0]) {
+        references
+    } else {
+        Vec::new()
+    }
 }
 
 /// Join dimension-recipe selector/reference pairs to active solved subentities.
@@ -10117,8 +10132,12 @@ mod relation_tests {
     }
 
     #[test]
-    fn dimension_recipe_decodes_both_persistent_reference_tails() {
+    fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         let mut prefix = vec![0; 10];
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&3u32.to_le_bytes());
+        prefix.extend_from_slice(&4u32.to_le_bytes());
+        prefix.extend_from_slice(&1u32.to_le_bytes());
         prefix.extend_from_slice(&2u32.to_le_bytes());
         let first_token_at = prefix.len();
         prefix.extend_from_slice(b"13");
@@ -10128,13 +10147,14 @@ mod relation_tests {
         prefix.extend_from_slice(&331u32.to_le_bytes());
         prefix.extend_from_slice(&0u32.to_le_bytes());
 
-        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&2u32.to_le_bytes());
         let second_token_at = prefix.len();
         prefix.extend_from_slice(&[b'9', 0, 0, 0]);
         prefix.push(0);
         prefix.extend_from_slice(&1u32.to_le_bytes());
         let second_reference_at = prefix.len();
         prefix.extend_from_slice(&303u32.to_le_bytes());
+        prefix.extend_from_slice(&0u32.to_le_bytes());
         prefix.extend_from_slice(&0u32.to_le_bytes());
 
         let references = super::decode_dimension_recipe_references(&prefix, 1_000);
