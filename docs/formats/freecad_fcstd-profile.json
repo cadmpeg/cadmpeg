@@ -1,0 +1,585 @@
+{
+  "profile_version": 1,
+  "format": "fcstd",
+  "manifest_sha256": "63507efea77b43d308adac9b2511d2c38e14d17de4c848ce44f0f80f3745c8a4",
+  "manifest_verified": true,
+  "envelope": {
+    "container": "ZIP-packaged FCStd",
+    "schema_version": 4,
+    "file_version": 1,
+    "native_namespace_version": 20,
+    "cadir_version": "53",
+    "write_support": false
+  },
+  "fixtures": [
+    {
+      "filename": "application_payloads.FCStd",
+      "sha256": "bc3093199a097cb1812ae7b7478fd6e142fcb5153bf3a5a15b86a952486f7a4d",
+      "canonical_cadir_sha256": "68aadf495555744b0ce8bf8877ace37e56685bab3923d67bd99773d37061eb54",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "neutral_errors": 0,
+      "native_errors": 0,
+      "exact_byte_coverage": true,
+      "entity_counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "attributes": 0,
+        "bodies": 0,
+        "coedges": 0,
+        "components": 0,
+        "configurations": 0,
+        "curves": 0,
+        "drawings": 0,
+        "edges": 0,
+        "faces": 0,
+        "features": 0,
+        "loops": 0,
+        "native.fcstd.applications": 4,
+        "native.fcstd.attachments": 2,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.document": 1,
+        "native.fcstd.entries": 4,
+        "native.fcstd.logical_ledger": 106,
+        "native.fcstd.objects": 4,
+        "native.fcstd.physical_ledger": 29,
+        "native.fcstd.properties": 51,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 0,
+        "pcurves": 0,
+        "points": 3,
+        "presentation_documents": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "regions": 0,
+        "semantic_annotations": 0,
+        "shells": 0,
+        "sketch_constraints": 0,
+        "sketch_entities": 0,
+        "sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 0,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 1,
+        "vertices": 0,
+        "view_presentations": 0
+      }
+    },
+    {
+      "filename": "binary_exact_shape.FCStd",
+      "sha256": "86ecddcee6d677370343c2f5a9682e57ca58db5808775b0e8812bdbe844dbe1e",
+      "canonical_cadir_sha256": "f64b02858e1e220201927993ac2ea67d34c62577fbc00f18f57a4aad8f87d8a4",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "neutral_errors": 0,
+      "native_errors": 0,
+      "exact_byte_coverage": true,
+      "entity_counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "attributes": 0,
+        "bodies": 1,
+        "coedges": 9,
+        "components": 0,
+        "configurations": 0,
+        "curves": 4,
+        "drawings": 0,
+        "edges": 5,
+        "faces": 3,
+        "features": 1,
+        "loops": 3,
+        "native.fcstd.applications": 2,
+        "native.fcstd.attachments": 1,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 1,
+        "native.fcstd.design_census": 1,
+        "native.fcstd.document": 1,
+        "native.fcstd.entries": 2,
+        "native.fcstd.logical_ledger": 74,
+        "native.fcstd.objects": 2,
+        "native.fcstd.physical_ledger": 15,
+        "native.fcstd.properties": 36,
+        "native.fcstd.shape_payloads": 1,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 0,
+        "pcurves": 9,
+        "points": 3,
+        "presentation_documents": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "regions": 1,
+        "semantic_annotations": 0,
+        "shells": 1,
+        "sketch_constraints": 0,
+        "sketch_entities": 0,
+        "sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 3,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 3,
+        "view_presentations": 0
+      }
+    },
+    {
+      "filename": "core_design_product.FCStd",
+      "sha256": "4fffd7e0d3b8ac3eec8ed7d4506c7edd6bb589cf9bfb3af12c3190f573622f0a",
+      "canonical_cadir_sha256": "fb6960a524aa2cb278e7ed2f727a27ea29fad5bec2684714381edde8fdcac17e",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "neutral_errors": 0,
+      "native_errors": 0,
+      "exact_byte_coverage": true,
+      "entity_counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "attributes": 0,
+        "bodies": 5,
+        "coedges": 84,
+        "components": 6,
+        "configurations": 0,
+        "curves": 48,
+        "drawings": 0,
+        "edges": 46,
+        "faces": 22,
+        "features": 6,
+        "loops": 24,
+        "native.fcstd.applications": 17,
+        "native.fcstd.attachments": 15,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 5,
+        "native.fcstd.design_census": 6,
+        "native.fcstd.document": 1,
+        "native.fcstd.element_maps": 2,
+        "native.fcstd.entries": 12,
+        "native.fcstd.extensions": 9,
+        "native.fcstd.logical_ledger": 460,
+        "native.fcstd.objects": 17,
+        "native.fcstd.physical_ledger": 85,
+        "native.fcstd.product_nodes": 2,
+        "native.fcstd.properties": 225,
+        "native.fcstd.shape_payloads": 7,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 1,
+        "parameters": 10,
+        "pcurves": 82,
+        "points": 32,
+        "presentation_documents": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "regions": 5,
+        "semantic_annotations": 0,
+        "shells": 5,
+        "sketch_constraints": 4,
+        "sketch_entities": 4,
+        "sketches": 1,
+        "spreadsheets": 1,
+        "subds": 0,
+        "surfaces": 24,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 32,
+        "view_presentations": 0
+      }
+    },
+    {
+      "filename": "geometry_topology.FCStd",
+      "sha256": "c336342e2f3f3556c35a76aed5ce6cecb0d5e9023828c29aad83a24d071bf7f0",
+      "canonical_cadir_sha256": "cefa13e67e84753e8c1d3185ecc7db009080ddecb2990000843ae6a491d01c1e",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "neutral_errors": 0,
+      "native_errors": 0,
+      "exact_byte_coverage": true,
+      "entity_counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "attributes": 0,
+        "bodies": 12,
+        "coedges": 177,
+        "components": 0,
+        "configurations": 0,
+        "curves": 98,
+        "drawings": 0,
+        "edges": 101,
+        "faces": 48,
+        "features": 12,
+        "loops": 48,
+        "native.fcstd.applications": 13,
+        "native.fcstd.attachments": 12,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 12,
+        "native.fcstd.design_census": 12,
+        "native.fcstd.document": 1,
+        "native.fcstd.element_maps": 3,
+        "native.fcstd.entries": 16,
+        "native.fcstd.logical_ledger": 264,
+        "native.fcstd.objects": 13,
+        "native.fcstd.physical_ledger": 113,
+        "native.fcstd.properties": 124,
+        "native.fcstd.shape_payloads": 12,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 0,
+        "pcurves": 163,
+        "points": 76,
+        "presentation_documents": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 1,
+        "regions": 18,
+        "semantic_annotations": 0,
+        "shells": 19,
+        "sketch_constraints": 0,
+        "sketch_entities": 0,
+        "sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 49,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 76,
+        "view_presentations": 0
+      }
+    },
+    {
+      "filename": "techdraw_annotations.FCStd",
+      "sha256": "2f2bb12a65d3e354dc5ae98bc66e8f92e9dc46108bb8460ce4f416a613376fb2",
+      "canonical_cadir_sha256": "e57f9ee2f0fa1ae128b078b177133729700d061d219a4c2f6dc2ffb79b7731d6",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "neutral_errors": 0,
+      "native_errors": 0,
+      "exact_byte_coverage": true,
+      "entity_counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "attributes": 0,
+        "bodies": 1,
+        "coedges": 24,
+        "components": 0,
+        "configurations": 0,
+        "curves": 12,
+        "drawings": 5,
+        "edges": 12,
+        "faces": 6,
+        "features": 1,
+        "loops": 6,
+        "native.fcstd.annotations": 2,
+        "native.fcstd.applications": 7,
+        "native.fcstd.attachments": 1,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 1,
+        "native.fcstd.design_census": 1,
+        "native.fcstd.document": 1,
+        "native.fcstd.drawings": 5,
+        "native.fcstd.entries": 3,
+        "native.fcstd.extensions": 2,
+        "native.fcstd.logical_ledger": 263,
+        "native.fcstd.objects": 7,
+        "native.fcstd.physical_ledger": 22,
+        "native.fcstd.properties": 130,
+        "native.fcstd.shape_payloads": 1,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 1,
+        "pcurves": 24,
+        "points": 8,
+        "presentation_documents": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "regions": 1,
+        "semantic_annotations": 2,
+        "shells": 1,
+        "sketch_constraints": 0,
+        "sketch_entities": 0,
+        "sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 6,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 8,
+        "view_presentations": 0
+      }
+    }
+  ],
+  "observed": {
+    "shape_forms": [
+      "binary",
+      "text"
+    ],
+    "curves_2d": [
+      "circle",
+      "line",
+      "trimmed"
+    ],
+    "curves_3d": [
+      "circle",
+      "ellipse",
+      "line",
+      "nurbs"
+    ],
+    "surfaces": [
+      "cone",
+      "cylinder",
+      "nurbs",
+      "plane",
+      "sphere",
+      "torus",
+      "trimmed"
+    ],
+    "topology": [
+      "compound",
+      "edge",
+      "face",
+      "shell",
+      "solid",
+      "vertex",
+      "wire"
+    ],
+    "feature_definitions": [
+      "post_process",
+      "primitive",
+      "sketch",
+      "stored_geometry",
+      "tree_node"
+    ],
+    "application_types": [
+      "App::FeaturePython",
+      "App::Line",
+      "App::Link",
+      "App::Origin",
+      "App::Part",
+      "App::Plane",
+      "App::Point",
+      "Mesh::Feature",
+      "Part::Box",
+      "Part::Cut",
+      "Part::Cylinder",
+      "Part::Feature",
+      "PartDesign::Feature",
+      "Points::Feature",
+      "Sketcher::SketchObject",
+      "Spreadsheet::Sheet",
+      "TechDraw::DrawPage",
+      "TechDraw::DrawSVGTemplate",
+      "TechDraw::DrawViewAnnotation",
+      "TechDraw::DrawViewPart",
+      "TechDraw::DrawViewSymbol"
+    ],
+    "native_arenas": [
+      "annotations",
+      "applications",
+      "attachments",
+      "byte_coverage",
+      "carrier_census",
+      "design_census",
+      "document",
+      "drawings",
+      "element_maps",
+      "entries",
+      "extensions",
+      "logical_ledger",
+      "objects",
+      "physical_ledger",
+      "product_nodes",
+      "properties",
+      "shape_payloads",
+      "string_tables"
+    ],
+    "neutral_arenas": [
+      "bodies",
+      "coedges",
+      "components",
+      "curves",
+      "drawings",
+      "edges",
+      "faces",
+      "features",
+      "loops",
+      "occurrences",
+      "parameters",
+      "pcurves",
+      "points",
+      "procedural_surfaces",
+      "regions",
+      "semantic_annotations",
+      "shells",
+      "sketch_constraints",
+      "sketch_entities",
+      "sketches",
+      "spreadsheets",
+      "surfaces",
+      "tessellations",
+      "vertices"
+    ]
+  },
+  "gates": [
+    {
+      "level": "L0",
+      "passed": true,
+      "assertions": [
+        {
+          "id": "clean_decode",
+          "passed": true,
+          "observed": "true",
+          "required": "all fixtures decode deterministically and validate"
+        },
+        {
+          "id": "physical_coverage",
+          "passed": true,
+          "observed": "true",
+          "required": "exact physical and logical byte partitions"
+        }
+      ]
+    },
+    {
+      "level": "L1",
+      "passed": true,
+      "assertions": [
+        {
+          "id": "application_graph",
+          "passed": true,
+          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\"}",
+          "required": "objects and properties arenas"
+        },
+        {
+          "id": "asset_inventory",
+          "passed": true,
+          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\"}",
+          "required": "entries arena"
+        }
+      ]
+    },
+    {
+      "level": "L2",
+      "passed": true,
+      "assertions": [
+        {
+          "id": "text_and_binary_shapes",
+          "passed": true,
+          "observed": "{\"binary\", \"text\"}",
+          "required": "text and binary"
+        },
+        {
+          "id": "carrier_families",
+          "passed": true,
+          "observed": "{\"circle\", \"cone\", \"cylinder\", \"ellipse\", \"line\", \"nurbs\", \"plane\", \"sphere\", \"torus\", \"trimmed\"}",
+          "required": "{\"circle\", \"cone\", \"cylinder\", \"ellipse\", \"line\", \"nurbs\", \"plane\", \"sphere\", \"torus\", \"trimmed\"}"
+        },
+        {
+          "id": "application_geometry",
+          "passed": true,
+          "observed": "tessellations=1, points=122",
+          "required": "mesh tessellation and point data"
+        }
+      ]
+    },
+    {
+      "level": "L3",
+      "passed": true,
+      "assertions": [
+        {
+          "id": "connected_topology",
+          "passed": true,
+          "observed": "{\"compound\", \"edge\", \"face\", \"shell\", \"solid\", \"vertex\", \"wire\"}",
+          "required": "{\"compound\", \"edge\", \"face\", \"shell\", \"solid\", \"vertex\", \"wire\"}"
+        },
+        {
+          "id": "persistent_names",
+          "passed": true,
+          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\"}",
+          "required": "element_maps arena"
+        }
+      ]
+    },
+    {
+      "level": "L4",
+      "passed": false,
+      "assertions": [
+        {
+          "id": "design_records",
+          "passed": true,
+          "observed": "features=20, sketches=1, constraints=4, parameters=11",
+          "required": "nonempty feature, sketch, constraint, and parameter graphs"
+        },
+        {
+          "id": "operation_semantics",
+          "passed": false,
+          "observed": "{\"post_process\", \"primitive\", \"sketch\", \"stored_geometry\", \"tree_node\"}",
+          "required": "extrusion plus subtractive or dress-up operation"
+        }
+      ]
+    },
+    {
+      "level": "L5",
+      "passed": false,
+      "assertions": [
+        {
+          "id": "appearance_coverage",
+          "passed": false,
+          "observed": "0",
+          "required": "object and subshape appearance bindings"
+        }
+      ]
+    },
+    {
+      "level": "L6",
+      "passed": false,
+      "assertions": [
+        {
+          "id": "complete_design_matrix",
+          "passed": false,
+          "observed": "public fixture matrix incomplete",
+          "required": "all Sketcher constraints and core Part/PartDesign operation branches"
+        }
+      ]
+    },
+    {
+      "level": "L7",
+      "passed": false,
+      "assertions": [
+        {
+          "id": "product_and_joints",
+          "passed": false,
+          "observed": "components=6, occurrences=1, joints=0",
+          "required": "components, occurrences, and joints"
+        }
+      ]
+    },
+    {
+      "level": "L8",
+      "passed": false,
+      "assertions": [
+        {
+          "id": "presentation",
+          "passed": true,
+          "observed": "drawings=5, semantic_annotations=2",
+          "required": "drawing and semantic annotation graphs"
+        },
+        {
+          "id": "gui_state",
+          "passed": false,
+          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\"}",
+          "required": "GUI document state"
+        },
+        {
+          "id": "application_retention",
+          "passed": true,
+          "observed": "application types={\"App::FeaturePython\", \"App::Line\", \"App::Link\", \"App::Origin\", \"App::Part\", \"App::Plane\", \"App::Point\", \"Mesh::Feature\", \"Part::Box\", \"Part::Cut\", \"Part::Cylinder\", \"Part::Feature\", \"PartDesign::Feature\", \"Points::Feature\", \"Sketcher::SketchObject\", \"Spreadsheet::Sheet\", \"TechDraw::DrawPage\", \"TechDraw::DrawSVGTemplate\", \"TechDraw::DrawViewAnnotation\", \"TechDraw::DrawViewPart\", \"TechDraw::DrawViewSymbol\"}, exact=true",
+          "required": "application records and exact byte coverage"
+        }
+      ]
+    }
+  ],
+  "highest_passing_gate": "L3"
+}

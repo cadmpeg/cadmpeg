@@ -19,6 +19,20 @@ Legacy schemas 2 and 3 are refusal profiles until their rows acquire explicit su
 Every gate also includes deterministic malformed-input cases for truncation, invalid counts and
 indices, duplicate identities, missing owners, resource limits, and unsupported layout dispatch.
 
+The checked-in [`freecad_fcstd-profile.json`](freecad_fcstd-profile.json) is generated from the
+manifested corpus rather than edited by hand. Regenerate it from the repository root with:
+
+```sh
+cargo run -p cadmpeg-codec-freecad --bin fcstd-profile -- \
+  corpus/freecad_fcstd/fixtures corpus/manifest.toml \
+  docs/formats/freecad_fcstd-profile.json
+```
+
+Generation fails if a fixture digest or filename differs from the manifest. The profile decodes
+every fixture twice, hashes canonical CADIR, runs neutral and native validation, rejects blocking
+losses, verifies exact byte coverage, and evaluates the cumulative ladder assertions. A failed
+row remains failed in the artifact; the generator never promotes a score from filenames alone.
+
 ## Implementation checklist
 
 Apply this boundary to every phase:

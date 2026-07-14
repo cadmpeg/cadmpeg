@@ -19,5 +19,9 @@ zip.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 
+[[bin]]
+name = "fcstd-profile"
+path = "src/bin/fcstd_profile.rs"
+
 [lints]
 workspace = true
