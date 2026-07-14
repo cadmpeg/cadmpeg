@@ -31,6 +31,8 @@ pub struct B5Graph {
     /// `b5 03 27/28/2d` analytic surface nodes and `a8 03 34` NURBS
     /// surfaces, keyed by `object_id`.
     pub surfaces: BTreeMap<u32, B5Surface>,
+    /// `b5 03 30` offset constructions, keyed by their result surface id.
+    pub offset_surfaces: BTreeMap<u32, B5OffsetSurface>,
     /// World-frame `05 08 01` vertex coordinates, in stream order.
     pub vertex_points: Vec<[f64; 3]>,
     /// Logical vertex coordinates resolved from native `5d` identity. Their
@@ -174,6 +176,23 @@ pub enum B5Surface {
     Nurbs(NurbsSurface),
 }
 
+/// A `b5 03 30` offset construction with an explicit result carrier.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B5OffsetSurface {
+    /// This construction's result surface id.
+    pub object_id: u32,
+    /// Explicit analytic carrier for the offset result.
+    pub carrier_surface: u32,
+    /// Surface from which the result is offset.
+    pub source_surface: u32,
+    /// Signed offset distance in millimetres.
+    pub distance: f64,
+    /// Native carrier-kind discriminator.
+    pub carrier_kind: u8,
+    /// Ordered native U and V bounds.
+    pub parameter_bounds: [[f64; 2]; 2],
+}
+
 /// A resolved `b5 03 18`, `b5 03 19`, or `b5 03 21` pcurve node, represented as a 2D
 /// B-spline curve in a surface's
 /// parameter space ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
@@ -306,6 +325,25 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         if let SurfaceGeometry::Nurbs(nurbs) = surface.geometry {
             surfaces.insert(surface.object_id, B5Surface::Nurbs(nurbs));
         }
+    }
+    for record in &records {
+        let Some(target) = surface_alias_target(record) else {
+            continue;
+        };
+        if let Some(surface) = surfaces.get(&target).cloned() {
+            surfaces.insert(record.object_id, surface);
+        }
+    }
+    let mut offset_surfaces = BTreeMap::new();
+    for record in &records {
+        let Some(offset) = parse_offset_surface(record, &surfaces) else {
+            continue;
+        };
+        let Some(carrier) = surfaces.get(&offset.carrier_surface).cloned() else {
+            continue;
+        };
+        surfaces.insert(record.object_id, carrier);
+        offset_surfaces.insert(record.object_id, offset);
     }
     let profiles: BTreeMap<u32, B5Profile> = records
         .iter()
@@ -465,6 +503,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         pcurves,
         opaque_pcurves,
         surfaces,
+        offset_surfaces,
         vertex_points,
         logical_vertex_points,
         logical_vertex_refs,
@@ -1026,6 +1065,47 @@ fn surface_node(
                 },
             )
         })
+    })
+}
+
+fn surface_alias_target(record: &B5Record) -> Option<u32> {
+    (record.family == 0xb5 && record.class == 0x2e).then_some(())?;
+    let mut position = 0;
+    let target = reference(&record.payload, &mut position, record.object_id)?;
+    (position == record.payload.len()).then_some(target)
+}
+
+fn parse_offset_surface(
+    record: &B5Record,
+    surfaces: &BTreeMap<u32, B5Surface>,
+) -> Option<B5OffsetSurface> {
+    (record.family == 0xb5 && record.class == 0x30 && record.payload.first() == Some(&0x82))
+        .then_some(())?;
+    let mut position = 1;
+    let carrier_surface = reference(&record.payload, &mut position, record.object_id)?;
+    let source_surface = reference(&record.payload, &mut position, record.object_id)?;
+    let distance = scalar(&record.payload, position)?;
+    position += 8;
+    let carrier_kind = *record.payload.get(position)?;
+    position += 1;
+    let [u0, u1, v0, v1] = line_values::<4>(&record.payload, position)?;
+    position += 32;
+    if position != record.payload.len() || u0 >= u1 || v0 >= v1 {
+        return None;
+    }
+    let expected_kind = match surfaces.get(&carrier_surface)? {
+        B5Surface::Plane { .. } => 0x15,
+        B5Surface::Cylinder { .. } => 0x05,
+        B5Surface::Torus { .. } => 0x0d,
+        _ => return None,
+    };
+    (carrier_kind == expected_kind).then_some(B5OffsetSurface {
+        object_id: record.object_id,
+        carrier_surface,
+        source_surface,
+        distance,
+        carrier_kind,
+        parameter_bounds: [[u0, u1], [v0, v1]],
     })
 }
 
@@ -2135,6 +2215,56 @@ mod tests {
                 surface: 2,
                 class: 0x1d,
                 payload: class_1d,
+            })
+        );
+    }
+
+    #[test]
+    fn freeform_surface_alias_requires_one_complete_reference() {
+        let alias = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x2e,
+            object_id: 9,
+            payload: vec![0x38, 0x34, 0x12, 0x00],
+        };
+        assert_eq!(surface_alias_target(&alias), Some(0x1234));
+
+        let mut tailed = alias.clone();
+        tailed.payload.push(0x05);
+        assert_eq!(surface_alias_target(&tailed), None);
+    }
+
+    #[test]
+    fn offset_surface_separates_result_carrier_source_and_bounds() {
+        let carrier = B5Surface::Plane {
+            origin: [0.0; 3],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+        };
+        let surfaces = BTreeMap::from([(2, carrier)]);
+        let mut payload = vec![0x82, 0x82, 0x83];
+        payload.extend_from_slice(&(-0.5f64).to_le_bytes());
+        payload.push(0x15);
+        for value in [-2.0f64, 3.0, -4.0, 5.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x30,
+            object_id: 9,
+            payload,
+        };
+        assert_eq!(
+            parse_offset_surface(&record, &surfaces),
+            Some(B5OffsetSurface {
+                object_id: 9,
+                carrier_surface: 2,
+                source_surface: 3,
+                distance: -0.5,
+                carrier_kind: 0x15,
+                parameter_bounds: [[-2.0, 3.0], [-4.0, 5.0]],
             })
         );
     }

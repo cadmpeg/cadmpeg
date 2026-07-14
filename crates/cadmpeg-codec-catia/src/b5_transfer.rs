@@ -104,7 +104,17 @@ pub(crate) fn transfer(
         return false;
     }
 
-    let referenced_surfaces: HashSet<u32> = graph.faces.iter().map(|face| face.surface).collect();
+    let mut referenced_surfaces: HashSet<u32> =
+        graph.faces.iter().map(|face| face.surface).collect();
+    let mut pending_surfaces: Vec<u32> = referenced_surfaces.iter().copied().collect();
+    while let Some(surface_id) = pending_surfaces.pop() {
+        let Some(offset) = graph.offset_surfaces.get(&surface_id) else {
+            continue;
+        };
+        if referenced_surfaces.insert(offset.source_surface) {
+            pending_surfaces.push(offset.source_surface);
+        }
+    }
     let mut surface_plan = BTreeMap::new();
     for surface_id in referenced_surfaces {
         let Some(surface) = graph.surfaces.get(&surface_id) else {
@@ -328,6 +338,36 @@ pub(crate) fn transfer(
                 cache_fit_tolerance: None,
             });
         }
+    }
+    for offset in graph.offset_surfaces.values() {
+        let (Some(surface), Some(support)) = (
+            surface_ids.get(&offset.object_id),
+            surface_ids.get(&offset.source_surface),
+        ) else {
+            continue;
+        };
+        let procedural_id = ProceduralSurfaceId(format!("catia:b5:offset#{}", offset.object_id));
+        annotate(
+            annotations,
+            &procedural_id,
+            "object_stream_b5_03",
+            "30_offset_surface",
+            Exactness::Derived,
+        );
+        annotations.derived(&procedural_id, "definition.u_sense");
+        annotations.derived(&procedural_id, "definition.v_sense");
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: procedural_id,
+            surface: surface.clone(),
+            definition: ProceduralSurfaceDefinition::Offset {
+                support: support.clone(),
+                distance: offset.distance,
+                u_sense: 0,
+                v_sense: 0,
+                extension_flags: Vec::new(),
+            },
+            cache_fit_tolerance: None,
+        });
     }
 
     let mut pcurve_ids = HashMap::new();
