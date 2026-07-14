@@ -145,6 +145,40 @@ fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
 }
 
 #[test]
+fn standard_mesh_ports_bridge_table_local_endpoint_names() {
+    let mut bytes = standard_quad_topology_stream();
+    let header = bytes
+        .windows(3)
+        .position(|window| window == [0x01, 0x01, 0x04])
+        .expect("edge table header");
+    bytes[header + 2] = 2;
+    let second_table = header + 3 + 2 * 8;
+    bytes.splice(
+        second_table..second_table,
+        [
+            0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x02, 0x02,
+        ],
+    );
+
+    let ports = crate::topology::standard_mesh_edge_ports(&bytes).expect("mesh port collapse");
+    let table_ports =
+        crate::topology::standard_edge_port_identities(&bytes).expect("table-local ports");
+    assert_ne!(table_ports[1][1], table_ports[2][0]);
+    assert_eq!(ports[0][1], ports[1][0]);
+    assert_eq!(ports[1][1], ports[2][0]);
+    assert_eq!(ports[2][1], ports[3][0]);
+    assert_eq!(ports[3][1], ports[0][0]);
+    assert_eq!(
+        ports
+            .into_iter()
+            .flatten()
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        4
+    );
+}
+
+#[test]
 fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 10, 0, 0, 0, 10];
     for handle in [

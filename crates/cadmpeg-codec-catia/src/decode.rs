@@ -2349,7 +2349,7 @@ fn attach_standard_topology(
     });
     let propagated_endpoint_pairs = endpoint_options
         .as_ref()
-        .zip(topology::standard_edge_ports(brep))
+        .zip(topology::standard_edge_port_identities(brep))
         .and_then(|(options, ports)| {
             let pairs = options
                 .iter()
@@ -2375,6 +2375,39 @@ fn attach_standard_topology(
                 })
                 .collect::<Vec<_>>()
         });
+    let mesh_propagated_endpoint_pairs = endpoint_options
+        .as_ref()
+        .zip(topology::standard_mesh_edge_ports(brep))
+        .and_then(|(options, ports)| {
+            let pairs = options
+                .iter()
+                .map(|pairs| {
+                    <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                        .ok()
+                        .map(|pair| pair[0])
+                })
+                .collect::<Vec<_>>();
+            topology::propagate_edge_port_points(&ports, &pairs)
+        });
+    let propagated_endpoint_pairs =
+        match (propagated_endpoint_pairs, mesh_propagated_endpoint_pairs) {
+            (Some(raw), Some(mesh)) => raw
+                .into_iter()
+                .zip(mesh)
+                .map(|(raw, mesh)| match (raw, mesh) {
+                    (Some(raw), Some(mesh)) if raw == mesh || raw == [mesh[1], mesh[0]] => {
+                        Some(raw)
+                    }
+                    (Some(_), Some(_)) => None,
+                    (Some(pair), None) | (None, Some(pair)) => Some(pair),
+                    (None, None) => None,
+                })
+                .collect::<Vec<_>>(),
+            (Some(pairs), None) | (None, Some(pairs)) => pairs,
+            (None, None) => Vec::new(),
+        };
+    let propagated_endpoint_pairs =
+        (!propagated_endpoint_pairs.is_empty()).then_some(propagated_endpoint_pairs);
     let constrained_endpoint_options = endpoint_options.as_ref().map(|options| {
         options
             .iter()

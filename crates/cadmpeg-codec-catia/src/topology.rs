@@ -538,6 +538,143 @@ pub fn standard_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
         .collect()
 }
 
+pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
+    let mut identities = HashMap::new();
+    edge_rows
+        .iter()
+        .map(|row| {
+            [*row.handles.first()?, *row.handles.last()?]
+                .map(|handle| {
+                    let next = identities.len();
+                    u32::try_from(*identities.entry((row.kind, handle)).or_insert(next)).ok()
+                })
+                .into_iter()
+                .collect::<Option<Vec<_>>>()
+                .and_then(|ports| <[u32; 2]>::try_from(ports).ok())
+        })
+        .collect()
+}
+
+pub(crate) fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
+    let mut solutions = Vec::new();
+    for width in [2, 3] {
+        let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
+            continue;
+        };
+        let cycles = trims
+            .iter()
+            .map(|trim| boundary_cycles(&trim.triangles))
+            .collect::<Option<Vec<_>>>()?;
+        let mut locations = HashMap::<u32, Vec<(usize, usize, usize)>>::new();
+        for (face, face_cycles) in cycles.iter().enumerate() {
+            for (cycle_index, cycle) in face_cycles.iter().enumerate() {
+                for (position, handle) in cycle.iter().copied().enumerate() {
+                    locations
+                        .entry(handle)
+                        .or_default()
+                        .push((face, cycle_index, position));
+                }
+            }
+        }
+        let mut union = UnionFind::new(edge_rows.len() * 2);
+        let mut table_ports = HashMap::new();
+        for (edge, row) in edge_rows.iter().enumerate() {
+            for (side, handle) in [row.handles.first()?, row.handles.last()?]
+                .into_iter()
+                .enumerate()
+            {
+                let node = edge * 2 + side;
+                if let Some(previous) = table_ports.insert((row.kind, *handle), node) {
+                    union.union(previous, node);
+                }
+            }
+        }
+        let mut corners = HashMap::new();
+        let mut valid = true;
+        for (edge, row) in edge_rows.iter().enumerate() {
+            let Some(interior) = row.handles.get(1..row.handles.len() - 1) else {
+                valid = false;
+                break;
+            };
+            if interior.is_empty() {
+                continue;
+            }
+            let mut occurrences = HashMap::<(usize, usize, usize), bool>::new();
+            for &(face, cycle_index, start) in locations.get(&interior[0]).into_iter().flatten() {
+                let cycle = &cycles[face][cycle_index];
+                if interior
+                    .iter()
+                    .enumerate()
+                    .all(|(offset, handle)| cycle[(start + offset) % cycle.len()] == *handle)
+                {
+                    occurrences.insert((face, cycle_index, start), false);
+                }
+            }
+            for &(face, cycle_index, start) in locations.get(interior.last()?).into_iter().flatten()
+            {
+                let cycle = &cycles[face][cycle_index];
+                if interior
+                    .iter()
+                    .rev()
+                    .enumerate()
+                    .all(|(offset, handle)| cycle[(start + offset) % cycle.len()] == *handle)
+                {
+                    occurrences
+                        .entry((face, cycle_index, start))
+                        .or_insert(true);
+                }
+            }
+            let mut cycle_counts = HashMap::new();
+            for &(face, cycle_index, _) in occurrences.keys() {
+                *cycle_counts.entry((face, cycle_index)).or_insert(0usize) += 1;
+            }
+            if cycle_counts.values().any(|count| *count > 1) {
+                valid = false;
+                break;
+            }
+            for ((face, cycle_index, start), reversed) in occurrences {
+                let cycle = &cycles[face][cycle_index];
+                let before = (start + cycle.len() - 1) % cycle.len();
+                let after = (start + interior.len()) % cycle.len();
+                let before_node = *corners
+                    .entry((face, cycle_index, before))
+                    .or_insert_with(|| union.push());
+                let after_node = *corners
+                    .entry((face, cycle_index, after))
+                    .or_insert_with(|| union.push());
+                if reversed {
+                    union.union(edge * 2 + 1, before_node);
+                    union.union(edge * 2, after_node);
+                } else {
+                    union.union(edge * 2, before_node);
+                    union.union(edge * 2 + 1, after_node);
+                }
+            }
+        }
+        if !valid {
+            continue;
+        }
+        let mut roots = HashMap::new();
+        let mut ports = Vec::with_capacity(edge_rows.len());
+        for edge in 0..edge_rows.len() {
+            let pair = [edge * 2, edge * 2 + 1].map(|node| {
+                let root = union.find(node);
+                let next = roots.len();
+                u32::try_from(*roots.entry(root).or_insert(next)).ok()
+            });
+            ports.push([pair[0]?, pair[1]?]);
+        }
+        solutions.push(ports);
+    }
+    <[Vec<[u32; 2]>; 1]>::try_from(solutions)
+        .ok()
+        .map(|[ports]| ports)
+}
+
 /// Propagate byte-level endpoint ports through independently resolved physical
 /// edge endpoint pairs. The result is rejected atomically when any port mapping
 /// contradicts a resolved pair.
