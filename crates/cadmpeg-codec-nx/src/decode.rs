@@ -3126,6 +3126,14 @@ fn attach_feature_operations(
             }
         }
         let mut source_properties = BTreeMap::new();
+        let outputs = body_references
+            .get(label.id.as_str())
+            .map_or_else(Vec::new, |body| {
+                feature_body_outputs(*body, &bodies_by_object_index)
+            });
+        if let Some(body) = body_references.get(label.id.as_str()) {
+            source_properties.insert("primary_body_object_index".to_string(), body.to_string());
+        }
         for (slot, value) in label.object_indices.iter().enumerate() {
             source_properties.insert(
                 format!("object_index.{slot}"),
@@ -3185,7 +3193,7 @@ fn attach_feature_operations(
             source_tag: Some(label.value.clone()),
             source_text: None,
             source_content: Vec::new(),
-            outputs: Vec::new(),
+            outputs,
             definition,
             native_ref: Some(label.id.clone()),
         });
@@ -3230,6 +3238,16 @@ pub(crate) fn feature_body_selection(
         }
     }
     BodySelection::Resolved { bodies, native }
+}
+
+pub(crate) fn feature_body_outputs(
+    object_index: u32,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
+) -> Vec<BodyId> {
+    bodies_by_object_index
+        .get(&object_index)
+        .cloned()
+        .unwrap_or_default()
 }
 
 pub(crate) fn attach_expression_parameters(

@@ -112,7 +112,10 @@ A body-affecting operation record contains exactly one primary-body field
 encoding. Operations sharing the index form one ordered body lineage. An
 operation depends on the preceding operation in its primary-body lineage. A
 Boolean additionally depends on the preceding operation in each tool-body
-lineage, preserving tool order and omitting duplicate dependencies.
+lineage, preserving tool order and omitting duplicate dependencies. When the
+primary body object has a segment body-image binding, every surviving neutral
+body from that image is an output of the operation. An unbound primary body
+retains its object index but has no neutral output.
 
 An operation label equal to `SKETCH` denotes a planar sketch history node. Its
 position in the operation sequence is the sketch's history position. The

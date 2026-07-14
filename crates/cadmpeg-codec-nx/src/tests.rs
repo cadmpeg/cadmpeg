@@ -484,6 +484,11 @@ fn feature_body_selection_resolves_complete_segment_bindings_atomically() {
         ),
         BodySelection::Native(_)
     ));
+    assert_eq!(
+        crate::decode::feature_body_outputs(94, &bindings),
+        vec![BodyId("nx:s2:body#3".to_string())]
+    );
+    assert!(crate::decode::feature_body_outputs(123, &bindings).is_empty());
 }
 
 #[test]
