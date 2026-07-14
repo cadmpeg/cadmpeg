@@ -5909,7 +5909,7 @@ fn named_feature_definition(
 ) -> Option<IrFeatureDefinition> {
     let schema_class = match kind {
         "Hole" => 911,
-        "Round" => 913,
+        "Round" | "Rundung" => 913,
         "Chamfer" => 914,
         _ => return None,
     };

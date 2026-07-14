@@ -473,7 +473,8 @@ A plane through a circular cone's apex is tangent to the cone when the absolute 
 `MdlStatus` names encode feature kinds as `<Kind> id <N>`. Defined names include
 `Annotation Feature`, `Cross Section`, `Datum Plane`, `Round`, `Chamfer`,
 `Protrusion`, `Extrude`, `Revolve`, `Hole`, `Cut`, `Draft`, `Mirror`, and
-`Surface`.
+`Surface`. The German operation-family name `Rundung` denotes the same round
+family as `Round`.
 
 Operation names end in ` id <N>` or ` ID <N>`; the stored case follows the
 name's localization. An ASCII `x` or `y` byte immediately preceding an uppercase operation-family

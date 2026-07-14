@@ -931,6 +931,24 @@ fn decode_types_class_913_without_an_edge_array() {
 }
 
 #[test]
+fn decode_types_named_german_round_without_a_schema_row() {
+    let data = build_prt("c", &[("MdlStatus", b"Rundung id 4\0".to_vec())]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+
+    assert_eq!(
+        result.ir.model.features[0].name.as_deref(),
+        Some("Rundung id 4")
+    );
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
+        }
+    ));
+}
+
+#[test]
 fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
