@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::psb;
 use crate::scalar;
 
-/// Procedural recipe discriminator stored in an `MdlStatus` state record.
+/// Procedural recipe discriminator stored in a feature-state record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureRecipeKind {
     /// Linear section sweep named `protextrude`.
@@ -20,7 +20,7 @@ pub enum FeatureRecipeKind {
     Revolve,
 }
 
-/// Feature-operation family named by an `MdlStatus` record.
+/// Feature-operation family named by a feature-state record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureOperation {
     /// Numeric feature identifier following `id` in the stored name.
@@ -35,8 +35,54 @@ pub struct FeatureOperation {
     pub offset: usize,
 }
 
-/// Decode NUL-terminated `<Kind> id <N>` operation names from one
-/// `MdlStatus` payload.
+fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeKind> {
+    const RECIPES: &[(&[u8], FeatureRecipeKind)] = &[
+        (b"protextrude\0", FeatureRecipeKind::Extrude),
+        (b"protrevolve\0", FeatureRecipeKind::Revolve),
+    ];
+    let mut bindings = BTreeMap::new();
+    for marker in 0..payload.len() {
+        if payload.get(marker) != Some(&psb::token::ENTITY_REF) {
+            continue;
+        }
+        let Ok((_, after_marker)) = psb::reference_id(payload, marker + 1) else {
+            continue;
+        };
+        let (feature_id, after_feature) = psb::compact_int(payload, after_marker);
+        let (schema_class, after_schema) = psb::compact_int(payload, after_feature);
+        if after_feature == after_marker
+            || after_schema == after_feature
+            || !matches!(schema_class, 916 | 917)
+            || payload.get(after_schema) != Some(&0xf6)
+        {
+            continue;
+        }
+        let (_, display_start) = psb::compact_int(payload, after_schema + 1);
+        let Some(display_end) = payload
+            .get(display_start..display_start.saturating_add(96).min(payload.len()))
+            .and_then(|bytes| bytes.iter().position(|byte| *byte == 0))
+            .map(|relative| display_start + relative)
+        else {
+            continue;
+        };
+        let recipe_start = display_end + 3;
+        if display_end == display_start
+            || payload.get(display_end + 1..recipe_start) != Some(&[0xf6, 0x00])
+        {
+            continue;
+        }
+        if let Some((_, kind)) = RECIPES
+            .iter()
+            .find(|(name, _)| payload.get(recipe_start..recipe_start + name.len()) == Some(*name))
+        {
+            bindings.insert(feature_id, *kind);
+        }
+    }
+    bindings
+}
+
+/// Decode NUL-terminated `<Kind> id <N>` operation names and their bounded
+/// procedural-recipe records from one feature-state namespace.
 pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
     const SEPARATORS: &[&[u8]] = &[b" id ", b" ID "];
     let family_byte = |byte: u8| {
@@ -44,6 +90,7 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
             || byte >= 0x80
             || matches!(byte, b' ' | b'_' | b'-' | b'/' | b'(' | b')')
     };
+    let bound_recipes = recipe_bindings(payload);
     let mut result = Vec::new();
     for separator in 0..payload.len().saturating_sub(4) {
         let Some(separator_bytes) = SEPARATORS.iter().find(|candidate| {
@@ -84,19 +131,21 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
             .rposition(|byte| *byte == 0xe3)
             .map_or(0, |position| position + 1);
         let record = &payload[record_start..offset];
-        let recipe = if record
-            .windows(b"protextrude\0".len())
-            .any(|window| window == b"protextrude\0")
-        {
-            Some(FeatureRecipeKind::Extrude)
-        } else if record
-            .windows(b"protrevolve\0".len())
-            .any(|window| window == b"protrevolve\0")
-        {
-            Some(FeatureRecipeKind::Revolve)
-        } else {
-            None
-        };
+        let recipe = bound_recipes.get(&feature_id).copied().or_else(|| {
+            if record
+                .windows(b"protextrude\0".len())
+                .any(|window| window == b"protextrude\0")
+            {
+                Some(FeatureRecipeKind::Extrude)
+            } else if record
+                .windows(b"protrevolve\0".len())
+                .any(|window| window == b"protrevolve\0")
+            {
+                Some(FeatureRecipeKind::Revolve)
+            } else {
+                None
+            }
+        });
         result.push(FeatureOperation {
             feature_id,
             kind: String::from_utf8_lossy(family).into_owned(),
@@ -3701,5 +3750,27 @@ mod tests {
         assert_eq!(operations[2].recipe, None);
         assert_eq!(operations[3].kind, "Körper");
         assert_eq!(operations[3].feature_id, 43);
+    }
+
+    #[test]
+    fn binds_depdb_recipe_records_to_compact_feature_ids() {
+        let payload = b"\xe3K\xc3\xb6rper ID 247\0\xe3\
+            \xf7\x3b\x80\xf7\x83\x95\xf6\x20Drehen 1\0\xf6\0protrevolve\0\
+            \xe3Body ID 8053\0\xe3\
+            \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0";
+
+        assert_eq!(
+            recipe_bindings(payload),
+            BTreeMap::from([
+                (247, FeatureRecipeKind::Revolve),
+                (8053, FeatureRecipeKind::Extrude),
+            ])
+        );
+        let operations = operations(payload);
+        assert_eq!(operations.len(), 2);
+        assert_eq!(operations[0].feature_id, 247);
+        assert_eq!(operations[0].recipe, Some(FeatureRecipeKind::Revolve));
+        assert_eq!(operations[1].feature_id, 8053);
+        assert_eq!(operations[1].recipe, Some(FeatureRecipeKind::Extrude));
     }
 }
