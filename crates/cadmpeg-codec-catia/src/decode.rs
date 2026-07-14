@@ -1261,8 +1261,15 @@ mod chart_tests {
             origin: cadmpeg_ir::math::Point2::new(0.0, 3.0),
             direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
         };
+        let native = crate::e5::E5Pcurve::Line {
+            surface: 0,
+            origin: [0.0, 3.0],
+            direction: [1.0, 0.0],
+            range: [0.0, std::f64::consts::FRAC_PI_2],
+        };
         let (curve, range) = e5_boundary_curve(
             &surface,
+            &native,
             &pcurve,
             [0.0, std::f64::consts::FRAC_PI_2],
             [Point3::new(2.0, 0.0, 3.0), Point3::new(0.0, 2.0, 3.0)],
@@ -1277,6 +1284,46 @@ mod chart_tests {
             } if center == Point3::new(0.0, 0.0, 3.0) && radius == 2.0
         ));
         assert!((range[1] - range[0] - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn e5_plane_circle_boundary_lifts_to_world_circle_carrier() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let native = crate::e5::E5Pcurve::Circle {
+            surface: 0,
+            center: [4.0, 5.0],
+            codes: [0, 0],
+            radius: 2.0,
+            range: [0.0, std::f64::consts::PI],
+            tail: [0.0, 0.0],
+        };
+        let pcurve = rational_pcurve_arc([4.0, 5.0], 2.0, [0.0, std::f64::consts::FRAC_PI_2])
+            .expect("plane pcurve");
+        let (curve, range) = e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            [0.0, std::f64::consts::FRAC_PI_2],
+            [Point3::new(7.0, 7.0, 3.0), Point3::new(5.0, 9.0, 3.0)],
+        )
+        .expect("plane boundary circle");
+        assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
+        assert!(matches!(
+            curve,
+            CurveGeometry::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            } if center == Point3::new(5.0, 7.0, 3.0)
+                && axis == Vector3::new(0.0, 0.0, 1.0)
+                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && radius == 2.0
+        ));
     }
 
     #[test]
@@ -1831,11 +1878,20 @@ fn transfer_e5_topology(
                     return false;
                 }
                 if !support.intersection {
-                    if let Some((curve, mut curve_range)) =
-                        e5_boundary_curve(&decoded_surface.geometry, &geometry, range, endpoints)
-                    {
+                    if let Some((mut curve, mut curve_range)) = e5_boundary_curve(
+                        &decoded_surface.geometry,
+                        pcurve,
+                        &geometry,
+                        range,
+                        endpoints,
+                    ) {
                         if reversed < forward {
-                            curve_range.swap(0, 1);
+                            let Some(reversed_curve) =
+                                reverse_e5_boundary_curve(&curve, curve_range)
+                            else {
+                                return false;
+                            };
+                            (curve, curve_range) = reversed_curve;
                         }
                         if let Some(existing) = edge_curve_plan.get(&edge_ref) {
                             if existing != &(curve, curve_range) {
@@ -2231,10 +2287,36 @@ fn e5_pcurve_on_surface(
 
 fn e5_boundary_curve(
     surface: &SurfaceGeometry,
+    native_pcurve: &crate::e5::E5Pcurve,
     pcurve: &PcurveGeometry,
     range: [f64; 2],
     endpoints: [Point3; 2],
 ) -> Option<(CurveGeometry, [f64; 2])> {
+    if let (
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        },
+        crate::e5::E5Pcurve::Circle { center, radius, .. },
+    ) = (surface, native_pcurve)
+    {
+        let v_axis = cross_vector(*normal, *u_axis);
+        let center = add_scaled_point(
+            add_scaled_point(*origin, *u_axis, center[0]),
+            v_axis,
+            center[1],
+        );
+        return Some((
+            CurveGeometry::Circle {
+                center,
+                axis: *normal,
+                ref_direction: *u_axis,
+                radius: *radius,
+            },
+            canonical_periodic_range(range)?,
+        ));
+    }
     let PcurveGeometry::Line { origin, direction } = pcurve else {
         return None;
     };
@@ -2303,6 +2385,51 @@ fn e5_boundary_curve(
         },
         [0.0, length],
     ))
+}
+
+fn reverse_e5_boundary_curve(
+    curve: &CurveGeometry,
+    range: [f64; 2],
+) -> Option<(CurveGeometry, [f64; 2])> {
+    match curve {
+        CurveGeometry::Line { origin, direction } => {
+            let length = range[1] - range[0];
+            (length >= 0.0).then_some((
+                CurveGeometry::Line {
+                    origin: add_scaled_point(*origin, *direction, range[1]),
+                    direction: scale_vector(*direction, -1.0),
+                },
+                [0.0, length],
+            ))
+        }
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            let sweep = range[1] - range[0];
+            if sweep < 0.0 {
+                return None;
+            }
+            let tangent = cross_vector(*axis, *ref_direction);
+            let end = range[1];
+            let ref_direction = add_vectors(
+                scale_vector(*ref_direction, end.cos()),
+                scale_vector(tangent, end.sin()),
+            );
+            Some((
+                CurveGeometry::Circle {
+                    center: *center,
+                    axis: scale_vector(*axis, -1.0),
+                    ref_direction,
+                    radius: *radius,
+                },
+                [0.0, sweep],
+            ))
+        }
+        _ => None,
+    }
 }
 
 fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f64, Vector3)> {
