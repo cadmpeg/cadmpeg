@@ -6228,6 +6228,26 @@ mod resolved_sketch_tests {
             solve_carriers(&[cone, cap, cone_tangent]),
             Some([5.0, 0.0, 3.0])
         );
+
+        let torus = CarrierEquation::Torus(TorusEquation {
+            center: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            major_radius: 5.0,
+            minor_radius: 2.0,
+        });
+        let torus_tangent = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 2.0],
+            normal: [0.0, 0.0, 1.0],
+        });
+        assert!(matches!(
+            carrier_intersection_curve(torus_tangent, torus),
+            Some((CurveGeometry::Circle { center, radius, .. }, "plane_torus_tangent_circle"))
+                if center == Point3::new(0.0, 0.0, 2.0) && radius == 5.0
+        ));
+        assert!(carrier_intersection_curve(equator, torus).is_none());
+        assert!(point_on_carrier([5.0, 0.0, 2.0], torus));
+        assert!(!point_on_carrier([5.0, 0.0, 0.0], torus));
     }
 }
 
@@ -6262,11 +6282,21 @@ struct SphereEquation {
 }
 
 #[derive(Clone, Copy)]
+struct TorusEquation {
+    center: [f64; 3],
+    axis: [f64; 3],
+    ref_direction: [f64; 3],
+    major_radius: f64,
+    minor_radius: f64,
+}
+
+#[derive(Clone, Copy)]
 enum CarrierEquation {
     Plane(PlaneEquation),
     Cylinder(CylinderEquation),
     Cone(ConeEquation),
     Sphere(SphereEquation),
+    Torus(TorusEquation),
 }
 
 fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
@@ -6514,6 +6544,17 @@ fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
             let relative = std::array::from_fn(|index| point[index] - sphere.center[index]);
             (dot(relative, relative).sqrt() - sphere.radius).abs() <= 1e-7 * sphere.radius.max(1.0)
         }
+        CarrierEquation::Torus(torus) => {
+            let Some(axis) = normalized(torus.axis) else {
+                return false;
+            };
+            let relative = std::array::from_fn(|index| point[index] - torus.center[index]);
+            let axial = dot(relative, axis);
+            let radial = std::array::from_fn(|index| relative[index] - axial * axis[index]);
+            let tube_distance = (dot(radial, radial).sqrt() - torus.major_radius).hypot(axial);
+            (tube_distance - torus.minor_radius).abs()
+                <= 1e-7 * torus.minor_radius.max(torus.major_radius).max(1.0)
+        }
     }
 }
 
@@ -6527,12 +6568,14 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                 let mut cylinders = Vec::new();
                 let mut cones = Vec::new();
                 let mut spheres = Vec::new();
+                let mut tori = Vec::new();
                 for carrier in triple {
                     match carrier {
                         CarrierEquation::Plane(plane) => planes.push(plane),
                         CarrierEquation::Cylinder(cylinder) => cylinders.push(cylinder),
                         CarrierEquation::Cone(cone) => cones.push(cone),
                         CarrierEquation::Sphere(sphere) => spheres.push(sphere),
+                        CarrierEquation::Torus(torus) => tori.push(torus),
                     }
                 }
                 if planes.len() == 3 {
@@ -6570,12 +6613,12 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                 } else if let ([first, second], [], [sphere]) =
                     (planes.as_slice(), cylinders.as_slice(), spheres.as_slice())
                 {
-                    if cones.is_empty() {
+                    if cones.is_empty() && tori.is_empty() {
                         candidates
                             .extend(intersect_two_planes_with_sphere(*first, *second, *sphere));
                     }
                 } else if let ([first, second], [cone]) = (planes.as_slice(), cones.as_slice()) {
-                    if cylinders.is_empty() && spheres.is_empty() {
+                    if cylinders.is_empty() && spheres.is_empty() && tori.is_empty() {
                         candidates.extend(intersect_two_planes_with_cone(*first, *second, *cone));
                     }
                 }
@@ -6693,6 +6736,24 @@ fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEqu
                     }),
                 );
             }
+        } else if let SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } = &surface.geometry
+        {
+            carriers.insert(
+                row.id,
+                CarrierEquation::Torus(TorusEquation {
+                    center: [center.x, center.y, center.z],
+                    axis: [axis.x, axis.y, axis.z],
+                    ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+                    major_radius: *major_radius,
+                    minor_radius: *minor_radius,
+                }),
+            );
         }
     }
     carriers
@@ -7700,6 +7761,34 @@ fn carrier_intersection_curve(
                 "plane_cone_circle",
             ))
         }
+        (CarrierEquation::Plane(plane), CarrierEquation::Torus(torus))
+        | (CarrierEquation::Torus(torus), CarrierEquation::Plane(plane)) => {
+            let normal = normalized(plane.normal)?;
+            let axis = normalized(torus.axis)?;
+            if (dot(normal, axis).abs() - 1.0).abs() > 1e-10 {
+                return None;
+            }
+            let axial = dot(
+                axis,
+                std::array::from_fn(|index| plane.origin[index] - torus.center[index]),
+            );
+            let scale = torus.minor_radius.max(torus.major_radius).max(1.0);
+            if (axial.abs() - torus.minor_radius).abs() > 1e-9 * scale {
+                return None;
+            }
+            let center: [f64; 3] =
+                std::array::from_fn(|index| torus.center[index] + axial * axis[index]);
+            let reference = normalized(torus.ref_direction)?;
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(normal[0], normal[1], normal[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius: torus.major_radius,
+                },
+                "plane_torus_tangent_circle",
+            ))
+        }
         (CarrierEquation::Cylinder(first), CarrierEquation::Cylinder(second)) => {
             let first_axis = normalized(first.axis)?;
             let second_axis = normalized(second.axis)?;
@@ -7779,7 +7868,9 @@ fn carrier_intersection_curve(
         | (
             CarrierEquation::Cylinder(_) | CarrierEquation::Sphere(_) | CarrierEquation::Cone(_),
             CarrierEquation::Cone(_),
-        ) => None,
+        )
+        | (CarrierEquation::Torus(_), _)
+        | (_, CarrierEquation::Torus(_)) => None,
     }
 }
 
