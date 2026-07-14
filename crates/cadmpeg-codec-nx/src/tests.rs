@@ -71,6 +71,22 @@ fn segment_body_binding_payload() -> Vec<u8> {
     payload
 }
 
+fn segment_extended_wrapper_payload() -> Vec<u8> {
+    let mut payload = Vec::new();
+    for word in [7u32, 9, 11, 1, 1, 48, 64, 0, 94, 150, 19, 0] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(64, 0);
+    payload.extend_from_slice(&0xc000_0005u32.to_le_bytes());
+    payload.resize(64 + 38, 0);
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    encoder
+        .write_all(b"PS\0\0 (partition) SCH_test extended wrapper payload with more than sixty-four inflated bytes........")
+        .unwrap();
+    payload.extend_from_slice(&encoder.finish().unwrap());
+    payload
+}
+
 fn segment_om_payload(separated: bool) -> Vec<u8> {
     let mut payload = Vec::new();
     for word in [32u32, 9, 11, 1, 1, 24] {
@@ -454,6 +470,26 @@ fn decode_binds_segment_body_object_index_to_partition_stream() {
     assert_eq!(bindings[0].stream_kind, "partition");
     assert_eq!(bindings[0].body_object_index, 94);
     assert_eq!(bindings[0].source_offset, 104);
+}
+
+#[test]
+fn decode_links_extended_partition_wrapper_and_body_identity() {
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_extended_wrapper_payload())]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let namespace = result.ir.native.namespace("nx").unwrap();
+    let links = namespace
+        .arena_as::<crate::native::SegmentStreamLink>("segment_stream_links")
+        .unwrap();
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].wrapper_byte_len, 38);
+    let bindings = namespace
+        .arena_as::<crate::native::SegmentBodyBinding>("segment_body_bindings")
+        .unwrap();
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(bindings[0].body_object_index, 94);
 }
 
 #[test]

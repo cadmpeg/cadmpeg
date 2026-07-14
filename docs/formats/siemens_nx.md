@@ -52,12 +52,14 @@ occupy the declared region from offset zero; zero to eleven trailing bytes fill
 the remainder when that offset is not divisible by twelve. Row order and all
 three words are significant.
 
-A segment-index word can point to a compressed-stream wrapper. At that
-payload-relative offset, wrapper flag `0x80000000:u32 LE` places the zlib header
-at `+8`; wrapper flag `0xc0000000:u32 LE` places it at `+33`. The pointed stream
-is valid only when that exact position begins a complete zlib payload accepted
-by the stream grammar. The containing row ordinal and word position preserve
-the wrapper's segment order.
+A segment-index word can point to a compressed-stream wrapper. Its first
+`u32 LE` is `kind | extension_length`, where `extension_length` is the low 30
+bits. Kind `0x80000000` places the zlib header at
+`8 + extension_length`; kind `0xc0000000` places it at
+`33 + extension_length`. The extension may contain a Parasolid text header.
+The pointed stream is valid only when that exact computed position begins a
+complete zlib payload accepted by the stream grammar. The containing row
+ordinal and word position preserve the wrapper's segment order.
 
 A partition or plain cached-body wrapper word begins a five-word segment tuple.
 The following word is zero, and the next word is the body-image object index

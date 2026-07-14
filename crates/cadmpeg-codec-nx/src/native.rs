@@ -694,10 +694,17 @@ pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<Se
             let Some(wrapper) = container.data.get(entry_start + relative..) else {
                 continue;
             };
-            let wrapper_byte_len = match cadmpeg_ir::le::u32_at(wrapper, 0) {
-                Some(0x8000_0000) => 8usize,
-                Some(0xc000_0000) => 33usize,
+            let Some(wrapper_word) = cadmpeg_ir::le::u32_at(wrapper, 0) else {
+                continue;
+            };
+            let extension = (wrapper_word & 0x3fff_ffff) as usize;
+            let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
+                0x8000_0000 => 8usize.checked_add(extension),
+                0xc000_0000 => 33usize.checked_add(extension),
                 _ => continue,
+            };
+            let Some(wrapper_byte_len) = wrapper_byte_len else {
+                continue;
             };
             let zlib_offset = entry_start + relative + wrapper_byte_len;
             let Some((stream_ordinal, stream)) = streams
