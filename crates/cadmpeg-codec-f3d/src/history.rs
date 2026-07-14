@@ -772,7 +772,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
 fn recipe_selector_candidates(
     structure: Option<&crate::records::DesignEdgeRecipeStructure>,
     contexts: &[crate::records::DesignHistoricalEdgeContext],
-) -> Vec<crate::records::DesignEdgeRecipeSelector> {
+) -> Vec<crate::records::DesignEdgeRecipeSelectorContext> {
     let Some(structure) = structure else {
         return Vec::new();
     };
@@ -798,7 +798,7 @@ fn recipe_selector_candidates(
                         .map(|entry| i64::from(entry.boundary_edge_count.get()))
                 })
                 .collect::<Vec<_>>();
-            let candidate_edge_slots = contexts
+            let boundary_count_matching_edge_slots = contexts
                 .iter()
                 .filter(|context| {
                     let counts = context
@@ -810,10 +810,10 @@ fn recipe_selector_candidates(
                 })
                 .map(|context| context.edge_slot)
                 .collect();
-            crate::records::DesignEdgeRecipeSelector {
+            crate::records::DesignEdgeRecipeSelectorContext {
                 selector: *selector,
                 clause_entries,
-                candidate_edge_slots,
+                boundary_count_matching_edge_slots,
             }
         })
         .collect()
@@ -1779,9 +1779,9 @@ mod tests {
         let selectors = recipe_selector_candidates(Some(&structure), &contexts);
         assert_eq!(selectors.len(), 2);
         assert_eq!(selectors[0].selector, 1);
-        assert_eq!(selectors[0].candidate_edge_slots, [8]);
+        assert_eq!(selectors[0].boundary_count_matching_edge_slots, [8]);
         assert_eq!(selectors[1].selector, 2);
-        assert_eq!(selectors[1].candidate_edge_slots, [7, 8]);
+        assert_eq!(selectors[1].boundary_count_matching_edge_slots, [7, 8]);
         assert!(incident_loop_counts_satisfy_sides(
             &[4, 5],
             &[Some(5), Some(4)]

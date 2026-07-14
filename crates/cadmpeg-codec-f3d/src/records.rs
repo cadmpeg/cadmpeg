@@ -1085,10 +1085,10 @@ pub struct DesignEdgeOperand {
     /// Ordered historical topology context for each prefix reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recipe_reference_contexts: Vec<DesignEdgeRecipeReferenceContext>,
-    /// Topology entries grouped by their source selector with historical edge
-    /// candidates matching the selector's incident-loop boundary counts.
+    /// Topology entries grouped by their source selector with changed-edge
+    /// context matching the selector's incident-loop boundary counts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub recipe_selectors: Vec<DesignEdgeRecipeSelector>,
+    pub recipe_selectors: Vec<DesignEdgeRecipeSelectorContext>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
@@ -1139,15 +1139,16 @@ pub struct DesignHistoricalEdgeLoopContext {
 
 /// Edge-recipe topology entries sharing one selector value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignEdgeRecipeSelector {
+pub struct DesignEdgeRecipeSelectorContext {
     /// Selector value stored in each grouped entry.
     pub selector: i32,
     /// Entry from each ordered recipe clause; a selector occurs at most once in
     /// one clause.
     pub clause_entries: [Option<DesignTopologyRecipeEntry>; 2],
     /// Changed historical edges whose incident loop counts satisfy every
-    /// present clause entry.
-    pub candidate_edge_slots: Vec<i64>,
+    /// present clause entry. This is a topology-context match, not a resolved
+    /// selection.
+    pub boundary_count_matching_edge_slots: Vec<i64>,
 }
 
 /// Standard delimiter structure following an edge recipe's common prologue.
