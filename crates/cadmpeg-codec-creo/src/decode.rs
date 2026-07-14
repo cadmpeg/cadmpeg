@@ -375,6 +375,7 @@ struct CreoSurfaceRowRecord {
     surface_id: u32,
     type_byte: u8,
     surface_family: &'static str,
+    surface_variant: Option<&'static str>,
     feature_id: u32,
     reversed: bool,
     boundary_type: u8,
@@ -386,6 +387,7 @@ struct CreoSurfaceRowRecord {
 #[derive(Serialize)]
 struct CreoSurfacePrototypeRecord {
     id: String,
+    declared_family: String,
     family: String,
     parameters: Vec<CreoSurfaceNamedParameterRecord>,
     offset: usize,
@@ -475,6 +477,14 @@ fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
     }
 }
 
+fn surface_variant(type_byte: u8) -> Option<&'static str> {
+    match type_byte {
+        0x2a => Some("ruled_surface"),
+        0x2c => Some("tabulated_cylinder"),
+        _ => None,
+    }
+}
+
 fn surface_row_records(scan: &ContainerScan) -> Vec<CreoSurfaceRowRecord> {
     scan.surface_rows
         .iter()
@@ -483,6 +493,7 @@ fn surface_row_records(scan: &ContainerScan) -> Vec<CreoSurfaceRowRecord> {
             surface_id: row.id,
             type_byte: row.type_byte,
             surface_family: surface_family(row.kind),
+            surface_variant: surface_variant(row.type_byte),
             feature_id: row.feature_id,
             reversed: row.reversed,
             boundary_type: row.boundary_type,
@@ -567,6 +578,7 @@ fn surface_prototype_records(scan: &ContainerScan) -> Vec<CreoSurfacePrototypeRe
         .iter()
         .map(|record| CreoSurfacePrototypeRecord {
             id: format!("creo:visibgeom:surface_prototype#{}", record.offset),
+            declared_family: record.declared_family.clone(),
             family: surface_prototype_family_name(&record.family),
             parameters: record
                 .parameters

@@ -205,14 +205,16 @@ each defined boundary byte; `boundary_type` does not select their scalar layout.
 | `26`        | Torus or sphere representation                   |
 | `28`        | Spline surface                                   |
 | `29`        | Fillet surface                                   |
-| `2a`        | Linear-extrusion family, `2a` body variant       |
-| `2c`        | Linear-extrusion family, including direction/directrix bodies |
+| `2a`        | Linear-extrusion family, `ruled_srf` variant     |
+| `2c`        | Linear-extrusion family, `tab_cyl` variant       |
 
 A decoder must not infer the kind of a row without a materialized parameter row from adjacent rows or topology.
 
 ### 3.2 Surface prototypes
 
 `srf_prim_ptr` records contain the surface prototype fields. The prototype block closes with `f1 f7 <entity_ref> e3`. A scalar field ending with bare `18` before that structural close stores zero.
+The family name inside `srf_prim_ptr(<family>)` is retained independently of
+the normalized surface family; `tab_cyl` and `ruled_srf` remain distinct names.
 
 | Prototype                                             | Named fields                                                    |
 | ----------------------------------------------------- | --------------------------------------------------------------- |

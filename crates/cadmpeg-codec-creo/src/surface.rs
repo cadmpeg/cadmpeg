@@ -185,6 +185,8 @@ pub struct SurfaceNamedParameter {
 /// Bounded `srf_prim_ptr(<kind>)` prototype and its named parameters.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfacePrototypeRecord {
+    /// Exact family name inside `srf_prim_ptr(<family>)`.
+    pub declared_family: String,
     /// Surface family named by the prototype label.
     pub family: SurfacePrototypeFamily,
     /// Selected named parameters in byte order.
@@ -871,6 +873,7 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
             });
         }
         records.push(SurfacePrototypeRecord {
+            declared_family: family_name.into_owned(),
             family,
             parameters,
             offset: record_start,

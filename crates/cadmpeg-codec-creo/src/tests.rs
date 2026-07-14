@@ -289,7 +289,8 @@ fn scan_preserves_linear_extrusion_type_variants() {
     let mut payload = visibgeom_payload(2, 0);
     payload.extend_from_slice(&[7, 0x2a, 4, 0x01, 0, 8]);
     payload.extend_from_slice(&[8, 0x2c, 4, 0x01, 0, 0]);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.surface_rows.len(), 2);
     assert_eq!(
@@ -302,6 +303,10 @@ fn scan_preserves_linear_extrusion_type_variants() {
         crate::surface::SurfaceKind::Extrusion
     );
     assert_eq!(scan.surface_rows[1].type_byte, 0x2c);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let rows = &result.ir.native.namespace("creo").unwrap().arenas["surface_rows"];
+    assert_eq!(rows[0].fields["surface_variant"], "ruled_surface");
+    assert_eq!(rows[1].fields["surface_variant"], "tabulated_cylinder");
 }
 
 #[test]
@@ -782,6 +787,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
 
     assert_eq!(scan.surface_prototype_records.len(), 1);
     let prototype = &scan.surface_prototype_records[0];
+    assert_eq!(prototype.declared_family, "cylinder");
     assert_eq!(
         prototype.family,
         crate::surface::SurfacePrototypeFamily::Cylinder
@@ -841,6 +847,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     );
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_prototypes"][0];
+    assert_eq!(native.fields["declared_family"], "cylinder");
     assert_eq!(native.fields["family"], "cylinder");
     assert_eq!(native.fields["parameters"][0]["name"], "local_sys");
     assert_eq!(native.fields["parameters"][0]["value_kind"], "scalar_array");
