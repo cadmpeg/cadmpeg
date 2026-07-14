@@ -985,6 +985,23 @@ fn b2_counted_61_stream() -> Vec<u8> {
     ]
 }
 
+fn b2_long_61_stream() -> Vec<u8> {
+    let mut payload = vec![0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb, 0x06];
+    for member in [0x064a_u16, 0x0650, 0x0656] {
+        payload.extend_from_slice(&member.to_le_bytes());
+    }
+    payload.push(0xfe);
+    for reference in [0x0100_u16, 0x0103, 0x0106, 0x0109, 0x010c] {
+        payload.push(0x0a);
+        payload.extend_from_slice(&reference.to_le_bytes());
+    }
+    payload.extend_from_slice(&le_f64(42.5));
+    payload.push(0x03);
+    let mut record = vec![0xb2, 0x03, 0x61, u8::try_from(payload.len()).unwrap(), 0x05];
+    record.extend_from_slice(&payload);
+    record
+}
+
 fn b2_link_5f_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x08, 0x5d, 0x02, 0x03, 0x05,
@@ -2948,6 +2965,22 @@ fn b2_counted_61_parser_separates_references_from_tail() {
     assert_eq!(records[0].header_token, 5);
     assert_eq!(records[0].references, [1300, 1294, 30, 74]);
     assert_eq!(records[0].tail, [0x41, 0x03]);
+}
+
+#[test]
+fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
+    let records = crate::geometry::b2_long_61(&b2_long_61_stream());
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].prefix,
+        [0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb]
+    );
+    assert_eq!(records[0].members, [0x064a, 0x0650, 0x0656]);
+    assert_eq!(
+        records[0].references,
+        [0x0100, 0x0103, 0x0106, 0x0109, 0x010c]
+    );
+    assert_eq!(records[0].scalar, 42.5);
 }
 
 #[test]

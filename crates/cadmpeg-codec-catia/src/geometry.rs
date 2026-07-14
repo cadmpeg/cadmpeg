@@ -744,6 +744,23 @@ pub struct B2Counted61 {
     pub tail: Vec<u8>,
 }
 
+/// Long-form class-`0x61` record with a monotone u16 member lane.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2Long61 {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Eight opaque bytes preceding the `0x06` list marker.
+    pub prefix: [u8; 8],
+    /// Strictly increasing little-endian u16 values.
+    pub members: Vec<u16>,
+    /// Five `0x0a <u16le>` persistent identities after delimiter `0xfe`.
+    pub references: [u16; 5],
+    /// Finite scalar preceding the terminal byte.
+    pub scalar: f64,
+}
+
 /// Fixed-shape class-`0x5f` link record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct B2Link5f {
@@ -1047,6 +1064,59 @@ pub fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
                 header_token: frame.header_token,
                 references,
                 tail: tail.to_vec(),
+            })
+        })
+        .collect()
+}
+
+/// Decode the long class-`0x61` form. Its fixed 25-byte suffix determines the
+/// monotone member-list boundary without searching for delimiter bytes.
+#[must_use]
+pub fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
+    b_family_frames(data, 0x61)
+        .into_iter()
+        .filter_map(|frame| {
+            let payload_len = frame.end.checked_sub(frame.payload)?;
+            let delimiter = frame.end.checked_sub(25)?;
+            if payload_len < 36
+                || data.get(frame.payload + 8) != Some(&0x06)
+                || data.get(delimiter) != Some(&0xfe)
+                || (delimiter - (frame.payload + 9)) % 2 != 0
+                || data.get(frame.end - 1) != Some(&0x03)
+            {
+                return None;
+            }
+            let prefix = data
+                .get(frame.payload..frame.payload + 8)?
+                .try_into()
+                .ok()?;
+            let members = data[frame.payload + 9..delimiter]
+                .chunks_exact(2)
+                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                .collect::<Vec<_>>();
+            if members.is_empty() || members.windows(2).any(|pair| pair[0] >= pair[1]) {
+                return None;
+            }
+            let mut at = delimiter + 1;
+            let mut references = [0u16; 5];
+            for reference in &mut references {
+                if data.get(at) != Some(&0x0a) {
+                    return None;
+                }
+                *reference = u16_le(data, at + 1)?;
+                at += 3;
+            }
+            let scalar = f64_le(data, at)?;
+            if !scalar.is_finite() || at + 9 != frame.end {
+                return None;
+            }
+            Some(B2Long61 {
+                pos: frame.pos,
+                header_token: frame.header_token,
+                prefix,
+                members,
+                references,
+                scalar,
             })
         })
         .collect()
