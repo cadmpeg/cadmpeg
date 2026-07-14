@@ -469,9 +469,9 @@ The positional `var_arr` scalar lane maps `64`, `69`, `9c`, `9d`, `9f`, `a0`,
 `3f de`, `40 11`, `40 12`, `40 14`, `40 15`, `3f d9`, `bf e0`, `bf f8`,
 `bf f9`, `bf fe`, `c0 00`, and `c0 04`. Its `28 <tail7>` form maps to
 `[3f, tail7]`.
-The positional generated-arc scalar lane maps `9c`, `9d`, `9e`, `9f`, `a0`, `5e`,
+The positional generated-arc scalar lane maps `9b`, `9c`, `9d`, `9e`, `9f`, `a0`, `5e`,
 `60`, `64`, `ad`, `cc`, `d0`, `d2`, `d5`, `de`, and `df` to IEEE prefixes
-`40 11`, `40 12`, `40 13`, `40 14`, `40 15`, `3f d3`, `3f d5`, `3f d9`, `3f d9`, `bf f9`, `bf fe`,
+`40 10`, `40 11`, `40 12`, `40 13`, `40 14`, `40 15`, `3f d3`, `3f d5`, `3f d9`, `3f d9`, `bf f9`, `bf fe`,
 `c0 00`, `c0 03`, `c0 10`, and `c0 11`, respectively. Its eight-byte
 `28 <tail7>` form maps to `[3f, tail7]`. Outside that positional arc lane,
 saved-entity `d5` is the negative subunit form `[bf, tail6, 00]`.
@@ -548,6 +548,10 @@ vertex exactly when it lies on the saved center/radius carrier.
 The saved center/radius pair defines the circular carrier independently of the
 endpoint fields. Trim incidence may intersect that carrier before either arc
 endpoint is available; bounded arc geometry still requires both endpoints.
+When both saved endpoints and exactly one center ordinate are defined, equal
+endpoint distance uniquely determines the missing center ordinate and radius.
+The endpoint chord must vary along the missing center axis; a stored radius,
+when present, must equal the derived radius.
 
 When an `order_table` omission lies between adjacent stored `segtab` rows whose internal identifiers differ by two, the omitted row has the intervening internal identifier if a saved entity of the same family carries that identifier. For an evaluated saved line, if one `ent_tab` trim endpoint equals exactly one saved endpoint, the other saved endpoint determines the opposite trim endpoint. A line without an inline carrier is then determined by its two trim endpoints only when they satisfy its stored horizontal or vertical selector.
 

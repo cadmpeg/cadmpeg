@@ -561,10 +561,59 @@ fn saved_section_arc_carrier(
     segment: &crate::feature::FeatureSegment,
 ) -> Option<([f64; 2], f64)> {
     let arc = saved_section_arc_record(definition, segment)?;
-    let [Some(center_u), Some(center_v), _] = arc.center else {
+    let [center_u, center_v, _] = arc.center;
+    if let ([Some(center_u), Some(center_v)], Some(radius)) = (
+        [center_u, center_v],
+        arc.radius.filter(|radius| *radius > 1e-12),
+    ) {
+        return Some(([center_u, center_v], radius));
+    }
+    let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
+    else {
         return None;
     };
-    let radius = arc.radius.filter(|radius| *radius > 1e-12)?;
+    let scale = [first_u, first_v, second_u, second_v]
+        .into_iter()
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let [center_u, center_v] = match [center_u, center_v] {
+        [Some(u), Some(v)] => [u, v],
+        [Some(u), None] => {
+            let denominator = 2.0 * (second_v - first_v);
+            if denominator.abs() <= 1e-12 * scale {
+                return None;
+            }
+            let v = ((second_u - u).mul_add(
+                second_u - u,
+                second_v * second_v - (first_u - u) * (first_u - u) - first_v * first_v,
+            )) / denominator;
+            [u, v]
+        }
+        [None, Some(v)] => {
+            let denominator = 2.0 * (second_u - first_u);
+            if denominator.abs() <= 1e-12 * scale {
+                return None;
+            }
+            let u = ((second_v - v).mul_add(
+                second_v - v,
+                second_u * second_u - (first_v - v) * (first_v - v) - first_u * first_u,
+            )) / denominator;
+            [u, v]
+        }
+        [None, None] => return None,
+    };
+    let first_radius = (first_u - center_u).hypot(first_v - center_v);
+    let second_radius = (second_u - center_u).hypot(second_v - center_v);
+    let radial_scale = first_radius.max(second_radius).max(1.0);
+    if first_radius <= 1e-12
+        || (first_radius - second_radius).abs() > 1e-9 * radial_scale
+        || arc.radius.is_some_and(|stored| {
+            (stored - first_radius).abs() > 1e-9 * stored.max(first_radius).max(1.0)
+        })
+    {
+        return None;
+    }
+    let radius = arc.radius.unwrap_or(first_radius);
     Some(([center_u, center_v], radius))
 }
 
@@ -3123,6 +3172,33 @@ mod resolved_sketch_tests {
             resolved_trim_vertex_coordinates(&trimmed, &BTreeMap::new()),
             BTreeMap::from([(1, [0.0, -2.0]), (2, [-2.0, 0.0])])
         );
+        if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut trimmed
+            .saved_section
+            .as_mut()
+            .expect("test definition has a saved section")
+            .entities[0]
+        {
+            arc.center[1] = None;
+            arc.radius = None;
+        }
+        let segment = &trimmed
+            .segments
+            .as_ref()
+            .expect("test definition has a segment table")
+            .rows[0];
+        assert_eq!(
+            saved_section_arc_carrier(&trimmed, segment),
+            Some(([0.0, 0.0], 2.0))
+        );
+        if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut trimmed
+            .saved_section
+            .as_mut()
+            .expect("test definition has a saved section")
+            .entities[0]
+        {
+            arc.center[1] = Some(0.0);
+            arc.radius = Some(2.0);
+        }
         if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut trimmed
             .saved_section
             .as_mut()
