@@ -625,6 +625,8 @@ The first two resolved datum-coordinate-system blocks form one logical object pa
 
 A datum-coordinate-system scalar-pair frame is `08 02 03 01 03 01 c0 45 04 00 80 86 02 00 03, shifted-f64, 00, shifted-f64`. Each complete occurrence in the reconstructed logical payload is retained in payload order. Both values are finite. The typed frame preserves its payload-relative discriminator and scalar offsets and their exact absolute source offsets across source-block boundaries.
 
+Each of datum-coordinate-system construction lanes 5–7 is an independently bounded descriptor block. A typed block contains exactly one maximal run of 30–32 lowercase hexadecimal digits. Bytes before and after the identity remain exact prefix and suffix fields. The descriptor retains its construction lane, resolved block, identity, exact prefix and suffix, block offset, and identity offset. A block with no qualifying run or multiple qualifying runs remains untyped.
+
 Each resolved coordinate-system block is joined to every operation-header input addressing the identical store block. The relation retains the coordinate-system construction, reference ordinal, shared block, input binding, consuming operation, and input slot. Equal numeric indices in different stores do not join. No origin, axis, input, or output role follows from block equality alone.
 
 A `DATUM_PLANE` payload begins `control:u8, 00 00 01 00 01, declared_count:u8, branch_tag:u8, 01 02`, with `declared_count >= 2`. The control, count, and branch tag are retained independently. The branch tag selects the following construction grammar; the common header assigns no reference, plane-kind, origin, or normal role to branch bytes.

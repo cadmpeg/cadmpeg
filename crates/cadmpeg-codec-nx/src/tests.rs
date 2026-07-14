@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 94);
+    assert_eq!(namespace.version, 95);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1509,6 +1509,20 @@ fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
 
     bytes[29] = 1;
     assert!(crate::om::datum_csys_payload_scalar_pairs(&bytes).is_empty());
+}
+
+#[test]
+fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
+    let bytes = b"\x02\x01ae166162820ea2d993e1fdf49091850e?A\x80\xa0\xf0\x26";
+    let descriptor = crate::om::datum_csys_descriptor_block(bytes).unwrap();
+    assert_eq!(descriptor.prefix, [0x02, 0x01]);
+    assert_eq!(descriptor.identity, "ae166162820ea2d993e1fdf49091850e");
+    assert_eq!(descriptor.identity_offset, 2);
+    assert_eq!(descriptor.suffix, b"?A\x80\xa0\xf0\x26");
+
+    let mut ambiguous = bytes.to_vec();
+    ambiguous.extend_from_slice(b"012345678901234567890123456789");
+    assert!(crate::om::datum_csys_descriptor_block(&ambiguous).is_none());
 }
 
 #[test]
@@ -5304,7 +5318,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 94);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 95);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

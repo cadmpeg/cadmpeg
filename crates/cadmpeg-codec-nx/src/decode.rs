@@ -2798,6 +2798,10 @@ fn attach_native_object_model(
             &scan.container,
             &feature_datum_csys_payloads,
         );
+    let feature_datum_csys_descriptors = crate::native::feature_datum_csys_descriptors(
+        &scan.container,
+        &feature_datum_csys_constructions,
+    );
     let feature_datum_plane_headers = crate::native::feature_datum_plane_headers(&scan.container);
     let feature_datum_plane_block_uses = crate::native::feature_datum_plane_block_uses(
         &feature_datum_plane_headers,
@@ -3261,7 +3265,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(94);
+    namespace.version = namespace.version.max(95);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3335,6 +3339,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_datum_csys_payload_scalar_pairs",
             &feature_datum_csys_payload_scalar_pairs,
+        )?;
+    }
+    if !feature_datum_csys_descriptors.is_empty() {
+        namespace.set_arena(
+            "feature_datum_csys_descriptors",
+            &feature_datum_csys_descriptors,
         )?;
     }
     if !feature_datum_csys_block_uses.is_empty() {

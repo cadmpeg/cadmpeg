@@ -471,6 +471,31 @@ pub struct FeatureDatumCsysPayloadScalarPair {
     pub value_source_offsets: [u64; 2],
 }
 
+/// Typed descriptor from one of the final three datum-CSYS construction lanes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDatumCsysDescriptor {
+    /// Globally unique descriptor identity.
+    pub id: String,
+    /// Owning `DATUM_CSYS` operation label.
+    pub operation_label: String,
+    /// Construction carrying the descriptor lane.
+    pub construction: String,
+    /// Construction reference ordinal in the range 5–7.
+    pub reference_ordinal: u8,
+    /// Resolved source block.
+    pub data_block: String,
+    /// Exact bytes preceding the hexadecimal identity.
+    pub prefix: Vec<u8>,
+    /// Lowercase 30–32 digit hexadecimal identity.
+    pub identity: String,
+    /// Exact bytes following the hexadecimal identity.
+    pub suffix: Vec<u8>,
+    /// Absolute source offset of the block.
+    pub source_offset: u64,
+    /// Absolute source offset of the identity.
+    pub identity_source_offset: u64,
+}
+
 /// Common typed header of one datum-plane construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDatumPlaneHeader {
@@ -2054,6 +2079,38 @@ pub fn feature_datum_csys_payload_scalar_pairs(
                     })
                 })
                 .collect()
+        })
+        .collect()
+}
+
+/// Decode the final three descriptor lanes of datum coordinate systems.
+pub fn feature_datum_csys_descriptors(
+    container: &Container,
+    constructions: &[FeatureDatumCsysConstruction],
+) -> Vec<FeatureDatumCsysDescriptor> {
+    let blocks = offset_data_block_bytes(container);
+    constructions
+        .iter()
+        .flat_map(|construction| {
+            (5..8)
+                .filter_map(|reference_ordinal| {
+                    let data_block = &construction.data_blocks[reference_ordinal];
+                    let &(bytes, source_offset) = blocks.get(data_block)?;
+                    let descriptor = crate::om::datum_csys_descriptor_block(bytes)?;
+                    Some(FeatureDatumCsysDescriptor {
+                        id: format!("{}-descriptor-{reference_ordinal}", construction.id),
+                        operation_label: construction.operation_label.clone(),
+                        construction: construction.id.clone(),
+                        reference_ordinal: reference_ordinal as u8,
+                        data_block: data_block.clone(),
+                        prefix: descriptor.prefix,
+                        identity: descriptor.identity,
+                        suffix: descriptor.suffix,
+                        source_offset,
+                        identity_source_offset: source_offset + descriptor.identity_offset as u64,
+                    })
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }

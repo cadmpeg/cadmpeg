@@ -518,6 +518,19 @@ pub struct DatumCsysPayloadScalarPair {
     pub value_offsets: [usize; 2],
 }
 
+/// One bounded datum-CSYS descriptor block with a unique hexadecimal identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatumCsysDescriptorBlock {
+    /// Exact bytes preceding the identity.
+    pub prefix: Vec<u8>,
+    /// Lowercase 30–32 digit hexadecimal identity.
+    pub identity: String,
+    /// Exact bytes following the identity.
+    pub suffix: Vec<u8>,
+    /// Block-relative identity offset.
+    pub identity_offset: usize,
+}
+
 /// Fixed scalar header in one bounded extrusion payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrudePayloadHeader {
@@ -1886,6 +1899,35 @@ pub fn datum_csys_payload_scalar_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadScal
             })
         })
         .collect()
+}
+
+/// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.
+pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<DatumCsysDescriptorBlock> {
+    let mut matches = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        if !(bytes[at].is_ascii_digit() || (b'a'..=b'f').contains(&bytes[at])) {
+            at += 1;
+            continue;
+        }
+        let start = at;
+        while at < bytes.len() && (bytes[at].is_ascii_digit() || (b'a'..=b'f').contains(&bytes[at]))
+        {
+            at += 1;
+        }
+        if (30..=32).contains(&(at - start)) {
+            matches.push((start, at));
+        }
+    }
+    let [(start, end)] = matches.as_slice() else {
+        return None;
+    };
+    Some(DatumCsysDescriptorBlock {
+        prefix: bytes[..*start].to_vec(),
+        identity: std::str::from_utf8(&bytes[*start..*end]).ok()?.to_string(),
+        suffix: bytes[*end..].to_vec(),
+        identity_offset: *start,
+    })
 }
 
 fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<u32>> {
