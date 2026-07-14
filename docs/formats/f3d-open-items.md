@@ -10,7 +10,6 @@ This document records F3D semantics that the format specification does not yet d
 - Variable-arity algebraic `readLaw` operators `MIN`, `MAX`, `SET`, `ROTATE`, and `STEP` have no defined serialized child-count or terminating delimiter. Their recursive boundaries cannot yet be decoded or written losslessly inside law, net, skin, and sweep payloads.
 - The native loop and degenerate-edge layouts for untrimmed closed spheres and tori are unspecified.
 - The semantic role of the `POSITION` field after `cyl_spl_sur.extrusion_direction` is unresolved.
-- The offset-law fields in `offset_int_cur` variants outside the defined vector-offset construction are unresolved.
 
 ## Container, header, and design records
 
