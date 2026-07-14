@@ -427,6 +427,13 @@ enum NativeAssociativity {
         declared_count: Option<i64>,
         placements: Vec<NativeLabelPlacement>,
     },
+    ViewList {
+        id: String,
+        source_entity: String,
+        declared_visible_count: Option<i64>,
+        view: Option<String>,
+        visible_entities: Vec<Option<String>>,
+    },
     SingleParent {
         id: String,
         source_entity: String,
@@ -2171,7 +2178,7 @@ pub(crate) fn store(
             .iter()
             .filter(|entry| {
                 entry.entity_type == 402
-                    && matches!(entry.form, 5 | 9 | 12 | 13 | 16 | 18 | 20 | 21)
+                    && matches!(entry.form, 5 | 6 | 9 | 12 | 13 | 16 | 18 | 20 | 21)
             })
             .filter_map(|entry| {
                 let record = by_directory.get(&entry.sequence).copied();
@@ -2208,6 +2215,20 @@ pub(crate) fn store(
                                         entity: entity_link(start + 6),
                                     }
                                 })
+                                .collect(),
+                        }
+                    }
+                    6 => {
+                        let count = record
+                            .and_then(|record| record.count(1))
+                            .unwrap_or_default();
+                        NativeAssociativity::ViewList {
+                            id,
+                            source_entity,
+                            declared_visible_count: record.and_then(|record| record.integer(1)),
+                            view: entity_link(2),
+                            visible_entities: (0..count)
+                                .map(|offset| entity_link(3 + offset))
                                 .collect(),
                         }
                     }

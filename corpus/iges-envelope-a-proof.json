@@ -4,9 +4,9 @@
   "representation": "fixed-ascii",
   "specification_version": "5.3",
   "approvals": {
-    "envelope_matrix": "pending-maintainer",
-    "ladder_decisions": "pending-maintainer",
-    "byte_ledger": "pending-maintainer"
+    "envelope_matrix": "approved",
+    "ladder_decisions": "approved",
+    "byte_ledger": "denied"
   },
   "ladder_decisions": [
     {
@@ -46,7 +46,7 @@
     "structurally_complete_gates": 9,
     "original_complete_gates": 9,
     "public_complete_gates": 2,
-    "complete_gates": 0,
+    "complete_gates": 2,
     "release_ready": false
   },
   "ladder_gates": [
@@ -74,7 +74,6 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "approval:ladder_decisions",
         "public_fixture_class:fixed-ascii-container",
         "public_assertion:bounded-detection",
         "public_assertion:document-kind",
@@ -244,7 +243,6 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "approval:ladder_decisions",
         "public_fixture_class:bounded-surfaces",
         "public_fixture_class:curves-on-surfaces",
         "public_fixture_class:explicit-brep",
@@ -271,9 +269,7 @@
       ],
       "original_tests": [],
       "public_fixtures": [],
-      "missing": [
-        "approval:ladder_decisions"
-      ]
+      "missing": []
     },
     {
       "level": "L5",
@@ -392,9 +388,7 @@
       ],
       "original_tests": [],
       "public_fixtures": [],
-      "missing": [
-        "approval:ladder_decisions"
-      ]
+      "missing": []
     },
     {
       "level": "L7",
@@ -435,7 +429,6 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "approval:ladder_decisions",
         "public_fixture_class:attribute-tables",
         "public_fixture_class:external-references",
         "public_fixture_class:network-connect-points",
@@ -505,6 +498,7 @@
         "decode_types_orthographic_and_perspective_views",
         "decode_types_scalar_and_string_property_forms",
         "decode_types_tabular_and_generic_data_properties",
+        "decode_types_view_list_with_required_back_pointers",
         "decode_types_view_visibility_and_display_overrides"
       ],
       "public_fixtures": [],
@@ -2495,6 +2489,7 @@
         3,
         4,
         5,
+        6,
         7,
         9,
         12,
@@ -2520,7 +2515,8 @@
       ],
       "original_tests": [
         "decode_preserves_signal_and_piping_flow_class_order",
-        "decode_types_bounded_predefined_associativity_roles"
+        "decode_types_bounded_predefined_associativity_roles",
+        "decode_types_view_list_with_required_back_pointers"
       ],
       "public_fixtures": [],
       "missing": [

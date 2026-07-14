@@ -22,7 +22,7 @@ tests = ["decode_projects_all_pointer_defined_analytic_surface_forms"]
 
 [[fixture_class]]
 name = "associativities"
-tests = ["decode_types_bounded_predefined_associativity_roles", "decode_preserves_signal_and_piping_flow_class_order"]
+tests = ["decode_types_bounded_predefined_associativity_roles", "decode_types_view_list_with_required_back_pointers", "decode_preserves_signal_and_piping_flow_class_order"]
 
 [[fixture_class]]
 name = "associativity-definitions"

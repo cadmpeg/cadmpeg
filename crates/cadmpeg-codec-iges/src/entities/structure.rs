@@ -592,6 +592,31 @@ fn predefined_associativity_valid(
                         && existing_pointer(record, start + 6, entries).is_some()
                 })
         }
+        6 => {
+            let visible_count = record.count(1);
+            let view = existing_pointer(record, 2, entries);
+            let visible = visible_count.and_then(|count| {
+                (0..count)
+                    .map(|offset| existing_pointer(record, 3 + offset, entries))
+                    .collect::<Option<Vec<_>>>()
+            });
+            visible_count.is_some_and(|count| end == 3 + count)
+                && view.is_some_and(|sequence| {
+                    entries
+                        .get(&sequence)
+                        .is_some_and(|target| target.entity_type == 410)
+                        && records.get(&sequence).is_some_and(|record| {
+                            has_association_back_pointer(record, entry.sequence, entries)
+                        })
+                })
+                && visible.is_some_and(|visible| {
+                    visible.iter().all(|sequence| {
+                        records.get(sequence).is_some_and(|record| {
+                            has_association_back_pointer(record, entry.sequence, entries)
+                        })
+                    })
+                })
+        }
         9 => {
             let child_count = record.count(2).filter(|count| *count > 0);
             let members = child_count.and_then(|count| {
@@ -1332,10 +1357,9 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory
-        .iter()
-        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 5 | 9 | 12 | 13 | 16 | 21))
-    {
+    for entry in directory.iter().filter(|entry| {
+        entry.entity_type == 402 && matches!(entry.form, 5 | 6 | 9 | 12 | 13 | 16 | 21)
+    }) {
         handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));

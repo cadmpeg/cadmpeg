@@ -2,11 +2,14 @@ schema_version = 1
 envelope = "iges-5.3-fixed-ascii-mechanical-document"
 representation = "fixed-ascii"
 specification_version = "5.3"
-approval = "pending-maintainer"
+approval = "approved"
 
 # `forms = "implementor-defined"` admits forms 5001 through 9999. An explicit
-# list is closed and admits only those forms. Obsolete and finite-element-only
-# branches are not part of this mechanical/document envelope.
+# list is closed and admits only those forms. Obsolete, finite-element,
+# electrical/artwork/schematic, and macro/extension branches are adjacent
+# envelopes and are not part of this mechanical/document envelope. Types 132,
+# 320, and 420 remain admitted as product-network identity and occurrence
+# records; electrical signal, node, and artwork semantics remain excluded.
 
 [[entity]]
 type = 0
@@ -663,7 +666,7 @@ assertions = ["field-layout", "identity", "byte-coverage"]
 [[entity]]
 type = 402
 name = "associativity-instance"
-forms = [1, 3, 4, 5, 7, 9, 12, 13, 14, 15, 16, 18, 19, 20, 21]
+forms = [1, 3, 4, 5, 6, 7, 9, 12, 13, 14, 15, 16, 18, 19, 20, 21]
 domain = "structure"
 decoder = "entities::structure::project"
 destination = "native.iges.associativities"

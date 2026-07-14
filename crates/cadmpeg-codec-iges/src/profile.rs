@@ -24,7 +24,7 @@ pub(crate) fn envelope_a_admits(entity_type: i64, form: i64) -> bool {
         214 => matches!(form, 1..=12),
         302 => matches!(form, 5001..=9999),
         322 => matches!(form, 0..=2),
-        402 => matches!(form, 1 | 3..=5 | 7 | 9 | 12..=16 | 18..=21),
+        402 => matches!(form, 1 | 3..=7 | 9 | 12..=16 | 18..=21),
         406 => matches!(form, 1..=3 | 5..=36),
         416 => matches!(form, 0..=4),
         502 | 504 | 508 | 510 => form == 1,

@@ -1,4 +1,4 @@
 schema_version = 1
-envelope_matrix = "pending-maintainer"
-ladder_decisions = "pending-maintainer"
-byte_ledger = "pending-maintainer"
+envelope_matrix = "approved"
+ladder_decisions = "approved"
+byte_ledger = "denied"

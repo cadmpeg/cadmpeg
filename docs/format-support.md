@@ -84,6 +84,9 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 - **Compressed ASCII.** Distinct representation envelope. Fixed ASCII support does not apply.
 - **Binary.** Distinct representation envelope. Fixed ASCII support does not apply.
 - **Extensions.** Named extension envelopes only. An unregistered entity type or form remains inspectable and prevents a Fixed ASCII mechanical/document score above the last cumulative gate that does not require its semantics.
+- **Finite-element analysis.** Types 134, 136, 138, 146, 148, and 418 form an adjacent analysis envelope and are excluded from the mechanical/document profile.
+- **Electrical, artwork, and schematic.** Type 125 and Type 402 Forms 8, 10, and 11 form an adjacent electrical-presentation envelope and are excluded. Types 132, 320, and 420 remain in the mechanical/document profile only for typed network definition, connection identity, and occurrence structure.
+- **Macro and extension definitions.** Type 306 belongs to extension-envelope declaration and is excluded from the closed mechanical/document profile.
 
 ### Ladder applicability
 

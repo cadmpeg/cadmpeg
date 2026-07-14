@@ -3364,6 +3364,33 @@ fn bounded_associativity_forms_file() -> Vec<u8> {
     ])
 }
 
+fn view_list_associativity_file(back_pointers: bool) -> Vec<u8> {
+    let suffix = if back_pointers { ",1,3,0" } else { "" };
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00000000",
+            parameters: format!("410,1,1,0,0,0,0,0,0{suffix};"),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 6,
+            label: "VIEWLIST".into(),
+            status: "00000200",
+            parameters: "402,1,1,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "VISIBLE".into(),
+            status: "00000000",
+            parameters: format!("116,1,2,3,0{suffix};"),
+        },
+    ])
+}
+
 fn flow_associativity_forms_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -5547,6 +5574,42 @@ fn decode_types_bounded_predefined_associativity_roles() {
         "{:#?}",
         result.report.losses
     );
+}
+
+#[test]
+fn decode_types_view_list_with_required_back_pointers() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(view_list_associativity_file(true)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let view_list = result.ir.native.namespace("iges").unwrap().arenas["associativities"]
+        .iter()
+        .find(|value| value.fields["kind"] == "view_list")
+        .unwrap();
+    assert_eq!(view_list.fields["declared_visible_count"], 1);
+    assert_eq!(view_list.fields["view"], "iges:entity:directory#1");
+    assert_eq!(
+        view_list.fields["visible_entities"][0],
+        "iges:entity:directory#5"
+    );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+
+    let missing = IgesCodec
+        .decode(
+            &mut Cursor::new(view_list_associativity_file(false)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(missing.report.losses.iter().any(|loss| {
+        loss.message.contains("entity type 402 form 6")
+            && loss.message.contains("predefined associativity")
+    }));
 }
 
 #[test]

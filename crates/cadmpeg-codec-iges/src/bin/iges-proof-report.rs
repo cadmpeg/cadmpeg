@@ -815,7 +815,11 @@ mod tests {
         let mut bytes = card(b"original fixture", b'S', 1);
         let chunks = global.chunks(72).collect::<Vec<_>>();
         for (index, chunk) in chunks.iter().enumerate() {
-            bytes.extend(card(chunk, b'G', u32::try_from(index + 1).unwrap()));
+            bytes.extend(card(
+                chunk,
+                b'G',
+                u32::try_from(index + 1).expect("test fixture card count fits u32"),
+            ));
         }
         bytes.extend(card(
             format!("S0000001G{:07}D0000000P0000000", chunks.len()).as_bytes(),
@@ -885,7 +889,7 @@ fn unrelated_test() {}
         assert_eq!(report.summary.structurally_complete_gates, 9);
         assert_eq!(report.summary.original_complete_gates, 9);
         assert_eq!(report.summary.public_complete_gates, 2);
-        assert_eq!(report.summary.complete_gates, 0);
+        assert_eq!(report.summary.complete_gates, 2);
         assert!(!report.summary.release_ready);
         assert!(report.evidence_errors.is_empty());
     }
