@@ -53,6 +53,22 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             ));
         }
     }
+    for (&id, record) in &exchange.records {
+        if record.simple_name() != Some("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
+            continue;
+        }
+        let Some(mut built) = build_geometric_set(id, record, exchange, ir) else {
+            result.warnings.push(format!(
+                "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no decoded bounded surfaces"
+            ));
+            continue;
+        };
+        result.typed_records.append(&mut built.typed);
+        ir.model.faces.append(&mut built.faces);
+        ir.model.shells.append(&mut built.shells);
+        ir.model.regions.push(built.region);
+        ir.model.bodies.push(built.body);
+    }
     if !ir.model.bodies.is_empty() {
         for (&id, record) in &exchange.records {
             if matches!(
@@ -66,6 +82,84 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         }
     }
     result
+}
+
+fn build_geometric_set(
+    id: u64,
+    representation: &RawRecord,
+    exchange: &Exchange,
+    ir: &CadIr,
+) -> Option<Built> {
+    let set_ids = refs(representation.parameter(1)?)?;
+    let mut typed = BTreeSet::from([id]);
+    let mut surfaces = Vec::new();
+    for set_id in set_ids {
+        let set = exchange.records.get(&set_id)?;
+        if set.simple_name() != Some("GEOMETRIC_SET") {
+            continue;
+        }
+        typed.insert(set_id);
+        for surface_step in refs(set.parameter(1)?)? {
+            let surface = SurfaceId(format!("step:data:surface#{surface_step}"));
+            if ir
+                .model
+                .surfaces
+                .iter()
+                .any(|candidate| candidate.id == surface)
+            {
+                surfaces.push((surface_step, surface));
+            }
+        }
+    }
+    if surfaces.is_empty() {
+        return None;
+    }
+    let body = BodyId(format!("step:data:body#{id}"));
+    let region = RegionId(format!("step:data:region#{id}"));
+    let shell = ShellId(format!("step:data:shell#geometric-set-{id}"));
+    let faces = surfaces
+        .into_iter()
+        .map(|(surface_step, surface)| Face {
+            id: FaceId(format!("step:data:face#{surface_step}-geometric-set-{id}")),
+            shell: shell.clone(),
+            surface,
+            sense: Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        })
+        .collect::<Vec<_>>();
+    let face_ids = faces.iter().map(|face| face.id.clone()).collect();
+    Some(Built {
+        typed,
+        vertices: Vec::new(),
+        edges: Vec::new(),
+        coedges: Vec::new(),
+        loops: Vec::new(),
+        faces,
+        shells: vec![Shell {
+            id: shell.clone(),
+            region: region.clone(),
+            faces: face_ids,
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        }],
+        region: Region {
+            id: region.clone(),
+            body: body.clone(),
+            shells: vec![shell],
+        },
+        body: Body {
+            id: body,
+            kind: BodyKind::Sheet,
+            regions: vec![region],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        },
+    })
 }
 
 #[derive(Clone)]

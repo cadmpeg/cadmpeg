@@ -276,6 +276,10 @@ fn every_repository_step_fixture_has_complete_byte_accounting() {
             include_bytes!("../tests/fixtures/ap242_geometry.p21"),
         ),
         (
+            "ap242_geometric_set",
+            include_bytes!("../tests/fixtures/ap242_geometric_set.p21"),
+        ),
+        (
             "ap242_mapped_assembly",
             include_bytes!("../tests/fixtures/ap242_mapped_assembly.p21"),
         ),
@@ -613,6 +617,27 @@ fn decode_builds_a_valid_ap203_sheet_brep() {
         .curves
         .iter()
         .any(|curve| matches!(curve.geometry, CurveGeometry::Composite { .. })));
+}
+
+#[test]
+fn decode_builds_a_sheet_from_a_geometric_surface_set() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let bytes = include_bytes!("../tests/fixtures/ap242_geometric_set.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode geometric surface set");
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert!(result.ir.model.faces[0].loops.is_empty());
+    assert_eq!(
+        result.ir.model.faces[0].surface.as_str(),
+        "step:data:surface#11"
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
