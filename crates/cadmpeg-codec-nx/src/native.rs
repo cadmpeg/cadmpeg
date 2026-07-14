@@ -2646,6 +2646,23 @@ pub struct ObjectReference {
     pub source_offset: u64,
 }
 
+/// Ordered persistent or tagged reference in an offset-store control block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockControlReference {
+    /// Globally unique occurrence identity.
+    pub id: String,
+    /// Owning control block in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Zero-based retained-reference order within the control block.
+    pub ordinal: u32,
+    /// Tagged reference family.
+    pub kind: ObjectReferenceKind,
+    /// Reference value without marker or tag bits.
+    pub value: u32,
+    /// Absolute file offset of the reference marker.
+    pub source_offset: u64,
+}
+
 /// Cross-record identity established by equal persistent-handle values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PersistentHandle {
@@ -2657,6 +2674,9 @@ pub struct PersistentHandle {
     pub records: Vec<String>,
     /// Total number of serialized occurrences across those records.
     pub occurrence_count: u32,
+    /// Ordered distinct offset-store control blocks containing the handle.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub data_blocks: Vec<String>,
     /// Ordered distinct EXTREFSTREAM records containing the same handle.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub external_records: Vec<String>,
@@ -3179,6 +3199,44 @@ pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlV
         .collect()
 }
 
+/// Decode persistent-handle and tagged-28 occurrences in bounded control blocks.
+pub fn data_block_control_references(container: &Container) -> Vec<DataBlockControlReference> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let Some(control) = section.control else {
+                return Vec::new();
+            };
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
+            crate::om::references(control.bytes, control.offset)
+                .into_iter()
+                .filter(|reference| reference.kind != crate::om::ReferenceKind::RecordOrdinal16)
+                .enumerate()
+                .map(|(ordinal, reference)| DataBlockControlReference {
+                    id: format!(
+                        "nx:om-data-block-control-references-{section_ordinal}:reference#{}",
+                        reference.offset
+                    ),
+                    data_block: data_block.clone(),
+                    ordinal: ordinal as u32,
+                    kind: match reference.kind {
+                        crate::om::ReferenceKind::PersistentHandle => {
+                            ObjectReferenceKind::PersistentHandle
+                        }
+                        crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
+                        crate::om::ReferenceKind::RecordOrdinal16 => unreachable!("filtered"),
+                    },
+                    value: reference.value,
+                    source_offset: entry_offset + reference.offset as u64,
+                })
+                .collect()
+        })
+        .collect()
+}
+
 /// Decode framed object references from offset-only OM data blocks.
 pub fn data_block_references(container: &Container) -> Vec<DataBlockReference> {
     let mut records = BTreeMap::<(String, u32), Vec<String>>::new();
@@ -3383,17 +3441,28 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
 /// Group persistent-handle occurrences into cross-record identities.
 pub fn persistent_handles(
     references: &[ObjectReference],
+    control_references: &[DataBlockControlReference],
     external: &[ExternalReferenceRecord],
 ) -> Vec<PersistentHandle> {
-    let mut groups = BTreeMap::<u32, (Vec<String>, u32, Vec<String>)>::new();
+    let mut groups = BTreeMap::<u32, (Vec<String>, u32, Vec<String>, Vec<String>)>::new();
     for reference in references
         .iter()
         .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
     {
-        let (records, occurrence_count, _) = groups.entry(reference.value).or_default();
+        let (records, occurrence_count, _, _) = groups.entry(reference.value).or_default();
         *occurrence_count += 1;
         if records.last() != Some(&reference.record) && !records.contains(&reference.record) {
             records.push(reference.record.clone());
+        }
+    }
+    for reference in control_references
+        .iter()
+        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
+    {
+        let (_, occurrence_count, _, data_blocks) = groups.entry(reference.value).or_default();
+        *occurrence_count += 1;
+        if !data_blocks.contains(&reference.data_block) {
+            data_blocks.push(reference.data_block.clone());
         }
     }
     for record in external {
@@ -3407,12 +3476,15 @@ pub fn persistent_handles(
     groups
         .into_iter()
         .map(
-            |(value, (records, occurrence_count, external_records))| PersistentHandle {
-                id: format!("nx:om-persistent-handles:handle#{value:08x}"),
-                value,
-                records,
-                occurrence_count,
-                external_records,
+            |(value, (records, occurrence_count, external_records, data_blocks))| {
+                PersistentHandle {
+                    id: format!("nx:om-persistent-handles:handle#{value:08x}"),
+                    value,
+                    records,
+                    occurrence_count,
+                    data_blocks,
+                    external_records,
+                }
             },
         )
         .collect()

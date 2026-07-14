@@ -551,6 +551,8 @@ The offset-only form does not assign one fixed-width object ID to every record. 
 
 A zero-prefixed offset-only store control-array form is an atomic array of four-byte words. Each word is `00, value:u24 LE`; the array is nonempty and its byte length is divisible by four. Values retain their zero-based word order and byte offsets. A nonzero prefix byte or incomplete final word means the control block uses another form and does not produce this array.
 
+Independently of the control-block form, complete `e0, handle:u32 BE` and four-byte high-nibble-`c` tagged-reference tokens are retained in byte order within the bounded control block. Record-ordinal tokens are not defined for offset-only control storage and are excluded.
+
 A printable OM string value is framed as `66 32 03, declared_len:u8, text[declared_len-2], 00`. The text is non-empty printable ASCII. The marker, declared length, text, and null terminator lie within one externally bounded record.
 
 A feature-history operation record begins at the fixed operation-header marker and ends at the next validated operation header or the record-area boundary. Its label is `03, declared_len:u8, printable_name[declared_len-2], 00`. The operation payload begins immediately after that null terminator and extends through the operation-record boundary. Payload strings use `04, declared_len:u8, utf8_text[declared_len-2], 00`; the text is non-empty valid UTF-8 and contains no control characters.
@@ -597,7 +599,7 @@ An operation input slot depends on every uniquely resolved parameter declaration
 
 The `SIMPLE HOLE` payload template is underscore-delimited. `Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer` identifies a general simple hole extending through all material, with chamfer treatments at its entry and exit. The six tokens form one atomic template; missing, reordered, or unknown tokens do not produce a typed hole template.
 
-**Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cross-stream bridge (RMFastLoad ↔ UG_PART OM ↔ EXTREFSTREAM). Equal handle values group their ordered distinct bounded OM records and indexed EXTREFSTREAM records under one native handle identity. A second family is a four-byte big-endian word whose high nibble is `0xC` and low 28 bits are the reference value. Both tokens remain within one externally bounded record and occur as `(e0-handle, c-ref)` pairs.
+**Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cross-stream bridge (RMFastLoad ↔ UG_PART OM ↔ EXTREFSTREAM). Equal handle values group their ordered distinct bounded OM records, offset-store control blocks, and indexed EXTREFSTREAM records under one native handle identity. A second family is a four-byte big-endian word whose high nibble is `0xC` and low 28 bits are the reference value. Both tokens remain within one externally bounded record and occur as `(e0-handle, c-ref)` pairs.
 
 **Same-section record references.** A counted reference run is `01, count:u8, (count - 1) × (90, record_ordinal:u16 BE)`, with `count >= 2`. Every ordinal addresses an entity record in the same external entity-index directory. The containing record depends on the addressed records; the addressed records have the containing record as a dependent. The complete run lies within one bounded record; any out-of-range ordinal invalidates the run atomically. Token order is operand order, and inverse dependent order follows containing-record ordinal.
 

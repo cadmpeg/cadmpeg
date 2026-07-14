@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 58);
+    assert_eq!(namespace.version, 59);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -4764,7 +4764,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 58);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 59);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -6617,11 +6617,21 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         source_entry: "external".into(),
         source_offset: 10,
     };
+    let control = crate::native::DataBlockControlReference {
+        id: "nx:test:control-reference#0".into(),
+        data_block: "nx:test:control-block#0".into(),
+        ordinal: 0,
+        kind: crate::native::ObjectReferenceKind::PersistentHandle,
+        value: 0x1020_3040,
+        source_offset: 20,
+    };
 
-    let handles = crate::native::persistent_handles(&[reference], &[external]);
+    let handles = crate::native::persistent_handles(&[reference], &[control], &[external]);
 
     assert_eq!(handles.len(), 1);
     assert_eq!(handles[0].records, ["nx:test:om-record#0"]);
+    assert_eq!(handles[0].occurrence_count, 2);
+    assert_eq!(handles[0].data_blocks, ["nx:test:control-block#0"]);
     assert_eq!(handles[0].external_records, ["nx:test:external-record#6"]);
 }
 
