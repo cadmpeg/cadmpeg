@@ -140,6 +140,13 @@ pub fn decode_in_surface_row_lane(
         return Some((f64::from_be_bytes(raw), offset + 7));
     }
     if let Some(high) = match data.get(offset) {
+        Some(0x73) => Some(0x3fe8),
+        Some(0xbb) => Some(0xbfe8),
+        _ => None,
+    } {
+        return ieee7_dict(data, offset, high);
+    }
+    if let Some(high) = match data.get(offset) {
         Some(0xd1) => Some(0x3fff),
         Some(0xd3) => Some(0x4001),
         Some(0xde) => Some(0x4010),

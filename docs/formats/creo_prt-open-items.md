@@ -5,7 +5,7 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 ## Geometry
 
 - The inherited-slot state transitions in curve-equation `local_sys f9 04 03` bodies are unspecified.
-- The remaining lane-specific DICT sign lattices are unspecified.
+- DICT sign lattices outside the defined scalar lanes are unspecified.
 - Per-instance overrides for cone half-angle and `geom_type = 26` torus/sphere radii are unspecified.
 - Packed B-spline surface bodies and surface-intersection curves are unspecified.
 - The prototype-adjacent `tab_cyl` instance rows use a construction distinct

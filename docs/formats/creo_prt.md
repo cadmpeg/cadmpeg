@@ -142,6 +142,8 @@ sub-unit form reconstructed as `3F <tail6> 00`. In named scalar lanes, `71`
 occupies eight source bytes and reconstructs as `3F <tail7>`.
 In a positional surface row, `a0 <tail6>` is the negative DICT form
 `C0 15 <tail6>`.
+The positional surface-row lane defines the same-tail sign pair
+`73→3F E8` and `bb→BF E8`.
 The positional surface-row lane maps `d1`, `d3`, `de`, and `df` to IEEE
 prefixes `3F FF`, `40 01`, `40 10`, and `40 11`, respectively.
 

@@ -544,7 +544,10 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
     assert_eq!(records[0].fields["surface_id"], 7);
     assert_eq!(records[0].fields["surface_family"], "torus_or_sphere");
     assert_eq!(records[0].fields["boundary"], "compound_close");
-    assert!(records[0].fields["slots"][0]["value"].is_null());
+    assert_eq!(
+        records[0].fields["slots"][0]["value"],
+        f64::from_be_bytes([0x3f, 0xe8, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0])
+    );
     for (index, expected) in [0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0]
         .into_iter()
         .enumerate()

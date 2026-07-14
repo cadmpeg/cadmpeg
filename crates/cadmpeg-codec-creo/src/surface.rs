@@ -1817,7 +1817,7 @@ mod tests {
     }
 
     #[test]
-    fn opaque_seven_byte_surface_scalar_owns_its_tail() {
+    fn signed_surface_dict_scalar_owns_its_tail() {
         let body = [0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0];
         let tokens = scalar_tokens(
             SurfaceKind::TorusOrSphere,
@@ -1826,7 +1826,12 @@ mod tests {
         );
 
         assert_eq!(tokens.len(), 1);
-        assert_eq!(tokens[0].value, None);
+        assert_eq!(
+            tokens[0].value,
+            Some(f64::from_be_bytes([
+                0x3f, 0xe8, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0
+            ]))
+        );
         assert_eq!(tokens[0].offset, 0);
         assert_eq!(tokens[0].length, 7);
         assert_eq!(tokens[0].raw, body);
@@ -2055,15 +2060,16 @@ mod tests {
     }
 
     #[test]
-    fn unresolved_seven_byte_scalars_preserve_slot_identity() {
+    fn signed_surface_dict_slots_decode_as_mirrors() {
         let body = [
             0xbb, 1, 2, 3, 4, 5, 6, 0xbb, 1, 2, 3, 4, 5, 6, 0x73, 1, 2, 3, 4, 5, 6,
         ];
         let slots = scalar_slots_with_tokens(&body, 3, &scalar::ScalarCache::default());
 
+        let magnitude = f64::from_be_bytes([0x3f, 0xe8, 1, 2, 3, 4, 5, 6]);
         assert_eq!(
             slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
-            vec![None; 3]
+            vec![Some(-magnitude), Some(-magnitude), Some(magnitude)]
         );
         assert_eq!(slot_equality(&slots[0], &slots[1]), Some(true));
         assert_eq!(slot_equality(&slots[1], &slots[2]), Some(false));
