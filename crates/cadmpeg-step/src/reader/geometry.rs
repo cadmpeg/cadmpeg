@@ -1209,7 +1209,7 @@ fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<Nur
         .into_iter()
         .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
-    let periodic = base.parameters.get(offset + 3)?.logical()?;
+    let periodic = logical_value(base.parameters.get(offset + 3)?)?.unwrap_or(false);
     let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(3)?;
     let knots = expand_knots(
@@ -1263,8 +1263,8 @@ fn nurbs_surface(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<N
         .flat_map(|row| row.list().unwrap())
         .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
         .collect::<Option<Vec<_>>>()?;
-    let u_periodic = base.parameters.get(offset + 4)?.logical()?;
-    let v_periodic = base.parameters.get(offset + 5)?.logical()?;
+    let u_periodic = logical_value(base.parameters.get(offset + 4)?)?.unwrap_or(false);
+    let v_periodic = logical_value(base.parameters.get(offset + 5)?)?.unwrap_or(false);
     let knot_leaf = record.partial("B_SPLINE_SURFACE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(5)?;
     let u_knots = expand_knots(&knot_leaf.parameters[tail], &knot_leaf.parameters[tail + 2])?;
