@@ -299,6 +299,16 @@ Negative prefixes `a4..a6`, `a7..b1`, and `b2..c7` add to `BF2B`, `BF2C`, and
 `BF2D`. Prefixes `2c`, `4c..4d`, `50`, and `54` reconstruct
 `3F <tail6> 00`; `28` and `41` reconstruct `3F <tail7>`.
 
+A replay-bound six-scalar frame stores two opposite corners of the directrix
+and extrusion bounds. When exactly two frame-axis spans equal the ranges of the
+first and second control-point coordinates, those axes define the directrix
+chart. The first coordinate runs from the greater frame bound to the lesser;
+the second runs from the lesser bound to the greater. Both directrix-axis frame
+coordinates are negated in model space. The remaining axis retains its stored
+sign, runs from the first corner to the second, and defines the extrusion
+vector. The four placed points form a non-rational clamped cubic B-spline with knot vector
+`[0,0,0,0,1,1,1,1]`.
+
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 
 ### 3.3 Torus and sphere representation

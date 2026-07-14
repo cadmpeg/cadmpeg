@@ -3437,6 +3437,104 @@ fn extruded_nurbs_surface(directrix: &NurbsCurve, sweep: [f64; 3]) -> Option<Nur
     })
 }
 
+fn placed_tabulated_cylinder_directrix(
+    replay: &crate::surface::TabulatedCylinderCurveReplay,
+    parameters: &crate::surface::SurfaceParameterRecord,
+) -> Option<(NurbsCurve, [f64; 3])> {
+    if parameters.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
+        return None;
+    }
+    let direction = parameters.extrusion_direction(0x2c)?;
+    (direction.iter().map(|value| value * value).sum::<f64>() > 0.0).then_some(())?;
+    let points = replay
+        .control_points
+        .iter()
+        .copied()
+        .collect::<Option<Vec<_>>>()?;
+    let [_, frame] = parameters.scalar_frames.as_slice() else {
+        return None;
+    };
+    let values = frame
+        .slots
+        .iter()
+        .map(|slot| slot.value)
+        .collect::<Option<Vec<_>>>()?;
+    let [a0, a1, a2, b0, b1, b2] = values.as_slice() else {
+        return None;
+    };
+    let first = [*a0, *a1, *a2];
+    let second = [*b0, *b1, *b2];
+    let local_min = [
+        points
+            .iter()
+            .map(|point| point[0])
+            .fold(f64::INFINITY, f64::min),
+        points
+            .iter()
+            .map(|point| point[1])
+            .fold(f64::INFINITY, f64::min),
+    ];
+    let local_max = [
+        points
+            .iter()
+            .map(|point| point[0])
+            .fold(f64::NEG_INFINITY, f64::max),
+        points
+            .iter()
+            .map(|point| point[1])
+            .fold(f64::NEG_INFINITY, f64::max),
+    ];
+    let local_span = [local_max[0] - local_min[0], local_max[1] - local_min[1]];
+    if local_span
+        .iter()
+        .any(|span| !span.is_finite() || *span <= 0.0)
+    {
+        return None;
+    }
+    let frame_span = std::array::from_fn::<_, 3, _>(|axis| (second[axis] - first[axis]).abs());
+    let close = |left: f64, right: f64| {
+        (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
+    };
+    let assignments = (0..3)
+        .flat_map(|first_axis| {
+            (0..3)
+                .filter(move |&second_axis| {
+                    first_axis != second_axis
+                        && close(frame_span[first_axis], local_span[0])
+                        && close(frame_span[second_axis], local_span[1])
+                })
+                .map(move |second_axis| (first_axis, second_axis, 3 - first_axis - second_axis))
+        })
+        .collect::<Vec<_>>();
+    let [(first_axis, second_axis, sweep_axis)] = assignments.as_slice() else {
+        return None;
+    };
+    let control_points = points
+        .iter()
+        .map(|point| {
+            let mut placed = [0.0; 3];
+            placed[*first_axis] =
+                -(first[*first_axis].max(second[*first_axis]) - (point[0] - local_min[0]));
+            placed[*second_axis] =
+                -(first[*second_axis].min(second[*second_axis]) + (point[1] - local_min[1]));
+            placed[*sweep_axis] = first[*sweep_axis];
+            Point3::new(placed[0], placed[1], placed[2])
+        })
+        .collect();
+    let mut sweep = [0.0; 3];
+    sweep[*sweep_axis] = second[*sweep_axis] - first[*sweep_axis];
+    (sweep[*sweep_axis].is_finite() && sweep[*sweep_axis] != 0.0).then_some((
+        NurbsCurve {
+            degree: 3,
+            knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+            control_points,
+            weights: None,
+            periodic: false,
+        },
+        sweep,
+    ))
+}
+
 fn transfer_saved_spline_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -7979,6 +8077,74 @@ fn extrusion_extent_and_direction(
 #[cfg(test)]
 mod resolved_sketch_tests {
     use super::*;
+
+    fn parameter_slot(value: f64) -> crate::surface::SurfaceParameterScalar {
+        crate::surface::SurfaceParameterScalar {
+            value: Some(value),
+            raw: vec![0xe4],
+            offset: 0,
+            length: 1,
+        }
+    }
+
+    #[test]
+    fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
+        let replay = crate::surface::TabulatedCylinderCurveReplay {
+            surface_id: 7,
+            curve_id: 9,
+            curve_type: 0x13,
+            flip: 1,
+            tangent_condition: 0,
+            degree: 3,
+            parameter_body: vec![],
+            control_point_ids: [1, 2, 3, 4],
+            successor_reference: 5,
+            control_point_bodies: std::array::from_fn(|_| vec![]),
+            control_points: [
+                Some([1.0, 2.0]),
+                Some([2.0, 2.5]),
+                Some([3.0, 3.5]),
+                Some([4.0, 4.0]),
+            ],
+            terminal_reference: 6,
+            offset: 0,
+            surface_row_offset: 0,
+        };
+        let parameters = crate::surface::SurfaceParameterRecord {
+            surface_id: 7,
+            body: vec![],
+            scalar_values: vec![],
+            scalar_tokens: vec![],
+            opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan {
+                raw: vec![0x00, 0x0c, 0x9a],
+                offset: 3,
+                length: 3,
+            }],
+            scalar_frames: vec![
+                crate::surface::SurfaceParameterScalarFrame {
+                    offset: 0,
+                    slots: [0.0, 0.0, 1.0].into_iter().map(parameter_slot).collect(),
+                },
+                crate::surface::SurfaceParameterScalarFrame {
+                    offset: 6,
+                    slots: [13.0, 22.0, 5.0, 10.0, 20.0, 10.0]
+                        .into_iter()
+                        .map(parameter_slot)
+                        .collect(),
+                },
+            ],
+            terminal_scalar_frame: None,
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 0,
+            body_offset: 0,
+        };
+
+        let (curve, sweep) =
+            placed_tabulated_cylinder_directrix(&replay, &parameters).expect("placement");
+        assert_eq!(curve.control_points[0], Point3::new(-13.0, -20.0, 5.0));
+        assert_eq!(curve.control_points[3], Point3::new(-10.0, -22.0, 5.0));
+        assert_eq!(sweep, [0.0, 0.0, 5.0]);
+    }
 
     #[test]
     fn geometry_signal_excludes_opaque_carriers() {
@@ -13089,6 +13255,111 @@ fn transfer_positional_line_extrusion_planes(
     transferred
 }
 
+fn transfer_tabulated_cylinder_spline_extrusions(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let parameters = scan
+        .surface_parameters
+        .iter()
+        .map(|record| (record.surface_id, record))
+        .collect::<BTreeMap<_, _>>();
+    let mut transferred = 0;
+    for replay in &scan.tabulated_cylinder_curve_replays {
+        let Some(parameters) = parameters.get(&replay.surface_id) else {
+            continue;
+        };
+        let Some((directrix, sweep)) = placed_tabulated_cylinder_directrix(replay, parameters)
+        else {
+            continue;
+        };
+        let Some(surface) = extruded_nurbs_surface(&directrix, sweep) else {
+            continue;
+        };
+        let curve_id = CurveId(format!(
+            "creo:visibgeom:tabulated_directrix#{}",
+            replay.surface_id
+        ));
+        let surface_id = SurfaceId(format!("creo:visibgeom:surface#{}", replay.surface_id));
+        if ir
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| surface.id == surface_id)
+        {
+            continue;
+        }
+        let procedural_id = ProceduralSurfaceId(format!(
+            "creo:visibgeom:tabulated_extrusion#{}",
+            replay.surface_id
+        ));
+        annotate(
+            annotations,
+            &curve_id,
+            "VisibGeom",
+            replay.offset as u64,
+            "tabulated_cylinder_directrix",
+            Exactness::Derived,
+        );
+        annotate(
+            annotations,
+            &surface_id,
+            "VisibGeom",
+            replay.surface_row_offset as u64,
+            "tabulated_cylinder_surface",
+            Exactness::Derived,
+        );
+        annotate(
+            annotations,
+            &procedural_id,
+            "VisibGeom",
+            replay.surface_row_offset as u64,
+            "tabulated_cylinder_extrusion",
+            Exactness::Derived,
+        );
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Nurbs(directrix),
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:curve#{}", replay.curve_id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Nurbs(surface),
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", replay.surface_id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: procedural_id,
+            surface: surface_id,
+            definition: ProceduralSurfaceDefinition::Extrusion {
+                directrix: curve_id,
+                parameter_interval: Some([0.0, 1.0]),
+                direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
+                native_position: None,
+            },
+            cache_fit_tolerance: None,
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 fn fc05_model_frame(
     axis_index: usize,
     axis_ordinate: f64,
@@ -14189,6 +14460,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         transfer_first_instance_prototype_surfaces(scan, &mut ir, &mut annotations);
     let positional_line_extrusion_plane_count =
         transfer_positional_line_extrusion_planes(scan, &mut ir, &mut annotations);
+    let tabulated_cylinder_spline_extrusion_count =
+        transfer_tabulated_cylinder_spline_extrusions(scan, &mut ir, &mut annotations);
     transfer_fc05_cap_circles(scan, &mut ir, &mut annotations);
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
     let saved_spline_curve_count = transfer_saved_spline_curves(scan, &mut ir, &mut annotations);
@@ -14214,6 +14487,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         source.attributes.insert(
             "transferred_positional_line_extrusion_plane_count".to_string(),
             positional_line_extrusion_plane_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_tabulated_cylinder_spline_extrusion_count".to_string(),
+            tabulated_cylinder_spline_extrusion_count.to_string(),
         );
         source.attributes.insert(
             "transferred_saved_spline_curve_count".to_string(),
@@ -15105,6 +15382,16 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         })
         .and_then(|count| count.parse::<usize>().ok())
         .unwrap_or(0);
+    let tabulated_cylinder_spline_extrusion_count = ir
+        .source
+        .as_ref()
+        .and_then(|source| {
+            source
+                .attributes
+                .get("transferred_tabulated_cylinder_spline_extrusion_count")
+        })
+        .and_then(|count| count.parse::<usize>().ok())
+        .unwrap_or(0);
     let mut losses = Vec::new();
 
     if container_only {
@@ -15200,6 +15487,18 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
                 "Transferred {positional_line_extrusion_plane_count} unbound straight positional \
                  surface-of-extrusion carrier(s) from complete sweep-direction and directrix \
                  frames."
+            ),
+            provenance: None,
+        });
+    }
+
+    if !container_only && tabulated_cylinder_spline_extrusion_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {tabulated_cylinder_spline_extrusion_count} tabulated-cylinder \
+                 cubic spline extrusion carrier(s) from uniquely matched directrix and frame spans."
             ),
             provenance: None,
         });
