@@ -1436,8 +1436,7 @@ pub(crate) fn store(
                 }
             } else {
                 let count = parameters
-                    .and_then(|record| record.integer(1))
-                    .and_then(|value| usize::try_from(value).ok())
+                    .and_then(|record| record.count(1))
                     .unwrap_or_default();
                 NativeLineFontDefinition::VisibleBlankPattern {
                     id: format!("iges:presentation:line-font#D{}", entry.sequence),
@@ -1491,16 +1490,14 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.integer(5))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(5))
                 .unwrap_or_default();
             let supersedes_code = record.and_then(|record| record.integer(3));
             let mut cursor = 6;
             let characters = (0..count)
                 .map(|_| {
                     let motion_count = record
-                        .and_then(|record| record.integer(cursor + 3))
-                        .and_then(|value| usize::try_from(value).ok())
+                        .and_then(|record| record.count(cursor + 3))
                         .unwrap_or_default();
                     let glyph = NativeGlyph {
                         character_code: record.and_then(|record| record.integer(cursor)),

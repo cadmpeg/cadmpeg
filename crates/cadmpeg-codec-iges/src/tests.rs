@@ -4789,6 +4789,28 @@ fn decode_bounds_declared_trimming_counts_by_record_tokens() {
 }
 
 #[test]
+fn decode_bounds_declared_presentation_counts_by_record_tokens() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 310,
+        form: 0,
+        label: "BADCOUNT".into(),
+        status: "00000200",
+        parameters: "310,1,1HA,,1,9223372036854775807;".into(),
+    }]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("font header")));
+    let fonts = &result.ir.native.namespace("iges").unwrap().arenas["text_fonts"];
+    assert!(fonts[0].fields["characters"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn decode_types_attribute_table_tuple_and_row_major_instances() {
     let result = IgesCodec
         .decode(

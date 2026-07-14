@@ -129,10 +129,7 @@ fn text_font_definition(
     if record.integer(3).is_some_and(|value| value < 0) && supersedes.is_none() {
         return None;
     }
-    let count = record
-        .integer(5)
-        .and_then(|value| usize::try_from(value).ok())
-        .filter(|count| *count > 0)?;
+    let count = record.count(5).filter(|count| *count > 0)?;
     let mut cursor = 6;
     let mut character_codes = BTreeSet::new();
     for _ in 0..count {
@@ -144,9 +141,7 @@ fn text_font_definition(
         }
         record.integer(cursor + 1)?;
         record.integer(cursor + 2)?;
-        let motion_count = record
-            .integer(cursor + 3)
-            .and_then(|value| usize::try_from(value).ok())?;
+        let motion_count = record.count(cursor + 3)?;
         cursor += 4;
         for _ in 0..motion_count {
             integer_or(record, cursor, 0).filter(|value| matches!(value, 0..=1))?;
@@ -299,8 +294,7 @@ pub(super) fn project(
             continue;
         };
         let levels = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
+            .count(1)
             .filter(|count| *count > 0)
             .and_then(|count| {
                 (0..count)
@@ -352,10 +346,7 @@ pub(super) fn project(
                     .number(4)
                     .is_some_and(|value| value.is_finite() && value > 0.0)
         } else {
-            let count = record
-                .integer(1)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count > 0);
+            let count = record.count(1).filter(|count| *count > 0);
             count.is_some_and(|count| {
                 let expected_digits = count.div_ceil(4);
                 (0..count).all(|index| {
