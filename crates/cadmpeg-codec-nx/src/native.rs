@@ -188,6 +188,70 @@ pub fn parasolid_blend_bound_records(streams: &[Stream]) -> Vec<ParasolidBlendBo
     records
 }
 
+/// Serialized framing of a Parasolid `term_use` record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParasolidTermUseFraming {
+    /// Direct `0x0029` tag.
+    Direct,
+    /// `0x0029ff` escaped tag.
+    Escaped,
+    /// Payload following the inline descriptor.
+    DescriptorInline,
+}
+
+/// Complete typed source record for one Parasolid `term_use` endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidTermUseRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Cross-reference index of the endpoint.
+    pub xmt: u32,
+    /// Serialized leading count.
+    pub count: u32,
+    /// Two-byte endpoint-form discriminator as printable ASCII.
+    pub form: String,
+    /// Endpoint position in millimetres.
+    pub point: [f64; 3],
+    /// Serialized record framing.
+    pub framing: ParasolidTermUseFraming,
+    /// Tag or inline-payload offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Decode complete typed source records for Parasolid `term_use` endpoints.
+pub fn parasolid_term_use_records(streams: &[Stream]) -> Vec<ParasolidTermUseRecord> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind.is_parasolid() {
+            continue;
+        }
+        for term in crate::intersection::term_use_records(&stream.inflated) {
+            let framing = match term.framing {
+                crate::intersection::TermUseFraming::Direct => ParasolidTermUseFraming::Direct,
+                crate::intersection::TermUseFraming::Escaped => ParasolidTermUseFraming::Escaped,
+                crate::intersection::TermUseFraming::DescriptorInline => {
+                    ParasolidTermUseFraming::DescriptorInline
+                }
+            };
+            records.push(ParasolidTermUseRecord {
+                id: format!("nx:s{stream_ordinal}:term-use-record#{}", term.xmt),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: term.xmt,
+                count: term.count,
+                form: String::from_utf8_lossy(&term.form).into_owned(),
+                point: [term.point.x, term.point.y, term.point.z],
+                framing,
+                inflated_offset: term.pos as u64,
+            });
+        }
+    }
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    records
+}
+
 /// Complete typed source record for one Parasolid surface-intersection curve.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidIntersectionRecord {

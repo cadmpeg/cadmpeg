@@ -32,6 +32,34 @@ pub struct BlendBound {
     pub pos: usize,
 }
 
+/// Serialized framing of one `term_use` endpoint record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TermUseFraming {
+    /// Direct `0x0029` tag.
+    Direct,
+    /// `0x0029ff` escaped tag.
+    Escaped,
+    /// Payload following the inline `term_use` descriptor.
+    DescriptorInline,
+}
+
+/// A complete `term_use` endpoint record.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TermUse {
+    /// Cross-reference index of the endpoint record.
+    pub xmt: u32,
+    /// Serialized leading count.
+    pub count: u32,
+    /// Two-byte endpoint-form discriminator.
+    pub form: [u8; 2],
+    /// Endpoint position in millimetres.
+    pub point: Point3,
+    /// Serialized record framing.
+    pub framing: TermUseFraming,
+    /// Tag or inline-payload offset in the inflated stream.
+    pub pos: usize,
+}
+
 /// A decoded surface-intersection construction and its solved chart cache.
 #[derive(Debug, Clone)]
 pub struct IntersectionCurve {
@@ -445,6 +473,14 @@ fn chart_points(stream: &[u8], block: usize, count: usize) -> Option<ChartPoints
 }
 
 fn term_records(stream: &[u8]) -> BTreeMap<u32, Point3> {
+    term_use_records(stream)
+        .into_iter()
+        .map(|term| (term.xmt, term.point))
+        .collect()
+}
+
+/// Decode complete direct, escaped, and descriptor-inline `term_use` records.
+pub fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
     let mut out = BTreeMap::new();
     for tag in find_tags(stream, [0, 41]) {
         for escape in [0usize, 1] {
@@ -452,8 +488,13 @@ fn term_records(stream: &[u8]) -> BTreeMap<u32, Point3> {
                 continue;
             }
             let base = tag + 2 + escape;
-            if let Some((xmt, point)) = term_at(stream, base) {
-                out.entry(xmt).or_insert(point);
+            let framing = if escape == 0 {
+                TermUseFraming::Direct
+            } else {
+                TermUseFraming::Escaped
+            };
+            if let Some(term) = term_at(stream, base, framing, tag) {
+                out.entry(term.xmt).or_insert(term);
                 break;
             }
         }
@@ -461,24 +502,30 @@ fn term_records(stream: &[u8]) -> BTreeMap<u32, Point3> {
     for label in find_bytes(stream, b"term_use") {
         let tail = label + b"term_use".len();
         if stream.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
-            if let Some((xmt, point)) = term_at(stream, tail + INLINE_TERM_TAIL.len()) {
-                out.entry(xmt).or_insert(point);
+            let pos = tail + INLINE_TERM_TAIL.len();
+            if let Some(term) = term_at(stream, pos, TermUseFraming::DescriptorInline, pos) {
+                out.entry(term.xmt).or_insert(term);
             }
         }
     }
-    out
+    out.into_values().collect()
 }
 
-fn term_at(stream: &[u8], base: usize) -> Option<(u32, Point3)> {
+fn term_at(stream: &[u8], base: usize, framing: TermUseFraming, pos: usize) -> Option<TermUse> {
     let count = be::u32_at(stream, base)?;
     let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
     let payload = base + 4 + xmt_len;
-    let valid = (count == 1 && stream.get(payload..payload + 2) == Some(b"L?"))
-        || (count == 2 && matches!(stream.get(payload..payload + 2), Some(b"TF" | b"TS")));
-    valid
-        .then(|| point_m(stream, payload + 2))
-        .flatten()
-        .map(|point| (xmt, point))
+    let form: [u8; 2] = stream.get(payload..payload + 2)?.try_into().ok()?;
+    let valid = (count == 1 && form == *b"L?") || (count == 2 && matches!(&form, b"TF" | b"TS"));
+    valid.then_some(())?;
+    Some(TermUse {
+        xmt,
+        count,
+        form,
+        point: point_m(stream, payload + 2)?,
+        framing,
+        pos,
+    })
 }
 
 fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUv> {

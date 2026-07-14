@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 137);
+    assert_eq!(namespace.version, 138);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6452,7 +6452,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 137);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 138);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -7783,6 +7783,22 @@ fn decode_emits_charted_surface_intersection_construction() {
     let stream = charted_intersection_curve_topology_partition_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let terms = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::ParasolidTermUseRecord>("parasolid_term_use_records")
+        .unwrap();
+    assert_eq!(terms.len(), 2);
+    assert_eq!(terms[0].count, 1);
+    assert_eq!(terms[0].form, "L?");
+    assert_eq!(terms[0].point, [0.0, 0.0, 0.0]);
+    assert_eq!(terms[1].point, [10.0, 0.0, 0.0]);
+    assert!(terms
+        .iter()
+        .all(|term| matches!(term.framing, crate::native::ParasolidTermUseFraming::Direct)));
 
     let procedural = result
         .ir
