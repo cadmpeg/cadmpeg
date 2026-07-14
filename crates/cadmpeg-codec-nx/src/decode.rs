@@ -2767,6 +2767,11 @@ fn attach_native_object_model(
     let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
     let feature_operation_records = crate::native::feature_operation_records(&scan.container);
     let feature_payload_strings = crate::native::feature_payload_strings(&scan.container);
+    let feature_simple_hole_templates = crate::native::feature_simple_hole_templates(
+        &feature_operation_labels,
+        &feature_operation_records,
+        &feature_payload_strings,
+    );
     let feature_body_references = crate::native::feature_body_references(&scan.container);
     let feature_body_reference_occurrences =
         crate::native::feature_body_reference_occurrences(&scan.container);
@@ -2848,6 +2853,7 @@ fn attach_native_object_model(
         && feature_operation_labels.is_empty()
         && feature_operation_records.is_empty()
         && feature_payload_strings.is_empty()
+        && feature_simple_hole_templates.is_empty()
         && feature_body_references.is_empty()
         && feature_input_blocks.is_empty()
         && feature_sketch_references.is_empty()
@@ -3121,7 +3127,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(54);
+    namespace.version = namespace.version.max(55);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3151,6 +3157,12 @@ fn attach_native_object_model(
     }
     if !feature_payload_strings.is_empty() {
         namespace.set_arena("feature_payload_strings", &feature_payload_strings)?;
+    }
+    if !feature_simple_hole_templates.is_empty() {
+        namespace.set_arena(
+            "feature_simple_hole_templates",
+            &feature_simple_hole_templates,
+        )?;
     }
     if !feature_body_references.is_empty() {
         namespace.set_arena("feature_body_references", &feature_body_references)?;
@@ -3734,14 +3746,10 @@ pub(crate) fn non_boolean_feature_definition(
 }
 
 fn simple_hole_extent(payload_strings: &[&str]) -> Option<cadmpeg_ir::features::Extent> {
-    payload_strings.iter().find_map(|value| {
-        let mut fields = value.split('_');
-        (fields.next() == Some("Hole")
-            && fields.next() == Some("GeneralHole")
-            && fields.next() == Some("Simple")
-            && fields.next() == Some("Through"))
-        .then_some(cadmpeg_ir::features::Extent::ThroughAll)
-    })
+    payload_strings
+        .iter()
+        .find_map(|value| crate::native::parse_simple_hole_template(value))
+        .map(|_| cadmpeg_ir::features::Extent::ThroughAll)
 }
 
 pub(crate) fn feature_body_selection(

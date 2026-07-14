@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 54);
+    assert_eq!(namespace.version, 55);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -572,6 +572,62 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
             if kind == "DATUM_PLANE"
     ));
+}
+
+#[test]
+fn nx_simple_hole_template_requires_exact_ordered_tokens() {
+    use crate::native::{
+        FeatureOperationLabel, FeatureOperationRecord, FeaturePayloadString,
+        SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
+    };
+
+    let label = FeatureOperationLabel {
+        id: "operation#3".to_string(),
+        section_link: "section#0".to_string(),
+        ordinal: 3,
+        value: "SIMPLE HOLE".to_string(),
+        object_indices: [None; 4],
+        source_offset: 100,
+    };
+    let record = FeatureOperationRecord {
+        id: "record#3".to_string(),
+        operation_label: label.id.clone(),
+        ordinal: 3,
+        byte_len: 80,
+        sha256: "a".repeat(64),
+        payload_byte_len: 40,
+        payload_sha256: "b".repeat(64),
+        payload_source_offset: 120,
+        source_offset: 90,
+    };
+    let string = FeaturePayloadString {
+        id: "payload-string#3-0".to_string(),
+        operation_record: record.id.clone(),
+        ordinal: 0,
+        value: "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer".to_string(),
+        source_offset: 130,
+    };
+    let templates = crate::native::feature_simple_hole_templates(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&string),
+    );
+    assert_eq!(templates.len(), 1);
+    assert_eq!(templates[0].payload_string, string.id);
+    assert_eq!(templates[0].family, SimpleHoleFamily::GeneralHole);
+    assert_eq!(templates[0].form, SimpleHoleForm::Simple);
+    assert_eq!(templates[0].extent, SimpleHoleExtent::Through);
+    assert_eq!(
+        templates[0].start_treatment,
+        SimpleHoleEndTreatment::Chamfer
+    );
+    assert_eq!(templates[0].end_treatment, SimpleHoleEndTreatment::Chamfer);
+
+    let mut malformed = string;
+    malformed.value = "Hole_GeneralHole_Simple_Through_EndChamfer_StartChamfer".to_string();
+    assert!(
+        crate::native::feature_simple_hole_templates(&[label], &[record], &[malformed]).is_empty()
+    );
 }
 
 #[test]
@@ -4650,7 +4706,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 54);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 55);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

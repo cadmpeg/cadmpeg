@@ -235,6 +235,59 @@ pub struct FeaturePayloadString {
     pub source_offset: u64,
 }
 
+/// Typed operation template carried by a `SIMPLE HOLE` payload string.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSimpleHoleTemplate {
+    /// Globally unique template identity.
+    pub id: String,
+    /// Owning `SIMPLE HOLE` operation label.
+    pub operation_label: String,
+    /// Source string in the native payload-string arena.
+    pub payload_string: String,
+    /// Hole construction family token.
+    pub family: SimpleHoleFamily,
+    /// Hole cross-section token.
+    pub form: SimpleHoleForm,
+    /// Axial extent token.
+    pub extent: SimpleHoleExtent,
+    /// Entry treatment token.
+    pub start_treatment: SimpleHoleEndTreatment,
+    /// Exit treatment token.
+    pub end_treatment: SimpleHoleEndTreatment,
+}
+
+/// Construction family named by a simple-hole template.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SimpleHoleFamily {
+    /// General-hole construction family.
+    GeneralHole,
+}
+
+/// Cross-section named by a simple-hole template.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SimpleHoleForm {
+    /// Plain cylindrical cross-section.
+    Simple,
+}
+
+/// Axial termination named by a simple-hole template.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SimpleHoleExtent {
+    /// Continue through all intersected material.
+    Through,
+}
+
+/// End treatment named by a simple-hole template.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SimpleHoleEndTreatment {
+    /// Chamfer the circular end edge.
+    Chamfer,
+}
+
 /// Primary body object read or written by one feature-history operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureBodyReference {
@@ -868,6 +921,71 @@ pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadStrin
         }
     }
     strings
+}
+
+/// Join exact `SIMPLE HOLE` payload templates to their operation identities.
+pub fn feature_simple_hole_templates(
+    labels: &[FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    strings: &[FeaturePayloadString],
+) -> Vec<FeatureSimpleHoleTemplate> {
+    let labels_by_id = labels
+        .iter()
+        .map(|label| (label.id.as_str(), label))
+        .collect::<BTreeMap<_, _>>();
+    let records_by_id = records
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    strings
+        .iter()
+        .filter_map(|string| {
+            let record = records_by_id.get(string.operation_record.as_str())?;
+            let label = labels_by_id.get(record.operation_label.as_str())?;
+            (label.value == "SIMPLE HOLE").then_some(())?;
+            let (family, form, extent, start_treatment, end_treatment) =
+                parse_simple_hole_template(&string.value)?;
+            Some(FeatureSimpleHoleTemplate {
+                id: string
+                    .id
+                    .replacen("payload-string", "simple-hole-template", 1),
+                operation_label: label.id.clone(),
+                payload_string: string.id.clone(),
+                family,
+                form,
+                extent,
+                start_treatment,
+                end_treatment,
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn parse_simple_hole_template(
+    value: &str,
+) -> Option<(
+    SimpleHoleFamily,
+    SimpleHoleForm,
+    SimpleHoleExtent,
+    SimpleHoleEndTreatment,
+    SimpleHoleEndTreatment,
+)> {
+    (value.split('_').collect::<Vec<_>>().as_slice()
+        == [
+            "Hole",
+            "GeneralHole",
+            "Simple",
+            "Through",
+            "StartChamfer",
+            "EndChamfer",
+        ])
+    .then_some((
+        SimpleHoleFamily::GeneralHole,
+        SimpleHoleForm::Simple,
+        SimpleHoleExtent::Through,
+        SimpleHoleEndTreatment::Chamfer,
+        SimpleHoleEndTreatment::Chamfer,
+    ))
 }
 
 /// Decode primary body lineage references from feature-history operations.
