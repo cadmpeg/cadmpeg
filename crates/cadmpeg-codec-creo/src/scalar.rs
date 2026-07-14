@@ -144,13 +144,17 @@ pub fn decode_in_surface_row_lane(
 
 /// Decode the first coordinate of a tabulated-cylinder directrix control point.
 ///
-/// This lane adds `0x4a`, whose six-byte payload completes a negative IEEE
-/// value with an implicit `0xc0` high byte and zero low byte.
+/// In this lane, `0x46` and `0x4a` select eight- and seven-byte negative IEEE
+/// forms with a `0xc0` high byte. The seven-byte form has an implicit zero low
+/// byte.
 pub fn decode_tabulated_cylinder_first_coordinate(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x46) {
+        return ieee8(data, offset, 0xc0);
+    }
     if data.get(offset) == Some(&0x4a) {
         return ieee7(data, offset, 0xc0);
     }
@@ -281,8 +285,16 @@ mod tests {
     #[test]
     fn decodes_tabulated_cylinder_coordinate_lanes() {
         let cache = ScalarCache::default();
+        let first_eight = [0x46, 0x13, 0x77, 0x9f, 0x89, 0x00, 0x00, 0x00];
         let first = [0x4a, 0x13, 0x21, 0xe3, 0xe3, 0x00, 0x00];
         let second = [0x7f, 0x24, 0x57, 0x89, 0x13, 0x66, 0x08];
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&first_eight, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xc0, 0x13, 0x77, 0x9f, 0x89, 0, 0, 0]),
+                8
+            ))
+        );
         assert_eq!(
             decode_tabulated_cylinder_first_coordinate(&first, 0, &cache),
             Some((
