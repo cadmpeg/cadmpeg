@@ -25,6 +25,9 @@ pub struct B5Graph {
     pub loops: BTreeMap<u32, B5Loop>,
     /// `b5 03 21` pcurve nodes, keyed by `object_id`.
     pub pcurves: BTreeMap<u32, B5Pcurve>,
+    /// Structurally bounded pcurve records whose parameter-space geometry is
+    /// not yet assigned, keyed by `object_id`.
+    pub opaque_pcurves: BTreeMap<u32, B5OpaquePcurve>,
     /// `b5 03 27/28/2d` analytic surface nodes and `a8 03 34` NURBS
     /// surfaces, keyed by `object_id`.
     pub surfaces: BTreeMap<u32, B5Surface>,
@@ -198,6 +201,19 @@ pub struct B5Pcurve {
     pub lifted_endpoints: Option<[[f64; 3]; 2]>,
 }
 
+/// An identity- and support-resolved pcurve with opaque chart geometry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct B5OpaquePcurve {
+    /// This record's stream `object_id`.
+    pub object_id: u32,
+    /// Owning surface object id.
+    pub surface: u32,
+    /// Native pcurve class.
+    pub class: u8,
+    /// Exact source payload.
+    pub payload: Vec<u8>,
+}
+
 /// One length-framed `b5 03` record as found by the stream walk ([spec §6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#6-object-stream-record-framing-a5-03-a8-03-b5-03)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B5Record {
@@ -352,6 +368,10 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             lifted_endpoints: None,
         });
     }
+    let opaque_pcurves: BTreeMap<u32, B5OpaquePcurve> = records
+        .iter()
+        .filter_map(|record| parse_opaque_pcurve(record).map(|pcurve| (record.object_id, pcurve)))
+        .collect();
     for pcurve in pcurves.values_mut() {
         pcurve.lifted_endpoints = surfaces
             .get(&pcurve.surface)
@@ -363,7 +383,8 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         .iter()
         .filter(|record| record.class == 0x62)
         .filter_map(|record| {
-            parse_loop(record, &by_id, &pcurves, &surfaces).map(|loop_| (record.object_id, loop_))
+            parse_loop(record, &by_id, &pcurves, &opaque_pcurves, &surfaces)
+                .map(|loop_| (record.object_id, loop_))
         })
         .collect();
     let mut faces: Vec<B5Face> = records
@@ -384,7 +405,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                 .iter()
                 .filter(|record| record.class == 0x62)
                 .filter_map(|record| {
-                    parse_loop(record, &by_id, &pcurves, &surfaces)
+                    parse_loop(record, &by_id, &pcurves, &opaque_pcurves, &surfaces)
                         .map(|loop_| (record.object_id, loop_))
                 })
                 .collect();
@@ -426,9 +447,12 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                     .iter()
                     .zip(&loop_.edges)
                     .all(|(pcurve, edge)| {
-                        pcurves
+                        (pcurves
                             .get(pcurve)
                             .is_some_and(|pcurve| pcurve.surface == loop_.surface)
+                            || opaque_pcurves
+                                .get(pcurve)
+                                .is_some_and(|pcurve| pcurve.surface == loop_.surface))
                             && edge_vertices.contains_key(edge)
                     })
                 && unique_loop_chain(loop_, &edge_vertices)
@@ -439,6 +463,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         faces,
         loops,
         pcurves,
+        opaque_pcurves,
         surfaces,
         vertex_points,
         logical_vertex_points,
@@ -1424,6 +1449,40 @@ fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     })
 }
 
+fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
+    if !matches!(record.class, 0x1a | 0x1d) || record.payload.first() != Some(&0x81) {
+        return None;
+    }
+    let mut position = 1;
+    let surface = reference(&record.payload, &mut position, record.object_id)?;
+    match record.class {
+        0x1a => {
+            (record.payload.len() == position.checked_add(74)?).then_some(())?;
+            line_values::<2>(&record.payload, position)?;
+            position += 16;
+            (record.payload.get(position..position + 2) == Some(&[0x05, 0x05])).then_some(())?;
+            line_values::<7>(&record.payload, position + 2)?;
+        }
+        0x1d => {
+            (record.payload.len() == position.checked_add(99)?).then_some(())?;
+            line_values::<4>(&record.payload, position)?;
+            position += 32;
+            (record.payload.get(position..position + 2) == Some(&[0x05, 0x81])).then_some(())?;
+            line_values::<3>(&record.payload, position + 2)?;
+            position += 26;
+            (record.payload.get(position) == Some(&0x1d)).then_some(())?;
+            line_values::<5>(&record.payload, position + 1)?;
+        }
+        _ => unreachable!(),
+    }
+    Some(B5OpaquePcurve {
+        object_id: record.object_id,
+        surface,
+        class: record.class,
+        payload: record.payload.clone(),
+    })
+}
+
 fn circle_pcurves(bytes: &[u8]) -> Vec<B5Pcurve> {
     let mut pcurves = Vec::new();
     for offset in 0..bytes.len().saturating_sub(8) {
@@ -1754,6 +1813,7 @@ fn parse_loop(
     record: &B5Record,
     by_id: &HashMap<u32, &B5Record>,
     parsed_pcurves: &BTreeMap<u32, B5Pcurve>,
+    opaque_pcurves: &BTreeMap<u32, B5OpaquePcurve>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Loop> {
     let mut position = 0;
@@ -1779,7 +1839,9 @@ fn parse_loop(
     let mut pcurves = Vec::with_capacity((count - 1) / 2);
     let mut edges = Vec::with_capacity((count - 1) / 2);
     for pair in references[..count - 1].chunks_exact(2) {
-        if !parsed_pcurves.contains_key(&pair[0]) || by_id.get(&pair[1])?.class != 0x5e {
+        if (!parsed_pcurves.contains_key(&pair[0]) && !opaque_pcurves.contains_key(&pair[0]))
+            || by_id.get(&pair[1])?.class != 0x5e
+        {
             return None;
         }
         pcurves.push(pair[0]);
@@ -2030,6 +2092,51 @@ mod tests {
         assert!((weights[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
         assert!((pcurve.control_points[0][0] - 2.0).abs() < 1e-12);
         assert!((pcurve.control_points[4][0] + 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn opaque_conic_pcurves_retain_support_identity_and_payload() {
+        let mut ellipse = vec![0x81, 0x82];
+        ellipse.extend_from_slice(&[0; 16]);
+        ellipse.extend_from_slice(&[0x05, 0x05]);
+        ellipse.extend_from_slice(&[0; 56]);
+        let ellipse_record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x1a,
+            object_id: 7,
+            payload: ellipse.clone(),
+        };
+        assert_eq!(
+            parse_opaque_pcurve(&ellipse_record),
+            Some(B5OpaquePcurve {
+                object_id: 7,
+                surface: 2,
+                class: 0x1a,
+                payload: ellipse,
+            })
+        );
+
+        let mut class_1d = vec![0x81, 0x82];
+        class_1d.extend_from_slice(&[0; 32]);
+        class_1d.extend_from_slice(&[0x05, 0x81]);
+        class_1d.extend_from_slice(&[0; 24]);
+        class_1d.push(0x1d);
+        class_1d.extend_from_slice(&[0; 40]);
+        let class_1d_record = B5Record {
+            class: 0x1d,
+            payload: class_1d.clone(),
+            ..ellipse_record
+        };
+        assert_eq!(
+            parse_opaque_pcurve(&class_1d_record),
+            Some(B5OpaquePcurve {
+                object_id: 7,
+                surface: 2,
+                class: 0x1d,
+                payload: class_1d,
+            })
+        );
     }
 
     #[test]

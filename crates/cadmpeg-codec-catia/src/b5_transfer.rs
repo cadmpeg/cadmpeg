@@ -50,10 +50,14 @@ pub(crate) fn transfer(
                 .iter()
                 .zip(&loop_.edges)
                 .all(|(pcurve, edge)| {
-                    subset
+                    (subset
                         .pcurves
                         .get(pcurve)
                         .is_some_and(|pcurve| pcurve.surface == loop_.surface)
+                        || subset
+                            .opaque_pcurves
+                            .get(pcurve)
+                            .is_some_and(|pcurve| pcurve.surface == loop_.surface))
                         && subset.edge_vertices.contains_key(edge)
                 })
                 && solve_loop_chain(loop_, &subset.edge_vertices).is_some()
@@ -135,6 +139,14 @@ pub(crate) fn transfer(
         loop_senses.insert(loop_.object_id, senses);
         for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
             let Some(pcurve) = graph.pcurves.get(&pcurve_id) else {
+                if graph
+                    .opaque_pcurves
+                    .get(&pcurve_id)
+                    .is_some_and(|pcurve| pcurve.surface == loop_.surface)
+                {
+                    edge_ids.insert(edge_id);
+                    continue;
+                }
                 return false;
             };
             if pcurve.surface != loop_.surface || !graph.edge_vertices.contains_key(&edge_id) {
@@ -553,7 +565,7 @@ pub(crate) fn transfer(
                     } else {
                         Sense::Forward
                     },
-                    pcurve: Some(pcurve_ids[&pcurve].clone()),
+                    pcurve: pcurve_ids.get(&pcurve).cloned(),
                 });
             }
         }
