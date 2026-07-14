@@ -1346,6 +1346,17 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                 .program
                                 .get(3..)
                                 .and_then(design::face_recipe_structure)
+                        && node.recipe_structure.as_ref().map_or_else(
+                            || node.referenced_node_ordinals.is_empty(),
+                            |structure| {
+                                design::face_recipe_node_references(
+                                    structure,
+                                    operand.recipe_nodes.len(),
+                                )
+                                .as_ref()
+                                    == Some(&node.referenced_node_ordinals)
+                            },
+                        )
                         && u64::try_from(node.program.len()).ok().is_some_and(|words| {
                             start.saturating_add(words.saturating_mul(4)) == end
                         })

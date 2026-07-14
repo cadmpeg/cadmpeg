@@ -6874,6 +6874,26 @@ pub(crate) fn face_recipe_structure(
     })
 }
 
+pub(crate) fn face_recipe_node_references(
+    structure: &crate::records::DesignFaceRecipeStructure,
+    node_count: usize,
+) -> Option<Vec<std::num::NonZeroU32>> {
+    let words = std::iter::once(structure.root)
+        .chain(std::iter::once(structure.prelude[0]))
+        .chain(structure.sides.iter().flat_map(|side| {
+            [Some(side.first), Some(side.second), side.third]
+                .into_iter()
+                .flatten()
+        }));
+    words
+        .filter(|word| *word != 0)
+        .map(|word| {
+            let ordinal = std::num::NonZeroU32::new(u32::try_from(word).ok()?)?;
+            (usize::try_from(ordinal.get()).ok()? <= node_count).then_some(ordinal)
+        })
+        .collect()
+}
+
 fn edge_recipe_side(runs: &[&[i32]]) -> Option<DesignTopologyRecipeSide> {
     if !matches!(runs.len(), 4 | 5)
         || runs[0].len() != 2
@@ -7030,12 +7050,18 @@ fn parse_face_operand(
         )
         .map(|(start, end)| {
             let program = recipe_program.get(start..end)?.to_vec();
+            let recipe_structure = program.get(3..).and_then(face_recipe_structure);
+            let referenced_node_ordinals = match &recipe_structure {
+                Some(structure) => face_recipe_node_references(structure, node_count)?,
+                None => Vec::new(),
+            };
             Some(crate::records::DesignFaceRecipeNode {
                 byte_offset: u64::try_from(recipe_program_at.checked_add(start.checked_mul(4)?)?)
                     .ok()?,
                 end_byte_offset: u64::try_from(recipe_program_at.checked_add(end.checked_mul(4)?)?)
                     .ok()?,
-                recipe_structure: program.get(3..).and_then(face_recipe_structure),
+                recipe_structure,
+                referenced_node_ordinals,
                 program,
             })
         })
@@ -11236,6 +11262,15 @@ mod relation_tests {
         assert_eq!(face.sides[1].header, [3, 0]);
         assert_eq!(face.sides[1].first, 1);
         assert_eq!(face.sides[1].second, 3);
+        assert_eq!(
+            super::face_recipe_node_references(&face, 3)
+                .expect("bounded face-node references")
+                .iter()
+                .map(|ordinal| ordinal.get())
+                .collect::<Vec<_>>(),
+            [1, 2, 1, 1, 3]
+        );
+        assert!(super::face_recipe_node_references(&face, 2).is_none());
         assert_eq!(edge_operand.next_record_index, 104);
         assert_eq!(edge_operand.next_byte_offset, next_at);
         bind_edge_operand_candidates(
