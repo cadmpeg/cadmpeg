@@ -434,6 +434,8 @@ value_block := 7C 0B <declared_len:u32le> <payload[declared_len-6]> FE 7C 02 ...
 
 `declared_len` measures from the `7C0B` marker through the byte before the terminator. The complete block occupies `declared_len + 1` bytes. The trailing `FE` is followed immediately by the associated `7C02` source-schema catalog.
 
+The value block owns that immediately following catalog as its source schema. The catalog marker offset therefore identifies the value block's schema without scanning or name matching.
+
 ### 7.4 Outer alias rows
 
 ```text

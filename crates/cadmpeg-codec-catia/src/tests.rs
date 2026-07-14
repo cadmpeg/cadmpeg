@@ -3923,6 +3923,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
     assert_eq!(native.value_blocks.len(), 1);
     assert_eq!(native.value_blocks[0].byte_offset, 16);
     assert_eq!(native.value_blocks[0].byte_len, 16);
+    assert_eq!(native.value_blocks[0].catalog, native.catalogs[0].id);
     assert_eq!(
         native.value_blocks[0].payload,
         [0x81, 0x83, 0x32, 0xea, 0, 0, 0, 0x83, 0x82]

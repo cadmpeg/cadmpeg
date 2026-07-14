@@ -10,7 +10,7 @@ use crate::object_graph::{self, AliasLead, HeadToken, ObjectPayload, PayloadSubt
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 6;
+pub const CATIA_NATIVE_VERSION: u32 = 7;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -110,6 +110,8 @@ pub struct CatiaValueBlock {
     pub byte_len: u64,
     /// Stored length from the marker through the byte before the terminator.
     pub declared_len: u64,
+    /// Source-schema catalog that begins immediately after this block.
+    pub catalog: String,
     /// Value payload in serialized order.
     pub payload: Vec<u8>,
 }
@@ -271,7 +273,10 @@ impl CatiaNative {
         }
         let value_blocks = value_block::parse(bytes)
             .into_iter()
-            .map(CatiaValueBlock::from)
+            .map(|block| {
+                let catalog_pos = block.pos + block.total_len;
+                CatiaValueBlock::from_parts(block, catalog_pos)
+            })
             .collect();
         let preview_images = container::preview_images(bytes)
             .into_iter()
@@ -415,11 +420,19 @@ impl CatiaNative {
 
 impl From<value_block::ValueBlock> for CatiaValueBlock {
     fn from(block: value_block::ValueBlock) -> Self {
+        let catalog_pos = block.pos + block.total_len;
+        Self::from_parts(block, catalog_pos)
+    }
+}
+
+impl CatiaValueBlock {
+    fn from_parts(block: value_block::ValueBlock, catalog_pos: usize) -> Self {
         Self {
             id: format!("catia:outer:value-block#{:010}", block.pos),
             byte_offset: block.pos as u64,
             byte_len: block.total_len as u64,
             declared_len: block.declared_len as u64,
+            catalog: format!("catia:outer:catalog#{catalog_pos:010}"),
             payload: block.payload,
         }
     }
