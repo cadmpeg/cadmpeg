@@ -3549,14 +3549,18 @@ pub(crate) fn type_display_relation_parameters(
     let mut families = HashMap::<cadmpeg_ir::features::ParameterId, HashSet<_>>::new();
     for lane in lanes {
         for relation in &lane.relation_instances {
-            if relation.parameter_scalar_ref.is_some() {
-                continue;
-            }
-            let Some(parameter) =
-                relation_parameter_by_display_name(relation, lane, features, parameters)
-            else {
-                continue;
-            };
+            let parameter = relation
+                .parameter_scalar_ref
+                .as_deref()
+                .and_then(|scalar| {
+                    parameters
+                        .iter()
+                        .find(|parameter| parameter.native_ref.as_deref() == Some(scalar))
+                })
+                .or_else(|| {
+                    relation_parameter_by_display_name(relation, lane, features, parameters)
+                });
+            let Some(parameter) = parameter else { continue };
             families
                 .entry(parameter.id.clone())
                 .or_default()
@@ -3572,13 +3576,31 @@ pub(crate) fn type_display_relation_parameters(
         }
         let family = *families.iter().next().expect("one relation family");
         match family {
-            FeatureInputRelationFamily::Angle => {}
+            FeatureInputRelationFamily::Angle => {
+                if let Some(cadmpeg_ir::features::ParameterValue::Real(value)) = parameter.value {
+                    parameter.expression = crate::history::format_angle_rad(value);
+                    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Angle(
+                        cadmpeg_ir::features::Angle(value),
+                    ));
+                }
+            }
             FeatureInputRelationFamily::LineLineDistance
             | FeatureInputRelationFamily::PointPointDistance
             | FeatureInputRelationFamily::PointLineDistance
             | FeatureInputRelationFamily::PointPointHorizontalDistance
             | FeatureInputRelationFamily::PointPointVerticalDistance
             | FeatureInputRelationFamily::CircleDiameter => {
+                if let Some(cadmpeg_ir::features::ParameterValue::Real(value)) = parameter.value {
+                    let value = value * 1000.0;
+                    parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
+                        format!("<MOD-DIAM>{}", crate::history::format_length_mm(value))
+                    } else {
+                        crate::history::format_length_mm(value)
+                    };
+                    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+                        cadmpeg_ir::features::Length(value),
+                    ));
+                }
                 if let Some(cadmpeg_ir::features::ParameterValue::Integer(value)) =
                     parameter.value.as_ref()
                 {
@@ -3597,6 +3619,7 @@ pub(crate) fn type_display_relation_parameters(
                         parameter.value,
                         Some(cadmpeg_ir::features::ParameterValue::Length(_))
                     )
+                    && parameter.display.is_none()
                 {
                     parameter.display = Some(cadmpeg_ir::features::DimensionDisplay::Diameter);
                 }
@@ -5106,11 +5129,39 @@ fn typed_relation_definition(
     let parameter_id = parameter.id.clone();
     let marker = |index: usize| relation.operands.get(index)?.entity_ref.as_deref();
     match relation.family {
-        PointPointDistance => Some(SketchConstraintDefinition::DistanceLoci {
-            first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
-            second: marker_point_locus(marker(1)?, markers_by_id, loci_by_marker)?,
-            parameter: parameter_id,
-        }),
+        PointPointDistance => {
+            let first = marker(0)
+                .and_then(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker));
+            let second = marker(1)
+                .and_then(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker));
+            let (first, second) = match (first, second) {
+                (Some(first), Some(second)) => (first, second),
+                (Some(known), None) => (
+                    known.clone(),
+                    unique_compact_profile_distance_locus(
+                        sketch,
+                        &known,
+                        parameter,
+                        sketch_entities,
+                    )?,
+                ),
+                (None, Some(known)) => (
+                    unique_compact_profile_distance_locus(
+                        sketch,
+                        &known,
+                        parameter,
+                        sketch_entities,
+                    )?,
+                    known,
+                ),
+                (None, None) => return None,
+            };
+            Some(SketchConstraintDefinition::DistanceLoci {
+                first,
+                second,
+                parameter: parameter_id,
+            })
+        }
         PointPointHorizontalDistance => Some(SketchConstraintDefinition::HorizontalDistance {
             first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
             second: marker_point_locus(marker(1)?, markers_by_id, loci_by_marker)?,
@@ -5177,6 +5228,47 @@ fn typed_relation_definition(
             }
         }
     }
+}
+
+fn unique_compact_profile_distance_locus(
+    sketch: &SketchId,
+    known: &SketchLocus,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<SketchLocus> {
+    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let known_entity = locus_entity(known);
+    if !known_entity.0.contains("sketch-entity#compact:") {
+        return None;
+    }
+    let point = |locus: &SketchLocus| {
+        let entity = sketch_entities
+            .iter()
+            .find(|entity| entity.id == locus_entity(locus))?;
+        match (&entity.geometry, locus) {
+            (SketchGeometry::Line { start, .. }, SketchLocus::Start(_)) => Some(*start),
+            (SketchGeometry::Line { end, .. }, SketchLocus::End(_)) => Some(*end),
+            _ => None,
+        }
+    };
+    let known_point = point(known)?;
+    let mut candidates = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .filter(|entity| entity.id.0.contains("sketch-entity#compact:"))
+        .filter_map(|entity| {
+            let SketchGeometry::Line { start, .. } = entity.geometry else {
+                return None;
+            };
+            let candidate = SketchLocus::Start(entity.id.clone());
+            let measured = (start.u - known_point.u).hypot(start.v - known_point.v);
+            (candidate != *known && same_dimension_length(measured, distance.0))
+                .then_some(candidate)
+        });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
 
 fn unique_dimensioned_circle_entity(
@@ -5326,7 +5418,16 @@ fn profile_loci_by_marker(
             let marker = entity.native_ref.as_ref()?;
             marker
                 .starts_with("sldprt:feature-input:sketch-entity#")
-                .then(|| (marker.clone(), vec![SketchLocus::Entity(entity.id.clone())]))
+                .then(|| {
+                    let locus = if entity.id.0.contains("sketch-entity#compact:")
+                        && matches!(entity.geometry, SketchGeometry::Line { .. })
+                    {
+                        SketchLocus::Start(entity.id.clone())
+                    } else {
+                        SketchLocus::Entity(entity.id.clone())
+                    };
+                    (marker.clone(), vec![locus])
+                })
         })
         .collect::<HashMap<String, Vec<SketchLocus>>>();
     for lane in lanes {
@@ -6473,14 +6574,33 @@ mod profile_join_tests {
             std::slice::from_ref(&FeatureInputLane {
                 relation_instances: vec![FeatureInputRelationInstance {
                     family: FeatureInputRelationFamily::CircleDiameter,
+                    ..relation.clone()
+                }],
+                ..lane.clone()
+            }),
+        );
+        assert_eq!(parameter.value, Some(ParameterValue::Length(Length(12.0))));
+        assert_eq!(parameter.expression, "<MOD-DIAM>12mm");
+        assert_eq!(parameter.display, Some(DimensionDisplay::Diameter));
+
+        parameter.value = Some(ParameterValue::Real(0.012));
+        parameter.expression = "0.012".into();
+        parameter.display = None;
+        parameter.native_ref = Some("driver".into());
+        type_display_relation_parameters(
+            std::slice::from_mut(&mut parameter),
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&FeatureInputLane {
+                relation_instances: vec![FeatureInputRelationInstance {
+                    family: FeatureInputRelationFamily::PointPointDistance,
+                    parameter_scalar_ref: Some("driver".into()),
                     ..relation
                 }],
                 ..lane
             }),
         );
         assert_eq!(parameter.value, Some(ParameterValue::Length(Length(12.0))));
-        assert_eq!(parameter.expression, "<MOD-DIAM>12mm");
-        assert_eq!(parameter.display, Some(DimensionDisplay::Diameter));
+        assert_eq!(parameter.expression, "12mm");
     }
 
     #[test]

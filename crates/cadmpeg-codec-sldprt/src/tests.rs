@@ -14882,7 +14882,7 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
 }
 
 #[test]
-fn semantic_writer_updates_untyped_resolved_feature_scalar() {
+fn semantic_writer_types_resolved_relation_scalar() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -14921,10 +14921,12 @@ fn semantic_writer_updates_untyped_resolved_feature_scalar() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .expect("regenerated D1 parameter");
-    assert_eq!(parameter.expression, "0.5");
+    assert_eq!(parameter.expression, "500mm");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(0.5))
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(500.0)
+        ))
     );
     let native_ref = parameter.native_ref.as_deref().expect("linked scalar");
     let native = sldprt_native(&regenerated.ir);
