@@ -201,7 +201,7 @@ Feature-input geometry-handle coordinates and the nested Parasolid profile diffe
 
 Multiple valid signed-axis transforms bind a marker when every transform maps that marker to the same normalized profile locus set. A transform-dependent marker remains unresolved.
 
-A line-or-circle handle at a transformed line midpoint identifies that line entity. Midpoint entity anchors are scoped to line-or-circle handles and cannot satisfy point operands. A curve handle matching an endpoint or center locus identifies the owning curve entity rather than an endpoint locus.
+A primary line-or-circle geometry handle on a transformed line segment identifies that line entity. Line-interior entity anchors are scoped to primary line-or-circle geometry records and cannot satisfy point operands or display handles. A curve handle matching an endpoint or center locus identifies the owning curve entity rather than an endpoint locus.
 
 When a point or constrained-point marker maps to a shared profile coordinate, its incident start and end loci are geometrically equivalent. The lexicographically first locus is the canonical operand. Line-or-circle and arc markers retain every compatible entity at a shared coordinate.
 

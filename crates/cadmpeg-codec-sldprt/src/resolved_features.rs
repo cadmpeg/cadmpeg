@@ -4335,6 +4335,9 @@ fn profile_loci_by_marker(
                 let Some([u, v]) = marker.coordinates_m else {
                     continue;
                 };
+                let primary_geometry_locus = usize::try_from(marker.offset)
+                    .ok()
+                    .is_some_and(|offset| marker_is_geometry_locus(&lane.native_payload, offset));
                 let point = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
                 let marker_loci = transforms
                     .iter()
@@ -4370,6 +4373,25 @@ fn profile_loci_by_marker(
                                 ),
                             );
                         }
+                        if marker_loci.is_empty()
+                            && primary_geometry_locus
+                            && marker.kind == SketchInputKind::LineOrCircle
+                        {
+                            marker_loci.extend(sketch_entities.iter().filter_map(|entity| {
+                                if entity.sketch != **sketch {
+                                    return None;
+                                }
+                                let SketchGeometry::Line { start, end } = &entity.geometry else {
+                                    return None;
+                                };
+                                point_on_quantized_segment(
+                                    translated,
+                                    quantize(*start, QUANTUM),
+                                    quantize(*end, QUANTUM),
+                                )
+                                .then(|| SketchLocus::Entity(entity.id.clone()))
+                            }));
+                        }
                         marker_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
                         marker_loci.dedup();
                         if matches!(
@@ -4394,6 +4416,21 @@ fn profile_loci_by_marker(
         }
     }
     result
+}
+
+fn point_on_quantized_segment(point: (i64, i64), start: (i64, i64), end: (i64, i64)) -> bool {
+    let ab = (
+        i128::from(end.0) - i128::from(start.0),
+        i128::from(end.1) - i128::from(start.1),
+    );
+    let ap = (
+        i128::from(point.0) - i128::from(start.0),
+        i128::from(point.1) - i128::from(start.1),
+    );
+    let cross = ab.0 * ap.1 - ab.1 * ap.0;
+    let projection = ab.0 * ap.0 + ab.1 * ap.1;
+    let squared_length = ab.0 * ab.0 + ab.1 * ab.1;
+    squared_length != 0 && cross == 0 && (0..=squared_length).contains(&projection)
 }
 
 fn marker_transform_candidates_by_feature(
@@ -5727,7 +5764,7 @@ mod profile_join_tests {
     }
 
     #[test]
-    fn line_handle_midpoints_identify_profile_entities() {
+    fn line_handle_interior_points_identify_profile_entities() {
         let sketch = SketchId("sketch".into());
         let line_ids = ["horizontal", "vertical", "offset"].map(|id| SketchEntityId(id.into()));
         let entities = vec![
@@ -5789,7 +5826,7 @@ mod profile_join_tests {
         let mut native_payload = vec![0; 81];
         let mut markers = Vec::new();
         for (ordinal, (id, coordinates_m)) in [
-            ("horizontal-marker", [0.005, 0.0]),
+            ("horizontal-marker", [0.0025, 0.0]),
             ("vertical-marker", [0.0, 0.010]),
             ("offset-marker", [0.015, 0.003]),
         ]
