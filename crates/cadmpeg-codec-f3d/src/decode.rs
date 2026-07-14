@@ -790,7 +790,7 @@ fn extend_related_design_records(
         &native.design_parameter_scopes,
         &native.design_record_headers,
     )?;
-    let indices = native
+    let mut indices = native
         .design_extrude_selection_groups
         .iter()
         .flat_map(|group| {
@@ -801,6 +801,59 @@ fn extend_related_design_records(
                 .members
                 .iter()
                 .map(move |record_index| (stream.clone(), *record_index))
+        })
+        .collect::<Vec<_>>();
+    indices.extend(
+        native
+            .design_extrude_operand_groups
+            .iter()
+            .flat_map(|group| {
+                let stream = crate::design::native_stream(&group.id)
+                    .unwrap_or("f3d:design")
+                    .to_owned();
+                std::iter::once((stream, group.identity_record_index))
+            }),
+    );
+    let existing = native
+        .design_record_headers
+        .iter()
+        .filter_map(|record| {
+            Some((
+                crate::design::native_stream(&record.id)?.to_owned(),
+                record.record_index,
+            ))
+        })
+        .collect::<std::collections::HashSet<_>>();
+    native.design_record_headers.extend(
+        crate::design::decode_related_record_headers(reader, scan, &indices)?
+            .into_iter()
+            .filter(|record| {
+                crate::design::native_stream(&record.id).is_none_or(|stream| {
+                    !existing.contains(&(stream.to_owned(), record.record_index))
+                })
+            }),
+    );
+    native
+        .design_record_headers
+        .sort_by_key(|record| record.id.clone());
+    native.design_extrude_operand_identities = crate::design::decode_extrude_operand_identities(
+        scan,
+        &native.design_extrude_operand_groups,
+        &native.design_record_headers,
+    )?;
+    let indices = native
+        .design_extrude_operand_identities
+        .iter()
+        .flat_map(|identity| {
+            let stream = crate::design::native_stream(&identity.id)
+                .unwrap_or("f3d:design")
+                .to_owned();
+            identity
+                .wrapper_record_indices
+                .iter()
+                .copied()
+                .chain(std::iter::once(identity.leaf_record_index))
+                .map(move |record_index| (stream.clone(), record_index))
         })
         .collect::<Vec<_>>();
     let existing = native

@@ -11,12 +11,12 @@ use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
     DesignConfigurationKind, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
-    DesignExtrudeOperandGroup, DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup,
-    DesignExtrudeSelectionMember, DesignObject, DesignObjectKind, DesignParameter,
-    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignExtrudeOperandGroup, DesignExtrudeOperandIdentity, DesignExtrudePersistentIdentity,
+    DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+    DesignObject, DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -2760,6 +2760,98 @@ fn parse_extrude_operand_group(
     })
 }
 
+/// Decode the persistent identity frame named by each Extrude operand group.
+pub fn decode_extrude_operand_identities(
+    scan: &ContainerScan,
+    groups: &[DesignExtrudeOperandGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<DesignExtrudeOperandIdentity>, CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for group in groups {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let Some(wrapper_header) = headers.get(&(stream, group.identity_record_index)) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        if let Some(mut identity) = parse_extrude_operand_identity(bytes, group, wrapper_header) {
+            identity.id = format!(
+                "f3d:{}:design-extrude-operand-identity#{}",
+                entry.name, wrapper_header.byte_offset
+            );
+            out.push(identity);
+        }
+    }
+    out.sort_by_key(|identity| identity.id.clone());
+    Ok(out)
+}
+
+fn parse_extrude_operand_identity(
+    bytes: &[u8],
+    group: &DesignExtrudeOperandGroup,
+    wrapper_header: &DesignRecordHeader,
+) -> Option<DesignExtrudeOperandIdentity> {
+    let mut current_at = usize::try_from(wrapper_header.byte_offset).ok()?;
+    let mut current_record_index = wrapper_header.record_index;
+    let mut current_class_tag = wrapper_header.class_tag.clone();
+    let mut wrapper_record_indices = Vec::new();
+    let mut wrapper_byte_offsets = Vec::new();
+    let mut wrapper_class_tags = Vec::new();
+    let mut seen = HashSet::new();
+    while bytes.get(current_at + 11..current_at + 21)? == [0; 10]
+        && bytes.get(current_at + 21..current_at + 24)? == [1, 1, 0]
+    {
+        if !seen.insert((current_record_index, current_at)) {
+            return None;
+        }
+        wrapper_record_indices.push(current_record_index);
+        wrapper_byte_offsets.push(u64::try_from(current_at).ok()?);
+        wrapper_class_tags.push(current_class_tag);
+        current_at = current_at.checked_add(24)?;
+        let (next_class_tag, after_next_tag) = lp_ascii(bytes, current_at)?;
+        current_record_index = u32_at(bytes, after_next_tag)?;
+        current_class_tag = next_class_tag;
+    }
+    if wrapper_record_indices.is_empty() {
+        return None;
+    }
+    let persistent_identity = parse_extrude_identity_member(bytes, current_at).map(|member| {
+        DesignExtrudePersistentIdentity {
+            local_id: member.local_id,
+            local_id_offset: member.local_id_offset,
+            asset_id: member.asset_id,
+            asset_id_offset: member.asset_id_offset,
+            context_id: member.context_id,
+            context_id_offset: member.context_id_offset,
+            next_record_index: member.next_record_index,
+            next_byte_offset: member.next_byte_offset,
+        }
+    });
+    Some(DesignExtrudeOperandIdentity {
+        id: String::new(),
+        group_record_index: group.record_index,
+        wrapper_record_indices,
+        wrapper_byte_offsets,
+        wrapper_class_tags,
+        leaf_record_index: current_record_index,
+        leaf_byte_offset: u64::try_from(current_at).ok()?,
+        leaf_class_tag: current_class_tag,
+        persistent_identity,
+    })
+}
+
 fn parse_extrude_selection_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -2946,6 +3038,41 @@ fn parse_extrude_selection_member(
     header: &DesignRecordHeader,
 ) -> Option<DesignExtrudeSelectionMember> {
     let start = usize::try_from(header.byte_offset).ok()?;
+    let member = parse_extrude_identity_member(bytes, start)?;
+    Some(DesignExtrudeSelectionMember {
+        id: String::new(),
+        group_record_index: group.record_index,
+        group_member_ordinal,
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        local_id: member.local_id,
+        local_id_offset: member.local_id_offset,
+        asset_id: member.asset_id,
+        asset_id_offset: member.asset_id_offset,
+        context_id: member.context_id,
+        context_id_offset: member.context_id_offset,
+        resolved_geometry: None,
+        next_record_index: member.next_record_index,
+        next_byte_offset: member.next_byte_offset,
+    })
+}
+
+struct ParsedExtrudeIdentityMember {
+    local_id: u64,
+    local_id_offset: u64,
+    asset_id: String,
+    asset_id_offset: u64,
+    context_id: String,
+    context_id_offset: u64,
+    next_record_index: u32,
+    next_byte_offset: u64,
+}
+
+fn parse_extrude_identity_member(
+    bytes: &[u8],
+    start: usize,
+) -> Option<ParsedExtrudeIdentityMember> {
     if bytes.get(start + 11..start + 21)? != [0; 10] {
         return None;
     }
@@ -2962,20 +3089,13 @@ fn parse_extrude_selection_member(
     }
     let next_at = start.checked_add(190)?;
     let (_, after_next_tag) = lp_ascii(bytes, next_at)?;
-    Some(DesignExtrudeSelectionMember {
-        id: String::new(),
-        group_record_index: group.record_index,
-        group_member_ordinal,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+    Some(ParsedExtrudeIdentityMember {
         local_id,
         local_id_offset: u64::try_from(start + 21).ok()?,
         asset_id,
         asset_id_offset: u64::try_from(start + 33).ok()?,
         context_id,
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
-        resolved_geometry: None,
         next_record_index: u32_at(bytes, after_next_tag)?,
         next_byte_offset: u64::try_from(next_at).ok()?,
     })
@@ -4975,17 +5095,18 @@ mod relation_tests {
         find_dimension_locus_pair, identity_matrix, next_indexed_record_offset,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_operand_group,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        parse_extrude_operand_identity, parse_extrude_profile, parse_extrude_selection_group,
+        parse_extrude_selection_member, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignDimensionLocusPair, DesignEntityHeader,
-        DesignExtrudeProfileOperand, DesignObjectKind, DesignParameterKind, DesignParameterOwner,
-        DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, SketchConstraintKind,
-        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-        SketchRelationOperand,
+        DesignExtrudeOperandGroup, DesignExtrudeProfileOperand, DesignObjectKind,
+        DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+        DesignSketchPlacement, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+        SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -5448,6 +5569,72 @@ mod relation_tests {
         assert_eq!(group.opaque_scalar, 0.125);
         assert!(group.variant);
         assert_eq!(group.paired_byte_offset, paired_at as u64);
+    }
+
+    #[test]
+    fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
+        fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+            bytes.extend_from_slice(&class_tag);
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+        }
+
+        let group = DesignExtrudeOperandGroup {
+            id: "f3d:Design/BulkStream.dat:operand-group#100".into(),
+            scope_record_index: 12,
+            scope_reference_ordinal: 0,
+            record_index: 100,
+            byte_offset: 1000,
+            class_tag: "332".into(),
+            member_count_offset: 1021,
+            members: vec![200],
+            member_offsets: vec![1026],
+            identity_record_index: 300,
+            identity_record_offset: 1043,
+            role: 0x0000_0008_0000_0000,
+            role_offset: 1053,
+            opaque_index: 180,
+            opaque_index_offset: 1071,
+            opaque_scalar: 0.125,
+            opaque_scalar_offset: 1075,
+            variant: false,
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 1124,
+        };
+        let wrapper_header = DesignRecordHeader {
+            id: "f3d:Design/BulkStream.dat:record#300".into(),
+            byte_offset: 0,
+            class_tag: "326".into(),
+            record_index: 300,
+        };
+        let mut bytes = Vec::new();
+        header(&mut bytes, *b"326", 300);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&[1, 1, 0]);
+        header(&mut bytes, *b"326", 305);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&[1, 1, 0]);
+        header(&mut bytes, *b"324", 400);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&586u64.to_le_bytes());
+        lp_utf16(&mut bytes, "df9087bd-02a6-4a3f-a132-7e69990f323c");
+        lp_utf16(&mut bytes, "0b2382d1-caaf-4eb9-b40d-a6322a7ed829");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 5]);
+        header(&mut bytes, *b"301", 900);
+
+        let identity = parse_extrude_operand_identity(&bytes, &group, &wrapper_header)
+            .expect("identity chain");
+        assert_eq!(identity.wrapper_record_indices, [300, 305]);
+        assert_eq!(identity.wrapper_byte_offsets, [0, 24]);
+        assert_eq!(identity.leaf_record_index, 400);
+        assert_eq!(identity.leaf_byte_offset, 48);
+        let persistent = identity
+            .persistent_identity
+            .expect("fixed persistent identity leaf");
+        assert_eq!(persistent.local_id, 586);
+        assert_eq!(persistent.next_record_index, 900);
+        assert_eq!(persistent.next_byte_offset, 238);
     }
 
     #[test]

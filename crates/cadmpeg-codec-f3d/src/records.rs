@@ -642,6 +642,51 @@ pub struct DesignExtrudeOperandGroup {
     pub paired_byte_offset: u64,
 }
 
+/// Nested identity chain named by an Extrude operand group.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignExtrudeOperandIdentity {
+    /// Globally unique deterministic identifier.
+    pub id: String,
+    /// Owning operand-group record.
+    pub group_record_index: u32,
+    /// Ordered identity-wrapper indexed-record identities.
+    pub wrapper_record_indices: Vec<u32>,
+    /// Indexed-header byte offsets parallel to `wrapper_record_indices`.
+    pub wrapper_byte_offsets: Vec<u64>,
+    /// Per-file dynamic class tags parallel to `wrapper_record_indices`.
+    pub wrapper_class_tags: Vec<String>,
+    /// Indexed identity of the first non-wrapper record.
+    pub leaf_record_index: u32,
+    /// Indexed-header byte offset of the first non-wrapper record.
+    pub leaf_byte_offset: u64,
+    /// Per-file dynamic class tag of the first non-wrapper record.
+    pub leaf_class_tag: String,
+    /// Fixed-width persistent identity leaf, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persistent_identity: Option<DesignExtrudePersistentIdentity>,
+}
+
+/// Fixed-width persistent identity at an Extrude operand-identity leaf.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignExtrudePersistentIdentity {
+    /// Local persistent identity preceding the two UUID fields.
+    pub local_id: u64,
+    /// Byte offset of `local_id`.
+    pub local_id_offset: u64,
+    /// Asset UUID qualifying the local identity.
+    pub asset_id: String,
+    /// Byte offset of the asset UUID's UTF-16LE code units.
+    pub asset_id_offset: u64,
+    /// UUID of the local identity context.
+    pub context_id: String,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    pub context_id_offset: u64,
+    /// Identity of the indexed record immediately following the leaf.
+    pub next_record_index: u32,
+    /// Byte offset of the indexed record immediately following the leaf.
+    pub next_byte_offset: u64,
+}
+
 /// One fixed-width member named by an Extrude selection group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignExtrudeSelectionMember {

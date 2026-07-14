@@ -474,6 +474,102 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let operand_groups_by_index = native
+        .design_extrude_operand_groups
+        .iter()
+        .map(|group| ((design_stream(&group.id), group.record_index), group))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut operand_identity_groups = HashSet::new();
+    for identity in &native.design_extrude_operand_identities {
+        let native_stream = design_stream(&identity.id);
+        let group = operand_groups_by_index.get(&(native_stream, identity.group_record_index));
+        let selected_profile = group
+            .and_then(|group| scopes_by_index.get(&(native_stream, group.scope_record_index)))
+            .and_then(|scope| scope.extrude_profile.as_ref());
+        let wrapper_shape = !identity.wrapper_record_indices.is_empty()
+            && identity.wrapper_record_indices.len() == identity.wrapper_byte_offsets.len()
+            && identity.wrapper_record_indices.len() == identity.wrapper_class_tags.len()
+            && identity
+                .wrapper_record_indices
+                .iter()
+                .copied()
+                .collect::<HashSet<_>>()
+                .len()
+                == identity.wrapper_record_indices.len()
+            && identity
+                .wrapper_byte_offsets
+                .windows(2)
+                .all(|offsets| offsets[1] == offsets[0].saturating_add(24))
+            && identity
+                .wrapper_record_indices
+                .iter()
+                .zip(&identity.wrapper_byte_offsets)
+                .zip(&identity.wrapper_class_tags)
+                .all(|((&record_index, &byte_offset), class_tag)| {
+                    class_tag.len() == 3
+                        && class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                        && records_by_index
+                            .get(&(native_stream, record_index))
+                            .is_some_and(|header| {
+                                header.byte_offset == byte_offset && header.class_tag == *class_tag
+                            })
+                });
+        let leaf_shape = identity.leaf_class_tag.len() == 3
+            && identity
+                .leaf_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && identity
+                .wrapper_byte_offsets
+                .last()
+                .is_some_and(|offset| identity.leaf_byte_offset == offset.saturating_add(24))
+            && records_by_index
+                .get(&(native_stream, identity.leaf_record_index))
+                .is_some_and(|header| {
+                    header.byte_offset == identity.leaf_byte_offset
+                        && header.class_tag == identity.leaf_class_tag
+                });
+        let persistent_shape = identity
+            .persistent_identity
+            .as_ref()
+            .is_none_or(|persistent| {
+                persistent.local_id_offset == identity.leaf_byte_offset.saturating_add(21)
+                    && persistent.asset_id_offset == identity.leaf_byte_offset.saturating_add(33)
+                    && persistent.context_id_offset > persistent.asset_id_offset
+                    && valid_design_guid(&persistent.asset_id)
+                    && valid_design_guid(&persistent.context_id)
+                    && selected_profile
+                        .is_some_and(|profile| profile.asset_id == persistent.asset_id)
+                    && persistent.next_byte_offset == identity.leaf_byte_offset.saturating_add(190)
+                    && persistent.next_record_index != 0
+            });
+        let valid = group.is_some_and(|group| {
+            identity.wrapper_record_indices.first() == Some(&group.identity_record_index)
+        }) && wrapper_shape
+            && leaf_shape
+            && persistent_shape
+            && operand_identity_groups.insert((native_stream, identity.group_record_index));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Extrude operand identity has an invalid nested frame"
+                    .into(),
+                entity: Some(identity.id.clone()),
+            });
+        }
+    }
+    for group in &native.design_extrude_operand_groups {
+        let native_stream = design_stream(&group.id);
+        if !operand_identity_groups.contains(&(native_stream, group.record_index)) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Extrude operand group has no identity chain".into(),
+                entity: Some(group.id.clone()),
+            });
+        }
+    }
     let members_by_slot = native
         .design_extrude_selection_members
         .iter()
