@@ -1772,6 +1772,8 @@ fn sketch_brep(
                 },
                 pcurve: None,
                 pcurve_parameter_range: None,
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
         }
         let count = coedge_ids.len();
@@ -1829,6 +1831,8 @@ fn sketch_brep(
             sense: Sense::Forward,
             pcurve: None,
             pcurve_parameter_range: None,
+            use_curve: None,
+            use_curve_parameter_range: None,
         });
         ir.model.loops.push(Loop {
             id: loop_id.clone(),

@@ -551,6 +551,84 @@ fn decode_selects_tolerant_coedge_extension_from_asm_release() {
     }
 }
 
+#[test]
+fn decode_transfers_embedded_tolerant_coedge_use_curves() {
+    let mut smbh = synthetic_geometry_smbh();
+    let mut tail = Vec::new();
+    t_dbl(&mut tail, 0.0);
+    t_dbl(&mut tail, 1.0);
+    t_ref(&mut tail, -1);
+    t_long(&mut tail, 1);
+    tail.extend_from_slice(&[0x0b, 0x0f]);
+    tail.extend_from_slice(&generated_curve_block());
+    tail.extend_from_slice(&[0x10, 0x0b, 0x0b]);
+    t_long(&mut tail, 0);
+    append_generated_record_tail(&mut smbh, "coedge", &tail);
+    replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("embedded tolerant-coedge curves must decode");
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.use_curve.is_some())
+            .count(),
+        3
+    );
+    assert!(decoded.ir.model.coedges.iter().all(|coedge| {
+        coedge.use_curve_parameter_range == Some([0.0, 1.0])
+            && coedge.use_curve.as_ref().is_some_and(|id| {
+                decoded.ir.model.curves.iter().any(|curve| {
+                    curve.id == *id
+                        && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref nurbs) if nurbs.degree == 2)
+                })
+            })
+    }));
+
+    let mut edited = decoded.ir.clone();
+    let use_curve = edited.model.coedges[0]
+        .use_curve
+        .clone()
+        .expect("first coedge use curve");
+    let curve = edited
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == use_curve)
+        .expect("embedded use-curve carrier");
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
+        panic!("embedded use curve must be NURBS")
+    };
+    nurbs.control_points[0].x += 1.0;
+    let error = F3dCodec
+        .write_preserved(&edited, &mut Vec::new())
+        .expect_err("embedded use-curve edits require exact native patch support");
+    assert!(
+        error
+            .to_string()
+            .contains("f3d:brep:tolerant-coedge-curve#7"),
+        "{error}"
+    );
+
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("source-less embedded use curves must not disappear");
+    assert!(
+        error.to_string().contains("use curve losslessly"),
+        "{error}"
+    );
+}
+
 fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let name_tag = bytes
@@ -4614,6 +4692,8 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             sense: cadmpeg_ir::topology::Sense::Forward,
             pcurve: None,
             pcurve_parameter_range: None,
+            use_curve: None,
+            use_curve_parameter_range: None,
         });
     source_less.model.loops[0].coedges.push(coedge_id);
     let ring = source_less.model.loops[0].coedges.clone();
@@ -4990,6 +5070,8 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             },
             pcurve: None,
             pcurve_parameter_range: None,
+            use_curve: None,
+            use_curve_parameter_range: None,
         });
         source_less.model.edges.push(Edge {
             id: edges[index].clone(),
@@ -5651,6 +5733,8 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
                 sense: cadmpeg_ir::topology::Sense::Reversed,
                 pcurve: None,
                 pcurve_parameter_range: None,
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
     }
     for index in 0..3 {

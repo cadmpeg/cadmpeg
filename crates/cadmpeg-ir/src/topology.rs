@@ -172,6 +172,12 @@ pub struct Coedge {
     /// Interval on the pcurve's own parameterization used by this coedge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcurve_parameter_range: Option<[f64; 2]>,
+    /// Optional coedge-local 3D carrier used instead of the shared edge curve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_curve: Option<CurveId>,
+    /// Interval on the coedge-local 3D carrier in loop-traversal order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_curve_parameter_range: Option<[f64; 2]>,
 }
 
 /// An edge: a bounded segment of a 3D curve between two vertices.

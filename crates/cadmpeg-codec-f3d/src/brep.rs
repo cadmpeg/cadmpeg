@@ -4115,6 +4115,44 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 continue;
             }
             let partner = r.ref_at(5).filter(|p| kept_coedges.contains(p));
+            let tolerant = if r.head == "tcoedge" {
+                match (r.chunk(11), r.chunk(12)) {
+                    (Some(Token::Double(start)), Some(Token::Double(end))) => {
+                        let extension = match release_major {
+                            Some(major) if major > 219 => tolerant_coedge_extension(r),
+                            Some(215..=219) => match r.chunk(13) {
+                                Some(Token::Ref(target)) => {
+                                    Some(TolerantCoedgeExtension::Reference {
+                                        target: (*target >= 0).then_some(*target),
+                                    })
+                                }
+                                _ => None,
+                            },
+                            Some(_) => Some(TolerantCoedgeExtension::None),
+                            None => None,
+                        };
+                        extension.map(|extension| ([*start, *end], extension))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let use_curve = tolerant.as_ref().and_then(|(range, extension)| {
+                if !matches!(extension, TolerantCoedgeExtension::EmbeddedCurve { .. }) {
+                    return None;
+                }
+                let record_bytes = bytes.get(r.offset..r.offset.checked_add(r.len)?)?;
+                let curve =
+                    nurbs::decode_curve_cache_resolving_refs(record_bytes, bytes, &subtype_tables)?;
+                let curve_id = CurveId(format!("f3d:brep:tolerant-coedge-curve#{i}"));
+                out.curves.push(Curve {
+                    id: curve_id.clone(),
+                    geometry: CurveGeometry::Nurbs(curve),
+                    source_object: None,
+                });
+                Some((curve_id, *range))
+            });
             out.coedges.push(Coedge {
                 id: CoedgeId(id(i)),
                 owner_loop: LoopId(id(owner)),
@@ -4128,32 +4166,18 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     .filter(|p| kept_pcurves.contains(p))
                     .map(|p| PcurveId(id(p))),
                 pcurve_parameter_range: pcurve_parameter_ranges.get(&i).copied(),
+                use_curve: use_curve.as_ref().map(|(curve, _)| curve.clone()),
+                use_curve_parameter_range: use_curve.map(|(_, range)| range),
             });
-            if r.head == "tcoedge" {
-                if let (Some(Token::Double(start)), Some(Token::Double(end))) =
-                    (r.chunk(11), r.chunk(12))
-                {
-                    let extension = match release_major {
-                        Some(major) if major > 219 => tolerant_coedge_extension(r),
-                        Some(215..=219) => match r.chunk(13) {
-                            Some(Token::Ref(target)) => Some(TolerantCoedgeExtension::Reference {
-                                target: (*target >= 0).then_some(*target),
-                            }),
-                            _ => None,
-                        },
-                        Some(_) => Some(TolerantCoedgeExtension::None),
-                        None => None,
-                    };
-                    let Some(extension) = extension else { continue };
-                    out.tolerant_coedge_parameters
-                        .push(TolerantCoedgeParameters {
-                            id: format!("f3d:asm:tolerant-coedge-parameters#{i}"),
-                            coedge: CoedgeId(id(i)),
-                            record_index: r.index as u32,
-                            parameter_range: [*start, *end],
-                            extension,
-                        });
-                }
+            if let Some((parameter_range, extension)) = tolerant {
+                out.tolerant_coedge_parameters
+                    .push(TolerantCoedgeParameters {
+                        id: format!("f3d:asm:tolerant-coedge-parameters#{i}"),
+                        coedge: CoedgeId(id(i)),
+                        record_index: r.index as u32,
+                        parameter_range,
+                        extension,
+                    });
             }
         }
     }

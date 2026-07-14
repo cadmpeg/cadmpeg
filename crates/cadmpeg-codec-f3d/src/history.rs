@@ -1299,6 +1299,8 @@ mod tests {
             sense: Sense::Forward,
             pcurve: None,
             pcurve_parameter_range: None,
+            use_curve: None,
+            use_curve_parameter_range: None,
         });
         brep.edges.push(Edge {
             id: EdgeId(id(7)),

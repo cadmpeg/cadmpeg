@@ -282,7 +282,7 @@ The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partn
 
 `tcoedge` inherits this complete base field sequence. `chunk[11]` and `chunk[12]` are its native start and end parameters. Releases below 215 have no fixed extension fields. Releases from 215 through 219 store a nullable reference in `chunk[13]`.
 
-Modern releases store a nullable reference in `chunk[13]` and a LONG selector in `chunk[14]`. Selector zero is followed by LONG zero and terminates the record. Selector one is followed by a boolean and one balanced subtype scope. The fields after the matching outer `SUBTYPE_CLOSE` are either `FALSE, FALSE, LONG 0`, denoting no trailing interval, or `TRUE, f64 start, TRUE, f64 end, LONG 0`, denoting an explicit trailing interval. Nested subtype scopes do not terminate the outer payload. These extension fields do not change the offsets or meanings of the base topology links.
+Modern releases store a nullable reference in `chunk[13]` and a LONG selector in `chunk[14]`. Selector zero is followed by LONG zero and terminates the record. Selector one is followed by a boolean and one balanced subtype scope containing a 3D NURBS coedge-use curve. `chunk[11..=12]` bound this curve in loop-traversal order: a forward coedge runs from the edge start vertex to the edge end vertex, while a reversed coedge runs from the edge end vertex to the edge start vertex. The fields after the matching outer `SUBTYPE_CLOSE` are either `FALSE, FALSE, LONG 0`, denoting no trailing interval, or `TRUE, f64 start, TRUE, f64 end, LONG 0`, denoting an explicit trailing interval. Nested subtype scopes do not terminate the outer payload. These extension fields do not change the offsets or meanings of the base topology links.
 
 **Edge (98 B):**
 

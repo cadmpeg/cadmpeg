@@ -18,6 +18,12 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .iter()
         .filter_map(|edge| edge.curve.as_ref().map(|id| id.0.as_str()))
         .collect::<HashSet<_>>();
+    curves.extend(
+        ir.model
+            .coedges
+            .iter()
+            .filter_map(|coedge| coedge.use_curve.as_ref().map(|id| id.0.as_str())),
+    );
     surfaces.extend(
         ir.model
             .surfaces
@@ -601,6 +607,35 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|pcurve| (pcurve.id.0.as_str(), &pcurve.geometry))
         .collect::<HashMap<_, _>>();
     for coedge in &ir.model.coedges {
+        if coedge.use_curve.is_some() != coedge.use_curve_parameter_range.is_some() {
+            findings.push(Finding {
+                check: Check::ParameterDomain,
+                severity: Severity::Error,
+                message: "coedge use curve and parameter range must occur together".into(),
+                entity: Some(coedge.id.0.clone()),
+            });
+        }
+        if let Some([start, end]) = coedge.use_curve_parameter_range {
+            let geometry = coedge
+                .use_curve
+                .as_ref()
+                .and_then(|id| curves.get(id.0.as_str()));
+            let mut valid =
+                start.is_finite() && end.is_finite() && start <= end && geometry.is_some();
+            if let Some(CurveGeometry::Nurbs(nurbs)) = geometry {
+                if let (Some(first), Some(last)) = (nurbs.knots.first(), nurbs.knots.last()) {
+                    valid &= start >= *first && end <= *last;
+                }
+            }
+            if !valid {
+                findings.push(Finding {
+                    check: Check::ParameterDomain,
+                    severity: Severity::Error,
+                    message: "coedge use-curve range is outside its carrier domain".into(),
+                    entity: Some(coedge.id.0.clone()),
+                });
+            }
+        }
         let Some([start, end]) = coedge.pcurve_parameter_range else {
             continue;
         };

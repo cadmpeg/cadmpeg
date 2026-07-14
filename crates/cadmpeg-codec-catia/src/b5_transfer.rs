@@ -380,6 +380,8 @@ pub(crate) fn transfer(
                     },
                     pcurve: Some(pcurve_ids[&pcurve].clone()),
                     pcurve_parameter_range: None,
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
         }

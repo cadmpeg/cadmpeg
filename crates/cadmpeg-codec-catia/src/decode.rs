@@ -671,6 +671,8 @@ fn transfer_e5_topology(
                     },
                     pcurve: Some(PcurveId(format!("catia:e5:pcurve#{pcurve_ref}"))),
                     pcurve_parameter_range: None,
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
         }
@@ -1282,6 +1284,8 @@ fn attach_standard_topology(
                     },
                     pcurve: None,
                     pcurve_parameter_range: None,
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
             annotate(

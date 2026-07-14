@@ -182,6 +182,8 @@ pub fn unit_cube() -> CadIr {
                 },
                 pcurve: None,
                 pcurve_parameter_range: None,
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
             edge_to_coedges
                 .entry(*edge_index)

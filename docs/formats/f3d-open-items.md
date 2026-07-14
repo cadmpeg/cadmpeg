@@ -30,7 +30,7 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Tolerant topology variants
 
-- The geometric role and parameterization of the balanced curve subtype embedded by a modern `tcoedge` selector-one extension are unresolved.
+- The semantic role of the boolean before a modern `tcoedge` selector-one curve and the optional interval following that curve are unresolved.
 
 ## Material assets
 

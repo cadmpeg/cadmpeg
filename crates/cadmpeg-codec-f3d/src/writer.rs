@@ -125,6 +125,17 @@ fn validate_source_less_topology_tolerances(target: &CadIr) -> Result<(), CodecE
             edge.id
         )));
     }
+    if let Some(coedge) = target
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.use_curve.is_some())
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize coedge {} use curve losslessly",
+            coedge.id
+        )));
+    }
     Ok(())
 }
 
@@ -10814,6 +10825,52 @@ fn validate_tolerant_coedge_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<usize, [f64; 2]>, CodecError> {
+    let baseline_coedges = baseline
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge))
+        .collect::<BTreeMap<_, _>>();
+    let target_coedges = target
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_coedges.keys().ne(target_coedges.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D tolerant-coedge regeneration requires the unchanged coedge-id set".into(),
+        ));
+    }
+    let baseline_curves = baseline
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve.id.as_str(), curve))
+        .collect::<BTreeMap<_, _>>();
+    let target_curves = target
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve.id.as_str(), curve))
+        .collect::<BTreeMap<_, _>>();
+    for (id, before) in &baseline_coedges {
+        let after = target_coedges[id];
+        if after.use_curve != before.use_curve
+            || after.use_curve_parameter_range != before.use_curve_parameter_range
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D coedge use-curve edit changes embedded record structure: {id}"
+            )));
+        }
+        if let Some(curve) = &before.use_curve {
+            if baseline_curves.get(curve.as_str()) != target_curves.get(curve.as_str()) {
+                return Err(CodecError::NotImplemented(format!(
+                    "F3D coedge use-curve geometry edit is not writable: {id}"
+                )));
+            }
+        }
+    }
     let baseline_parameters = f3d_native(baseline)?
         .map(|native| native.tolerant_coedge_parameters)
         .unwrap_or_default();

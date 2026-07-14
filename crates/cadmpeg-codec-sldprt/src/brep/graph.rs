@@ -608,6 +608,8 @@ fn decode_graph(
                     sense: sense_of(ce.marker.unwrap_or(0x2b)),
                     pcurve: None,
                     pcurve_parameter_range: None,
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
         }
@@ -1747,6 +1749,8 @@ fn synthesize_cylinder_seams(
             sense: Sense::Forward,
             pcurve: None,
             pcurve_parameter_range: None,
+            use_curve: None,
+            use_curve_parameter_range: None,
         });
         coedge_indices.insert(seam_b.clone(), out.coedges.len());
         out.coedges.push(Coedge {
@@ -1759,6 +1763,8 @@ fn synthesize_cylinder_seams(
             sense: Sense::Reversed,
             pcurve: None,
             pcurve_parameter_range: None,
+            use_curve: None,
+            use_curve_parameter_range: None,
         });
         let ring = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
         for (index, id) in ring.iter().enumerate() {
@@ -1891,6 +1897,8 @@ fn synthesize_sphere_seams(
             sense: Sense::Forward,
             pcurve: None,
             pcurve_parameter_range: None,
+            use_curve: None,
+            use_curve_parameter_range: None,
         });
         for (index, id) in ring.iter().enumerate() {
             if let Some(coedge_index) = coedge_indices.get(id) {

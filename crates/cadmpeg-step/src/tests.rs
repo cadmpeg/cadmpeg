@@ -90,6 +90,8 @@ fn edgeless_doc() -> CadIr {
         sense: Sense::Forward,
         pcurve: None,
         pcurve_parameter_range: None,
+        use_curve: None,
+        use_curve_parameter_range: None,
     });
     ir.model.loops.push(Loop {
         id: LoopId("lp0".into()),
@@ -234,6 +236,23 @@ fn reports_entity_counts_and_no_geometry_loss_for_cube() {
     assert_eq!(report.entity_counts.get("VERTEX_POINT"), Some(&8));
     // The cube is fully representable: no error/blocking losses.
     assert_eq!(report.error_count(), 0);
+}
+
+#[test]
+fn coedge_use_curves_are_reported_as_geometry_loss() {
+    let mut ir = unit_cube();
+    let edge = ir.model.edges[0].clone();
+    ir.model.coedges[0].use_curve = edge.curve;
+    ir.model.coedges[0].use_curve_parameter_range = edge.param_range;
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default()).unwrap();
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss
+                .message
+                .contains("1 coedge-local 3D use curve(s) were not written")
+    }));
 }
 
 fn buf_line_count(buf: &[u8]) -> usize {

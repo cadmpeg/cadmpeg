@@ -7,6 +7,7 @@ use super::*;
 use crate::eval::{curve_point, pcurve_uv, surface_point};
 use crate::geometry::PcurveGeometry;
 use crate::math::Point3;
+use crate::topology::Sense;
 
 /// Maximum distance, in the document's length unit, between an evaluated
 /// carrier point and the vertex position it must coincide with. Exact carriers
@@ -83,6 +84,54 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                     "edge curve endpoints miss the edge's vertex positions by {mismatch:.6}"
                 ),
                 entity: Some(edge.id.0.clone()),
+            });
+        }
+    }
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (edge.id.0.as_str(), edge))
+        .collect::<HashMap<_, _>>();
+    for coedge in &ir.model.coedges {
+        let Some([start_t, end_t]) = coedge.use_curve_parameter_range else {
+            continue;
+        };
+        let Some(geometry) = coedge
+            .use_curve
+            .as_ref()
+            .and_then(|id| curves.get(id.0.as_str()))
+        else {
+            continue;
+        };
+        let Some(edge) = edges.get(coedge.edge.0.as_str()) else {
+            continue;
+        };
+        let (first_vertex, last_vertex) = match coedge.sense {
+            Sense::Forward => (&edge.start, &edge.end),
+            Sense::Reversed => (&edge.end, &edge.start),
+        };
+        let (Some((start, start_tol)), Some((end, end_tol))) = (
+            vertices.get(first_vertex.0.as_str()),
+            vertices.get(last_vertex.0.as_str()),
+        ) else {
+            continue;
+        };
+        let (Some(at_start), Some(at_end)) =
+            (curve_point(geometry, start_t), curve_point(geometry, end_t))
+        else {
+            continue;
+        };
+        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol]);
+        let mismatch = distance(at_start, *start).max(distance(at_end, *end));
+        if !mismatch.is_finite() || mismatch > bound {
+            findings.push(Finding {
+                check: Check::GeometricConsistency,
+                severity: Severity::Error,
+                message: format!(
+                    "coedge use-curve endpoints miss the traversal vertices by {mismatch:.6}"
+                ),
+                entity: Some(coedge.id.0.clone()),
             });
         }
     }

@@ -1111,6 +1111,22 @@ fn dangling_reference_is_flagged() {
 }
 
 #[test]
+fn coedge_use_curve_requires_a_resolved_carrier_and_interval() {
+    let mut ir = unit_cube();
+    ir.model.coedges[0].use_curve = Some(CurveId("missing:use-curve#0".into()));
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity && finding.message.contains("coedge use curve")
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ParameterDomain
+            && finding
+                .message
+                .contains("use curve and parameter range must occur together")
+    }));
+}
+
+#[test]
 fn broken_loop_ring_is_flagged() {
     let mut ir = unit_cube();
     // Redirect a coedge's `next` to a valid coedge in a different loop, so the

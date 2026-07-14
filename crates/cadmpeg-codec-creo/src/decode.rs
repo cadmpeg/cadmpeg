@@ -542,6 +542,8 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                     },
                     pcurve: None,
                     pcurve_parameter_range: None,
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
         }

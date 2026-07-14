@@ -187,6 +187,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 ref_error(findings, &ce.id.0, "pcurve", &pc.0);
             }
         }
+        if let Some(curve) = &ce.use_curve {
+            if !ids.curves.contains(&curve.0) {
+                ref_error(findings, &ce.id.0, "coedge use curve", &curve.0);
+            }
+        }
     }
     for e in &ir.model.edges {
         if let Some(c) = &e.curve {

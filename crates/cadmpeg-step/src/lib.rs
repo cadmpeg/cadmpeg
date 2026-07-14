@@ -890,6 +890,23 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let use_curve_count = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.use_curve.is_some())
+            .count();
+        if use_curve_count > 0 {
+            self.loss(
+                LossCategory::Geometry,
+                Severity::Warning,
+                format!(
+                    "{use_curve_count} coedge-local 3D use curve(s) were not written; \
+                     oriented edges use their shared edge carriers"
+                ),
+            );
+        }
         if !self.ir.model.pcurves.is_empty() {
             self.loss(
                 LossCategory::Geometry,

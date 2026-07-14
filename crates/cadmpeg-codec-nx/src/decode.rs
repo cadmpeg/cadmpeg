@@ -1115,6 +1115,8 @@ fn emit_topology(
             sense: sense(Some(fields.sense)),
             pcurve: None,
             pcurve_parameter_range: None,
+            use_curve: None,
+            use_curve_parameter_range: None,
         });
         if let Some(parent) = ir
             .model
