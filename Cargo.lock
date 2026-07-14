@@ -192,6 +192,7 @@ version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
  "serde",
+ "serde_json",
  "sha2",
  "toml",
 ]
