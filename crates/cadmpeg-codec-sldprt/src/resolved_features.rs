@@ -1682,6 +1682,7 @@ pub(crate) fn bind_extrusion_operations(
                 feature_operation_code(lane, name)?,
             ) {
                 (Some("moExtrusion_c"), 1) | (_, 3) => Some(BooleanOp::Join),
+                (Some("moICE_c"), 1 | 2 | 10) => Some(BooleanOp::Cut),
                 (_, 11) => Some(BooleanOp::Cut),
                 _ => None,
             }
