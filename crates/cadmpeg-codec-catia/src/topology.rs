@@ -1300,7 +1300,7 @@ pub fn standard_mesh_missing_edge_assignments(
         cycle_lengths: &[usize],
         missing: &[usize],
         rows: &[EdgeRow],
-        edge_ports: &[[u32; 2]],
+        edge_ports: Option<&[[u32; 2]]>,
         corner_ports: &HashMap<MeshCorner, u32>,
     ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
         struct Search<'a> {
@@ -1309,7 +1309,7 @@ pub fn standard_mesh_missing_edge_assignments(
             cycle_lengths: &'a [usize],
             missing: &'a [usize],
             rows: &'a [EdgeRow],
-            edge_ports: &'a [[u32; 2]],
+            edge_ports: Option<&'a [[u32; 2]]>,
             corner_ports: &'a HashMap<MeshCorner, u32>,
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
@@ -1367,12 +1367,16 @@ pub fn standard_mesh_missing_edge_assignments(
                         Box::new(std::iter::once(stored_span))
                     };
                     for segment_count in spans.filter(|span| *span <= remaining) {
-                        let ports = self.edge_ports[edge];
-                        let mut next_ports = match current_port {
-                            Some(current) if ports[0] == current => vec![ports[1]],
-                            Some(current) if ports[1] == current => vec![ports[0]],
-                            Some(_) => continue,
-                            None => ports.to_vec(),
+                        let mut next_ports = match (self.edge_ports, current_port) {
+                            (Some(edge_ports), Some(current)) if edge_ports[edge][0] == current => {
+                                vec![Some(edge_ports[edge][1])]
+                            }
+                            (Some(edge_ports), Some(current)) if edge_ports[edge][1] == current => {
+                                vec![Some(edge_ports[edge][0])]
+                            }
+                            (Some(_), Some(_)) => continue,
+                            (Some(edge_ports), None) => edge_ports[edge].map(Some).to_vec(),
+                            (None, _) => vec![None],
                         };
                         next_ports.sort_unstable();
                         next_ports.dedup();
@@ -1392,7 +1396,7 @@ pub fn standard_mesh_missing_edge_assignments(
                                 gap,
                                 offset + segment_count,
                                 used | (1 << rank),
-                                Some(next_port),
+                                next_port,
                                 placed,
                             )?;
                         }
@@ -1622,8 +1626,19 @@ pub fn standard_mesh_missing_edge_assignments(
                         &cycle_lengths,
                         &face.missing_edges,
                         &edge_rows,
-                        &edge_ports,
+                        Some(&edge_ports),
                         &corner_ports,
+                    )
+                })
+                .or_else(|| {
+                    enumerate_face(
+                        face.face,
+                        &face.gaps,
+                        &cycle_lengths,
+                        &face.missing_edges,
+                        &edge_rows,
+                        None,
+                        &HashMap::new(),
                     )
                 })
             })

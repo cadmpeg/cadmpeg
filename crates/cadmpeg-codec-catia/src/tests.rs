@@ -300,6 +300,17 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     let assignments = crate::topology::standard_mesh_missing_edge_assignments(&bytes, &[[0, 0]; 4])
         .expect("complete missing-edge assignments");
     assert_eq!(assignments[0], [placements[0].clone()]);
+    let mut local_ports = bytes.clone();
+    let first_row = local_ports
+        .windows(2)
+        .position(|window| window == [0x02, 0x02])
+        .expect("short edge row");
+    local_ports[first_row + 2..first_row + 4].copy_from_slice(&200u16.to_be_bytes());
+    local_ports[first_row + 4..first_row + 6].copy_from_slice(&201u16.to_be_bytes());
+    assert!(
+        crate::topology::standard_mesh_missing_edge_assignments(&local_ports, &[[0, 0]; 4])
+            .is_some()
+    );
     let boundaries = crate::topology::standard_mesh_boundary_assignments(&bytes, &[[0, 0]; 4])
         .expect("complete ordered boundary assignments");
     assert_eq!(boundaries[0].len(), 1);
