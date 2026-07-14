@@ -79,10 +79,10 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "6";
+pub const IR_VERSION: &str = "7";
 
 /// Immediately preceding IR version supported by the explicit JSON migration.
-pub const PREVIOUS_IR_VERSION: &str = "5";
+pub const PREVIOUS_IR_VERSION: &str = "6";
 
 arena_registry!(declare_model);
 
@@ -219,9 +219,9 @@ impl CadIr {
 
     /// Migrate JSON from the immediately preceding IR version and parse it.
     ///
-    /// Version 5 adds only new pcurve geometry variants, so every valid version
-    /// 4 document migrates by updating
-    /// its version discriminator. Other legacy versions remain unsupported.
+    /// Version 7 adds the analytic-solid primitive feature variant, so every
+    /// valid version 6 document migrates by updating its version discriminator.
+    /// Other legacy versions remain unsupported.
     pub fn migrate_json(s: &str) -> Result<Self, serde_json::Error> {
         let mut value: serde_json::Value = serde_json::from_str(s)?;
         let version = value.get("ir_version").and_then(serde_json::Value::as_str);

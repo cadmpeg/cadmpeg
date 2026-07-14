@@ -5,7 +5,7 @@
 use super::*;
 use crate::features::{
     ChamferSpec, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind,
-    RadiusSpec,
+    PrimitiveSolid, RadiusSpec,
 };
 use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
@@ -1385,6 +1385,65 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         let mut face_selections = Vec::new();
         let mut body_selections = Vec::new();
         match &feature.definition {
+            FeatureDefinition::Primitive { solid, .. } => {
+                let positive = |value: Length| value.0.is_finite() && value.0 > 0.0;
+                let finite_angle = |value: crate::features::Angle| value.0.is_finite();
+                let valid = match solid {
+                    PrimitiveSolid::Box {
+                        length,
+                        width,
+                        height,
+                    } => positive(*length) && positive(*width) && positive(*height),
+                    PrimitiveSolid::Cylinder {
+                        radius,
+                        height,
+                        angle,
+                    } => positive(*radius) && positive(*height) && finite_angle(*angle),
+                    PrimitiveSolid::Cone {
+                        radius1,
+                        radius2,
+                        height,
+                        angle,
+                    } => {
+                        radius1.0.is_finite()
+                            && radius1.0 >= 0.0
+                            && radius2.0.is_finite()
+                            && radius2.0 >= 0.0
+                            && (radius1.0 > 0.0 || radius2.0 > 0.0)
+                            && positive(*height)
+                            && finite_angle(*angle)
+                    }
+                    PrimitiveSolid::Sphere {
+                        radius,
+                        latitude1,
+                        latitude2,
+                        longitude,
+                    } => {
+                        positive(*radius)
+                            && finite_angle(*latitude1)
+                            && finite_angle(*latitude2)
+                            && latitude1.0 < latitude2.0
+                            && finite_angle(*longitude)
+                    }
+                    PrimitiveSolid::Torus {
+                        major_radius,
+                        minor_radius,
+                        latitude1,
+                        latitude2,
+                        longitude,
+                    } => {
+                        positive(*major_radius)
+                            && positive(*minor_radius)
+                            && finite_angle(*latitude1)
+                            && finite_angle(*latitude2)
+                            && latitude1.0 < latitude2.0
+                            && finite_angle(*longitude)
+                    }
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "primitive dimensions are invalid");
+                }
+            }
             FeatureDefinition::Extrude {
                 profile, extent, ..
             } => {

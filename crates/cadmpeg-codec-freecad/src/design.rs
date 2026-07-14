@@ -7,8 +7,8 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BooleanOp, ChamferSpec, DesignParameter, EdgeSelection, Extent, Feature, FeatureDefinition,
-    FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue, ProfileRef, RadiusSpec,
-    RevolutionAxis, RevolutionConstruction, SketchSpace,
+    FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue, PrimitiveSolid,
+    ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, SketchSpace,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -92,6 +92,14 @@ pub(crate) fn transfer(
                 space: SketchSpace::Planar,
                 sketch: Some(sketch_id),
             }
+        } else if is_primitive(&object.type_name) {
+            primitive_definition(&object.type_name, &owned).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
         } else if is_extrusion(&object.type_name) {
             let profile = profile_ref(&owned, &sketch_ids);
             let length_property = property(&owned, "Length");
@@ -1282,6 +1290,71 @@ fn native_parameters(properties: &[&PropertyRecord]) -> BTreeMap<String, String>
         .collect()
 }
 
+fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+    let length = |name: &str| {
+        property(properties, name)
+            .and_then(scalar_value)
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(Length)
+    };
+    let angle = |name: &str| {
+        property(properties, name)
+            .and_then(scalar_value)
+            .filter(|value| value.is_finite())
+            .map(|value| cadmpeg_ir::features::Angle(value.to_radians()))
+    };
+    let solid = if kind.ends_with("Box") {
+        PrimitiveSolid::Box {
+            length: length("Length").filter(|value| value.0 > 0.0)?,
+            width: length("Width").filter(|value| value.0 > 0.0)?,
+            height: length("Height").filter(|value| value.0 > 0.0)?,
+        }
+    } else if kind.ends_with("Cylinder") {
+        PrimitiveSolid::Cylinder {
+            radius: length("Radius").filter(|value| value.0 > 0.0)?,
+            height: length("Height").filter(|value| value.0 > 0.0)?,
+            angle: angle("Angle")?,
+        }
+    } else if kind.ends_with("Cone") {
+        let radius1 = length("Radius1")?;
+        let radius2 = length("Radius2")?;
+        if radius1.0 == 0.0 && radius2.0 == 0.0 {
+            return None;
+        }
+        PrimitiveSolid::Cone {
+            radius1,
+            radius2,
+            height: length("Height").filter(|value| value.0 > 0.0)?,
+            angle: angle("Angle")?,
+        }
+    } else if kind.ends_with("Sphere") {
+        PrimitiveSolid::Sphere {
+            radius: length("Radius").filter(|value| value.0 > 0.0)?,
+            latitude1: angle("Angle1")?,
+            latitude2: angle("Angle2")?,
+            longitude: angle("Angle3")?,
+        }
+    } else if kind.ends_with("Torus") {
+        PrimitiveSolid::Torus {
+            major_radius: length("Radius1").filter(|value| value.0 > 0.0)?,
+            minor_radius: length("Radius2").filter(|value| value.0 > 0.0)?,
+            latitude1: angle("Angle1")?,
+            latitude2: angle("Angle2")?,
+            longitude: angle("Angle3")?,
+        }
+    } else {
+        return None;
+    };
+    let op = if kind.contains("Subtractive") {
+        BooleanOp::Cut
+    } else if kind.contains("Additive") {
+        BooleanOp::Join
+    } else {
+        BooleanOp::NewBody
+    };
+    Some(FeatureDefinition::Primitive { solid, op })
+}
+
 fn feature_id(object: &ObjectRecord) -> FeatureId {
     FeatureId(format!("fcstd:design:feature#{}", object.name))
 }
@@ -1298,6 +1371,12 @@ fn is_revolution(kind: &str) -> bool {
         || kind.contains("PartDesign::Groove")
         || kind.contains("Part::Revolution")
 }
+fn is_primitive(kind: &str) -> bool {
+    ["Box", "Cylinder", "Cone", "Sphere", "Torus"]
+        .iter()
+        .any(|primitive| kind.ends_with(primitive))
+        && (kind.starts_with("Part::") || kind.starts_with("PartDesign::"))
+}
 fn is_dress_up(kind: &str) -> bool {
     kind.contains("Fillet") || kind.contains("Chamfer")
 }
@@ -1311,6 +1390,7 @@ fn is_design_object(kind: &str) -> bool {
     is_spreadsheet(kind)
         || is_body(kind)
         || is_sketch(kind)
+        || is_primitive(kind)
         || is_extrusion(kind)
         || is_revolution(kind)
         || is_dress_up(kind)

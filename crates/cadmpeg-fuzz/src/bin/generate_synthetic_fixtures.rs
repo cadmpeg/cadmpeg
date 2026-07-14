@@ -24,11 +24,11 @@ fn main() {
         .to_canonical_json()
         .expect("serialize directed SubD and Sum CadIr");
     let documents = [
-        ("minimal_v6.json", minimal.as_bytes()),
-        ("unit_cube_v6.json", unit_cube.as_bytes()),
-        ("directed_subd_sum_v6.json", directed_subd_sum.as_bytes()),
+        ("minimal_v7.json", minimal.as_bytes()),
+        ("unit_cube_v7.json", unit_cube.as_bytes()),
+        ("directed_subd_sum_v7.json", directed_subd_sum.as_bytes()),
     ];
-    let valid_v0 = minimal.replacen(r#""ir_version": "6""#, r#""ir_version": "0""#, 1);
+    let valid_v0 = minimal.replacen(r#""ir_version": "7""#, r#""ir_version": "0""#, 1);
     for (_, document) in documents {
         CadIr::from_json(std::str::from_utf8(document).expect("fixture is UTF-8"))
             .expect("fixture is valid current-version CadIr");
@@ -51,8 +51,8 @@ fn main() {
     for (name, contents) in documents {
         let legacy = std::str::from_utf8(contents)
             .expect("fixture is UTF-8")
-            .replacen(r#""ir_version": "6""#, r#""ir_version": "5""#, 1);
-        let name = name.replace("_v6.json", "_v5.json");
+            .replacen(r#""ir_version": "7""#, r#""ir_version": "6""#, 1);
+        let name = name.replace("_v7.json", "_v6.json");
         write(&migration_directory, &name, legacy.as_bytes());
     }
 

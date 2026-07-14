@@ -376,6 +376,13 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sketch: Option<crate::sketches::SketchId>,
     },
+    /// Parametric analytic solid primitive.
+    Primitive {
+        /// Primitive dimensions and angular bounds.
+        solid: PrimitiveSolid,
+        /// Boolean combination with an existing `PartDesign` body.
+        op: BooleanOp,
+    },
     /// Linear extrusion of a profile.
     Extrude {
         /// Profile swept along `direction` (or the profile's own normal, when
@@ -672,6 +679,65 @@ pub enum FeatureDefinition {
         /// Source operation attributes that are not dimensional parameters.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
+    },
+}
+
+/// Canonical dimensions of an analytic solid primitive.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PrimitiveSolid {
+    /// Rectangular solid aligned to its feature frame.
+    Box {
+        /// Size along the local x-axis.
+        length: Length,
+        /// Size along the local y-axis.
+        width: Length,
+        /// Size along the local z-axis.
+        height: Length,
+    },
+    /// Circular cylinder aligned to its feature-frame z-axis.
+    Cylinder {
+        /// Circular base radius.
+        radius: Length,
+        /// Axial height.
+        height: Length,
+        /// Angular sweep around the axis.
+        angle: Angle,
+    },
+    /// Circular cone or frustum aligned to its feature-frame z-axis.
+    Cone {
+        /// Radius at the local-frame origin.
+        radius1: Length,
+        /// Radius at the opposite end.
+        radius2: Length,
+        /// Axial height.
+        height: Length,
+        /// Angular sweep around the axis.
+        angle: Angle,
+    },
+    /// Spherical segment.
+    Sphere {
+        /// Sphere radius.
+        radius: Length,
+        /// Lower latitude bound.
+        latitude1: Angle,
+        /// Upper latitude bound.
+        latitude2: Angle,
+        /// Longitudinal sweep.
+        longitude: Angle,
+    },
+    /// Toroidal segment aligned to its feature frame.
+    Torus {
+        /// Distance from the axis to the tube center.
+        major_radius: Length,
+        /// Tube radius.
+        minor_radius: Length,
+        /// Lower tube-angle bound.
+        latitude1: Angle,
+        /// Upper tube-angle bound.
+        latitude2: Angle,
+        /// Sweep around the torus axis.
+        longitude: Angle,
     },
 }
 

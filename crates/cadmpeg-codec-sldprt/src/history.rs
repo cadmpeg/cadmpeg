@@ -3773,6 +3773,12 @@ pub fn sync_neutral_features(
                 merged.extend(properties.clone());
                 (kind.clone(), parameters.clone(), merged)
             }
+            FeatureDefinition::Primitive { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported analytic-primitive semantics",
+                    feature.id
+                )));
+            }
             FeatureDefinition::DatumPrincipalPlane { plane } => {
                 let record = existing.as_deref().ok_or_else(|| {
                     CodecError::NotImplemented(format!(
@@ -6963,6 +6969,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Helix { .. } | FeatureDefinition::HelixNativeAxis { .. } => "Helix",
         FeatureDefinition::Wrap { .. } => "Wrap",
         FeatureDefinition::Sketch { .. } => "Sketch",
+        FeatureDefinition::Primitive { .. } => "Primitive",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",
         FeatureDefinition::Sweep {

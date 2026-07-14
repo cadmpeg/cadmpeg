@@ -272,3 +272,10 @@ list, and three-operand symmetry retains both loci plus its axis entity. Dimensi
 their driving flag and native identity; angular values use radians, geometric distances use model
 lengths, and spline-weight values are dimensionless. Any constraint family left in the native
 variant emits its own attributable blocking design-loss record.
+
+Standalone Part and additive or subtractive PartDesign box, cylinder, cone, sphere, and torus
+objects transfer as neutral analytic-solid primitives. Lengths are canonical model lengths and
+persisted degree-valued angular bounds become radians. A standalone primitive creates a new body;
+additive and subtractive families explicitly join or cut. Required dimensions must be finite,
+linear sizes must be positive except that one cone end radius may be zero, and latitude bounds must
+be ordered. Incomplete or invalid primitive definitions remain attributable native operations.

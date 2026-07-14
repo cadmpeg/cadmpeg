@@ -226,6 +226,89 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
 }
 
 #[test]
+fn transfers_part_and_partdesign_analytic_primitives() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Box" name="Box" id="1"/>
+ <Object type="PartDesign::AdditiveCylinder" name="AddCylinder" id="2"/>
+ <Object type="PartDesign::SubtractiveCone" name="CutCone" id="3"/>
+ <ObjectDeps Name="AddCylinder"><Dep Name="Box"/></ObjectDeps>
+ <ObjectDeps Name="CutCone"><Dep Name="AddCylinder"/></ObjectDeps>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Box"><Properties Count="3">
+  <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="20"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="30"/></Property>
+ </Properties></Object>
+ <Object name="AddCylinder"><Properties Count="3">
+  <Property name="Radius" type="App::PropertyLength"><Float value="4"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="8"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="180"/></Property>
+ </Properties></Object>
+ <Object name="CutCone"><Properties Count="4">
+  <Property name="Radius1" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="Radius2" type="App::PropertyLength"><Float value="0"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="6"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="360"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("primitives");
+    assert_eq!(result.ir.ir_version, "7");
+    let feature = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("primitive")
+            .definition
+    };
+    assert!(matches!(
+        feature("Box"),
+        cadmpeg_ir::features::FeatureDefinition::Primitive {
+            solid: cadmpeg_ir::features::PrimitiveSolid::Box {
+                length: cadmpeg_ir::features::Length(10.0),
+                width: cadmpeg_ir::features::Length(20.0),
+                height: cadmpeg_ir::features::Length(30.0),
+            },
+            op: cadmpeg_ir::features::BooleanOp::NewBody,
+        }
+    ));
+    assert!(matches!(
+        feature("AddCylinder"),
+        cadmpeg_ir::features::FeatureDefinition::Primitive {
+            solid: cadmpeg_ir::features::PrimitiveSolid::Cylinder {
+                angle: cadmpeg_ir::features::Angle(angle),
+                ..
+            },
+            op: cadmpeg_ir::features::BooleanOp::Join,
+        } if (angle - std::f64::consts::PI).abs() < 1e-12
+    ));
+    assert!(matches!(
+        feature("CutCone"),
+        cadmpeg_ir::features::FeatureDefinition::Primitive {
+            solid: cadmpeg_ir::features::PrimitiveSolid::Cone { .. },
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+        }
+    ));
+    assert!(result.report.losses.is_empty());
+    let findings = cadmpeg_ir::validate(&result.ir, Vec::new()).findings;
+    assert!(
+        findings
+            .iter()
+            .all(|finding| finding.check != cadmpeg_ir::Check::GeometricConsistency),
+        "{findings:#?}"
+    );
+}
+
+#[test]
 fn reports_attributable_native_design_blockers() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="PartDesign::FeatureCustom" name="Custom" id="1"/></Objects>
