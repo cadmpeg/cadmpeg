@@ -39,6 +39,8 @@ pub struct B5Graph {
     pub offset_surfaces: BTreeMap<u32, B5OffsetSurface>,
     /// `b5 03 37/3b` support-bound constructions, keyed by result surface id.
     pub supported_surfaces: BTreeMap<u32, B5SupportedSurface>,
+    /// Native class-`06` curve-parameter incidences, keyed by object id.
+    pub parameter_incidences: BTreeMap<u32, B5ParameterIncidence>,
     /// World-frame `05 08 01` vertex coordinates, in stream order.
     pub vertex_points: Vec<[f64; 3]>,
     /// Logical vertex coordinates resolved from native `5d` identity. Their
@@ -216,6 +218,19 @@ pub struct B5SupportedSurface {
     pub controls: [u8; 6],
     /// Two finite native construction scalars.
     pub scalars: [f64; 2],
+}
+
+/// One class-`06` incidence lane connecting curves to parameters at a vertex.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B5ParameterIncidence {
+    /// This record's stream object id.
+    pub object_id: u32,
+    /// Ordered curve or pcurve references.
+    pub curves: Vec<u32>,
+    /// Finite native parameters aligned with `curves`.
+    pub parameters: Vec<f64>,
+    /// Compact native controls aligned with `curves`.
+    pub controls: Vec<u32>,
 }
 
 /// A resolved `b5 03 18`, `b5 03 19`, or `b5 03 21` pcurve node, represented as a 2D
@@ -446,6 +461,12 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         .iter()
         .filter_map(|record| parse_opaque_pcurve(record).map(|pcurve| (record.object_id, pcurve)))
         .collect();
+    let parameter_incidences: BTreeMap<u32, B5ParameterIncidence> = records
+        .iter()
+        .filter_map(|record| {
+            parameter_incidence(record).map(|incidence| (record.object_id, incidence))
+        })
+        .collect();
     let implicit_pcurves =
         implicit_pcurve_bindings(&records, &by_id, &pcurves, &opaque_pcurves, &surfaces);
     for pcurve in pcurves.values_mut() {
@@ -567,6 +588,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         surfaces,
         offset_surfaces,
         supported_surfaces,
+        parameter_incidences,
         vertex_points,
         logical_vertex_points,
         logical_vertex_refs,
@@ -644,10 +666,11 @@ fn incidence_vertex_coordinates(
             let incidence = vertex_incidence_ref(by_id.get(&vertex)?)?;
             let incidence_records = counted_references(by_id.get(&incidence)?, 0x05)?;
             let point = incidence_records.into_iter().find_map(|incidence_record| {
-                let (references, parameters) = parameter_incidence(by_id.get(&incidence_record)?)?;
-                references
+                let incidence = parameter_incidence(by_id.get(&incidence_record)?)?;
+                incidence
+                    .curves
                     .into_iter()
-                    .zip(parameters)
+                    .zip(incidence.parameters)
                     .find_map(|(pcurve_id, parameter)| {
                         let pcurve = pcurves.get(&pcurve_id)?;
                         let uv = evaluate_pcurve(pcurve, parameter)?;
@@ -678,7 +701,7 @@ fn counted_references(record: &B5Record, class: u8) -> Option<Vec<u32>> {
     (position == record.payload.len()).then_some(references)
 }
 
-fn parameter_incidence(record: &B5Record) -> Option<(Vec<u32>, Vec<f64>)> {
+fn parameter_incidence(record: &B5Record) -> Option<B5ParameterIncidence> {
     (record.class == 0x06).then_some(())?;
     let count = usize::from(record.payload.first()?.checked_sub(0x80)?);
     let mut position = 1;
@@ -689,6 +712,7 @@ fn parameter_incidence(record: &B5Record) -> Option<(Vec<u32>, Vec<f64>)> {
         .then_some(())?;
     position += 1;
     let mut parameters = Vec::with_capacity(count);
+    let mut controls = Vec::with_capacity(count);
     for _ in 0..count {
         let parameter = scalar(&record.payload, position)?;
         if !parameter.is_finite() {
@@ -696,9 +720,14 @@ fn parameter_incidence(record: &B5Record) -> Option<(Vec<u32>, Vec<f64>)> {
         }
         parameters.push(parameter);
         position += 8;
-        compact(&record.payload, &mut position)?;
+        controls.push(compact(&record.payload, &mut position)?);
     }
-    (position == record.payload.len()).then_some((references, parameters))
+    (position == record.payload.len()).then_some(B5ParameterIncidence {
+        object_id: record.object_id,
+        curves: references,
+        parameters,
+        controls,
+    })
 }
 
 fn implicit_pcurve_bindings(
@@ -738,7 +767,7 @@ fn implicit_pcurve_bindings(
                 by_id
                     .get(&reference_id)
                     .and_then(|incidence| parameter_incidence(incidence))
-                    .is_some_and(|(references, _)| references.contains(&pcurve))
+                    .is_some_and(|incidence| incidence.curves.contains(&pcurve))
             };
             let curve_wrapper_contains = by_id.get(&edge_references[0]).is_some_and(|wrapper| {
                 matches!(wrapper.class, 0x23..=0x25) && record_references(wrapper).contains(&pcurve)
@@ -2933,6 +2962,28 @@ mod tests {
             ),
             BTreeMap::from([(9, 11)])
         );
+    }
+
+    #[test]
+    fn parameter_incidence_retains_aligned_compact_controls() {
+        let mut payload = vec![0x82, 0x89, 0x8a, 0x82];
+        payload.extend_from_slice(&1.25f64.to_le_bytes());
+        payload.push(0x15);
+        payload.extend_from_slice(&2.5f64.to_le_bytes());
+        payload.push(0x2d);
+        let incidence = parameter_incidence(&B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x06,
+            object_id: 17,
+            payload,
+        })
+        .expect("parameter incidence");
+
+        assert_eq!(incidence.object_id, 17);
+        assert_eq!(incidence.curves, [9, 10]);
+        assert_eq!(incidence.parameters, [1.25, 2.5]);
+        assert_eq!(incidence.controls, [5, 11]);
     }
 
     #[test]
