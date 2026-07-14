@@ -1191,6 +1191,23 @@ pub struct FeatureBlockDimensions {
     pub values: [f64; 3],
 }
 
+/// Expression declaration addressed from one bounded offset-store block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockExpressionDeclaration {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Source block carrying the expression-object frame.
+    pub data_block: String,
+    /// Zero-based frame order within the block.
+    pub ordinal: u32,
+    /// Persistent expression object ID.
+    pub object_id: u32,
+    /// Uniquely resolved expression declaration.
+    pub expression_declaration: String,
+    /// Absolute source offset of the compact object index.
+    pub source_offset: u64,
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -3696,6 +3713,46 @@ pub fn feature_block_dimensions(
                     .map(|(expression, _)| expression.id.clone()),
                 values: resolved.map(|(_, value)| value),
             })
+        })
+        .collect()
+}
+
+/// Resolve expression-object frames in bounded offset-store blocks.
+pub fn data_block_expression_declarations(
+    container: &Container,
+    declarations: &[ExpressionDeclaration],
+) -> Vec<DataBlockExpressionDeclaration> {
+    let blocks = offset_data_block_bytes(container);
+    blocks
+        .into_iter()
+        .flat_map(|(data_block, (bytes, source_offset))| {
+            crate::om::data_block_expression_references(bytes)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, reference)| {
+                    let mut matches = declarations
+                        .iter()
+                        .filter(|declaration| declaration.object_id == reference.object_id);
+                    let declaration = matches.next()?;
+                    if matches.next().is_some() {
+                        return None;
+                    }
+                    Some(DataBlockExpressionDeclaration {
+                        id: format!(
+                            "nx:om-data-block-expression-declarations-{}:declaration#{}",
+                            data_block
+                                .rsplit_once('#')
+                                .map_or("unknown", |(_, key)| key),
+                            ordinal
+                        ),
+                        data_block: data_block.clone(),
+                        ordinal: ordinal as u32,
+                        object_id: reference.object_id,
+                        expression_declaration: declaration.id.clone(),
+                        source_offset: source_offset + reference.offset as u64,
+                    })
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }

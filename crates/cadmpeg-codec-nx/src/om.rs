@@ -533,6 +533,15 @@ pub struct DatumCsysDescriptorBlock {
     pub identity_offset: usize,
 }
 
+/// Compact expression-object reference in a bounded offset-store block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DataBlockExpressionReference {
+    /// Referenced persistent expression object ID.
+    pub object_id: u32,
+    /// Block-relative offset of the compact index.
+    pub offset: usize,
+}
+
 /// Fixed scalar header in one bounded extrusion payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrudePayloadHeader {
@@ -1943,6 +1952,29 @@ pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<DatumCsysDescriptorBl
         suffix: bytes[*end..].to_vec(),
         identity_offset: *start,
     })
+}
+
+/// Decode expression-object references followed by their complete discriminator.
+pub fn data_block_expression_references(bytes: &[u8]) -> Vec<DataBlockExpressionReference> {
+    const DISCRIMINATOR: [u8; 18] = [
+        0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x01,
+        0x02, 0x80, 0xa4,
+    ];
+    let mut references = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let Some((CompactIndex::Value(object_id), width)) = compact_index(&bytes[offset..]) else {
+            offset += 1;
+            continue;
+        };
+        if bytes.get(offset + width..offset + width + DISCRIMINATOR.len()) != Some(&DISCRIMINATOR) {
+            offset += 1;
+            continue;
+        }
+        references.push(DataBlockExpressionReference { object_id, offset });
+        offset += width + DISCRIMINATOR.len();
+    }
+    references
 }
 
 fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<u32>> {
