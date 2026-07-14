@@ -3869,11 +3869,6 @@ impl MeshSelectionSearch<'_> {
         if self.ambiguous || self.exhausted {
             return;
         }
-        if self.states >= MAX_SELECTION_STATES {
-            self.exhausted = true;
-            return;
-        }
-        self.states += 1;
         let mut measured = quotient.clone();
         let root_count = measured.root_count();
         if root_count < self.vertex_points.len() {
@@ -4047,22 +4042,37 @@ impl MeshSelectionSearch<'_> {
         if supported == 0 {
             return;
         }
+        let mut options = Vec::new();
         for assignment_index in 0..self.assignments[face].len() {
             let assignment = &self.assignments[face][assignment_index];
             if !quotient.assignment_has_option(assignment, self.edge_candidates) {
                 continue;
             }
-            for (directions, next_quotient) in
-                quotient.assignment_options(assignment, self.edge_candidates)
-            {
-                self.selected[face] = Some((assignment_index, directions));
-                if self.selected_orientable() {
-                    self.search(&next_quotient);
-                }
-                self.selected[face] = None;
-                if self.ambiguous || self.exhausted {
+            options.extend(
+                quotient
+                    .assignment_options(assignment, self.edge_candidates)
+                    .into_iter()
+                    .map(|(directions, next_quotient)| {
+                        (assignment_index, directions, next_quotient)
+                    }),
+            );
+        }
+        let branching = options.len() > 1;
+        for (assignment_index, directions, next_quotient) in options {
+            if branching {
+                if self.states >= MAX_SELECTION_STATES {
+                    self.exhausted = true;
                     return;
                 }
+                self.states += 1;
+            }
+            self.selected[face] = Some((assignment_index, directions));
+            if self.selected_orientable() {
+                self.search(&next_quotient);
+            }
+            self.selected[face] = None;
+            if self.ambiguous || self.exhausted {
+                return;
             }
         }
     }
@@ -5214,6 +5224,46 @@ mod motif_tests {
         assert!(!search.fixed_remaining_faces_are_orientable());
         search.selected[1] = Some((0, vec![vec![false, true]]));
         assert!(search.fixed_remaining_faces_are_orientable());
+    }
+
+    #[test]
+    fn forced_face_selection_does_not_consume_the_branch_budget() {
+        let assignments = vec![vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: Some(false),
+            }]],
+        }]];
+        let edge_candidates = vec![vec![[0, 0]]];
+        let edge_rows = vec![EdgeRow {
+            kind: 1,
+            handles: vec![0],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        }];
+        let mut search = MeshSelectionSearch {
+            assignments: &assignments,
+            face_work: vec![Some(1)],
+            edge_candidates: &edge_candidates,
+            edge_rows: &edge_rows,
+            vertex_points: &[[0.0, 0.0, 0.0]],
+            selected: vec![None],
+            states: 512,
+            solution: None,
+            ambiguous: false,
+            exhausted: false,
+        };
+        let quotient = MeshQuotient {
+            union: UnionFind::new(2),
+            domains: vec![HashSet::from([0]); 2],
+            members: (0..2).map(|node| vec![node]).collect(),
+        };
+
+        search.search(&quotient);
+
+        assert!(!search.exhausted);
+        assert_eq!(search.states, 512);
     }
 
     #[test]
