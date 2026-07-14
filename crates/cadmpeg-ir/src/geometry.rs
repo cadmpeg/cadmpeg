@@ -9,6 +9,7 @@
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
+use crate::transform::Transform;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -125,6 +126,13 @@ pub enum SurfaceGeometry {
     },
     /// Free-form NURBS surface.
     Nurbs(NurbsSurface),
+    /// Exact affine placement of an inline basis surface.
+    Transformed {
+        /// Unplaced basis geometry with unchanged parameterization.
+        basis: Box<SurfaceGeometry>,
+        /// Affine map from basis coordinates to model coordinates.
+        transform: Transform,
+    },
     /// Surface geometry that has no typed neutral representation.
     ///
     /// `record` links to retained source bytes when available.
@@ -218,6 +226,13 @@ pub enum CurveGeometry {
     },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
+    /// Exact affine placement of an inline basis curve.
+    Transformed {
+        /// Unplaced basis geometry with unchanged parameterization.
+        basis: Box<CurveGeometry>,
+        /// Affine map from basis coordinates to model coordinates.
+        transform: Transform,
+    },
     /// Native curve carrier whose shape is not decoded.
     Unknown {
         /// Retained native record containing the curve carrier.

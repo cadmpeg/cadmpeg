@@ -2438,3 +2438,39 @@ fn body_selections_round_trip_through_json() {
         selections
     );
 }
+
+#[test]
+fn transformed_carriers_preserve_basis_parameters() {
+    let transform = crate::transform::Transform {
+        rows: [
+            [-2.0, 0.0, 0.0, 4.0],
+            [0.0, 2.0, 0.0, 5.0],
+            [0.0, 0.0, 2.0, 6.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    };
+    let curve = CurveGeometry::Transformed {
+        basis: Box::new(CurveGeometry::Line {
+            origin: Point3::new(1.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        }),
+        transform,
+    };
+    assert_eq!(
+        crate::eval::curve_point(&curve, 3.0),
+        Some(Point3::new(-4.0, 5.0, 6.0))
+    );
+
+    let surface = SurfaceGeometry::Transformed {
+        basis: Box::new(SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        }),
+        transform,
+    };
+    assert_eq!(
+        crate::eval::surface_point(&surface, 2.0, 3.0),
+        Some(Point3::new(0.0, 11.0, 6.0))
+    );
+}

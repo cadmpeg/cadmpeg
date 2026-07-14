@@ -1,0 +1,911 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Occurrence-aware transfer of exact-shape topology into neutral CADIR.
+
+use std::collections::{HashMap, HashSet};
+
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+    SurfaceId, VertexId,
+};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+};
+use cadmpeg_ir::transform::Transform;
+
+use crate::brep::{
+    ShapePayloadRecord, TextCurve2d, TextLocation, TextOrientation, TextShapeKind, TextShapeUse,
+    TextTShape, TextTShapeGeometry,
+};
+
+/// Transfer text or binary shape-set topology with placements applied once.
+pub(crate) fn transfer(ir: &mut CadIr, payloads: &[ShapePayloadRecord]) -> Result<(), CodecError> {
+    for payload in payloads {
+        let Some(tables) = Tables::from_payload(payload) else {
+            continue;
+        };
+        let mut builder = Builder::new(payload, tables);
+        builder.emit_pcurves(ir);
+        for root in builder.body_roots()? {
+            builder.append_body(ir, root)?;
+        }
+    }
+    close_radial_rings(&mut ir.model.coedges);
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct Tables<'a> {
+    locations: &'a [TextLocation],
+    curve2ds: &'a [TextCurve2d],
+    tshapes: &'a [TextTShape],
+    roots: &'a [TextShapeUse],
+}
+
+impl<'a> Tables<'a> {
+    fn from_payload(payload: &'a ShapePayloadRecord) -> Option<Self> {
+        payload
+            .text
+            .as_ref()
+            .map(|text| Self {
+                locations: &text.locations,
+                curve2ds: &text.curve2ds,
+                tshapes: &text.tshapes,
+                roots: &text.roots,
+            })
+            .or_else(|| {
+                payload.binary.as_ref().map(|binary| Self {
+                    locations: &binary.locations,
+                    curve2ds: &binary.curve2ds,
+                    tshapes: &binary.tshapes,
+                    roots: &binary.roots,
+                })
+            })
+    }
+
+    fn location(&self, index: usize) -> Transform {
+        if index == 0 {
+            Transform::identity()
+        } else {
+            self.locations[index - 1].transform
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct BodyRoot {
+    shape: usize,
+    transform: Transform,
+    reversed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct OccurrenceKey {
+    shape: usize,
+    transform: [u64; 16],
+}
+
+impl OccurrenceKey {
+    fn new(shape: usize, transform: Transform) -> Self {
+        Self {
+            shape,
+            transform: transform_bits(transform),
+        }
+    }
+}
+
+struct Builder<'a> {
+    payload: &'a ShapePayloadRecord,
+    tables: Tables<'a>,
+    vertices: HashMap<OccurrenceKey, VertexId>,
+    edges: HashMap<OccurrenceKey, EdgeId>,
+    emitted_curves: HashSet<CurveId>,
+    emitted_surfaces: HashSet<SurfaceId>,
+    body_scope: Transform,
+}
+
+impl<'a> Builder<'a> {
+    fn new(payload: &'a ShapePayloadRecord, tables: Tables<'a>) -> Self {
+        Self {
+            payload,
+            tables,
+            vertices: HashMap::new(),
+            edges: HashMap::new(),
+            emitted_curves: HashSet::new(),
+            emitted_surfaces: HashSet::new(),
+            body_scope: Transform::identity(),
+        }
+    }
+
+    fn emit_pcurves(&self, ir: &mut CadIr) {
+        for shape in self.tables.tshapes {
+            let TextTShapeGeometry::Edge {
+                representations, ..
+            } = &shape.geometry
+            else {
+                continue;
+            };
+            for (representation_index, representation) in representations.iter().enumerate() {
+                if !matches!(representation.kind, 2 | 3) {
+                    continue;
+                }
+                ir.model.pcurves.push(Pcurve {
+                    id: self.pcurve_id(shape.index, representation_index, false),
+                    geometry: pcurve_geometry(&self.tables.curve2ds[representation.primary - 1]),
+                    wrapper_reversed: None,
+                    native_tail_flags: None,
+                    parameter_range: representation.parameter_range,
+                    fit_tolerance: None,
+                });
+                if let Some(secondary) = representation.secondary {
+                    ir.model.pcurves.push(Pcurve {
+                        id: self.pcurve_id(shape.index, representation_index, true),
+                        geometry: pcurve_geometry(&self.tables.curve2ds[secondary - 1]),
+                        wrapper_reversed: None,
+                        native_tail_flags: None,
+                        parameter_range: representation.parameter_range,
+                        fit_tolerance: None,
+                    });
+                }
+            }
+        }
+    }
+
+    fn pcurve_id(&self, edge: usize, representation: usize, secondary: bool) -> PcurveId {
+        PcurveId(format!(
+            "{}:pcurve#{}:{}:{}",
+            self.payload.id,
+            edge,
+            representation + 1,
+            usize::from(secondary) + 1
+        ))
+    }
+
+    fn body_roots(&self) -> Result<Vec<BodyRoot>, CodecError> {
+        fn visit(
+            builder: &Builder<'_>,
+            shape_use: &TextShapeUse,
+            parent: Transform,
+            reversed: bool,
+            output: &mut Vec<BodyRoot>,
+        ) -> Result<(), CodecError> {
+            let shape = builder.shape(shape_use.shape)?;
+            let transform = multiply(parent, builder.tables.location(shape_use.location));
+            let reversed = reversed ^ is_reversed(shape_use.orientation);
+            match shape.kind {
+                TextShapeKind::Solid
+                | TextShapeKind::Shell
+                | TextShapeKind::Wire
+                | TextShapeKind::Face => output.push(BodyRoot {
+                    shape: shape_use.shape,
+                    transform,
+                    reversed,
+                }),
+                TextShapeKind::CompSolid | TextShapeKind::Compound => {
+                    for child in &shape.children {
+                        visit(builder, child, transform, reversed, output)?;
+                    }
+                }
+                TextShapeKind::Vertex | TextShapeKind::Edge => {}
+            }
+            Ok(())
+        }
+
+        let mut output = Vec::new();
+        for root in self.tables.roots {
+            visit(self, root, Transform::identity(), false, &mut output)?;
+        }
+        Ok(output)
+    }
+
+    fn append_body(&mut self, ir: &mut CadIr, root: BodyRoot) -> Result<(), CodecError> {
+        self.body_scope = root.transform;
+        let root_shape = self.shape(root.shape)?;
+        let body_key = occurrence_label(root.shape, root.transform);
+        let body_id = BodyId(format!("{}:body#{body_key}", self.payload.id));
+        let region_id = RegionId(format!("{}:region#{body_key}", self.payload.id));
+        let kind = match root_shape.kind {
+            TextShapeKind::Solid => BodyKind::Solid,
+            TextShapeKind::Wire => BodyKind::Wire,
+            TextShapeKind::Shell | TextShapeKind::Face => BodyKind::Sheet,
+            _ => BodyKind::General,
+        };
+        let root_children = root_shape.children.clone();
+        let mut shell_ids = Vec::new();
+        match root_shape.kind {
+            TextShapeKind::Solid => {
+                for child in root_children.iter().filter(|child| {
+                    self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Shell
+                }) {
+                    shell_ids.push(self.append_shell(
+                        ir,
+                        &region_id,
+                        child,
+                        Transform::identity(),
+                        root.reversed,
+                    )?);
+                }
+            }
+            TextShapeKind::Shell | TextShapeKind::Face | TextShapeKind::Wire => {
+                shell_ids.push(self.append_shell_shape(
+                    ir,
+                    &region_id,
+                    root.shape,
+                    Transform::identity(),
+                    root.reversed,
+                )?);
+            }
+            _ => {}
+        }
+        if shell_ids.is_empty() {
+            return Ok(());
+        }
+        ir.model.bodies.push(Body {
+            id: body_id.clone(),
+            kind,
+            regions: vec![region_id.clone()],
+            transform: (!is_identity(root.transform)).then_some(root.transform),
+            name: None,
+            color: None,
+            visible: None,
+        });
+        ir.model.regions.push(Region {
+            id: region_id,
+            body: body_id,
+            shells: shell_ids,
+        });
+        Ok(())
+    }
+
+    fn append_shell(
+        &mut self,
+        ir: &mut CadIr,
+        region: &RegionId,
+        shell_use: &TextShapeUse,
+        parent: Transform,
+        reversed: bool,
+    ) -> Result<ShellId, CodecError> {
+        let transform = multiply(parent, self.tables.location(shell_use.location));
+        self.append_shell_shape(
+            ir,
+            region,
+            shell_use.shape,
+            transform,
+            reversed ^ is_reversed(shell_use.orientation),
+        )
+    }
+
+    fn append_shell_shape(
+        &mut self,
+        ir: &mut CadIr,
+        region: &RegionId,
+        shape_index: usize,
+        transform: Transform,
+        reversed: bool,
+    ) -> Result<ShellId, CodecError> {
+        let shape = self.shape(shape_index)?.clone();
+        let key = self.topology_label(shape_index, transform);
+        let shell_id = ShellId(format!("{}:shell#{key}", self.payload.id));
+        let mut faces = Vec::new();
+        let mut wire_edges = Vec::new();
+        match shape.kind {
+            TextShapeKind::Shell => {
+                for child in &shape.children {
+                    if self.shape(child.shape)?.kind == TextShapeKind::Face {
+                        if let Some(face) =
+                            self.append_face(ir, &shell_id, child, transform, reversed)?
+                        {
+                            faces.push(face);
+                        }
+                    }
+                }
+            }
+            TextShapeKind::Face => {
+                let shape_use = TextShapeUse {
+                    shape: shape_index,
+                    orientation: TextOrientation::Forward,
+                    location: 0,
+                };
+                if let Some(face) =
+                    self.append_face(ir, &shell_id, &shape_use, transform, reversed)?
+                {
+                    faces.push(face);
+                }
+            }
+            TextShapeKind::Wire => {
+                for child in &shape.children {
+                    if self.shape(child.shape)?.kind == TextShapeKind::Edge {
+                        wire_edges.push(self.ensure_edge(ir, child, transform)?);
+                    }
+                }
+            }
+            _ => {}
+        }
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region.clone(),
+            faces,
+            wire_edges,
+            free_vertices: Vec::new(),
+        });
+        Ok(shell_id)
+    }
+
+    fn append_face(
+        &mut self,
+        ir: &mut CadIr,
+        shell: &ShellId,
+        face_use: &TextShapeUse,
+        parent: Transform,
+        reversed: bool,
+    ) -> Result<Option<FaceId>, CodecError> {
+        let face_transform = multiply(parent, self.tables.location(face_use.location));
+        let face_reversed = reversed ^ is_reversed(face_use.orientation);
+        let shape = self.shape(face_use.shape)?.clone();
+        let TextTShapeGeometry::Face {
+            tolerance,
+            surface,
+            location,
+            ..
+        } = shape.geometry
+        else {
+            return Ok(None);
+        };
+        if surface == 0 {
+            return Ok(None);
+        }
+        let surface_transform = multiply(face_transform, self.tables.location(location));
+        let surface_id = self.located_surface(ir, surface, surface_transform)?;
+        let face_key = self.topology_label(face_use.shape, face_transform);
+        let face_id = FaceId(format!("{}:face#{face_key}", self.payload.id));
+        let mut loops = Vec::new();
+        for (loop_index, wire_use) in shape
+            .children
+            .iter()
+            .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Wire)
+            .enumerate()
+        {
+            let wire_transform = multiply(face_transform, self.tables.location(wire_use.location));
+            let wire = self.shape(wire_use.shape)?.clone();
+            let mut edge_uses = wire
+                .children
+                .iter()
+                .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Edge)
+                .cloned()
+                .collect::<Vec<_>>();
+            let wire_reversed = face_reversed ^ is_reversed(wire_use.orientation);
+            if wire_reversed {
+                edge_uses.reverse();
+            }
+            if edge_uses.is_empty() {
+                continue;
+            }
+            let loop_id = LoopId(format!(
+                "{}:loop#{}:{}",
+                self.payload.id,
+                face_key,
+                loop_index + 1
+            ));
+            let coedge_ids = (0..edge_uses.len())
+                .map(|index| {
+                    CoedgeId(format!(
+                        "{}:coedge#{}:{}:{}",
+                        self.payload.id,
+                        face_key,
+                        loop_index + 1,
+                        index + 1
+                    ))
+                })
+                .collect::<Vec<_>>();
+            for (index, edge_use) in edge_uses.iter().enumerate() {
+                let edge_transform =
+                    multiply(wire_transform, self.tables.location(edge_use.location));
+                let edge = self.ensure_edge(ir, edge_use, wire_transform)?;
+                let pcurve = self.face_pcurve(
+                    edge_use,
+                    edge_transform,
+                    surface,
+                    surface_transform,
+                    wire_reversed,
+                );
+                let id = coedge_ids[index].clone();
+                ir.model.coedges.push(Coedge {
+                    id: id.clone(),
+                    owner_loop: loop_id.clone(),
+                    edge,
+                    next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
+                    previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone(),
+                    radial_next: id,
+                    sense: sense(is_reversed(edge_use.orientation) ^ wire_reversed),
+                    pcurve,
+                });
+            }
+            ir.model.loops.push(Loop {
+                id: loop_id.clone(),
+                face: face_id.clone(),
+                coedges: coedge_ids,
+            });
+            loops.push(loop_id);
+        }
+        ir.model.faces.push(Face {
+            id: face_id.clone(),
+            shell: shell.clone(),
+            surface: surface_id,
+            sense: sense(face_reversed),
+            loops,
+            name: None,
+            color: None,
+            tolerance: Some(tolerance),
+        });
+        Ok(Some(face_id))
+    }
+
+    fn ensure_edge(
+        &mut self,
+        ir: &mut CadIr,
+        edge_use: &TextShapeUse,
+        parent: Transform,
+    ) -> Result<EdgeId, CodecError> {
+        let transform = multiply(parent, self.tables.location(edge_use.location));
+        let key = OccurrenceKey::new(edge_use.shape, multiply(self.body_scope, transform));
+        if let Some(id) = self.edges.get(&key) {
+            return Ok(id.clone());
+        }
+        let shape = self.shape(edge_use.shape)?.clone();
+        let TextTShapeGeometry::Edge {
+            tolerance,
+            degenerated,
+            representations,
+            ..
+        } = shape.geometry
+        else {
+            return Err(CodecError::Malformed(format!(
+                "TShape {} is not an edge",
+                edge_use.shape
+            )));
+        };
+        let endpoint_use = |orientation| {
+            shape
+                .children
+                .iter()
+                .find(|child| child.orientation == orientation)
+                .or_else(|| shape.children.first())
+                .cloned()
+        };
+        let Some(start_use) = endpoint_use(TextOrientation::Forward) else {
+            return Err(CodecError::Malformed(format!(
+                "edge TShape {} has no vertex",
+                edge_use.shape
+            )));
+        };
+        let end_use = endpoint_use(TextOrientation::Reversed).unwrap_or_else(|| start_use.clone());
+        let start = self.ensure_vertex(ir, &start_use, transform)?;
+        let end = self.ensure_vertex(ir, &end_use, transform)?;
+        let curve_representation = representations
+            .iter()
+            .find(|representation| representation.kind == 1);
+        let curve = if degenerated {
+            None
+        } else {
+            curve_representation
+                .map(|representation| {
+                    let carrier_transform =
+                        multiply(transform, self.tables.location(representation.location));
+                    self.located_curve(ir, representation.primary, carrier_transform)
+                })
+                .transpose()?
+        };
+        let id = EdgeId(format!(
+            "{}:edge#{}",
+            self.payload.id,
+            self.topology_label(edge_use.shape, transform)
+        ));
+        ir.model.edges.push(Edge {
+            id: id.clone(),
+            curve,
+            start,
+            end,
+            param_range: curve_representation
+                .and_then(|representation| representation.parameter_range),
+            tolerance: Some(tolerance),
+        });
+        self.edges.insert(key, id.clone());
+        Ok(id)
+    }
+
+    fn ensure_vertex(
+        &mut self,
+        ir: &mut CadIr,
+        vertex_use: &TextShapeUse,
+        parent: Transform,
+    ) -> Result<VertexId, CodecError> {
+        let transform = multiply(parent, self.tables.location(vertex_use.location));
+        let key = OccurrenceKey::new(vertex_use.shape, multiply(self.body_scope, transform));
+        if let Some(id) = self.vertices.get(&key) {
+            return Ok(id.clone());
+        }
+        let shape = self.shape(vertex_use.shape)?;
+        let TextTShapeGeometry::Vertex {
+            tolerance, point, ..
+        } = shape.geometry
+        else {
+            return Err(CodecError::Malformed(format!(
+                "TShape {} is not a vertex",
+                vertex_use.shape
+            )));
+        };
+        let label = self.topology_label(vertex_use.shape, transform);
+        let point_id = PointId(format!("{}:point#{label}", self.payload.id));
+        let vertex_id = VertexId(format!("{}:vertex#{label}", self.payload.id));
+        ir.model.points.push(Point {
+            id: point_id.clone(),
+            position: transform_point(transform, point),
+        });
+        ir.model.vertices.push(Vertex {
+            id: vertex_id.clone(),
+            point: point_id,
+            tolerance: Some(tolerance * similarity(transform)?.scale),
+        });
+        self.vertices.insert(key, vertex_id.clone());
+        Ok(vertex_id)
+    }
+
+    fn located_curve(
+        &mut self,
+        ir: &mut CadIr,
+        source: usize,
+        transform: Transform,
+    ) -> Result<CurveId, CodecError> {
+        let base_id = CurveId(format!("{}:curve#{source}", self.payload.id));
+        if is_identity(transform) {
+            return Ok(base_id);
+        }
+        let id = CurveId(format!(
+            "{}:curve#{}@{}",
+            self.payload.id,
+            source,
+            transform_digest(transform)
+        ));
+        if self.emitted_curves.insert(id.clone()) {
+            let base = ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == base_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("missing curve table entry {source}"))
+                })?
+                .clone();
+            ir.model.curves.push(Curve {
+                id: id.clone(),
+                geometry: transform_curve(&base.geometry, transform)?,
+                source_object: base.source_object,
+            });
+        }
+        Ok(id)
+    }
+
+    fn located_surface(
+        &mut self,
+        ir: &mut CadIr,
+        source: usize,
+        transform: Transform,
+    ) -> Result<SurfaceId, CodecError> {
+        let base_id = SurfaceId(format!("{}:surface#{source}", self.payload.id));
+        if is_identity(transform) {
+            return Ok(base_id);
+        }
+        let id = SurfaceId(format!(
+            "{}:surface#{}@{}",
+            self.payload.id,
+            source,
+            transform_digest(transform)
+        ));
+        if self.emitted_surfaces.insert(id.clone()) {
+            let base = ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == base_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("missing surface table entry {source}"))
+                })?
+                .clone();
+            ir.model.surfaces.push(Surface {
+                id: id.clone(),
+                geometry: transform_surface(&base.geometry, transform)?,
+                source_object: base.source_object,
+            });
+        }
+        Ok(id)
+    }
+
+    fn face_pcurve(
+        &self,
+        edge_use: &TextShapeUse,
+        edge_transform: Transform,
+        surface: usize,
+        surface_transform: Transform,
+        parent_reversed: bool,
+    ) -> Option<PcurveId> {
+        let TextTShapeGeometry::Edge {
+            representations, ..
+        } = &self.tables.tshapes[edge_use.shape - 1].geometry
+        else {
+            return None;
+        };
+        representations
+            .iter()
+            .enumerate()
+            .find(|(_, representation)| {
+                matches!(representation.kind, 2 | 3)
+                    && representation.surface == Some(surface)
+                    && transforms_equal(
+                        multiply(
+                            edge_transform,
+                            self.tables.location(representation.location),
+                        ),
+                        surface_transform,
+                    )
+            })
+            .map(|(index, representation)| {
+                let reversed = is_reversed(edge_use.orientation) ^ parent_reversed;
+                self.pcurve_id(
+                    edge_use.shape,
+                    index,
+                    representation.secondary.is_some() && reversed,
+                )
+            })
+    }
+
+    fn shape(&self, index: usize) -> Result<&TextTShape, CodecError> {
+        self.tables
+            .tshapes
+            .get(index - 1)
+            .ok_or_else(|| CodecError::Malformed(format!("missing TShape {index}")))
+    }
+
+    fn topology_label(&self, shape: usize, local: Transform) -> String {
+        occurrence_label(shape, multiply(self.body_scope, local))
+    }
+}
+
+pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> PcurveGeometry {
+    match curve {
+        TextCurve2d::Line { origin, direction } => PcurveGeometry::Line {
+            origin: *origin,
+            direction: *direction,
+        },
+        TextCurve2d::Circle {
+            center,
+            x_axis,
+            y_axis,
+            radius,
+        } => PcurveGeometry::Circle {
+            center: *center,
+            x_axis: *x_axis,
+            y_axis: *y_axis,
+            radius: *radius,
+        },
+        TextCurve2d::Ellipse {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => PcurveGeometry::Ellipse {
+            center: *center,
+            x_axis: *x_axis,
+            y_axis: *y_axis,
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        },
+        TextCurve2d::Parabola {
+            vertex,
+            x_axis,
+            y_axis,
+            focal_distance,
+        } => PcurveGeometry::Parabola {
+            vertex: *vertex,
+            x_axis: *x_axis,
+            y_axis: *y_axis,
+            focal_distance: *focal_distance,
+        },
+        TextCurve2d::Hyperbola {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => PcurveGeometry::Hyperbola {
+            center: *center,
+            x_axis: *x_axis,
+            y_axis: *y_axis,
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        },
+        TextCurve2d::Nurbs(nurbs) => PcurveGeometry::Nurbs {
+            degree: nurbs.degree,
+            knots: nurbs.knots.clone(),
+            control_points: nurbs.control_points.clone(),
+            weights: nurbs.weights.clone(),
+            periodic: nurbs.periodic,
+        },
+        TextCurve2d::Trimmed {
+            parameter_range,
+            basis,
+        } => PcurveGeometry::Trimmed {
+            parameter_range: *parameter_range,
+            basis: Box::new(pcurve_geometry(basis)),
+        },
+        TextCurve2d::Offset { distance, basis } => PcurveGeometry::Offset {
+            distance: *distance,
+            basis: Box::new(pcurve_geometry(basis)),
+        },
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Similarity {
+    scale: f64,
+}
+
+fn similarity(transform: Transform) -> Result<Similarity, CodecError> {
+    let columns = [
+        Vector3::new(
+            transform.rows[0][0],
+            transform.rows[1][0],
+            transform.rows[2][0],
+        ),
+        Vector3::new(
+            transform.rows[0][1],
+            transform.rows[1][1],
+            transform.rows[2][1],
+        ),
+        Vector3::new(
+            transform.rows[0][2],
+            transform.rows[1][2],
+            transform.rows[2][2],
+        ),
+    ];
+    let scale = columns[0].norm();
+    let tolerance = 1.0e-10 * scale.max(1.0);
+    if !scale.is_finite()
+        || scale <= 0.0
+        || columns
+            .iter()
+            .any(|column| (column.norm() - scale).abs() > tolerance)
+        || dot(columns[0], columns[1]).abs() > tolerance
+        || dot(columns[0], columns[2]).abs() > tolerance
+        || dot(columns[1], columns[2]).abs() > tolerance
+    {
+        return Err(CodecError::Malformed(
+            "B-rep location is not a finite similarity transform".into(),
+        ));
+    }
+    Ok(Similarity { scale })
+}
+
+fn transform_curve(
+    geometry: &CurveGeometry,
+    transform: Transform,
+) -> Result<CurveGeometry, CodecError> {
+    similarity(transform)?;
+    Ok(CurveGeometry::Transformed {
+        basis: Box::new(geometry.clone()),
+        transform,
+    })
+}
+
+fn transform_surface(
+    geometry: &SurfaceGeometry,
+    transform: Transform,
+) -> Result<SurfaceGeometry, CodecError> {
+    similarity(transform)?;
+    Ok(SurfaceGeometry::Transformed {
+        basis: Box::new(geometry.clone()),
+        transform,
+    })
+}
+
+fn transform_point(transform: Transform, point: Point3) -> Point3 {
+    Point3::new(
+        transform.rows[0][0] * point.x
+            + transform.rows[0][1] * point.y
+            + transform.rows[0][2] * point.z
+            + transform.rows[0][3],
+        transform.rows[1][0] * point.x
+            + transform.rows[1][1] * point.y
+            + transform.rows[1][2] * point.z
+            + transform.rows[1][3],
+        transform.rows[2][0] * point.x
+            + transform.rows[2][1] * point.y
+            + transform.rows[2][2] * point.z
+            + transform.rows[2][3],
+    )
+}
+
+fn multiply(left: Transform, right: Transform) -> Transform {
+    let mut rows = [[0.0; 4]; 4];
+    for (row, values) in rows.iter_mut().enumerate() {
+        for (column, value) in values.iter_mut().enumerate() {
+            *value = (0..4)
+                .map(|inner| left.rows[row][inner] * right.rows[inner][column])
+                .sum();
+        }
+    }
+    Transform { rows }
+}
+
+fn occurrence_label(shape: usize, transform: Transform) -> String {
+    if is_identity(transform) {
+        shape.to_string()
+    } else {
+        format!("{}@{}", shape, transform_digest(transform))
+    }
+}
+
+fn transform_digest(transform: Transform) -> String {
+    let mut bytes = Vec::with_capacity(16 * 8);
+    for row in transform.rows {
+        for value in row {
+            bytes.extend_from_slice(&value.to_bits().to_le_bytes());
+        }
+    }
+    sha256_hex(&bytes)[..16].to_owned()
+}
+
+fn transform_bits(transform: Transform) -> [u64; 16] {
+    let mut output = [0; 16];
+    for (target, value) in output.iter_mut().zip(transform.rows.into_iter().flatten()) {
+        *target = value.to_bits();
+    }
+    output
+}
+
+fn is_identity(transform: Transform) -> bool {
+    transforms_equal(transform, Transform::identity())
+}
+
+fn transforms_equal(left: Transform, right: Transform) -> bool {
+    left.rows
+        .into_iter()
+        .flatten()
+        .zip(right.rows.into_iter().flatten())
+        .all(|(left, right)| left.to_bits() == right.to_bits() || (left - right).abs() <= 1.0e-12)
+}
+
+fn is_reversed(orientation: TextOrientation) -> bool {
+    orientation == TextOrientation::Reversed
+}
+
+fn sense(reversed: bool) -> Sense {
+    if reversed {
+        Sense::Reversed
+    } else {
+        Sense::Forward
+    }
+}
+
+fn close_radial_rings(coedges: &mut [Coedge]) {
+    let mut by_edge: HashMap<EdgeId, Vec<usize>> = HashMap::new();
+    for (index, coedge) in coedges.iter().enumerate() {
+        by_edge.entry(coedge.edge.clone()).or_default().push(index);
+    }
+    for indices in by_edge.values() {
+        for (position, index) in indices.iter().enumerate() {
+            let next = indices[(position + 1) % indices.len()];
+            coedges[*index].radial_next = coedges[next].id.clone();
+        }
+    }
+}
+
+fn dot(left: Vector3, right: Vector3) -> f64 {
+    left.x * right.x + left.y * right.y + left.z * right.z
+}

@@ -11,6 +11,7 @@
 
 use crate::geometry::{CurveGeometry, NurbsSurface, PcurveGeometry, SurfaceGeometry};
 use crate::math::{Point2, Point3, Vector3};
+use crate::transform::Transform;
 
 fn cross(a: Vector3, b: Vector3) -> Vector3 {
     Vector3::new(
@@ -213,6 +214,9 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
             nurbs.weights.as_deref(),
             t,
         ),
+        CurveGeometry::Transformed { basis, transform } => {
+            curve_point(basis, t).map(|point| affine_point(*transform, point))
+        }
         CurveGeometry::Parabola { .. }
         | CurveGeometry::Hyperbola { .. }
         | CurveGeometry::Unknown { .. } => None,
@@ -294,8 +298,28 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
             ))
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point(nurbs, u, v),
+        SurfaceGeometry::Transformed { basis, transform } => {
+            surface_point(basis, u, v).map(|point| affine_point(*transform, point))
+        }
         SurfaceGeometry::Unknown { .. } => None,
     }
+}
+
+fn affine_point(transform: Transform, point: Point3) -> Point3 {
+    Point3::new(
+        transform.rows[0][0] * point.x
+            + transform.rows[0][1] * point.y
+            + transform.rows[0][2] * point.z
+            + transform.rows[0][3],
+        transform.rows[1][0] * point.x
+            + transform.rows[1][1] * point.y
+            + transform.rows[1][2] * point.z
+            + transform.rows[1][3],
+        transform.rows[2][0] * point.x
+            + transform.rows[2][1] * point.y
+            + transform.rows[2][2] * point.z
+            + transform.rows[2][3],
+    )
 }
 
 /// Evaluate a pcurve carrier at parameter `t`, yielding a surface `(u, v)`.

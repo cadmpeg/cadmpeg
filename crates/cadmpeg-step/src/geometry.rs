@@ -8,6 +8,7 @@
 
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
 
 use crate::writer::{real, refs, Emitter, Ref};
 
@@ -40,6 +41,40 @@ pub fn placement(e: &mut Emitter, origin: Point3, axis: Vector3, ref_dir: Vector
     let a = direction(e, axis);
     let r = direction(e, ref_dir);
     e.emit("AXIS2_PLACEMENT_3D", &format!("'',{o},{a},{r}"))
+}
+
+fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
+    let origin = point(
+        e,
+        Point3::new(
+            transform.rows[0][3],
+            transform.rows[1][3],
+            transform.rows[2][3],
+        ),
+    );
+    let x = Vector3::new(
+        transform.rows[0][0],
+        transform.rows[1][0],
+        transform.rows[2][0],
+    );
+    let y = Vector3::new(
+        transform.rows[0][1],
+        transform.rows[1][1],
+        transform.rows[2][1],
+    );
+    let z = Vector3::new(
+        transform.rows[0][2],
+        transform.rows[1][2],
+        transform.rows[2][2],
+    );
+    let scale = x.norm();
+    let x = direction(e, x);
+    let y = direction(e, y);
+    let z = direction(e, z);
+    e.emit(
+        "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
+        &format!("'',{x},{y},{origin},{},{z}", real(scale)),
+    )
 }
 
 /// Emit an analytic or NURBS surface carrier.
@@ -106,6 +141,11 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
             )
         }
         SurfaceGeometry::Nurbs(n) => nurbs_surface(e, n),
+        SurfaceGeometry::Transformed { basis, transform } => {
+            let parent = surface(e, basis);
+            let operator = transformation_operator(e, *transform);
+            e.emit("SURFACE_REPLICA", &format!("'',{parent},{operator}"))
+        }
         // Unknown surfaces have no STEP representation; the writer filters faces
         // resting on them in `emit_face` before ever reaching here.
         SurfaceGeometry::Unknown { .. } => {
@@ -176,6 +216,11 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
             e.emit("POLYLINE", &format!("'',({point},{point})"))
         }
         CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
+        CurveGeometry::Transformed { basis, transform } => {
+            let parent = curve(e, basis);
+            let operator = transformation_operator(e, *transform);
+            e.emit("CURVE_REPLICA", &format!("'',{parent},{operator}"))
+        }
         CurveGeometry::Unknown { .. } => {
             unreachable!("unknown curves are filtered before emission")
         }

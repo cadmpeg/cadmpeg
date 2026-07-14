@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD containers through format codecs into `CadIr`, then optionally validates and encodes that IR. [cad-ir.md](cad-ir.md) defines the current required IR version 5, including canonical units and parameterization, identity, topology, free carriers, annotations, and native-namespace contracts. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
+cadmpeg routes native CAD containers through format codecs into `CadIr`, then optionally validates and encodes that IR. [cad-ir.md](cad-ir.md) defines the current required IR version 6, including canonical units and parameterization, identity, topology, free carriers, annotations, and native-namespace contracts. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
 
 ## Pipeline
 
@@ -19,7 +19,7 @@ native CAD ── detect + inspect ──> container summary
 - `convert` performs load/decode, validation, and export. Validation errors stop export unless `--allow-invalid` is set.
 - `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, annotations, native namespaces, and opaque records. ID-bearing records are matched by globally unique IDs. Vector position is not entity identity.
 
-CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 5, including its required `subds` arena. Library callers can explicitly migrate version 4 with `CadIr::migrate_json`. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
+CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 6, including its required `subds` arena. Library callers can explicitly migrate version 5 with `CadIr::migrate_json`. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
 
 ## CLI stream and exit contract
 
@@ -40,7 +40,7 @@ The [format support profiles](format-support.md) record read, write, and round-t
 | Crate                  | Responsibility                                                                                                                                                                                                 |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`              | CLI orchestration for `inspect`, `decode`, `validate`, `export`, `diff`, and `convert`; built-in codec registration; CADIR, STEP, and SLDPRT output dispatch.                                                  |
-| `cadmpeg-ir`           | Layered version 5 IR model, canonical JSON, free-carrier source associations, sparse provenance and exactness, native namespaces, structural diff, validation, codec traits, and report types.                 |
+| `cadmpeg-ir`           | Layered version 6 IR model, canonical JSON, free-carrier source associations, sparse provenance and exactness, native namespaces, structural diff, validation, codec traits, and report types.                 |
 | `cadmpeg-codec-f3d`    | `.f3d` ZIP inspection; ASM/SAB B-rep, analytic and cached NURBS geometry, pcurves, transforms, attributes, appearances, Design/ACT records, history decode, retained-source replay, and selected native edits. |
 | `cadmpeg-codec-sldprt` | SLDPRT block, directory, and cache-cell inspection; Parasolid analytic/NURBS B-rep, pcurves, appearances, feature lanes, history, and tessellation decode; retained-source and semantic SLDPRT writing.        |
 | `cadmpeg-codec-catia`  | CATIA V5 `V5_CFV2` layout inspection; standard, zero-entity, E5, and object-stream carrier decode; conditional standard-nested topology reconstruction.                                                        |

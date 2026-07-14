@@ -342,6 +342,14 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check_knots(findings, &s.id.0, &n.u_knots, "u");
                 check_knots(findings, &s.id.0, &n.v_knots, "v");
             }
+            SurfaceGeometry::Transformed { basis, transform } => {
+                if !valid_affine_transform(*transform) {
+                    bounds_err(findings, &s.id.0, "surface transform is not finite affine");
+                }
+                if !valid_surface_basis(basis) {
+                    bounds_err(findings, &s.id.0, "transformed surface basis is invalid");
+                }
+            }
             // An unknown surface carries no numeric geometry to bounds-check; its
             // record link is checked in `check_references`. A face resting on it
             // is legal (topology known, shape opaque).
@@ -1457,6 +1465,14 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 check_knots(findings, &c.id.0, &n.knots, "");
             }
+            CurveGeometry::Transformed { basis, transform } => {
+                if !valid_affine_transform(*transform) {
+                    bounds_err(findings, &c.id.0, "curve transform is not finite affine");
+                }
+                if !valid_curve_basis(basis) {
+                    bounds_err(findings, &c.id.0, "transformed curve basis is invalid");
+                }
+            }
             CurveGeometry::Unknown { .. } => {}
         }
     }
@@ -1762,6 +1778,104 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 "helix major and minor radii differ",
             );
         }
+    }
+}
+
+fn valid_affine_transform(transform: crate::transform::Transform) -> bool {
+    transform.rows.into_iter().flatten().all(f64::is_finite)
+        && transform.rows[3] == [0.0, 0.0, 0.0, 1.0]
+}
+
+fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
+    match geometry {
+        SurfaceGeometry::Plane { normal, u_axis, .. } => !degenerate(normal) && !degenerate(u_axis),
+        SurfaceGeometry::Cylinder {
+            axis,
+            ref_direction,
+            radius,
+            ..
+        } => !degenerate(axis) && !degenerate(ref_direction) && !nonpositive(*radius),
+        SurfaceGeometry::Cone {
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            ..
+        } => {
+            !degenerate(axis)
+                && !degenerate(ref_direction)
+                && *radius >= 0.0
+                && ratio.is_finite()
+                && *ratio > 0.0
+        }
+        SurfaceGeometry::Sphere {
+            axis,
+            ref_direction,
+            radius,
+            ..
+        } => !degenerate(axis) && !degenerate(ref_direction) && radius.abs() > f64::EPSILON,
+        SurfaceGeometry::Torus {
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            !degenerate(axis)
+                && !degenerate(ref_direction)
+                && !nonpositive(*major_radius)
+                && minor_radius.abs() > f64::EPSILON
+        }
+        SurfaceGeometry::Nurbs(n) => {
+            n.control_points.len() == n.u_count as usize * n.v_count as usize
+                && n.u_knots.windows(2).all(|w| w[0] <= w[1])
+                && n.v_knots.windows(2).all(|w| w[0] <= w[1])
+        }
+        SurfaceGeometry::Transformed { basis, transform } => {
+            valid_affine_transform(*transform) && valid_surface_basis(basis)
+        }
+        SurfaceGeometry::Unknown { .. } => true,
+    }
+}
+
+fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
+    match geometry {
+        CurveGeometry::Line { direction, .. } => !degenerate(direction),
+        CurveGeometry::Circle { axis, radius, .. } => !degenerate(axis) && !nonpositive(*radius),
+        CurveGeometry::Ellipse {
+            major_radius,
+            minor_radius,
+            ..
+        } => !nonpositive(*major_radius) && !nonpositive(*minor_radius),
+        CurveGeometry::Parabola {
+            axis,
+            major_direction,
+            focal_distance,
+            ..
+        } => !degenerate(axis) && !degenerate(major_direction) && !nonpositive(*focal_distance),
+        CurveGeometry::Hyperbola {
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            !degenerate(axis)
+                && !degenerate(major_direction)
+                && !nonpositive(*major_radius)
+                && !nonpositive(*minor_radius)
+        }
+        CurveGeometry::Degenerate { point } => {
+            [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+        }
+        CurveGeometry::Nurbs(n) => {
+            n.control_points.len() > n.degree as usize
+                && n.knots.windows(2).all(|w| w[0] <= w[1])
+        }
+        CurveGeometry::Transformed { basis, transform } => {
+            valid_affine_transform(*transform) && valid_curve_basis(basis)
+        }
+        CurveGeometry::Unknown { .. } => true,
     }
 }
 

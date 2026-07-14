@@ -299,6 +299,7 @@ fn surface_class(value: &SurfaceGeometry) -> u8 {
         SurfaceGeometry::Torus { .. } => 4,
         SurfaceGeometry::Nurbs(_) => 5,
         SurfaceGeometry::Unknown { .. } => 6,
+        SurfaceGeometry::Transformed { .. } => 7,
     }
 }
 
@@ -312,6 +313,7 @@ fn curve_class(value: &CurveGeometry) -> u8 {
         CurveGeometry::Hyperbola { .. } => 5,
         CurveGeometry::Degenerate { .. } => 6,
         CurveGeometry::Unknown { .. } => 7,
+        CurveGeometry::Transformed { .. } => 8,
     }
 }
 

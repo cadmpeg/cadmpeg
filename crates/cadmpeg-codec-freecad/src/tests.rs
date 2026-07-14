@@ -20,7 +20,7 @@ fn transfers_recursive_exact_parameter_curve_geometry() {
         }),
     };
     let cadmpeg_ir::geometry::PcurveGeometry::Offset { distance, basis } =
-        crate::text_pcurve_geometry(&source)
+        crate::topology_transfer::pcurve_geometry(&source)
     else {
         panic!("expected offset pcurve");
     };
@@ -249,6 +249,129 @@ Co 1001000 +2 0 *
         .coedges
         .iter()
         .all(|coedge| coedge.pcurve.is_some()));
+    let report = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(
+        report
+            .findings
+            .iter()
+            .all(|finding| finding.severity < cadmpeg_ir::Severity::Error
+                || finding.check == cadmpeg_ir::Check::Identity),
+        "{:#?}",
+        report.findings
+    );
+}
+
+#[test]
+fn composes_outer_and_nested_mirrored_shape_locations_once() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 3
+1 1 0 0 10 0 1 0 0 0 0 1 0
+1 -2 0 0 0 0 2 0 5 0 0 2 0
+1 1 0 0 20 0 1 0 0 0 0 1 0
+Curve2ds 2
+1 0 0 1 0
+1 1 0 -1 0
+Curves 2
+1 0 0 0 1 0 0
+1 1 0 0 -1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 9
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +9 0 -8 0 *
+Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +8 0 -9 0 *
+Wi 1001000 +7 0 +6 0 *
+Fa 0 0.001 1 0 1001000 +5 0 *
+Sh 1001000 +4 2 *
+So 1001000 +3 0 *
+Co 1001000 +2 1 +2 3 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("located topology");
+    assert_eq!(result.ir.model.bodies.len(), 2);
+    assert_eq!(result.ir.model.edges.len(), 4);
+    assert_eq!(result.ir.model.vertices.len(), 4);
+    let mut body_translations = result
+        .ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.transform.expect("outer body transform").rows[0][3])
+        .collect::<Vec<_>>();
+    body_translations.sort_by(f64::total_cmp);
+    assert_eq!(body_translations, [10.0, 20.0]);
+    let mut positions = result
+        .ir
+        .model
+        .edges
+        .iter()
+        .flat_map(|edge| [&edge.start, &edge.end])
+        .map(|vertex| {
+            let vertex = result
+                .ir
+                .model
+                .vertices
+                .iter()
+                .find(|candidate| &candidate.id == vertex)
+                .unwrap();
+            result
+                .ir
+                .model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .unwrap()
+                .position
+        })
+        .collect::<Vec<_>>();
+    positions.sort_by(|left, right| left.x.total_cmp(&right.x));
+    positions.dedup();
+    assert_eq!(positions.len(), 2);
+    assert_eq!([positions[0].x, positions[0].y], [-2.0, 5.0]);
+    assert_eq!([positions[1].x, positions[1].y], [0.0, 5.0]);
+    let face = &result.ir.model.faces[0];
+    let surface = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)
+        .unwrap();
+    let cadmpeg_ir::geometry::SurfaceGeometry::Transformed { basis, transform } = &surface.geometry
+    else {
+        panic!("located face must retain its exact transformed basis");
+    };
+    assert!(matches!(
+        basis.as_ref(),
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
+    ));
+    assert_eq!(transform.rows[0][0], -2.0);
+    assert_eq!(transform.rows[1][1], 2.0);
+    let origin = cadmpeg_ir::eval::surface_point(&surface.geometry, 0.0, 0.0).unwrap();
+    assert_eq!([origin.x, origin.y], [0.0, 5.0]);
+    for edge in &result.ir.model.edges {
+        let curve = result
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| Some(&curve.id) == edge.curve.as_ref())
+            .unwrap();
+        let range = edge.param_range.expect("located edge parameter range");
+        let start = cadmpeg_ir::eval::curve_point(&curve.geometry, range[0]).unwrap();
+        let end = cadmpeg_ir::eval::curve_point(&curve.geometry, range[1]).unwrap();
+        assert_eq!((start.x - end.x).abs(), 2.0);
+    }
     let report = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(
         report

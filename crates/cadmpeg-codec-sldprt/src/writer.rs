@@ -2133,7 +2133,9 @@ pub(super) fn surface_values(
                 reference.z,
             ],
         ),
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Transformed { .. }
+        | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support this surface carrier".into(),
             ))
@@ -2378,6 +2380,11 @@ pub(super) fn curve_values(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
             ))
         }
+        CurveGeometry::Transformed { .. } => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer does not support transformed curve carriers".into(),
+            ))
+        }
         CurveGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer cannot regenerate an opaque curve".into(),
@@ -2410,6 +2417,7 @@ pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math:
             ref_direction,
             ..
         } => *ref_direction,
+        SurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
         SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
             x: 1.0,
             y: 0.0,
