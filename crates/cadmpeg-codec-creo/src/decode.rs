@@ -6566,6 +6566,20 @@ mod resolved_sketch_tests {
             solve_carriers(&[cone, cap, cone_tangent]),
             Some([5.0, 0.0, 3.0])
         );
+        let coaxial_cone_cylinder = parallel_cylinder([0.0, 0.0, 4.0], 5.0);
+        assert!(matches!(
+            carrier_intersection_curve(coaxial_cone_cylinder, cone),
+            Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_cone_circle"))
+                if (center.z - 3.0).abs() < 1e-12 && radius == 5.0
+        ));
+        let cone_cylinder_vertex =
+            solve_carriers(&[coaxial_cone_cylinder, cone, cone_tangent]).expect("unique vertex");
+        assert!((cone_cylinder_vertex[0] - 5.0).abs() < 1e-12);
+        assert!(cone_cylinder_vertex[1].abs() < 1e-12);
+        assert!((cone_cylinder_vertex[2] - 3.0).abs() < 1e-12);
+        assert!(
+            carrier_intersection_curve(parallel_cylinder([1.0, 0.0, 0.0], 5.0), cone,).is_none()
+        );
 
         let torus = CarrierEquation::Torus(TorusEquation {
             center: [0.0, 0.0, 0.0],
@@ -7096,6 +7110,21 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                         if let Some((geometry, _)) = carrier_intersection_curve(
                             CarrierEquation::Cylinder(*cylinder),
                             CarrierEquation::Torus(*torus),
+                        ) {
+                            if let Some((center, axis, radius)) = circle_parameters(&geometry) {
+                                candidates.extend(intersect_plane_with_circle(
+                                    *plane, center, axis, radius,
+                                ));
+                            }
+                        }
+                    }
+                } else if let ([plane], [cylinder], [cone]) =
+                    (planes.as_slice(), cylinders.as_slice(), cones.as_slice())
+                {
+                    if spheres.is_empty() && tori.is_empty() {
+                        if let Some((geometry, _)) = carrier_intersection_curve(
+                            CarrierEquation::Cylinder(*cylinder),
+                            CarrierEquation::Cone(*cone),
                         ) {
                             if let Some((center, axis, radius)) = circle_parameters(&geometry) {
                                 candidates.extend(intersect_plane_with_circle(
@@ -8434,17 +8463,45 @@ fn carrier_intersection_curve(
                 "coaxial_cylinder_torus_tangent_circle",
             ))
         }
+        (CarrierEquation::Cylinder(cylinder), CarrierEquation::Cone(cone))
+        | (CarrierEquation::Cone(cone), CarrierEquation::Cylinder(cylinder)) => {
+            let cylinder_axis = normalized(cylinder.axis)?;
+            let cone_axis = normalized(cone.axis)?;
+            if (dot(cylinder_axis, cone_axis).abs() - 1.0).abs() > 1e-10 {
+                return None;
+            }
+            let relative: [f64; 3] =
+                std::array::from_fn(|index| cone.origin[index] - cylinder.origin[index]);
+            let axial = dot(relative, cylinder_axis);
+            let transverse: [f64; 3] =
+                std::array::from_fn(|index| relative[index] - axial * cylinder_axis[index]);
+            let scale = cone.radius.max(cylinder.radius).max(1.0);
+            if dot(transverse, transverse).sqrt() > 1e-9 * scale {
+                return None;
+            }
+            let slope = cone.half_angle.tan();
+            if slope.abs() <= 1e-12 || cylinder.radius <= 1e-12 {
+                return None;
+            }
+            let cone_parameter = (cylinder.radius - cone.radius) / slope;
+            let center: [f64; 3] =
+                std::array::from_fn(|index| cone.origin[index] + cone_parameter * cone_axis[index]);
+            let reference = normalized(cylinder.ref_direction)?;
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(cone_axis[0], cone_axis[1], cone_axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius: cylinder.radius,
+                },
+                "coaxial_cylinder_cone_circle",
+            ))
+        }
         (
             CarrierEquation::Cone(_),
-            CarrierEquation::Sphere(_)
-            | CarrierEquation::Cylinder(_)
-            | CarrierEquation::Cone(_)
-            | CarrierEquation::Torus(_),
+            CarrierEquation::Sphere(_) | CarrierEquation::Cone(_) | CarrierEquation::Torus(_),
         )
-        | (
-            CarrierEquation::Sphere(_) | CarrierEquation::Cylinder(_) | CarrierEquation::Torus(_),
-            CarrierEquation::Cone(_),
-        )
+        | (CarrierEquation::Sphere(_) | CarrierEquation::Torus(_), CarrierEquation::Cone(_))
         | (CarrierEquation::Torus(_), CarrierEquation::Sphere(_) | CarrierEquation::Torus(_))
         | (CarrierEquation::Sphere(_), CarrierEquation::Torus(_)) => None,
     }
