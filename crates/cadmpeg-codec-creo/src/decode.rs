@@ -6133,6 +6133,36 @@ mod resolved_sketch_tests {
                 if origin.x == 2.0 && direction.z == 1.0
         ));
         assert!(carrier_intersection_curve(secant, cylinder).is_none());
+
+        let parallel_cylinder = |origin: [f64; 3], radius| {
+            CarrierEquation::Cylinder(CylinderEquation {
+                origin,
+                axis: [0.0, 0.0, 1.0],
+                ref_direction: [1.0, 0.0, 0.0],
+                radius,
+            })
+        };
+        assert!(matches!(
+            carrier_intersection_curve(
+                parallel_cylinder([0.0, 0.0, 0.0], 2.0),
+                parallel_cylinder([5.0, 0.0, 0.0], 3.0),
+            ),
+            Some((CurveGeometry::Line { origin, direction }, "parallel_cylinder_tangent_line"))
+                if origin.x == 2.0 && direction.z == 1.0
+        ));
+        assert!(matches!(
+            carrier_intersection_curve(
+                parallel_cylinder([0.0, 0.0, 0.0], 5.0),
+                parallel_cylinder([3.0, 0.0, 0.0], 2.0),
+            ),
+            Some((CurveGeometry::Line { origin, .. }, "parallel_cylinder_tangent_line"))
+                if origin.x == 5.0
+        ));
+        assert!(carrier_intersection_curve(
+            parallel_cylinder([0.0, 0.0, 0.0], 3.0),
+            parallel_cylinder([4.0, 0.0, 0.0], 3.0),
+        )
+        .is_none());
     }
 }
 
@@ -7326,7 +7356,47 @@ fn carrier_intersection_curve(
                 "plane_cylinder_ellipse",
             ))
         }
-        _ => None,
+        (CarrierEquation::Cylinder(first), CarrierEquation::Cylinder(second)) => {
+            let first_axis = normalized(first.axis)?;
+            let second_axis = normalized(second.axis)?;
+            let alignment = dot(first_axis, second_axis);
+            if (alignment.abs() - 1.0).abs() > 1e-10 {
+                return None;
+            }
+            let relative = std::array::from_fn(|index| second.origin[index] - first.origin[index]);
+            let axial = dot(relative, first_axis);
+            let transverse: [f64; 3] =
+                std::array::from_fn(|index| relative[index] - axial * first_axis[index]);
+            let distance = dot(transverse, transverse).sqrt();
+            if distance <= 1e-12 {
+                return None;
+            }
+            let external = first.radius + second.radius;
+            let internal = (first.radius - second.radius).abs();
+            let scale = external.max(distance).max(1.0);
+            let first_fraction = if (distance - external).abs() <= 1e-9 * scale {
+                first.radius / distance
+            } else if (distance - internal).abs() <= 1e-9 * scale {
+                let signed = if first.radius >= second.radius {
+                    first.radius
+                } else {
+                    -first.radius
+                };
+                signed / distance
+            } else {
+                return None;
+            };
+            let origin: [f64; 3] = std::array::from_fn(|index| {
+                first.origin[index] + first_fraction * transverse[index]
+            });
+            Some((
+                CurveGeometry::Line {
+                    origin: Point3::new(origin[0], origin[1], origin[2]),
+                    direction: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                },
+                "parallel_cylinder_tangent_line",
+            ))
+        }
     }
 }
 
