@@ -6211,6 +6211,10 @@ mod resolved_sketch_tests {
             Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_sphere_circle"))
                 if center == Point3::new(0.0, 0.0, 0.0) && radius == 2.0
         ));
+        assert_eq!(
+            solve_carriers(&[cylinder, sphere, tangent]),
+            Some([2.0, 0.0, 0.0])
+        );
         assert!(
             carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 1.0), sphere,).is_none()
         );
@@ -6256,6 +6260,10 @@ mod resolved_sketch_tests {
         assert!(carrier_intersection_curve(equator, torus).is_none());
         assert!(point_on_carrier([5.0, 0.0, 2.0], torus));
         assert!(!point_on_carrier([5.0, 0.0, 0.0], torus));
+        assert_eq!(
+            solve_carriers(&[torus, torus_tangent, cone_tangent]),
+            Some([5.0, 0.0, 2.0])
+        );
     }
 }
 
@@ -6523,6 +6531,68 @@ fn intersect_two_planes_with_cone(
         .collect()
 }
 
+fn intersect_plane_with_circle(
+    plane: PlaneEquation,
+    center: [f64; 3],
+    circle_axis: [f64; 3],
+    radius: f64,
+) -> Vec<[f64; 3]> {
+    let (Some(plane_normal), Some(circle_normal)) =
+        (normalized(plane.normal), normalized(circle_axis))
+    else {
+        return Vec::new();
+    };
+    let line_direction = cross(plane_normal, circle_normal);
+    let denominator = dot(line_direction, line_direction);
+    if denominator <= 1e-18 || radius <= 0.0 {
+        return Vec::new();
+    }
+    let plane_distance = dot(plane_normal, plane.origin);
+    let circle_distance = dot(circle_normal, center);
+    let weighted = std::array::from_fn(|index| {
+        plane_distance * circle_normal[index] - circle_distance * plane_normal[index]
+    });
+    let line_origin = cross(weighted, line_direction).map(|value| value / denominator);
+    let relative: [f64; 3] = std::array::from_fn(|index| line_origin[index] - center[index]);
+    let parameter_at_nearest = -dot(relative, line_direction) / denominator;
+    let nearest: [f64; 3] = std::array::from_fn(|index| {
+        line_origin[index] + parameter_at_nearest * line_direction[index]
+    });
+    let center_to_nearest: [f64; 3] = std::array::from_fn(|index| nearest[index] - center[index]);
+    let remaining = radius.mul_add(radius, -dot(center_to_nearest, center_to_nearest));
+    let scale = radius.max(1.0);
+    if remaining < -1e-12 * scale * scale {
+        return Vec::new();
+    }
+    let parameter_delta = remaining.max(0.0).sqrt() / denominator.sqrt();
+    let mut points = vec![std::array::from_fn(|index| {
+        nearest[index] - parameter_delta * line_direction[index]
+    })];
+    if parameter_delta > 1e-12 * scale {
+        points.push(std::array::from_fn(|index| {
+            nearest[index] + parameter_delta * line_direction[index]
+        }));
+    }
+    points
+}
+
+fn circle_parameters(geometry: &CurveGeometry) -> Option<([f64; 3], [f64; 3], f64)> {
+    let CurveGeometry::Circle {
+        center,
+        axis,
+        radius,
+        ..
+    } = geometry
+    else {
+        return None;
+    };
+    Some((
+        [center.x, center.y, center.z],
+        [axis.x, axis.y, axis.z],
+        *radius,
+    ))
+}
+
 fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
     match carrier {
         CarrierEquation::Plane(plane) => {
@@ -6628,6 +6698,40 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                 } else if let ([first, second], [cone]) = (planes.as_slice(), cones.as_slice()) {
                     if cylinders.is_empty() && spheres.is_empty() && tori.is_empty() {
                         candidates.extend(intersect_two_planes_with_cone(*first, *second, *cone));
+                    }
+                } else if let ([plane], [cylinder], [sphere]) =
+                    (planes.as_slice(), cylinders.as_slice(), spheres.as_slice())
+                {
+                    if cones.is_empty() && tori.is_empty() {
+                        if let Some((geometry, _)) = carrier_intersection_curve(
+                            CarrierEquation::Cylinder(*cylinder),
+                            CarrierEquation::Sphere(*sphere),
+                        ) {
+                            if let Some((center, axis, radius)) = circle_parameters(&geometry) {
+                                candidates.extend(intersect_plane_with_circle(
+                                    *plane, center, axis, radius,
+                                ));
+                            }
+                        }
+                    }
+                } else if let ([first, second], [torus]) = (planes.as_slice(), tori.as_slice()) {
+                    if cylinders.is_empty() && cones.is_empty() && spheres.is_empty() {
+                        for (section_plane, cutting_plane) in [(*first, *second), (*second, *first)]
+                        {
+                            if let Some((geometry, _)) = carrier_intersection_curve(
+                                CarrierEquation::Plane(section_plane),
+                                CarrierEquation::Torus(*torus),
+                            ) {
+                                if let Some((center, axis, radius)) = circle_parameters(&geometry) {
+                                    candidates.extend(intersect_plane_with_circle(
+                                        cutting_plane,
+                                        center,
+                                        axis,
+                                        radius,
+                                    ));
+                                }
+                            }
+                        }
                     }
                 }
             }
