@@ -2953,9 +2953,10 @@ fn transfer_resolved_sketches(
         else {
             continue;
         };
-        let Some(segments) = &definition.segments else {
-            continue;
-        };
+        let segments = definition
+            .segments
+            .as_ref()
+            .map_or(&[][..], |segments| segments.rows.as_slice());
         let points = resolved_section_points(definition);
         let solved = definition
             .trim_entities
@@ -2965,7 +2966,6 @@ fn transfer_resolved_sketches(
             .collect::<BTreeSet<_>>();
         let trim_vertex_coordinates = resolved_trim_vertex_coordinates(definition, &points);
         let emitted = segments
-            .rows
             .iter()
             .filter(|segment| {
                 if solved.contains(&segment.external_id) {
@@ -2984,7 +2984,6 @@ fn transfer_resolved_sketches(
             .collect::<BTreeSet<_>>();
         let profiles = resolved_profile_chains(definition, &emitted);
         let profile_segments = segments
-            .rows
             .iter()
             .filter(|segment| {
                 let id = SketchEntityId(format!(
@@ -3000,7 +2999,6 @@ fn transfer_resolved_sketches(
             .collect::<BTreeSet<_>>();
         let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
         let mut entities = segments
-            .rows
             .iter()
             .filter_map(|segment| {
                 let geometry = if solved.contains(&segment.external_id) {
@@ -3054,7 +3052,6 @@ fn transfer_resolved_sketches(
             })
             .collect::<Vec<_>>();
         for segment in segments
-            .rows
             .iter()
             .filter(|segment| !emitted.contains(&segment.external_id))
         {
@@ -3158,7 +3155,7 @@ fn transfer_resolved_sketches(
         if entities.is_empty() {
             continue;
         }
-        for segment in &segments.rows {
+        for segment in segments {
             let Some(section_geometry) =
                 resolved_section_segment_geometry(definition, &points, segment)
             else {
@@ -3200,7 +3197,6 @@ fn transfer_resolved_sketches(
             });
         }
         let mut constraints = segments
-            .rows
             .iter()
             .filter_map(|segment| {
                 let entity = SketchEntityId(format!(
