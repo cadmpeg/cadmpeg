@@ -58,6 +58,8 @@ Type 162 defines a solid of revolution from a profile-curve pointer, a revolutio
 
 Type 180 Forms 0 and 1 store a postorder regularized Boolean expression. The declared term count is greater than two. Negative terms are negated odd Directory pointers to solid operands; positive terms `1`, `2`, and `3` mean union, intersection, and difference. Each operation consumes two stack values and produces one. The stack never underflows and contains exactly one value after the final term. Operand links are acyclic. Form 0 excludes Manifold Solid B-rep operands; Form 1 contains at least one such operand. The typed `boolean_trees` arena retains ordered operands and operations without converting the expression to an unordered relationship graph.
 
+Type 182 Form 0 selects one connected component of a disjoint Boolean result. It has entity-use flag `03`, a pointer to a semantically decoded Type 180 tree, and a finite model-space point in or on the selected component. The `selected_components` arena retains the tree identity, native selection coordinates, source identity, and optional Directory transformation.
+
 The `native.iges` `procedural_solids` arena retains sweep kind, form, profile identity, native sweep amount, omitted-versus-present axis fields, and transformation link. Semantic decoding requires a decoded profile carrier and closure consistent with the owning form.
 
 ## Topology

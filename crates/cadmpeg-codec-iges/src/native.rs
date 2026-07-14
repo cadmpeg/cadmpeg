@@ -166,6 +166,15 @@ struct NativeBooleanTree {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeSelectedComponent {
+    id: String,
+    source_entity: String,
+    boolean_tree: Option<String>,
+    selection_point: [Option<f64>; 3],
+    transformation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -606,6 +615,27 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let selected_components = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 182 && entry.form == 0)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            NativeSelectedComponent {
+                id: format!("iges:solid:selected-component#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                boolean_tree: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| format!("iges:solid:boolean-tree#D{sequence}")),
+                selection_point: [
+                    record.and_then(|record| record.number(2)),
+                    record.and_then(|record| record.number(3)),
+                    record.and_then(|record| record.number(4)),
+                ],
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -620,5 +650,6 @@ pub(crate) fn store(
     namespace.set_arena("primitive_solids", &primitive_solids)?;
     namespace.set_arena("procedural_solids", &procedural_solids)?;
     namespace.set_arena("boolean_trees", &boolean_trees)?;
+    namespace.set_arena("selected_components", &selected_components)?;
     Ok(())
 }

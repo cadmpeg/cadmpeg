@@ -433,6 +433,60 @@ pub(super) fn project(
         decoded.insert(*sequence);
     }
 
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 182 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(tree) = pointer(record, 1).filter(|sequence| {
+            decoded.contains(sequence)
+                && entries
+                    .get(sequence)
+                    .is_some_and(|target| target.entity_type == 180)
+        }) else {
+            losses.push(entity_loss(
+                entry,
+                "selected-component Boolean tree pointer is invalid",
+            ));
+            continue;
+        };
+        let point = (2..=4)
+            .map(|index| record.number(index).filter(|value| value.is_finite()))
+            .collect::<Option<Vec<_>>>();
+        if point.is_none() || entry.status.use_flag != 3 {
+            losses.push(entity_loss(
+                entry,
+                "selected-component point or entity-use flag is invalid",
+            ));
+            continue;
+        }
+        let Some(factor) = global.length_factor_mm() else {
+            losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
+        if resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            factor,
+            &mut BTreeSet::new(),
+        )
+        .is_err()
+        {
+            losses.push(entity_loss(
+                entry,
+                "selected-component placement is invalid",
+            ));
+            continue;
+        }
+        let _ = tree;
+        decoded.insert(entry.sequence);
+    }
+
     Projection {
         handled,
         decoded,

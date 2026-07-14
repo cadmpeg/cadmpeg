@@ -2144,6 +2144,13 @@ fn procedural_and_boolean_solids_file() -> Vec<u8> {
             status: "00000000",
             parameters: "180,3,-11,-13,1;".into(),
         },
+        OwnedTestEntity {
+            entity_type: 182,
+            form: 0,
+            label: "SELECT".into(),
+            status: "00000300",
+            parameters: "182,15,1,0,0;".into(),
+        },
     ])
 }
 
@@ -3075,6 +3082,13 @@ fn decode_types_swept_solids_and_balanced_boolean_postfix() {
     assert_eq!(trees.len(), 1);
     assert_eq!(trees[0].fields["declared_length"], 3);
     assert_eq!(trees[0].fields["terms"].as_array().unwrap().len(), 3);
+    let selected = &native.arenas["selected_components"];
+    assert_eq!(selected.len(), 1);
+    assert_eq!(
+        selected[0].fields["boolean_tree"],
+        "iges:solid:boolean-tree#D15"
+    );
+    assert_eq!(selected[0].fields["selection_point"][0], 1.0);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

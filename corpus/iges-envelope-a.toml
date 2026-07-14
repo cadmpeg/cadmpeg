@@ -339,6 +339,16 @@ fixture_classes = ["csg-boolean-trees"]
 assertions = ["postfix-arity", "ordered-operands", "cycles", "byte-coverage"]
 
 [[entity]]
+type = 182
+name = "selected-component"
+forms = [0]
+domain = "geometry"
+decoder = "entities::csg::decode_selected_component"
+destination = "native.iges.solids"
+fixture_classes = ["csg-selected-components"]
+assertions = ["boolean-tree-link", "selection-point", "placement", "byte-coverage"]
+
+[[entity]]
 type = 184
 name = "solid-assembly"
 forms = [0]
