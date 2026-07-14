@@ -552,7 +552,10 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
     let unknown_notes: Vec<_> = report
         .losses
         .iter()
-        .filter(|l| l.message.contains("rest on an unknown"))
+        .filter(|l| {
+            l.message
+                .contains("rest on a construction-backed or unknown surface")
+        })
         .collect();
     assert_eq!(
         unknown_notes.len(),
