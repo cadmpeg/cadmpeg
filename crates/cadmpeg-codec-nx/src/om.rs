@@ -2311,6 +2311,23 @@ pub fn offset_store_control_class_ordinals(bytes: &[u8], class_count: usize) -> 
     (distinct.len() == ordinals.len()).then_some(ordinals)
 }
 
+/// Decode the control words following the class-selection lane as offsets into
+/// the store's contiguous column-storage region.
+pub fn offset_store_control_column_offsets(
+    bytes: &[u8],
+    class_count: usize,
+    column_byte_len: usize,
+) -> Option<Vec<u32>> {
+    let class_ordinals = offset_store_control_class_ordinals(bytes, class_count)?;
+    let values = offset_store_control_values(bytes)?;
+    let offsets = values.get(class_ordinals.len()..)?.to_vec();
+    (!offsets.is_empty()
+        && offsets
+            .iter()
+            .all(|offset| usize::try_from(*offset).is_ok_and(|offset| offset < column_byte_len)))
+    .then_some(offsets)
+}
+
 /// Decode the aligned little-endian value array preceding one product record.
 pub fn offset_store_index_values(bytes: &[u8]) -> Option<(usize, Vec<u32>)> {
     let matches = (0..bytes.len())

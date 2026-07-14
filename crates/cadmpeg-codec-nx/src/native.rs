@@ -3120,6 +3120,27 @@ pub struct DataBlockControlClassReference {
     pub source_offset: u64,
 }
 
+/// Ordered control-tail offset resolved into contiguous column storage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockControlColumnOffset {
+    /// Globally unique column-offset identity.
+    pub id: String,
+    /// Owning control block in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Zero-based order in the control-tail offset lane.
+    pub ordinal: u32,
+    /// Byte offset from the start of contiguous column storage.
+    pub column_offset: u32,
+    /// Physical block containing the addressed byte.
+    pub target_data_block: String,
+    /// Byte offset within `target_data_block`.
+    pub target_block_offset: u64,
+    /// Absolute file offset of the addressed column byte.
+    pub target_source_offset: u64,
+    /// Absolute file offset of the four-byte control word.
+    pub source_offset: u64,
+}
+
 /// Ordered object reference carried by an offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockReference {
@@ -3873,6 +3894,81 @@ pub fn data_block_control_class_references(
                         ),
                         class_name: definition.name.to_string(),
                         source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Resolve each control-tail offset through the store's contiguous column region.
+pub fn data_block_control_column_offsets(
+    container: &Container,
+) -> Vec<DataBlockControlColumnOffset> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let (Some(control), Some(column_storage), Some(first_column)) = (
+                section.control,
+                section.column_storage,
+                section.records.first(),
+            ) else {
+                return Vec::new();
+            };
+            let registry_len = container
+                .om_sections()
+                .into_iter()
+                .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
+                .flat_map(|(_, section)| section.types)
+                .map(|definition| definition.offset)
+                .collect::<BTreeSet<_>>()
+                .len();
+            let Some(class_ordinals) = crate::om::offset_store_control_class_ordinals(
+                control.bytes,
+                registry_len,
+            ) else {
+                return Vec::new();
+            };
+            let Some(offsets) = crate::om::offset_store_control_column_offsets(
+                control.bytes,
+                registry_len,
+                column_storage.len(),
+            ) else {
+                return Vec::new();
+            };
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
+            let column_start = first_column.offset;
+            offsets
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, column_offset)| {
+                    let target = column_start.checked_add(usize::try_from(column_offset).ok()?)?;
+                    let (block_ordinal, block) = section
+                        .records
+                        .iter()
+                        .enumerate()
+                        .find(|(_, block)| {
+                            target >= block.offset && target < block.offset + block.bytes.len()
+                        })?;
+                    Some(DataBlockControlColumnOffset {
+                        id: format!(
+                            "nx:om-data-block-control-column-offsets-{section_ordinal}:offset#{ordinal}"
+                        ),
+                        data_block: data_block.clone(),
+                        ordinal: ordinal as u32,
+                        column_offset,
+                        target_data_block: format!(
+                            "nx:om-data-blocks-{section_ordinal}:block#{}",
+                            block_ordinal + 1
+                        ),
+                        target_block_offset: (target - block.offset) as u64,
+                        target_source_offset: entry_offset + target as u64,
+                        source_offset: entry_offset
+                            + control.offset as u64
+                            + ((class_ordinals.len() + ordinal) * 4) as u64,
                     })
                 })
                 .collect()
