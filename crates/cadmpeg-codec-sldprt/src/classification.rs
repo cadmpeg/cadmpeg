@@ -113,8 +113,8 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moOriginProfileFeature_c" => (
             NativeClassKind::OriginProfileFeature,
             Feature,
-            Some(FeatureClass::Sketch),
             None,
+            Some(FeatureTreeNodeRole::ModelOrigin),
         ),
         "moProfileFeature_c" | "mo3DProfileFeature_c" => (
             NativeClassKind::ProfileFeature,
@@ -474,6 +474,12 @@ mod tests {
         assert_eq!(markup.role, FeatureInputClassRole::Auxiliary);
         assert_eq!(markup.tree_node, Some(FeatureTreeNodeRole::Markups));
 
+        let origin = native_object_class("moOriginProfileFeature_c");
+        assert_eq!(origin.kind, NativeClassKind::OriginProfileFeature);
+        assert_eq!(origin.role, FeatureInputClassRole::Feature);
+        assert_eq!(origin.feature, None);
+        assert_eq!(origin.tree_node, Some(FeatureTreeNodeRole::ModelOrigin));
+
         for name in [
             "moCompReferenceCurve_c",
             "moCompSurfaceBody_c",
@@ -539,7 +545,7 @@ mod tests {
     }
 
     #[test]
-    fn every_known_feature_class_has_feature_input_role() {
+    fn every_known_feature_class_has_projection_role() {
         for name in [
             "moExtrusion_c",
             "moICE_c",
@@ -559,7 +565,10 @@ mod tests {
             "moDeleteBody_c",
         ] {
             let class = native_object_class(name);
-            assert!(class.feature.is_some(), "missing feature family for {name}");
+            assert!(
+                class.feature.is_some() || class.tree_node.is_some(),
+                "missing projection role for {name}"
+            );
             assert_ne!(
                 class.role,
                 FeatureInputClassRole::Native,

@@ -767,6 +767,8 @@ pub enum FeatureTreeNodeRole {
     LightsAndCameras,
     /// Markup container.
     Markups,
+    /// Built-in model origin node.
+    ModelOrigin,
     /// Material container or assignment node.
     Materials,
     /// Note container.

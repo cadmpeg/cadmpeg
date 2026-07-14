@@ -6872,6 +6872,7 @@ fn decode_types_non_modeling_feature_tree_nodes() {
             <Feature Name="Bodies" Type="Solid Bodies" id="103"/>
             <Feature Name="Light" Type="Direccional" id="104"/>
             <Feature Name="Unknown" Type="CustomOperation" id="105"/>
+            <Sketch Name="Origen" Type="Croquis localizado" id="106"/>
         </Keywords>"#,
     ));
     source.extend(make_block(
@@ -6881,6 +6882,7 @@ fn decode_types_non_modeling_feature_tree_nodes() {
             ("moDetailCabinet_c", "Annotations", 101),
             ("moEqnFolder_c", "Ecuaciones", 102),
             ("moSolidBodyFolder_c", "Bodies", 103),
+            ("moOriginProfileFeature_c", "Origen", 106),
         ]),
     ));
     let mut decoded = SldprtCodec
@@ -6913,6 +6915,16 @@ fn decode_types_non_modeling_feature_tree_nodes() {
     ));
     assert!(matches!(definitions[3], FeatureDefinition::Native { .. }));
     assert!(matches!(definitions[4], FeatureDefinition::Native { .. }));
+    assert!(matches!(
+        definitions[5],
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::ModelOrigin
+        }
+    ));
+    assert!(!decoded.ir.model.features.iter().any(|feature| matches!(
+        feature.definition,
+        FeatureDefinition::Sketch { .. }
+    )));
     decoded.ir.model.features[0].name = Some("Document annotations".into());
     let mut encoded = Vec::new();
     SldprtCodec.encode(&decoded.ir, &mut encoded).unwrap();

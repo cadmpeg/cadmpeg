@@ -1278,6 +1278,7 @@ fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
         FeatureTreeNodeRole::History => "History",
         FeatureTreeNodeRole::LightsAndCameras => "Lights and Cameras",
         FeatureTreeNodeRole::Markups => "Markups",
+        FeatureTreeNodeRole::ModelOrigin => "Origin",
         FeatureTreeNodeRole::Materials => "SOLIDWORKS Materials",
         FeatureTreeNodeRole::Notes => "Notes",
         FeatureTreeNodeRole::SelectionSets => "Selection Sets",
