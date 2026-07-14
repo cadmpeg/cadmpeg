@@ -47,26 +47,37 @@ struct FlowAssociativity {
     continuations: Vec<Option<u32>>,
 }
 
-fn single_target_cycle(
+pub(crate) fn single_target_cycle(
     sequence: u32,
     targets: &BTreeMap<u32, u32>,
-    visiting: &mut BTreeSet<u32>,
     visited: &mut BTreeSet<u32>,
 ) -> bool {
     if visited.contains(&sequence) {
         return false;
     }
-    if !visiting.insert(sequence) {
-        return true;
+
+    let mut path = Vec::new();
+    let mut visiting = BTreeSet::new();
+    let mut current = sequence;
+    loop {
+        if visited.contains(&current) {
+            visited.extend(path);
+            return false;
+        }
+        if !visiting.insert(current) {
+            return true;
+        }
+        path.push(current);
+        let Some(target) = targets
+            .get(&current)
+            .copied()
+            .filter(|target| targets.contains_key(target))
+        else {
+            visited.extend(path);
+            return false;
+        };
+        current = target;
     }
-    if targets.get(&sequence).is_some_and(|target| {
-        targets.contains_key(target) && single_target_cycle(*target, targets, visiting, visited)
-    }) {
-        return true;
-    }
-    visiting.remove(&sequence);
-    visited.insert(sequence);
-    false
 }
 
 fn array_base_type(entity_type: i64, form: i64) -> bool {
@@ -1480,12 +1491,7 @@ pub(super) fn project(
                     .get(target)
                     .is_some_and(|base| array_base_type(base.entity_type, base.form))
         });
-        let cyclic = single_target_cycle(
-            entry.sequence,
-            &array_targets,
-            &mut BTreeSet::new(),
-            &mut visited_arrays,
-        );
+        let cyclic = single_target_cycle(entry.sequence, &array_targets, &mut visited_arrays);
         let transform_valid = global.length_factor_mm().is_some_and(|factor| {
             resolve_transform(
                 entry.transform,
@@ -1657,12 +1663,7 @@ pub(super) fn project(
             )
             .is_ok()
         });
-        let cyclic = single_target_cycle(
-            *sequence,
-            &solid_instances,
-            &mut BTreeSet::new(),
-            &mut visited_instances,
-        );
+        let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances);
         if target_valid && transform_valid && !cyclic {
             decoded.insert(*sequence);
         } else {

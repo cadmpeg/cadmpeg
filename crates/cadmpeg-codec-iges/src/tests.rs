@@ -36,6 +36,29 @@ fn fixed_ascii_detection_requires_two_consistent_cards() {
 }
 
 #[test]
+fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively() {
+    let targets = (1..=100_000_u32)
+        .map(|sequence| (sequence, sequence + 1))
+        .collect::<BTreeMap<_, _>>();
+    let mut visited = std::collections::BTreeSet::new();
+
+    assert!(!crate::entities::structure::single_target_cycle(
+        1,
+        &targets,
+        &mut visited
+    ));
+    assert_eq!(visited.len(), 100_000);
+
+    let mut cyclic = targets;
+    cyclic.insert(100_001, 50_000);
+    assert!(crate::entities::structure::single_target_cycle(
+        1,
+        &cyclic,
+        &mut std::collections::BTreeSet::new()
+    ));
+}
+
+#[test]
 fn envelope_admission_exactly_matches_the_machine_matrix() {
     let matrix_path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/iges-envelope-a.toml");
