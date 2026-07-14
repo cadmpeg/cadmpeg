@@ -12,6 +12,22 @@ use cadmpeg_ir::transform::Transform;
 
 use crate::writer::{real, refs, Emitter, Ref};
 
+pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
+    match surface {
+        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => false,
+        SurfaceGeometry::Transformed { basis, .. } => surface_is_supported(basis),
+        _ => true,
+    }
+}
+
+pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
+    match curve {
+        CurveGeometry::Unknown { .. } => false,
+        CurveGeometry::Transformed { basis, .. } => curve_is_supported(basis),
+        _ => true,
+    }
+}
+
 /// Emit or reuse a `CARTESIAN_POINT`.
 pub fn point(e: &mut Emitter, p: Point3) -> Ref {
     let params = format!("'',({},{},{})", real(p.x), real(p.y), real(p.z));

@@ -242,19 +242,39 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
 fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> {
     validate_property_wrapper(property)?;
     let mut replacement = property.raw_xml.clone();
+    let wrapped = format!("<Root>{}</Root>", property.raw_xml);
+    let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
+        CodecError::Malformed(format!("invalid retained property XML: {error}"))
+    })?;
+    let source_ranges = parsed
+        .root_element()
+        .first_element_child()
+        .into_iter()
+        .flat_map(|property| {
+            property
+                .descendants()
+                .filter(move |node| node.is_element() && *node != property)
+        })
+        .map(|node| (node.range().start - 6, node.range().end - 6))
+        .collect::<Vec<_>>();
+    if source_ranges.len() != property.values.len() {
+        return Err(CodecError::Malformed(format!(
+            "property {} value provenance count changed",
+            property.id
+        )));
+    }
     let mut edits = Vec::new();
-    for value in &property.values {
+    for (value, (start, end)) in property.values.iter().zip(source_ranges) {
         let serialized = serialize_value(value)?;
         if serialized == value.raw_xml {
             continue;
         }
-        let start = property.raw_xml.find(&value.raw_xml).ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "property {} no longer contains retained value {}",
+        if property.raw_xml[start..end] != value.raw_xml {
+            return Err(CodecError::Malformed(format!(
+                "property {} retained value {} disagrees with provenance",
                 property.id, value.order
-            ))
-        })?;
-        let end = start + value.raw_xml.len();
+            )));
+        }
         edits.push((start, end, serialized));
     }
     edits.sort_by_key(|(start, _, _)| *start);
@@ -362,7 +382,71 @@ pub(crate) fn escape_xml(value: &str, output: &mut String, attribute: bool) {
             '>' => output.push_str("&gt;"),
             '"' if attribute => output.push_str("&quot;"),
             '\'' if attribute => output.push_str("&apos;"),
+            '\t' => output.push_str("&#9;"),
+            '\n' => output.push_str("&#10;"),
+            '\r' => output.push_str("&#13;"),
             other => output.push(other),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn property_edits_use_value_order_when_raw_xml_is_identical() {
+        let raw_value = r#"<String value="same"/>"#;
+        let mut values = (0..2)
+            .map(|order| ValueRecord {
+                tag: "String".into(),
+                order,
+                attributes: [("value".into(), "same".into())].into(),
+                text: None,
+                raw_xml: raw_value.into(),
+            })
+            .collect::<Vec<_>>();
+        values[1]
+            .attributes
+            .insert("value".into(), "changed".into());
+        let property = PropertyRecord {
+            id: "test:property#values".into(),
+            owner: "test:object#owner".into(),
+            name: "Values".into(),
+            type_name: "App::PropertyStringList".into(),
+            family: crate::native::PropertyFamily::List,
+            status: None,
+            transient: false,
+            dynamic: None,
+            order: 0,
+            values,
+            links: Vec::new(),
+            side_entries: Vec::new(),
+            raw_xml: format!(
+                r#"<Property name="Values" type="App::PropertyStringList">{raw_value}{raw_value}</Property>"#
+            ),
+            byte_start: 0,
+            byte_end: 0,
+        };
+        let output = String::from_utf8(serialize_property(&property).unwrap()).unwrap();
+        assert_eq!(output.matches(r#"value="same""#).count(), 1);
+        assert_eq!(output.matches(r#"value="changed""#).count(), 1);
+        assert!(output.find("same").unwrap() < output.find("changed").unwrap());
+    }
+
+    #[test]
+    fn xml_serialization_preserves_normalized_whitespace() {
+        let value = ValueRecord {
+            tag: "String".into(),
+            order: 0,
+            attributes: [("value".into(), "a\tb\nc\rd".into())].into(),
+            text: Some("a\tb\nc\rd".into()),
+            raw_xml: r#"<String value="old">old</String>"#.into(),
+        };
+        let serialized = serialize_value(&value).unwrap();
+        assert!(serialized.contains("a&#9;b&#10;c&#13;d"));
+        assert_eq!(serialized.matches("&#9;").count(), 2);
+        assert_eq!(serialized.matches("&#10;").count(), 2);
+        assert_eq!(serialized.matches("&#13;").count(), 2);
     }
 }

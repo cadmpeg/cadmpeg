@@ -179,6 +179,13 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
 
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
 pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
+    curve_point_inner(geometry, t, 0)
+}
+
+fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<Point3> {
+    if depth > 256 {
+        return None;
+    }
     match geometry {
         CurveGeometry::Line { origin, direction } => Some(offset(*origin, &[(t, *direction)])),
         CurveGeometry::Circle {
@@ -218,7 +225,7 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
             points, parameters, ..
         } => polyline_point(points, parameters.as_deref(), t),
         CurveGeometry::Transformed { basis, transform } => {
-            curve_point(basis, t).map(|point| affine_point(*transform, point))
+            curve_point_inner(basis, t, depth + 1).map(|point| affine_point(*transform, point))
         }
         CurveGeometry::Parabola { .. }
         | CurveGeometry::Hyperbola { .. }
@@ -230,6 +237,13 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
 /// the azimuth angle and `v` the axial distance / polar angle on analytic
 /// quadrics, and both are knot-domain parameters on NURBS surfaces.
 pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point3> {
+    surface_point_inner(geometry, u, v, 0)
+}
+
+fn surface_point_inner(geometry: &SurfaceGeometry, u: f64, v: f64, depth: usize) -> Option<Point3> {
+    if depth > 256 {
+        return None;
+    }
     match geometry {
         SurfaceGeometry::Plane {
             origin,
@@ -303,7 +317,7 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
         SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point(nurbs, u, v),
         SurfaceGeometry::Polygonal { .. } => None,
         SurfaceGeometry::Transformed { basis, transform } => {
-            surface_point(basis, u, v).map(|point| affine_point(*transform, point))
+            surface_point_inner(basis, u, v, depth + 1).map(|point| affine_point(*transform, point))
         }
         SurfaceGeometry::Unknown { .. } => None,
     }
@@ -362,6 +376,13 @@ fn affine_point(transform: Transform, point: Point3) -> Point3 {
 
 /// Evaluate a pcurve carrier at parameter `t`, yielding a surface `(u, v)`.
 pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
+    pcurve_uv_inner(geometry, t, 0)
+}
+
+fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Point2> {
+    if depth > 256 {
+        return None;
+    }
     match geometry {
         PcurveGeometry::Line { origin, direction } => Some(Point2::new(
             origin.u + t * direction.u,
@@ -419,7 +440,7 @@ pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
             weights,
             ..
         } => nurbs_pcurve_uv(*degree, knots, control_points, weights.as_deref(), t),
-        PcurveGeometry::Trimmed { basis, .. } => pcurve_uv(basis, t),
+        PcurveGeometry::Trimmed { basis, .. } => pcurve_uv_inner(basis, t, depth + 1),
         // Exact offset evaluation also requires the basis tangent. The IR
         // retains the exact construction even when this point-only evaluator
         // cannot establish a stable tangent.

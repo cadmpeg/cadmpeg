@@ -281,9 +281,14 @@ fn migrate_previous_external_documents(value: &mut serde_json::Value) {
             continue;
         };
         if let Some(identity) = document.as_str().map(str::to_owned) {
+            let resolution = if identity.is_empty() {
+                "missing_reference"
+            } else {
+                "unresolved"
+            };
             *document = serde_json::json!({
                 "document_id": identity,
-                "resolution": "unresolved"
+                "resolution": resolution
             });
         }
     }

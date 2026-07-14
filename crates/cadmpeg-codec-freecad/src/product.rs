@@ -382,6 +382,12 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
             .max()
             .expect("nonempty lengths")
         });
+    if count > 1_000_000 || u32::try_from(count).is_err() {
+        return Err(CodecError::Malformed(format!(
+            "{} link-array count limit exceeded",
+            record.id
+        )));
+    }
     if count == 0
         || [
             record.element_transforms.len(),

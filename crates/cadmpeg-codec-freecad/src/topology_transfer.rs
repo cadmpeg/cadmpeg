@@ -315,6 +315,7 @@ impl<'a> Builder<'a> {
             Transform::identity(),
             root.reversed,
             &mut regions,
+            0,
         )?;
         if regions.is_empty() {
             ir.model.tessellations.truncate(tessellation_start);
@@ -332,6 +333,7 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)] // Depth is explicit to bound hostile topology nesting.
     fn append_shape_regions(
         &mut self,
         ir: &mut CadIr,
@@ -340,7 +342,13 @@ impl<'a> Builder<'a> {
         transform: Transform,
         reversed: bool,
         output: &mut Vec<RegionId>,
+        depth: usize,
     ) -> Result<(), CodecError> {
+        if depth > 256 {
+            return Err(CodecError::Malformed(
+                "topology nesting limit exceeded".into(),
+            ));
+        }
         let shape = self.shape(shape_index)?.clone();
         if matches!(
             shape.kind,
@@ -354,6 +362,7 @@ impl<'a> Builder<'a> {
                     multiply(transform, self.tables.location(child.location)),
                     reversed ^ is_reversed(child.orientation),
                     output,
+                    depth + 1,
                 )?;
             }
             return Ok(());

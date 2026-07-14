@@ -3799,6 +3799,26 @@ fn retains_ordered_document_level_gui_state() {
 }
 
 #[test]
+fn gui_property_counts_ignore_nested_extension_properties() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="0"/><Extension name="Nested"><Properties Count="1"><Property name="NestedValue" type="App::PropertyString"><String value="kept by extension"/></Property></Properties></Extension></ViewProvider>
+</ViewProviderData></Document>"#;
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("nested extension properties do not alter the provider's direct count");
+}
+
+#[test]
 fn recovers_techdraw_page_template_and_view_graph() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -4306,13 +4326,14 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
 #[test]
 fn transfers_partdesign_mixed_extrusion_side_controls() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="4">
+<Objects Count="5">
  <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
  <Object type="Part::Box" name="Target" id="2"/>
  <Object type="PartDesign::Pad" name="Mixed" id="3"/>
  <Object type="PartDesign::Pocket" name="Symmetric" id="4"/>
+ <Object type="PartDesign::Pad" name="LegacyTwoLengths" id="5"/>
 </Objects>
-<ObjectData Count="4">
+<ObjectData Count="5">
  <Object name="Profile"><Properties Count="0"/></Object>
  <Object name="Target"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="Mixed"><Properties Count="15">
@@ -4337,6 +4358,12 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
   <Property name="SideType" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Offset" type="App::PropertyDistance"><Float value="0.5"/></Property>
+ </Properties></Object>
+ <Object name="LegacyTwoLengths"><Properties Count="4">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="4"/></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="6"/></Property>
+  <Property name="Length2" type="App::PropertyLength"><Float value="2"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -4385,6 +4412,14 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             first_offset: Some(Length(0.5)),
             ..
         } if matches!(extent.as_ref(), Extent::ThroughAll)
+    ));
+    assert!(matches!(
+        definition("LegacyTwoLengths"),
+        FeatureDefinition::Extrude {
+            extent: Extent::TwoSidedExtents { first, second },
+            ..
+        } if matches!(first.as_ref(), Extent::Blind { length: Length(6.0) })
+            && matches!(second.as_ref(), Extent::Blind { length: Length(2.0) })
     ));
     assert!(result.report.losses.is_empty());
 }
@@ -5752,6 +5787,7 @@ fn inspects_and_closes_physical_ledger() {
     assert_eq!(ledger.first().map(|span| span.start), Some(0));
     assert_eq!(ledger.last().map(|span| span.end), Some(archive_len));
     assert!(ledger.windows(2).all(|pair| pair[0].end == pair[1].start));
+    assert!(crate::validate_native(&result.ir).is_empty());
     for role in [
         "local-signature",
         "local-fields",

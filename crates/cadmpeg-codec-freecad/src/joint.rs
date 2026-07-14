@@ -36,29 +36,43 @@ pub(crate) fn transfer(
         if !grounded && joint_type.is_none() {
             continue;
         }
-        let references = if grounded {
-            links(&owned, "ObjectToGround")
+        let (references, placements, offsets) = if grounded {
+            (
+                links(&owned, "ObjectToGround"),
+                placement(&owned, "Placement").into_iter().collect(),
+                Vec::new(),
+            )
         } else {
-            ["Reference1", "Reference2"]
-                .into_iter()
-                .flat_map(|name| links(&owned, name))
-                .collect()
-        };
-        let placements = if grounded {
-            placement(&owned, "Placement").into_iter().collect()
-        } else {
-            ["Placement1", "Placement2"]
-                .into_iter()
-                .filter_map(|name| placement(&owned, name))
-                .collect()
-        };
-        let offsets = if grounded {
-            Vec::new()
-        } else {
-            ["Offset1", "Offset2"]
-                .into_iter()
-                .filter_map(|name| placement(&owned, name))
-                .collect()
+            let slots = [
+                (
+                    links(&owned, "Reference1"),
+                    placement(&owned, "Placement1"),
+                    placement(&owned, "Offset1"),
+                ),
+                (
+                    links(&owned, "Reference2"),
+                    placement(&owned, "Placement2"),
+                    placement(&owned, "Offset2"),
+                ),
+            ]
+            .into_iter()
+            .filter(|(references, _, _)| !references.is_empty())
+            .collect::<Vec<_>>();
+            let references = slots
+                .iter()
+                .flat_map(|(references, _, _)| references.clone())
+                .collect();
+            let placements = slots
+                .iter()
+                .map(|(_, placement, _)| *placement)
+                .collect::<Option<Vec<_>>>()
+                .unwrap_or_default();
+            let offsets = slots
+                .iter()
+                .map(|(_, _, offset)| *offset)
+                .collect::<Option<Vec<_>>>()
+                .unwrap_or_default();
+            (references, placements, offsets)
         };
         let parameters = owned
             .iter()

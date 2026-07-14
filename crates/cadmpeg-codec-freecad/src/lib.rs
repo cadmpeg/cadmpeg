@@ -1195,6 +1195,7 @@ impl Codec for FcstdCodec {
         namespace.version = native::VERSION;
         namespace.set_arena("document", std::slice::from_ref(&scan.document))?;
         namespace.set_arena("physical_ledger", &scan.ledger)?;
+        #[allow(clippy::if_not_else)] // The full-decode path remains the primary linear flow.
         if !options.container_only {
             let document_bytes = scan.data.get("Document.xml").ok_or_else(|| {
                 CodecError::Malformed("Document.xml disappeared after scan".into())
@@ -1382,6 +1383,12 @@ impl Codec for FcstdCodec {
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena("element_maps", &element_maps)?;
+        } else {
+            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.end);
+            let coverage = byte_coverage(&scan.ledger, &[], &[], physical_byte_len);
+            ir.native
+                .namespace_mut("fcstd")
+                .set_arena("byte_coverage", std::slice::from_ref(&coverage))?;
         }
         let losses = if options.container_only {
             Vec::new()

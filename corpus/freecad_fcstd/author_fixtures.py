@@ -44,7 +44,7 @@ def normalize_fcstd(target):
         history_tags = {}
         design_tags = {}
         element_map_child_ids = {}
-        link_owner_ids = {}
+        object_ids = {}
 
         def stable_persistent_id(match):
             source_id = match.group(1)
@@ -76,9 +76,13 @@ def normalize_fcstd(target):
 
         def stable_link_owner_id(match):
             source_id = match.group(2)
-            target_id = link_owner_ids.setdefault(
-                source_id, str(len(link_owner_ids) + 1).encode()
-            )
+            target_id = object_ids.get(source_id, source_id)
+            return match.group(1) + target_id + match.group(3)
+
+        def stable_object_id(match):
+            source_id = match.group(2)
+            target_id = str(len(object_ids) + 1).encode()
+            object_ids[source_id] = target_id
             return match.group(1) + target_id + match.group(3)
 
         for source_info in archive.infolist():
@@ -92,10 +96,9 @@ def normalize_fcstd(target):
                 objects_start = data.index(b"<Objects ")
                 objects_end = data.index(b"</Objects>", objects_start)
                 declarations = data[objects_start:objects_end]
-                next_object_id = iter(range(1, 1000000))
                 declarations = re.sub(
-                    rb' id="[0-9]+"',
-                    lambda _: f' id="{next(next_object_id)}"'.encode(),
+                    rb'( id=")([0-9]+)(")',
+                    stable_object_id,
                     declarations,
                 )
                 data = data[:objects_start] + declarations + data[objects_end:]

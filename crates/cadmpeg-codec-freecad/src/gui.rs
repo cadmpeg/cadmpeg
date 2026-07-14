@@ -116,16 +116,16 @@ pub(crate) fn transfer(
             &mut native_providers,
             &mut native_properties,
         )?;
-        let property_nodes = provider
-            .descendants()
-            .filter(|node| node.has_tag_name("Property"))
-            .collect::<Vec<_>>();
         let properties_node = provider
             .children()
             .find(|node| node.has_tag_name("Properties"))
             .ok_or_else(|| {
                 CodecError::Malformed(format!("ViewProvider {name} has no Properties"))
             })?;
+        let property_nodes = properties_node
+            .children()
+            .filter(|node| node.has_tag_name("Property"))
+            .collect::<Vec<_>>();
         let declared = properties_node
             .attribute("Count")
             .and_then(|value| value.parse::<usize>().ok())

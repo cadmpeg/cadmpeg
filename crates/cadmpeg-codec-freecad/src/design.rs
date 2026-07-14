@@ -1844,12 +1844,91 @@ fn build_profiles(entities: &[SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
 fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
     match entity.geometry {
         SketchGeometry::Line { start, end } => Some((start, end)),
+        SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => Some((
+            Point2::new(
+                center.u + radius.0 * start_angle.0.cos(),
+                center.v + radius.0 * start_angle.0.sin(),
+            ),
+            Point2::new(
+                center.u + radius.0 * end_angle.0.cos(),
+                center.v + radius.0 * end_angle.0.sin(),
+            ),
+        )),
+        SketchGeometry::Ellipse {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            start_angle: Some(start),
+            end_angle: Some(end),
+        } => {
+            let point = |parameter: f64| {
+                let major = Point2::new(major_angle.0.cos(), major_angle.0.sin());
+                let minor = Point2::new(-major.v, major.u);
+                Point2::new(
+                    center.u
+                        + major_radius.0 * parameter.cos() * major.u
+                        + minor_radius.0 * parameter.sin() * minor.u,
+                    center.v
+                        + major_radius.0 * parameter.cos() * major.v
+                        + minor_radius.0 * parameter.sin() * minor.v,
+                )
+            };
+            Some((point(start.0), point(end.0)))
+        }
         _ => None,
     }
 }
 
 fn near(a: Point2, b: Point2) -> bool {
     (a.u - b.u).abs() <= 1e-9 && (a.v - b.v).abs() <= 1e-9
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+
+    fn entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
+        SketchEntity {
+            id: cadmpeg_ir::sketches::SketchEntityId(id.into()),
+            sketch: SketchId("test:sketch#curved".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        }
+    }
+
+    #[test]
+    fn curved_segments_chain_by_their_evaluated_endpoints() {
+        let entities = [
+            entity(
+                "test:entity#line",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, 1.0),
+                    end: Point2::new(0.0, 0.0),
+                },
+            ),
+            entity(
+                "test:entity#arc",
+                SketchGeometry::Arc {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length(1.0),
+                    start_angle: cadmpeg_ir::features::Angle(0.0),
+                    end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+                },
+            ),
+        ];
+        let profiles = build_profiles(&entities);
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].len(), 2);
+    }
 }
 
 fn profile_ref(properties: &[&PropertyRecord], sketches: &HashMap<&str, SketchId>) -> ProfileRef {
@@ -2292,13 +2371,20 @@ fn extrusion_definition(
             allow_multi_profile_faces: None,
         });
     }
+    let legacy_two_lengths = property(properties, "SideType").is_none()
+        && integer_property(properties, "Type") == Some(4);
     let termination = |side: u8| {
         let suffix = if side == 1 { "" } else { "2" };
         let type_name = format!("Type{suffix}");
         let length_name = format!("Length{suffix}");
         let face_name = format!("UpToFace{suffix}");
         let shape_name = format!("UpToShape{suffix}");
-        match integer_property(properties, &type_name).unwrap_or(0) {
+        let termination_type = if legacy_two_lengths {
+            0
+        } else {
+            integer_property(properties, &type_name).unwrap_or(0)
+        };
+        match termination_type {
             0 => Some(Extent::Blind {
                 length: Length(
                     scalar_named(properties, &length_name).filter(|value| *value != 0.0)?,

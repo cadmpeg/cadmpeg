@@ -492,7 +492,7 @@ pub fn parse_payloads(
                 ShapePayloadForm::Binary => (None, Some(parse_binary_prefix(&entry.data)?)),
             };
             payloads.push(ShapePayloadRecord {
-                id: crate::native::native_child_id("shape-payload", &property.id, "shape"),
+                id: crate::native::native_child_id("shape-payload", &property.id, name),
                 property: property.id.clone(),
                 entry: entry.id.clone(),
                 form,
@@ -687,6 +687,7 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
     };
     let tokens = text.split_ascii_whitespace().collect::<Vec<_>>();
     let mut section_counts = BTreeMap::new();
+    let mut previous_section = None;
     for section in [
         "Locations",
         "Curve2ds",
@@ -705,6 +706,17 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
             .get(index + 1)
             .and_then(|value| value.parse::<usize>().ok())
             .ok_or_else(|| CodecError::Malformed(format!("invalid {section} count")))?;
+        if count > 1_000_000 {
+            return Err(CodecError::Malformed(format!(
+                "{section} count limit exceeded"
+            )));
+        }
+        if previous_section.is_some_and(|previous| index <= previous) {
+            return Err(CodecError::Malformed(format!(
+                "text B-rep {section} table is out of order"
+            )));
+        }
+        previous_section = Some(index);
         section_counts.insert(section.to_owned(), count);
     }
     let tshapes = tokens
@@ -3495,7 +3507,7 @@ mod tests {
             order: 0,
             values: Vec::new(),
             links: Vec::new(),
-            side_entries: vec!["empty.brp".into()],
+            side_entries: vec!["empty.brp".into(), "empty-2.brp".into()],
             raw_xml: String::new(),
             byte_start: 0,
             byte_end: 0,
@@ -3509,8 +3521,19 @@ mod tests {
             referenced_by: vec![property.id.clone()],
             data: Vec::new(),
         };
-        let payloads = parse_payloads(&[property], &[entry]).expect("empty shape payload");
-        assert_eq!(payloads.len(), 1);
+        let second_entry = EntryRecord {
+            id: crate::native::native_id("entry", "empty-2.brp"),
+            name: "empty-2.brp".into(),
+            role: "brep".into(),
+            byte_len: 0,
+            sha256: cadmpeg_ir::hash::sha256_hex(b""),
+            referenced_by: vec![property.id.clone()],
+            data: Vec::new(),
+        };
+        let payloads =
+            parse_payloads(&[property], &[entry, second_entry]).expect("empty shape payload");
+        assert_eq!(payloads.len(), 2);
+        assert_ne!(payloads[0].id, payloads[1].id);
         assert_eq!(payloads[0].form, ShapePayloadForm::Empty);
         assert!(payloads[0].text.is_none());
         assert!(payloads[0].binary.is_none());
@@ -3752,5 +3775,20 @@ mod tests {
         assert_eq!(representations[0].parameter_range, Some([0.0, 1.0]));
         assert_eq!(facts.roots.len(), 1);
         assert_eq!(facts.roots[0].shape, 8);
+    }
+
+    #[test]
+    fn rejects_oversized_and_out_of_order_text_tables() {
+        let oversized = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 1000001\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        assert!(parse_text(oversized)
+            .expect_err("oversized table")
+            .to_string()
+            .contains("count limit"));
+
+        let out_of_order = b"CASCADE Topology V1, (c) Matra-Datavision\nCurve2ds 0\nLocations 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        assert!(parse_text(out_of_order)
+            .expect_err("out-of-order table")
+            .to_string()
+            .contains("out of order"));
     }
 }

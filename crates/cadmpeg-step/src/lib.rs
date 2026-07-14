@@ -53,9 +53,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::io::Write;
 
 use cadmpeg_ir::codec::{CodecError, Encoder};
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::{Curve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry};
 use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::{Coedge, Edge, Point, Sense, Vertex};
 use cadmpeg_ir::CadIr;
@@ -671,7 +669,7 @@ impl<'a> Builder<'a> {
         // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
         // loss rather than fabricate placeholder geometry.
         if let Some(surf) = self.surfaces.get(surface_id.as_str()) {
-            if matches!(surf.geometry, SurfaceGeometry::Unknown { .. }) {
+            if !geometry::surface_is_supported(&surf.geometry) {
                 self.unknown_surface_faces.insert(face_id.to_string());
                 return None;
             }
@@ -755,7 +753,7 @@ impl<'a> Builder<'a> {
         if self
             .curves
             .get(curve_id.as_str())
-            .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+            .is_some_and(|curve| !geometry::curve_is_supported(&curve.geometry))
         {
             self.curveless_edges.insert(edge_id.to_string());
             return None;

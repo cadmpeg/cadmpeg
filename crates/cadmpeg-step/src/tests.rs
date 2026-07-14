@@ -548,6 +548,44 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
 }
 
 #[test]
+fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
+    let mut polygonal = unit_cube();
+    let surface_id = polygonal.model.faces[0].surface.clone();
+    polygonal
+        .model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == surface_id)
+        .unwrap()
+        .geometry = SurfaceGeometry::Polygonal {
+        vertices: Vec::new(),
+        triangles: Vec::new(),
+        chordal_deflection: 0.1,
+    };
+    write_step(&polygonal, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("polygonal face is reported as an export loss");
+
+    let mut nested_unknown = unit_cube();
+    let curve_id = nested_unknown.model.edges[0].curve.clone().unwrap();
+    nested_unknown
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry = CurveGeometry::Transformed {
+        basis: Box::new(CurveGeometry::Unknown { record: None }),
+        transform: cadmpeg_ir::transform::Transform::identity(),
+    };
+    write_step(
+        &nested_unknown,
+        &mut Vec::new(),
+        &StepWriteOptions::default(),
+    )
+    .expect("transformed unknown curve is reported as an export loss");
+}
+
+#[test]
 fn signed_analytic_radius_normalization_is_reported() {
     let mut ir = unit_cube();
     ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere {

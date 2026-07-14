@@ -28,7 +28,7 @@ pub(crate) fn id_key(id: &str) -> &str {
 fn encode_id_key(value: &str) -> String {
     let mut output = String::with_capacity(value.len());
     for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':' | b'/') {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
             output.push(char::from(byte));
         } else {
             use std::fmt::Write;
@@ -49,6 +49,7 @@ mod tests {
             "fcstd:native:object#A%20B%23C"
         );
         assert_eq!(native_id("object", "A%20B"), "fcstd:native:object#A%2520B");
+        assert_eq!(native_id("object", "A:B"), "fcstd:native:object#A%3AB");
         let property = native_child_id("property", &native_id("object", "A B"), "Shape Value");
         assert_eq!(property, "fcstd:native:property#A%20B:Shape%20Value");
         assert_eq!(

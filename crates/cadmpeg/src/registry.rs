@@ -42,13 +42,19 @@ impl Registry {
 
     /// Return the strongest codec match above [`Confidence::No`].
     pub fn detect<'a>(&'a self, prefix: &[u8]) -> Option<(&'a dyn Codec, Confidence)> {
-        // `max_by_key` selects the last registered codec on a tie. Built-in
-        // magic values do not overlap; keep tie resolution deterministic.
+        // Earlier codecs have explicit precedence when generic container
+        // signatures tie; deeper inspection will still validate the choice.
         self.codecs
             .iter()
             .map(|c| (c.as_ref(), c.detect(prefix)))
             .filter(|(_, conf)| *conf > Confidence::No)
-            .max_by_key(|(_, conf)| *conf)
+            .reduce(|best, candidate| {
+                if candidate.1 > best.1 {
+                    candidate
+                } else {
+                    best
+                }
+            })
     }
 
     /// Return the codec with the given stable format identifier.
@@ -89,5 +95,13 @@ mod tests {
                 format.name()
             );
         }
+    }
+
+    #[test]
+    fn ambiguous_zip_uses_first_registered_codec_precedence() {
+        let registry = Registry::with_builtins();
+        let (codec, confidence) = registry.detect(b"PK\x03\x04 markerless").unwrap();
+        assert_eq!(codec.id(), "fcstd");
+        assert_eq!(confidence, cadmpeg_ir::codec::Confidence::Low);
     }
 }
