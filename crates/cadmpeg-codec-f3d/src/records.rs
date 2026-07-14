@@ -718,6 +718,9 @@ pub struct DesignConstructionOperandGroup {
     pub member_count_offset: u64,
     /// Ordered operand-record references.
     pub members: Vec<u32>,
+    /// Ordered unresolved-edge records whose run terminates at this group's identity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lost_edge_references: Vec<String>,
     /// Byte offsets parallel to `members`.
     pub member_offsets: Vec<u64>,
     /// Indexed identity-wrapper record.

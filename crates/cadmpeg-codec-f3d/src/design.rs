@@ -360,8 +360,19 @@ pub fn project_parameter_design(
                             })
                             .map(|parameter| parameter.evaluated_value)
                             .filter(|weight| weight.is_finite());
+                        let edges = construction_groups
+                            .iter()
+                            .find(|group| {
+                                native_stream(&group.id) == Some(native_scope)
+                                    && group.record_index == assignment.group_record_index
+                            })
+                            .filter(|group| !group.lost_edge_references.is_empty())
+                            .map_or_else(
+                                || EdgeSelection::Native(assignment.id.clone()),
+                                |_| EdgeSelection::Unresolved,
+                            );
                         FilletGroup {
-                            edges: EdgeSelection::Native(assignment.id.clone()),
+                            edges,
                             radius,
                             tangency_weight,
                         }
@@ -433,8 +444,17 @@ pub fn project_parameter_design(
                     } else {
                         (None, None)
                     };
+                let edges = if construction_groups.iter().any(|group| {
+                    native_stream(&group.id) == Some(native_scope)
+                        && group.scope_record_index == scope.record_index
+                        && !group.lost_edge_references.is_empty()
+                }) {
+                    EdgeSelection::Unresolved
+                } else {
+                    EdgeSelection::Native(scope.id.clone())
+                };
                 FeatureDefinition::Chamfer {
-                    edges: EdgeSelection::Native(scope.id.clone()),
+                    edges,
                     spec: spec
                         .filter(valid_chamfer_spec)
                         .unwrap_or(ChamferSpec::Unresolved { form }),
@@ -4078,6 +4098,7 @@ fn parse_construction_operand_group(
         class_tag: header.class_tag.clone(),
         member_count_offset: u64::try_from(start + 21).ok()?,
         members,
+        lost_edge_references: Vec::new(),
         member_offsets,
         identity_record_index,
         identity_record_offset: u64::try_from(position + 7).ok()?,
@@ -4133,6 +4154,92 @@ pub fn decode_construction_operand_identities(
     }
     out.sort_by_key(|identity| identity.id.clone());
     Ok(out)
+}
+
+/// Bind a contiguous unresolved-edge run to the construction group whose
+/// first identity wrapper terminates that run.
+pub fn bind_lost_edge_groups(
+    groups: &mut [DesignConstructionOperandGroup],
+    identities: &[DesignConstructionOperandIdentity],
+    lost_edges: &[LostEdgeReference],
+) -> Result<(), CodecError> {
+    for group in groups {
+        group.lost_edge_references.clear();
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let mut identity_matches = identities.iter().filter(|identity| {
+            native_stream(&identity.id) == Some(stream)
+                && identity.group_record_index == group.record_index
+        });
+        let Some(identity) = identity_matches.next() else {
+            continue;
+        };
+        if identity_matches.next().is_some() {
+            return Err(CodecError::Malformed(format!(
+                "Fusion construction group {} has multiple identity chains",
+                group.record_index
+            )));
+        }
+        let Some((wrapper_record_index, wrapper_byte_offset, wrapper_class_tag)) = identity
+            .wrapper_record_indices
+            .first()
+            .zip(identity.wrapper_byte_offsets.first())
+            .zip(identity.wrapper_class_tags.first())
+            .map(|((record_index, byte_offset), class_tag)| {
+                (*record_index, *byte_offset, class_tag.as_str())
+            })
+        else {
+            continue;
+        };
+        let mut stream_edges = lost_edges
+            .iter()
+            .filter(|edge| native_stream(&edge.id) == Some(stream))
+            .collect::<Vec<_>>();
+        stream_edges.sort_by_key(|edge| edge.record_byte_offset);
+        let terminals = stream_edges
+            .iter()
+            .enumerate()
+            .filter(|(_, edge)| {
+                edge.next_record_index == wrapper_record_index
+                    && edge.next_byte_offset == wrapper_byte_offset
+                    && edge.next_class_tag == wrapper_class_tag
+            })
+            .map(|(ordinal, _)| ordinal)
+            .collect::<Vec<_>>();
+        let [terminal] = terminals.as_slice() else {
+            if terminals.is_empty() {
+                continue;
+            }
+            return Err(CodecError::Malformed(format!(
+                "Fusion construction group {} has multiple terminating lost-edge runs",
+                group.record_index
+            )));
+        };
+        let mut start = *terminal;
+        while start > 0 {
+            let previous = stream_edges[start - 1];
+            let current = stream_edges[start];
+            if previous.next_byte_offset != current.record_byte_offset
+                || previous.next_record_index != current.record_index
+                || previous.next_class_tag != current.class_tag
+            {
+                break;
+            }
+            start -= 1;
+        }
+        let run = &stream_edges[start..=*terminal];
+        if run.len() != group.members.len() {
+            return Err(CodecError::Malformed(format!(
+                "Fusion construction group {} has {} operands but its lost-edge run has {} records",
+                group.record_index,
+                group.members.len(),
+                run.len()
+            )));
+        }
+        group.lost_edge_references = run.iter().map(|edge| edge.id.clone()).collect();
+    }
+    Ok(())
 }
 
 fn parse_construction_operand_identity(
@@ -6647,11 +6754,11 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 mod relation_tests {
     use super::{
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
-        bind_face_operand_candidates, bind_sketch_graph, companion_owned_interval,
-        decode_fillet_radius_groups, directional_point_dimension, exact_atomic_constraint,
-        exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
-        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
-        indirect_angular_lines, neutral_sketch_id, next_indexed_record_offset,
+        bind_face_operand_candidates, bind_lost_edge_groups, bind_sketch_graph,
+        companion_owned_interval, decode_fillet_radius_groups, directional_point_dimension,
+        exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
+        exact_offset_constraint, find_dimension_locus_groups, find_dimension_locus_pair,
+        identity_matrix, indirect_angular_lines, neutral_sketch_id, next_indexed_record_offset,
         parse_construction_operand_group, parse_construction_operand_identity,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -6667,8 +6774,8 @@ mod relation_tests {
         DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
         DesignExtrudeStart, DesignObjectKind, DesignParameterCompanion, DesignParameterKind,
         DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-        SketchPoint, SketchRelation, SketchRelationOperand,
+        LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
+        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ParameterValue};
@@ -7363,6 +7470,7 @@ mod relation_tests {
             class_tag: "332".into(),
             member_count_offset: 1021,
             members: vec![200],
+            lost_edge_references: Vec::new(),
             member_offsets: vec![1026],
             identity_record_index: 300,
             identity_record_offset: 1043,
@@ -7408,10 +7516,38 @@ mod relation_tests {
         assert_eq!(identity.following_byte_offset, 48);
         let persistent = identity
             .persistent_identity
+            .as_ref()
             .expect("fixed persistent identity leaf");
         assert_eq!(persistent.local_id, 586);
         assert_eq!(persistent.next_record_index, 900);
         assert_eq!(persistent.next_byte_offset, 238);
+
+        let mut bound_group = group;
+        let mut terminating_identity = identity;
+        terminating_identity.id =
+            "f3d:Design/BulkStream.dat:design-construction-operand-identity#200".into();
+        terminating_identity.wrapper_byte_offsets[0] = 200;
+        bind_lost_edge_groups(
+            std::slice::from_mut(&mut bound_group),
+            std::slice::from_ref(&terminating_identity),
+            &[LostEdgeReference {
+                id: "f3d:Design/BulkStream.dat:lost-edge-reference#152".into(),
+                record_byte_offset: 152,
+                class_tag_offset: 156,
+                class_tag: "419".into(),
+                record_index: 299,
+                record_index_offset: 159,
+                byte_offset: 181,
+                next_byte_offset: 200,
+                next_class_tag: "326".into(),
+                next_record_index: 300,
+            }],
+        )
+        .expect("lost-edge run terminates at the group identity");
+        assert_eq!(
+            bound_group.lost_edge_references,
+            ["f3d:Design/BulkStream.dat:lost-edge-reference#152"]
+        );
     }
 
     #[test]
@@ -7693,6 +7829,7 @@ mod relation_tests {
             class_tag: "306".into(),
             member_count_offset: 920,
             members: vec![operand.record_index],
+            lost_edge_references: Vec::new(),
             member_offsets: vec![924],
             identity_record_index: 91,
             identity_record_offset: 935,
@@ -8843,6 +8980,7 @@ mod relation_tests {
             class_tag: "332".into(),
             member_count_offset: 1021,
             members: vec![200],
+            lost_edge_references: Vec::new(),
             member_offsets: vec![1026],
             identity_record_index: 300,
             identity_record_offset: 1044,
@@ -9199,6 +9337,7 @@ mod relation_tests {
                 .map(|index| 1026 + u64::from(ordinal) * 200 + index as u64 * 11)
                 .collect(),
             members,
+            lost_edge_references: Vec::new(),
             identity_record_index: 300 + ordinal,
             identity_record_offset: 1100 + u64::from(ordinal) * 200,
             role: 0x0000_0008_0000_0000,
@@ -9213,7 +9352,7 @@ mod relation_tests {
             paired_class_tag: "259".into(),
             paired_byte_offset: 1200 + u64::from(ordinal) * 200,
         };
-        let groups = [group(100, 0, vec![200]), group(101, 1, vec![201, 202])];
+        let mut groups = [group(100, 0, vec![200]), group(101, 1, vec![201, 202])];
         let parameter = |owner_index, record_index, source_kind: &str, unit, value| {
             let mut parameter = parse_design_parameter(&parameter_record(
                 Some(owner_index),
@@ -9269,6 +9408,9 @@ mod relation_tests {
             assignments[1].tangency_weight_parameter_record_index,
             Some(41)
         );
+        groups[0]
+            .lost_edge_references
+            .push("f3d:native:lost-edge-reference#1".into());
 
         let (features, _) = project_parameter_design(
             &parameters,
@@ -9286,12 +9428,12 @@ mod relation_tests {
         assert!(matches!(
             &groups[0],
             cadmpeg_ir::features::FilletGroup {
-                edges: cadmpeg_ir::features::EdgeSelection::Native(selection),
+                edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
                 radius: cadmpeg_ir::features::RadiusSpec::Constant {
                     radius: cadmpeg_ir::features::Length(5.0),
                 },
                 tangency_weight: Some(1.0),
-            } if selection == &assignments[0].id
+            }
         ));
         assert!(matches!(
             &groups[1],

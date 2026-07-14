@@ -881,6 +881,11 @@ fn extend_related_design_records(
             &native.design_construction_operand_groups,
             &native.design_record_headers,
         )?;
+    crate::design::bind_lost_edge_groups(
+        &mut native.design_construction_operand_groups,
+        &native.design_construction_operand_identities,
+        &native.lost_edge_references,
+    )?;
     let indices = native
         .design_construction_operand_identities
         .iter()
