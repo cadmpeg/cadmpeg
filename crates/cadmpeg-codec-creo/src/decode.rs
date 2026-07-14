@@ -6171,6 +6171,41 @@ mod resolved_sketch_tests {
             parallel_cylinder([4.0, 0.0, 0.0], 3.0),
         )
         .is_none());
+
+        let sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [0.0, 0.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 2.0,
+        });
+        let equator = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+        });
+        assert!(matches!(
+            carrier_intersection_curve(equator, sphere),
+            Some((CurveGeometry::Circle { center, radius, .. }, "plane_sphere_circle"))
+                if center == Point3::new(0.0, 0.0, 0.0) && radius == 2.0
+        ));
+        assert_eq!(solve_carriers(&[equator, secant, sphere]), None);
+        assert_eq!(
+            solve_carriers(&[equator, tangent, sphere]),
+            Some([2.0, 0.0, 0.0])
+        );
+        let second_sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [4.0, 0.0, 0.0],
+            ref_direction: [0.0, 1.0, 0.0],
+            radius: 3.0,
+        });
+        let first_sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [0.0, 0.0, 0.0],
+            ref_direction: [0.0, 1.0, 0.0],
+            radius: 3.0,
+        });
+        assert!(matches!(
+            carrier_intersection_curve(first_sphere, second_sphere),
+            Some((CurveGeometry::Circle { center, radius, .. }, "sphere_intersection_circle"))
+                if center.x == 2.0 && (radius - 5.0_f64.sqrt()).abs() < 1e-12
+        ));
     }
 }
 
@@ -6189,9 +6224,17 @@ struct CylinderEquation {
 }
 
 #[derive(Clone, Copy)]
+struct SphereEquation {
+    center: [f64; 3],
+    ref_direction: [f64; 3],
+    radius: f64,
+}
+
+#[derive(Clone, Copy)]
 enum CarrierEquation {
     Plane(PlaneEquation),
     Cylinder(CylinderEquation),
+    Sphere(SphereEquation),
 }
 
 fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
@@ -6300,6 +6343,51 @@ fn intersect_two_planes_with_cylinder(
         .collect()
 }
 
+fn intersect_two_planes_with_sphere(
+    first: PlaneEquation,
+    second: PlaneEquation,
+    sphere: SphereEquation,
+) -> Vec<[f64; 3]> {
+    let direction = cross(first.normal, second.normal);
+    let denominator = dot(direction, direction);
+    if denominator <= 1e-18 {
+        return Vec::new();
+    }
+    let first_distance = dot(first.normal, first.origin);
+    let second_distance = dot(second.normal, second.origin);
+    let second_cross_direction = cross(second.normal, direction);
+    let direction_cross_first = cross(direction, first.normal);
+    let line_origin: [f64; 3] = std::array::from_fn(|index| {
+        (first_distance * second_cross_direction[index]
+            + second_distance * direction_cross_first[index])
+            / denominator
+    });
+    let relative: [f64; 3] = std::array::from_fn(|index| line_origin[index] - sphere.center[index]);
+    let quadratic = denominator;
+    let linear = 2.0 * dot(relative, direction);
+    let constant = dot(relative, relative) - sphere.radius * sphere.radius;
+    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
+    let scale = linear
+        .abs()
+        .max((4.0 * quadratic * constant).abs().sqrt())
+        .max(1.0);
+    if discriminant < -1e-12 * scale * scale {
+        return Vec::new();
+    }
+    let root = discriminant.max(0.0).sqrt();
+    let mut parameters = vec![(-linear - root) / (2.0 * quadratic)];
+    if root > 1e-12 * scale {
+        parameters.push((-linear + root) / (2.0 * quadratic));
+    }
+    parameters
+        .into_iter()
+        .map(|parameter| {
+            std::array::from_fn(|index| line_origin[index] + parameter * direction[index])
+        })
+        .filter(|point: &[f64; 3]| point.iter().all(|value| value.is_finite()))
+        .collect()
+}
+
 fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
     match carrier {
         CarrierEquation::Plane(plane) => {
@@ -6315,6 +6403,10 @@ fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
             let radial = std::array::from_fn(|index| relative[index] - axial * axis[index]);
             (dot(radial, radial).sqrt() - cylinder.radius).abs() <= 1e-7 * cylinder.radius.max(1.0)
         }
+        CarrierEquation::Sphere(sphere) => {
+            let relative = std::array::from_fn(|index| point[index] - sphere.center[index]);
+            (dot(relative, relative).sqrt() - sphere.radius).abs() <= 1e-7 * sphere.radius.max(1.0)
+        }
     }
 }
 
@@ -6326,10 +6418,12 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                 let triple = [carriers[first], carriers[second], carriers[third]];
                 let mut planes = Vec::new();
                 let mut cylinders = Vec::new();
+                let mut spheres = Vec::new();
                 for carrier in triple {
                     match carrier {
                         CarrierEquation::Plane(plane) => planes.push(plane),
                         CarrierEquation::Cylinder(cylinder) => cylinders.push(cylinder),
+                        CarrierEquation::Sphere(sphere) => spheres.push(sphere),
                     }
                 }
                 if planes.len() == 3 {
@@ -6364,6 +6458,10 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                     candidates.push(std::array::from_fn(|index| {
                         line_origin[index] + parameter * line_direction[index]
                     }));
+                } else if let ([first, second], [], [sphere]) =
+                    (planes.as_slice(), cylinders.as_slice(), spheres.as_slice())
+                {
+                    candidates.extend(intersect_two_planes_with_sphere(*first, *second, *sphere));
                 }
             }
         }
@@ -6439,6 +6537,21 @@ fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEqu
                 CarrierEquation::Cylinder(CylinderEquation {
                     origin: [origin.x, origin.y, origin.z],
                     axis: [axis.x, axis.y, axis.z],
+                    ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+                    radius: *radius,
+                }),
+            );
+        } else if let SurfaceGeometry::Sphere {
+            center,
+            axis: _,
+            ref_direction,
+            radius,
+        } = &surface.geometry
+        {
+            carriers.insert(
+                row.id,
+                CarrierEquation::Sphere(SphereEquation {
+                    center: [center.x, center.y, center.z],
                     ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
                     radius: *radius,
                 }),
@@ -7386,6 +7499,41 @@ fn carrier_intersection_curve(
                 "plane_cylinder_ellipse",
             ))
         }
+        (CarrierEquation::Plane(plane), CarrierEquation::Sphere(sphere))
+        | (CarrierEquation::Sphere(sphere), CarrierEquation::Plane(plane)) => {
+            let normal = normalized(plane.normal)?;
+            let signed_distance = dot(
+                normal,
+                std::array::from_fn(|index| sphere.center[index] - plane.origin[index]),
+            );
+            let radius_squared = sphere
+                .radius
+                .mul_add(sphere.radius, -(signed_distance * signed_distance));
+            let scale = sphere.radius.max(1.0);
+            if radius_squared <= 1e-18 * scale * scale {
+                return None;
+            }
+            let center: [f64; 3] =
+                std::array::from_fn(|index| sphere.center[index] - signed_distance * normal[index]);
+            let reference = normalized(std::array::from_fn(|index| {
+                sphere.ref_direction[index] - dot(sphere.ref_direction, normal) * normal[index]
+            }))
+            .unwrap_or_else(|| {
+                let reference = cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
+                    normal[0], normal[1], normal[2],
+                ));
+                [reference.x, reference.y, reference.z]
+            });
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(normal[0], normal[1], normal[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius: radius_squared.sqrt(),
+                },
+                "plane_sphere_circle",
+            ))
+        }
         (CarrierEquation::Cylinder(first), CarrierEquation::Cylinder(second)) => {
             let first_axis = normalized(first.axis)?;
             let second_axis = normalized(second.axis)?;
@@ -7427,6 +7575,41 @@ fn carrier_intersection_curve(
                 "parallel_cylinder_tangent_line",
             ))
         }
+        (CarrierEquation::Sphere(first), CarrierEquation::Sphere(second)) => {
+            let center_delta: [f64; 3] =
+                std::array::from_fn(|index| second.center[index] - first.center[index]);
+            let distance = dot(center_delta, center_delta).sqrt();
+            if distance <= 1e-12
+                || distance >= first.radius + second.radius
+                || distance <= (first.radius - second.radius).abs()
+            {
+                return None;
+            }
+            let axis = center_delta.map(|value| value / distance);
+            let axial = (distance * distance + first.radius * first.radius
+                - second.radius * second.radius)
+                / (2.0 * distance);
+            let radius_squared = first.radius.mul_add(first.radius, -(axial * axial));
+            if radius_squared <= 1e-18 {
+                return None;
+            }
+            let center: [f64; 3] =
+                std::array::from_fn(|index| first.center[index] + axial * axis[index]);
+            let reference = cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
+                axis[0], axis[1], axis[2],
+            ));
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(axis[0], axis[1], axis[2]),
+                    ref_direction: reference,
+                    radius: radius_squared.sqrt(),
+                },
+                "sphere_intersection_circle",
+            ))
+        }
+        (CarrierEquation::Cylinder(_), CarrierEquation::Sphere(_))
+        | (CarrierEquation::Sphere(_), CarrierEquation::Cylinder(_)) => None,
     }
 }
 
