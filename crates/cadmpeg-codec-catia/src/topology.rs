@@ -1819,7 +1819,7 @@ fn standard_mesh_boundary_assignments_impl(
                                 start: run.start,
                                 end: (run.start + run.segment_count)
                                     % cycle_lengths[face][run.cycle],
-                                reversed: Some(run.reversed),
+                                reversed: edge_candidates.is_none().then_some(run.reversed),
                             },
                             run.segment_count,
                         ));
@@ -3750,8 +3750,7 @@ pub fn parse_standard_mesh_endpoint_candidates(
         domains,
         members: (0..edge_rows.len() * 2).map(|node| vec![node]).collect(),
     };
-    let port_identities =
-        standard_mesh_edge_ports(bytes).or_else(|| standard_edge_port_identities(bytes))?;
+    let port_identities = standard_edge_port_identities(bytes)?;
     if port_identities.len() != edge_rows.len() {
         return None;
     }

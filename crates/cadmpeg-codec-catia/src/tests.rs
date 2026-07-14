@@ -591,6 +591,30 @@ fn standard_mesh_gap_assignment_follows_native_port_cycle() {
 }
 
 #[test]
+fn standard_mesh_endpoint_domains_solve_port_order_independently_of_interior_order() {
+    let mut bytes = standard_quad_topology_stream();
+    let header = bytes
+        .windows(3)
+        .position(|window| window == [0x01, 0x01, 0x04])
+        .expect("edge table header");
+    let first_row = header + 3;
+    let start = bytes[first_row + 2..first_row + 4].to_vec();
+    let end = bytes[first_row + 6..first_row + 8].to_vec();
+    bytes[first_row + 2..first_row + 4].copy_from_slice(&end);
+    bytes[first_row + 6..first_row + 8].copy_from_slice(&start);
+
+    let (topology, _) = crate::topology::parse_standard_mesh_endpoint_candidates(
+        &bytes,
+        &[[0, 0]; 4],
+        &[vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
+    )
+    .expect("independent endpoint-port gauge");
+    let coedges = &topology.faces()[0].boundaries[0].coedges;
+    assert!(coedges[0].reversed);
+    assert!(coedges[1..].iter().all(|coedge| !coedge.reversed));
+}
+
+#[test]
 fn fbb_topology_reads_u8_mesh_and_edge_handles() {
     let mut bytes = vec![0x01, 0x49, 0x02, 0xff, 6, 0, 0, 0];
     for value in [0.0f32, 0.0, 1.0] {
