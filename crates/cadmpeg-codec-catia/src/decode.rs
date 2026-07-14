@@ -1161,7 +1161,7 @@ mod chart_tests {
         include_native_endpoint_pairs, intersection_line_direction, ordered_range,
         point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc,
         resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
-        standard_pcurve_geometry, unique_native_identity_points,
+        standard_circle_param_range, standard_pcurve_geometry, unique_native_identity_points,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
@@ -1205,10 +1205,11 @@ mod chart_tests {
             &mut annotations,
             &[],
             &HashMap::new(),
+            &[],
             &support,
-            0,
-            0,
+            [0, 0],
         )
+        .0
         .expect("spline support identifies a curve carrier");
         assert_eq!(ir.model.curves[0].id, id);
         assert!(matches!(
@@ -1216,6 +1217,83 @@ mod chart_tests {
             CurveGeometry::Unknown { ref record }
                 if record.as_ref().is_some_and(|id| id.0 == "catia:payload:unknown#brep-stream")
         ));
+    }
+
+    #[test]
+    fn standard_line_edge_uses_distance_parameterization() {
+        let mut ir = CadIr::empty(Units::default());
+        for (index, position) in [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 6.0, 3.0)]
+            .into_iter()
+            .enumerate()
+        {
+            ir.model.points.push(Point {
+                id: PointId(format!("p{index}")),
+                position,
+            });
+        }
+        let support = StandardCurveSupport {
+            pos: 12,
+            tag: 7,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Line,
+        };
+        let (_, range) = build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &support,
+            [0, 1],
+        );
+        assert_eq!(range, Some([0.0, 5.0]));
+    }
+
+    #[test]
+    fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
+        let mut ir = CadIr::empty(Units::default());
+        let surface_id = SurfaceId("cylinder".to_string());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        });
+        let bindings = [(surface_id.clone(), true, 0), (surface_id.clone(), true, 0)];
+        let indices = [(surface_id, 0)].into_iter().collect();
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 3.0),
+                radius: 2.0,
+            },
+        };
+        let mut brep = vec![0; 39];
+        brep[..3].copy_from_slice(&[0x00, 0x33, 0x33]);
+        brep[27..31].copy_from_slice(&(-2.0f32).to_le_bytes());
+        let axis = Vector3::new(0.0, 0.0, 1.0);
+        let reference = cadmpeg_ir::geometry::derive_reference_direction(axis);
+        let range = standard_circle_param_range(
+            &ir,
+            &bindings,
+            &indices,
+            &brep,
+            &support,
+            Point3::new(0.0, 0.0, 3.0),
+            2.0,
+            axis,
+            reference,
+            Point3::new(2.0, 0.0, 3.0),
+            Point3::new(0.0, 2.0, 3.0),
+        )
+        .expect("witnessed circle range");
+        assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-12);
     }
 
     #[test]
@@ -3351,14 +3429,14 @@ fn attach_standard_topology(
     {
         let start_point = point_assignment[logical_vertices[0]];
         let end_point = point_assignment[logical_vertices[1]];
-        let curve = build_standard_edge_curve(
+        let (curve, param_range) = build_standard_edge_curve(
             ir,
             annotations,
             bindings,
             &surface_indices,
+            brep,
             support,
-            start_point,
-            end_point,
+            [start_point, end_point],
         );
         let id = EdgeId(format!("catia:standard:edge#{edge_index}"));
         annotate(
@@ -3373,12 +3451,15 @@ fn attach_standard_topology(
             annotations.derived(&id, "curve");
         }
         annotations.derived(&id, "start").derived(&id, "end");
+        if param_range.is_some() {
+            annotations.derived(&id, "param_range");
+        }
         ir.model.edges.push(Edge {
             id,
             curve,
             start: VertexId(format!("catia:standard:v#{start_point}")),
             end: VertexId(format!("catia:standard:v#{end_point}")),
-            param_range: None,
+            param_range,
             tolerance: None,
         });
     }
@@ -4054,49 +4135,76 @@ fn build_standard_edge_curve(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
+    brep: &[u8],
     support: &geometry::StandardCurveSupport,
-    start_point: usize,
-    end_point: usize,
-) -> Option<CurveId> {
-    let geometry = match &support.geometry {
+    points: [usize; 2],
+) -> (Option<CurveId>, Option<[f64; 2]>) {
+    let (geometry, param_range) = match &support.geometry {
         geometry::StandardCurveGeometry::Line => {
-            let start = ir.model.points[start_point].position;
-            let end = ir.model.points[end_point].position;
+            let start = ir.model.points[points[0]].position;
+            let end = ir.model.points[points[1]].position;
             let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
             let length = axis_dot(delta, delta).sqrt();
             if length <= f64::EPSILON {
-                return None;
+                return (None, None);
             }
-            CurveGeometry::Line {
-                origin: start,
-                direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
-            }
+            (
+                CurveGeometry::Line {
+                    origin: start,
+                    direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+                },
+                Some([0.0, length]),
+            )
         }
         geometry::StandardCurveGeometry::Circle { center, radius } => {
+            let start = ir.model.points[points[0]].position;
+            let end = ir.model.points[points[1]].position;
             let axes: Vec<Vector3> = support
                 .faces
                 .iter()
                 .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
                 .filter_map(|surface| circle_axis_from_carrier(*center, *radius, &surface.geometry))
                 .collect();
-            let axis = *axes.first()?;
+            let Some(axis) = axes.first().copied() else {
+                return (None, None);
+            };
             if axes
                 .iter()
                 .skip(1)
                 .any(|other| axis_dot(axis, *other).abs() < 0.9999)
             {
-                return None;
+                return (None, None);
             }
-            CurveGeometry::Circle {
-                center: *center,
+            let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
+            let param_range = standard_circle_param_range(
+                ir,
+                bindings,
+                surface_indices,
+                brep,
+                support,
+                *center,
+                *radius,
                 axis,
-                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
-                radius: *radius,
-            }
+                ref_direction,
+                start,
+                end,
+            );
+            (
+                CurveGeometry::Circle {
+                    center: *center,
+                    axis,
+                    ref_direction,
+                    radius: *radius,
+                },
+                param_range,
+            )
         }
-        geometry::StandardCurveGeometry::Bspline => CurveGeometry::Unknown {
-            record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
-        },
+        geometry::StandardCurveGeometry::Bspline => (
+            CurveGeometry::Unknown {
+                record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
+            },
+            None,
+        ),
     };
     let id = CurveId(format!("catia:standard:curve#{}", support.pos));
     annotate(
@@ -4126,7 +4234,55 @@ fn build_standard_edge_curve(
         geometry,
         source_object: None,
     });
-    Some(id)
+    (Some(id), param_range)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn standard_circle_param_range(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    brep: &[u8],
+    support: &geometry::StandardCurveSupport,
+    center: Point3,
+    radius: f64,
+    axis: Vector3,
+    ref_direction: Vector3,
+    start: Point3,
+    end: Point3,
+) -> Option<[f64; 2]> {
+    let tangent = cross_vector(axis, ref_direction);
+    let start_offset = point_delta(start, center);
+    let start_parameter =
+        axis_dot(start_offset, tangent).atan2(axis_dot(start_offset, ref_direction));
+    let mut deltas = support.faces.iter().filter_map(|face| {
+        let surface = face_surface(ir, bindings, surface_indices, *face)?;
+        let SurfaceGeometry::Cylinder {
+            axis: surface_axis, ..
+        } = &surface.geometry
+        else {
+            return None;
+        };
+        let witness = geometry::standard_face_witness(brep, bindings.get(*face)?.2)?;
+        let (PcurveGeometry::Line { direction, .. }, _) =
+            standard_pcurve_geometry(&surface.geometry, support, start, end, Some(witness))?
+        else {
+            return None;
+        };
+        Some(direction.u * axis_dot(*surface_axis, axis).signum())
+    });
+    let delta = deltas.next()?;
+    if !delta.is_finite() || deltas.any(|other| !other.is_finite() || (other - delta).abs() > 1e-9)
+    {
+        return None;
+    }
+    let range = [start_parameter, start_parameter + delta];
+    let evaluated_end = Point3::new(
+        center.x + radius * (range[1].cos() * ref_direction.x + range[1].sin() * tangent.x),
+        center.y + radius * (range[1].cos() * ref_direction.y + range[1].sin() * tangent.y),
+        center.z + radius * (range[1].cos() * ref_direction.z + range[1].sin() * tangent.z),
+    );
+    (point_distance_squared(evaluated_end, end).sqrt() <= 2e-3).then_some(range)
 }
 
 fn attach_standard_circles(
