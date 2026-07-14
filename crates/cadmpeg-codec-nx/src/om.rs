@@ -2035,6 +2035,21 @@ pub fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_
     })
 }
 
+/// Decode the zero-prefixed offset-store control form as ordered 24-bit values.
+///
+/// Each word is serialized `00, value:u24 LE`. The complete form is atomic.
+pub fn offset_store_control_values(bytes: &[u8]) -> Option<Vec<u32>> {
+    (!bytes.is_empty() && bytes.len().is_multiple_of(4)).then_some(())?;
+    bytes
+        .chunks_exact(4)
+        .map(|word| {
+            (word[0] == 0).then(|| {
+                u32::from(word[1]) | (u32::from(word[2]) << 8) | (u32::from(word[3]) << 16)
+            })
+        })
+        .collect()
+}
+
 fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinition<'_>> {
     let mut out = Vec::new();
     let mut at = start;

@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 57);
+    assert_eq!(namespace.version, 58);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -2135,6 +2135,17 @@ fn om_offset_only_index_bounds_storage_blocks() {
 }
 
 #[test]
+fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
+    assert_eq!(
+        crate::om::offset_store_control_values(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]),
+        Some(vec![0x1234, 0x00ff_ffff])
+    );
+    assert!(crate::om::offset_store_control_values(&[]).is_none());
+    assert!(crate::om::offset_store_control_values(&[0, 1, 2]).is_none());
+    assert!(crate::om::offset_store_control_values(&[1, 1, 2, 3]).is_none());
+}
+
+#[test]
 fn native_catalog_separates_offset_only_blocks_from_object_records() {
     let file =
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
@@ -2147,6 +2158,11 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
     assert_eq!(blocks[0].role, crate::native::DataBlockRole::Control);
     assert_eq!(blocks[1].role, crate::native::DataBlockRole::Column);
     assert!(blocks[0].byte_len > 0);
+    let control_values = crate::native::data_block_control_values(&container);
+    assert_eq!(control_values.len(), 1);
+    assert_eq!(control_values[0].data_block, blocks[0].id);
+    assert_eq!(control_values[0].ordinal, 0);
+    assert_eq!(control_values[0].value, 0);
     assert!(crate::native::string_values(&container).is_empty());
     assert!(crate::native::object_references(&container).is_empty());
     let expressions = crate::native::expressions(&container);
@@ -4748,7 +4764,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 57);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 58);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

@@ -2529,6 +2529,21 @@ pub struct DataBlock {
     pub source_offset: u64,
 }
 
+/// Ordered value from a zero-prefixed offset-only OM store control array.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockControlValue {
+    /// Globally unique control-value identity.
+    pub id: String,
+    /// Owning control block in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Zero-based word order in the complete control block.
+    pub ordinal: u32,
+    /// Unsigned 24-bit value serialized after the zero byte.
+    pub value: u32,
+    /// Absolute file offset of the four-byte word.
+    pub source_offset: u64,
+}
+
 /// Ordered object reference carried by an offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockReference {
@@ -3126,6 +3141,38 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
                     sha256: cadmpeg_ir::hash::sha256_hex(block.bytes),
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + block.offset as u64,
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode complete zero-prefixed control arrays from offset-only OM stores.
+pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlValue> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let Some(control) = section.control else {
+                return Vec::new();
+            };
+            let Some(values) = crate::om::offset_store_control_values(control.bytes) else {
+                return Vec::new();
+            };
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
+            values
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, value)| DataBlockControlValue {
+                    id: format!(
+                        "nx:om-data-block-control-values-{section_ordinal}:value#{ordinal}"
+                    ),
+                    data_block: data_block.clone(),
+                    ordinal: ordinal as u32,
+                    value,
+                    source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
                 })
                 .collect()
         })
