@@ -535,7 +535,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "35");
+    assert_eq!(result.ir.ir_version, "36");
     let feature = |name: &str| {
         &result
             .ir
@@ -1430,14 +1430,16 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
 }
 
 #[test]
-fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() {
+fn transfers_uniform_irregular_and_two_axis_patterns() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="3">
+<Objects Count="5">
  <Object type="PartDesign::Feature" name="Seed" id="1"/>
  <Object type="PartDesign::LinearPattern" name="Uniform" id="2"/>
  <Object type="PartDesign::LinearPattern" name="Custom" id="3"/>
+ <Object type="PartDesign::LinearPattern" name="TwoAxis" id="4"/>
+ <Object type="PartDesign::PolarPattern" name="PolarCustom" id="5"/>
 </Objects>
-<ObjectData Count="3">
+<ObjectData Count="5">
  <Object name="Seed"><Properties Count="0"/></Object>
  <Object name="Uniform"><Properties Count="7">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
@@ -1455,6 +1457,28 @@ fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() 
   <Property name="Offset" type="App::PropertyLength"><Float value="5"/></Property>
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
   <Property name="Spacings" type="App::PropertyFloatList"><FloatList count="2"><Float value="2"/><Float value="7"/></FloatList></Property>
+ </Properties></Object>
+ <Object name="TwoAxis"><Properties Count="11">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Direction" type="App::PropertyVector"><Vector x="1" y="0" z="0"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="4"/></Property>
+  <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
+  <Property name="Direction2" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+  <Property name="Reversed2" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Mode2" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Offset2" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="Occurrences2" type="App::PropertyInteger"><Integer value="3"/></Property>
+  <Property name="SpacingPattern2" type="App::PropertyFloatList"><FloatList count="2"><Float value="1"/><Float value="4"/></FloatList></Property>
+ </Properties></Object>
+ <Object name="PolarCustom"><Properties Count="7">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="1"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Offset" type="App::PropertyAngle"><Float value="30"/></Property>
+  <Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>
+  <Property name="Spacings" type="App::PropertyFloatList"><FloatList count="3"><Float value="-1"/><Float value="-1"/><Float value="-1"/></FloatList></Property>
+  <Property name="SpacingPattern" type="App::PropertyFloatList"><FloatList count="2"><Float value="10"/><Float value="20"/></FloatList></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -1489,21 +1513,43 @@ fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() 
     ));
     assert!(matches!(
         &feature("Custom").definition,
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
-            if kind == "PartDesign::LinearPattern"
+        cadmpeg_ir::features::FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::LinearOffsets { direction: Some(direction), offsets },
+            ..
+        } if direction.x == 1.0 && offsets.iter().map(|offset| offset.0).collect::<Vec<_>>() == [0.0, 2.0, 9.0]
+    ));
+    let cadmpeg_ir::features::FeatureDefinition::Pattern {
+        pattern: cadmpeg_ir::features::PatternKind::Composite { stages },
+        ..
+    } = &feature("TwoAxis").definition
+    else {
+        panic!("two-axis pattern")
+    };
+    assert_eq!(stages.len(), 2);
+    assert!(matches!(
+        *stages[0].pattern,
+        cadmpeg_ir::features::PatternKind::Linear { count: 3, .. }
+    ));
+    assert!(matches!(
+        &*stages[1].pattern,
+        cadmpeg_ir::features::PatternKind::LinearOffsets { direction: Some(direction), offsets }
+            if direction.y == -1.0 && offsets.iter().map(|offset| offset.0).collect::<Vec<_>>() == [0.0, 1.0, 5.0]
+    ));
+    assert_eq!(
+        stages[1].combination,
+        cadmpeg_ir::features::PatternStageCombination::CartesianProduct
+    );
+    assert!(matches!(
+        &feature("PolarCustom").definition,
+        cadmpeg_ir::features::FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::CircularAngles { angles, .. },
+            ..
+        } if angles.iter().zip([0.0, 10.0, 30.0, 40.0]).all(|(angle, expected)|
+            (angle.0.to_degrees() - expected).abs() < 1e-12)
     ));
     assert_eq!(feature("Uniform").dependencies.len(), 1);
-    assert_eq!(result.report.losses.len(), 1);
-    assert!(result.report.losses[0]
-        .message
-        .contains("retained natively but has no neutral semantics"));
-    assert_eq!(
-        result.report.losses[0]
-            .provenance
-            .as_ref()
-            .and_then(|provenance| provenance.tag.as_deref()),
-        Some("fcstd:native:object#Custom")
-    );
+    assert!(result.report.losses.is_empty());
+    assert_valid_document(&result.ir);
     let census = result
         .ir
         .native
@@ -1511,7 +1557,7 @@ fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() 
         .expect("native namespace")
         .arena_as::<crate::native::DesignCensusRecord>("design_census")
         .expect("design census");
-    assert_eq!(census.len(), 3);
+    assert_eq!(census.len(), 5);
     assert!(census.iter().any(|record| {
         record.object == "fcstd:native:object#Seed"
             && record.semantic_kind == "stored_geometry"
@@ -1520,8 +1566,8 @@ fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() 
     }));
     assert!(census.iter().any(|record| {
         record.object == "fcstd:native:object#Custom"
-            && record.semantic_kind == "native"
-            && !record.neutral
+            && record.semantic_kind == "pattern"
+            && record.neutral
     }));
     let baseline_findings = cadmpeg_ir::validate(&result.ir, Vec::new()).findings;
     assert!(

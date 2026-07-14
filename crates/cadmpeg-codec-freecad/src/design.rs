@@ -3267,56 +3267,161 @@ fn pattern_kind(
     }
 
     let pattern = if kind.ends_with("LinearPattern") {
-        // The neutral linear form is one-dimensional and evenly spaced. Preserve
-        // two-direction and custom-spacing patterns natively until the IR can
-        // describe their complete transform sequence.
-        if integer_property(properties, "Occurrences2").unwrap_or(1) > 1
-            || has_custom_spacing(properties, "Spacings", "SpacingPattern")?
-        {
+        let first = linear_pattern_axis(properties, "", count, mode, objects, properties_by_owner)?;
+        let count2 = integer_property(properties, "Occurrences2").unwrap_or(1);
+        if count2 > u32::MAX as u64 {
             return None;
         }
-        let spacing = match mode {
-            0 if count > 1 => scalar_named(properties, "Length")? / f64::from(count - 1),
-            1 => scalar_named(properties, "Offset")?,
-            _ => return None,
-        };
-        if !spacing.is_finite() || spacing <= 0.0 {
-            return None;
-        }
-        let (_, mut direction) =
-            axis_reference(properties, "Direction", objects, properties_by_owner)?;
-        if bool_property(properties, "Reversed").unwrap_or(false) {
-            direction = Vector3::new(-direction.x, -direction.y, -direction.z);
-        }
-        PatternKind::Linear {
-            direction: Some(direction),
-            spacing: Length(spacing),
-            count,
+        if count2 > 1 {
+            let mode2 = integer_property(properties, "Mode2").unwrap_or(0);
+            let second = linear_pattern_axis(
+                properties,
+                "2",
+                count2 as u32,
+                mode2,
+                objects,
+                properties_by_owner,
+            )?;
+            PatternKind::Composite {
+                stages: vec![
+                    PatternStage {
+                        pattern: Box::new(first),
+                        combination: PatternStageCombination::Initialize,
+                    },
+                    PatternStage {
+                        pattern: Box::new(second),
+                        combination: PatternStageCombination::CartesianProduct,
+                    },
+                ],
+            }
+        } else {
+            first
         }
     } else if kind.ends_with("PolarPattern") {
-        if has_custom_spacing(properties, "Spacings", "SpacingPattern")? {
-            return None;
-        }
         let (axis_origin, mut axis_dir) =
             axis_reference(properties, "Axis", objects, properties_by_owner)?;
         if bool_property(properties, "Reversed").unwrap_or(false) {
             axis_dir = Vector3::new(-axis_dir.x, -axis_dir.y, -axis_dir.z);
         }
-        let angle_degrees = match mode {
-            0 => scalar_named(properties, "Angle")?,
-            1 if count > 1 => scalar_named(properties, "Offset")? * f64::from(count - 1),
-            _ => return None,
-        };
-        PatternKind::Circular {
-            axis_origin,
-            axis_dir,
-            angle: cadmpeg_ir::features::Angle(angle_degrees.to_radians()),
-            count,
+        let angles = pattern_locations(properties, "", count, mode, "Angle", "Offset")?;
+        if let Some(step) = uniform_step(&angles) {
+            PatternKind::Circular {
+                axis_origin,
+                axis_dir,
+                angle: cadmpeg_ir::features::Angle((step * f64::from(count - 1)).to_radians()),
+                count,
+            }
+        } else {
+            PatternKind::CircularAngles {
+                axis_origin,
+                axis_dir,
+                angles: angles
+                    .into_iter()
+                    .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()))
+                    .collect(),
+            }
         }
     } else {
         return None;
     };
     Some(pattern)
+}
+
+fn linear_pattern_axis(
+    properties: &[&PropertyRecord],
+    suffix: &str,
+    count: u32,
+    mode: u64,
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+) -> Option<PatternKind> {
+    let name = |base: &str| format!("{base}{suffix}");
+    let (_, mut direction) =
+        axis_reference(properties, &name("Direction"), objects, properties_by_owner)?;
+    if bool_property(properties, &name("Reversed")).unwrap_or(false) {
+        direction = Vector3::new(-direction.x, -direction.y, -direction.z);
+    }
+    let offsets = pattern_locations(properties, suffix, count, mode, "Length", "Offset")?;
+    if let Some(spacing) = uniform_step(&offsets) {
+        Some(PatternKind::Linear {
+            direction: Some(direction),
+            spacing: Length(spacing),
+            count,
+        })
+    } else {
+        Some(PatternKind::LinearOffsets {
+            direction: Some(direction),
+            offsets: offsets.into_iter().map(Length).collect(),
+        })
+    }
+}
+
+fn pattern_locations(
+    properties: &[&PropertyRecord],
+    suffix: &str,
+    count: u32,
+    mode: u64,
+    extent_base: &str,
+    offset_base: &str,
+) -> Option<Vec<f64>> {
+    if count == 0 {
+        return None;
+    }
+    if count == 1 {
+        return Some(vec![0.0]);
+    }
+    let name = |base: &str| format!("{base}{suffix}");
+    let intervals = match mode {
+        0 => {
+            let interval = scalar_named(properties, &name(extent_base))? / f64::from(count - 1);
+            vec![interval; count as usize - 1]
+        }
+        1 => {
+            let fallback = scalar_named(properties, &name(offset_base))?;
+            let spacings = property(properties, &name("Spacings"))
+                .map_or_else(|| Some(Vec::new()), numeric_list)?;
+            let pattern = property(properties, &name("SpacingPattern"))
+                .map_or_else(|| Some(Vec::new()), numeric_list)?;
+            if !spacings.is_empty() && spacings.len() != count as usize - 1 {
+                return None;
+            }
+            (0..count as usize - 1)
+                .map(|index| {
+                    let explicit = spacings.get(index).copied().unwrap_or(-1.0);
+                    if explicit != -1.0 {
+                        explicit
+                    } else if pattern.len() > 1 {
+                        pattern[index % pattern.len()]
+                    } else {
+                        fallback
+                    }
+                })
+                .collect()
+        }
+        _ => return None,
+    };
+    let mut locations = Vec::with_capacity(count as usize);
+    locations.push(0.0);
+    let mut location = 0.0;
+    for interval in intervals {
+        if !interval.is_finite() || interval <= 0.0 {
+            return None;
+        }
+        location += interval;
+        if !location.is_finite() {
+            return None;
+        }
+        locations.push(location);
+    }
+    Some(locations)
+}
+
+fn uniform_step(locations: &[f64]) -> Option<f64> {
+    let step = *locations.get(1)?;
+    locations
+        .windows(2)
+        .all(|pair| (pair[1] - pair[0] - step).abs() <= f64::EPSILON * step.abs().max(1.0))
+        .then_some(step)
 }
 
 fn axis_reference(
@@ -3419,18 +3524,6 @@ fn string_property_value(property: &PropertyRecord) -> Option<&str> {
 fn integer_property(properties: &[&PropertyRecord], name: &str) -> Option<u64> {
     let value = scalar_named(properties, name)?;
     (value.is_finite() && value >= 0.0 && value.fract() == 0.0).then_some(value as u64)
-}
-
-fn has_custom_spacing(
-    properties: &[&PropertyRecord],
-    spacings_name: &str,
-    pattern_name: &str,
-) -> Option<bool> {
-    let spacings =
-        property(properties, spacings_name).map_or_else(|| Some(Vec::new()), numeric_list)?;
-    let pattern =
-        property(properties, pattern_name).map_or_else(|| Some(Vec::new()), numeric_list)?;
-    Some(spacings.iter().any(|value| *value != -1.0) || pattern.len() > 1)
 }
 
 fn numeric_list(property: &PropertyRecord) -> Option<Vec<f64>> {

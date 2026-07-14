@@ -6579,8 +6579,12 @@ pub fn sync_neutral_features(
             FeatureDefinition::Pattern { seeds, pattern } => {
                 let expected_form = match pattern {
                     PatternKind::Unresolved { form } => *form,
-                    PatternKind::Linear { .. } => Some(PatternForm::Linear),
-                    PatternKind::Circular { .. } => Some(PatternForm::Circular),
+                    PatternKind::Linear { .. } | PatternKind::LinearOffsets { .. } => {
+                        Some(PatternForm::Linear)
+                    }
+                    PatternKind::Circular { .. } | PatternKind::CircularAngles { .. } => {
+                        Some(PatternForm::Circular)
+                    }
                     PatternKind::CurveDriven { .. } => Some(PatternForm::CurveDriven),
                     PatternKind::Mirror { .. } => Some(PatternForm::Mirror),
                     PatternKind::Scale { .. } => Some(PatternForm::Scale),
@@ -6760,7 +6764,10 @@ pub fn sync_neutral_features(
                         properties.insert("PlaneOrigin".into(), format_point3_mm(*plane_origin));
                         properties.insert("PlaneNormal".into(), format_vector3(*plane_normal));
                     }
-                    PatternKind::Scale { .. } | PatternKind::Composite { .. } => {
+                    PatternKind::LinearOffsets { .. }
+                    | PatternKind::CircularAngles { .. }
+                    | PatternKind::Scale { .. }
+                    | PatternKind::Composite { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} uses a pattern form that cannot be written",
                             feature.id

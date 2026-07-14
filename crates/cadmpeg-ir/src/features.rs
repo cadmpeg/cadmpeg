@@ -2226,6 +2226,14 @@ pub enum PatternKind {
         /// Total number of instances, including the original.
         count: u32,
     },
+    /// Repeats seeds at explicitly located distances along a straight direction.
+    LinearOffsets {
+        /// Repetition direction, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
+        /// Cumulative distances from the original instance, beginning with zero.
+        offsets: Vec<Length>,
+    },
     /// Repeats seeds evenly around an axis.
     Circular {
         /// A point on the pattern axis.
@@ -2236,6 +2244,15 @@ pub enum PatternKind {
         angle: Angle,
         /// Total number of instances, including the original.
         count: u32,
+    },
+    /// Repeats seeds at explicitly located angles around an axis.
+    CircularAngles {
+        /// A point on the pattern axis.
+        axis_origin: Point3,
+        /// Unit direction of the pattern axis.
+        axis_dir: Vector3,
+        /// Cumulative angles from the original instance, beginning with zero.
+        angles: Vec<Angle>,
     },
     /// Repeats seeds at fixed arc-length spacing along a curve.
     CurveDriven {

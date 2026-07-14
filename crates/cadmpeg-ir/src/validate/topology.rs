@@ -21,6 +21,10 @@ fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
                 && positive_feature_length(*spacing)
                 && *count > 0
         }
+        PatternKind::LinearOffsets { direction, offsets } => {
+            direction.is_none_or(valid_feature_direction)
+                && valid_increasing_locations(offsets.iter().map(|offset| offset.0))
+        }
         PatternKind::Circular {
             axis_origin,
             axis_dir,
@@ -34,6 +38,17 @@ fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
                 && angle.0.is_finite()
                 && angle.0 > 0.0
                 && *count > 0
+        }
+        PatternKind::CircularAngles {
+            axis_origin,
+            axis_dir,
+            angles,
+        } => {
+            axis_origin.x.is_finite()
+                && axis_origin.y.is_finite()
+                && axis_origin.z.is_finite()
+                && valid_feature_direction(*axis_dir)
+                && valid_increasing_locations(angles.iter().map(|angle| angle.0))
         }
         PatternKind::CurveDriven { spacing, count, .. } => {
             positive_feature_length(*spacing) && *count > 0
@@ -107,9 +122,24 @@ fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
         | PatternKind::Circular { count, .. }
         | PatternKind::CurveDriven { count, .. }
         | PatternKind::Scale { count, .. } => usize::try_from(*count).ok(),
+        PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
+        PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
         PatternKind::Mirror { .. } => Some(2),
         PatternKind::Unresolved { .. } | PatternKind::Composite { .. } => None,
     }
+}
+
+fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
+    let mut locations = locations;
+    let Some(first) = locations.next() else {
+        return false;
+    };
+    first == 0.0
+        && locations
+            .try_fold(first, |previous, location| {
+                (location.is_finite() && location > previous).then_some(location)
+            })
+            .is_some()
 }
 
 fn collect_pattern_paths<'a>(

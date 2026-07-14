@@ -426,6 +426,13 @@ the compatibility ordering used when fusing the new feature with the existing bo
 profile-based PartDesign operation—extrusion, revolution, loft, pipe, helix, and hole—retains
 whether a profile containing multiple faces is accepted as one construction input.
 
+PartDesign linear and polar patterns retain both uniform and explicitly spaced instance
+sequences. Explicit sequences are cumulative transforms beginning at the unchanged seed; per-gap
+values override defaults, while multi-value spacing patterns repeat cyclically for unspecified
+gaps. A second linear direction is an ordered Cartesian-product stage with its own direction,
+reversal, mode, occurrence count, and spacing sequence. Invalid counts, list cardinalities,
+directions, and non-positive intervals leave the operation attributable and native.
+
 Part extrusions retain their normalized direction, custom-vector, selected-edge, or profile-normal
 direction source, independent forward and reverse lengths and tapers, symmetric construction, and
 solid-versus-sheet result. Solid construction additionally retains the extensible face-maker class
