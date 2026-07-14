@@ -245,6 +245,78 @@ fn decode_accounts_for_every_part21_byte() {
 }
 
 #[test]
+fn every_repository_step_fixture_has_complete_byte_accounting() {
+    let fixtures: &[(&str, &[u8])] = &[
+        (
+            "ap203_sheet",
+            include_bytes!("../tests/fixtures/ap203_sheet.p21"),
+        ),
+        (
+            "ap214_sheet",
+            include_bytes!("../tests/fixtures/ap214_sheet.p21"),
+        ),
+        (
+            "ap242_assembly",
+            include_bytes!("../tests/fixtures/ap242_assembly.p21"),
+        ),
+        (
+            "ap242_conversion_units",
+            include_bytes!("../tests/fixtures/ap242_conversion_units.p21"),
+        ),
+        (
+            "ap242_ed3_sections",
+            include_bytes!("../tests/fixtures/ap242_ed3_sections.p21"),
+        ),
+        (
+            "ap242_external_documents",
+            include_bytes!("../tests/fixtures/ap242_external_documents.p21"),
+        ),
+        (
+            "ap242_geometry",
+            include_bytes!("../tests/fixtures/ap242_geometry.p21"),
+        ),
+        (
+            "ap242_mapped_assembly",
+            include_bytes!("../tests/fixtures/ap242_mapped_assembly.p21"),
+        ),
+        (
+            "ap242_minimal",
+            include_bytes!("../tests/fixtures/ap242_minimal.p21"),
+        ),
+        (
+            "ap242_presentation_pmi",
+            include_bytes!("../tests/fixtures/ap242_presentation_pmi.p21"),
+        ),
+        (
+            "ap242_semantic_pmi",
+            include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21"),
+        ),
+        (
+            "ap242_tessellation",
+            include_bytes!("../tests/fixtures/ap242_tessellation.p21"),
+        ),
+        (
+            "complex_instance",
+            include_bytes!("../tests/fixtures/complex_instance.p21"),
+        ),
+        ("strings", include_bytes!("../tests/fixtures/strings.p21")),
+    ];
+    for &(name, bytes) in fixtures {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let attributes = &result.ir.source.as_ref().unwrap().attributes;
+        let count = |key: &str| attributes[key].parse::<usize>().unwrap();
+        assert_eq!(count("bytes_unclassified"), 0, "{name}");
+        assert_eq!(
+            count("bytes_structural") + count("bytes_typed") + count("bytes_named_opaque"),
+            bytes.len(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
