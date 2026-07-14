@@ -1747,6 +1747,8 @@ fn encoder_writes_source_less_line_sketches() {
             guides: vec![path],
             op: BooleanOp::NewBody,
             closed: false,
+            solid: true,
+            ruled: false,
         },
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
@@ -11695,6 +11697,7 @@ fn semantic_writer_round_trips_typed_loft() {
             guides,
             op: BooleanOp::NewBody,
             closed: false,
+            ..
         } if profiles == &vec![
             ProfileRef::Native(refs[0].clone()),
             ProfileRef::Native(refs[1].clone()),
@@ -11707,6 +11710,7 @@ fn semantic_writer_round_trips_typed_loft() {
         guides,
         op,
         closed,
+        ..
     } = &mut decoded.ir.model.features[5].definition
     else {
         panic!("typed loft");
@@ -11751,6 +11755,7 @@ fn semantic_writer_retains_unresolved_native_loft_construction() {
             ref guides,
             op: BooleanOp::Unresolved,
             closed: false,
+            ..
         } if profiles.is_empty() && guides.is_empty()
     ));
     decoded.ir.model.features[0].name = Some("Renamed loft".into());
@@ -11804,6 +11809,7 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
             guides,
             op: BooleanOp::Join,
             closed: false,
+            ..
         } if profiles == &vec![
             ProfileRef::Native(refs[0].clone()),
             ProfileRef::Native(refs[1].clone()),

@@ -1763,6 +1763,8 @@ fn project_loft(
             .properties
             .get("Closed")
             .map_or(Some(false), |closed| parse_bool(closed))?,
+        solid: true,
+        ruled: false,
     })
 }
 
@@ -6270,7 +6272,15 @@ pub fn sync_neutral_features(
                 guides,
                 op,
                 closed,
+                solid,
+                ruled,
             } => {
+                if !solid || *ruled {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported loft result semantics",
+                        feature.id
+                    )));
+                }
                 if existing.as_deref().is_some_and(|record| !is_loft(record)) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported loft semantics",

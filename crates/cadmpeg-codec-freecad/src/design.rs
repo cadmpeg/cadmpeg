@@ -2114,6 +2114,9 @@ fn loft_definition(
         guides: Vec::new(),
         op: operation_boolean(kind),
         closed: bool_property(properties, "Closed").unwrap_or(false),
+        solid: kind.starts_with("PartDesign::")
+            || bool_property(properties, "Solid").unwrap_or(true),
+        ruled: bool_property(properties, "Ruled").unwrap_or(false),
     })
 }
 

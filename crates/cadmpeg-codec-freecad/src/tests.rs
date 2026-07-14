@@ -520,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "19");
+    assert_eq!(result.ir.ir_version, "20");
     let feature = |name: &str| {
         &result
             .ir
@@ -686,24 +686,30 @@ fn transfers_partdesign_boolean_base_and_group_rules() {
 #[test]
 fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="5">
+<Objects Count="6">
  <Object type="Sketcher::SketchObject" name="Section1" id="1"/>
  <Object type="Sketcher::SketchObject" name="Section2" id="2"/>
  <Object type="Sketcher::SketchObject" name="Path" id="3"/>
  <Object type="PartDesign::AdditiveLoft" name="Loft" id="4"/>
  <Object type="PartDesign::SubtractivePipe" name="Pipe" id="5"/>
+ <Object type="Part::Loft" name="SurfaceLoft" id="6"/>
 </Objects>
-<ObjectData Count="5">
+<ObjectData Count="6">
  <Object name="Section1"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Section2"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Path"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
- <Object name="Loft"><Properties Count="2">
+ <Object name="Loft"><Properties Count="3">
   <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
   <Property name="Closed" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Ruled" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
  <Object name="Pipe"><Properties Count="2">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section1"/></Property>
   <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+ </Properties></Object>
+ <Object name="SurfaceLoft"><Properties Count="2">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
+  <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -726,12 +732,23 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
         cadmpeg_ir::features::FeatureDefinition::Loft {
             profiles,
             closed: true,
+            solid: true,
+            ruled: true,
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
         } if matches!(profiles.as_slice(), [
             cadmpeg_ir::features::ProfileRef::Sketch(first),
             cadmpeg_ir::features::ProfileRef::Sketch(second),
         ] if first.0.ends_with("#Section1") && second.0.ends_with("#Section2"))
+    ));
+    assert!(matches!(
+        &feature("SurfaceLoft").definition,
+        cadmpeg_ir::features::FeatureDefinition::Loft {
+            solid: false,
+            ruled: false,
+            op: cadmpeg_ir::features::BooleanOp::NewBody,
+            ..
+        }
     ));
     assert!(matches!(
         &feature("Pipe").definition,

@@ -337,6 +337,10 @@ property, including its ordered subelement selectors. Standalone sweeps distingu
 solid results through their persisted solid flag; PartDesign pipes are solid and explicitly join
 or cut. Cached result shapes remain outputs and do not replace these construction operands.
 
+Lofts additionally retain whether adjacent sections use ruled spans and whether a standalone Part
+loft produces a solid or sheet result. PartDesign lofts are solid and explicitly join or cut;
+standalone lofts create a new result body without fabricating a Boolean relationship.
+
 Part extrusions retain their normalized direction, independent forward and reverse lengths, and
 equal forward/reverse taper when both sides are active. PartDesign pads and pockets distinguish
 blind, through-all, first-intersection, last-intersection, face-selected, and shape-selected

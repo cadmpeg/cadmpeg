@@ -450,6 +450,12 @@ pub enum FeatureDefinition {
         /// Whether the loft closes from the last section to the first.
         #[serde(default)]
         closed: bool,
+        /// Whether the sections bound a solid instead of a sheet body.
+        #[serde(default = "default_true")]
+        solid: bool,
+        /// Whether adjacent sections are connected by straight ruled spans.
+        #[serde(default)]
+        ruled: bool,
     },
     /// Thin rib grown from a profile.
     Rib {
@@ -721,6 +727,10 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
     },
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 /// Geometric offset construction used by a thin-wall shell operation.
