@@ -3844,6 +3844,7 @@ fn section_skamp_constraints(
     let (Some(segments), Some(relations)) = (&definition.segments, &definition.relations) else {
         return Vec::new();
     };
+    let section_entities = section_entity_external_ids(definition);
     relations
         .skamps
         .iter()
@@ -3917,16 +3918,12 @@ fn section_skamp_constraints(
                         .items
                         .iter()
                         .map(|item| {
-                            segments
-                                .rows
-                                .iter()
-                                .any(|segment| segment.external_id == item.entity_id)
-                                .then(|| {
-                                    SketchEntityId(format!(
-                                        "creo:featdefs:sketch_entity#{}:{}",
-                                        definition.id, item.entity_id
-                                    ))
-                                })
+                            section_entities.contains(&item.entity_id).then(|| {
+                                SketchEntityId(format!(
+                                    "creo:featdefs:sketch_entity#{}:{}",
+                                    definition.id, item.entity_id
+                                ))
+                            })
                         })
                         .collect::<Option<Vec<_>>>()?;
                     if entities.is_empty() {
@@ -3962,6 +3959,27 @@ fn section_skamp_constraints(
             ))
         })
         .collect()
+}
+
+fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -> BTreeSet<u32> {
+    let mut ids = definition
+        .segments
+        .iter()
+        .flat_map(|segments| &segments.rows)
+        .map(|segment| segment.external_id)
+        .collect::<BTreeSet<_>>();
+    let Some(order) = &definition.order_table else {
+        return ids;
+    };
+    ids.extend(
+        definition
+            .saved_section
+            .iter()
+            .flat_map(|saved| &saved.entities)
+            .filter_map(saved_section_entity_geometry)
+            .filter_map(|(internal_id, _, _)| order.external_id(internal_id)),
+    );
+    ids
 }
 
 fn resolved_profile_chains(
@@ -6553,6 +6571,44 @@ mod resolved_sketch_tests {
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
             })
         );
+        assert_eq!(
+            section_entity_external_ids(&definition),
+            BTreeSet::from([42])
+        );
+        let mut constrained = definition.clone();
+        constrained.segments = Some(crate::feature::FeatureSegmentTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            offset: 0,
+        });
+        constrained.relations = Some(crate::feature::FeatureRelationTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            skamps: vec![crate::feature::FeatureSkamp {
+                id: 5,
+                kind: 99,
+                flags: 0,
+                status: 0,
+                items: vec![crate::feature::FeatureSkampItem {
+                    entity_id: 42,
+                    sense: 4,
+                }],
+                offset: 30,
+            }],
+            triples: Vec::new(),
+            offset: 28,
+        });
+        let constraints =
+            section_skamp_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()));
+        assert!(matches!(
+            &constraints[0].0.definition,
+            SketchConstraintDefinition::Native { entities, .. }
+                if entities == &[SketchEntityId(
+                    "creo:featdefs:sketch_entity#5:42".to_string()
+                )]
+        ));
 
         let mut completed = definition;
         completed

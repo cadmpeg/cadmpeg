@@ -352,6 +352,11 @@ A two-item type-three incidence has one sense-zero point entity and one
 endpoint-selected entity; the point and endpoint loci coincide.
 A one-item type-one incidence makes the referenced entity horizontal. A
 one-item type-two incidence makes the referenced entity vertical.
+An incidence item may reference a complete saved-section entity through its
+`order_table.ext_id`. When its type/sense pattern has no neutral constraint
+mapping, retain the incidence type, ordered entity identifiers, and sense values
+as one native sketch constraint; the absence of a typed locus interpretation
+does not remove the solver relation.
 
 The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;
