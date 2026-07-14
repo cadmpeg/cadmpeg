@@ -14900,7 +14900,13 @@ fn decode_groups_unary_circle_diameter_relations() {
 
 #[test]
 fn decode_groups_each_circle_dimension_operand_tag() {
-    for tag in [[0xfe, 0x83], [0xb6, 0x8a], [0x9d, 0x92], [0x69, 0xbd]] {
+    for tag in [
+        [0xcc, 0x80],
+        [0xfe, 0x83],
+        [0xb6, 0x8a],
+        [0x9d, 0x92],
+        [0x69, 0xbd],
+    ] {
         let mut source =
             sldprt_with_tagged_compact_relation(&triangle_body(), "sgCircleDim", [tag, [0, 0]]);
         source.extend(make_block(

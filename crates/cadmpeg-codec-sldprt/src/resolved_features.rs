@@ -302,6 +302,40 @@ mod marker_tests {
     }
 
     #[test]
+    fn legacy_scalar_layout_carries_shifted_role_and_operand() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(NAME_MARKER);
+        payload.push(2);
+        for unit in "D1".encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.extend_from_slice(SCALAR_HEADER);
+        payload.extend_from_slice(&0.004f64.to_le_bytes());
+        let trailer = payload.len();
+        payload.resize(trailer + 48, 0);
+        payload[trailer + 3..trailer + 7].copy_from_slice(&28u32.to_le_bytes());
+        payload[trailer + 24..trailer + 30].copy_from_slice(&[0x0f, 0, 0, 0, 2, 0]);
+        payload[trailer + 30] = 0;
+        payload[trailer + 36..trailer + 38].copy_from_slice(&[0xcc, 0x80]);
+        payload[trailer + 38..trailer + 40].copy_from_slice(&0u16.to_le_bytes());
+        payload[trailer + 40..trailer + 44].fill(0xff);
+
+        let names = object_names(&payload, "lane");
+        let scalars = named_scalars(&payload, "lane", &names);
+        let [scalar] = scalars.as_slice() else {
+            panic!("expected one scalar");
+        };
+        assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
+        assert_eq!(scalar.operands.len(), 1);
+        assert_eq!(scalar.operands[0].offset, (trailer + 36) as u64);
+        assert_eq!(
+            scalar.operands[0].kind,
+            crate::records::FeatureInputOperandKind::Native(0x80cc)
+        );
+        assert_eq!(scalar.operands[0].entity_index, 0);
+    }
+
+    #[test]
     fn coordinate_marker_local_id_uses_the_variant_footer() {
         let mut payload = vec![0; 142 + 5];
         payload[..5].copy_from_slice(super::SKETCH_MARKER);
@@ -504,7 +538,12 @@ fn scalar_operands(
     parent: &str,
 ) -> Vec<FeatureInputOperand> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    [35usize, 47]
+    let first = if legacy_scalar_layout(payload, trailer_offset) {
+        36
+    } else {
+        35
+    };
+    [first, first + 12]
         .into_iter()
         .filter_map(|relative| {
             let offset = trailer_offset.checked_add(relative)?;
@@ -616,6 +655,7 @@ pub(crate) fn bind_scalar_operands(
                                 0x837b
                                     | 0x8386
                                     | 0x83fe
+                                    | 0x80cc
                                     | 0x8ab6
                                     | 0x8dcb
                                     | 0x8dda
@@ -838,7 +878,9 @@ pub(crate) fn operand_accepts_marker(
 ) -> bool {
     match kind {
         FeatureInputOperandKind::D6
-        | FeatureInputOperandKind::Native(0x837b | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69) => {
+        | FeatureInputOperandKind::Native(
+            0x80cc | 0x837b | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69,
+        ) => {
             matches!(
                 marker,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
@@ -857,7 +899,7 @@ fn operand_uses_compatible_ordinal(kind: FeatureInputOperandKind) -> bool {
         kind,
         FeatureInputOperandKind::D6
             | FeatureInputOperandKind::E1
-            | FeatureInputOperandKind::Native(0x83fe | 0x8ab6 | 0x929d | 0xbd69)
+            | FeatureInputOperandKind::Native(0x80cc | 0x83fe | 0x8ab6 | 0x929d | 0xbd69)
     )
 }
 
@@ -1016,7 +1058,7 @@ fn relation_signature(
         return matches!(
             operands,
             [operand]
-                if matches!(operand.kind, Native(0x83fe | 0x8ab6 | 0x929d | 0xbd69))
+                if matches!(operand.kind, Native(0x80cc | 0x83fe | 0x8ab6 | 0x929d | 0xbd69))
         );
     }
     let [first, second] = operands else {
@@ -1052,14 +1094,26 @@ fn scalar_role(payload: &[u8], trailer_offset: usize) -> FeatureInputScalarRole 
             .get(trailer_offset + 7..trailer_offset + 21)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
         && payload.get(trailer_offset + 24..trailer_offset + 29) == Some(&[0, 0, 0, 2, 0]);
-    if !fixed_layout {
+    let role_offset = if fixed_layout {
+        trailer_offset + 29
+    } else if legacy_scalar_layout(payload, trailer_offset) {
+        trailer_offset + 30
+    } else {
         return FeatureInputScalarRole::Native;
-    }
-    match payload.get(trailer_offset + 29) {
+    };
+    match payload.get(role_offset) {
         Some(0) => FeatureInputScalarRole::Driving,
         Some(1) => FeatureInputScalarRole::Display,
         _ => FeatureInputScalarRole::Native,
     }
+}
+
+fn legacy_scalar_layout(payload: &[u8], trailer_offset: usize) -> bool {
+    payload.get(trailer_offset..trailer_offset + 3) == Some(&[0, 0, 0])
+        && payload
+            .get(trailer_offset + 7..trailer_offset + 24)
+            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+        && payload.get(trailer_offset + 24..trailer_offset + 30) == Some(&[0x0f, 0, 0, 0, 2, 0])
 }
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
