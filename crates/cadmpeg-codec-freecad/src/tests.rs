@@ -609,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "51");
+    assert_eq!(result.ir.ir_version, "52");
     let feature = |name: &str| {
         &result
             .ir
@@ -3553,10 +3553,12 @@ fn separates_semantic_annotations_from_drawing_relationships() {
 <ObjectData Count="4">
  <Object name="Model"><Properties Count="0"/></Object>
  <Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Model"/></Property></Properties></Object>
- <Object name="Dimension"><Properties Count="3">
+ <Object name="Dimension"><Properties Count="5">
   <Property name="BaseView" type="App::PropertyLink"><Link value="View"/></Property>
   <Property name="References2D" type="App::PropertyLinkSubList"><LinkList count="1"><Link object="Model" sub="Edge1"/></LinkList></Property>
   <Property name="FormatSpec" type="App::PropertyString"><String value="12.5 mm"/></Property>
+  <Property name="Measurement" type="App::PropertyLength"><Float value="12.5"/></Property>
+  <Property name="Position" type="App::PropertyVector"><PropertyVector valueX="10" valueY="20" valueZ="0"/></Property>
  </Properties></Object>
  <Object name="Note"><Properties Count="2">
   <Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="INSPECT"/></StringList></Property>
@@ -3614,6 +3616,122 @@ fn separates_semantic_annotations_from_drawing_relationships() {
     );
     assert!(neutral_dimension.relationships.contains_key("BaseView"));
     assert!(neutral_dimension.relationships.contains_key("References2D"));
+    assert_eq!(result.ir.model.semantic_annotations.len(), 2);
+    let semantic_dimension = result
+        .ir
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.object.ends_with("#Dimension"))
+        .expect("semantic dimension");
+    assert_eq!(
+        semantic_dimension.kind,
+        cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Dimension
+    );
+    assert_eq!(semantic_dimension.text, ["12.5 mm"]);
+    assert_eq!(semantic_dimension.format.as_deref(), Some("12.5 mm"));
+    assert_eq!(semantic_dimension.value, Some(12.5));
+    assert_eq!(semantic_dimension.position, Some([10.0, 20.0, 0.0]));
+    assert_eq!(
+        semantic_dimension.references["References2D"][0].subelements,
+        ["Edge1"]
+    );
+    let semantic_note = result
+        .ir
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.object.ends_with("#Note"))
+        .expect("semantic note");
+    assert_eq!(
+        semantic_note.kind,
+        cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
+    );
+    assert_eq!(semantic_note.text, ["INSPECT"]);
+    let neutral_view = result
+        .ir
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with("#View"))
+        .expect("neutral view");
+    assert_eq!(
+        semantic_note.references["View"][0].target.as_deref(),
+        Some(neutral_view.id.0.as_str())
+    );
+    assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
+
+    let mut corrupted = result.ir.clone();
+    corrupted.model.semantic_annotations[0].value = Some(f64::INFINITY);
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message
+            == "invalid semantic annotation reference, order, or numeric state"));
+}
+
+#[test]
+fn transfers_remaining_semantic_annotation_families_and_assets() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="6">
+ <Object type="Part::Feature" name="Model" id="1"/>
+ <Object type="TechDraw::DrawViewBalloon" name="Balloon" id="2"/>
+ <Object type="TechDraw::DrawLeaderLine" name="Leader" id="3"/>
+ <Object type="TechDraw::DrawViewSymbol" name="Symbol" id="4"/>
+ <Object type="TechDraw::DrawViewDatum" name="Datum" id="5"/>
+ <Object type="TechDraw::DrawViewTolerance" name="Tolerance" id="6"/>
+</Objects>
+<ObjectData Count="6">
+ <Object name="Model"><Properties Count="0"/></Object>
+ <Object name="Balloon"><Properties Count="2">
+  <Property name="Text" type="App::PropertyString"><String value="7"/></Property>
+  <Property name="Source" type="App::PropertyLinkSub"><Link object="Model" sub="Face1"/></Property>
+ </Properties></Object>
+ <Object name="Leader"><Properties Count="1"><Property name="Text" type="App::PropertyString"><String value="LEAD"/></Property></Properties></Object>
+ <Object name="Symbol"><Properties Count="1"><Property name="Symbol" type="App::PropertyFileIncluded"><FileIncluded file="symbol.svg"/></Property></Properties></Object>
+ <Object name="Datum"><Properties Count="1"><Property name="LabelText" type="App::PropertyString"><String value="A"/></Property></Properties></Object>
+ <Object name="Tolerance"><Properties Count="1"><Property name="Text" type="App::PropertyString"><String value="0.1"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("symbol.svg", b"<svg/>"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("annotation families");
+    use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind as Kind;
+    let kinds = result
+        .ir
+        .model
+        .semantic_annotations
+        .iter()
+        .map(|annotation| annotation.kind.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        kinds,
+        [
+            Kind::Balloon,
+            Kind::Datum,
+            Kind::Leader,
+            Kind::Symbol,
+            Kind::GeometricTolerance
+        ]
+    );
+    let balloon = &result.ir.model.semantic_annotations[0];
+    assert_eq!(balloon.text, ["7"]);
+    assert_eq!(balloon.references["Source"][0].subelements, ["Face1"]);
+    let symbol = result
+        .ir
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.kind == Kind::Symbol)
+        .expect("semantic symbol");
+    assert_eq!(symbol.assets.len(), 1);
+    assert!(symbol.assets[0].ends_with("symbol.svg"));
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
 }

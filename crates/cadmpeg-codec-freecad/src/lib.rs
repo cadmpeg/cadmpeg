@@ -1009,10 +1009,9 @@ impl Codec for FcstdCodec {
             let drawings = drawing::transfer(&graph.objects, &graph.properties);
             drawing::transfer_neutral(&mut ir.model, &drawings, &graph.properties);
             namespace.set_arena("drawings", &drawings)?;
-            namespace.set_arena(
-                "annotations",
-                &annotation::transfer(&graph.objects, &graph.properties),
-            )?;
+            let annotations = annotation::transfer(&graph.objects, &graph.properties);
+            annotation::transfer_neutral(&mut ir.model, &annotations, &graph.properties, &drawings);
+            namespace.set_arena("annotations", &annotations)?;
             namespace.set_arena(
                 "applications",
                 &application::transfer(&graph.objects, &graph.properties),

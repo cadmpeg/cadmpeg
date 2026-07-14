@@ -315,6 +315,14 @@ object identities, and external document/object pairs remain explicit without be
 local references. View position, positive scale, nonzero projection direction, rotation, exact
 fallback parameters, and resolved template or image assets are independently validated.
 
+CADIR version 52 adds a separate format-neutral semantic-annotation arena. Dimensions, notes,
+geometric tolerances, datums, balloons, leaders, symbols, and extension annotations retain source
+order, visible text, exact runtime classification, role-grouped model or drawing references,
+subelement selectors, explicit numeric measurements, formatting expressions, positions, fallback
+parameters, and resolved assets. Local drawing targets resolve to neutral drawing identities;
+external document/object pairs remain explicit. Referential and finite-numeric validation is
+independent of drawing presentation and of provenance annotations.
+
 Native namespace version 10 adds a `gui_documents` arena. A GUI archive has exactly one document
 record; a headless archive has none. The record retains the GUI schema and root attributes plus
 every document-level element outside `ViewProviderData` in source order. These named state records

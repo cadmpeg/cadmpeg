@@ -52,6 +52,7 @@ pub mod products;
 mod provenance;
 pub mod read;
 pub mod report;
+pub mod semantic_annotations;
 pub mod sketches;
 pub mod spreadsheets;
 pub mod subd;

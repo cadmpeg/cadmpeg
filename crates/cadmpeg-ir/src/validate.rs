@@ -33,6 +33,7 @@ mod geometry_payloads;
 mod identity_order;
 mod presentation;
 mod products;
+mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
 mod subd;
@@ -46,6 +47,7 @@ use geometry_payloads::{check_bounds, check_tessellations, check_unknown_payload
 use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
 use presentation::check_presentation;
 use products::check_products;
+use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
@@ -91,6 +93,7 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_products(ir, &mut findings);
     check_presentation(ir, &all_ids, &mut findings);
     check_drawings(ir, &all_ids, &mut findings);
+    check_semantic_annotations(ir, &all_ids, &mut findings);
 
     ValidationReport {
         entity_counts: entity_counts(ir),
