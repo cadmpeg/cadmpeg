@@ -740,6 +740,13 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         );
         complete_ext11_support_uv(&mut ir, &pending_ext11_support_uv);
         complete_support_uv(&mut ir, &pending_ext11_support_uv);
+        attach_completed_intersection_pcurves(
+            &mut ir,
+            &graph,
+            &format!("nx:s{si}"),
+            source_stream,
+            &mut annotations,
+        );
 
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let mut unknown = unknown_stream(si, stream);
@@ -1815,6 +1822,115 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
         };
         if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
             context.sides[side].pcurve = Some(pcurve);
+        }
+    }
+}
+
+pub(crate) fn attach_completed_intersection_pcurves(
+    ir: &mut CadIr,
+    graph: &Graph,
+    prefix: &str,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    annotations: &mut AnnotationBuilder,
+) {
+    let loop_faces = ir
+        .model
+        .loops
+        .iter()
+        .map(|loop_| (&loop_.id, &loop_.face))
+        .collect::<BTreeMap<_, _>>();
+    let face_surfaces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (&face.id, &face.surface))
+        .collect::<BTreeMap<_, _>>();
+    let edge_curves = ir
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| Some((&edge.id, edge.curve.as_ref()?)))
+        .collect::<BTreeMap<_, _>>();
+    let mut candidates =
+        BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveGeometry, [f64; 2], Option<f64>)>>::new();
+    for procedural in &ir.model.procedural_curves {
+        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+            continue;
+        };
+        for side in &context.sides {
+            let (Some(surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
+                continue;
+            };
+            let values = candidates
+                .entry((procedural.curve.clone(), surface.clone()))
+                .or_default();
+            let candidate = (
+                pcurve.clone(),
+                context.parameter_range,
+                procedural.cache_fit_tolerance,
+            );
+            if !values.contains(&candidate) {
+                values.push(candidate);
+            }
+        }
+    }
+
+    let replacements = ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.pcurve.is_none() && coedge.id.0.starts_with(prefix))
+        .filter_map(|coedge| {
+            let surface = loop_faces
+                .get(&coedge.owner_loop)
+                .and_then(|face| face_surfaces.get(*face))?;
+            let curve = edge_curves.get(&coedge.edge)?;
+            let [candidate] = candidates
+                .get(&((*curve).clone(), (*surface).clone()))?
+                .as_slice()
+            else {
+                return None;
+            };
+            pcurve_matches_edge(ir, &coedge.edge, surface, &candidate.0, candidate.2)
+                .then(|| (coedge.id.clone(), candidate.clone()))
+        })
+        .collect::<Vec<_>>();
+    for (coedge_id, (geometry, parameter_range, fit_tolerance)) in replacements {
+        let Some(fin_xmt) = coedge_id
+            .0
+            .rsplit_once('#')
+            .and_then(|(_, value)| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let pcurve_id = PcurveId(format!("{prefix}:intersection-pcurve-completed#{fin_xmt}"));
+        if ir.model.pcurves.iter().any(|pcurve| pcurve.id == pcurve_id) {
+            continue;
+        }
+        let source_offset = graph.get(17, fin_xmt).map_or(0, |node| node.pos as u64);
+        annotations
+            .note(&pcurve_id, source_stream, source_offset)
+            .tag("INTERSECTION_PCURVE");
+        annotations.derived(&pcurve_id, "geometry");
+        annotations.derived(&pcurve_id, "parameter_range");
+        if fit_tolerance.is_some() {
+            annotations.derived(&pcurve_id, "fit_tolerance");
+        }
+        ir.model.pcurves.push(Pcurve {
+            id: pcurve_id.clone(),
+            geometry,
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: Some(parameter_range),
+            fit_tolerance,
+        });
+        if let Some(coedge) = ir
+            .model
+            .coedges
+            .iter_mut()
+            .find(|coedge| coedge.id == coedge_id && coedge.pcurve.is_none())
+        {
+            coedge.pcurve = Some(pcurve_id);
         }
     }
 }

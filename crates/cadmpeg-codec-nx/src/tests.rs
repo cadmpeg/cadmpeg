@@ -8414,6 +8414,93 @@ fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
 }
 
 #[test]
+fn completed_intersection_support_lane_attaches_after_topology_emission() {
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let edge = cadmpeg_ir::ids::EdgeId("synthetic:cube:edge#0".into());
+    let target = ir
+        .model
+        .coedges
+        .iter_mut()
+        .find(|coedge| coedge.edge == edge && coedge.id.0.contains("bottom"))
+        .expect("bottom coedge");
+    target.id = cadmpeg_ir::ids::CoedgeId("nx:s0:fin#42".into());
+    target.pcurve = None;
+    let owner_loop = target.owner_loop.clone();
+    let surface = ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == owner_loop)
+        .and_then(|loop_| {
+            ir.model
+                .faces
+                .iter()
+                .find(|face| face.id == loop_.face)
+                .map(|face| face.surface.clone())
+        })
+        .expect("bottom support");
+    let curve = ir
+        .model
+        .edges
+        .iter()
+        .find(|candidate| candidate.id == edge)
+        .and_then(|edge| edge.curve.clone())
+        .expect("edge curve");
+    ir.model
+        .procedural_curves
+        .push(cadmpeg_ir::geometry::ProceduralCurve {
+            id: cadmpeg_ir::ids::ProceduralCurveId("nx:test:intersection#0".into()),
+            curve,
+            definition: ProceduralCurveDefinition::Intersection {
+                context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                    sides: [
+                        cadmpeg_ir::geometry::IntcurveSupportSide {
+                            surface: Some(surface),
+                            pcurve: Some(PcurveGeometry::Nurbs {
+                                degree: 1,
+                                knots: vec![0.0, 0.0, 1.0, 1.0],
+                                control_points: vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)],
+                                weights: None,
+                                periodic: false,
+                            }),
+                        },
+                        cadmpeg_ir::geometry::IntcurveSupportSide {
+                            surface: None,
+                            pcurve: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
+            },
+            cache_fit_tolerance: None,
+        });
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    let source_stream = annotations.stream("nx:test");
+
+    crate::decode::attach_completed_intersection_pcurves(
+        &mut ir,
+        &crate::topology::Graph::parse(&[]),
+        "nx:s0",
+        source_stream,
+        &mut annotations,
+    );
+
+    let completed = ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.0.contains("intersection-pcurve-completed"))
+        .expect("validated completed support lane attaches");
+    assert!(ir
+        .model
+        .coedges
+        .iter()
+        .any(|coedge| coedge.pcurve.as_ref() == Some(&completed.id)));
+}
+
+#[test]
 fn ext11_uv_completion_runs_after_support_incidence_resolution() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let mut cur = Cursor::new(prt_with_partition(&stream));
