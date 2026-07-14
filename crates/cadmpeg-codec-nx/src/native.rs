@@ -184,6 +184,42 @@ pub struct ParasolidEntity51Record {
     pub inflated_offset: u64,
 }
 
+/// Self-framed printable Parasolid type-84 string record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidEntity54StringRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Exact nonempty printable value.
+    pub value: String,
+    /// Exact framed record length.
+    pub byte_len: u64,
+    /// Offset of the record tag in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Exact type-81 reference to a uniquely resolved type-84 string record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidEntity51StringUse {
+    /// Globally unique use identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Owning type-81 record.
+    pub entity_51_record: String,
+    /// Zero-based position in the type-81 reference lane.
+    pub reference_ordinal: u32,
+    /// Stream-local referenced xmt.
+    pub referenced_xmt: u32,
+    /// Uniquely resolved type-84 string record.
+    pub string_record: String,
+    /// Offset of the owning type-81 record in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Validated link from a segment-index word to a framed OM section.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SegmentOmLink {
@@ -4454,6 +4490,73 @@ pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51R
         .collect::<Vec<_>>();
     records.sort_by(|first, second| first.id.cmp(&second.id));
     records
+}
+
+/// Decode every self-framed printable type-84 string record.
+pub fn parasolid_entity_54_string_records(
+    streams: &[Stream],
+) -> Vec<ParasolidEntity54StringRecord> {
+    let mut records = streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .flat_map(|(stream_ordinal, stream)| {
+            crate::parasolid::entity_54_string_records(&stream.inflated)
+                .into_iter()
+                .map(move |record| ParasolidEntity54StringRecord {
+                    id: format!(
+                        "nx:s{stream_ordinal}:entity-54-string#{}-{}",
+                        record.xmt, record.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    xmt: record.xmt,
+                    value: record.value.to_string(),
+                    byte_len: record.byte_len as u64,
+                    inflated_offset: record.offset as u64,
+                })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by(|first, second| first.id.cmp(&second.id));
+    records
+}
+
+/// Join type-81 reference slots to unique same-stream type-84 strings.
+pub fn parasolid_entity_51_string_uses(
+    entities: &[ParasolidEntity51Record],
+    strings: &[ParasolidEntity54StringRecord],
+) -> Vec<ParasolidEntity51StringUse> {
+    let mut strings_by_identity = BTreeMap::<(u32, u32), Vec<&str>>::new();
+    for string in strings {
+        strings_by_identity
+            .entry((string.stream_ordinal, string.xmt))
+            .or_default()
+            .push(string.id.as_str());
+    }
+    let mut uses = Vec::new();
+    for entity in entities {
+        for (reference_ordinal, referenced_xmt) in entity.references.iter().copied().enumerate() {
+            let Some([string]) = strings_by_identity
+                .get(&(entity.stream_ordinal, referenced_xmt))
+                .map(Vec::as_slice)
+            else {
+                continue;
+            };
+            uses.push(ParasolidEntity51StringUse {
+                id: format!(
+                    "nx:s{}:entity-51-string-use#{}-{}-{reference_ordinal}",
+                    entity.stream_ordinal, entity.xmt, entity.inflated_offset
+                ),
+                stream_ordinal: entity.stream_ordinal,
+                entity_51_record: entity.id.clone(),
+                reference_ordinal: reference_ordinal as u32,
+                referenced_xmt,
+                string_record: (*string).to_string(),
+                inflated_offset: entity.inflated_offset,
+            });
+        }
+    }
+    uses.sort_by(|first, second| first.id.cmp(&second.id));
+    uses
 }
 
 /// Unit declared by an NX numeric expression.

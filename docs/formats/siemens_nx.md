@@ -758,6 +758,12 @@ individually `01`-prefixed XMT values followed by `00`; the two forms are
 atomic. A topology attribute-list identity resolves only when exactly one
 type-81 record in the same stream has that xmt.
 
+A printable type-84 value record is `00 54 [ff], length:u32 BE, xmt,
+text[length], 00`. The length is nonzero, xmt is non-null, and every text byte
+is printable ASCII. The terminator is outside the declared text length. A
+type-81 reference slot addresses the value only when exactly one type-84 record
+in the same stream has the referenced xmt; reference order is retained.
+
 `hostglobalvariables` stores numeric expressions as independently length-framed ASCII records:
 
 ```text

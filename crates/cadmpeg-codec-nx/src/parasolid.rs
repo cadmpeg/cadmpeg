@@ -91,6 +91,67 @@ pub struct Entity51Record {
     pub references: Vec<u32>,
 }
 
+/// One self-framed printable type-84 string record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entity54StringRecord<'a> {
+    /// Inflated-stream offset of the `00 54` tag.
+    pub offset: usize,
+    /// Exact framed record length.
+    pub byte_len: usize,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Nonempty printable string value.
+    pub value: &'a str,
+}
+
+/// Decode self-framed printable type-84 string records.
+pub fn entity_54_string_records(bytes: &[u8]) -> Vec<Entity54StringRecord<'_>> {
+    let mut records = Vec::new();
+    for offset in 0..bytes.len().saturating_sub(10) {
+        if bytes.get(offset..offset + 2) != Some(&[0x00, 0x54]) {
+            continue;
+        }
+        let mut at = offset + 2;
+        if bytes.get(at) == Some(&0xff) {
+            at += 1;
+        }
+        let Some(length) = bytes
+            .get(at..at + 4)
+            .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")) as usize)
+            .filter(|length| *length > 0)
+        else {
+            continue;
+        };
+        at += 4;
+        let Some(xmt) = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1) else {
+            continue;
+        };
+        let Some(end) = at.checked_add(length) else {
+            continue;
+        };
+        let Some(value) = bytes.get(at..end).filter(|value| {
+            value
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+        }) else {
+            continue;
+        };
+        if bytes.get(end) != Some(&0) {
+            continue;
+        }
+        let Ok(value) = std::str::from_utf8(value) else {
+            continue;
+        };
+        records.push(Entity54StringRecord {
+            offset,
+            byte_len: end + 1 - offset,
+            xmt,
+            value,
+        });
+    }
+    records
+}
+
 /// Decode framed type-81 entity/attribute-list records.
 pub fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
     let mut records = Vec::new();
