@@ -570,6 +570,15 @@ pub(crate) fn transfer(
 fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
     match surface {
         B5Surface::Cylinder { radius, .. } => Point2::new(point[0] / radius, point[1]),
+        B5Surface::Cone {
+            half_angle,
+            slant_range,
+            angular_scale,
+            ..
+        } => Point2::new(
+            point[0] / angular_scale,
+            (point[1] - slant_range[0]) * half_angle.cos(),
+        ),
         _ => Point2::new(point[0], point[1]),
     }
 }
@@ -609,6 +618,44 @@ fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<Curve
             Some(CurveGeometry::Line {
                 origin: point3(line_origin),
                 direction: vector(*axis),
+            })
+        }
+        B5Surface::Cone {
+            apex,
+            direction_x,
+            direction_y,
+            axis,
+            half_angle,
+            angular_scale,
+            ..
+        } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
+            let [u, _] = *pcurve.control_points.first()?;
+            let angle = u / angular_scale;
+            let radial = add(
+                scale(*direction_x, angle.cos()),
+                scale(*direction_y, angle.sin()),
+            );
+            Some(CurveGeometry::Line {
+                origin: point3(*apex),
+                direction: vector(add(
+                    scale(*axis, half_angle.cos()),
+                    scale(radial, half_angle.sin()),
+                )),
+            })
+        }
+        B5Surface::Cone {
+            apex,
+            direction_x,
+            axis,
+            half_angle,
+            ..
+        } => {
+            let slant = constant_coordinate(&pcurve.control_points, 1)?;
+            Some(CurveGeometry::Circle {
+                center: point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
+                axis: vector(*axis),
+                ref_direction: vector(*direction_x),
+                radius: slant * half_angle.sin(),
             })
         }
         B5Surface::Cylinder {
@@ -847,6 +894,24 @@ fn neutral_surface(
             ref_direction: vector(*reference_x),
             radius: *radius,
         },
+        B5Surface::Cone {
+            apex,
+            direction_x,
+            axis,
+            half_angle,
+            slant_range,
+            ..
+        } => {
+            let slant = slant_range[0];
+            SurfaceGeometry::Cone {
+                origin: point(add(*apex, scale(*axis, slant * half_angle.cos()))),
+                axis: vector(*axis),
+                ref_direction: vector(*direction_x),
+                radius: slant * half_angle.sin(),
+                ratio: 1.0,
+                half_angle: *half_angle,
+            }
+        }
         B5Surface::Nurbs(surface) => SurfaceGeometry::Nurbs(surface.clone()),
         B5Surface::Revolution {
             profile_curve,
@@ -1284,7 +1349,7 @@ mod tests {
     use crate::b5::{B5Pcurve, B5Profile, B5Surface};
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SurfaceGeometry};
-    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     #[test]
     fn cylinder_pcurve_arc_length_normalizes_to_neutral_angle() {
@@ -1391,6 +1456,54 @@ mod tests {
         };
         assert_eq!(curve.weights, pcurve.weights);
         assert!(curve.control_points.iter().all(|point| point.z == 2.0));
+    }
+
+    #[test]
+    fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
+        let half_angle = std::f64::consts::FRAC_PI_6;
+        let cone = B5Surface::Cone {
+            apex: [0.0, 0.0, 0.0],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            half_angle,
+            angular_offset: 0.0,
+            slant_range: [2.0, 8.0],
+            angular_scale: 3.0,
+        };
+        let pcurve = B5Pcurve {
+            object_id: 1,
+            surface: 2,
+            degree: 1,
+            distinct_knots: vec![0.0, 3.0 * std::f64::consts::PI],
+            multiplicities: vec![2, 2],
+            control_points: vec![[0.0, 4.0], [3.0 * std::f64::consts::PI, 4.0]],
+            weights: None,
+            lifted_endpoints: None,
+        };
+        assert_eq!(
+            pcurve
+                .control_points
+                .iter()
+                .map(|point| neutral_pcurve_point(*point, &cone))
+                .collect::<Vec<_>>(),
+            [
+                Point2::new(0.0, 2.0 * half_angle.cos()),
+                Point2::new(std::f64::consts::PI, 2.0 * half_angle.cos()),
+            ]
+        );
+        let Some(CurveGeometry::Circle {
+            center,
+            radius,
+            axis,
+            ..
+        }) = lifted_curve_geometry(&pcurve, &cone)
+        else {
+            panic!("expected cone latitude circle");
+        };
+        assert_eq!(center, Point3::new(0.0, 0.0, 4.0 * half_angle.cos()));
+        assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
+        assert!((radius - 2.0).abs() < 1e-12);
     }
 
     #[test]

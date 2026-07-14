@@ -114,6 +114,25 @@ pub enum B5Surface {
         /// Positive cylinder radius.
         radius: f64,
     },
+    /// `b5 03 29`: a circular cone in its native arc-length/slant chart.
+    Cone {
+        /// Cone apex.
+        apex: [f64; 3],
+        /// First transverse unit direction.
+        direction_x: [f64; 3],
+        /// Second transverse unit direction.
+        direction_y: [f64; 3],
+        /// Cone-axis unit direction.
+        axis: [f64; 3],
+        /// Cone half-angle in radians.
+        half_angle: f64,
+        /// Stored angular-origin offset.
+        angular_offset: f64,
+        /// Native slant-coordinate range.
+        slant_range: [f64; 2],
+        /// Divisor mapping native U to azimuth.
+        angular_scale: f64,
+    },
     /// `b5 03 2d`: a surface of revolution sweeping `profile_curve` about
     /// `axis_origin`/`axis_direction`.
     Revolution {
@@ -865,6 +884,30 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 radius,
             })
         }
+        0x29 => {
+            let apex = point(&record.payload, 1)?;
+            let direction_x = unit(point(&record.payload, 25)?)?;
+            let direction_y = unit(point(&record.payload, 49)?)?;
+            let axis = unit(point(&record.payload, 73)?)?;
+            let half_angle = scalar(&record.payload, 97)?;
+            let angular_offset = scalar(&record.payload, 121)?;
+            let slant_range = [scalar(&record.payload, 129)?, scalar(&record.payload, 137)?];
+            let angular_scale = scalar(&record.payload, 145)?;
+            ((0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
+                && slant_range[0] > 0.0
+                && slant_range[0] < slant_range[1]
+                && angular_scale > 0.0)
+                .then_some(B5Surface::Cone {
+                    apex,
+                    direction_x,
+                    direction_y,
+                    axis,
+                    half_angle,
+                    angular_offset,
+                    slant_range,
+                    angular_scale,
+                })
+        }
         0x2d => {
             let mut position = 1;
             let profile_curve = reference(&record.payload, &mut position, record.object_id)?;
@@ -941,6 +984,31 @@ fn lift_pcurve_endpoints(
                 )
             }))
         }
+        B5Surface::Cone {
+            apex,
+            direction_x,
+            direction_y,
+            axis,
+            half_angle,
+            angular_scale,
+            ..
+        } => Some(endpoints.map(|[u, v]| {
+            let angle = u / angular_scale;
+            let radial = add(
+                scale(*direction_x, angle.cos()),
+                scale(*direction_y, angle.sin()),
+            );
+            add(
+                *apex,
+                scale(
+                    add(
+                        scale(*axis, half_angle.cos()),
+                        scale(radial, half_angle.sin()),
+                    ),
+                    v,
+                ),
+            )
+        })),
         B5Surface::Revolution {
             profile_curve,
             axis_origin,
@@ -1473,7 +1541,7 @@ fn object_frame(bytes: &[u8], start: usize) -> Option<(usize, u8, u8, u32)> {
 fn is_topology_class(class: u8) -> bool {
     matches!(
         class,
-        0x0e | 0x0f | 0x18 | 0x20 | 0x21 | 0x27 | 0x28 | 0x2d | 0x5e | 0x5f | 0x62
+        0x0e | 0x0f | 0x18 | 0x20 | 0x21 | 0x27 | 0x28 | 0x29 | 0x2d | 0x5e | 0x5f | 0x62
     )
 }
 
@@ -1676,6 +1744,52 @@ mod tests {
                 axis_origin: [1.0, 0.0, 0.0],
                 axis_direction: [1.0, 0.0, 0.0],
                 gauge_radius: 2.0,
+            })
+        );
+    }
+
+    #[test]
+    fn cone_surface_reads_the_native_slant_chart() {
+        let mut payload = vec![0; 185];
+        payload[0] = 0x80;
+        for (offset, values) in [
+            (1, [1.0f64, 2.0, 3.0]),
+            (25, [1.0, 0.0, 0.0]),
+            (49, [0.0, 1.0, 0.0]),
+            (73, [0.0, 0.0, 1.0]),
+        ] {
+            for (index, value) in values.into_iter().enumerate() {
+                payload[offset + 8 * index..offset + 8 * index + 8]
+                    .copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        for (offset, value) in [
+            (97, 0.25f64),
+            (121, 0.5),
+            (129, 2.0),
+            (137, 8.0),
+            (145, 3.0),
+        ] {
+            payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x29,
+            object_id: 7,
+            payload,
+        };
+        assert_eq!(
+            parse_surface(&record),
+            Some(B5Surface::Cone {
+                apex: [1.0, 2.0, 3.0],
+                direction_x: [1.0, 0.0, 0.0],
+                direction_y: [0.0, 1.0, 0.0],
+                axis: [0.0, 0.0, 1.0],
+                half_angle: 0.25,
+                angular_offset: 0.5,
+                slant_range: [2.0, 8.0],
+                angular_scale: 3.0,
             })
         );
     }
