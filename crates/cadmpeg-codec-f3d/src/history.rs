@@ -261,13 +261,24 @@ fn decode_history_records(
     match crate::sab::frame_history(bytes, start, limit, width) {
         Ok(records) => records
             .into_iter()
-            .map(|record| AsmHistoryRecord {
-                id: format!("f3d:{stream}:asm-history-record#{:010}", record.offset),
-                parent: state_id.to_string(),
-                index: record.index as u64,
-                byte_offset: record.offset as u64,
-                name: record.name,
-                raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
+            .map(|record| {
+                let entity_references = record
+                    .tokens
+                    .iter()
+                    .filter_map(|token| match token {
+                        crate::sab::Token::Ref(value) => Some(*value),
+                        _ => None,
+                    })
+                    .collect();
+                AsmHistoryRecord {
+                    id: format!("f3d:{stream}:asm-history-record#{:010}", record.offset),
+                    parent: state_id.to_string(),
+                    index: record.index as u64,
+                    byte_offset: record.offset as u64,
+                    name: record.name,
+                    entity_references,
+                    raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
+                }
             })
             .collect(),
         Err(_) => {
@@ -277,6 +288,7 @@ fn decode_history_records(
                 index: 0,
                 byte_offset: start as u64,
                 name: "opaque_history_payload".into(),
+                entity_references: Vec::new(),
                 raw_bytes: bytes[start..limit].to_vec(),
             }]
         }

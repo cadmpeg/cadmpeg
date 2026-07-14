@@ -523,6 +523,8 @@ fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
     t_end(&mut tail);
     t_ident(&mut tail, "history_payload");
     t_long(&mut tail, 37);
+    t_ref(&mut tail, 1830);
+    t_ref(&mut tail, -1);
     t_end(&mut tail);
     t_ident(&mut tail, "delta_state");
     for value in [3, 1, 0] {
@@ -9289,6 +9291,7 @@ fn decode_retains_generated_asm_history_graph() {
     assert_eq!(history.states[0].bulletin_boards[0].changes.len(), 2);
     assert_eq!(history.states[0].records.len(), 1);
     assert_eq!(history.states[0].records[0].name, "history_payload");
+    assert_eq!(history.states[0].records[0].entity_references, [1830, -1]);
     assert!(!history.states[0].records[0].raw_bytes.is_empty());
     assert_eq!(
         history.states[0].bulletin_boards[0].changes[1].kind,

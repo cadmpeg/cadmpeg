@@ -47,6 +47,9 @@ pub(crate) struct AsmHistoryRecord {
     #[serde(default)]
     pub byte_offset: u64,
     pub name: String,
+    /// Ordered `0x0c` entity-reference tokens in the history revision namespace.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entity_references: Vec<i64>,
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub raw_bytes: Vec<u8>,
