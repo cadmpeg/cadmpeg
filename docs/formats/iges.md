@@ -70,6 +70,10 @@ Type 308 Form 0 defines a reusable subfigure and has entity-use flag `02`. It st
 
 Type 408 Form 0 instantiates one Type 308 definition. It stores the definition pointer, a model-space translation defaulting componentwise to zero, and a positive scale defaulting to one. Its Directory transformation supplies rotation or other permitted affine placement and is applied in addition to the instance translation and scale. The `subfigure_definitions` and `subfigure_instances` arenas preserve definition identity separately from occurrence identity, ordered members, native placement components, and nesting links.
 
+Type 320 Form 0 defines a reusable network subfigure and has entity-use flag `02`. It stores a nonnegative nesting depth, nonempty name, ordered child entities, a type flag identifying unspecified, logical, or physical content, a primary reference designator, an optional Type 312 display-template pointer, and an ordered list of nullable Type 132 connect-point pointers. Its nesting depth includes both Type 308 and Type 320 definitions, and every contained Type 408 or Type 420 instance targets a definition of strictly smaller depth. Type 320 carries no independent transformation.
+
+Type 420 Form 0 instantiates one Type 320 definition. It stores translation coordinates defaulting to zero; positive definition-space x, y, and z scale factors, where x defaults to one and omitted y or z defaults to x; a type flag; a primary reference designator; an optional Type 312 display-template pointer; and an ordered nullable connect-point list. The instance and definition connect-point counts are equal. Definition-space scaling precedes the instance translation and the Directory transformation. The `network_definitions` and `network_instances` arenas retain native values, ordered identities, nullable connection positions, and placement links.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.

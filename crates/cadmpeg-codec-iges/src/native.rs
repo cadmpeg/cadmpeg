@@ -211,6 +211,36 @@ struct NativeSubfigureInstance {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeNetworkDefinition {
+    id: String,
+    source_entity: String,
+    depth: Option<i64>,
+    name: Option<Vec<u8>>,
+    declared_member_count: Option<i64>,
+    members: Vec<Option<String>>,
+    type_flag: Option<i64>,
+    primary_reference_designator: Option<Vec<u8>>,
+    display_template: Option<String>,
+    declared_connect_point_count: Option<i64>,
+    connect_points: Vec<Option<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeNetworkInstance {
+    id: String,
+    source_entity: String,
+    definition: Option<String>,
+    translation: [Option<f64>; 3],
+    scale: [Option<f64>; 3],
+    type_flag: Option<i64>,
+    primary_reference_designator: Option<Vec<u8>>,
+    display_template: Option<String>,
+    declared_connect_point_count: Option<i64>,
+    connect_points: Vec<Option<String>>,
+    transformation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -751,6 +781,103 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let network_definitions = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 320 && entry.form == 0)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let member_count = record
+                .and_then(|record| record.integer(3))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let connect_count_index = 7 + member_count;
+            let connect_count = record
+                .and_then(|record| record.integer(connect_count_index))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            NativeNetworkDefinition {
+                id: format!("iges:product:network-definition#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                depth: record.and_then(|record| record.integer(1)),
+                name: record
+                    .and_then(|record| record.string(2))
+                    .map(<[u8]>::to_vec),
+                declared_member_count: record.and_then(|record| record.integer(3)),
+                members: (0..member_count)
+                    .map(|index| {
+                        record
+                            .and_then(|record| record.integer(4 + index))
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                    })
+                    .collect(),
+                type_flag: record.and_then(|record| record.integer(4 + member_count)),
+                primary_reference_designator: record
+                    .and_then(|record| record.string(5 + member_count))
+                    .map(<[u8]>::to_vec),
+                display_template: record
+                    .and_then(|record| record.integer(6 + member_count))
+                    .filter(|sequence| *sequence != 0)
+                    .map(|sequence| format!("iges:entity:directory#{sequence}")),
+                declared_connect_point_count: record
+                    .and_then(|record| record.integer(connect_count_index)),
+                connect_points: (0..connect_count)
+                    .map(|index| {
+                        record
+                            .and_then(|record| record.integer(8 + member_count + index))
+                            .filter(|sequence| *sequence != 0)
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                    })
+                    .collect(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let network_instances = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 420 && entry.form == 0)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let connect_count = record
+                .and_then(|record| record.integer(11))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            NativeNetworkInstance {
+                id: format!("iges:product:network-instance#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                definition: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| format!("iges:product:network-definition#D{sequence}")),
+                translation: [
+                    record.and_then(|record| record.number(2)),
+                    record.and_then(|record| record.number(3)),
+                    record.and_then(|record| record.number(4)),
+                ],
+                scale: [
+                    record.and_then(|record| record.number(5)),
+                    record.and_then(|record| record.number(6)),
+                    record.and_then(|record| record.number(7)),
+                ],
+                type_flag: record.and_then(|record| record.integer(8)),
+                primary_reference_designator: record
+                    .and_then(|record| record.string(9))
+                    .map(<[u8]>::to_vec),
+                display_template: record
+                    .and_then(|record| record.integer(10))
+                    .filter(|sequence| *sequence != 0)
+                    .map(|sequence| format!("iges:entity:directory#{sequence}")),
+                declared_connect_point_count: record.and_then(|record| record.integer(11)),
+                connect_points: (0..connect_count)
+                    .map(|index| {
+                        record
+                            .and_then(|record| record.integer(12 + index))
+                            .filter(|sequence| *sequence != 0)
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                    })
+                    .collect(),
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -769,5 +896,7 @@ pub(crate) fn store(
     namespace.set_arena("solid_assemblies", &solid_assemblies)?;
     namespace.set_arena("subfigure_definitions", &subfigure_definitions)?;
     namespace.set_arena("subfigure_instances", &subfigure_instances)?;
+    namespace.set_arena("network_definitions", &network_definitions)?;
+    namespace.set_arena("network_instances", &network_instances)?;
     Ok(())
 }

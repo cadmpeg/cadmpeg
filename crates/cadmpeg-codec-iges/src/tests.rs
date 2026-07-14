@@ -2254,6 +2254,25 @@ fn invalid_subfigure_depth_file() -> Vec<u8> {
     ])
 }
 
+fn network_subfigure_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 320,
+            form: 0,
+            label: "NETWORK".into(),
+            status: "00000200",
+            parameters: "320,0,3HNET,0,1,2HR1,0,2,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 420,
+            form: 0,
+            label: "NETINST".into(),
+            status: "00000000",
+            parameters: "420,1,1,2,3,2,,,1,2HU1,0,2,0,0;".into(),
+        },
+    ])
+}
+
 fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
     explicit_multi_pcurve_loop_file_with_first_pcurve(
         "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,0.5,0,0,0,1,0,0,1;",
@@ -3345,6 +3364,42 @@ fn decode_rejects_non_decreasing_subfigure_nesting_depth() {
     assert_eq!(
         result.ir.native.namespace("iges").unwrap().arenas["subfigure_definitions"].len(),
         2
+    );
+}
+
+#[test]
+fn decode_preserves_network_definition_and_anisotropic_instance() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(network_subfigure_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+    let definition = &native.arenas["network_definitions"][0];
+    assert_eq!(definition.id, "iges:product:network-definition#D1");
+    assert_eq!(definition.fields["type_flag"], 1);
+    assert_eq!(definition.fields["declared_connect_point_count"], 2);
+    assert_eq!(
+        definition.fields["connect_points"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let instance = &native.arenas["network_instances"][0];
+    assert_eq!(
+        instance.fields["definition"],
+        "iges:product:network-definition#D1"
+    );
+    assert_eq!(instance.fields["translation"][2], 3.0);
+    assert_eq!(instance.fields["scale"][0], 2.0);
+    assert!(instance.fields["scale"][1].is_null());
+    assert!(instance.fields["scale"][2].is_null());
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
     );
 }
 
