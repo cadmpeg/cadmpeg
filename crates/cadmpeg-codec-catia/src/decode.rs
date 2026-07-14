@@ -1167,7 +1167,10 @@ mod chart_tests {
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
-    use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface,
+        SurfaceGeometry,
+    };
     use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{Point, Vertex};
@@ -1192,9 +1195,24 @@ mod chart_tests {
     }
 
     #[test]
-    fn standard_spline_edge_retains_an_unknown_curve_carrier() {
+    fn standard_spline_edge_retains_cache_and_exact_intersection_construction() {
         let mut ir = CadIr::empty(Units::default());
         let mut annotations = AnnotationBuilder::new();
+        for index in 0..2 {
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId(format!("surface-{index}")),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: if index == 0 {
+                        Vector3::new(0.0, 0.0, 1.0)
+                    } else {
+                        Vector3::new(0.0, 1.0, 0.0)
+                    },
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            });
+        }
         let support = StandardCurveSupport {
             pos: 12,
             tag: 7,
@@ -1204,8 +1222,14 @@ mod chart_tests {
         let id = build_standard_edge_curve(
             &mut ir,
             &mut annotations,
-            &[],
-            &HashMap::new(),
+            &[
+                (SurfaceId("surface-0".to_string()), false, 0),
+                (SurfaceId("surface-1".to_string()), false, 1),
+            ],
+            &HashMap::from([
+                (SurfaceId("surface-0".to_string()), 0),
+                (SurfaceId("surface-1".to_string()), 1),
+            ]),
             &[],
             &support,
             [0, 0],
@@ -1217,6 +1241,17 @@ mod chart_tests {
             ir.model.curves[0].geometry,
             CurveGeometry::Unknown { ref record }
                 if record.as_ref().is_some_and(|id| id.0 == "catia:payload:unknown#brep-stream")
+        ));
+        assert!(matches!(
+            ir.model.procedural_curves.as_slice(),
+            [ProceduralCurve {
+                curve,
+                definition: ProceduralCurveDefinition::Intersection { context, .. },
+                ..
+            }] if curve == &id
+                && context.sides[0].surface.as_ref().is_some_and(|id| id.0 == "surface-0")
+                && context.sides[1].surface.as_ref().is_some_and(|id| id.0 == "surface-1")
+                && context.parameter_range == [0.0, 1.0]
         ));
     }
 
@@ -5095,6 +5130,45 @@ fn build_standard_edge_curve(
         geometry,
         source_object: None,
     });
+    if matches!(&support.geometry, geometry::StandardCurveGeometry::Bspline) {
+        let sides = support.faces.map(|face| {
+            let surface = bindings
+                .get(face)
+                .and_then(|(id, _, _)| surface_indices.get(id).map(|_| id.clone()));
+            IntcurveSupportSide {
+                surface,
+                pcurve: None,
+            }
+        });
+        if sides.iter().all(|side| side.surface.is_some()) && sides[0].surface != sides[1].surface {
+            let procedural_id =
+                ProceduralCurveId(format!("catia:standard:intersection#{}", support.pos));
+            annotate(
+                annotations,
+                &procedural_id,
+                "MainDataStream+SurfacicReps",
+                support.pos as u64,
+                "standard_radial_surface_intersection",
+                Exactness::Derived,
+            );
+            annotations
+                .derived(&procedural_id, "curve")
+                .derived(&procedural_id, "definition");
+            ir.model.procedural_curves.push(ProceduralCurve {
+                id: procedural_id,
+                curve: id.clone(),
+                definition: ProceduralCurveDefinition::Intersection {
+                    context: IntcurveSupportContext {
+                        sides,
+                        parameter_range: [0.0, 1.0],
+                        discontinuities: std::array::from_fn(|_| Vec::new()),
+                    },
+                    discontinuity_flag: false,
+                },
+                cache_fit_tolerance: None,
+            });
+        }
+    }
     (Some(id), param_range)
 }
 

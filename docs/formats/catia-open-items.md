@@ -22,7 +22,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The semantic assignments of the width-coded `b2/b3/b4 03 5e` header token and terminal byte are unresolved.
 
 - The byte relation assigning logical vertex components to `05 08 01` allocation rows is unspecified.
-- Standard spline edge carrier geometry. Native `b5 03 5e` endpoint identities bind the edge topology, but the solved 3D spline carrier referenced by the standard row remains unresolved.
+- Standard spline cache poles, knots, and native parameterization. The exact two-surface intersection construction and endpoint trim are resolved, but the serialized cache referenced by the standard row remains unresolved.
 - `op1` and persistent-tag resolution. The mapping from absolute persistent CGM tags to serialized records remains unresolved for the consolidated `a5` family.
 - Standard-path line equations, multi-body shell membership, annular-cap orientation, and plane-normal sign.
 - The standard-path arc branch is unspecified for arcs with no witnessed adjacent face.
