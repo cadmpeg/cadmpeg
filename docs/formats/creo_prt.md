@@ -118,7 +118,7 @@ byte1 = (prefix - 0x8B) & 0xFF
 byte0 = 0x3F when byte1 >= 0x80, otherwise 0x40
 ```
 
-Known prefixes include `71→3F E6`, `74→3F E9`, `81→3F F6`, `8b→40 00`, `90→40 05`, `91→40 06`, `a1→40 16`, `a2→40 17`, and `b7→3F E4`. In the `var_arr` coordinate lane, `d7` is the sign counterpart of `90` and maps to `C0 05 <tail6>`.
+Known prefixes include `71→3F E6`, `74→3F E9`, `76→3F EB`, `81→3F F6`, `8b→40 00`, `90→40 05`, `91→40 06`, `a1→40 16`, `a2→40 17`, and `b7→3F E4`. The negative saved-spline tangent form `b3` maps to `BF E0`. In the `var_arr` coordinate lane, `d7` is the sign counterpart of `90` and maps to `C0 05 <tail6>`.
 
 The `var_arr` coordinate lane also defines the sign pairs
 `80→3F F5`/`c8→BF F5` and `97→40 0C`/`dd→C0 0C`. Each prefix is followed by
