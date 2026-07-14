@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
+use crate::parasolid::{Stream, StreamKind};
 
 /// One row retained from the canonical `UG_PART` segment index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,6 +47,88 @@ pub fn segment_index_rows(container: &Container) -> Vec<SegmentIndexRow> {
             source_offset: entry_offset + (ordinal * 12) as u64,
         })
         .collect()
+}
+
+/// Word position within one segment-index row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SegmentIndexSlot {
+    /// First row word.
+    TypeCode,
+    /// Second row word.
+    SubtypeCode,
+    /// Third row word.
+    Value,
+}
+
+/// Validated link from a segment-index word to a compressed stream wrapper.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SegmentStreamLink {
+    /// Globally unique link identity.
+    pub id: String,
+    /// Owning segment-index row.
+    pub row: String,
+    /// Row word containing the wrapper offset.
+    pub slot: SegmentIndexSlot,
+    /// Zero-based stream ordinal in source-file order.
+    pub stream_ordinal: u32,
+    /// Decoded stream classification.
+    pub stream_kind: String,
+    /// Bytes from the wrapper start to its zlib header.
+    pub wrapper_byte_len: u32,
+    /// Absolute file offset of the wrapper.
+    pub source_offset: u64,
+}
+
+/// Resolve segment-index words that point to validated compressed wrappers.
+pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<SegmentStreamLink> {
+    let Some((entry, index)) = container.segment_index() else {
+        return Vec::new();
+    };
+    let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+    let entry_start = usize::try_from(entry_offset).expect("in-bounds directory offset");
+    let mut links = Vec::new();
+    for (row_ordinal, row) in index.rows.into_iter().enumerate() {
+        for (slot, relative) in [
+            (SegmentIndexSlot::TypeCode, row.type_code),
+            (SegmentIndexSlot::SubtypeCode, row.subtype_code),
+            (SegmentIndexSlot::Value, row.value),
+        ] {
+            let relative = relative as usize;
+            let Some(wrapper) = container.data.get(entry_start + relative..) else {
+                continue;
+            };
+            let wrapper_byte_len = match cadmpeg_ir::le::u32_at(wrapper, 0) {
+                Some(0x8000_0000) => 8usize,
+                Some(0xc000_0000) => 33usize,
+                _ => continue,
+            };
+            let zlib_offset = entry_start + relative + wrapper_byte_len;
+            let Some((stream_ordinal, stream)) = streams
+                .iter()
+                .enumerate()
+                .find(|(_, stream)| stream.file_offset == zlib_offset)
+            else {
+                continue;
+            };
+            links.push(SegmentStreamLink {
+                id: format!("nx:segment-stream-links:link#{}", links.len()),
+                row: format!("nx:segment-index:row#{row_ordinal}"),
+                slot,
+                stream_ordinal: stream_ordinal as u32,
+                stream_kind: match stream.kind {
+                    StreamKind::Partition => "partition",
+                    StreamKind::Deltas => "deltas",
+                    StreamKind::Plain => "plain",
+                    StreamKind::Preview => "preview",
+                }
+                .to_string(),
+                wrapper_byte_len: wrapper_byte_len as u32,
+                source_offset: entry_offset + relative as u64,
+            });
+        }
+    }
+    links
 }
 
 /// Unit declared by an NX numeric expression.

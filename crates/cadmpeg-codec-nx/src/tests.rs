@@ -39,6 +39,22 @@ fn segment_index_payload() -> Vec<u8> {
     payload
 }
 
+fn segment_stream_payload() -> Vec<u8> {
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    payload.extend_from_slice(&0x8000_0000u32.to_le_bytes());
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    encoder
+        .write_all(b"PS\0\0 (deltas) SCH_test segment stream payload with more than sixty-four inflated bytes........")
+        .unwrap();
+    payload.extend_from_slice(&encoder.finish().unwrap());
+    payload
+}
+
 #[test]
 fn nx_expression_parameter_references_preserve_formula_order() {
     assert_eq!(
@@ -329,6 +345,27 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
     assert_eq!(rows[1].value, 28);
     assert_eq!(rows[1].source_entry, "/Root/UG_PART/UG_PART");
     assert_eq!(rows[1].source_offset, rows[0].source_offset + 12);
+}
+
+#[test]
+fn decode_links_segment_index_word_to_validated_stream_wrapper() {
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let links = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::SegmentStreamLink>("segment_stream_links")
+        .unwrap();
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].row, "nx:segment-index:row#0");
+    assert_eq!(links[0].slot, crate::native::SegmentIndexSlot::TypeCode);
+    assert_eq!(links[0].stream_ordinal, 0);
+    assert_eq!(links[0].stream_kind, "deltas");
+    assert_eq!(links[0].wrapper_byte_len, 8);
 }
 
 #[test]

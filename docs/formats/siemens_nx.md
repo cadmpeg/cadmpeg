@@ -52,6 +52,13 @@ occupy the declared region from offset zero; zero to eleven trailing bytes fill
 the remainder when that offset is not divisible by twelve. Row order and all
 three words are significant.
 
+A segment-index word can point to a compressed-stream wrapper. At that
+payload-relative offset, wrapper flag `0x80000000:u32 LE` places the zlib header
+at `+8`; wrapper flag `0xc0000000:u32 LE` places it at `+33`. The pointed stream
+is valid only when that exact position begins a complete zlib payload accepted
+by the stream grammar. The containing row ordinal and word position preserve
+the wrapper's segment order.
+
 ### 2.1 Stream inventory
 
 | Stream                       | Role                                                                           |
