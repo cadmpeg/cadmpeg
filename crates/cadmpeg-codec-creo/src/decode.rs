@@ -2557,6 +2557,144 @@ fn extrusion_profile_signed_area(
     (area_twice.abs() > 1e-12 * scale * scale).then_some(0.5 * area_twice)
 }
 
+type ExtrusionProfile = Vec<(SketchGeometry, bool, [f64; 2], [f64; 2])>;
+
+fn segments_intersect(first: [[f64; 2]; 2], second: [[f64; 2]; 2], tolerance: f64) -> bool {
+    let orient = |a: [f64; 2], b: [f64; 2], point: [f64; 2]| {
+        (b[0] - a[0]).mul_add(point[1] - a[1], -((b[1] - a[1]) * (point[0] - a[0])))
+    };
+    let on_segment = |segment: [[f64; 2]; 2], point: [f64; 2]| {
+        point[0] >= segment[0][0].min(segment[1][0]) - tolerance
+            && point[0] <= segment[0][0].max(segment[1][0]) + tolerance
+            && point[1] >= segment[0][1].min(segment[1][1]) - tolerance
+            && point[1] <= segment[0][1].max(segment[1][1]) + tolerance
+    };
+    let orientations = [
+        orient(first[0], first[1], second[0]),
+        orient(first[0], first[1], second[1]),
+        orient(second[0], second[1], first[0]),
+        orient(second[0], second[1], first[1]),
+    ];
+    let first_length = (first[1][0] - first[0][0]).hypot(first[1][1] - first[0][1]);
+    let second_length = (second[1][0] - second[0][0]).hypot(second[1][1] - second[0][1]);
+    let first_cross_tolerance = tolerance * first_length.max(1.0);
+    let second_cross_tolerance = tolerance * second_length.max(1.0);
+    let opposite = |left: f64, right: f64, cross_tolerance: f64| {
+        (left > cross_tolerance && right < -cross_tolerance)
+            || (left < -cross_tolerance && right > cross_tolerance)
+    };
+    if opposite(orientations[0], orientations[1], first_cross_tolerance)
+        && opposite(orientations[2], orientations[3], second_cross_tolerance)
+    {
+        return true;
+    }
+    (orientations[0].abs() <= first_cross_tolerance && on_segment(first, second[0]))
+        || (orientations[1].abs() <= first_cross_tolerance && on_segment(first, second[1]))
+        || (orientations[2].abs() <= second_cross_tolerance && on_segment(second, first[0]))
+        || (orientations[3].abs() <= second_cross_tolerance && on_segment(second, first[1]))
+}
+
+fn ordered_polygonal_extrusion_profiles(
+    mut profiles: Vec<ExtrusionProfile>,
+) -> Option<(Vec<ExtrusionProfile>, f64)> {
+    let polygons = profiles
+        .iter()
+        .map(|profile| {
+            profile
+                .iter()
+                .map(|(geometry, _, start, _)| {
+                    matches!(geometry, SketchGeometry::Line { .. }).then_some(*start)
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let scale = polygons
+        .iter()
+        .flatten()
+        .flat_map(|point| point.iter())
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let tolerance = 1e-9 * scale;
+    for polygon in &polygons {
+        for first in 0..polygon.len() {
+            for second in first + 1..polygon.len() {
+                if second == first + 1 || (first == 0 && second + 1 == polygon.len()) {
+                    continue;
+                }
+                if segments_intersect(
+                    [polygon[first], polygon[(first + 1) % polygon.len()]],
+                    [polygon[second], polygon[(second + 1) % polygon.len()]],
+                    tolerance,
+                ) {
+                    return None;
+                }
+            }
+        }
+    }
+    for first in 0..polygons.len() {
+        for second in first + 1..polygons.len() {
+            for first_edge in 0..polygons[first].len() {
+                for second_edge in 0..polygons[second].len() {
+                    if segments_intersect(
+                        [
+                            polygons[first][first_edge],
+                            polygons[first][(first_edge + 1) % polygons[first].len()],
+                        ],
+                        [
+                            polygons[second][second_edge],
+                            polygons[second][(second_edge + 1) % polygons[second].len()],
+                        ],
+                        tolerance,
+                    ) {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+    let outer = polygons
+        .iter()
+        .enumerate()
+        .filter(|(candidate, polygon)| {
+            polygons.iter().enumerate().all(|(index, inner)| {
+                index == *candidate
+                    || inner
+                        .iter()
+                        .all(|point| polygon_strictly_contains(polygon, *point))
+            })
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let [outer] = outer.as_slice() else {
+        return None;
+    };
+    for first in 0..polygons.len() {
+        if first == *outer {
+            continue;
+        }
+        for second in first + 1..polygons.len() {
+            if second == *outer {
+                continue;
+            }
+            if polygon_strictly_contains(&polygons[first], polygons[second][0])
+                || polygon_strictly_contains(&polygons[second], polygons[first][0])
+            {
+                return None;
+            }
+        }
+    }
+    let outer_area = extrusion_profile_signed_area(&profiles[*outer])?;
+    if profiles.iter().enumerate().any(|(index, profile)| {
+        index != *outer
+            && extrusion_profile_signed_area(profile)
+                .is_none_or(|area| area.is_sign_positive() == outer_area.is_sign_positive())
+    }) {
+        return None;
+    }
+    profiles.swap(0, *outer);
+    Some((profiles, outer_area))
+}
+
 fn add_extrusion_pcurve(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -2669,13 +2807,18 @@ fn transfer_resolved_extrusion_breps(
         if !supported {
             continue;
         }
-        let [profile] = profiles.as_slice() else {
-            continue;
+        let (profiles, outer_area) = if profiles.len() == 1 {
+            let Some(area) = extrusion_profile_signed_area(&profiles[0]) else {
+                continue;
+            };
+            (profiles, area)
+        } else {
+            let Some(result) = ordered_polygonal_extrusion_profiles(profiles) else {
+                continue;
+            };
+            result
         };
-        let Some(profile_area) = extrusion_profile_signed_area(profile) else {
-            continue;
-        };
-        let forward_faces = profile_area > 0.0;
+        let forward_caps = outer_area > 0.0;
 
         let prefix = format!("creo:feature:extrusion#{feature_id}");
         let body_id = BodyId(format!("{prefix}:body"));
@@ -2940,6 +3083,9 @@ fn transfer_resolved_extrusion_breps(
                 });
             }
 
+            let forward_sides = extrusion_profile_signed_area(profile)
+                .expect("validated extrusion profile has nonzero area")
+                > 0.0;
             for (index, (geometry, _, start, _)) in profile.iter().enumerate() {
                 let next = (index + 1) % count;
                 let surface_id =
@@ -3028,7 +3174,7 @@ fn transfer_resolved_extrusion_breps(
                     id: face_id.clone(),
                     shell: shell_id.clone(),
                     surface: surface_id,
-                    sense: if forward_faces {
+                    sense: if forward_sides {
                         Sense::Forward
                     } else {
                         Sense::Reversed
@@ -3048,7 +3194,7 @@ fn transfer_resolved_extrusion_breps(
             id: bottom_face,
             shell: shell_id.clone(),
             surface: bottom_surface,
-            sense: if forward_faces {
+            sense: if forward_caps {
                 Sense::Reversed
             } else {
                 Sense::Forward
@@ -3062,7 +3208,7 @@ fn transfer_resolved_extrusion_breps(
             id: top_face,
             shell: shell_id.clone(),
             surface: top_surface,
-            sense: if forward_faces {
+            sense: if forward_caps {
                 Sense::Forward
             } else {
                 Sense::Reversed
@@ -5398,6 +5544,55 @@ mod resolved_sketch_tests {
                 .abs()
                 < 1e-12
         );
+    }
+
+    #[test]
+    fn polygonal_extrusion_profiles_require_one_oppositely_oriented_hole() {
+        let rectangle = |minimum: [f64; 2], maximum: [f64; 2], clockwise: bool| {
+            let mut points = [
+                minimum,
+                [maximum[0], minimum[1]],
+                maximum,
+                [minimum[0], maximum[1]],
+            ];
+            if clockwise {
+                points.reverse();
+            }
+            (0..4)
+                .map(|index| {
+                    let start = points[index];
+                    let end = points[(index + 1) % 4];
+                    (
+                        SketchGeometry::Line {
+                            start: Point2::new(start[0], start[1]),
+                            end: Point2::new(end[0], end[1]),
+                        },
+                        false,
+                        start,
+                        end,
+                    )
+                })
+                .collect::<ExtrusionProfile>()
+        };
+        let outer = rectangle([-2.0, -2.0], [2.0, 2.0], false);
+        let hole = rectangle([-1.0, -1.0], [1.0, 1.0], true);
+        let (profiles, outer_area) =
+            ordered_polygonal_extrusion_profiles(vec![hole.clone(), outer.clone()])
+                .expect("strict outer and hole");
+        assert_eq!(profiles[0], outer);
+        assert!(outer_area > 0.0);
+        assert!(extrusion_profile_signed_area(&profiles[1]).expect("hole area") < 0.0);
+
+        assert!(ordered_polygonal_extrusion_profiles(vec![
+            rectangle([-2.0, -2.0], [2.0, 2.0], false),
+            rectangle([-1.0, -1.0], [1.0, 1.0], false),
+        ])
+        .is_none());
+        assert!(ordered_polygonal_extrusion_profiles(vec![
+            rectangle([-2.0, -2.0], [2.0, 2.0], false),
+            rectangle([1.0, -1.0], [3.0, 1.0], true),
+        ])
+        .is_none());
     }
 
     #[test]
