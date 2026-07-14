@@ -10,7 +10,6 @@
 - The complete version table for text B-rep record branches in the primary envelope is undefined.
 - The complete version table and field grammar for binary B-rep records in the primary envelope is
   undefined.
-- The byte grammars of persistent element maps and string-hasher tables are undefined.
 
 ## Auxiliary records
 

@@ -1869,8 +1869,7 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
             [point.x, point.y, point.z].into_iter().all(f64::is_finite)
         }
         CurveGeometry::Nurbs(n) => {
-            n.control_points.len() > n.degree as usize
-                && n.knots.windows(2).all(|w| w[0] <= w[1])
+            n.control_points.len() > n.degree as usize && n.knots.windows(2).all(|w| w[0] <= w[1])
         }
         CurveGeometry::Transformed { basis, transform } => {
             valid_affine_transform(*transform) && valid_curve_basis(basis)

@@ -963,7 +963,7 @@ fn fold_surface_frame(
             *ref_direction = u_reference;
         }
         SurfaceGeometry::Transformed { basis, .. } => {
-            fold_surface_frame(basis, u_reference, v_reference)
+            fold_surface_frame(basis, u_reference, v_reference);
         }
         SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
     }
@@ -989,7 +989,7 @@ fn annotate_surface_frame(
                 .derived(id, "geometry.ref_direction");
         }
         SurfaceGeometry::Transformed { basis, .. } => {
-            annotate_surface_frame(annotations, id, basis)
+            annotate_surface_frame(annotations, id, basis);
         }
         SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
     }

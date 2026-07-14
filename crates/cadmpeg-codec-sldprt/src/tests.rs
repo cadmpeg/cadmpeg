@@ -3776,6 +3776,7 @@ fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     pole.x += dx;
                 }
             }
+            CurveGeometry::Transformed { transform, .. } => transform.rows[0][3] += dx,
             CurveGeometry::Unknown { .. } => {}
         }
     }
@@ -3792,6 +3793,7 @@ fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     pole.x += dx;
                 }
             }
+            SurfaceGeometry::Transformed { transform, .. } => transform.rows[0][3] += dx,
             SurfaceGeometry::Unknown { .. } => {}
         }
     }

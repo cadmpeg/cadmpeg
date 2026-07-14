@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// One physical archive span.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -229,4 +229,98 @@ pub struct LogicalSpan {
     pub classification: String,
     /// Native record that owns typed or opaque bytes.
     pub owner: Option<String>,
+}
+
+/// One document-wide persistent string table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StringTableRecord {
+    /// Stable table identity; the suffix is the zero-based `HasherIndex`.
+    pub id: String,
+    /// Zero-based document table index referenced by shape properties.
+    pub index: usize,
+    /// Owning property when the table is serialized beside its first use.
+    pub owner_property: Option<String>,
+    /// Whether all strings, rather than only marked strings, were persisted.
+    pub save_all: bool,
+    /// Native hashing threshold.
+    pub threshold: i64,
+    /// Declared number of serialized entries.
+    pub declared_count: usize,
+    /// Referenced side entry, or `None` for inline data.
+    pub source_entry: Option<String>,
+    /// Parsed records in serialized order.
+    pub entries: Vec<StringTableEntry>,
+}
+
+/// One relative-coded record in a persistent string table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StringTableEntry {
+    /// Restored numeric string identity.
+    pub string_id: i64,
+    /// Native flag word.
+    pub flags: u64,
+    /// Restored referenced string identities.
+    pub components: Vec<i64>,
+    /// Exact payload following the numeric header.
+    pub payload: String,
+    /// Exact serialized record without its line terminator.
+    pub raw: String,
+}
+
+/// One persisted element map owned by an exact-shape property.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ElementMapRecord {
+    /// Stable map identity.
+    pub id: String,
+    /// Owning shape property identity.
+    pub property: String,
+    /// Version discriminator carried by the shape value.
+    pub version: String,
+    /// Document string-table index used by mapped names.
+    pub hasher_index: Option<usize>,
+    /// Referenced side entry, or `None` for inline data.
+    pub source_entry: Option<String>,
+    /// Native map identity.
+    pub map_id: u64,
+    /// Declared number of mapped transient elements.
+    pub declared_count: usize,
+    /// Ordered postfix dictionary.
+    pub postfixes: Vec<String>,
+    /// Ordered child-map records; the last record is the owning shape map.
+    pub maps: Vec<ElementMapNode>,
+}
+
+/// One map node, including recursively referenced child maps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ElementMapNode {
+    /// One-based map index in this serialization.
+    pub index: usize,
+    /// Native node identity.
+    pub map_id: u64,
+    /// Ordered indexed-element groups.
+    pub groups: Vec<ElementMapGroup>,
+}
+
+/// Persistent-name chains for one native topology kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ElementMapGroup {
+    /// Native indexed-name prefix such as `Face`, `Edge`, or `Vertex`.
+    pub indexed_name: String,
+    /// Child-map descriptors retained exactly.
+    pub children: Vec<String>,
+    /// One entry per transient indexed element, in index order.
+    pub names: Vec<Vec<ElementMappedName>>,
+}
+
+/// One persistent mapped-name encoding and its neutral topology bindings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ElementMappedName {
+    /// Exact encoded mapped name.
+    pub encoded: String,
+    /// Decoded base and postfix when all dictionary references are valid.
+    pub resolved: Option<String>,
+    /// Referenced persistent string identities.
+    pub string_ids: Vec<i64>,
+    /// Neutral topology ids for every placed occurrence of this element.
+    pub topology_ids: Vec<String>,
 }

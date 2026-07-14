@@ -3,6 +3,7 @@
 
 mod brep;
 mod container;
+mod element_map;
 mod native;
 mod persistence;
 mod topology_transfer;
@@ -69,6 +70,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
+    let string_tables = match namespace.arena_as::<native::StringTableRecord>("string_tables") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
+    let element_maps = match namespace.arena_as::<native::ElementMapRecord>("element_maps") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
 
     let mut findings = Vec::new();
     let object_ids = objects
@@ -131,6 +140,120 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     Check::ReferentialIntegrity,
                     format!("{} has missing link target {target}", property.id),
                     Some(property.id.clone()),
+                ));
+            }
+        }
+    }
+    let entry_names = entries
+        .iter()
+        .map(|entry| entry.name.as_str())
+        .collect::<HashSet<_>>();
+    for (expected_table_index, table) in string_tables.iter().enumerate() {
+        if table.index != expected_table_index || table.declared_count != table.entries.len() {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!("{} has invalid index or entry count", table.id),
+                Some(table.id.clone()),
+            ));
+        }
+        if table
+            .owner_property
+            .as_ref()
+            .is_some_and(|owner| !property_ids.contains(owner.as_str()))
+            || table
+                .source_entry
+                .as_ref()
+                .is_some_and(|entry| !entry_names.contains(entry.as_str()))
+        {
+            findings.push(finding(
+                Check::ReferentialIntegrity,
+                format!("{} has a missing property or side-entry link", table.id),
+                Some(table.id.clone()),
+            ));
+        }
+        let mut known_string_ids = HashSet::new();
+        for entry in &table.entries {
+            if !known_string_ids.insert(entry.string_id)
+                || entry
+                    .components
+                    .iter()
+                    .any(|id| !known_string_ids.contains(id))
+            {
+                findings.push(finding(
+                    Check::ReferentialIntegrity,
+                    format!("{} has duplicate or forward string-id references", table.id),
+                    Some(table.id.clone()),
+                ));
+            }
+        }
+    }
+    let topology_ids = ir
+        .model
+        .vertices
+        .iter()
+        .map(|entity| entity.id.0.as_str())
+        .chain(ir.model.edges.iter().map(|entity| entity.id.0.as_str()))
+        .chain(ir.model.loops.iter().map(|entity| entity.id.0.as_str()))
+        .chain(ir.model.faces.iter().map(|entity| entity.id.0.as_str()))
+        .chain(ir.model.shells.iter().map(|entity| entity.id.0.as_str()))
+        .chain(ir.model.bodies.iter().map(|entity| entity.id.0.as_str()))
+        .collect::<HashSet<_>>();
+    for map in &element_maps {
+        if !property_ids.contains(map.property.as_str())
+            || map
+                .hasher_index
+                .is_some_and(|index| index >= string_tables.len())
+            || map
+                .source_entry
+                .as_ref()
+                .is_some_and(|entry| !entry_names.contains(entry.as_str()))
+        {
+            findings.push(finding(
+                Check::ReferentialIntegrity,
+                format!(
+                    "{} has a missing property, string table, or side entry",
+                    map.id
+                ),
+                Some(map.id.clone()),
+            ));
+        }
+        for name in map
+            .maps
+            .iter()
+            .flat_map(|node| &node.groups)
+            .flat_map(|group| &group.names)
+            .flatten()
+        {
+            if let Some(table) = map.hasher_index.and_then(|index| string_tables.get(index)) {
+                let known_ids = table
+                    .entries
+                    .iter()
+                    .map(|entry| entry.string_id)
+                    .collect::<HashSet<_>>();
+                if name.string_ids.iter().any(|id| !known_ids.contains(id)) {
+                    findings.push(finding(
+                        Check::ReferentialIntegrity,
+                        format!("{} references a missing persistent string id", map.id),
+                        Some(map.id.clone()),
+                    ));
+                }
+            }
+            if name.topology_ids.is_empty() {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    format!("{} has an unbound persistent element name", map.id),
+                    Some(map.id.clone()),
+                ));
+            }
+            if name
+                .topology_ids
+                .iter()
+                .any(|id| !topology_ids.contains(id.as_str()))
+            {
+                findings.push(finding(
+                    Check::ReferentialIntegrity,
+                    format!("{} references missing neutral topology", map.id),
+                    Some(map.id.clone()),
                 ));
             }
         }
@@ -376,12 +499,15 @@ impl Codec for FcstdCodec {
                 .collect::<Result<Vec<_>, CodecError>>()?;
             let logical_ledger = logical_ledger(&entry_records, &graph.properties)?;
             let shape_payloads = brep::parse_payloads(&graph.properties, &entry_records)?;
+            let (string_tables, mut element_maps) =
+                element_map::parse(document_bytes, &graph.properties, &entry_records)?;
             namespace.set_arena("objects", &graph.objects)?;
             namespace.set_arena("extensions", &graph.extensions)?;
             namespace.set_arena("properties", &graph.properties)?;
             namespace.set_arena("entries", &entry_records)?;
             namespace.set_arena("logical_ledger", &logical_ledger)?;
             namespace.set_arena("shape_payloads", &shape_payloads)?;
+            namespace.set_arena("string_tables", &string_tables)?;
             let mut curve_transfer = transfer_text_curves(&shape_payloads, &graph.properties);
             let surface_transfer =
                 transfer_text_surfaces(&shape_payloads, &graph.properties, &mut curve_transfer);
@@ -398,6 +524,14 @@ impl Codec for FcstdCodec {
                 &graph.properties,
             ));
             topology_transfer::transfer(&mut ir, &shape_payloads)?;
+            let payload_ids = shape_payloads
+                .iter()
+                .map(|payload| (payload.property.as_str(), payload.id.as_str()))
+                .collect::<HashMap<_, _>>();
+            element_map::bind_topology(&mut element_maps, &payload_ids, &ir);
+            ir.native
+                .namespace_mut("fcstd")
+                .set_arena("element_maps", &element_maps)?;
         }
         let losses = if options.container_only {
             Vec::new()

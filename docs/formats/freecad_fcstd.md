@@ -76,6 +76,29 @@ indices, locations, geometry carriers, topology, tolerances, flags, parameter ra
 Transient table indices do not constitute persistent element identity. Persistent element names
 exist only when an element-map record supplies them.
 
+A shape value optionally carries an element-map version and a zero-based document string-table
+index. A newly encoded string table consists of a legacy marker followed by a second XML element,
+either containing the table stream or naming a side entry. Side-entry streams begin with
+`StringTableStart v1` and a decimal record count. Each record begins with a hexadecimal string id,
+a hexadecimal flag word, and zero or more dotted hexadecimal string-id references. A leading
+minus on an id encodes a positive delta from the preceding id. Dotted references are deltas from
+the corresponding preceding references; references beyond that preceding vector are encoded as a
+subtraction from the current id. Non-postfixed payloads use a decimal newline count followed by a
+colon and exact text. Postfixed payload fields are whitespace-delimited according to their flag
+bits. XML and stream counts must agree.
+
+A newly encoded element map likewise uses a compatibility marker followed by a second XML element,
+inline or side-entry. A side entry begins with `BeginElementMap v1`. The stream then carries a map
+id, an ordered postfix dictionary, a positive map-node count, and contiguous one-based map nodes.
+Each node contains ordered indexed-name groups. A group contains child-map descriptors followed by
+one persistent-name chain per transient indexed element. Chains terminate with `0`; each name
+encodes a literal or dictionary-derived base, a postfix-dictionary index, and persistent string-id
+references. The final node owns the shape. Group order and name position establish `Face1`,
+`Edge1`, `Vertex1`, and the corresponding other topology-kind indices. These transient positions
+are connected to persistent names and to every placed neutral occurrence; they are never exposed
+as persistent identity by themselves. Counts, indices, dictionary references, string references,
+property ownership, and neutral topology links are validated without synthesizing missing names.
+
 The native location chain is applied exactly once at the owning topology level. Display
 tessellation is presentation data and does not replace an available exact shape.
 

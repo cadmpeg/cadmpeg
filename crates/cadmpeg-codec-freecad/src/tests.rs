@@ -262,6 +262,80 @@ Co 1001000 +2 0 *
 }
 
 #[test]
+fn connects_persistent_element_names_to_neutral_topology() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1" StringHasher="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape">
+<Part HasherIndex="0" SaveHasher="1" ElementMap="1.0" file="Shape.brp"/>
+<StringHasher saveall="0" threshold="16" count="0" new="1"/>
+<StringHasher2 count="1">
+a.c PersistentSource
+</StringHasher2>
+<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
+<ElementMap2 count="5">
+41 PostfixCount 0 MapCount 1
+ElementMap 1 41 3
+Face ChildCount 0 NameCount 1
+;FaceStable.0.a 0
+Edge ChildCount 0 NameCount 2
+;EdgeStable1.0.a 0
+;EdgeStable2.0.a 0
+Vertex ChildCount 0 NameCount 2
+;VertexStable1.0.a 0
+;VertexStable2.0.a 0
+EndMap
+</ElementMap2>
+</Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 2
+1 0 0 1 0
+1 1 0 -1 0
+Curves 2
+1 0 0 0 1 0 0
+1 1 0 0 -1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 9
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +9 0 -8 0 *
+Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +8 0 -9 0 *
+Wi 1001000 +7 0 +6 0 *
+Fa 0 0.001 1 0 1001000 +5 0 *
+Sh 1001000 +4 0 *
+So 1001000 +3 0 *
+Co 1001000 +2 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("persistent element map");
+    let namespace = result.ir.native.namespace("fcstd").unwrap();
+    let tables = namespace
+        .arena_as::<crate::native::StringTableRecord>("string_tables")
+        .unwrap();
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].entries[0].string_id, 10);
+    let maps = namespace
+        .arena_as::<crate::native::ElementMapRecord>("element_maps")
+        .unwrap();
+    assert_eq!(maps.len(), 1);
+    assert_eq!(maps[0].hasher_index, Some(0));
+    let groups = &maps[0].maps[0].groups;
+    assert_eq!(groups[0].names[0][0].topology_ids.len(), 1);
+    assert_eq!(groups[1].names[0][0].topology_ids.len(), 1);
+    assert_eq!(groups[1].names[1][0].topology_ids.len(), 1);
+    assert_eq!(groups[2].names[0][0].topology_ids.len(), 1);
+    assert_eq!(groups[2].names[1][0].topology_ids.len(), 1);
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
 fn composes_outer_and_nested_mirrored_shape_locations_once() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
