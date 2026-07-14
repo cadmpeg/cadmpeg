@@ -1958,6 +1958,11 @@ fn multi_pcurve_boundary_file() -> Vec<u8> {
 
 fn trimmed_plane_with_inner_loop_file() -> Vec<u8> {
     let outer = "106,1,5,0,0,0,1,0,1,1,0,1,0,0;";
+    trimmed_plane_with_inner_loop_and_outer_pcurve(outer)
+}
+
+fn trimmed_plane_with_inner_loop_and_outer_pcurve(outer_pcurve: &str) -> Vec<u8> {
+    let outer = "106,1,5,0,0,0,1,0,1,1,0,1,0,0;";
     let inner = "106,1,5,0,0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75,0.25,0.25;";
     owned_test_file(&[
         OwnedTestEntity {
@@ -1979,7 +1984,7 @@ fn trimmed_plane_with_inner_loop_file() -> Vec<u8> {
             form: 63,
             label: "OUTPCURV".into(),
             status: "00010500",
-            parameters: outer.into(),
+            parameters: outer_pcurve.into(),
         },
         OwnedTestEntity {
             entity_type: 142,
@@ -2107,6 +2112,30 @@ fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
         "{:#?}",
         result.report.losses
     );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_rejects_disagreeing_curve_on_surface_carriers() {
+    let shifted_outer = "106,1,5,0,0.1,0,1.1,0,1.1,1,0.1,1,0.1,0;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_with_inner_loop_and_outer_pcurve(
+                shifted_outer,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .ir
+        .model
+        .faces
+        .iter()
+        .all(|face| face.id.0 != "iges:model:face#D15"));
+    assert!(result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("carriers disagree beyond the minimum resolution")));
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

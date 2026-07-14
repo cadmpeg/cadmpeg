@@ -56,6 +56,8 @@ Boundary, curve-on-surface, bounded-surface, and trimmed-surface entities carry 
 
 A Form 0 Boundary Entity (Type 141) stores `TYPE`, `PREF`, the support-surface pointer, and a positive model-curve count. Each ordered model-curve item stores its curve pointer, sense (`1` forward or `2` reversed), pcurve count, and that many parameter-curve pointers. `TYPE=0` requires every pcurve count to be zero. `TYPE=1` requires every pcurve count to be positive. The parameter curves of one item remain ordered and together form that coedge's parameter-space image.
 
+A Form 0 Curve on a Parametric Surface Entity (Type 142) stores its creation method, support-surface pointer, parameter-space curve pointer, model-space curve pointer, and preferred representation. The parameter-space curve has entity-use flag `05`. Its composition with the support surface has the same oriented model-space endpoints as the model-space curve. Projection requires both endpoint distances to be no greater than the Global minimum resolution; disagreement prevents attachment of the containing topology candidate.
+
 A Form 0 Trimmed Surface Entity (Type 144) stores a support-surface pointer, an outer-boundary flag, an inner-boundary count, an outer Curve on a Parametric Surface pointer or zero, and the ordered inner Curve on a Parametric Surface pointers. When the outer-boundary flag is zero, the outer pointer is zero and the rectangular parameter domain of the support surface supplies the outer boundary. The entity then produces no explicit outer loop; each listed loop is `inner`. When the flag is one, the outer pointer produces the single `outer` loop and each listed loop is `inner`.
 
 ## Byte accounting

@@ -6,6 +6,7 @@ pub(crate) mod brep;
 pub(crate) mod composite;
 pub(crate) mod conics;
 pub(crate) mod copious;
+pub(crate) mod evaluation;
 pub(crate) mod geometry;
 pub(crate) mod offsets;
 pub(crate) mod splines;

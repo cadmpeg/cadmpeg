@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Face-local trimmed-surface projection.
 
+use super::evaluation;
 use super::geometry::entity_loss;
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
@@ -23,6 +24,7 @@ struct BoundarySegment {
     model_curve: u32,
     pcurves: Vec<u32>,
     sense: Sense,
+    require_carrier_agreement: bool,
 }
 
 #[derive(Clone)]
@@ -224,6 +226,7 @@ pub(super) fn project(
                     pcurves: vec![pcurve],
                     model_curve,
                     sense: Sense::Forward,
+                    require_carrier_agreement: true,
                 }],
             },
         );
@@ -328,6 +331,7 @@ pub(super) fn project(
                 model_curve,
                 pcurves,
                 sense,
+                require_carrier_agreement: false,
             });
             index += 3 + pcurve_count;
         }
@@ -555,6 +559,28 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
+                if segment.require_carrier_agreement {
+                    let agrees = pcurves.len() == 1
+                        && global.minimum_resolution_mm().is_some_and(|tolerance| {
+                            let (geometry, range) = &pcurves[0];
+                            let mapped_start = evaluation::pcurve(geometry, range[0])
+                                .and_then(|uv| evaluation::surface(&support.geometry, uv));
+                            let mapped_end = evaluation::pcurve(geometry, range[1])
+                                .and_then(|uv| evaluation::surface(&support.geometry, uv));
+                            mapped_start.is_some_and(|point| {
+                                evaluation::distance(point, start) <= tolerance
+                            }) && mapped_end
+                                .is_some_and(|point| evaluation::distance(point, end) <= tolerance)
+                        });
+                    if !agrees {
+                        losses.push(entity_loss(
+                            entry,
+                            "curve-on-surface carriers disagree beyond the minimum resolution",
+                        ));
+                        valid = false;
+                        break;
+                    }
+                }
                 items.push(BoundaryItem {
                     segment: segment.clone(),
                     model_curve: model_curve_id,

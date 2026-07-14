@@ -224,6 +224,12 @@ impl Global {
         (scale.is_finite() && scale > 0.0).then_some(unit / scale)
     }
 
+    pub(crate) fn minimum_resolution_mm(&self) -> Option<f64> {
+        let resolution = self.values.get(18).and_then(Value::real)?;
+        let factor = self.length_factor_mm()?;
+        (resolution.is_finite() && resolution > 0.0).then_some(resolution * factor)
+    }
+
     pub(crate) fn sender_product(&self) -> Option<String> {
         self.values.get(2).and_then(Value::string)
     }
