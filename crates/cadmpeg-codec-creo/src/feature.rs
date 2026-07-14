@@ -760,7 +760,50 @@ pub struct FeatureRelationTable {
     pub entity_ref: Option<u32>,
     /// Complete positional relation rows in stored order.
     pub rows: Vec<FeatureRelation>,
+    /// Section-entity incidence records used by solver equations.
+    pub skamps: Vec<FeatureSkamp>,
+    /// Joins between relation, equation, and incidence identifiers.
+    pub triples: Vec<FeatureRelationTriple>,
     /// Byte offset of the `relat_ptr` label in the original stream.
+    pub offset: usize,
+}
+
+/// One entity incidence within a section solver `skamp_ptr` row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureSkampItem {
+    /// External section-entity identifier.
+    pub entity_id: u32,
+    /// Stored endpoint or locus selector.
+    pub sense: u32,
+}
+
+/// One counted section solver `skamp_ptr` row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureSkamp {
+    /// Incidence identifier referenced by `triples_ptr`.
+    pub id: u32,
+    /// Stored incidence family.
+    pub kind: u32,
+    /// Stored flags.
+    pub flags: u32,
+    /// Stored solver status.
+    pub status: u32,
+    /// Counted entity incidences in stored order.
+    pub items: Vec<FeatureSkampItem>,
+    /// Byte offset of the row in the original stream.
+    pub offset: usize,
+}
+
+/// One `triples_ptr` join between solver namespaces.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureRelationTriple {
+    /// Relation identifier, or the native null sentinel.
+    pub relation_id: Option<u32>,
+    /// Equation identifier, or the native null sentinel.
+    pub equation_id: Option<u32>,
+    /// Incidence identifier, or the native null sentinel.
+    pub skamp_id: Option<u32>,
+    /// Byte offset of the row in the original stream.
     pub offset: usize,
 }
 
@@ -1314,6 +1357,17 @@ fn next_segment_int(payload: &[u8], offset: &mut usize) -> Option<u32> {
     let (value, next) = segment_int(payload, *offset);
     *offset = next;
     value
+}
+
+fn next_solver_int(payload: &[u8], offset: &mut usize) -> Option<u32> {
+    let &head = payload.get(*offset)?;
+    if (0xc0..=0xdf).contains(&head) {
+        let high = *payload.get(*offset + 1)?;
+        let low = *payload.get(*offset + 2)?;
+        *offset += 3;
+        return Some((u32::from(head - 0xc0) << 16) | (u32::from(high) << 8) | u32::from(low));
+    }
+    next_segment_int(payload, offset)
 }
 
 fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegmentTable> {
@@ -1991,6 +2045,243 @@ fn dimension_table(
     })
 }
 
+fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp> {
+    let Some(table) = find_bytes(payload, b"skamp_ptr\0", start, end) else {
+        return Vec::new();
+    };
+    let mut cursor = table + b"skamp_ptr\0".len();
+    if payload
+        .get(cursor)
+        .is_some_and(|byte| matches!(byte, 0xf1 | 0xf3))
+    {
+        cursor += 1;
+    } else if payload.get(cursor..cursor + 2) == Some(&[0xf4, 0x05]) {
+        cursor += 2;
+    }
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Vec::new();
+    }
+    let (declared_count, next) = psb::compact_int(payload, cursor + 1);
+    cursor = next;
+    let class_start = cursor;
+    let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
+        return Vec::new();
+    };
+    let class_encoding = &payload[class_start..next];
+    cursor = next;
+    if payload.get(cursor..cursor + 2) != Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
+        return Vec::new();
+    }
+    cursor += 2;
+    let mut trailer = Vec::with_capacity(class_encoding.len() + 2);
+    trailer.push(0xf3);
+    trailer.extend_from_slice(class_encoding);
+    trailer.push(0xe2);
+    let Some(prototype_end) = find_bytes(payload, &trailer, cursor, end) else {
+        return Vec::new();
+    };
+    let named_item = (|| {
+        Some(FeatureSkampItem {
+            entity_id: named_compact_int(payload, b"ent_id\0", cursor, prototype_end)?,
+            sense: named_compact_int(payload, b"sense\0", cursor, prototype_end)?,
+        })
+    })();
+    let Some(items_label) = find_bytes(payload, b"items\0", cursor, prototype_end) else {
+        return Vec::new();
+    };
+    let mut item_cursor = items_label + b"items\0".len();
+    if payload.get(item_cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Vec::new();
+    }
+    let (prototype_item_count, after_count) = psb::compact_int(payload, item_cursor + 1);
+    item_cursor = after_count;
+    let item_class_start = item_cursor;
+    let Ok((_, after_item_class)) = psb::reference_id(payload, item_cursor + 1) else {
+        return Vec::new();
+    };
+    let item_class_encoding = &payload[item_class_start..after_item_class];
+    let mut item_close = Vec::with_capacity(item_class_encoding.len() + 2);
+    item_close.push(0xf1);
+    item_close.extend_from_slice(item_class_encoding);
+    item_close.push(0xe2);
+    let Some(named_item_end) = find_bytes(payload, &item_close, after_item_class, prototype_end)
+    else {
+        return Vec::new();
+    };
+    item_cursor = named_item_end + item_close.len();
+    let mut prototype_items = named_item.into_iter().collect::<Vec<_>>();
+    while prototype_items.len() < usize::try_from(prototype_item_count).unwrap_or(usize::MAX) {
+        let (Some(entity_id), next) = segment_int(payload, item_cursor) else {
+            return Vec::new();
+        };
+        item_cursor = next;
+        let (Some(sense), next) = segment_int(payload, item_cursor) else {
+            return Vec::new();
+        };
+        item_cursor = next;
+        prototype_items.push(FeatureSkampItem { entity_id, sense });
+    }
+    if item_cursor != prototype_end {
+        return Vec::new();
+    }
+    let Some(prototype) = (|| {
+        Some(FeatureSkamp {
+            id: named_compact_int(payload, b"id\0", cursor, prototype_end)?,
+            kind: named_compact_int(payload, b"type\0", cursor, prototype_end)?,
+            flags: named_compact_int(payload, b"flags\0", cursor, prototype_end)?,
+            status: named_compact_int(payload, b"status\0", cursor, prototype_end)?,
+            items: prototype_items,
+            offset: cursor,
+        })
+    })() else {
+        return Vec::new();
+    };
+    let mut rows = vec![prototype];
+    cursor = prototype_end + trailer.len();
+    while rows.len() < usize::try_from(declared_count).unwrap_or(usize::MAX) {
+        let row_offset = cursor;
+        let Some(id) = next_solver_int(payload, &mut cursor) else {
+            return Vec::new();
+        };
+        let Some(kind) = next_solver_int(payload, &mut cursor) else {
+            return Vec::new();
+        };
+        let Some(flags) = next_solver_int(payload, &mut cursor) else {
+            return Vec::new();
+        };
+        let Some(status) = next_solver_int(payload, &mut cursor) else {
+            return Vec::new();
+        };
+        if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+            return Vec::new();
+        }
+        let (item_count, next) = psb::compact_int(payload, cursor + 1);
+        cursor = next;
+        let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
+            return Vec::new();
+        };
+        cursor = next;
+        if payload.get(cursor..cursor + 2) != Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
+            return Vec::new();
+        }
+        cursor += 2;
+        let mut items = Vec::new();
+        while items.len() < usize::try_from(item_count).unwrap_or(usize::MAX) {
+            if !items.is_empty() && payload.get(cursor) == Some(&0xe2) {
+                cursor += 1;
+            }
+            if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
+                let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
+                    return Vec::new();
+                };
+                cursor = next;
+            }
+            let Some(entity_id) = next_solver_int(payload, &mut cursor) else {
+                return Vec::new();
+            };
+            let Some(sense) = next_solver_int(payload, &mut cursor) else {
+                return Vec::new();
+            };
+            items.push(FeatureSkampItem { entity_id, sense });
+            if payload.get(cursor) == Some(&0xf1) {
+                let Ok((_, next)) = psb::reference_id(payload, cursor + 2) else {
+                    return Vec::new();
+                };
+                cursor = next;
+                if payload.get(cursor) != Some(&0xe2) {
+                    return Vec::new();
+                }
+                cursor += 1;
+            }
+        }
+        if payload.get(cursor..cursor + trailer.len()) == Some(trailer.as_slice()) {
+            cursor += trailer.len();
+        } else if payload.get(cursor) == Some(&0xe2) {
+            cursor += 1;
+        } else if payload.get(cursor) == Some(&0xe0) {
+            // The final row is terminated by the following named table.
+        } else {
+            return Vec::new();
+        }
+        rows.push(FeatureSkamp {
+            id,
+            kind,
+            flags,
+            status,
+            items,
+            offset: row_offset,
+        });
+    }
+    rows
+}
+
+fn feature_relation_triples(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Vec<FeatureRelationTriple> {
+    let Some(table) = find_bytes(payload, b"triples_ptr\0", start, end) else {
+        return Vec::new();
+    };
+    let mut cursor = table + b"triples_ptr\0".len();
+    if payload.get(cursor..cursor + 2) == Some(&[0xf4, 0x04]) {
+        cursor += 2;
+    }
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Vec::new();
+    }
+    let (declared_count, next) = psb::compact_int(payload, cursor + 1);
+    cursor = next;
+    let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
+        return Vec::new();
+    };
+    cursor = next;
+    if payload.get(cursor..cursor + 2) != Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
+        return Vec::new();
+    }
+    cursor += 2;
+    let Some(close) = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end) else {
+        return Vec::new();
+    };
+    let prototype = FeatureRelationTriple {
+        relation_id: named_compact_int(payload, b"rel_id\0", cursor, close),
+        equation_id: named_compact_int(payload, b"eqn_id\0", cursor, close),
+        skamp_id: named_compact_int(payload, b"skamp_id\0", cursor, close),
+        offset: cursor,
+    };
+    let Ok((_, next)) = psb::reference_id(payload, close + 2) else {
+        return Vec::new();
+    };
+    cursor = next;
+    if payload.get(cursor) != Some(&0xe2) {
+        return Vec::new();
+    }
+    cursor += 1;
+    let mut rows = vec![prototype];
+    while rows.len() < usize::try_from(declared_count).unwrap_or(usize::MAX) {
+        let row_offset = cursor;
+        let relation_id = next_solver_int(payload, &mut cursor);
+        let equation_id = next_solver_int(payload, &mut cursor);
+        let skamp_id = next_solver_int(payload, &mut cursor);
+        let terminal_named_boundary = rows.len() + 1
+            == usize::try_from(declared_count).unwrap_or(usize::MAX)
+            && payload.get(cursor).is_some_and(|byte| *byte >= 0xe0);
+        if payload.get(cursor) != Some(&0xe2) && !terminal_named_boundary {
+            return Vec::new();
+        }
+        if !terminal_named_boundary {
+            cursor += 1;
+        }
+        rows.push(FeatureRelationTriple {
+            relation_id,
+            equation_id,
+            skamp_id,
+            offset: row_offset,
+        });
+    }
+    rows
+}
+
 fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRelationTable> {
     let table = find_bytes(payload, b"relat_ptr\0", start, end)?;
     let mut cursor = table + b"relat_ptr\0".len();
@@ -2057,6 +2348,8 @@ fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRel
         declared_count,
         entity_ref,
         rows,
+        skamps: feature_skamps(payload, start, end),
+        triples: feature_relation_triples(payload, start, end),
         offset: table,
     })
 }

@@ -319,12 +319,27 @@ ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, 
 | `ent_tab`     | Trimmed profile entity chain.                                                                                                          |
 | `vert_tab`    | Trim vertices and their two incident `segtab` entities.                                                                                |
 | `relat_ptr`   | Counted sketch-constraint relations. The `f8` allocation count includes two structural entries; exactly `count - 2` positional rows follow the schema close. Each row ends at `e2` and stores `id`, `used`, three four-slot operand vectors `a`, `b`, `c`, then `sign`, dimension selector, and relation-type discriminator. |
+| `skamp_ptr`   | Counted solver-incidence rows. Each row stores `id`, `type`, `flags`, `status`, and a counted ordered array of section-entity `ent_id`/`sense` pairs. |
+| `triples_ptr` | Counted joins from relation and equation identifiers to `skamp_ptr` incidence identifiers. Each of the three fields independently admits the `f6` null sentinel. |
 
 The first `var_arr` row is the named field prototype between the table header
 and schema close. It is a data row and contributes to the declared count;
 positional replay rows follow the close.
 The `f8` count is the exact total row count; bytes following that many rows do
 not belong to `var_arr`.
+
+`skamp_ptr` accepts the table wrappers `f1`, `f3`, and `f4 05`. Its named row
+is the first counted row. Positional rows repeat the nested item schema for the
+first item, then store additional `ent_id`/`sense` pairs directly; `e2`
+separates direct items when the item count exceeds two. The row trailer is
+`f3` plus the table entity reference plus `e2`; a one-item row instead ends at
+its item `e2`, and the final row may end at the following named record. Solver
+integer fields extend the compact-integer lattice with `c0..df XX YY`, equal
+to `((head-c0)<<16)|(XX<<8)|YY`.
+
+The first `triples_ptr` row is named and contributes to its declared count.
+Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;
+the last row may terminate directly at the next structural or named record.
 
 The named `segtab` row before its schema close is likewise a data row. Its `type`, `dir`, `pointid`, `cntrid`, `arcorient`, `verhor`, radius, and `ext_id` fields contribute one segment to the declared table count.
 Positional rows may insert the two-byte `c0 80` wrapper before `type`. The

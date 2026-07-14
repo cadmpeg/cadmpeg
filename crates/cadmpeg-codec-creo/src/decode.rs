@@ -55,6 +55,8 @@ struct CreoSketchRecord {
     segments: Vec<CreoSketchSegment>,
     dimensions: Vec<CreoSketchDimension>,
     relations: Vec<CreoSketchRelation>,
+    skamps: Vec<CreoSketchSkamp>,
+    relation_triples: Vec<CreoSketchRelationTriple>,
 }
 
 #[derive(Serialize)]
@@ -99,6 +101,31 @@ struct CreoSketchRelation {
     dimension_id: u32,
     relation_type: u32,
     body: Vec<u8>,
+}
+
+#[derive(Serialize)]
+struct CreoSketchSkamp {
+    id: u32,
+    kind: u32,
+    flags: u32,
+    status: u32,
+    items: Vec<CreoSketchSkampItem>,
+}
+
+#[derive(Serialize)]
+struct CreoSketchSkampItem {
+    entity_id: u32,
+    sense: u32,
+}
+
+#[derive(Serialize)]
+struct CreoSketchRelationTriple {
+    #[serde(rename = "relation_id")]
+    relation: Option<u32>,
+    #[serde(rename = "equation_id")]
+    equation: Option<u32>,
+    #[serde(rename = "skamp_id")]
+    skamp: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -380,6 +407,35 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     dimension_id: relation.dimension_id,
                     relation_type: relation.relation_type,
                     body: relation.body.clone(),
+                })
+                .collect(),
+            skamps: definition
+                .relations
+                .iter()
+                .flat_map(|table| &table.skamps)
+                .map(|skamp| CreoSketchSkamp {
+                    id: skamp.id,
+                    kind: skamp.kind,
+                    flags: skamp.flags,
+                    status: skamp.status,
+                    items: skamp
+                        .items
+                        .iter()
+                        .map(|item| CreoSketchSkampItem {
+                            entity_id: item.entity_id,
+                            sense: item.sense,
+                        })
+                        .collect(),
+                })
+                .collect(),
+            relation_triples: definition
+                .relations
+                .iter()
+                .flat_map(|table| &table.triples)
+                .map(|triple| CreoSketchRelationTriple {
+                    relation: triple.relation_id,
+                    equation: triple.equation_id,
+                    skamp: triple.skamp_id,
                 })
                 .collect(),
         })

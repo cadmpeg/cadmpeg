@@ -1338,11 +1338,21 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
 
 #[test]
 fn scan_decodes_counted_featdefs_constraint_relations() {
-    let payload = b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x04\xf7\x6a\xfb\xe2\
+    let mut payload = b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x04\xf7\x6a\xfb\xe2\
         \xe0\x01id\0\xe0\x01used\0\xe0\x01type\0\xf1\xf7\x6a\xe2\
         \x34\x00\x05\x01\xf6\xe4\x00\xe6\x0f\x10\x0f\xe4\x00\x00\x00\xe2\
         \x35\x01\x07\x29\x32\xf6\x00\xe6\x0f\x10\x0f\xe4\x01\x2a\x03\xe2"
         .to_vec();
+    payload.extend_from_slice(
+        b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
+          \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+          \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+          \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+          \xf3\xf7\x6b\xe2\
+          triples_ptr\0\xf4\x04\xf8\x02\xf7\x6d\xfb\xe2\
+          \xe0\x01rel_id\0\x07\xe0\x01eqn_id\0\x08\xe0\x01skamp_id\0\x05\
+          \xf1\xf7\x6d\xe2\xf6\x09\x05\xe2",
+    );
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
 
     let relations = scan.feature_definitions[0]
@@ -1365,6 +1375,51 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     assert_eq!(relations.rows[1].used, 1);
     assert_eq!(relations.rows[1].dimension_id, 42);
     assert_eq!(relations.rows[1].relation_type, 3);
+    assert_eq!(relations.skamps.len(), 1);
+    assert_eq!(relations.skamps[0].id, 5);
+    assert_eq!(relations.skamps[0].kind, 2);
+    assert_eq!(relations.skamps[0].items[0].entity_id, 42);
+    assert_eq!(relations.skamps[0].items[0].sense, 1);
+    assert_eq!(relations.triples.len(), 2);
+    assert_eq!(relations.triples[0].relation_id, Some(7));
+    assert_eq!(relations.triples[0].equation_id, Some(8));
+    assert_eq!(relations.triples[0].skamp_id, Some(5));
+    assert_eq!(relations.triples[1].relation_id, None);
+    assert_eq!(relations.triples[1].equation_id, Some(9));
+}
+
+#[test]
+fn scan_decodes_extended_solver_incidences() {
+    let payload = b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x02\xf7\x6a\xfb\xe2\
+        schema\xf1\xf7\x6a\xe2\
+        skamp_ptr\0\xf4\x05\xf8\x02\xf7\x6b\xfb\xe2\
+        \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+        \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+        \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+        \xf3\xf7\x6b\xe2\
+        \xc0\x40\x01\x0e\xc0\x40\x00\x22\xf8\x03\xf7\x6c\xfb\xe2\
+        \xf7\x6d\x09\x03\xf1\xf7\x6c\xe2\x0a\x02\xe2\x0b\x03\
+        \xe0\x00triples_ptr\0"
+        .to_vec();
+    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let relations = scan.feature_definitions[0]
+        .relations
+        .as_ref()
+        .expect("relat_ptr");
+
+    assert_eq!(relations.skamps.len(), 2);
+    assert_eq!(relations.skamps[1].id, 0x4001);
+    assert_eq!(relations.skamps[1].kind, 14);
+    assert_eq!(relations.skamps[1].flags, 0x4000);
+    assert_eq!(relations.skamps[1].status, 34);
+    assert_eq!(
+        relations.skamps[1]
+            .items
+            .iter()
+            .map(|item| (item.entity_id, item.sense))
+            .collect::<Vec<_>>(),
+        [(9, 3), (10, 2), (11, 3)]
+    );
 }
 
 #[test]
