@@ -179,6 +179,40 @@ pub fn offset_store_counted_index_lanes(bytes: &[u8]) -> Vec<OffsetStoreCountedI
     lanes
 }
 
+/// One exact shifted-IEEE scalar field in a reconstructed sketch payload.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SketchPayloadScalarField {
+    /// Payload-relative offset of the `50 59 66` marker.
+    pub offset: usize,
+    /// Serialized field discriminator following the marker.
+    pub field_code: u8,
+    /// Finite decoded binary64 value.
+    pub value: f64,
+}
+
+/// Decode exact `50 59 66, field_code, 00, shifted-f64` sketch fields.
+pub fn sketch_payload_scalar_fields(bytes: &[u8]) -> Vec<SketchPayloadScalarField> {
+    let mut fields = Vec::new();
+    for start in 0..bytes.len().saturating_sub(12) {
+        if bytes.get(start..start + 3) != Some(b"PYf")
+            || bytes.get(start + 4) != Some(&0x00)
+            || !matches!(bytes.get(start + 5), Some(0x20..=0x3f | 0xa0..=0xbf))
+        {
+            continue;
+        }
+        let Some(value) = shifted_ieee_f64(bytes.get(start + 5..start + 13).unwrap_or_default())
+        else {
+            continue;
+        };
+        fields.push(SketchPayloadScalarField {
+            offset: start,
+            field_code: bytes[start + 3],
+            value,
+        });
+    }
+    fields
+}
+
 /// One tagged reference occurrence in an externally bounded OM record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReferenceValue {

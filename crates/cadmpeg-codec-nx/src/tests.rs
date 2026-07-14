@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 65);
+    assert_eq!(namespace.version, 66);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1101,6 +1101,25 @@ fn om_offset_store_counted_index_lane_requires_complete_non_null_members() {
         crate::om::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0x62, 0x01, 0x10,])
             .is_empty()
     );
+}
+
+#[test]
+fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
+    let bytes = [
+        0xaa, 0x50, 0x59, 0x66, 0x64, 0x00, 0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72, 0xbb,
+    ];
+    let fields = crate::om::sketch_payload_scalar_fields(&bytes);
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].offset, 1);
+    assert_eq!(fields[0].field_code, 0x64);
+    assert!((fields[0].value - 38.1).abs() < 2.0e-12);
+
+    let mut malformed = bytes;
+    malformed[5] = 1;
+    assert!(crate::om::sketch_payload_scalar_fields(&malformed).is_empty());
+    malformed = bytes;
+    malformed[6] = 0x70;
+    assert!(crate::om::sketch_payload_scalar_fields(&malformed).is_empty());
 }
 
 #[test]
@@ -4836,7 +4855,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 65);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 66);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

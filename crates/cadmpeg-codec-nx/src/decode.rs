@@ -2825,6 +2825,10 @@ fn attach_native_object_model(
         &scan.container,
         &feature_sketch_construction_inputs,
     );
+    let feature_sketch_payload_scalars = crate::native::feature_sketch_payload_scalars(
+        &scan.container,
+        &feature_sketch_construction_inputs,
+    );
     let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
     let expression_declarations = crate::native::expression_declarations(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
@@ -2889,6 +2893,7 @@ fn attach_native_object_model(
         && feature_sketch_records.is_empty()
         && feature_sketch_construction_inputs.is_empty()
         && feature_sketch_construction_payloads.is_empty()
+        && feature_sketch_payload_scalars.is_empty()
         && feature_boolean_operations.is_empty()
         && expression_declarations.is_empty()
         && expressions.is_empty()
@@ -3173,7 +3178,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(65);
+    namespace.version = namespace.version.max(66);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3313,6 +3318,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_sketch_construction_payloads",
             &feature_sketch_construction_payloads,
+        )?;
+    }
+    if !feature_sketch_payload_scalars.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_payload_scalars",
+            &feature_sketch_payload_scalars,
         )?;
     }
     if !feature_boolean_operations.is_empty() {

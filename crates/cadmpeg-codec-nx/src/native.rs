@@ -418,6 +418,27 @@ pub struct FeatureSketchConstructionPayload {
     pub block_source_offsets: Vec<u64>,
 }
 
+/// Exact framed scalar retained from one reconstructed sketch payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureSketchPayloadScalar {
+    /// Globally unique scalar identity.
+    pub id: String,
+    /// Owning `SKETCH` operation label.
+    pub operation_label: String,
+    /// Reconstructed sketch payload carrying this field.
+    pub construction_payload: String,
+    /// Zero-based field order within the reconstructed payload.
+    pub ordinal: u32,
+    /// Serialized discriminator following the `50 59 66` marker.
+    pub field_code: u8,
+    /// Finite shifted-IEEE binary64 value.
+    pub value: f64,
+    /// Byte offset of the field marker within the reconstructed payload.
+    pub payload_offset: u64,
+    /// Absolute file offset of the field marker.
+    pub source_offset: u64,
+}
+
 /// Ordered object reference carried by a bounded sketch-operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchReference {
@@ -1357,28 +1378,7 @@ pub fn feature_sketch_construction_payloads(
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
 ) -> Vec<FeatureSketchConstructionPayload> {
-    let mut blocks = BTreeMap::<String, (&[u8], u64)>::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections().into_iter().enumerate()
-    {
-        if section
-            .records
-            .first()
-            .is_none_or(|record| record.object_id.is_some())
-        {
-            continue;
-        }
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (record_ordinal, block) in section.records.into_iter().enumerate() {
-            blocks.insert(
-                format!(
-                    "nx:om-data-blocks-{section_ordinal}:block#{}",
-                    record_ordinal + 1
-                ),
-                (block.bytes, entry_offset + block.offset as u64),
-            );
-        }
-    }
+    let blocks = offset_data_block_bytes(container);
 
     constructions
         .iter()
@@ -1402,6 +1402,83 @@ pub fn feature_sketch_construction_payloads(
                 block_source_offsets,
             })
         })
+        .collect()
+}
+
+fn offset_data_block_bytes(container: &Container) -> BTreeMap<String, (&[u8], u64)> {
+    let mut blocks = BTreeMap::new();
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections().into_iter().enumerate()
+    {
+        if section
+            .records
+            .first()
+            .is_none_or(|record| record.object_id.is_some())
+        {
+            continue;
+        }
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (record_ordinal, block) in section.records.into_iter().enumerate() {
+            blocks.insert(
+                format!(
+                    "nx:om-data-blocks-{section_ordinal}:block#{}",
+                    record_ordinal + 1
+                ),
+                (block.bytes, entry_offset + block.offset as u64),
+            );
+        }
+    }
+    blocks
+}
+
+/// Decode exact framed scalar fields across reconstructed sketch payloads.
+pub fn feature_sketch_payload_scalars(
+    container: &Container,
+    constructions: &[FeatureSketchConstructionInputs],
+) -> Vec<FeatureSketchPayloadScalar> {
+    let blocks = offset_data_block_bytes(container);
+    constructions
+        .iter()
+        .filter_map(|construction| {
+            let data_blocks = construction.member_data_blocks.clone();
+            let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
+                join_data_block_bytes(&data_blocks, &blocks)?;
+            let construction_payload = construction.id.replacen(
+                "sketch-construction-inputs",
+                "sketch-construction-payload",
+                1,
+            );
+            Some(
+                crate::om::sketch_payload_scalar_fields(&payload)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ordinal, field)| {
+                        let source_offset = block_payload_offsets
+                            .iter()
+                            .zip(&block_byte_lengths)
+                            .zip(&block_source_offsets)
+                            .find_map(|((payload_start, byte_len), source_start)| {
+                                let relative = u64::try_from(field.offset).ok()?;
+                                (relative >= *payload_start
+                                    && relative < payload_start.saturating_add(*byte_len))
+                                .then_some(source_start + relative - payload_start)
+                            })
+                            .expect("field lies in joined payload");
+                        FeatureSketchPayloadScalar {
+                            id: format!("{construction_payload}:scalar#{ordinal}"),
+                            operation_label: construction.operation_label.clone(),
+                            construction_payload: construction_payload.clone(),
+                            ordinal: ordinal as u32,
+                            field_code: field.field_code,
+                            value: field.value,
+                            payload_offset: field.offset as u64,
+                            source_offset,
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .flatten()
         .collect()
 }
 
