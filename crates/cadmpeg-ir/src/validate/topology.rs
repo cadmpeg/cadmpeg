@@ -1545,6 +1545,22 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             && latitude1.0 < latitude2.0
                             && finite_angle(*longitude)
                     }
+                    PrimitiveSolid::Ellipsoid {
+                        x_radius,
+                        y_radius,
+                        z_radius,
+                        latitude1,
+                        latitude2,
+                        longitude,
+                    } => {
+                        positive(*x_radius)
+                            && positive(*y_radius)
+                            && positive(*z_radius)
+                            && finite_angle(*latitude1)
+                            && finite_angle(*latitude2)
+                            && latitude1.0 < latitude2.0
+                            && finite_angle(*longitude)
+                    }
                     PrimitiveSolid::Torus {
                         major_radius,
                         minor_radius,
@@ -1558,6 +1574,34 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             && finite_angle(*latitude2)
                             && latitude1.0 < latitude2.0
                             && finite_angle(*longitude)
+                    }
+                    PrimitiveSolid::Prism {
+                        sides,
+                        circumradius,
+                        height,
+                    } => *sides >= 3 && positive(*circumradius) && positive(*height),
+                    PrimitiveSolid::Wedge {
+                        xmin,
+                        ymin,
+                        zmin,
+                        x2min,
+                        z2min,
+                        xmax,
+                        ymax,
+                        zmax,
+                        x2max,
+                        z2max,
+                    } => {
+                        [
+                            xmin, ymin, zmin, x2min, z2min, xmax, ymax, zmax, x2max, z2max,
+                        ]
+                        .into_iter()
+                        .all(|value| value.0.is_finite())
+                            && xmax.0 > xmin.0
+                            && ymax.0 > ymin.0
+                            && zmax.0 > zmin.0
+                            && x2max.0 >= x2min.0
+                            && z2max.0 >= z2min.0
                     }
                 };
                 if !valid {
@@ -2119,6 +2163,30 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "native-axis helix is invalid");
                 }
             }
+            FeatureDefinition::HelicalSweep { construction, .. } => {
+                profiles.push(&construction.profile);
+                let valid = [
+                    construction.axis_origin.x,
+                    construction.axis_origin.y,
+                    construction.axis_origin.z,
+                    construction.pitch.0,
+                    construction.height.0,
+                    construction.radial_growth.0,
+                    construction.cone_angle.0,
+                    construction.tolerance,
+                ]
+                .into_iter()
+                .all(f64::is_finite)
+                    && valid_feature_direction(construction.axis_direction)
+                    && construction.pitch.0 >= 0.0
+                    && construction.turns.is_finite()
+                    && construction.turns > 0.0
+                    && construction.tolerance > 0.0
+                    && (construction.height.0 != 0.0 || construction.radial_growth.0 != 0.0);
+                if !valid {
+                    feature_geometry_error(findings, feature, "helical sweep is invalid");
+                }
+            }
             FeatureDefinition::Wrap {
                 profile,
                 face,
@@ -2347,6 +2415,9 @@ fn check_feature_sketch_references(
             FeatureDefinition::Sweep { profile, path, .. } => {
                 profiles.extend(profile);
                 paths.extend(path);
+            }
+            FeatureDefinition::HelicalSweep { construction, .. } => {
+                profiles.push(&construction.profile);
             }
             FeatureDefinition::Loft {
                 profiles: sections,

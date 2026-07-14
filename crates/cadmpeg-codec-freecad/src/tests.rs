@@ -259,7 +259,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "10");
+    assert_eq!(result.ir.ir_version, "11");
     let feature = |name: &str| {
         &result
             .ir
@@ -702,6 +702,129 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
         *stages[1].pattern,
         cadmpeg_ir::features::PatternKind::Scale { count: 3, .. }
     ));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_complete_additive_and_outside_subtractive_helices() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
+ <Object type="PartDesign::AdditiveHelix" name="Spring" id="2"/>
+ <Object type="PartDesign::SubtractiveHelix" name="OutsideCut" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Profile"><Properties Count="0"/></Object>
+ <Object name="Spring"><Properties Count="13">
+  <Property name="Profile" type="App::PropertyLinkSub"><Link object="Profile" sub=""/></Property>
+  <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="1"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Pitch" type="App::PropertyLength"><Float value="4"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="10"/></Property>
+  <Property name="Turns" type="App::PropertyFloatConstraint"><Float value="2.5"/></Property>
+  <Property name="Growth" type="App::PropertyDistance"><Float value="1"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="14.0362434679"/></Property>
+  <Property name="LeftHanded" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Outside" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Tolerance" type="App::PropertyFloatConstraint"><Float value="0.25"/></Property>
+ </Properties></Object>
+ <Object name="OutsideCut"><Properties Count="13">
+  <Property name="Profile" type="App::PropertyLinkSub"><Link object="Profile" sub=""/></Property>
+  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+  <Property name="Pitch" type="App::PropertyLength"><Float value="0"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="0"/></Property>
+  <Property name="Turns" type="App::PropertyFloatConstraint"><Float value="3"/></Property>
+  <Property name="Growth" type="App::PropertyDistance"><Float value="2"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="0"/></Property>
+  <Property name="LeftHanded" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Outside" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Tolerance" type="App::PropertyFloatConstraint"><Float value="0.1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("helical sweeps");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("feature")
+            .definition
+    };
+    assert!(
+        matches!(definition("Spring"), cadmpeg_ir::features::FeatureDefinition::HelicalSweep {
+        construction,
+        op: cadmpeg_ir::features::BooleanOp::Join,
+    } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::PitchTurnsAngle
+        && construction.axis_origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+        && construction.left_handed && construction.reversed
+        && construction.turns == 2.5 && construction.tolerance == 0.25)
+    );
+    assert!(
+        matches!(definition("OutsideCut"), cadmpeg_ir::features::FeatureDefinition::HelicalSweep {
+        construction,
+        op: cadmpeg_ir::features::BooleanOp::Intersect,
+    } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::HeightTurnsGrowth
+        && construction.pitch.0 == 0.0 && construction.radial_growth.0 == 2.0)
+    );
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_remaining_partdesign_analytic_primitives() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="PartDesign::AdditiveEllipsoid" name="Ellipsoid" id="1"/>
+ <Object type="PartDesign::SubtractivePrism" name="Prism" id="2"/>
+ <Object type="PartDesign::AdditiveWedge" name="Wedge" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Ellipsoid"><Properties Count="6">
+  <Property name="Radius1" type="App::PropertyLength"><Float value="3"/></Property><Property name="Radius2" type="App::PropertyLength"><Float value="5"/></Property><Property name="Radius3" type="App::PropertyLength"><Float value="0"/></Property>
+  <Property name="Angle1" type="App::PropertyAngle"><Float value="-45"/></Property><Property name="Angle2" type="App::PropertyAngle"><Float value="60"/></Property><Property name="Angle3" type="App::PropertyAngle"><Float value="270"/></Property>
+ </Properties></Object>
+ <Object name="Prism"><Properties Count="3"><Property name="Polygon" type="App::PropertyIntegerConstraint"><Integer value="7"/></Property><Property name="Circumradius" type="App::PropertyLength"><Float value="4"/></Property><Property name="Height" type="App::PropertyLength"><Float value="9"/></Property></Properties></Object>
+ <Object name="Wedge"><Properties Count="10">
+  <Property name="Xmin" type="App::PropertyDistance"><Float value="-2"/></Property><Property name="Ymin" type="App::PropertyDistance"><Float value="-1"/></Property><Property name="Zmin" type="App::PropertyDistance"><Float value="0"/></Property><Property name="X2min" type="App::PropertyDistance"><Float value="1"/></Property><Property name="Z2min" type="App::PropertyDistance"><Float value="2"/></Property>
+  <Property name="Xmax" type="App::PropertyDistance"><Float value="8"/></Property><Property name="Ymax" type="App::PropertyDistance"><Float value="6"/></Property><Property name="Zmax" type="App::PropertyDistance"><Float value="10"/></Property><Property name="X2max" type="App::PropertyDistance"><Float value="7"/></Property><Property name="Z2max" type="App::PropertyDistance"><Float value="8"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("remaining primitives");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("feature")
+            .definition
+    };
+    assert!(
+        matches!(definition("Ellipsoid"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid: cadmpeg_ir::features::PrimitiveSolid::Ellipsoid { x_radius, y_radius, z_radius, .. }, op: cadmpeg_ir::features::BooleanOp::Join } if x_radius.0 == 5.0 && y_radius.0 == 5.0 && z_radius.0 == 3.0)
+    );
+    assert!(
+        matches!(definition("Prism"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid: cadmpeg_ir::features::PrimitiveSolid::Prism { sides: 7, circumradius, height }, op: cadmpeg_ir::features::BooleanOp::Cut } if circumradius.0 == 4.0 && height.0 == 9.0)
+    );
+    assert!(
+        matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid: cadmpeg_ir::features::PrimitiveSolid::Wedge { xmin, ymax, .. }, op: cadmpeg_ir::features::BooleanOp::Join } if xmin.0 == -2.0 && ymax.0 == 6.0)
+    );
     assert!(result.report.losses.is_empty());
 }
 

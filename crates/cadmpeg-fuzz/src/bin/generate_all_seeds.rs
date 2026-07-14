@@ -1173,11 +1173,11 @@ fn generate_ir_seeds() {
         .to_canonical_json()
         .unwrap();
     let canonical = [
-        ("minimal_v10.json", minimal.as_bytes()),
-        ("unit_cube_v10.json", cube.as_bytes()),
-        ("directed_subd_sum_v10.json", directed_subd_sum.as_bytes()),
+        ("minimal_v11.json", minimal.as_bytes()),
+        ("unit_cube_v11.json", cube.as_bytes()),
+        ("directed_subd_sum_v11.json", directed_subd_sum.as_bytes()),
     ];
-    let valid_v0 = minimal.replacen(r#""ir_version": "10""#, r#""ir_version": "0""#, 1);
+    let valid_v0 = minimal.replacen(r#""ir_version": "11""#, r#""ir_version": "0""#, 1);
 
     let from_json = Path::new("seeds/ir_from_json");
     replace_seed_directory(from_json);
@@ -1192,8 +1192,8 @@ fn generate_ir_seeds() {
     for (name, data) in &canonical {
         let legacy = std::str::from_utf8(data)
             .unwrap()
-            .replacen(r#""ir_version": "10""#, r#""ir_version": "9""#, 1);
-        fs::write(migrate.join(name.replace("_v10.json", "_v9.json")), legacy).unwrap();
+            .replacen(r#""ir_version": "11""#, r#""ir_version": "10""#, 1);
+        fs::write(migrate.join(name.replace("_v11.json", "_v10.json")), legacy).unwrap();
     }
 
     for target in ["ir_validate", "ir_canonical_roundtrip", "step_writer"] {

@@ -6590,6 +6590,12 @@ pub fn sync_neutral_features(
                 );
                 (kind, parameters, properties)
             }
+            FeatureDefinition::HelicalSweep { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses a helical sweep that cannot be written",
+                    feature.id
+                )));
+            }
         };
         if feature.outputs.is_empty() {
             if existing.is_none() {
@@ -6794,6 +6800,7 @@ fn dependency_residual(
         FeatureDefinition::Extrude { .. }
         | FeatureDefinition::Revolve { .. }
         | FeatureDefinition::Sweep { .. }
+        | FeatureDefinition::HelicalSweep { .. }
         | FeatureDefinition::Loft { .. }
         | FeatureDefinition::Rib { .. } => dependencies
             .into_iter()
@@ -7026,6 +7033,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
             ..
         } => "Surface-Sweep",
         FeatureDefinition::Sweep { .. } => "Sweep",
+        FeatureDefinition::HelicalSweep { .. } => "Helix",
         FeatureDefinition::Loft { .. } => "Loft",
         FeatureDefinition::Rib { .. } => "Rib",
         FeatureDefinition::Fillet { .. } => "Fillet",

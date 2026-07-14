@@ -7,11 +7,11 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ChamferSpec, DesignParameter, EdgeSelection, Extent, Feature,
-    FeatureDefinition, FeatureId, FeatureTreeNodeRole, HoleBottom, HoleKind, HoleProfileFilter,
-    HoleSpecification, HoleThreadDepth, Length, ParameterId, ParameterValue, PathRef, PatternKind,
-    PatternScaleCenter, PatternStage, PatternStageCombination, PrimitiveSolid, ProfileRef,
-    RadiusSpec, RevolutionAxis, RevolutionConstruction, ShellJoin, ShellMode, SketchSpace,
-    SweepMode, ThreadHand,
+    FeatureDefinition, FeatureId, FeatureTreeNodeRole, HelicalSweepConstruction, HelicalSweepLaw,
+    HoleBottom, HoleKind, HoleProfileFilter, HoleSpecification, HoleThreadDepth, Length,
+    ParameterId, ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternStage,
+    PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, ShellJoin, ShellMode, SketchSpace, SweepMode, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -56,7 +56,16 @@ pub(crate) fn transfer(
                 .map(move |member| (member, feature_id(body)))
         })
         .collect::<HashMap<_, _>>();
-    let mut sketch_ids = HashMap::<&str, SketchId>::new();
+    let mut sketch_ids = objects
+        .iter()
+        .filter(|object| is_sketch(&object.type_name))
+        .map(|object| {
+            (
+                object.id.as_str(),
+                SketchId(format!("fcstd:design:sketch#{}", object.name)),
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let body_ids = ir
         .model
         .bodies
@@ -129,6 +138,14 @@ pub(crate) fn transfer(
             })
         } else if is_sweep(&object.type_name) {
             sweep_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
+        } else if is_helical_sweep(&object.type_name) {
+            helical_sweep_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
                 FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
@@ -1469,6 +1486,12 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
             .filter(|value| value.is_finite())
             .map(|value| cadmpeg_ir::features::Angle(value.to_radians()))
     };
+    let signed_length = |name: &str| {
+        property(properties, name)
+            .and_then(scalar_value)
+            .filter(|value| value.is_finite())
+            .map(Length)
+    };
     let solid = if kind.ends_with("Box") {
         PrimitiveSolid::Box {
             length: length("Length").filter(|value| value.0 > 0.0)?,
@@ -1500,6 +1523,21 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
             latitude2: angle("Angle2")?,
             longitude: angle("Angle3")?,
         }
+    } else if kind.ends_with("Ellipsoid") {
+        let x_radius = length("Radius2").filter(|value| value.0 > 0.0)?;
+        let y_radius = length("Radius3")?;
+        PrimitiveSolid::Ellipsoid {
+            x_radius,
+            y_radius: if y_radius.0 == 0.0 {
+                x_radius
+            } else {
+                y_radius
+            },
+            z_radius: length("Radius1").filter(|value| value.0 > 0.0)?,
+            latitude1: angle("Angle1")?,
+            latitude2: angle("Angle2")?,
+            longitude: angle("Angle3")?,
+        }
     } else if kind.ends_with("Torus") {
         PrimitiveSolid::Torus {
             major_radius: length("Radius1").filter(|value| value.0 > 0.0)?,
@@ -1507,6 +1545,25 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
             latitude1: angle("Angle1")?,
             latitude2: angle("Angle2")?,
             longitude: angle("Angle3")?,
+        }
+    } else if kind.ends_with("Prism") {
+        PrimitiveSolid::Prism {
+            sides: u32::try_from(integer_property(properties, "Polygon")?).ok()?,
+            circumradius: length("Circumradius").filter(|value| value.0 > 0.0)?,
+            height: length("Height").filter(|value| value.0 > 0.0)?,
+        }
+    } else if kind.ends_with("Wedge") {
+        PrimitiveSolid::Wedge {
+            xmin: signed_length("Xmin")?,
+            ymin: signed_length("Ymin")?,
+            zmin: signed_length("Zmin")?,
+            x2min: signed_length("X2min")?,
+            z2min: signed_length("Z2min")?,
+            xmax: signed_length("Xmax")?,
+            ymax: signed_length("Ymax")?,
+            zmax: signed_length("Zmax")?,
+            x2max: signed_length("X2max")?,
+            z2max: signed_length("Z2max")?,
         }
     } else {
         return None;
@@ -1813,6 +1870,46 @@ fn thread_standard(value: u64) -> Option<&'static str> {
     .copied()
 }
 
+fn helical_sweep_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+    sketches: &HashMap<&str, SketchId>,
+) -> Option<FeatureDefinition> {
+    let law = match integer_property(properties, "Mode")? {
+        0 => HelicalSweepLaw::PitchHeightAngle,
+        1 => HelicalSweepLaw::PitchTurnsAngle,
+        2 => HelicalSweepLaw::HeightTurnsAngle,
+        3 => HelicalSweepLaw::HeightTurnsGrowth,
+        _ => return None,
+    };
+    let origin = vector_property(properties, "Base")?;
+    let axis_direction = vector_property(properties, "Axis")?;
+    let construction = HelicalSweepConstruction {
+        profile: profile_ref(properties, sketches),
+        axis_origin: Point3::new(origin.x, origin.y, origin.z),
+        axis_direction,
+        law,
+        pitch: Length(scalar_named(properties, "Pitch")?),
+        height: Length(scalar_named(properties, "Height")?),
+        turns: scalar_named(properties, "Turns")?,
+        radial_growth: Length(scalar_named(properties, "Growth")?),
+        cone_angle: cadmpeg_ir::features::Angle(scalar_named(properties, "Angle")?.to_radians()),
+        left_handed: bool_property(properties, "LeftHanded")?,
+        reversed: bool_property(properties, "Reversed")?,
+        tolerance: scalar_named(properties, "Tolerance")?,
+    };
+    let op = if kind.ends_with("SubtractiveHelix") {
+        if bool_property(properties, "Outside").unwrap_or(false) {
+            BooleanOp::Intersect
+        } else {
+            BooleanOp::Cut
+        }
+    } else {
+        BooleanOp::Join
+    };
+    Some(FeatureDefinition::HelicalSweep { construction, op })
+}
+
 fn enumeration_label(properties: &[&PropertyRecord], name: &str) -> Option<String> {
     let property = property(properties, name)?;
     let index = usize::try_from(integer_property(properties, name)?).ok()?;
@@ -2117,9 +2214,18 @@ fn is_revolution(kind: &str) -> bool {
         || kind.contains("Part::Revolution")
 }
 fn is_primitive(kind: &str) -> bool {
-    ["Box", "Cylinder", "Cone", "Sphere", "Torus"]
-        .iter()
-        .any(|primitive| kind.ends_with(primitive))
+    [
+        "Box",
+        "Cylinder",
+        "Cone",
+        "Sphere",
+        "Ellipsoid",
+        "Torus",
+        "Prism",
+        "Wedge",
+    ]
+    .iter()
+    .any(|primitive| kind.ends_with(primitive))
         && (kind.starts_with("Part::") || kind.starts_with("PartDesign::"))
 }
 fn is_boolean(kind: &str) -> bool {
@@ -2143,6 +2249,12 @@ fn is_sweep(kind: &str) -> bool {
             kind,
             "PartDesign::AdditivePipe" | "PartDesign::SubtractivePipe"
         )
+}
+fn is_helical_sweep(kind: &str) -> bool {
+    matches!(
+        kind,
+        "PartDesign::AdditiveHelix" | "PartDesign::SubtractiveHelix"
+    )
 }
 fn is_pattern(kind: &str) -> bool {
     matches!(
@@ -2174,6 +2286,7 @@ fn is_design_object(kind: &str) -> bool {
         || is_boolean(kind)
         || is_loft(kind)
         || is_sweep(kind)
+        || is_helical_sweep(kind)
         || is_pattern(kind)
         || is_hole(kind)
         || is_extrusion(kind)

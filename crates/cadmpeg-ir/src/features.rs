@@ -424,6 +424,13 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scale: Option<f64>,
     },
+    /// Solid sweep of a profile along a parametrically defined helix or spiral.
+    HelicalSweep {
+        /// Complete helix path and profile construction.
+        construction: HelicalSweepConstruction,
+        /// Boolean combination with the existing body.
+        op: BooleanOp,
+    },
     /// Loft through an ordered sequence of section profiles.
     Loft {
         /// Ordered section profiles.
@@ -772,6 +779,21 @@ pub enum PrimitiveSolid {
         /// Longitudinal sweep.
         longitude: Angle,
     },
+    /// Ellipsoidal segment aligned to its feature frame.
+    Ellipsoid {
+        /// Radius along local x.
+        x_radius: Length,
+        /// Radius along local y.
+        y_radius: Length,
+        /// Radius along local z.
+        z_radius: Length,
+        /// Lower latitude bound.
+        latitude1: Angle,
+        /// Upper latitude bound.
+        latitude2: Angle,
+        /// Longitudinal sweep.
+        longitude: Angle,
+    },
     /// Toroidal segment aligned to its feature frame.
     Torus {
         /// Distance from the axis to the tube center.
@@ -784,6 +806,38 @@ pub enum PrimitiveSolid {
         latitude2: Angle,
         /// Sweep around the torus axis.
         longitude: Angle,
+    },
+    /// Regular polygonal prism aligned to its feature frame.
+    Prism {
+        /// Number of polygon sides.
+        sides: u32,
+        /// Distance from polygon center to each vertex.
+        circumradius: Length,
+        /// Axial height.
+        height: Length,
+    },
+    /// General wedge defined by two x-z profiles across a y interval.
+    Wedge {
+        /// Lower x bound.
+        xmin: Length,
+        /// Lower y bound.
+        ymin: Length,
+        /// Lower z bound.
+        zmin: Length,
+        /// Inner x coordinate on the lower-y profile.
+        x2min: Length,
+        /// Inner z coordinate on the lower-y profile.
+        z2min: Length,
+        /// Upper x bound.
+        xmax: Length,
+        /// Upper y bound.
+        ymax: Length,
+        /// Upper z bound.
+        zmax: Length,
+        /// Inner x coordinate on the upper-y profile.
+        x2max: Length,
+        /// Inner z coordinate on the upper-y profile.
+        z2max: Length,
     },
 }
 
@@ -1220,6 +1274,49 @@ pub enum SweepMode {
     },
     /// Sweep creates a sheet body.
     Surface,
+}
+
+/// Complete construction of a solid helical sweep.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct HelicalSweepConstruction {
+    /// Profile swept along the helical path.
+    pub profile: ProfileRef,
+    /// Point at the start of the helix axis.
+    pub axis_origin: Point3,
+    /// Unit direction of positive axial travel.
+    pub axis_direction: Vector3,
+    /// Persisted authoring law identifying the independent parameters.
+    pub law: HelicalSweepLaw,
+    /// Positive axial advance per turn; zero is permitted for a planar spiral.
+    pub pitch: Length,
+    /// Signed total axial travel.
+    pub height: Length,
+    /// Positive number of turns.
+    pub turns: f64,
+    /// Signed radial change per turn.
+    pub radial_growth: Length,
+    /// Cone half-angle corresponding to radial growth.
+    pub cone_angle: Angle,
+    /// Whether angular travel is left-handed along the positive axis.
+    pub left_handed: bool,
+    /// Whether path travel runs opposite the declared axis direction.
+    pub reversed: bool,
+    /// Relative tolerance used while joining the generated sweep.
+    pub tolerance: f64,
+}
+
+/// Independent-parameter law used to author a helical sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HelicalSweepLaw {
+    /// Pitch, height, and cone angle are independent.
+    PitchHeightAngle,
+    /// Pitch, turn count, and cone angle are independent.
+    PitchTurnsAngle,
+    /// Height, turn count, and cone angle are independent.
+    HeightTurnsAngle,
+    /// Height, turn count, and radial growth are independent.
+    HeightTurnsGrowth,
 }
 
 /// Profile consumed by an extrude or revolve.
