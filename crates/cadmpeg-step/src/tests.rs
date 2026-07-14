@@ -718,6 +718,7 @@ fn decode_builds_a_valid_connected_sheet_brep() {
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written pcurve");
     assert_eq!(roundtrip.ir.model.pcurves.len(), 1);
+    assert_eq!(roundtrip.ir.model.bodies[0].kind, BodyKind::Sheet);
     assert_eq!(
         roundtrip
             .ir

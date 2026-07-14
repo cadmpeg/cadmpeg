@@ -65,7 +65,7 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
-use cadmpeg_ir::topology::{Coedge, Edge, Point, Sense, Vertex};
+use cadmpeg_ir::topology::{BodyKind, Coedge, Edge, Point, Sense, Vertex};
 use cadmpeg_ir::CadIr;
 
 use writer::{real, refs, string, Emitter, Ref};
@@ -384,8 +384,8 @@ impl<'a> Builder<'a> {
         let product_def_shape = self.emit_product_structure();
         let context = self.emit_context();
 
-        let solids = self.emit_solids();
-        if solids.is_empty() {
+        let shape_items = self.emit_shape_items();
+        if shape_items.is_empty() {
             self.loss(
                 LossCategory::Topology,
                 Severity::Warning,
@@ -395,7 +395,7 @@ impl<'a> Builder<'a> {
             );
         }
 
-        let mut items = solids;
+        let mut items = shape_items;
         // A representation-space origin placement is conventional and harmless.
         let origin = geometry::placement(
             &mut self.emitter,
@@ -686,8 +686,8 @@ impl<'a> Builder<'a> {
 
     /// Emit one solid per region across all displayed bodies; returns the
     /// solid references. Bodies the source document hides are omitted.
-    fn emit_solids(&mut self) -> Vec<Ref> {
-        let mut solids = Vec::new();
+    fn emit_shape_items(&mut self) -> Vec<Ref> {
+        let mut items = Vec::new();
         // `ir` is a shared `&CadIr`; binding it locally lets us read the arenas
         // while still calling `&mut self` helpers (loss/emit).
         let ir = self.ir;
@@ -732,15 +732,39 @@ impl<'a> Builder<'a> {
             if hidden.contains(region.body.0.as_str()) {
                 continue;
             }
+            let body_kind = ir
+                .model
+                .bodies
+                .iter()
+                .find(|body| body.id == region.body)
+                .map(|body| body.kind)
+                .unwrap_or(BodyKind::General);
+            if body_kind == BodyKind::Wire {
+                self.loss(
+                    LossCategory::Topology,
+                    Severity::Warning,
+                    format!(
+                        "wire body '{}' is not yet writable as STEP topology",
+                        region.body
+                    ),
+                );
+                continue;
+            }
+            let closed = body_kind == BodyKind::Solid;
             let shell_refs: Vec<Ref> = region
                 .shells
                 .iter()
-                .filter_map(|sid| self.emit_shell(sid.as_str()))
+                .filter_map(|sid| self.emit_shell(sid.as_str(), closed))
                 .collect();
             let Some((outer, voids)) = shell_refs.split_first() else {
                 continue;
             };
-            let solid = if voids.is_empty() {
+            let item = if !closed {
+                self.emitter.emit(
+                    "SHELL_BASED_SURFACE_MODEL",
+                    &format!("'',{}", refs(&shell_refs)),
+                )
+            } else if voids.is_empty() {
                 self.emitter
                     .emit("MANIFOLD_SOLID_BREP", &format!("'',{outer}"))
             } else {
@@ -756,12 +780,12 @@ impl<'a> Builder<'a> {
                     &format!("'',{outer},{}", refs(&void_refs)),
                 )
             };
-            solids.push(solid);
+            items.push(item);
             self.body_step_refs
                 .entry(region.body.0.clone())
-                .or_insert(solid);
+                .or_insert(if closed { item } else { *outer });
         }
-        solids
+        items
     }
 
     fn emit_tessellations(&mut self, context: Ref) {
@@ -875,7 +899,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn emit_shell(&mut self, shell_id: &str) -> Option<Ref> {
+    fn emit_shell(&mut self, shell_id: &str, closed: bool) -> Option<Ref> {
         let shell = self
             .ir
             .model
@@ -892,10 +916,10 @@ impl<'a> Builder<'a> {
         if face_refs.is_empty() {
             return None;
         }
-        Some(
-            self.emitter
-                .emit("CLOSED_SHELL", &format!("'',{}", refs(&face_refs))),
-        )
+        Some(self.emitter.emit(
+            if closed { "CLOSED_SHELL" } else { "OPEN_SHELL" },
+            &format!("'',{}", refs(&face_refs)),
+        ))
     }
 
     fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
