@@ -398,7 +398,10 @@ An incidence item may reference a complete saved-section entity through its
 `order_table.ext_id`. When its type/sense pattern has no neutral constraint
 mapping, retain the incidence type, ordered entity identifiers, and sense values
 as one native sketch constraint; the absence of a typed locus interpretation
-does not remove the solver relation.
+does not remove the solver relation. `relat_ptr`, `skamp_ptr`, `triples_ptr`,
+`order_table`, and saved-section entities remain valid when `segtab_ptr` is
+absent; segment-dependent refinement is withheld without dropping those design
+records.
 For an ordered saved line, senses `2` and `3` select its first and second stored
 endpoints. For an ordered saved arc they select the neutral end and start loci,
 respectively, because saved-arc evaluation reverses the stored endpoint order.

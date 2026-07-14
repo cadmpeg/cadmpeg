@@ -4313,9 +4313,13 @@ fn section_dimension_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
-    let (Some(segments), Some(relations)) = (&definition.segments, &definition.relations) else {
+    let Some(relations) = &definition.relations else {
         return Vec::new();
     };
+    let segments = definition
+        .segments
+        .as_ref()
+        .map_or(&[][..], |segments| segments.rows.as_slice());
     relations
         .rows
         .iter()
@@ -4344,7 +4348,7 @@ fn section_dimension_constraints(
                     let [Some(radius_id), Some(0), Some(0), Some(0)] = vectors[0] else {
                         return None;
                     };
-                    let segment = segments.rows.iter().find(|segment| {
+                    let segment = segments.iter().find(|segment| {
                         segment.kind == crate::feature::FeatureSegmentKind::Arc
                             && segment.radius_ref == Some(radius_id)
                     })?;
@@ -4362,13 +4366,13 @@ fn section_dimension_constraints(
                 if let Some(vectors) = relation.operand_vectors {
                     if section_linear_distance_vectors(vectors) {
                         if let [Some(first_id), Some(second_id), _, _] = vectors[0] {
-                            if let Some(measured) = segments.rows.iter().find(|segment| {
+                            if let Some(measured) = segments.iter().find(|segment| {
                                 segment.point_ids == [first_id, second_id]
                                     || segment.point_ids == [second_id, first_id]
                             }) {
                                 if let (Some(first), Some(second)) = (
-                                    section_point_locus(definition.id, &segments.rows, first_id),
-                                    section_point_locus(definition.id, &segments.rows, second_id),
+                                    section_point_locus(definition.id, segments, first_id),
+                                    section_point_locus(definition.id, segments, second_id),
                                 ) {
                                     match measured.vertical_horizontal {
                                         Some(0) => {
@@ -4604,9 +4608,13 @@ fn section_skamp_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
-    let (Some(segments), Some(relations)) = (&definition.segments, &definition.relations) else {
+    let Some(relations) = &definition.relations else {
         return Vec::new();
     };
+    let segments = definition
+        .segments
+        .as_ref()
+        .map_or(&[][..], |segments| segments.rows.as_slice());
     let section_entities = section_entity_external_ids(definition);
     relations
         .skamps
@@ -4640,7 +4648,7 @@ fn section_skamp_constraints(
                     }
                 }
                 (1, [item])
-                    if section_skamp_segment(&segments.rows, item)?.kind
+                    if section_skamp_segment(segments, item)?.kind
                         == crate::feature::FeatureSegmentKind::Line =>
                 {
                     SketchConstraintDefinition::Horizontal {
@@ -4651,7 +4659,7 @@ fn section_skamp_constraints(
                     }
                 }
                 (2, [item])
-                    if section_skamp_segment(&segments.rows, item)?.kind
+                    if section_skamp_segment(segments, item)?.kind
                         == crate::feature::FeatureSegmentKind::Line =>
                 {
                     SketchConstraintDefinition::Vertical {
@@ -4671,11 +4679,11 @@ fn section_skamp_constraints(
                     }
                 }
                 (5, [first, second])
-                    if section_skamp_line_pair(definition.id, &segments.rows, first, second)
+                    if section_skamp_line_pair(definition.id, segments, first, second)
                         .is_some() =>
                 {
                     let [first, second] =
-                        section_skamp_line_pair(definition.id, &segments.rows, first, second)?;
+                        section_skamp_line_pair(definition.id, segments, first, second)?;
                     SketchConstraintDefinition::Perpendicular { first, second }
                 }
                 (6, [first, second])
@@ -4688,19 +4696,19 @@ fn section_skamp_constraints(
                     }
                 }
                 (7, [first, second])
-                    if section_skamp_line_pair(definition.id, &segments.rows, first, second)
+                    if section_skamp_line_pair(definition.id, segments, first, second)
                         .is_some() =>
                 {
                     let [first, second] =
-                        section_skamp_line_pair(definition.id, &segments.rows, first, second)?;
+                        section_skamp_line_pair(definition.id, segments, first, second)?;
                     SketchConstraintDefinition::Parallel { first, second }
                 }
                 (8, [first, second])
-                    if section_skamp_line_pair(definition.id, &segments.rows, first, second)
+                    if section_skamp_line_pair(definition.id, segments, first, second)
                         .is_some() =>
                 {
                     let [first, second] =
-                        section_skamp_line_pair(definition.id, &segments.rows, first, second)?;
+                        section_skamp_line_pair(definition.id, segments, first, second)?;
                     SketchConstraintDefinition::Equal { first, second }
                 }
                 (9, [first, second])
@@ -4708,8 +4716,8 @@ fn section_skamp_constraints(
                         && second.sense == 0
                         && matches!(
                             (
-                                section_skamp_segment(&segments.rows, first)?.kind,
-                                section_skamp_segment(&segments.rows, second)?.kind,
+                                section_skamp_segment(segments, first)?.kind,
+                                section_skamp_segment(segments, second)?.kind,
                             ),
                             (
                                 crate::feature::FeatureSegmentKind::Line,
@@ -4729,7 +4737,7 @@ fn section_skamp_constraints(
                 }
                 (14, [axis, first, second])
                     if axis.sense == 0
-                        && section_skamp_segment(&segments.rows, axis)?.kind
+                        && section_skamp_segment(segments, axis)?.kind
                             == crate::feature::FeatureSegmentKind::Line
                         && section_skamp_point_locus(definition, first).is_some()
                         && section_skamp_point_locus(definition, second).is_some() =>
@@ -8134,6 +8142,16 @@ mod resolved_sketch_tests {
                 "creo:featdefs:sketch_entity#5:42".to_string()
             )]
         );
+        constrained.segments = None;
+        let constraints =
+            section_skamp_constraints(&constrained, &SketchId("creo:model:sketch#5".to_string()));
+        assert!(matches!(
+            &constraints[0].0.definition,
+            SketchConstraintDefinition::Native { entities, .. }
+                if entities == &[SketchEntityId(
+                    "creo:featdefs:sketch_entity#5:42".to_string()
+                )]
+        ));
 
         let mut completed = definition;
         completed
