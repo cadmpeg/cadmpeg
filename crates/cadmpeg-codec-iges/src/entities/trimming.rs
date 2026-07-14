@@ -256,11 +256,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "boundary support pointer is invalid"));
             continue;
         };
-        let Some(segment_count) = record
-            .integer(4)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0)
-        else {
+        let Some(segment_count) = record.count(4).filter(|count| *count > 0) else {
             losses.push(entity_loss(entry, "boundary segment count is not positive"));
             continue;
         };
@@ -285,10 +281,7 @@ pub(super) fn project(
                     break;
                 }
             };
-            let Some(pcurve_count) = record
-                .integer(index + 2)
-                .and_then(|value| usize::try_from(value).ok())
-            else {
+            let Some(pcurve_count) = record.count(index + 2) else {
                 losses.push(entity_loss(entry, "boundary pcurve count is invalid"));
                 valid = false;
                 break;
@@ -374,10 +367,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let Some(inner_count) = record
-                    .integer(3)
-                    .and_then(|value| usize::try_from(value).ok())
-                else {
+                let Some(inner_count) = record.count(3) else {
                     losses.push(entity_loss(
                         entry,
                         "trimmed-surface inner-boundary count is invalid",
@@ -431,11 +421,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let Some(count) = record
-                    .integer(3)
-                    .and_then(|value| usize::try_from(value).ok())
-                    .filter(|count| *count > 0)
-                else {
+                let Some(count) = record.count(3).filter(|count| *count > 0) else {
                     losses.push(entity_loss(
                         entry,
                         "bounded-surface boundary count is not positive",

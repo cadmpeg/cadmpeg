@@ -4760,6 +4760,35 @@ fn decode_bounds_declared_brep_counts_by_record_tokens() {
 }
 
 #[test]
+fn decode_bounds_declared_trimming_counts_by_record_tokens() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 108,
+            form: 0,
+            label: "PLANE".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 141,
+            form: 0,
+            label: "BADCOUNT".into(),
+            status: "00010000",
+            parameters: "141,0,1,1,9223372036854775807;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("boundary segment count")));
+}
+
+#[test]
 fn decode_types_attribute_table_tuple_and_row_major_instances() {
     let result = IgesCodec
         .decode(
