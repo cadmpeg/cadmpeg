@@ -255,22 +255,6 @@ pub fn decode_tabulated_cylinder_second_coordinate(
     decode_in_surface_row_lane(data, offset, cache)
 }
 
-/// Decode one explicit coordinate in a named `local_sys` scalar body.
-///
-/// This lane shares the directrix-coordinate DICT lattice, except that `0x41`
-/// is the negative eight-byte IEEE form. Generic and directrix lanes assign
-/// the positive sign to the same prefix.
-pub fn decode_named_local_system_coordinate(
-    data: &[u8],
-    offset: usize,
-    cache: &ScalarCache,
-) -> Option<(f64, usize)> {
-    if data.get(offset) == Some(&0x41) {
-        return ieee8(data, offset, 0xbf);
-    }
-    decode_tabulated_cylinder_second_coordinate(data, offset, cache)
-}
-
 /// Decode one scalar in a replay-bound tabulated-cylinder envelope frame.
 ///
 /// The frame otherwise uses the second-coordinate lane, but `0x4a` is a
