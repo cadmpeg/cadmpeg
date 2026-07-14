@@ -2293,6 +2293,24 @@ pub fn offset_store_control_values(bytes: &[u8]) -> Option<Vec<u32>> {
         .collect()
 }
 
+/// Decode the distinct leading class-registry ordinals in an offset-store
+/// control block. The remaining metadata words are all outside the registry.
+pub fn offset_store_control_class_ordinals(bytes: &[u8], class_count: usize) -> Option<Vec<u32>> {
+    (class_count > 0).then_some(())?;
+    let values = offset_store_control_values(bytes)?;
+    let boundary = values
+        .iter()
+        .position(|value| usize::try_from(*value).map_or(true, |value| value >= class_count))?;
+    (boundary > 0
+        && values[boundary..]
+            .iter()
+            .all(|value| usize::try_from(*value).map_or(true, |value| value >= class_count)))
+    .then_some(())?;
+    let ordinals = values[..boundary].to_vec();
+    let distinct = ordinals.iter().copied().collect::<BTreeSet<_>>();
+    (distinct.len() == ordinals.len()).then_some(ordinals)
+}
+
 /// Decode the aligned little-endian value array preceding one product record.
 pub fn offset_store_index_values(bytes: &[u8]) -> Option<(usize, Vec<u32>)> {
     let matches = (0..bytes.len())

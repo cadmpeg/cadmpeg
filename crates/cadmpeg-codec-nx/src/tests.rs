@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 71);
+    assert_eq!(namespace.version, 72);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -2400,6 +2400,26 @@ fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
     assert!(crate::om::offset_store_control_values(&[]).is_none());
     assert!(crate::om::offset_store_control_values(&[0, 1, 2]).is_none());
     assert!(crate::om::offset_store_control_values(&[1, 1, 2, 3]).is_none());
+}
+
+#[test]
+fn om_offset_store_control_class_lane_is_a_distinct_in_range_prefix() {
+    let encode = |values: &[u32]| {
+        values
+            .iter()
+            .flat_map(|value| {
+                let bytes = value.to_le_bytes();
+                [0, bytes[0], bytes[1], bytes[2]]
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        crate::om::offset_store_control_class_ordinals(&encode(&[2, 0, 4, 8]), 4),
+        Some(vec![2, 0])
+    );
+    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[2, 2, 4]), 4).is_none());
+    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[2, 4, 1]), 4).is_none());
+    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[4, 8]), 4).is_none());
 }
 
 #[test]
@@ -5042,7 +5062,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 71);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 72);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

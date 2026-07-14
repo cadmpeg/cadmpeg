@@ -3101,6 +3101,25 @@ pub struct DataBlockControlIndexValue {
     pub source_offset: u64,
 }
 
+/// Registered class selected by the leading lane of an offset-store control block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockControlClassReference {
+    /// Globally unique class-reference identity.
+    pub id: String,
+    /// Owning control block in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Zero-based order in the class-selection lane.
+    pub ordinal: u32,
+    /// Zero-based ordinal in the store's class registry.
+    pub class_ordinal: u32,
+    /// Target in the native `class_definitions` arena.
+    pub class_definition: String,
+    /// Exact registered class name.
+    pub class_name: String,
+    /// Absolute file offset of the four-byte control word.
+    pub source_offset: u64,
+}
+
 /// Ordered object reference carried by an offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockReference {
@@ -3796,6 +3815,65 @@ pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlV
                     ordinal: ordinal as u32,
                     value,
                     source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Resolve each atomic leading control lane through its store-local class registry.
+pub fn data_block_control_class_references(
+    container: &Container,
+) -> Vec<DataBlockControlClassReference> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let Some(control) = section.control else {
+                return Vec::new();
+            };
+            let registry = container
+                .om_sections()
+                .into_iter()
+                .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
+                .flat_map(|(_, section)| section.types)
+                .map(|definition| (definition.offset, definition))
+                .collect::<BTreeMap<_, _>>()
+                .into_values()
+                .collect::<Vec<_>>();
+            let Some(ordinals) = crate::om::offset_store_control_class_ordinals(
+                control.bytes,
+                registry.len(),
+            ) else {
+                return Vec::new();
+            };
+            let entry_index = container
+                .entries
+                .iter()
+                .position(|candidate| std::ptr::eq(candidate, entry))
+                .expect("indexed entry belongs to container");
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
+            ordinals
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, class_ordinal)| {
+                    let definition = registry.get(usize::try_from(class_ordinal).ok()?)?;
+                    Some(DataBlockControlClassReference {
+                        id: format!(
+                            "nx:om-data-block-control-class-references-{section_ordinal}:class#{ordinal}"
+                        ),
+                        data_block: data_block.clone(),
+                        ordinal: ordinal as u32,
+                        class_ordinal,
+                        class_definition: format!(
+                            "nx:om-entry-{entry_index}:class#{}",
+                            definition.offset
+                        ),
+                        class_name: definition.name.to_string(),
+                        source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
+                    })
                 })
                 .collect()
         })

@@ -2855,6 +2855,8 @@ fn attach_native_object_model(
     let object_records = crate::native::object_records(&scan.container);
     let data_blocks = crate::native::data_blocks(&scan.container);
     let data_block_control_values = crate::native::data_block_control_values(&scan.container);
+    let data_block_control_class_references =
+        crate::native::data_block_control_class_references(&scan.container);
     let data_block_control_index_values =
         crate::native::data_block_control_index_values(&scan.container);
     let data_block_control_references =
@@ -2925,6 +2927,7 @@ fn attach_native_object_model(
         && object_records.is_empty()
         && data_blocks.is_empty()
         && data_block_control_values.is_empty()
+        && data_block_control_class_references.is_empty()
         && data_block_control_index_values.is_empty()
         && data_block_control_references.is_empty()
         && data_block_control_handle_pairs.is_empty()
@@ -3044,6 +3047,12 @@ fn attach_native_object_model(
             .note(&value.id, annotation_stream, value.source_offset)
             .tag("OM_DATA_BLOCK_CONTROL_VALUE");
         annotations.exactness(&value.id, Exactness::ByteExact);
+    }
+    for reference in &data_block_control_class_references {
+        annotations
+            .note(&reference.id, annotation_stream, reference.source_offset)
+            .tag("OM_DATA_BLOCK_CONTROL_CLASS_REFERENCE");
+        annotations.exactness(&reference.id, Exactness::ByteExact);
     }
     for value in &data_block_control_index_values {
         annotations
@@ -3204,7 +3213,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(71);
+    namespace.version = namespace.version.max(72);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3402,6 +3411,12 @@ fn attach_native_object_model(
     }
     if !data_block_control_values.is_empty() {
         namespace.set_arena("data_block_control_values", &data_block_control_values)?;
+    }
+    if !data_block_control_class_references.is_empty() {
+        namespace.set_arena(
+            "data_block_control_class_references",
+            &data_block_control_class_references,
+        )?;
     }
     if !data_block_control_index_values.is_empty() {
         namespace.set_arena(
