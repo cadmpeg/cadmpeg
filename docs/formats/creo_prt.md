@@ -630,6 +630,11 @@ Positional `segtab_ptr` replay ends at the first following section-table label,
 including `dimtab_ptr`, `relat_ptr`, `var_arr`, `gsec3d_ptr`, `order_ptr`, or
 `p_saved_result`; bytes in later tables are not segment rows.
 
+In an instantiated positional definition, the `S2D<N>` name terminator is
+followed immediately by the unlabeled `segtab_ptr` array body. Its `f8` extent
+is the number of segment rows. The entity-reference header and segment rows use
+the same framing and field order as the labelled `segtab_ptr` table.
+
 `order_table` entries are `ext_id`, `int_id`, and orientation-flag tuples. `ext_id` references a section entity and `int_id` is a one-byte generated-entity order index. In a feature-generated table, a line entity with `int_id = N` maps to table position `N - 1`. Arc entities map in `int_id` order to cylinder entries in generated-table order only when the feature's arc count equals its cylinder-entry count; `int_id - 1` does not index arc-generated cylinders.
 
 Positional `order_table` tuples are separated by `e2`. The final tuple may

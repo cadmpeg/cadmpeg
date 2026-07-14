@@ -1426,6 +1426,25 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
     {
         cursor += 1;
     }
+    segment_table_body(payload, table, cursor, end)
+}
+
+fn positional_segment_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<FeatureSegmentTable> {
+    let name_end = find_bytes(payload, b"S2D", start, start.saturating_add(256).min(end))?;
+    let cursor = payload[name_end..end].iter().position(|&byte| byte == 0)? + name_end + 1;
+    segment_table_body(payload, cursor, cursor, end)
+}
+
+fn segment_table_body(
+    payload: &[u8],
+    table: usize,
+    mut cursor: usize,
+    end: usize,
+) -> Option<FeatureSegmentTable> {
     (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
     let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
     cursor = after_count;
@@ -1506,7 +1525,8 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
     .unwrap_or(end);
     let mut rows = named_row.into_iter().collect::<Vec<_>>();
     let first_row = cursor;
-    while cursor < region_end {
+    let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
+    while cursor < region_end && rows.len() < row_limit {
         let row_start = cursor;
         let kind_offset = if payload.get(cursor..cursor + 2) == Some(&[0xc0, 0x80]) {
             cursor + 2
@@ -3703,7 +3723,8 @@ fn definitions_in_ranges(
         }
         outlines.sort_by_key(|outline| outline.offset);
         let variables = variable_table(payload, start, end, &cache);
-        let segments = segment_table(payload, start, end);
+        let segments = segment_table(payload, start, end)
+            .or_else(|| owner_override.and_then(|_| positional_segment_table(payload, start, end)));
         let trim_entities = trim_entity_table(payload, start, end, segments.as_ref());
         let trim_vertices = trim_vertex_table(
             payload,
@@ -4108,6 +4129,27 @@ mod tests {
         assert_eq!(decoded[1].owner_feature_id, Some(42));
         assert!(decoded[1].body.starts_with(b"\xe0\x01feat_id\0"));
         assert!(decoded[1].body.ends_with(b"saved"));
+    }
+
+    #[test]
+    fn positional_saved_section_replays_its_segment_table() {
+        let mut payload = b"feat_defs_917\0template\0\xe0\x01feat_id\0\x2a\
+            \xe0\x00ref_model_info\0\xe3S2D0004\0\xf8\x02\xf7\x01\xfb\xe2\
+            \xf2\xf7\x01\xe2"
+            .to_vec();
+        payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+        payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2]);
+
+        let decoded = definitions(&payload);
+        let segments = decoded[1].segments.as_ref().expect("positional segtab");
+
+        assert_eq!(segments.declared_count, 2);
+        assert_eq!(segments.entity_ref, Some(1));
+        assert_eq!(segments.rows.len(), 2);
+        assert_eq!(segments.rows[0].point_ids, [7, 8]);
+        assert_eq!(segments.rows[1].kind, FeatureSegmentKind::Arc);
+        assert_eq!(segments.rows[1].center_id, Some(10));
+        assert_eq!(segments.rows[1].external_id, 43);
     }
 
     #[test]
