@@ -3419,7 +3419,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(120);
+    namespace.version = namespace.version.max(121);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -4168,7 +4168,8 @@ fn attach_feature_operations(
         .iter()
         .map(|record| (record.id.as_str(), record.operation_label.as_str()))
         .collect::<BTreeMap<_, _>>();
-    let mut payload_strings_by_operation = BTreeMap::<&str, Vec<&str>>::new();
+    let mut payload_strings_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeaturePayloadString>>::new();
     for value in payload_strings {
         let Some(operation) = operation_labels_by_record.get(value.operation_record.as_str())
         else {
@@ -4177,7 +4178,7 @@ fn attach_feature_operations(
         payload_strings_by_operation
             .entry(operation)
             .or_default()
-            .push(value.value.as_str());
+            .push(value);
     }
     let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
     for binding in body_bindings {
@@ -4484,9 +4485,13 @@ fn attach_feature_operations(
         {
             source_properties.insert(format!("parameter_use.{ordinal}"), parameter_use.id.clone());
         }
-        let operation_payload_strings = payload_strings_by_operation
+        let operation_payload_string_records = payload_strings_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
+        let operation_payload_strings = operation_payload_string_records
+            .iter()
+            .map(|value| value.value.as_str())
+            .collect::<Vec<_>>();
         let block_dimension_values = block_dimensions_by_operation
             .get(label.id.as_str())
             .map(|dimensions| dimensions.values);
@@ -4494,7 +4499,7 @@ fn attach_feature_operations(
             || {
                 non_boolean_feature_definition(
                     &label.value,
-                    operation_payload_strings,
+                    &operation_payload_strings,
                     block_dimension_values,
                 )
             },
@@ -4528,16 +4533,12 @@ fn attach_feature_operations(
             .note(&id, stream, label.source_offset)
             .tag("FEATURE_OPERATION");
         annotations.exactness(&id, Exactness::Derived);
-        let mut source_content = Vec::new();
-        source_content.extend(
-            operation_payload_strings
-                .iter()
-                .map(|value| FeatureSourceContent::Text((*value).to_string())),
-        );
-        if source_content
-            .iter()
-            .any(|content| matches!(content, FeatureSourceContent::Parameter(_)))
-        {
+        let operation_parameter_uses = parameter_uses_by_operation
+            .get(label.id.as_str())
+            .map_or([].as_slice(), Vec::as_slice);
+        let source_content =
+            feature_source_content(operation_payload_string_records, operation_parameter_uses);
+        if !source_content.is_empty() {
             annotations.derived(&id, "source_content");
         }
         ir.model.features.push(Feature {
@@ -4559,6 +4560,34 @@ fn attach_feature_operations(
             last_body_writer.insert(canonical_body(*body), id);
         }
     }
+}
+
+pub(crate) fn feature_source_content(
+    payload_strings: &[&crate::native::FeaturePayloadString],
+    parameter_uses: &[&crate::native::FeatureParameterUse],
+) -> Vec<FeatureSourceContent> {
+    let mut content = payload_strings
+        .iter()
+        .map(|value| {
+            (
+                value.source_offset,
+                FeatureSourceContent::Text(value.value.clone()),
+            )
+        })
+        .collect::<Vec<_>>();
+    for parameter_use in parameter_uses {
+        let Some(parameter) = expression_parameter_id(&parameter_use.expression) else {
+            continue;
+        };
+        content.extend(
+            parameter_use
+                .source_offsets
+                .iter()
+                .map(|offset| (*offset, FeatureSourceContent::Parameter(parameter.clone()))),
+        );
+    }
+    content.sort_by_key(|(offset, _)| *offset);
+    content.into_iter().map(|(_, content)| content).collect()
 }
 
 pub(crate) fn simple_hole_native_properties(
@@ -4735,21 +4764,17 @@ pub(crate) fn attach_expression_parameters(
         });
         let mut parameter_ids = BTreeMap::<String, Vec<ParameterId>>::new();
         for expression in &expressions {
-            let key = expression
-                .id
-                .rsplit_once('#')
-                .map_or("unknown", |(_, key)| key);
             parameter_ids
                 .entry(expression.name.clone())
                 .or_default()
-                .push(ParameterId(format!("{section}:parameter#{key}")));
+                .push(
+                    expression_parameter_id(&expression.id)
+                        .expect("sectioned expressions have parameter identities"),
+                );
         }
         for (ordinal, expression) in expressions.into_iter().enumerate() {
-            let key = expression
-                .id
-                .rsplit_once('#')
-                .map_or("unknown", |(_, key)| key);
-            let id = ParameterId(format!("{section}:parameter#{key}"));
+            let id = expression_parameter_id(&expression.id)
+                .expect("sectioned expressions have parameter identities");
             annotations
                 .note(&id.0, stream, expression.source_offset)
                 .tag("Number");
@@ -4821,6 +4846,11 @@ pub(crate) fn attach_expression_parameters(
             });
         }
     }
+}
+
+fn expression_parameter_id(expression_id: &str) -> Option<ParameterId> {
+    let (section, key) = expression_id.split_once(":expression#")?;
+    Some(ParameterId(format!("{section}:parameter#{key}")))
 }
 
 fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {

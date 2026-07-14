@@ -1362,34 +1362,13 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 Some(_) => {}
             }
         }
-        let mut content_parameters = HashSet::new();
         let mut content_features = HashSet::new();
         for item in &feature.source_content {
             match item {
                 FeatureSourceContent::Text(_) => {}
                 FeatureSourceContent::Parameter(parameter) => {
-                    if !content_parameters.insert(parameter) {
-                        findings.push(Finding {
-                            check: Check::Counts,
-                            severity: Severity::Error,
-                            message: format!("feature repeats content parameter `{}`", parameter.0),
-                            entity: Some(feature.id.0.clone()),
-                        });
-                    }
-                    match parameters_by_id.get(parameter) {
-                        None => {
-                            ref_error(findings, &feature.id.0, "content parameter", &parameter.0);
-                        }
-                        Some(owner) if *owner != &feature.id => findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
-                                "content parameter `{}` belongs to another feature",
-                                parameter.0
-                            ),
-                            entity: Some(feature.id.0.clone()),
-                        }),
-                        Some(_) => {}
+                    if !parameters_by_id.contains_key(parameter) {
+                        ref_error(findings, &feature.id.0, "content parameter", &parameter.0);
                     }
                 }
                 FeatureSourceContent::Feature(child) => {

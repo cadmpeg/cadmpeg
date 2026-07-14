@@ -714,6 +714,68 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
 }
 
 #[test]
+fn feature_source_content_allows_shared_repeated_parameters() {
+    use crate::features::{
+        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureSourceContent, ParameterId,
+        ParameterValue,
+    };
+    use std::collections::BTreeMap;
+
+    let mut ir = unit_cube();
+    let owner = FeatureId("synthetic:test:feature#equations".into());
+    let consumer = FeatureId("synthetic:test:feature#consumer".into());
+    let parameter = ParameterId("synthetic:test:parameter#shared".into());
+    for (ordinal, id, source_content) in [
+        (0, owner.clone(), Vec::new()),
+        (
+            1,
+            consumer,
+            vec![
+                FeatureSourceContent::Parameter(parameter.clone()),
+                FeatureSourceContent::Parameter(parameter.clone()),
+            ],
+        ),
+    ] {
+        ir.model.features.push(Feature {
+            id,
+            ordinal,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content,
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "test".into(),
+                parameters: BTreeMap::new(),
+                properties: BTreeMap::new(),
+            },
+            native_ref: None,
+        });
+    }
+    ir.model.parameters.push(DesignParameter {
+        id: parameter,
+        owner,
+        ordinal: 0,
+        name: "shared".into(),
+        expression: "1".into(),
+        display: None,
+        value: Some(ParameterValue::Real(1.0)),
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.finalize();
+
+    let report = validate(&ir, Vec::new());
+    assert!(report.is_ok(), "findings: {:?}", report.findings);
+}
+
+#[test]
 fn feature_parameters_require_unique_names_and_ordinals() {
     use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
     use std::collections::BTreeMap;

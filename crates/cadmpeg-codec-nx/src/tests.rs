@@ -285,6 +285,40 @@ fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
     );
 }
 
+#[test]
+fn nx_feature_source_content_orders_parameter_occurrences_with_text() {
+    let text = crate::native::FeaturePayloadString {
+        id: "text".into(),
+        operation_record: "record".into(),
+        ordinal: 0,
+        value: "Through".into(),
+        source_offset: 30,
+    };
+    let parameter_use = crate::native::FeatureParameterUse {
+        id: "use".into(),
+        operation_label: "operation".into(),
+        expression: "nx:test:expression#20".into(),
+        bindings: vec!["first".into(), "second".into()],
+        source_offsets: vec![20, 40],
+    };
+    let content = crate::decode::feature_source_content(&[&text], &[&parameter_use]);
+    assert_eq!(content.len(), 3);
+    assert!(matches!(
+        &content[0],
+        cadmpeg_ir::features::FeatureSourceContent::Parameter(id)
+            if id.0 == "nx:test:parameter#20"
+    ));
+    assert!(matches!(
+        &content[1],
+        cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Through"
+    ));
+    assert!(matches!(
+        &content[2],
+        cadmpeg_ir::features::FeatureSourceContent::Parameter(id)
+            if id.0 == "nx:test:parameter#20"
+    ));
+}
+
 /// Write three big-endian doubles into `rec` starting at `at`.
 fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
     for (i, v) in xyz.iter().enumerate() {
@@ -485,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 120);
+    assert_eq!(namespace.version, 121);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -5829,7 +5863,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 120);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 121);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

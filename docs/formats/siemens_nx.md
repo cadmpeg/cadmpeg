@@ -645,6 +645,12 @@ An offset-only OM data block references a persistent OM object as `04 00, object
 
 An operation input slot depends on every uniquely resolved parameter declaration referenced by its target data block. Binding order is operation-header slot order followed by reference byte order within each block. When exactly one numeric-expression record names the declaration, the consumption edge also identifies that expression record. The binding establishes parameter consumption but does not assign a dimensional role to the parameter.
 
+All binding occurrences for one operation and one expression form one parameter
+use. Its occurrences retain ascending source-offset order, including repeated
+slots. A feature's ordered source content merges its payload strings and every
+parameter-use occurrence by absolute source offset; repeated consumption emits
+the same parameter identity at each serialized position.
+
 The `SIMPLE HOLE` payload template is underscore-delimited. `Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer` identifies a general simple hole extending through all material, with chamfer treatments at its entry and exit. The six tokens form one atomic template; missing, reordered, or unknown tokens do not produce a typed hole template.
 
 Before its unique `Hole_` template string, a `SIMPLE HOLE` payload may carry exactly four marker-`30` shifted-binary64 scalars. When the first scalar is bitwise equal to the third and the second is bitwise equal to the fourth, the payload retains one ordered pair with two byte-identical witnesses. Any other scalar count or unequal pair rejects the repeated pair atomically. No unit, coordinate frame, or geometric role is assigned to these values.

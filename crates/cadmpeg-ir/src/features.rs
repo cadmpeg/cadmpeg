@@ -83,7 +83,7 @@ pub struct ParameterId(pub String);
 pub struct DesignParameter {
     /// Globally unique parameter id.
     pub id: ParameterId,
-    /// Feature that consumes this parameter.
+    /// Feature that owns or defines this parameter.
     pub owner: FeatureId,
     /// Position among parameters owned by the feature.
     #[serde(default)]
@@ -229,7 +229,8 @@ pub struct Feature {
 pub enum FeatureSourceContent {
     /// Literal text between child records.
     Text(String),
-    /// Dimension or equation parameter at this position.
+    /// Dimension or equation parameter referenced at this position. The same
+    /// parameter may occur more than once and may be owned by another feature.
     Parameter(ParameterId),
     /// Nested feature record at this position.
     Feature(FeatureId),
