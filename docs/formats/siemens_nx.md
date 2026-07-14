@@ -496,6 +496,8 @@ Hvec form depends on the stream: partition streams use **`xyz3`** (`x,y,z` meter
 |    2/3 | `2·n`   | `(u,v)` on support 0                                          |
 |      4 | `4·n`   | `(u0,v0,u1,v1)`: first pair on support 0, second on support 1 |
 
+The typed source record retains the scalar count, marker, ordered scalar lane, direct/escaped/descriptor-inline framing, and inflated-stream offset. Tuple grouping derives only from the marker and never reorders the serialized lane.
+
 The value `-31415800000000.0` is a missing-parameter sentinel. Preserve the tuple position. Support-0 `(u,v)` values evaluate on the analytic surface to the curve's 3D points.
 
 CHART_s and its two term_use endpoints define the bounded 3D carrier independently of the values-array. A null, sentinel-bearing, or count-mismatched values-array omits the corresponding pcurve; it does not invalidate the 3D chart carrier.

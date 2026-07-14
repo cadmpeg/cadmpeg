@@ -252,6 +252,72 @@ pub fn parasolid_term_use_records(streams: &[Stream]) -> Vec<ParasolidTermUseRec
     records
 }
 
+/// Serialized framing of a Parasolid support-UV values array.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParasolidSupportUvFraming {
+    /// Direct `0x00cc` tag.
+    Direct,
+    /// `0x00ccff` escaped tag.
+    Escaped,
+    /// Payload following the inline descriptor.
+    DescriptorInline,
+}
+
+/// Complete typed source record for one Parasolid support-UV values array.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidSupportUvRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Cross-reference index of the values array.
+    pub xmt: u32,
+    /// Serialized scalar count.
+    pub count: u32,
+    /// Tuple-packing marker (`2`, `3`, or `4`).
+    pub marker: u8,
+    /// Ordered serialized scalar values.
+    pub values: Vec<f64>,
+    /// Serialized record framing.
+    pub framing: ParasolidSupportUvFraming,
+    /// Tag or inline-payload offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Decode complete typed source records for Parasolid support-UV arrays.
+pub fn parasolid_support_uv_records(streams: &[Stream]) -> Vec<ParasolidSupportUvRecord> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind.is_parasolid() {
+            continue;
+        }
+        for record in crate::intersection::support_uv_records(&stream.inflated) {
+            let framing = match record.framing {
+                crate::intersection::SupportUvFraming::Direct => ParasolidSupportUvFraming::Direct,
+                crate::intersection::SupportUvFraming::Escaped => {
+                    ParasolidSupportUvFraming::Escaped
+                }
+                crate::intersection::SupportUvFraming::DescriptorInline => {
+                    ParasolidSupportUvFraming::DescriptorInline
+                }
+            };
+            records.push(ParasolidSupportUvRecord {
+                id: format!("nx:s{stream_ordinal}:support-uv-record#{}", record.xmt),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: record.xmt,
+                count: record.count,
+                marker: record.marker,
+                values: record.values,
+                framing,
+                inflated_offset: record.pos as u64,
+            });
+        }
+    }
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    records
+}
+
 /// Complete typed source record for one Parasolid surface-intersection curve.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidIntersectionRecord {

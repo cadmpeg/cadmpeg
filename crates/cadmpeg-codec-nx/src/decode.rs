@@ -3130,6 +3130,7 @@ fn attach_native_object_model(
     let parasolid_intersection_records =
         crate::native::parasolid_intersection_records(&scan.streams);
     let parasolid_term_use_records = crate::native::parasolid_term_use_records(&scan.streams);
+    let parasolid_support_uv_records = crate::native::parasolid_support_uv_records(&scan.streams);
     let parasolid_attribute_definitions =
         crate::native::parasolid_attribute_definitions(&scan.streams);
     let parasolid_entity_51_records = crate::native::parasolid_entity_51_records(&scan.streams);
@@ -3396,6 +3397,7 @@ fn attach_native_object_model(
         && parasolid_surface_curve_records.is_empty()
         && parasolid_intersection_records.is_empty()
         && parasolid_term_use_records.is_empty()
+        && parasolid_support_uv_records.is_empty()
         && parasolid_attribute_definitions.is_empty()
         && parasolid_entity_51_records.is_empty()
         && parasolid_entity_52_integer_records.is_empty()
@@ -3556,6 +3558,13 @@ fn attach_native_object_model(
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("term_use");
+        annotations.exactness(&record.id, Exactness::ByteExact);
+    }
+    for record in &parasolid_support_uv_records {
+        let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
+        annotations
+            .note(&record.id, source_stream, record.inflated_offset)
+            .tag("values");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
     for definition in &parasolid_attribute_definitions {
@@ -3954,7 +3963,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(138);
+    namespace.version = namespace.version.max(139);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -4008,6 +4017,12 @@ fn attach_native_object_model(
     }
     if !parasolid_term_use_records.is_empty() {
         namespace.set_arena("parasolid_term_use_records", &parasolid_term_use_records)?;
+    }
+    if !parasolid_support_uv_records.is_empty() {
+        namespace.set_arena(
+            "parasolid_support_uv_records",
+            &parasolid_support_uv_records,
+        )?;
     }
     if !parasolid_attribute_definitions.is_empty() {
         namespace.set_arena(

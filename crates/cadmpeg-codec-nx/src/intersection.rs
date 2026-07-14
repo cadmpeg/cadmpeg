@@ -60,6 +60,52 @@ pub struct TermUse {
     pub pos: usize,
 }
 
+/// Serialized framing of one support-UV values array.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SupportUvFraming {
+    /// Direct `0x00cc` tag.
+    Direct,
+    /// `0x00ccff` escaped tag.
+    Escaped,
+    /// Payload following the inline `values` descriptor.
+    DescriptorInline,
+}
+
+/// A complete support-UV values-array record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SupportUvRecord {
+    /// Cross-reference index of the values array.
+    pub xmt: u32,
+    /// Serialized scalar count.
+    pub count: u32,
+    /// Tuple-packing marker (`2`, `3`, or `4`).
+    pub marker: u8,
+    /// Ordered serialized finite scalar values.
+    pub values: Vec<f64>,
+    /// Serialized record framing.
+    pub framing: SupportUvFraming,
+    /// Tag or inline-payload offset in the inflated stream.
+    pub pos: usize,
+}
+
+impl SupportUvRecord {
+    fn support_uv(&self) -> SupportUv {
+        let width = if self.marker == 4 { 4 } else { 2 };
+        let first = self
+            .values
+            .chunks_exact(width)
+            .map(|entry| [entry[0], entry[1]])
+            .collect();
+        let second = (self.marker == 4).then(|| {
+            self.values
+                .chunks_exact(4)
+                .map(|entry| [entry[2], entry[3]])
+                .collect()
+        });
+        [Some(first), second]
+    }
+}
+
 /// A decoded surface-intersection construction and its solved chart cache.
 #[derive(Debug, Clone)]
 pub struct IntersectionCurve {
@@ -529,6 +575,14 @@ fn term_at(stream: &[u8], base: usize, framing: TermUseFraming, pos: usize) -> O
 }
 
 fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUv> {
+    support_uv_records(stream)
+        .into_iter()
+        .map(|record| (record.xmt, record.support_uv()))
+        .collect()
+}
+
+/// Decode complete direct, escaped, and descriptor-inline support-UV arrays.
+pub fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
     let mut out = BTreeMap::new();
     for tag in find_tags(stream, [0, 204]) {
         for escape in [0usize, 1] {
@@ -536,8 +590,13 @@ fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUv> {
                 continue;
             }
             let base = tag + 2 + escape;
-            if let Some((xmt, values)) = uv_at(stream, base) {
-                out.entry(xmt).or_insert(values);
+            let framing = if escape == 0 {
+                SupportUvFraming::Direct
+            } else {
+                SupportUvFraming::Escaped
+            };
+            if let Some(record) = uv_at(stream, base, framing, tag) {
+                out.entry(record.xmt).or_insert(record);
                 break;
             }
         }
@@ -545,42 +604,46 @@ fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUv> {
     for label in find_bytes(stream, b"values") {
         let tail = label + b"values".len();
         if stream.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
-            if let Some((xmt, values)) = uv_at(stream, tail + INLINE_UV_TAIL.len()) {
-                out.entry(xmt).or_insert(values);
+            let pos = tail + INLINE_UV_TAIL.len();
+            if let Some(record) = uv_at(stream, pos, SupportUvFraming::DescriptorInline, pos) {
+                out.entry(record.xmt).or_insert(record);
             }
         }
     }
-    out
+    out.into_values().collect()
 }
 
-fn uv_at(stream: &[u8], base: usize) -> Option<(u32, SupportUv)> {
-    let count = be::u32_at(stream, base)? as usize;
+fn uv_at(
+    stream: &[u8],
+    base: usize,
+    framing: SupportUvFraming,
+    pos: usize,
+) -> Option<SupportUvRecord> {
+    let count = be::u32_at(stream, base)?;
+    let count_usize = count as usize;
     let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
     let payload = base + 4 + xmt_len;
     let marker @ 2..=4 = stream.get(payload).copied()? else {
         return None;
     };
     let width = if marker == 4 { 4 } else { 2 };
-    if count < width * 2 || !count.is_multiple_of(width) {
+    if count_usize < width * 2 || !count_usize.is_multiple_of(width) {
         return None;
     }
-    let values = (0..count)
+    let values = (0..count_usize)
         .map(|index| be::f64_at(stream, payload + 1 + index * 8))
         .collect::<Option<Vec<_>>>()?;
     if !values.iter().all(|value| value.is_finite()) {
         return None;
     }
-    let first = values
-        .chunks_exact(width)
-        .map(|entry| [entry[0], entry[1]])
-        .collect();
-    let second = (marker == 4).then(|| {
-        values
-            .chunks_exact(4)
-            .map(|entry| [entry[2], entry[3]])
-            .collect()
-    });
-    Some((xmt, [Some(first), second]))
+    Some(SupportUvRecord {
+        xmt,
+        count,
+        marker,
+        values,
+        framing,
+        pos,
+    })
 }
 
 fn find_tags(stream: &[u8], tag: [u8; 2]) -> impl Iterator<Item = usize> + '_ {

@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 138);
+    assert_eq!(namespace.version, 139);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6452,7 +6452,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 138);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 139);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -7799,6 +7799,21 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert!(terms
         .iter()
         .all(|term| matches!(term.framing, crate::native::ParasolidTermUseFraming::Direct)));
+    let support_uv = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::ParasolidSupportUvRecord>("parasolid_support_uv_records")
+        .unwrap();
+    assert_eq!(support_uv.len(), 1);
+    assert_eq!(support_uv[0].count, 4);
+    assert_eq!(support_uv[0].marker, 2);
+    assert_eq!(support_uv[0].values, [0.0, 0.0, 0.01, 0.0]);
+    assert!(matches!(
+        support_uv[0].framing,
+        crate::native::ParasolidSupportUvFraming::Direct
+    ));
 
     let procedural = result
         .ir
