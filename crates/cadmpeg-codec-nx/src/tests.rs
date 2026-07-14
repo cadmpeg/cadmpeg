@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 93);
+    assert_eq!(namespace.version, 94);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1490,6 +1490,25 @@ fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
     bytes[0] = b'G';
     assert!(crate::om::datum_plane_descriptor_block(&bytes).is_none());
     assert!(crate::om::datum_plane_descriptor_block(&bytes[..39]).is_none());
+}
+
+#[test]
+fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
+    let mut bytes = vec![0x2f, 0x2f, 0x41, 0x6d, 0x00, 0xf0];
+    bytes.extend_from_slice(&[
+        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    ]);
+    bytes.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+    bytes.push(0);
+    bytes.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+    let pairs = crate::om::datum_csys_payload_scalar_pairs(&bytes);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].offset, 6);
+    assert_eq!(pairs[0].value_offsets, [21, 30]);
+    assert_eq!(pairs[0].values, [10.0, -20.0]);
+
+    bytes[29] = 1;
+    assert!(crate::om::datum_csys_payload_scalar_pairs(&bytes).is_empty());
 }
 
 #[test]
@@ -5285,7 +5304,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 93);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 94);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

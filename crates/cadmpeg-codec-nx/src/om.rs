@@ -507,6 +507,17 @@ pub struct DatumPlaneDescriptorBlock {
     pub label: String,
 }
 
+/// Exact scalar pair following a datum-coordinate-system discriminator.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DatumCsysPayloadScalarPair {
+    /// Payload-relative offset of the discriminator.
+    pub offset: usize,
+    /// Ordered finite shifted-IEEE values.
+    pub values: [f64; 2],
+    /// Payload-relative offsets of the two scalar encodings.
+    pub value_offsets: [usize; 2],
+}
+
 /// Fixed scalar header in one bounded extrusion payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrudePayloadHeader {
@@ -1850,6 +1861,31 @@ pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<DatumPlaneDescriptor
         schema_index,
         label: std::str::from_utf8(label).ok()?.to_string(),
     })
+}
+
+/// Decode every exactly framed scalar pair in a reconstructed datum-CSYS payload.
+pub fn datum_csys_payload_scalar_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadScalarPair> {
+    const DISCRIMINATOR: [u8; 15] = [
+        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    ];
+    bytes
+        .windows(DISCRIMINATOR.len())
+        .enumerate()
+        .filter_map(|(offset, window)| {
+            (window == DISCRIMINATOR).then_some(())?;
+            let first = offset + DISCRIMINATOR.len();
+            let second = first + 9;
+            (bytes.get(first + 8) == Some(&0x00)).then_some(())?;
+            Some(DatumCsysPayloadScalarPair {
+                offset,
+                values: [
+                    shifted_ieee_f64(bytes.get(first..first + 8)?)?,
+                    shifted_ieee_f64(bytes.get(second..second + 8)?)?,
+                ],
+                value_offsets: [first, second],
+            })
+        })
+        .collect()
 }
 
 fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<u32>> {
