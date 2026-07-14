@@ -181,6 +181,13 @@ pub fn decode(
                 &native.asm_histories,
                 &ir.model.bodies,
             );
+            crate::history::bind_feature_face_selections(
+                &mut ir.model.features,
+                &native.design_parameter_scopes,
+                &native.design_construction_operand_groups,
+                &native.design_face_operands,
+                &native.asm_histories,
+            );
             (ir.model.sketches, ir.model.sketch_entities) = crate::design::project_sketch_design(
                 &native.design_sketch_placements,
                 &native.sketch_points,
@@ -375,6 +382,13 @@ pub fn decode(
         &native.design_parameter_scopes,
         &native.asm_histories,
         &ir.model.bodies,
+    );
+    crate::history::bind_feature_face_selections(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_face_operands,
+        &native.asm_histories,
     );
     (ir.model.sketches, ir.model.sketch_entities) = crate::design::project_sketch_design(
         &native.design_sketch_placements,

@@ -514,6 +514,129 @@ pub(crate) fn bind_feature_outputs(
     }
 }
 
+pub(crate) fn bind_feature_face_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[crate::records::DesignParameterScope],
+    groups: &[crate::records::DesignConstructionOperandGroup],
+    operands: &[crate::records::DesignFaceOperand],
+    histories: &[AsmHistory],
+) {
+    let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
+    for state in histories.iter().flat_map(|history| &history.states) {
+        states
+            .entry(state.state_id)
+            .and_modify(|state| *state = None)
+            .or_insert(Some(state));
+    }
+    for feature in features {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+        let Some(scope) = matching_scopes.next() else {
+            continue;
+        };
+        if matching_scopes.next().is_some() {
+            continue;
+        }
+        let (Some(state_id), Some(previous_state_id)) =
+            (scope.history_state_id, scope.previous_history_state_id)
+        else {
+            continue;
+        };
+        let Some(Some(state)) = states.get(&state_id) else {
+            continue;
+        };
+        let Some(transition) = &state.transition else {
+            continue;
+        };
+        if transition.previous_state_id != Some(previous_state_id) {
+            continue;
+        }
+        let Some(Some(previous)) = states.get(&previous_state_id) else {
+            continue;
+        };
+        let Some(topology) = &previous.topology else {
+            continue;
+        };
+        let cadmpeg_ir::features::FeatureDefinition::Extrude { start, extent, .. } =
+            &mut feature.definition
+        else {
+            continue;
+        };
+        if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
+            bind_face_selection(face, scope, groups, operands, topology);
+        }
+        if let cadmpeg_ir::features::Extent::ToFace { face, .. } = extent {
+            bind_face_selection(face, scope, groups, operands, topology);
+        }
+    }
+}
+
+fn bind_face_selection(
+    selection: &mut cadmpeg_ir::features::FaceSelection,
+    scope: &crate::records::DesignParameterScope,
+    groups: &[crate::records::DesignConstructionOperandGroup],
+    operands: &[crate::records::DesignFaceOperand],
+    topology: &AsmHistoricalTopology,
+) {
+    let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
+        return;
+    };
+    let mut matching_groups = groups.iter().filter(|group| group.id == *native);
+    let Some(group) = matching_groups.next() else {
+        return;
+    };
+    if matching_groups.next().is_some()
+        || group.scope_record_index != scope.record_index
+        || crate::design::native_stream(&group.id) != crate::design::native_stream(&scope.id)
+    {
+        return;
+    }
+    let Some(stream) = crate::design::native_stream(&scope.id) else {
+        return;
+    };
+    let mut faces = Vec::new();
+    for record_index in &group.members {
+        let mut matches = operands.iter().filter(|operand| {
+            crate::design::native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == scope.record_index
+                && operand.record_index == *record_index
+        });
+        let Some(operand) = matches.next() else {
+            return;
+        };
+        if matches.next().is_some() {
+            return;
+        }
+        let candidates = faces_in_topology(&operand.candidate_faces, topology);
+        let [face] = candidates.as_slice() else {
+            return;
+        };
+        if !faces.contains(face) {
+            faces.push(face.clone());
+        }
+    }
+    if !faces.is_empty() {
+        *selection = cadmpeg_ir::features::FaceSelection::Resolved {
+            faces,
+            native: native.clone(),
+        };
+    }
+}
+
+fn faces_in_topology(
+    candidates: &[cadmpeg_ir::ids::FaceId],
+    topology: &AsmHistoricalTopology,
+) -> Vec<cadmpeg_ir::ids::FaceId> {
+    let faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+    candidates
+        .iter()
+        .filter(|face| stable_ref(&face.0).is_some_and(|slot| faces.contains(&slot)))
+        .cloned()
+        .collect()
+}
+
 fn stable_ref(id: &str) -> Option<i64> {
     id.rsplit_once('#')?
         .1
@@ -1155,6 +1278,13 @@ mod tests {
         assert_eq!(
             bodies_intersecting(&topology, &BTreeSet::from([28])).unwrap(),
             BTreeSet::from([1])
+        );
+        assert_eq!(
+            faces_in_topology(
+                &[FaceId(id(4)), FaceId(id(99)), FaceId("foreign".into())],
+                &topology,
+            ),
+            [FaceId(id(4))]
         );
     }
 
