@@ -2931,29 +2931,6 @@ pub fn parse_standard_mesh_endpoint_candidates(
         return None;
     }
     deduplicate_mesh_quotient_assignments(&mut assignments);
-    let face_work = assignments
-        .iter()
-        .map(|assignments| Some(assignments.len()))
-        .collect::<Vec<_>>();
-    let total_work = face_work
-        .iter()
-        .copied()
-        .collect::<Option<Vec<_>>>()?
-        .into_iter()
-        .try_fold(0usize, usize::checked_add)?;
-    if total_work > MAX_SELECTION_WORK {
-        return None;
-    }
-    let mut search = MeshSelectionSearch {
-        assignments: &assignments,
-        face_work,
-        edge_candidates,
-        edge_rows: &edge_rows,
-        vertex_points: &vertex_points,
-        selected: vec![None; face_count],
-        states: 0,
-        solution: None,
-    };
     let mut quotient = MeshQuotient {
         union: UnionFind::new(edge_rows.len() * 2),
         domains,
@@ -2978,6 +2955,38 @@ pub fn parse_standard_mesh_endpoint_candidates(
     if !quotient.edge_domains_viable(edge_candidates) {
         return None;
     }
+    for face in &mut assignments {
+        face.retain(|assignment| {
+            let mut quotient = quotient.clone();
+            quotient.assignment_adjacencies_viable(assignment)
+        });
+        if face.is_empty() {
+            return None;
+        }
+    }
+    let face_work = assignments
+        .iter()
+        .map(|assignments| Some(assignments.len()))
+        .collect::<Vec<_>>();
+    let total_work = face_work
+        .iter()
+        .copied()
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .try_fold(0usize, usize::checked_add)?;
+    if total_work > MAX_SELECTION_WORK {
+        return None;
+    }
+    let mut search = MeshSelectionSearch {
+        assignments: &assignments,
+        face_work,
+        edge_candidates,
+        edge_rows: &edge_rows,
+        vertex_points: &vertex_points,
+        selected: vec![None; face_count],
+        states: 0,
+        solution: None,
+    };
     search.search(&quotient);
     search.solution
 }
