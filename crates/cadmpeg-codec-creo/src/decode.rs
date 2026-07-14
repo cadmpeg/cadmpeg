@@ -233,6 +233,7 @@ fn transfer_curve_expression_features(
             record.entity_id, record.offset
         ));
         let mut parameters_by_name = BTreeMap::<String, ParameterId>::new();
+        let mut source_content = Vec::with_capacity(record.assignments.len());
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
             let parameter_id = ParameterId(format!(
                 "creo:depdb:curve_expression_parameter#{}-{}-{}",
@@ -277,6 +278,7 @@ fn transfer_curve_expression_features(
                 pmi: None,
                 native_ref: Some(curve_expression_record_id(record)),
             });
+            source_content.push(FeatureSourceContent::Parameter(parameter_id.clone()));
             parameters_by_name.insert(assignment.name.clone(), parameter_id);
         }
         annotate(
@@ -325,7 +327,7 @@ fn transfer_curve_expression_features(
                     .collect::<Vec<_>>()
                     .join("\n"),
             ),
-            source_content: Vec::new(),
+            source_content,
             outputs: Vec::new(),
             definition,
             native_ref: Some(curve_expression_record_id(record)),

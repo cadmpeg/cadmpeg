@@ -1710,6 +1710,20 @@ fn decode_preserves_counted_curve_expression_programs() {
         result.ir.model.parameters[2].properties["external_dependencies"],
         "t"
     );
+    assert_eq!(
+        result.ir.model.features[0].source_content,
+        result
+            .ir
+            .model
+            .parameters
+            .iter()
+            .map(
+                |parameter| cadmpeg_ir::features::FeatureSourceContent::Parameter(
+                    parameter.id.clone()
+                )
+            )
+            .collect::<Vec<_>>()
+    );
     assert_annotation(
         &result.ir,
         &records[0].id,
