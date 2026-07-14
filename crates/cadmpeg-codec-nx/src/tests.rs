@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 75);
+    assert_eq!(namespace.version, 76);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1396,6 +1396,10 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
         ],
     );
     assert_eq!(uses.len(), 3);
+    assert_eq!(
+        uses[0].id,
+        "nx:feature-history:datum-csys-block-use#0-3-0-1"
+    );
     assert_eq!(uses[0].reference_ordinal, 3);
     assert_eq!(uses[0].input_operation_label, "operation#0");
     assert_eq!(uses[1].reference_ordinal, 4);
@@ -5157,7 +5161,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 75);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 76);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

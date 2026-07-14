@@ -1630,10 +1630,18 @@ pub fn feature_datum_csys_block_uses(
                 .iter()
                 .filter(|input| input.data_block == *data_block)
             {
+                let construction_key = construction
+                    .operation_label
+                    .rsplit_once('#')
+                    .map_or(construction.operation_label.as_str(), |(_, key)| key);
+                let input_key = input
+                    .operation_label
+                    .rsplit_once('#')
+                    .map_or(input.operation_label.as_str(), |(_, key)| key);
                 uses.push(FeatureDatumCsysBlockUse {
                     id: format!(
-                        "{}:block-use#{reference_ordinal}-{}-{}",
-                        construction.id, input.operation_label, input.input_slot
+                        "nx:feature-history:datum-csys-block-use#{construction_key}-{reference_ordinal}-{input_key}-{}",
+                        input.input_slot
                     ),
                     construction: construction.id.clone(),
                     construction_operation_label: construction.operation_label.clone(),
