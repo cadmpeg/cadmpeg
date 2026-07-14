@@ -3777,15 +3777,9 @@ fn section_skamp_constraints(
                         && section_skamp_endpoint(definition.id, &segments.rows, second)
                             .is_some() =>
                 {
-                    SketchConstraintDefinition::Tangent {
-                        first: SketchEntityId(format!(
-                            "creo:featdefs:sketch_entity#{}:{}",
-                            definition.id, first.entity_id
-                        )),
-                        second: SketchEntityId(format!(
-                            "creo:featdefs:sketch_entity#{}:{}",
-                            definition.id, second.entity_id
-                        )),
+                    SketchConstraintDefinition::TangentLoci {
+                        first: section_skamp_endpoint(definition.id, &segments.rows, first)?,
+                        second: section_skamp_endpoint(definition.id, &segments.rows, second)?,
                     }
                 }
                 _ => {
@@ -6772,6 +6766,23 @@ mod resolved_sketch_tests {
                     ],
                     offset: 72,
                 },
+                crate::feature::FeatureSkamp {
+                    id: 8,
+                    kind: 4,
+                    flags: 0,
+                    status: 0,
+                    items: vec![
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 3,
+                        },
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 13,
+                            sense: 2,
+                        },
+                    ],
+                    offset: 73,
+                },
             ],
             triples: Vec::new(),
             offset: 45,
@@ -6850,6 +6861,17 @@ mod resolved_sketch_tests {
                 ..
             } if native_kind == "creo:skamp:0"
         ));
+        assert_eq!(
+            constraints[5].0.definition,
+            SketchConstraintDefinition::TangentLoci {
+                first: SketchLocus::End(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                second: SketchLocus::End(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:13".to_string()
+                )),
+            }
+        );
         let relations = section_dimension_constraints(&definition, &SketchId("sketch".into()));
         assert_eq!(
             relations[0].0.definition,

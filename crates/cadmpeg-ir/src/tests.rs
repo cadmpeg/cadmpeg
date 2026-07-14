@@ -359,6 +359,10 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             second: SketchLocus::End(entity.clone()),
             axis: entity.clone(),
         },
+        SketchConstraintDefinition::TangentLoci {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
+        },
         SketchConstraintDefinition::Radius {
             entity: entity.clone(),
             parameter: parameter.clone(),

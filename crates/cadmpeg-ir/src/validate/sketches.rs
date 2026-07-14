@@ -341,7 +341,8 @@ fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
         Constraint::Symmetric { first, second, .. } => vec![first, second],
         Constraint::DistanceLoci { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
-        | Constraint::VerticalDistance { first, second, .. } => vec![first, second],
+        | Constraint::VerticalDistance { first, second, .. }
+        | Constraint::TangentLoci { first, second } => vec![first, second],
         _ => Vec::new(),
     }
 }

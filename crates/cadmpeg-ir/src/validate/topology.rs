@@ -1124,6 +1124,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             Definition::CoincidentLoci { loci } => {
                 (loci.iter().map(locus_entity).cloned().collect(), None)
             }
+            Definition::TangentLoci { first, second } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                None,
+            ),
             Definition::Midpoint { point, entity } => {
                 (vec![locus_entity(point).clone(), entity.clone()], None)
             }

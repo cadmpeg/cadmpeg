@@ -270,6 +270,13 @@ pub enum SketchConstraintDefinition {
         /// Second entity.
         second: SketchEntityId,
     },
+    /// Two bounded entities are tangent at explicit loci.
+    TangentLoci {
+        /// Tangency locus on the first entity.
+        first: SketchLocus,
+        /// Tangency locus on the second entity.
+        second: SketchLocus,
+    },
     /// Two entities have equal size.
     Equal {
         /// First entity.
