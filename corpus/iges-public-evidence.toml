@@ -4,4 +4,4 @@ fixtures = []
 # Each [[fixtures]] entry names one committed IGES corpus filename, one or more
 # fixture_classes, an assertions table mapping every verified assertion label
 # to exact codec tests that load the file, and SHA-256 digests for its
-# serialized inspection, canonical IR, and decode report.
+# serialized inspection, canonical IR, decode report, and source-fidelity sidecar.

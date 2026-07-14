@@ -92,6 +92,7 @@ struct PublicFixture {
     inspect_sha256: String,
     ir_sha256: String,
     report_sha256: String,
+    source_fidelity_sha256: String,
     #[serde(skip)]
     observed_entities: BTreeSet<(i64, i64)>,
 }
@@ -180,6 +181,7 @@ struct PublicOutputDigests {
     inspect: String,
     ir: String,
     report: String,
+    source_fidelity: String,
     observed_entities: BTreeSet<(i64, i64)>,
 }
 
@@ -229,6 +231,17 @@ fn public_output_digests(bytes: &[u8], filename: &str) -> Result<PublicOutputDig
     let second = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .map_err(|error| format!("public fixture {filename} repeated decode: {error}"))?;
+    let validation = cadmpeg_ir::validate_with_source_fidelity(
+        &first.ir,
+        &first.source_fidelity,
+        first.report.losses.clone(),
+    );
+    if !validation.is_ok() {
+        return Err(format!(
+            "public fixture {filename} source-fidelity validation failed: {:?}",
+            validation.findings
+        ));
+    }
     let inspect_json = serde_json::to_vec(&inspect)
         .map_err(|error| format!("public fixture {filename} inspect serialization: {error}"))?;
     let first_ir = first.ir.to_canonical_json().map_err(|error| {
@@ -242,7 +255,16 @@ fn public_output_digests(bytes: &[u8], filename: &str) -> Result<PublicOutputDig
     let second_report = serde_json::to_vec(&second.report).map_err(|error| {
         format!("public fixture {filename} repeated report serialization: {error}")
     })?;
-    if first_ir != second_ir || first_report != second_report {
+    let first_source_fidelity = serde_json::to_vec(&first.source_fidelity).map_err(|error| {
+        format!("public fixture {filename} source fidelity serialization: {error}")
+    })?;
+    let second_source_fidelity = serde_json::to_vec(&second.source_fidelity).map_err(|error| {
+        format!("public fixture {filename} repeated source fidelity serialization: {error}")
+    })?;
+    if first_ir != second_ir
+        || first_report != second_report
+        || first_source_fidelity != second_source_fidelity
+    {
         return Err(format!(
             "public fixture {filename} decode is not deterministic"
         ));
@@ -265,6 +287,7 @@ fn public_output_digests(bytes: &[u8], filename: &str) -> Result<PublicOutputDig
         inspect: cadmpeg_ir::hash::sha256_hex(&inspect_json),
         ir: cadmpeg_ir::hash::sha256_hex(first_ir.as_bytes()),
         report: cadmpeg_ir::hash::sha256_hex(&first_report),
+        source_fidelity: cadmpeg_ir::hash::sha256_hex(&first_source_fidelity),
         observed_entities,
     })
 }
@@ -289,6 +312,7 @@ fn valid_public_fixture(
         || fixture.inspect_sha256.len() != 64
         || fixture.ir_sha256.len() != 64
         || fixture.report_sha256.len() != 64
+        || fixture.source_fidelity_sha256.len() != 64
     {
         return Err(format!(
             "public fixture evidence {:?} has incomplete proof fields",
@@ -334,6 +358,11 @@ fn valid_public_fixture(
         ("inspect", outputs.inspect, &fixture.inspect_sha256),
         ("canonical IR", outputs.ir, &fixture.ir_sha256),
         ("report", outputs.report, &fixture.report_sha256),
+        (
+            "source fidelity",
+            outputs.source_fidelity,
+            &fixture.source_fidelity_sha256,
+        ),
     ] {
         if !actual.eq_ignore_ascii_case(expected) {
             return Err(format!(
@@ -781,6 +810,7 @@ fn run() -> Result<(), String> {
             println!("inspect_sha256 = {:?}", outputs.inspect);
             println!("ir_sha256 = {:?}", outputs.ir);
             println!("report_sha256 = {:?}", outputs.report);
+            println!("source_fidelity_sha256 = {:?}", outputs.source_fidelity);
             Ok(())
         }
         _ => Err(USAGE.into()),

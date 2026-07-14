@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::{validate, CadIr, SourceFidelity};
+use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, SourceFidelity};
 
 use crate::loader::{self, read_prefix};
 use crate::registry::Registry;
@@ -17,8 +17,15 @@ use crate::{DecodeArgs, ForcedInput, Format};
 
 const CLI_SCHEMA_VERSION: u32 = 3;
 
-fn validate_ir(ir: &CadIr, losses: Vec<cadmpeg_ir::LossNote>) -> ValidationReport {
-    let mut report = validate(ir, losses);
+fn validate_ir(
+    ir: &CadIr,
+    source_fidelity: Option<&SourceFidelity>,
+    losses: Vec<cadmpeg_ir::LossNote>,
+) -> ValidationReport {
+    let mut report = match source_fidelity {
+        Some(source_fidelity) => validate_with_source_fidelity(ir, source_fidelity, losses),
+        None => validate(ir, losses),
+    };
     if ir.native.namespace("f3d").is_some() {
         report
             .findings
@@ -180,7 +187,11 @@ pub fn validate_cmd(
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
-    let report = validate_ir(&loaded.ir, losses(loaded.decode_report.as_ref()));
+    let report = validate_ir(
+        &loaded.ir,
+        loaded.source_fidelity.as_ref(),
+        losses(loaded.decode_report.as_ref()),
+    );
     if json {
         writeln!(
             stdout,
@@ -294,7 +305,11 @@ pub fn convert(
         print_decode_report(&mut stderr, report)?;
         writeln!(stderr)?;
     }
-    let validation = validate_ir(&loaded.ir, losses(loaded.decode_report.as_ref()));
+    let validation = validate_ir(
+        &loaded.ir,
+        loaded.source_fidelity.as_ref(),
+        losses(loaded.decode_report.as_ref()),
+    );
     print_validation_report(&mut stderr, &validation)?;
     if !validation.is_ok() && !settings.allow_invalid {
         write_command_report(
