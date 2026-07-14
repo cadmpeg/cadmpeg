@@ -271,6 +271,22 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     let assignments = crate::topology::standard_mesh_missing_edge_assignments(&bytes, &[[0, 0]; 4])
         .expect("complete missing-edge assignments");
     assert_eq!(assignments[0], [placements[0].clone()]);
+    let boundaries = crate::topology::standard_mesh_boundary_assignments(&bytes, &[[0, 0]; 4])
+        .expect("complete ordered boundary assignments");
+    assert_eq!(boundaries[0].len(), 1);
+    assert_eq!(boundaries[0][0].boundaries.len(), 1);
+    assert_eq!(
+        boundaries[0][0].boundaries[0]
+            .iter()
+            .map(|use_| (use_.edge, use_.reversed))
+            .collect::<Vec<_>>(),
+        [
+            (0, None),
+            (1, Some(false)),
+            (2, Some(false)),
+            (3, Some(false))
+        ]
+    );
     let endpoint_domains = crate::topology::standard_mesh_placement_endpoint_pairs(
         &bytes,
         &[[0, 0]; 4],

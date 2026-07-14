@@ -197,6 +197,8 @@ A standard `u16be` edge row with no interior handles does not match every bounda
 
 The placement domain for unmatched rows contains only assignments that partition every uncovered run end-to-end. Each assignment groups one placement for every missing edge use; its placements remain correlated and cannot be selected independently. A row with stored interiors covers `arity - 1` boundary segments. An arity-two row has no stored interior discretization and may cover any positive remaining span. Face incidence determines the eligible rows; span partitions do not determine edge orientation.
 
+Merging an assignment with the exact interior-handle occurrences produces one ordered physical-edge sequence per trim cycle. Every boundary segment is covered exactly once. Interior-handle occurrences retain their stored-row direction; unmatched occurrences retain an unresolved direction until endpoint constraints select it.
+
 Resolved matched edges constrain trim-cycle corner points by unordered endpoint pairs. Intersect the pair sets at shared corners, then propagate a singleton corner across its edge to the opposite endpoint. An unmatched placement whose start and end corners are bound contributes their unordered point pair to that edge's endpoint domain. A placement-derived domain is complete only when every retained placement has both corners bound; incomplete corner coverage does not narrow the edge.
 
 Endpoint constraints prune complete face assignments atomically. A placement domain intersects the edge's resolved endpoint pair and the complete placement domain on its opposite incident face. Repeat assignment removal and domain intersection to a fixpoint. An unbound placement contributes no endpoint restriction; it does not invalidate its face assignment.

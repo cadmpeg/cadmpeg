@@ -940,6 +940,27 @@ pub struct MeshEdgePlacementEndpointCandidate {
     pub endpoint_pairs: Option<Vec<[usize; 2]>>,
 }
 
+/// One physical-edge use in a complete candidate trim boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeshBoundaryEdgeCandidate {
+    /// Physical edge-row ordinal.
+    pub edge: usize,
+    /// Boundary-segment index at which the use begins.
+    pub start: usize,
+    /// Boundary-segment index immediately after the use.
+    pub end: usize,
+    /// Stored-row direction when an interior handle sequence fixes it.
+    pub reversed: Option<bool>,
+}
+
+/// One complete choice of all unmatched placements on a face, expressed as
+/// ordered physical-edge uses for each serialized trim cycle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeshFaceBoundaryAssignment {
+    /// Trim cycles in serialized cycle order.
+    pub boundaries: Vec<Vec<MeshBoundaryEdgeCandidate>>,
+}
+
 /// Recover exact face-local mesh coverage without assigning unmatched edge rows
 /// to gaps. A result exists only for a unique trim-handle width and when every
 /// matched interior occurs on one of its two serialized incident faces.
@@ -1190,6 +1211,87 @@ pub fn standard_mesh_missing_edge_placements(
             })
             .collect()
     })
+}
+
+/// Combine exact interior-handle runs with each complete unmatched-edge
+/// assignment to form ordered, gap-free candidate boundaries.
+#[must_use]
+pub fn standard_mesh_boundary_assignments(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
+    let assignments = standard_mesh_missing_edge_assignments(bytes, edge_faces)?;
+    let runs = standard_mesh_edge_runs(bytes)?;
+    let (face_start, face_count, _) = largest_fbb_run(bytes)?;
+    let cycle_solutions = [1, 2, 3]
+        .into_iter()
+        .filter_map(|width| parse_trim_chain(bytes, face_start, face_count, width))
+        .map(|trims| {
+            trims
+                .iter()
+                .map(|trim| {
+                    boundary_cycles(&trim.triangles)
+                        .map(|cycles| cycles.into_iter().map(|cycle| cycle.len()).collect())
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let [cycle_lengths] = <[Vec<Vec<usize>>; 1]>::try_from(cycle_solutions).ok()?;
+    assignments
+        .into_iter()
+        .enumerate()
+        .map(|(face, assignments)| {
+            assignments
+                .into_iter()
+                .map(|assignment| {
+                    let mut boundaries = vec![Vec::new(); cycle_lengths[face].len()];
+                    for run in runs.iter().filter(|run| run.face == face) {
+                        boundaries[run.cycle].push((
+                            MeshBoundaryEdgeCandidate {
+                                edge: run.edge,
+                                start: run.start,
+                                end: (run.start + run.segment_count)
+                                    % cycle_lengths[face][run.cycle],
+                                reversed: Some(run.reversed),
+                            },
+                            run.segment_count,
+                        ));
+                    }
+                    for placement in assignment {
+                        boundaries[placement.cycle].push((
+                            MeshBoundaryEdgeCandidate {
+                                edge: placement.edge,
+                                start: placement.start,
+                                end: placement.end,
+                                reversed: None,
+                            },
+                            placement.segment_count,
+                        ));
+                    }
+                    let boundaries = boundaries
+                        .into_iter()
+                        .enumerate()
+                        .map(|(cycle, mut uses)| {
+                            uses.sort_unstable_by_key(|(edge, _)| edge.start);
+                            let length = cycle_lengths[face][cycle];
+                            let mut coverage = vec![0u8; length];
+                            for (edge, segment_count) in &uses {
+                                for offset in 0..*segment_count {
+                                    let covered = &mut coverage[(edge.start + offset) % length];
+                                    *covered = covered.checked_add(1)?;
+                                }
+                            }
+                            coverage
+                                .iter()
+                                .all(|count| *count == 1)
+                                .then(|| uses.into_iter().map(|(edge, _)| edge).collect::<Vec<_>>())
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Some(MeshFaceBoundaryAssignment { boundaries })
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect()
 }
 
 type MeshCorner = (usize, usize, usize);
