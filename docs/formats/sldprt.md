@@ -265,6 +265,8 @@ Point-distance operands select explicit profile loci. Line-distance and angular 
 
 An `moCurvePattern_c` feature-input object is immediately preceded by its seed feature object and followed by its path feature object. The preceding object identifies the repeated neutral feature. When the following object is an `moProfileFeature_c` sketch with one resolved neutral sketch, that sketch is the curve-driven pattern path. A missing or multiply addressed adjacent object, or a following object that is not a resolved sketch, leaves both pattern inputs unresolved.
 
+An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That preceding object identifies the repeated neutral feature. A missing or multiply addressed preceding object leaves the linear-pattern seed unresolved.
+
 A parameterless, propertyless `Feature` history record with type `Directional` or `Direccional` is a directional scene-light tree node rather than a modeling operation.
 
 Built-in reference-plane history records have no dimensions or extra attributes. Source IDs `2`, `3`, and `4` identify the Front, Top, and Right principal planes. Names, element tags, and type strings do not affect the role.

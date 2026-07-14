@@ -1342,8 +1342,8 @@ fn feature_object_name<'a>(
     matches.next().is_none().then_some(first)
 }
 
-/// Bind curve-driven patterns to their adjacent seed and path objects.
-pub(crate) fn bind_curve_pattern_inputs(
+/// Bind pattern operands carried by adjacent feature-input objects.
+pub(crate) fn bind_pattern_inputs(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -1363,6 +1363,7 @@ pub(crate) fn bind_curve_pattern_inputs(
         cadmpeg_ir::features::FeatureId,
         PathRef,
     )>::new();
+    let mut linear_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
 
     for lane in lanes {
         let mut starts = history_features
@@ -1371,6 +1372,29 @@ pub(crate) fn bind_curve_pattern_inputs(
             .collect::<Vec<_>>();
         starts.sort_unstable_by_key(|(offset, _)| *offset);
         for (start_index, (_, feature)) in starts.iter().enumerate() {
+            if feature.input_class.as_deref() == Some("moLPattern_c") {
+                let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
+                    continue;
+                };
+                if !matches!(
+                    model_features[model_index].definition,
+                    FeatureDefinition::Pattern {
+                        ref seeds,
+                        pattern: PatternKind::Linear { .. },
+                    } if seeds.is_empty()
+                ) {
+                    continue;
+                }
+                let Some(previous_index) = start_index.checked_sub(1) else {
+                    continue;
+                };
+                let (_, seed) = starts[previous_index];
+                let Some(&seed_index) = model_by_native.get(seed.id.as_str()) else {
+                    continue;
+                };
+                linear_seed_assignments.push((model_index, model_features[seed_index].id.clone()));
+                continue;
+            }
             if feature.input_class.as_deref() != Some("moCurvePattern_c") {
                 continue;
             }
@@ -1446,6 +1470,26 @@ pub(crate) fn bind_curve_pattern_inputs(
             if seeds.is_empty() && slot.is_none() {
                 seeds.push(seed.clone());
                 *slot = Some(path.clone());
+            }
+        }
+    }
+    let mut linear_seeds_by_pattern = HashMap::<usize, Vec<cadmpeg_ir::features::FeatureId>>::new();
+    for (index, seed) in linear_seed_assignments {
+        let candidates = linear_seeds_by_pattern.entry(index).or_default();
+        if !candidates.contains(&seed) {
+            candidates.push(seed);
+        }
+    }
+    for (index, candidates) in linear_seeds_by_pattern {
+        let [seed] = candidates.as_slice() else {
+            continue;
+        };
+        if !model_features[index].dependencies.contains(seed) {
+            model_features[index].dependencies.push(seed.clone());
+        }
+        if let FeatureDefinition::Pattern { seeds, .. } = &mut model_features[index].definition {
+            if seeds.is_empty() {
+                seeds.push(seed.clone());
             }
         }
     }
@@ -8111,13 +8155,12 @@ fn marker_entities_inner(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        bind_circular_profile_by_dimension, bind_curve_pattern_inputs,
-        bind_detached_relation_drivers, dimensioned_circle_surface_transforms,
-        dimensioned_circle_transform, implicit_circle_marker, line_endpoint_markers,
-        marker_entities, marker_point_locus, profile_loci_by_marker,
-        project_dimensioned_sketch_geometry, project_relation_point_geometry,
-        project_relation_solved_point_geometry, relation_owner_markers,
-        relation_parameter_by_display_name, resolved_marker_locus,
+        bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
+        dimensioned_circle_surface_transforms, dimensioned_circle_transform,
+        implicit_circle_marker, line_endpoint_markers, marker_entities, marker_point_locus,
+        profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        project_relation_point_geometry, project_relation_solved_point_geometry,
+        relation_owner_markers, relation_parameter_by_display_name, resolved_marker_locus,
         select_marker_transforms_by_frame, sketch_frame_marker_transform,
         type_display_relation_parameters, typed_marker_relation_definition,
         typed_relation_definition, unique_axis_aligned_linked_loci,
@@ -8969,7 +9012,7 @@ mod profile_join_tests {
             ),
         ];
 
-        bind_curve_pattern_inputs(
+        bind_pattern_inputs(
             &mut features,
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
@@ -8994,7 +9037,7 @@ mod profile_join_tests {
         };
         assert_eq!(seeds, std::slice::from_ref(&features[2].id));
 
-        let mut ambiguous_lane = lane;
+        let mut ambiguous_lane = lane.clone();
         ambiguous_lane.names.insert(2, name(175, 20, "PathSketch"));
         if let FeatureDefinition::Pattern {
             pattern: PatternKind::CurveDriven { path, .. },
@@ -9005,7 +9048,11 @@ mod profile_join_tests {
             *path = None;
             seeds.clear();
         }
-        bind_curve_pattern_inputs(&mut features, &[history], &[ambiguous_lane]);
+        bind_pattern_inputs(
+            &mut features,
+            std::slice::from_ref(&history),
+            &[ambiguous_lane],
+        );
         assert!(matches!(
             features[0].definition,
             FeatureDefinition::Pattern {
@@ -9013,6 +9060,28 @@ mod profile_join_tests {
                 ..
             }
         ));
+
+        let mut linear_history = history;
+        linear_history.features[1].input_class = Some("moLPattern_c".into());
+        features[0].dependencies.clear();
+        features[0].definition = FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Linear {
+                direction: None,
+                spacing: Length(5.0),
+                count: 3,
+            },
+        };
+        bind_pattern_inputs(
+            &mut features,
+            &[linear_history],
+            std::slice::from_ref(&lane),
+        );
+        let FeatureDefinition::Pattern { seeds, .. } = &features[0].definition else {
+            panic!("expected pattern");
+        };
+        assert_eq!(seeds, std::slice::from_ref(&features[2].id));
+        assert_eq!(features[0].dependencies, [features[2].id.clone()]);
     }
 
     #[test]
