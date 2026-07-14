@@ -544,6 +544,14 @@ gives the signed blind depth; its magnitude is the hole depth and its sign
 orients the hole axis from the entry plane toward the termination plane. The
 first plane row is the hole's native placement-face selection.
 
+A class-911 simple-hole generated table has four entries in the order entry
+plane, termination plane, first cylinder use, and second cylinder use. Both
+plane outlines store diagonal corners of the same axis-normal square. The
+midpoint of either square is on the hole axis; half either in-plane span is the
+hole radius. The two squares have equal nonzero in-plane spans and equal radial
+midpoints. Both cylinder uses share this carrier. Layouts with additional
+entries do not use this simple-hole rule.
+
 A typed schema row that owns a materialized `srf_array` row is an active construction feature. The root schema class supplies its operation family independently of an `MdlStatus` operation name.
 
 A class-923 feature with exactly one resolved plane carrier defines that datum plane by the carrier's model-space origin, normal, and in-plane reference direction.
