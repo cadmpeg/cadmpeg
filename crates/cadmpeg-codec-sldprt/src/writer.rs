@@ -630,7 +630,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .coedges
         .iter()
-        .filter_map(|coedge| coedge.pcurve.clone())
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.clone()))
         .collect::<HashSet<_>>();
     subset
         .model

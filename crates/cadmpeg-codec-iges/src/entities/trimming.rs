@@ -13,7 +13,7 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -622,13 +622,20 @@ pub(super) fn project(
                         .clone(),
                     radial_next: coedge_id,
                     sense: item.segment.sense,
-                    pcurve: pcurve_id,
+                    pcurves: pcurve_id
+                        .into_iter()
+                        .map(|pcurve| PcurveUse {
+                            pcurve,
+                            isoparametric: None,
+                        })
+                        .collect(),
                 });
             }
             candidate.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 coedges: coedge_ids,
+                vertex: None,
             });
             loop_ids.push(loop_id);
             consumed.push(sequence);

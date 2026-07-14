@@ -2126,7 +2126,7 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         .iter()
         .find(|coedge| coedge.id == loop_.coedges[0])
         .unwrap();
-    assert!(coedge.pcurve.is_some());
+    assert!(!coedge.pcurves.is_empty());
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -2189,7 +2189,7 @@ fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
         .coedges
         .iter()
         .filter(|coedge| coedge.owner_loop == loop_.id)
-        .all(|coedge| coedge.pcurve.is_none()));
+        .all(|coedge| coedge.pcurves.is_empty()));
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -2241,7 +2241,7 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .find(|coedge| coedge.id == loop_.coedges[0])
         .unwrap();
     assert_eq!(coedge.radial_next, coedge.id);
-    assert!(coedge.pcurve.is_some());
+    assert!(!coedge.pcurves.is_empty());
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

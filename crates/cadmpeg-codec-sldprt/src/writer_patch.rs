@@ -234,7 +234,7 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
                     &v.previous,
                     &v.radial_next,
                     v.sense,
-                    &v.pcurve,
+                    &v.pcurves,
                 )
             })
             .eq(native.coedges.iter().map(|v| {
@@ -246,7 +246,7 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
                     &v.previous,
                     &v.radial_next,
                     v.sense,
-                    &v.pcurve,
+                    &v.pcurves,
                 )
             }))
         && ir

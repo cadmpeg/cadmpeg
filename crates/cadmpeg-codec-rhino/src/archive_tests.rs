@@ -537,11 +537,8 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     assert_eq!(face.shell, shell.id);
     assert_eq!(face.loops, vec![loop_record.id.clone()]);
     assert_eq!(loop_record.face, face.id);
-    assert!(model
-        .coedges
-        .iter()
-        .all(|coedge| coedge.pcurve.is_some()
-            && model.edges.iter().any(|edge| edge.id == coedge.edge)));
+    assert!(model.coedges.iter().all(|coedge| !coedge.pcurves.is_empty()
+        && model.edges.iter().any(|edge| edge.id == coedge.edge)));
     assert!(model.edges.iter().all(|edge| edge.curve.is_some()
         && edge
             .tolerance

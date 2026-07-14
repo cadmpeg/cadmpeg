@@ -88,12 +88,13 @@ fn edgeless_doc() -> CadIr {
         previous: CoedgeId("ce0".into()),
         radial_next: CoedgeId("ce0".into()),
         sense: Sense::Forward,
-        pcurve: None,
+        pcurves: Vec::new(),
     });
     ir.model.loops.push(Loop {
         id: LoopId("lp0".into()),
         face: FaceId("f0".into()),
         coedges: vec![CoedgeId("ce0".into())],
+        vertex: None,
     });
     ir.model.faces.push(Face {
         id: FaceId("f0".into()),

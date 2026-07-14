@@ -1722,6 +1722,12 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         })
         .collect::<Result<Vec<_>, _>>()?;
     for (index, coedge) in coedges.iter().enumerate() {
+        if coedge.pcurves.len() > 1 {
+            return Err(CodecError::NotImplemented(format!(
+                "coedge {} has an ordered pcurve collection",
+                coedge.id
+            )));
+        }
         let next = coedges[(index + 1) % coedges.len()];
         let previous = coedges[(index + coedges.len() - 1) % coedges.len()];
         if coedge.owner_loop != loop_.id
@@ -2076,9 +2082,10 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         native_ref(&mut records, 5);
         native_i64(&mut records, 0);
         let pcurve_ref = coedge
-            .pcurve
-            .as_ref()
-            .map(|pcurve_id| {
+            .pcurves
+            .first()
+            .map(|use_| {
+                let pcurve_id = &use_.pcurve;
                 model
                     .pcurves
                     .iter()
@@ -3329,6 +3336,12 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     }
 
     for (coedge_ordinal, coedge) in model.coedges.iter().enumerate() {
+        if coedge.pcurves.len() > 1 {
+            return Err(CodecError::NotImplemented(format!(
+                "coedge {} has an ordered pcurve collection",
+                coedge.id
+            )));
+        }
         let next = coedge_ordinals.get(&coedge.next).copied();
         let previous = coedge_ordinals.get(&coedge.previous).copied();
         let radial = coedge_ordinals.get(&coedge.radial_next).copied();
@@ -3372,9 +3385,10 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         native_ref(&mut records, native_record_index(loop_start, owner)?);
         native_i64(&mut records, 0);
         let pcurve_ref = coedge
-            .pcurve
-            .as_ref()
-            .map(|pcurve_id| {
+            .pcurves
+            .first()
+            .map(|use_| {
+                let pcurve_id = &use_.pcurve;
                 pcurve_ordinals
                     .get(pcurve_id)
                     .copied()

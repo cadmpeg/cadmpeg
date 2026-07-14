@@ -3878,10 +3878,15 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 previous: CoedgeId(id(prev)),
                 radial_next: partner.map_or_else(|| CoedgeId(id(i)), |p| CoedgeId(id(p))),
                 sense: sense_at(r, 7),
-                pcurve: r
+                pcurves: r
                     .ref_at(10)
                     .filter(|p| kept_pcurves.contains(p))
-                    .map(|p| PcurveId(id(p))),
+                    .map(|p| cadmpeg_ir::topology::PcurveUse {
+                        pcurve: PcurveId(id(p)),
+                        isoparametric: None,
+                    })
+                    .into_iter()
+                    .collect(),
             });
             if r.head == "tcoedge" {
                 if let (Some(Token::Double(start)), Some(Token::Double(end))) =
@@ -3908,6 +3913,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 id: LoopId(id(i)),
                 face: FaceId(id(owner)),
                 coedges,
+                vertex: None,
             });
         }
     }

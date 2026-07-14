@@ -2100,12 +2100,16 @@ fn stage_extrusion_caps(
                 previous: coedge_id.clone(),
                 radial_next: coedge_id.clone(),
                 sense: Sense::Forward,
-                pcurve: Some(pcurve_id.clone()),
+                pcurves: vec![cadmpeg_ir::topology::PcurveUse {
+                    pcurve: pcurve_id.clone(),
+                    isoparametric: None,
+                }],
             });
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 coedges: vec![coedge_id.clone()],
+                vertex: None,
             });
             loop_ids.push(loop_id.clone());
             for id in [
@@ -2598,7 +2602,13 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                 previous: coedge_id.clone(),
                 radial_next: coedge_id.clone(),
                 sense: coedge_sense(trim.reversed_3d != 0),
-                pcurve,
+                pcurves: pcurve
+                    .into_iter()
+                    .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
+                        pcurve,
+                        isoparametric: None,
+                    })
+                    .collect(),
             });
             coedges.push(coedge_id);
         }
@@ -2612,6 +2622,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
             id: id.clone(),
             face: face_id.clone(),
             coedges,
+            vertex: None,
         });
         staged.faces[loop_record.face as usize].loops.push(id);
     }
@@ -2744,7 +2755,7 @@ fn scale_plane_pcurves(staged: &mut StagedBrep, scale: f64) {
         .coedges
         .iter()
         .filter(|coedge| plane_loops.contains(coedge.owner_loop.0.as_str()))
-        .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.clone()))
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.clone()))
         .collect::<BTreeSet<_>>();
     for pcurve in &mut staged.pcurves {
         if !plane_pcurves.contains(&pcurve.id.0) {

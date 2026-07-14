@@ -165,6 +165,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 ref_error(findings, &lp.id.0, "coedge", &ce.0);
             }
         }
+        if let Some(vertex) = &lp.vertex {
+            if !ids.vertices.contains(&vertex.0) {
+                ref_error(findings, &lp.id.0, "vertex", &vertex.0);
+            }
+        }
     }
     for ce in &ir.model.coedges {
         if !ids.loops.contains(&ce.owner_loop.0) {
@@ -182,9 +187,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         if !ids.coedges.contains(&ce.radial_next.0) {
             ref_error(findings, &ce.id.0, "coedge(radial_next)", &ce.radial_next.0);
         }
-        if let Some(pc) = &ce.pcurve {
-            if !ids.pcurves.contains(&pc.0) {
-                ref_error(findings, &ce.id.0, "pcurve", &pc.0);
+        for use_ in &ce.pcurves {
+            if !ids.pcurves.contains(&use_.pcurve.0) {
+                ref_error(findings, &ce.id.0, "pcurve", &use_.pcurve.0);
             }
         }
     }
@@ -2240,13 +2245,16 @@ pub(super) fn check_loops(ir: &CadIr, findings: &mut Vec<Finding>) {
         .collect();
 
     for lp in &ir.model.loops {
-        if lp.coedges.is_empty() {
+        if lp.coedges.is_empty() == lp.vertex.is_none() {
             findings.push(Finding {
                 check: Check::LoopClosure,
                 severity: Severity::Error,
-                message: "loop has no coedges".into(),
+                message: "loop must contain either a coedge ring or one vertex".into(),
                 entity: Some(lp.id.0.clone()),
             });
+            continue;
+        }
+        if lp.coedges.is_empty() {
             continue;
         }
         // Walk the `next` chain from the first listed coedge and confirm it is a

@@ -4281,7 +4281,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             previous: coedge_id.clone(),
             radial_next: coedge_id.clone(),
             sense: cadmpeg_ir::topology::Sense::Forward,
-            pcurve: None,
+            pcurves: Vec::new(),
         });
     source_less.model.loops[0].coedges.push(coedge_id);
     let ring = source_less.model.loops[0].coedges.clone();
@@ -4909,7 +4909,7 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
             .model
             .coedges
             .iter()
-            .filter(|coedge| coedge.pcurve.is_some())
+            .filter(|coedge| !coedge.pcurves.is_empty())
             .count(),
         1
     );
@@ -5124,7 +5124,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
                 previous: coedge_id.clone(),
                 radial_next: coedge_id,
                 sense: cadmpeg_ir::topology::Sense::Reversed,
-                pcurve: None,
+                pcurves: Vec::new(),
             });
     }
     for index in 0..3 {
@@ -5142,6 +5142,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
         id: loop_id.clone(),
         face: face_id,
         coedges: coedge_ids,
+        vertex: None,
     });
     source_less.model.faces[0].loops.push(loop_id);
 
@@ -5223,7 +5224,10 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
     pcurve.id = pcurve_id.clone();
     let expected_pcurve = pcurve.geometry.clone();
     source_less.model.pcurves.push(pcurve);
-    source_less.model.coedges[0].pcurve = Some(pcurve_id);
+    source_less.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+        pcurve: pcurve_id,
+        isoparametric: None,
+    }];
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -5241,7 +5245,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
             .model
             .coedges
             .iter()
-            .filter(|coedge| coedge.pcurve.is_some())
+            .filter(|coedge| !coedge.pcurves.is_empty())
             .count(),
         1
     );
@@ -15827,7 +15831,7 @@ fn decode_attaches_generated_pcurve_to_its_coedge() {
             .model
             .coedges
             .iter()
-            .filter(|c| c.pcurve.is_some())
+            .filter(|c| !c.pcurves.is_empty())
             .count(),
         1
     );
@@ -15901,7 +15905,7 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
             .model
             .coedges
             .iter()
-            .all(|coedge| coedge.pcurve.is_none()));
+            .all(|coedge| coedge.pcurves.is_empty()));
     }
 }
 
@@ -16058,7 +16062,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
         .model
         .coedges
         .iter()
-        .any(|coedge| coedge.pcurve.as_ref() == Some(&actual.id)));
+        .any(|coedge| coedge.pcurves.iter().any(|use_| use_.pcurve == actual.id)));
 
     let mut mixed = edited;
     let mut inline = mixed.model.pcurves[0].clone();
@@ -16066,7 +16070,10 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     inline.wrapper_reversed = Some(false);
     inline.native_tail_flags = Some([true, false, true, false]);
     inline.fit_tolerance = Some(0.002);
-    mixed.model.coedges[1].pcurve = Some(inline.id.clone());
+    mixed.model.coedges[1].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+        pcurve: inline.id.clone(),
+        isoparametric: None,
+    }];
     mixed.model.pcurves.push(inline);
     let mut mixed_bytes = Vec::new();
     F3dCodec
@@ -16093,7 +16100,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
         .model
         .coedges
         .iter()
-        .filter_map(|coedge| coedge.pcurve.as_ref())
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| &use_.pcurve))
         .all(|pcurve_id| mixed_round_trip
             .ir
             .model

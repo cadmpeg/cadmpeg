@@ -126,11 +126,13 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
     let vertices = vertex_positions(ir);
 
     for coedge in &ir.model.coedges {
-        let Some(pcurve) = coedge
-            .pcurve
-            .as_ref()
-            .and_then(|id| pcurves.get(id.0.as_str()))
-        else {
+        let Some((first, last)) = coedge.pcurves.first().zip(coedge.pcurves.last()) else {
+            continue;
+        };
+        let (Some(first), Some(last)) = (
+            pcurves.get(first.pcurve.0.as_str()),
+            pcurves.get(last.pcurve.0.as_str()),
+        ) else {
             continue;
         };
         let Some(face) = loops
@@ -151,12 +153,15 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         ) else {
             continue;
         };
-        let Some([t0, t1]) = pcurve_parameter_extremes(&pcurve.geometry) else {
+        let (Some([t0, _]), Some([_, t1])) = (
+            pcurve_parameter_extremes(first),
+            pcurve_parameter_extremes(last),
+        ) else {
             continue;
         };
         let (Some(uv0), Some(uv1)) = (
-            pcurve_uv(&pcurve.geometry, t0),
-            pcurve_uv(&pcurve.geometry, t1),
+            pcurve_uv(&first.geometry, t0),
+            pcurve_uv(&last.geometry, t1),
         ) else {
             continue;
         };
@@ -187,8 +192,11 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
 /// The parameter extremes over which a pcurve is checked: the stored parameter
 /// range when present, otherwise the NURBS knot extremes. A line pcurve
 /// without a stored range has no intrinsic extent and is skipped.
-fn pcurve_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
-    match geometry {
+fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2]> {
+    if let Some(range) = pcurve.parameter_range {
+        return Some(range);
+    }
+    match &pcurve.geometry {
         PcurveGeometry::Nurbs { knots, .. } => Some([*knots.first()?, *knots.last()?]),
         PcurveGeometry::Line { .. } => None,
     }

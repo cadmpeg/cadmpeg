@@ -1061,6 +1061,7 @@ fn emit_topology(
             id: id.clone(),
             face: face.clone(),
             coedges: Vec::new(),
+            vertex: None,
         });
         if let Some(parent) = ir
             .model
@@ -1112,7 +1113,7 @@ fn emit_topology(
             previous,
             radial_next,
             sense: sense(Some(fields.sense)),
-            pcurve: None,
+            pcurves: Vec::new(),
         });
         if let Some(parent) = ir
             .model

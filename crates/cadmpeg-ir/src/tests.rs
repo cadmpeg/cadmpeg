@@ -1928,7 +1928,10 @@ fn pcurve_surface_mismatch_is_flagged() {
                 coedge.id.0.contains("bottom") && coedge.edge.0 == "synthetic:cube:edge#0"
             })
             .expect("bottom face uses edge #0");
-        coedge.pcurve = Some(crate::ids::PcurveId("synthetic:cube:pcurve#0".into()));
+        coedge.pcurves = vec![crate::topology::PcurveUse {
+            pcurve: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
+            isoparametric: None,
+        }];
         validate(&ir, Vec::new())
     };
 
@@ -1951,6 +1954,56 @@ fn pcurve_surface_mismatch_is_flagged() {
                 && f.entity.as_deref().is_some_and(|e| e.contains("coedge"))),
         "off-surface-image pcurve must be flagged, got: {:?}",
         inconsistent.findings
+    );
+}
+
+#[test]
+fn vertex_loop_is_valid_and_exclusive_with_coedges() {
+    let mut ir = unit_cube();
+    let face_id = ir.model.faces[0].id.clone();
+    let vertex_id = ir.model.vertices[0].id.clone();
+    let loop_id = crate::ids::LoopId("synthetic:cube:vertex-loop#0".into());
+    ir.model.loops.push(crate::topology::Loop {
+        id: loop_id.clone(),
+        face: face_id,
+        coedges: Vec::new(),
+        vertex: Some(vertex_id),
+    });
+    ir.model.faces[0].loops.push(loop_id.clone());
+    ir.model.finalize();
+    let report = validate(&ir, Vec::new());
+    assert!(report.is_ok(), "{:#?}", report.findings);
+
+    let coedge = ir.model.loops[0].coedges[0].clone();
+    ir.model
+        .loops
+        .iter_mut()
+        .find(|loop_| loop_.id == loop_id)
+        .unwrap()
+        .coedges
+        .push(coedge);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::LoopClosure && finding.entity.as_deref() == Some(loop_id.0.as_str())
+    }));
+}
+
+#[test]
+fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
+    let uses = vec![
+        crate::topology::PcurveUse {
+            pcurve: crate::ids::PcurveId("test:pcurve#first".into()),
+            isoparametric: Some(true),
+        },
+        crate::topology::PcurveUse {
+            pcurve: crate::ids::PcurveId("test:pcurve#second".into()),
+            isoparametric: Some(false),
+        },
+    ];
+    let json = serde_json::to_string(&uses).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Vec<crate::topology::PcurveUse>>(&json).unwrap(),
+        uses
     );
 }
 
@@ -2469,7 +2522,7 @@ fn current_document_serializes_an_empty_byte_ledger() {
     let ir = CadIr::empty(crate::units::Units::default());
     let json = serde_json::to_value(&ir).unwrap();
 
-    assert_eq!(json["ir_version"], "4");
+    assert_eq!(json["ir_version"], "5");
     assert_eq!(json["byte_ledger"]["source_length"], 0);
     assert_eq!(json["byte_ledger"]["spans"], serde_json::json!([]));
 }

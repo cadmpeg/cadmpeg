@@ -35,7 +35,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .model
         .coedges
         .iter()
-        .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.as_str()))
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.as_str()))
         .collect::<HashSet<_>>();
     let points = ir
         .model

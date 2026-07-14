@@ -4257,7 +4257,7 @@ fn closed_cylinder_gets_derived_seam() {
         .model
         .coedges
         .iter()
-        .all(|coedge| coedge.pcurve.is_some()));
+        .all(|coedge| !coedge.pcurves.is_empty()));
     assert_eq!(result.ir.model.edges.len(), 3);
     assert!(result
         .ir
@@ -4806,7 +4806,7 @@ fn edge_uses_decoded_line_curve() {
         .model
         .coedges
         .iter()
-        .any(|coedge| coedge.pcurve.is_some()));
+        .any(|coedge| !coedge.pcurves.is_empty()));
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }

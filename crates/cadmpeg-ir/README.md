@@ -15,7 +15,7 @@ cargo add cadmpeg-ir
 
 A `CadIr` document contains:
 
-- required IR version 4 schema, including the `subds` arena and source-byte ledger;
+- required IR version 5 schema, including vertex loops, ordered pcurve uses, the `subds` arena, and source-byte ledger;
 - canonical units and document tolerances;
 - flat, ID-referenced arenas for topology, geometry, subdivision control cages, construction features,
   tessellation, appearance, and source attributes;
@@ -57,8 +57,8 @@ assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);
 ```
 
 `CadIr::to_canonical_json` emits pretty JSON after the caller establishes
-canonical arena order. `CadIr::from_json` parses only `ir_version: "4"` and
-requires the version-3 schema, including `model.subds`. `diff` compares units,
+canonical arena order. `CadIr::from_json` parses only `ir_version: "5"` and
+requires the version-5 schema. `diff` compares units,
 tolerances, annotations, and entity arenas by stable identity.
 
 Format crates implement the object-safe `Codec` trait. A consumer can select a
@@ -87,7 +87,7 @@ offsets.
 
 ## Scope
 
-IR version 4 covers B-rep topology, analytic and NURBS geometry, Catmull–Clark
+IR version 5 covers B-rep topology, analytic and NURBS geometry, Catmull–Clark
 control cages, procedural construction links including Sum and bounded
 Revolution definitions, tessellation, appearance, attributes, and neutral
 feature records. Native namespaces retain format-specific design and history
@@ -97,7 +97,7 @@ Assembly instancing, component trees, and joint constraints are reserved.
 ## Documentation
 
 - [API documentation][docs]
-- [CAD IR version 4][ir-spec]
+- [CAD IR version 5][ir-spec]
 - [Architecture and crate map][architecture]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]

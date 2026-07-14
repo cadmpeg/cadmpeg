@@ -720,7 +720,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let orientation = matches!(coedge.sense, Sense::Forward);
-            // Pcurves (coedge.pcurve) are intentionally dropped; the aggregate
+            // Pcurve uses are intentionally dropped; the aggregate
             // loss note is recorded in `note_unrepresented`.
             let Some(edge_ref) = self.emit_edge(coedge.edge.as_str()) else {
                 continue;
@@ -877,7 +877,7 @@ impl<'a> Builder<'a> {
             .model
             .coedges
             .iter()
-            .filter(|c| c.pcurve.is_some())
+            .filter(|c| !c.pcurves.is_empty())
             .count();
         if pcurve_count > 0 {
             self.loss(

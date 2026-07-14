@@ -632,6 +632,7 @@ fn transfer_e5_topology(
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 coedges: coedge_ids.clone(),
+                vertex: None,
             });
             for (index, ((&edge_ref, &pcurve_ref), &reversed)) in loop_
                 .edge_uses
@@ -649,7 +650,7 @@ fn transfer_e5_topology(
                     "serialized_loop_member",
                     Exactness::ByteExact,
                 );
-                for field in ["owner_loop", "edge", "next", "previous", "sense", "pcurve"] {
+                for field in ["owner_loop", "edge", "next", "previous", "sense", "pcurves"] {
                     annotations.derived(&id, field);
                 }
                 let arena_index = ir.model.coedges.len();
@@ -669,7 +670,10 @@ fn transfer_e5_topology(
                     } else {
                         Sense::Forward
                     },
-                    pcurve: Some(PcurveId(format!("catia:e5:pcurve#{pcurve_ref}"))),
+                    pcurves: vec![cadmpeg_ir::topology::PcurveUse {
+                        pcurve: PcurveId(format!("catia:e5:pcurve#{pcurve_ref}")),
+                        isoparametric: None,
+                    }],
                 });
             }
         }
@@ -1279,7 +1283,7 @@ fn attach_standard_topology(
                     } else {
                         Sense::Forward
                     },
-                    pcurve: None,
+                    pcurves: Vec::new(),
                 });
             }
             annotate(
@@ -1297,6 +1301,7 @@ fn attach_standard_topology(
                 id: loop_id.clone(),
                 face: FaceId(format!("catia:standard:face#{face_index}")),
                 coedges: coedge_ids,
+                vertex: None,
             });
             ir.model.faces[face_index].loops.push(loop_id);
         }

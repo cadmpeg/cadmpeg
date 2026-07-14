@@ -14,7 +14,7 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -710,7 +710,13 @@ pub(super) fn project(
                             .clone(),
                             radial_next: coedge_ids[use_index].clone(),
                             sense: edge_use.sense,
-                            pcurve: pcurve_id,
+                            pcurves: pcurve_id
+                                .into_iter()
+                                .map(|pcurve| PcurveUse {
+                                    pcurve,
+                                    isoparametric: None,
+                                })
+                                .collect(),
                         });
                     }
                     if !valid {
@@ -720,6 +726,7 @@ pub(super) fn project(
                         id: loop_id.clone(),
                         face: face_id.clone(),
                         coedges: coedge_ids,
+                        vertex: None,
                     });
                     face_loops.push(loop_id);
                     consumed.insert(loop_sequence);
