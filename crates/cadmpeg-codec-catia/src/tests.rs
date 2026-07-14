@@ -3369,6 +3369,23 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
     assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
     assert_eq!(pcurves[0].range, [0.0, 1.0]);
     assert_eq!(pcurves[0].mode, 0x01);
+    let mut wrong_degree = a8_pcurve_stream();
+    wrong_degree[15] = 17;
+    assert!(crate::geometry::a8_pcurves(&wrong_degree).is_empty());
+
+    let mut repeated_knot = a8_pcurve_stream();
+    repeated_knot[28..36].copy_from_slice(&le_f64(0.0));
+    assert!(crate::geometry::a8_pcurves(&repeated_knot).is_empty());
+
+    let mut wrong_endpoint_multiplicity = a8_pcurve_stream();
+    wrong_endpoint_multiplicity[36] = 21;
+    assert!(crate::geometry::a8_pcurves(&wrong_endpoint_multiplicity).is_empty());
+
+    let mut trailing_byte = a8_pcurve_stream();
+    trailing_byte.push(0);
+    let payload_len = u32::try_from(trailing_byte.len() - 11).unwrap();
+    trailing_byte[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    assert!(crate::geometry::a8_pcurves(&trailing_byte).is_empty());
 }
 
 #[test]

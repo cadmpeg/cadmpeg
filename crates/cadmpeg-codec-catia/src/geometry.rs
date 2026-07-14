@@ -2612,7 +2612,7 @@ fn parse_a5_pcurve(data: &[u8], pos: usize, payload: usize, end: usize) -> Optio
     let support_id = compact_int(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
-    if !(1..=9).contains(&degree) || !(2..=4096).contains(&count) {
+    if degree != 5 || !(2..=4096).contains(&count) {
         return None;
     }
     let extrapolation_sites = match *data.get(at)? {
@@ -2658,6 +2658,7 @@ fn parse_a5_pcurve(data: &[u8], pos: usize, payload: usize, end: usize) -> Optio
     at += 16;
     if at > end
         || knots.windows(2).any(|v| v[0] >= v[1])
+        || range[0] >= range[1]
         || knots
             .iter()
             .chain(&u)
@@ -3235,7 +3236,7 @@ fn parse_object_stream_pcurve(
     data.get(..at)?;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     at += if data.get(at) == Some(&0x08) { 2 } else { 1 };
-    if !(2..=8192).contains(&count) || !(1..=9).contains(&degree) {
+    if !(2..=8192).contains(&count) || degree != 5 {
         return None;
     }
     let read = |at: &mut usize| -> Option<Vec<f64>> {
@@ -3269,7 +3270,15 @@ fn parse_object_stream_pcurve(
     let range = [f64_le(data, at)?, f64_le(data, at + 8)?];
     at += 16;
     if data.get(at) != Some(&0x07)
-        || end - (at + 1) > 256
+        || mode % 4 != 1
+        || knots.windows(2).any(|pair| pair[0] >= pair[1])
+        || multiplicities.first() != Some(&6)
+        || multiplicities.last() != Some(&6)
+        || multiplicities[1..multiplicities.len() - 1]
+            .iter()
+            .any(|multiplicity| *multiplicity != 3)
+        || range[0] >= range[1]
+        || end != at + 1
         || knots
             .iter()
             .chain(&u)
