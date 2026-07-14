@@ -2905,6 +2905,7 @@ fn attach_native_object_model(
         &feature_sketch_payload_names,
         &feature_sketch_payload_scalars,
     );
+    let offset_store_named_points = crate::native::offset_store_named_points(&scan.container);
     let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
     let expression_declarations = crate::native::expression_declarations(&scan.container);
     let data_block_object_frames = crate::native::data_block_object_frames(&scan.container);
@@ -2992,6 +2993,7 @@ fn attach_native_object_model(
         && feature_sketch_payload_names.is_empty()
         && feature_sketch_payload_named_records.is_empty()
         && feature_sketch_points.is_empty()
+        && offset_store_named_points.is_empty()
         && feature_boolean_operations.is_empty()
         && expression_declarations.is_empty()
         && data_block_object_frames.is_empty()
@@ -3052,6 +3054,12 @@ fn attach_native_object_model(
             .note(&frame.id, annotation_stream, frame.source_offset)
             .tag("OFFSET_STORE_OBJECT_FRAME");
         annotations.exactness(&frame.id, Exactness::ByteExact);
+    }
+    for point in &offset_store_named_points {
+        annotations
+            .note(&point.id, annotation_stream, point.source_offset)
+            .tag("OFFSET_STORE_NAMED_POINT");
+        annotations.exactness(&point.id, Exactness::ByteExact);
     }
     for group in &feature_input_block_identity_groups {
         annotations
@@ -3316,7 +3324,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(110);
+    namespace.version = namespace.version.max(111);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3571,6 +3579,9 @@ fn attach_native_object_model(
     }
     if !feature_sketch_points.is_empty() {
         namespace.set_arena("feature_sketch_points", &feature_sketch_points)?;
+    }
+    if !offset_store_named_points.is_empty() {
+        namespace.set_arena("offset_store_named_points", &offset_store_named_points)?;
     }
     if !feature_boolean_operations.is_empty() {
         namespace.set_arena("feature_boolean_operations", &feature_boolean_operations)?;

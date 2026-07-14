@@ -857,6 +857,23 @@ pub struct FeatureSketchPoint {
     pub coordinates: [f64; 2],
 }
 
+/// Named two-scalar point object spanning consecutive offset-store blocks.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OffsetStoreNamedPoint {
+    /// Globally unique point-object identity.
+    pub id: String,
+    /// Exact `Point<positive decimal>` source name.
+    pub name: String,
+    /// Two consecutive source blocks carrying the object.
+    pub data_blocks: [String; 2],
+    /// Ordered finite native scalar values.
+    pub values: [f64; 2],
+    /// Absolute source offsets of the two scalar markers.
+    pub value_source_offsets: [u64; 2],
+    /// Absolute source offset of the name frame.
+    pub source_offset: u64,
+}
+
 /// Ordered object reference carried by a bounded sketch-operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchReference {
@@ -2898,6 +2915,50 @@ pub fn feature_sketch_points(
             })
         })
         .collect()
+}
+
+/// Decode exact named point objects across consecutive offset-store blocks.
+pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedPoint> {
+    let mut points = Vec::new();
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections().into_iter().enumerate()
+    {
+        if section
+            .records
+            .first()
+            .is_none_or(|record| record.object_id.is_some())
+        {
+            continue;
+        }
+        let section_key = format!("nx:om-data-blocks-{section_ordinal}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (ordinal, pair) in section.records.windows(2).enumerate() {
+            let Some(point) = crate::om::offset_store_named_point(pair[0].bytes, pair[1].bytes)
+            else {
+                continue;
+            };
+            let first_source = entry_offset + pair[0].offset as u64;
+            let second_source = entry_offset + pair[1].offset as u64;
+            points.push(OffsetStoreNamedPoint {
+                id: format!(
+                    "nx:offset-store:named-point#{section_ordinal}-{}",
+                    ordinal + 1
+                ),
+                name: point.name,
+                data_blocks: [
+                    format!("{section_key}:block#{}", ordinal + 1),
+                    format!("{section_key}:block#{}", ordinal + 2),
+                ],
+                values: point.values,
+                value_source_offsets: [
+                    first_source + point.value_offsets[0] as u64,
+                    second_source + (point.value_offsets[1] - pair[0].bytes.len()) as u64,
+                ],
+                source_offset: first_source,
+            });
+        }
+    }
+    points
 }
 
 pub(crate) fn parse_sketch_point_name(value: &str) -> Option<u32> {

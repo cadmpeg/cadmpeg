@@ -269,6 +269,52 @@ pub struct SketchPayloadNamedField<'a> {
     pub value: &'a str,
 }
 
+/// Exact type-free named point record spanning two consecutive store blocks.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OffsetStoreNamedPoint {
+    /// Exact `Point<positive decimal>` name.
+    pub name: String,
+    /// Two framed scalar values in block order.
+    pub values: [f64; 2],
+    /// Scalar marker offsets in the concatenated two-block payload.
+    pub value_offsets: [usize; 2],
+}
+
+/// Decode one named point whose first and second scalar fields occupy successive blocks.
+pub fn offset_store_named_point(first: &[u8], second: &[u8]) -> Option<OffsetStoreNamedPoint> {
+    let mut bytes = Vec::with_capacity(first.len() + second.len());
+    bytes.extend_from_slice(first);
+    bytes.extend_from_slice(second);
+    let names = sketch_payload_named_fields(&bytes);
+    let [name] = names.as_slice() else {
+        return None;
+    };
+    if !name.payload_leading || parse_positive_decimal_suffix(name.value, "Point").is_none() {
+        return None;
+    }
+    let scalars = sketch_payload_scalar_fields(&bytes);
+    let [first_scalar, second_scalar] = scalars.as_slice() else {
+        return None;
+    };
+    if first_scalar.offset >= first.len() || second_scalar.offset < first.len() {
+        return None;
+    }
+    Some(OffsetStoreNamedPoint {
+        name: name.value.to_string(),
+        values: [first_scalar.value, second_scalar.value],
+        value_offsets: [first_scalar.offset, second_scalar.offset],
+    })
+}
+
+fn parse_positive_decimal_suffix(value: &str, prefix: &str) -> Option<u32> {
+    let suffix = value.strip_prefix(prefix)?;
+    if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let ordinal = suffix.parse::<u32>().ok()?;
+    (ordinal != 0).then_some(ordinal)
+}
+
 /// Decode exact `66, compact_type, 03, declared_len, text, 00` fields.
 pub fn sketch_payload_named_fields(bytes: &[u8]) -> Vec<SketchPayloadNamedField<'_>> {
     let mut fields = Vec::new();
