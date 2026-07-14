@@ -165,7 +165,7 @@ A feature-input class declaration is `ff ff 01 00`, a little-endian u16 byte len
 
 A repeated class instance stores a little-endian u16 class token immediately before its feature-name marker. The token is scoped to the `ResolvedFeatures` lane. Repeated instances with the same token have the same declared class.
 
-A compact `moDeleteBody_c` object ends with a little-endian u32 schema word `11000`, two zero u32 words, a u32 selection count, that many ordered u32 feature-local body identifiers, the sentinel `ff ff ff ff`, and three zero u32 words. The object trailer after those zero words is empty, `6a cb`, or one zero u32 word.
+A compact `moDeleteBody_c` object ends with a little-endian u32 schema word `11000`, two zero u32 words, a u32 selection count, that many ordered u32 feature-local body identifiers, the sentinel `ff ff ff ff`, and three zero u32 words. The object ends after those zero words or one additional zero u32 word. When another instance of the same declared class follows, its lane-scoped u16 repeated-class token lies between the selection terminator and the next feature-name marker.
 
 The lane-scoped u16 token immediately following the sole `moDeleteBodyData_c` class declaration opens each body-state record owned by a compact delete/keep object. The token is followed by `2b 80 02 00 00 00 00 00 00`, the feature-local u32 body identifier twice, 28 zero bytes, 16 `ff` bytes, and 20 zero bytes. Body-state records precede the selection vector and retain their ordered local identifiers independently of the selected identifier list. The retained roster equals the ordered records between the owning feature-name record and its selection vector. The state roster is not a retention-mode discriminator.
 

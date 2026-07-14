@@ -901,13 +901,16 @@ mod marker_tests {
         payload.extend([0; 12]);
         payload.extend([0x6a, 0xcb]);
         assert_eq!(
-            compact_body_selection_vector(&payload, 100),
+            compact_body_selection_vector(&payload, 100, Some(0xcb6a)),
             Some((109, vec![287, 115]))
         );
         assert_eq!(compact_body_selection_at(&payload, 9), Some(vec![287, 115]));
         let zero_trailer = payload.len() - 3;
         payload[zero_trailer] = 1;
-        assert_eq!(compact_body_selection_vector(&payload, 100), None);
+        assert_eq!(
+            compact_body_selection_vector(&payload, 100, Some(0xcb6a)),
+            None
+        );
     }
 
     #[test]
@@ -1580,14 +1583,24 @@ fn compact_body_selections(
         let Some(start) = usize::try_from(name.offset).ok() else {
             continue;
         };
-        let end = objects
-            .get(object_index + 1)
+        let next = objects.get(object_index + 1);
+        let end = next
             .and_then(|(next, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
+        let next_token = next.and_then(|(next, next_feature)| {
+            (native_object_class(next_feature.input_class.as_deref().unwrap_or_default()).kind
+                == NativeClassKind::DeleteBody)
+                .then(|| {
+                    usize::try_from(next.offset)
+                        .ok()
+                        .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
+                })
+                .flatten()
+        });
         let Some((offset, local_body_ids)) = lane
             .native_payload
             .get(start..end)
-            .and_then(|payload| compact_body_selection_vector(payload, start))
+            .and_then(|payload| compact_body_selection_vector(payload, start, next_token))
         else {
             continue;
         };
@@ -2035,7 +2048,11 @@ fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<V
     .then_some(ids)
 }
 
-fn compact_body_selection_vector(payload: &[u8], base: usize) -> Option<(usize, Vec<u32>)> {
+fn compact_body_selection_vector(
+    payload: &[u8],
+    base: usize,
+    next_object_token: Option<u16>,
+) -> Option<(usize, Vec<u32>)> {
     const SCHEMA: &[u8] = &11000u32.to_le_bytes();
     for relative in (0..=payload.len().checked_sub(16)?).rev() {
         if payload.get(relative..relative + 4)? != SCHEMA
@@ -2050,12 +2067,12 @@ fn compact_body_selection_vector(payload: &[u8], base: usize) -> Option<(usize, 
         let ids_end = relative.checked_add(16 + count.checked_mul(4)?)?;
         let sentinel_end = ids_end.checked_add(4)?;
         let zeros_end = sentinel_end.checked_add(12)?;
+        let suffix = payload.get(zeros_end..)?;
+        let valid_suffix = matches!(suffix, [] | [0, 0, 0, 0])
+            || next_object_token.is_some_and(|token| suffix == token.to_le_bytes());
         if payload.get(ids_end..sentinel_end)? != u32::MAX.to_le_bytes()
             || payload.get(sentinel_end..zeros_end)? != [0; 12]
-            || !matches!(
-                payload.get(zeros_end..),
-                Some([] | [0, 0, 0, 0] | [0x6a, 0xcb])
-            )
+            || !valid_suffix
         {
             continue;
         }
