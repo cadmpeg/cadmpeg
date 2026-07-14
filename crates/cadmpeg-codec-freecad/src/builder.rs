@@ -263,7 +263,9 @@ impl FcstdDocumentBuilder {
             "<Document SchemaVersion=\"4\" ProgramVersion=\"cadmpeg\" FileVersion=\"1\">\n",
         );
         xml.push_str("  <Properties Count=\"1\" TransientCount=\"0\">\n");
-        xml.push_str("    <Property name=\"Label\" type=\"App::PropertyString\"><String value=\"");
+        xml.push_str(
+            "    <Property name=\"Label\" type=\"App::PropertyString\" status=\"16777217\"><String value=\"",
+        );
         crate::writer::escape_xml(&self.label, &mut xml, true);
         xml.push_str("\"/></Property>\n  </Properties>\n");
         writeln!(

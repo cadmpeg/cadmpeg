@@ -6,10 +6,13 @@ use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
 use zip::write::SimpleFileOptions;
 
-use crate::native::{DocumentFacts, EntryRecord, PropertyRecord, ValueRecord};
+use crate::native::{
+    DocumentFacts, EntryRecord, ExtensionRecord, ObjectRecord, PropertyRecord, ValueRecord,
+};
 use crate::FcstdWriteOptions;
 
 pub(crate) fn write(
@@ -42,6 +45,8 @@ pub(crate) fn write(
         )));
     }
     let entries = namespace.arena_as::<EntryRecord>("entries")?;
+    let objects = namespace.arena_as::<ObjectRecord>("objects")?;
+    let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
     validate_entries(&entries)?;
     let source_document = entries
@@ -51,6 +56,23 @@ pub(crate) fn write(
             CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
         })?;
     let document_xml = patch_document(&source_document.data, &properties)?;
+    let written_graph = crate::persistence::parse(&document_xml)?;
+    validate_declarations(
+        &objects,
+        &extensions,
+        &written_graph.objects,
+        &written_graph.extensions,
+    )?;
+    for property in &written_graph.properties {
+        for entry in &property.side_entries {
+            if !entries.iter().any(|candidate| candidate.name == *entry) {
+                return Err(CodecError::Malformed(format!(
+                    "edited property {} references missing side entry {entry}",
+                    property.id
+                )));
+            }
+        }
+    }
 
     let mut archive_bytes = Cursor::new(Vec::new());
     {
@@ -58,7 +80,9 @@ pub(crate) fn write(
         let file_options = SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
             .last_modified_time(zip::DateTime::default());
-        for entry in &entries {
+        let mut ordered_entries = entries.iter().collect::<Vec<_>>();
+        ordered_entries.sort_by_key(|entry| (entry.name != "Document.xml", entry.name.as_str()));
+        for entry in ordered_entries {
             archive
                 .start_file(&entry.name, file_options)
                 .map_err(|error| {
@@ -123,6 +147,54 @@ fn validate_entries(entries: &[EntryRecord]) -> Result<(), CodecError> {
                 entry.name
             )));
         }
+        if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
+            return Err(CodecError::Malformed(format!(
+                "FCStd output entry {} has stale length or digest metadata",
+                entry.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_declarations(
+    expected_objects: &[ObjectRecord],
+    expected_extensions: &[ExtensionRecord],
+    written_objects: &[ObjectRecord],
+    written_extensions: &[ExtensionRecord],
+) -> Result<(), CodecError> {
+    if expected_objects.len() != written_objects.len()
+        || !expected_objects.iter().all(|expected| {
+            written_objects
+                .iter()
+                .find(|written| written.id == expected.id)
+                .is_some_and(|written| {
+                    expected.id == written.id
+                        && expected.name == written.name
+                        && expected.type_name == written.type_name
+                        && expected.persistent_id == written.persistent_id
+                        && expected.view_type == written.view_type
+                        && expected.attributes == written.attributes
+                        && expected.dependencies == written.dependencies
+                        && expected.order == written.order
+                })
+        })
+    {
+        return Err(CodecError::NotImplemented(
+            "object declaration edits require source-less graph regeneration".into(),
+        ));
+    }
+    if expected_extensions.len() != written_extensions.len()
+        || !expected_extensions.iter().all(|expected| {
+            written_extensions
+                .iter()
+                .find(|written| written.id == expected.id)
+                == Some(expected)
+        })
+    {
+        return Err(CodecError::NotImplemented(
+            "extension declaration edits require a typed serializer".into(),
+        ));
     }
     Ok(())
 }
@@ -168,6 +240,7 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
 }
 
 fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> {
+    validate_property_wrapper(property)?;
     let mut replacement = property.raw_xml.clone();
     let mut edits = Vec::new();
     for value in &property.values {
@@ -195,6 +268,38 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
         replacement.replace_range(start..end, &serialized);
     }
     Ok(replacement.into_bytes())
+}
+
+fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError> {
+    let wrapped = format!("<Root>{}</Root>", property.raw_xml);
+    let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
+        CodecError::Malformed(format!("invalid retained property XML: {error}"))
+    })?;
+    let element = parsed
+        .root_element()
+        .first_element_child()
+        .ok_or_else(|| CodecError::Malformed("retained property has no element".into()))?;
+    let expected_tag = if property.transient {
+        "_Property"
+    } else {
+        "Property"
+    };
+    let status = element
+        .attribute("status")
+        .map(str::parse::<u64>)
+        .transpose()
+        .map_err(|_| CodecError::Malformed("retained property has invalid status".into()))?;
+    if element.tag_name().name() != expected_tag
+        || element.attribute("name") != Some(property.name.as_str())
+        || element.attribute("type") != Some(property.type_name.as_str())
+        || status != property.status
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "editing FCStd property declaration {} requires a typed serializer",
+            property.id
+        )));
+    }
+    Ok(())
 }
 
 fn serialize_value(value: &ValueRecord) -> Result<String, CodecError> {

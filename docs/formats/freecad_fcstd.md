@@ -8,6 +8,19 @@ Spreadsheet, Assembly, TechDraw, and GUI persistence records. Exact shapes may u
 B-rep side entries. GUI state, thumbnails, persistent element maps, and string-hasher tables are
 independently optional.
 
+The write envelope targets exactly schema 4/file 1. A retained document write regenerates the ZIP
+container deterministically, writes `Document.xml` first, preserves every unedited XML record and
+every named side entry, and serializes checked leaf-value edits with XML escaping. An edit to a
+nested value without a typed serializer is refused rather than flattening or discarding children.
+Schema/file targets outside the declared band and retained-document transcoding across bands are
+explicitly refused.
+
+Source-less construction declares application objects, runtime types, ordered dependencies,
+recursive typed property values, and named side entries. It materializes the same native graph
+used by decoded documents before encoding. This permits general extension-object retention and
+parametric core objects without requiring a source archive; unsupported semantics must be supplied
+as named records or rejected, never silently approximated.
+
 Schema versions 2 and 3, pre-schema-4 object layouts, and earlier property encodings are separate
 legacy envelopes. A decoder must identify their governing version before refusing a layout it does
 not support.

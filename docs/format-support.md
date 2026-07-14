@@ -35,7 +35,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 
 | Codec                                      | Score          | Extras above score                                                                                    |
 | ------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
-| FreeCAD `.FCStd` (schema 4, file 1)        | **L8 tested**  | read-only; no native write support                                                                     |
+| FreeCAD `.FCStd` (schema 4, file 1)        | **L9 tested**  | deterministic retained writes, checked edits, source-less typed application graphs                    |
 | Autodesk Fusion `.f3d`                     | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
 | SolidWorks `.sldprt`                       | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
 | Rhino `.3dm` (archive 50/60/70/80)         | **L3 tested**  | SubD control cages, display meshes, native extrusion and instance constructions                       |
@@ -59,9 +59,11 @@ Sketcher, Spreadsheet, Assembly, TechDraw, GUI records, text and binary B-rep en
 identity-preserving extension objects. GUI state, thumbnails, persistent element maps, and
 string-hasher tables are independently optional.
 
-**Ladder: L8 tested.** The generated public-corpus profile passes every cumulative read gate for
+**Ladder: L9 tested.** The generated public-corpus profile passes every cumulative read gate for
 container, persistence, geometry, connected model, design records, appearance, design completeness,
-product structure, presentation, drawings, annotations, and deliberately retained application data.
+product structure, presentation, drawings, annotations, and deliberately retained application data,
+plus semantic writing, edits, source-less generation, target selection, and unsupported-record
+survival.
 Schema versions 2 and 3
 and earlier layout bands are separate legacy profiles and are identified and explicitly refused.
 
@@ -69,7 +71,15 @@ and earlier layout bands are separate legacy profiles and are identified and exp
   constraints, core design operations, product links, TechDraw, semantic annotations, Mesh,
   Points, embedded assets, inert extension data, and exact physical/logical byte accounting are
   implemented. See the generated coverage profile for the current cumulative gate result.
-- **Native write:** None; L9 is outside this envelope.
+- **Native write:** Complete for the declared write envelope. Schema 4/file 1 retained documents
+  regenerate deterministically while preserving every unedited XML record and named side entry.
+  Checked leaf property edits and side-entry replacements are supported. Recursive typed
+  application graphs can be generated without a source archive. Unsupported schema/file targets,
+  cross-band transcoding, and edits lacking a typed nested-value serializer are explicitly refused.
+- **Round trip:** Every manifested public fixture writes deterministically, decodes to the same
+  semantic fingerprint, accepts a typed property edit, and retains every named entry by identity
+  and digest. FreeCAD 1.1.1 accepts all written fixtures; a representative full design document
+  also recomputes, saves, and reopens with object identities and types unchanged.
 
 See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md),
 [`formats/freecad_fcstd-open-items.md`](formats/freecad_fcstd-open-items.md), and
@@ -88,9 +98,10 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 
 ## At a glance
 
-- **FreeCAD `.FCStd` schema 4/file 1 (L8 tested):** complete primary-envelope document recovery,
+- **FreeCAD `.FCStd` schema 4/file 1 (L9 tested):** complete primary-envelope document recovery,
   including exact geometry, design history, product structure, presentation, drawings, annotations,
-  retained application data, and exact byte accounting. Read only.
+  retained application data, exact byte accounting, deterministic semantic writes, checked edits,
+  and source-less typed application graphs.
 - **Autodesk Fusion `.f3d` (L4 tested):** design records, partial B-rep and appearance reads, byte-exact replay, native patching, and source-less generation.
 - **SolidWorks `.sldprt` (L4 tested):** connected model reads, typed design records, native writes, and round trips.
 - **Rhino `.3dm` (L3 tested for archive 50/60/70/80):** curves, surfaces, meshes, connected B-rep, SubD, extrusions, and expanded instances. V3/V4 score L1; V1/V2 and archive 5 score L0. Read only.

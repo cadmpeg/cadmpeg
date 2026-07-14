@@ -7,8 +7,11 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_codec_freecad::{validate_native, FcstdCodec};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_codec_freecad::{
+    validate_native, FcstdCodec, FcstdDocumentBuilder, FcstdPropertyOwner, FcstdPropertyValue,
+    FcstdWriteOptions,
+};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{CadIr, Severity};
 use serde::Serialize;
@@ -24,6 +27,7 @@ struct Profile {
     envelope: Envelope,
     fixtures: Vec<FixtureProfile>,
     observed: Observed,
+    source_less_write: SourceLessWriteProfile,
     gates: Vec<Gate>,
     highest_passing_gate: Option<String>,
 }
@@ -39,6 +43,7 @@ struct Envelope {
 }
 
 #[derive(Serialize)]
+#[allow(clippy::struct_excessive_bools)]
 struct FixtureProfile {
     filename: String,
     sha256: String,
@@ -48,7 +53,22 @@ struct FixtureProfile {
     neutral_errors: usize,
     native_errors: usize,
     exact_byte_coverage: bool,
+    write_deterministic: bool,
+    semantic_round_trip: bool,
+    side_entries_preserved: bool,
+    typed_edit_round_trip: bool,
     entity_counts: BTreeMap<String, usize>,
+}
+
+#[derive(Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+struct SourceLessWriteProfile {
+    generated: bool,
+    deterministic: bool,
+    decodes_cleanly: bool,
+    object_type: String,
+    typed_parameters: BTreeMap<String, String>,
+    unsupported_target_rejected: bool,
 }
 
 #[derive(Default, Serialize)]
@@ -136,6 +156,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .native
             .namespace("fcstd")
             .ok_or("decoded fixture has no fcstd namespace")?;
+        let mut first_write = Vec::new();
+        FcstdCodec.encode(&first.ir, &mut first_write)?;
+        let mut second_write = Vec::new();
+        FcstdCodec.encode(&first.ir, &mut second_write)?;
+        let written =
+            FcstdCodec.decode(&mut Cursor::new(&first_write), &DecodeOptions::default())?;
+        let semantic_round_trip =
+            semantic_fingerprint(first.ir.clone())? == semantic_fingerprint(written.ir.clone())?;
+        let side_entries_preserved =
+            logical_side_entries(&first.ir)? == logical_side_entries(&written.ir)?;
+        let mut edited_ir = first.ir.clone();
+        FcstdCodec.set_property_value_attribute(
+            &mut edited_ir,
+            FcstdPropertyOwner::Document,
+            "Label",
+            0,
+            "value",
+            "cadmpeg L9 edit",
+        )?;
+        let mut edited_bytes = Vec::new();
+        FcstdCodec.encode(&edited_ir, &mut edited_bytes)?;
+        let edited =
+            FcstdCodec.decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())?;
+        let typed_edit_round_trip =
+            property_value_attribute(&edited.ir, "fcstd:native:document#0", "Label", 0, "value")
+                == Some("cadmpeg L9 edit".to_owned());
         namespace_version = Some(namespace.version);
         observed.native_arenas.extend(
             namespace
@@ -179,20 +225,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .filter(|finding| finding.severity >= Severity::Error)
                 .count(),
             exact_byte_coverage: exact_byte_coverage(&first.ir),
+            write_deterministic: first_write == second_write,
+            semantic_round_trip,
+            side_entries_preserved,
+            typed_edit_round_trip,
             entity_counts: neutral.entity_counts,
         });
     }
 
     let manifest = fs::read(&manifest_path)?;
     verify_manifest(&manifest, &fixtures)?;
-    let gates = gates(&fixtures, &observed, &total_counts);
+    let source_less_write = source_less_profile()?;
+    let gates = gates(&fixtures, &observed, &total_counts, &source_less_write);
     let highest_passing_gate = gates
         .iter()
         .take_while(|gate| gate.passed)
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 3,
+        version: 4,
         format: "fcstd",
         manifest_sha256: sha256_hex(&manifest),
         manifest_verified: true,
@@ -202,10 +253,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             file_version: 1,
             native_namespace_version: namespace_version.unwrap_or_default(),
             cadir_version: cadmpeg_ir::document::IR_VERSION,
-            write_support: false,
+            write_support: true,
         },
         fixtures,
         observed,
+        source_less_write,
         gates,
         highest_passing_gate,
     };
@@ -568,10 +620,140 @@ fn exact_byte_coverage(ir: &CadIr) -> bool {
         })
 }
 
+fn semantic_fingerprint(mut ir: CadIr) -> Result<String, Box<dyn std::error::Error>> {
+    if let Some(source) = &mut ir.source {
+        source.attributes.remove("physical_archive_bytes");
+        source.attributes.remove("physical_ledger_spans");
+    }
+    if let Some(namespace) = ir.native.0.get_mut("fcstd") {
+        namespace.arenas.remove("physical_ledger");
+        namespace.arenas.remove("byte_coverage");
+        namespace.arenas.remove("logical_ledger");
+    }
+    Ok(ir.to_canonical_json()?)
+}
+
+fn logical_side_entries(
+    ir: &CadIr,
+) -> Result<BTreeMap<String, String>, Box<dyn std::error::Error>> {
+    let namespace = ir
+        .native
+        .namespace("fcstd")
+        .ok_or("CADIR has no fcstd namespace")?;
+    Ok(namespace
+        .arenas
+        .get("entries")
+        .into_iter()
+        .flatten()
+        .filter_map(|record| {
+            let name = record.fields.get("name")?.as_str()?;
+            let digest = record.fields.get("sha256")?.as_str()?;
+            Some((name.to_owned(), digest.to_owned()))
+        })
+        .collect())
+}
+
+fn property_value_attribute(
+    ir: &CadIr,
+    owner: &str,
+    property_name: &str,
+    value_order: usize,
+    attribute: &str,
+) -> Option<String> {
+    ir.native
+        .namespace("fcstd")?
+        .arenas
+        .get("properties")?
+        .iter()
+        .find(|record| {
+            record.fields.get("owner").and_then(Value::as_str) == Some(owner)
+                && record.fields.get("name").and_then(Value::as_str) == Some(property_name)
+        })?
+        .fields
+        .get("values")?
+        .as_array()?
+        .iter()
+        .find(|value| value.get("order").and_then(Value::as_u64) == Some(value_order as u64))?
+        .get("attributes")?
+        .get(attribute)?
+        .as_str()
+        .map(str::to_owned)
+}
+
+fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::Error>> {
+    let mut builder = FcstdDocumentBuilder::new("FCStd L9 source-less evidence");
+    builder
+        .add_object("Box", "Part::Box")?
+        .add_property(
+            "Box",
+            "Length",
+            "App::PropertyLength",
+            vec![FcstdPropertyValue::attribute("Float", "value", "12.5")],
+        )?
+        .add_property(
+            "Box",
+            "Width",
+            "App::PropertyLength",
+            vec![FcstdPropertyValue::attribute("Float", "value", "7")],
+        )?
+        .add_property(
+            "Box",
+            "Height",
+            "App::PropertyLength",
+            vec![FcstdPropertyValue::attribute("Float", "value", "3")],
+        )?;
+    let ir = builder.build()?;
+    let mut first = Vec::new();
+    FcstdCodec.encode(&ir, &mut first)?;
+    let mut second = Vec::new();
+    FcstdCodec.encode(&ir, &mut second)?;
+    let decoded = FcstdCodec.decode(&mut Cursor::new(&first), &DecodeOptions::default())?;
+    let namespace = decoded
+        .ir
+        .native
+        .namespace("fcstd")
+        .ok_or("generated CADIR has no fcstd namespace")?;
+    let object_type = namespace
+        .arenas
+        .get("objects")
+        .into_iter()
+        .flatten()
+        .find_map(|record| record.fields.get("type_name").and_then(Value::as_str))
+        .unwrap_or_default()
+        .to_owned();
+    let object_owner = "fcstd:native:object#Box";
+    let typed_parameters = ["Length", "Width", "Height"]
+        .into_iter()
+        .filter_map(|name| {
+            property_value_attribute(&decoded.ir, object_owner, name, 0, "value")
+                .map(|value| (name.to_owned(), value))
+        })
+        .collect();
+    let unsupported_target_rejected = FcstdCodec
+        .encode_with_options(
+            &ir,
+            &mut Vec::new(),
+            FcstdWriteOptions {
+                schema_version: 3,
+                file_version: 1,
+            },
+        )
+        .is_err();
+    Ok(SourceLessWriteProfile {
+        generated: true,
+        deterministic: first == second,
+        decodes_cleanly: validate_native(&decoded.ir).is_empty(),
+        object_type,
+        typed_parameters,
+        unsupported_target_rejected,
+    })
+}
+
 fn gates(
     fixtures: &[FixtureProfile],
     observed: &Observed,
     counts: &BTreeMap<String, usize>,
+    source_less_write: &SourceLessWriteProfile,
 ) -> Vec<Gate> {
     let clean = fixtures.iter().all(|fixture| {
         fixture.deterministic
@@ -959,6 +1141,64 @@ fn gates(
                     format!(
                         "types={required_application_types:?}, constructs={required_application_constructs:?}, exact byte coverage"
                     ),
+                ),
+            ],
+        ),
+        gate(
+            "L9",
+            vec![
+                assertion(
+                    "semantic_native_round_trip",
+                    fixtures.iter().all(|fixture| {
+                        fixture.write_deterministic
+                            && fixture.semantic_round_trip
+                            && fixture.typed_edit_round_trip
+                    }),
+                    format!(
+                        "{} of {} fixtures deterministic, semantically equivalent, and editable",
+                        fixtures
+                            .iter()
+                            .filter(|fixture| fixture.write_deterministic
+                                && fixture.semantic_round_trip
+                                && fixture.typed_edit_round_trip)
+                            .count(),
+                        fixtures.len()
+                    ),
+                    "every primary-envelope fixture writes deterministically, round-trips semantically, and accepts a typed edit",
+                ),
+                assertion(
+                    "unsupported_record_survival",
+                    fixtures
+                        .iter()
+                        .all(|fixture| fixture.side_entries_preserved),
+                    format!(
+                        "{} of {} fixture entry sets preserved",
+                        fixtures
+                            .iter()
+                            .filter(|fixture| fixture.side_entries_preserved)
+                            .count(),
+                        fixtures.len()
+                    ),
+                    "every named logical entry retains identity and digest",
+                ),
+                assertion(
+                    "source_less_and_target_selection",
+                    source_less_write.generated
+                        && source_less_write.deterministic
+                        && source_less_write.decodes_cleanly
+                        && source_less_write.object_type == "Part::Box"
+                        && source_less_write.typed_parameters.len() == 3
+                        && source_less_write.unsupported_target_rejected,
+                    format!(
+                        "generated={}, deterministic={}, clean={}, type={}, parameters={:?}, unsupported_target_rejected={}",
+                        source_less_write.generated,
+                        source_less_write.deterministic,
+                        source_less_write.decodes_cleanly,
+                        source_less_write.object_type,
+                        source_less_write.typed_parameters,
+                        source_less_write.unsupported_target_rejected
+                    ),
+                    "deterministic clean source-less Part::Box with three typed dimensions and explicit unsupported-target rejection",
                 ),
             ],
         ),

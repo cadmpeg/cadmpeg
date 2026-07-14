@@ -15,6 +15,7 @@ Legacy schemas 2 and 3 are refusal profiles until their rows acquire explicit su
 | L6 | all Sketcher geometry/constraint branches; expressions; spreadsheet; core Part and PartDesign operations | constraint, expression, cell, and operation graphs are typed and valid; the recomputed design census matches every projected object; design-domain loss report is empty |
 | L7 | groups, parts, nested links, link arrays, external links, assemblies, joints | components and occurrences have distinct identity; local/world placements, persistent operands, missing externals, and cycles validate |
 | L8 | GUI state, TechDraw, annotations, embedded files, Mesh, Points, FEM, CAM, Python-backed and extension data | presentation/drawing graphs validate; every application record is typed or named-retained; no payload executes; all physical/logical ledgers close |
+| L9 | every manifested primary-envelope fixture; source-less parametric document; supported and unsupported target selections | writes are deterministic and decode to the same semantic fingerprint; typed edits survive; every named entry survives by identity and digest; source-less output is accepted by FreeCAD; unsupported targets and unsafe nested edits are refused |
 
 Every gate also includes deterministic malformed-input cases for truncation, invalid counts and
 indices, duplicate identities, missing owners, resource limits, and unsupported layout dispatch.
@@ -30,8 +31,16 @@ cargo run -p cadmpeg-codec-freecad --bin fcstd-profile -- \
 
 Generation fails if a fixture digest or filename differs from the manifest. The profile decodes
 every fixture twice, hashes canonical CADIR, runs neutral and native validation, rejects blocking
-losses, verifies exact byte coverage, and evaluates the cumulative ladder assertions. A failed
+losses, verifies exact byte coverage, writes each fixture twice, decodes the result, compares its
+semantic fingerprint, applies a typed edit, verifies named-entry survival, exercises source-less
+generation and target refusal, and evaluates the cumulative ladder assertions. A failed
 row remains failed in the artifact; the generator never promotes a score from filenames alone.
+
+Independent application acceptance is checked after cadmpeg writes the manifested fixtures. Set
+`CADMPEG_FCSTD_INPUT_DIR` to those outputs and `CADMPEG_FCSTD_OUTPUT_DIR` to a scratch directory,
+then execute `tools/validate_fcstd_interop.py` inside `FreeCADCmd`. The validator fails when any
+document is refused. Set `CADMPEG_FCSTD_REQUIRE_NATIVE_RESAVE=1` for fixtures expected to recompute,
+save, and reopen without application-specific external assets.
 
 ## Implementation checklist
 

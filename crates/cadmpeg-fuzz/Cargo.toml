@@ -62,6 +62,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "fcstd_write"
+path = "fuzz_targets/fcstd_write.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "fcstd_xml"
 path = "fuzz_targets/fcstd_xml.rs"
 test = false

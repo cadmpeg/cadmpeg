@@ -106,6 +106,49 @@ fn write_target_and_source_requirements_are_explicit() {
 }
 
 #[test]
+fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source");
+
+    let mut declaration_edit = decoded.ir.clone();
+    let namespace = declaration_edit.native.namespace_mut("fcstd");
+    let mut objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
+    objects[0].type_name = "App::FeaturePython".into();
+    namespace
+        .set_arena("objects", &objects)
+        .expect("replace objects");
+    let error = FcstdCodec
+        .encode(&declaration_edit, &mut Vec::new())
+        .expect_err("unserialized declaration edit must fail");
+    assert!(error.to_string().contains("declaration edits"));
+
+    let mut stale_entry = decoded.ir;
+    let namespace = stale_entry.native.namespace_mut("fcstd");
+    let mut entries = namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .expect("entries");
+    entries
+        .iter_mut()
+        .find(|entry| entry.name != "Document.xml")
+        .expect("side entry")
+        .data
+        .push(0);
+    namespace
+        .set_arena("entries", &entries)
+        .expect("replace entries");
+    let error = FcstdCodec
+        .encode(&stale_entry, &mut Vec::new())
+        .expect_err("stale entry metadata must fail");
+    assert!(error.to_string().contains("stale length or digest"));
+}
+
+#[test]
 fn builds_and_writes_a_source_less_typed_application_graph() {
     let mut builder = crate::FcstdDocumentBuilder::new("source-less & portable");
     builder

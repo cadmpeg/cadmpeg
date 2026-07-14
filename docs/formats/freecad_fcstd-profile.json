@@ -1,5 +1,5 @@
 {
-  "profile_version": 3,
+  "profile_version": 4,
   "format": "fcstd",
   "manifest_sha256": "cf224a9311102185fb4fd72adda721bc6d281e659ddc39087082dfa6b589e7f6",
   "manifest_verified": true,
@@ -9,7 +9,7 @@
     "file_version": 1,
     "native_namespace_version": 20,
     "cadir_version": "53",
-    "write_support": false
+    "write_support": true
   },
   "fixtures": [
     {
@@ -21,6 +21,10 @@
       "neutral_errors": 0,
       "native_errors": 0,
       "exact_byte_coverage": true,
+      "write_deterministic": true,
+      "semantic_round_trip": true,
+      "side_entries_preserved": true,
+      "typed_edit_round_trip": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -78,6 +82,10 @@
       "neutral_errors": 0,
       "native_errors": 0,
       "exact_byte_coverage": true,
+      "write_deterministic": true,
+      "semantic_round_trip": true,
+      "side_entries_preserved": true,
+      "typed_edit_round_trip": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -137,6 +145,10 @@
       "neutral_errors": 0,
       "native_errors": 0,
       "exact_byte_coverage": true,
+      "write_deterministic": true,
+      "semantic_round_trip": true,
+      "side_entries_preserved": true,
+      "typed_edit_round_trip": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -199,6 +211,10 @@
       "neutral_errors": 0,
       "native_errors": 0,
       "exact_byte_coverage": true,
+      "write_deterministic": true,
+      "semantic_round_trip": true,
+      "side_entries_preserved": true,
+      "typed_edit_round_trip": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -260,6 +276,10 @@
       "neutral_errors": 0,
       "native_errors": 0,
       "exact_byte_coverage": true,
+      "write_deterministic": true,
+      "semantic_round_trip": true,
+      "side_entries_preserved": true,
+      "typed_edit_round_trip": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -321,6 +341,10 @@
       "neutral_errors": 0,
       "native_errors": 0,
       "exact_byte_coverage": true,
+      "write_deterministic": true,
+      "semantic_round_trip": true,
+      "side_entries_preserved": true,
+      "typed_edit_round_trip": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -380,6 +404,10 @@
       "neutral_errors": 0,
       "native_errors": 0,
       "exact_byte_coverage": true,
+      "write_deterministic": true,
+      "semantic_round_trip": true,
+      "side_entries_preserved": true,
+      "typed_edit_round_trip": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -440,6 +468,10 @@
       "neutral_errors": 0,
       "native_errors": 0,
       "exact_byte_coverage": true,
+      "write_deterministic": true,
+      "semantic_round_trip": true,
+      "side_entries_preserved": true,
+      "typed_edit_round_trip": true,
       "entity_counts": {
         "appearance_bindings": 25,
         "appearances": 2,
@@ -503,6 +535,10 @@
       "neutral_errors": 0,
       "native_errors": 0,
       "exact_byte_coverage": true,
+      "write_deterministic": true,
+      "semantic_round_trip": true,
+      "side_entries_preserved": true,
+      "typed_edit_round_trip": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -565,6 +601,10 @@
       "neutral_errors": 0,
       "native_errors": 0,
       "exact_byte_coverage": true,
+      "write_deterministic": true,
+      "semantic_round_trip": true,
+      "side_entries_preserved": true,
+      "typed_edit_round_trip": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -626,6 +666,10 @@
       "neutral_errors": 0,
       "native_errors": 0,
       "exact_byte_coverage": true,
+      "write_deterministic": true,
+      "semantic_round_trip": true,
+      "side_entries_preserved": true,
+      "typed_edit_round_trip": true,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -1058,6 +1102,18 @@
       "view_presentations"
     ]
   },
+  "source_less_write": {
+    "generated": true,
+    "deterministic": true,
+    "decodes_cleanly": true,
+    "object_type": "Part::Box",
+    "typed_parameters": {
+      "Height": "3",
+      "Length": "12.5",
+      "Width": "7"
+    },
+    "unsupported_target_rejected": true
+  },
   "gates": [
     {
       "level": "L0",
@@ -1232,7 +1288,31 @@
           "required": "types={\"App::FeaturePython\", \"Fem::ConstraintTemperature\", \"Fem::FemAnalysis\", \"Mesh::Feature\", \"Path::Feature\", \"Points::Feature\", \"Spreadsheet::Sheet\"}, constructs={\"embedded_payload\", \"inert_payload\"}, exact byte coverage"
         }
       ]
+    },
+    {
+      "level": "L9",
+      "passed": true,
+      "assertions": [
+        {
+          "id": "semantic_native_round_trip",
+          "passed": true,
+          "observed": "11 of 11 fixtures deterministic, semantically equivalent, and editable",
+          "required": "every primary-envelope fixture writes deterministically, round-trips semantically, and accepts a typed edit"
+        },
+        {
+          "id": "unsupported_record_survival",
+          "passed": true,
+          "observed": "11 of 11 fixture entry sets preserved",
+          "required": "every named logical entry retains identity and digest"
+        },
+        {
+          "id": "source_less_and_target_selection",
+          "passed": true,
+          "observed": "generated=true, deterministic=true, clean=true, type=Part::Box, parameters={\"Height\": \"3\", \"Length\": \"12.5\", \"Width\": \"7\"}, unsupported_target_rejected=true",
+          "required": "deterministic clean source-less Part::Box with three typed dimensions and explicit unsupported-target rejection"
+        }
+      ]
     }
   ],
-  "highest_passing_gate": "L8"
+  "highest_passing_gate": "L9"
 }

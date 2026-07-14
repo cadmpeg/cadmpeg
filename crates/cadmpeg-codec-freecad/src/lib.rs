@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Read and write ZIP-packaged `FreeCAD` `.FCStd` documents.
+//!
+//! [`FcstdCodec`] implements [`Codec`] and [`Encoder`]. Retained writes preserve
+//! unedited persistence records and named side entries, while checked mutation
+//! methods update typed values. [`FcstdDocumentBuilder`] creates source-less
+//! schema-4/file-1 application graphs. Other target bands and edits without a
+//! lossless serializer are rejected explicitly.
+//!
+//! Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! on the cadmpeg support ladder.
 
 mod annotation;
 mod application;

@@ -46,7 +46,7 @@ Start with a container target when testing an end-to-end codec path. These
 harnesses call format detection, inspection, and decoding:
 
 - `f3d_container`
-- `fcstd_container`, `fcstd_decode`
+- `fcstd_container`, `fcstd_decode`, `fcstd_write`
 - `sldprt_container`
 - `catia_container`
 - `creo_container`
