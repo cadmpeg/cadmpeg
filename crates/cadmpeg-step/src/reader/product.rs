@@ -250,6 +250,7 @@ fn apply_body_placements(
         .enumerate()
         .map(|(index, body)| (body.id.clone(), index))
         .collect::<BTreeMap<_, _>>();
+    let mut representation_cache = BTreeMap::new();
     for (&id, item) in &exchange.records {
         if item.simple_name() != Some("MAPPED_ITEM") {
             continue;
@@ -282,7 +283,13 @@ fn apply_body_placements(
             warnings.push(format!("MAPPED_ITEM #{id} has no resolved body placement"));
             continue;
         };
-        for body in representation_bodies(representation, exchange, &mut BTreeSet::new(), 0) {
+        for body in representation_bodies(
+            representation,
+            exchange,
+            &mut representation_cache,
+            &mut BTreeSet::new(),
+            0,
+        ) {
             if let Some(index) = body_indices.get(&body) {
                 ir.model.bodies[*index].transform = Some(transform);
             }
@@ -311,12 +318,19 @@ fn shape_bindings(
         })
         .collect::<BTreeMap<_, _>>();
     let mut result = BTreeMap::<u64, Vec<BodyId>>::new();
+    let mut representation_cache = BTreeMap::new();
     for record in exchange
         .records
         .values()
         .filter(|record| record.simple_name() == Some("SHAPE_DEFINITION_REPRESENTATION"))
     {
-        if let Some((product, bodies)) = shape_binding(record, exchange, &pds, definitions) {
+        if let Some((product, bodies)) = shape_binding(
+            record,
+            exchange,
+            &pds,
+            definitions,
+            &mut representation_cache,
+        ) {
             result.entry(product).or_default().extend(bodies);
         }
     }
@@ -328,20 +342,31 @@ fn shape_binding(
     exchange: &Exchange,
     pds: &BTreeMap<u64, u64>,
     definitions: &BTreeMap<u64, u64>,
+    representation_cache: &mut BTreeMap<u64, Vec<BodyId>>,
 ) -> Option<(u64, Vec<BodyId>)> {
     let definition = *pds.get(&record.parameter(0)?.reference()?)?;
     let product = *definitions.get(&definition)?;
     let representation = record.parameter(1)?.reference()?;
-    let bodies = representation_bodies(representation, exchange, &mut BTreeSet::new(), 0);
+    let bodies = representation_bodies(
+        representation,
+        exchange,
+        representation_cache,
+        &mut BTreeSet::new(),
+        0,
+    );
     Some((product, bodies))
 }
 
 fn representation_bodies(
     representation: u64,
     exchange: &Exchange,
+    cache: &mut BTreeMap<u64, Vec<BodyId>>,
     active: &mut BTreeSet<u64>,
     depth: usize,
 ) -> Vec<BodyId> {
+    if let Some(bodies) = cache.get(&representation) {
+        return bodies.clone();
+    }
     if depth >= 256 {
         return Vec::new();
     }
@@ -377,6 +402,7 @@ fn representation_bodies(
                     return representation_bodies(
                         mapped_representation,
                         exchange,
+                        cache,
                         active,
                         depth + 1,
                     );
@@ -384,8 +410,11 @@ fn representation_bodies(
             }
             Vec::new()
         })
-        .collect();
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     active.remove(&representation);
+    cache.insert(representation, bodies.clone());
     bodies
 }
 

@@ -1621,6 +1621,44 @@ fn decode_inline(records: &str) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 #[test]
+fn mapped_representation_dag_is_memoized() {
+    let depth = 32_u64;
+    let mut records = String::from(
+        "#1=APPLICATION_CONTEXT('');\n\
+#2=PRODUCT('p','p','',());\n\
+#3=PRODUCT_DEFINITION_FORMATION('','',#2);\n\
+#4=PRODUCT_DEFINITION('','',#3,#1);\n\
+#5=PRODUCT_DEFINITION_SHAPE('','',#4);\n\
+#6=SHAPE_DEFINITION_REPRESENTATION(#5,#100);\n",
+    );
+    for level in 0..depth {
+        let representation = 100 + level;
+        let next = representation + 1;
+        let map = 1_000 + level;
+        let first = 2_000 + level * 2;
+        let second = first + 1;
+        records.push_str(&format!(
+            "#{representation}=SHAPE_REPRESENTATION('',(#{first},#{second}),$);\n\
+#{map}=REPRESENTATION_MAP($,#{next});\n\
+#{first}=MAPPED_ITEM('',#{map},$);\n\
+#{second}=MAPPED_ITEM('',#{map},$);\n"
+        ));
+    }
+    records.push_str(&format!(
+        "#{}=SHAPE_REPRESENTATION('',(#9000),$);\n#9000=MANIFOLD_SOLID_BREP('',#9001);\n#9001=CLOSED_SHELL('',());",
+        100 + depth
+    ));
+
+    let result = decode_inline(&records);
+    assert_eq!(result.ir.model.products.len(), 1);
+    assert_eq!(result.ir.model.products[0].bodies.len(), 1);
+    assert_eq!(
+        result.ir.model.products[0].bodies[0].as_str(),
+        "step:data:body#9000"
+    );
+}
+
+#[test]
 fn malformed_zero_partial_pmi_reference_is_non_panicking() {
     let result = decode_inline("#5=();\n#10=ANNOTATION_OCCURRENCE('',(),#5);");
     assert!(result.ir.model.pmi.len() <= 1);
