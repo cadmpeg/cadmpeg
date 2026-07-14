@@ -47,7 +47,7 @@ use crate::geometry;
 use crate::parasolid::{self, Stream, StreamKind};
 use crate::topology::{Graph, Node};
 
-const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
+pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 
 /// Parsed container data shared by inspection and entity decoding.
 pub struct Scan {
@@ -647,7 +647,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                         }
                     }
                     if let Some(carrier) = ir.model.pcurves.iter_mut().find(|p| p.id == pcurve) {
-                        carrier.fit_tolerance = Some(surface_curve.tolerance * 1000.0);
+                        carrier.fit_tolerance = decoded_tolerance(surface_curve.tolerance);
                     }
                     pcurves_by_xmt.insert(surface_curve.xmt, pcurve);
                     if let Some(support) = surfaces_by_xmt.get(&surface_curve.surface).cloned() {

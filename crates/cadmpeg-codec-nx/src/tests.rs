@@ -4080,6 +4080,27 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
 }
 
 #[test]
+fn decode_omits_surface_curve_missing_tolerance_sentinel() {
+    let mut stream = pcurve_topology_partition_stream();
+    let surface_curve = stream
+        .windows(2)
+        .position(|window| window == [0, 137])
+        .expect("surface curve");
+    put_f64(
+        &mut stream,
+        surface_curve + 25,
+        crate::decode::MISSING_TOLERANCE,
+    );
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.pcurves[0].fit_tolerance, None);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn decode_preserves_multiple_shells_in_one_region() {
     let stream = shared_region_shells_partition_stream();
     let mut input = Cursor::new(prt_with_partition(&stream));
