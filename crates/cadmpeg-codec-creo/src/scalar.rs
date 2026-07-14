@@ -237,6 +237,18 @@ pub fn decode_tabulated_cylinder_second_coordinate(
     if matches!(head, 0xb2..=0xc7) {
         return ieee7_dict(data, offset, 0xbf2d + u16::from(head));
     }
+    if matches!(head, 0xc8..=0xcf) {
+        return ieee7_dict(data, offset, 0xbf2d + u16::from(head));
+    }
+    if matches!(head, 0xd0..=0xdc) {
+        return ieee7_dict(data, offset, 0xbf2e + u16::from(head));
+    }
+    if head == 0xdd {
+        return ieee7_dict(data, offset, 0xbf2f + u16::from(head));
+    }
+    if matches!(head, 0xde..=0xdf) {
+        return ieee7_dict(data, offset, 0xbf32 + u16::from(head));
+    }
     decode_in_surface_row_lane(data, offset, cache)
 }
 
@@ -380,6 +392,7 @@ mod tests {
         let second = [0x7f, 0x24, 0x57, 0x89, 0x13, 0x66, 0x08];
         let second_positive_low = [0x69, 0x91, 0x22, 0x33, 0x44, 0x55, 0x66];
         let second_negative = [0xc7, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
+        let second_negative_large = [0xdd, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
         assert_eq!(
             decode_tabulated_cylinder_first_coordinate(&first_eight, 0, &cache),
             Some((
@@ -472,6 +485,13 @@ mod tests {
             decode_tabulated_cylinder_second_coordinate(&second_negative, 0, &cache),
             Some((
                 f64::from_be_bytes([0xbf, 0xf4, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_second_coordinate(&second_negative_large, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xc0, 0x0c, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77]),
                 7
             ))
         );

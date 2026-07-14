@@ -298,30 +298,29 @@ The fixed-width forms are `28 <tail7> → 3F <tail7>`,
 `4a <tail6> → C0 <tail6> 00`.
 In the second-coordinate lane, prefixes `5e..a3` use the positive DICT mapping.
 Negative prefixes `a4..a6`, `a7..b1`, and `b2..c7` add to `BF2B`, `BF2C`, and
-`BF2D`. Prefixes `2c`, `4c..4d`, `50`, and `54` reconstruct
+`BF2D`. Prefixes `c8..cf`, `d0..dc`, `dd`, and `de..df` add to `BF2D`,
+`BF2E`, `BF2F`, and `BF32`, respectively. Prefixes `2c`, `4c..4d`, `50`, and `54` reconstruct
 `3F <tail6> 00`; `28` and `41` reconstruct `3F <tail7>`.
 
 A replay-bound six-scalar frame stores two opposite corners of the directrix
 and extrusion bounds. Its scalar slots use the second directrix-coordinate
-lane, with `4a <tail6>` reconstructed as `40 <tail6> 00`. When exactly two frame-axis spans equal the ranges of the
-first and second control-point coordinates, those axes define the directrix
-chart. The first coordinate runs from the greater frame bound to the lesser;
-the second runs from the lesser bound to the greater. Frame coordinates on
-model X and Y are negated; model Z retains its stored sign. The remaining axis
-retains its stored direction from the first corner to the second and defines
-the extrusion vector. The four placed points form a non-rational clamped cubic B-spline with knot vector
+lane, with `4a <tail6>` reconstructed as `40 <tail6> 00`. When exactly two
+frame-axis spans equal the ranges of the first and second control-point
+coordinates, those axes define the directrix chart. Each directrix axis is a
+signed unit-slope affine map selected by the frame bounds and the layout's
+required intercept magnitude. A missing or non-unique map leaves the frame
+opaque. The remaining axis defines the extrusion vector. The four placed
+points form a non-rational clamped cubic B-spline with knot vector
 `[0,0,0,0,1,1,1,1]`.
 
-The reflected-planar six-token envelope has either the prefix layout
-`_ 46 2f _ 46 2e` or `_ 42 7f..86 _ 18 7f..86`. In the second layout, the
-first and fourth prefixes are one of `46`, `4a`, `d1`, `d3`, `de`, or `df`.
-An offset-planar envelope has prefix layout `_ 2d _ _ 2d _`. Its first
-directrix axis is the unique signed unit-slope map from the local coordinate
-range to the frame bounds whose intercept has magnitude 30. Its second axis is
-the unique signed unit-slope map with zero intercept. The remaining frame axis
-is sign-reflected and runs from the first corner to the second. A missing or
-non-unique signed map leaves the envelope opaque. Other six-scalar sequences
-after the marker are not directrix envelopes.
+The `_ 46 2f _ 46 2e` layout requires a first-axis intercept magnitude of 30,
+a zero second-axis intercept, and retains the stored sweep-axis sign. The
+`_ 42 7f..86 _ 18 7f..86` layout requires zero intercepts and retains the
+stored sweep-axis sign; its first and fourth prefixes are one of `46`, `4a`,
+`d1`, `d3`, `de`, or `df`. The `_ 2d _ _ 2d _` layout requires a first-axis
+intercept magnitude of 30, a zero second-axis intercept, and reflects the
+sweep-axis sign. Other six-scalar sequences after the marker are not directrix
+envelopes.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 

@@ -3472,8 +3472,11 @@ fn placed_tabulated_cylinder_directrix(
 ) -> Option<(NurbsCurve, [f64; 3])> {
     #[derive(Clone, Copy)]
     enum FrameLayout {
-        ReflectedPlanar,
-        OffsetPlanar,
+        LegacyReflected,
+        SignedPlanar {
+            first_offset: f64,
+            reflect_sweep: bool,
+        },
     }
     if parameters.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
         return None;
@@ -3511,10 +3514,30 @@ fn placed_tabulated_cylinder_directrix(
                 && matches!(second, 0x46 | 0x4a | 0xd1 | 0xd3 | 0xde | 0xdf)
                 && matches!(z0, 0x7f..=0x86)
                 && matches!(z1, 0x7f..=0x86));
-        if resistor_layout || thyrister_layout {
-            Some((values, FrameLayout::ReflectedPlanar))
+        if resistor_layout {
+            Some((
+                values,
+                FrameLayout::SignedPlanar {
+                    first_offset: 30.0,
+                    reflect_sweep: false,
+                },
+            ))
+        } else if thyrister_layout {
+            Some((
+                values,
+                FrameLayout::SignedPlanar {
+                    first_offset: 0.0,
+                    reflect_sweep: false,
+                },
+            ))
         } else if matches!(heads.as_slice(), [_, 0x2d, _, _, 0x2d, _]) {
-            Some((values, FrameLayout::OffsetPlanar))
+            Some((
+                values,
+                FrameLayout::SignedPlanar {
+                    first_offset: 30.0,
+                    reflect_sweep: true,
+                },
+            ))
         } else {
             None
         }
@@ -3528,7 +3551,7 @@ fn placed_tabulated_cylinder_directrix(
             .iter()
             .map(|slot| slot.value)
             .collect::<Option<Vec<_>>>()?;
-        Some((values, FrameLayout::ReflectedPlanar))
+        Some((values, FrameLayout::LegacyReflected))
     })?;
     let [a0, a1, a2, b0, b1, b2] = values.as_slice() else {
         return None;
@@ -3580,13 +3603,13 @@ fn placed_tabulated_cylinder_directrix(
     let [(first_axis, second_axis, sweep_axis)] = assignments.as_slice() else {
         return None;
     };
-    let offset_chart = match layout {
-        FrameLayout::ReflectedPlanar => None,
-        FrameLayout::OffsetPlanar => Some((
+    let signed_chart = match layout {
+        FrameLayout::LegacyReflected => None,
+        FrameLayout::SignedPlanar { first_offset, .. } => Some((
             signed_unit_chart(
                 [local_min[0], local_max[0]],
                 [first[*first_axis], second[*first_axis]],
-                30.0,
+                first_offset,
             )?,
             signed_unit_chart(
                 [local_min[1], local_max[1]],
@@ -3599,11 +3622,22 @@ fn placed_tabulated_cylinder_directrix(
         .iter()
         .map(|point| {
             let mut placed = [0.0; 3];
-            match offset_chart {
+            match signed_chart {
                 Some(((first_slope, first_intercept), (second_slope, second_intercept))) => {
                     placed[*first_axis] = first_slope * point[0] + first_intercept;
                     placed[*second_axis] = second_slope * point[1] + second_intercept;
-                    placed[*sweep_axis] = -first[*sweep_axis];
+                    let reflect_sweep = matches!(
+                        layout,
+                        FrameLayout::SignedPlanar {
+                            reflect_sweep: true,
+                            ..
+                        }
+                    );
+                    placed[*sweep_axis] = if reflect_sweep {
+                        -first[*sweep_axis]
+                    } else {
+                        first[*sweep_axis]
+                    };
                 }
                 None => {
                     let chart_first =
@@ -3628,8 +3662,15 @@ fn placed_tabulated_cylinder_directrix(
         .collect();
     let mut sweep = [0.0; 3];
     sweep[*sweep_axis] = match layout {
-        FrameLayout::ReflectedPlanar => second[*sweep_axis] - first[*sweep_axis],
-        FrameLayout::OffsetPlanar => first[*sweep_axis] - second[*sweep_axis],
+        FrameLayout::SignedPlanar {
+            reflect_sweep: true,
+            ..
+        } => first[*sweep_axis] - second[*sweep_axis],
+        FrameLayout::LegacyReflected
+        | FrameLayout::SignedPlanar {
+            reflect_sweep: false,
+            ..
+        } => second[*sweep_axis] - first[*sweep_axis],
     };
     (sweep[*sweep_axis].is_finite() && sweep[*sweep_axis] != 0.0).then_some((
         NurbsCurve {
