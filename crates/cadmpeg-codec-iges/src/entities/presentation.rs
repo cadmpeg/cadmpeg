@@ -88,6 +88,35 @@ pub(super) fn project(
 
     for entry in directory
         .iter()
+        .filter(|entry| entry.entity_type == 406 && entry.form == 1)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let levels = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+            .and_then(|count| {
+                (0..count)
+                    .map(|index| record.integer(2 + index).filter(|level| *level >= 0))
+                    .collect::<Option<Vec<_>>>()
+            });
+        if levels.is_some_and(|levels| levels.iter().collect::<BTreeSet<_>>().len() == levels.len())
+        {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(loss(
+                entry,
+                "definition-level count, value, or uniqueness is invalid",
+            ));
+        }
+    }
+
+    for entry in directory
+        .iter()
         .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
     {
         handled.insert(entry.sequence);
@@ -223,6 +252,20 @@ pub(super) fn project(
             losses.push(loss(
                 entry,
                 "Directory color number or definition pointer is invalid",
+            ));
+        }
+    }
+    for entry in directory.iter().filter(|entry| entry.level < 0) {
+        let sequence = entry.level.unsigned_abs();
+        if u32::try_from(sequence).ok().is_none_or(|sequence| {
+            !decoded.contains(&sequence)
+                || entries
+                    .get(&sequence)
+                    .is_none_or(|target| target.entity_type != 406 || target.form != 1)
+        }) {
+            losses.push(loss(
+                entry,
+                "negative Directory level does not reference a decoded Definition Levels property",
             ));
         }
     }

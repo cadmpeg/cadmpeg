@@ -1738,6 +1738,19 @@ fn owned_test_file_with_display(
     colors: &[(u32, i64)],
     line_fonts: &[(u32, i64)],
 ) -> Vec<u8> {
+    owned_test_file_with_attributes(entities, colors, line_fonts, &[])
+}
+
+fn owned_test_file_with_levels(entities: &[OwnedTestEntity], levels: &[(u32, i64)]) -> Vec<u8> {
+    owned_test_file_with_attributes(entities, &[], &[], levels)
+}
+
+fn owned_test_file_with_attributes(
+    entities: &[OwnedTestEntity],
+    colors: &[(u32, i64)],
+    line_fonts: &[(u32, i64)],
+    levels: &[(u32, i64)],
+) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -1755,7 +1768,11 @@ fn owned_test_file_with_display(
                     .find_map(|(entry, line_font)| (*entry == sequence).then_some(*line_font))
                     .unwrap_or(0)
                     .to_string(),
-                "0",
+                &levels
+                    .iter()
+                    .find_map(|(entry, level)| (*entry == sequence).then_some(*level))
+                    .unwrap_or(0)
+                    .to_string(),
                 "0",
                 "0",
                 "0",
@@ -1945,6 +1962,26 @@ fn line_font_definitions_file() -> Vec<u8> {
         },
     ];
     owned_test_file_with_display(&entities, &[], &[(3, 1), (5, 2), (7, -5)])
+}
+
+fn definition_levels_file() -> Vec<u8> {
+    let entities = [
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 1,
+            label: "LEVELS".into(),
+            status: "00000200",
+            parameters: "406,3,2,7,11;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "LINE".into(),
+            status: "00000000",
+            parameters: "110,0,0,0,1,0,0;".into(),
+        },
+    ];
+    owned_test_file_with_levels(&entities, &[(3, -1)])
 }
 
 fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
@@ -2719,6 +2756,44 @@ fn decode_types_template_and_visible_blank_line_fonts() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("IGES entity type 304 form")));
+}
+
+#[test]
+fn decode_types_definition_levels_and_directory_level_links() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(definition_levels_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+    let levels = &native.arenas["definition_levels"];
+    assert_eq!(levels.len(), 1);
+    assert_eq!(levels[0].id, "iges:presentation:definition-levels#D1");
+    assert_eq!(levels[0].fields["declared_count"], 3);
+    assert_eq!(
+        levels[0].fields["levels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_i64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![2, 7, 11]
+    );
+    let line = native.arenas["display_attributes"]
+        .iter()
+        .find(|record| record.id == "iges:presentation:display-attributes#D3")
+        .unwrap();
+    assert_eq!(line.fields["level_number"], -1);
+    assert_eq!(
+        line.fields["level_definition"],
+        "iges:presentation:definition-levels#D1"
+    );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
 }
 
 fn append_tetrahedral_shell(

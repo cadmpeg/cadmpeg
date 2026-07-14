@@ -114,6 +114,14 @@ enum NativeLineFontDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeDefinitionLevels {
+    id: String,
+    source_entity: String,
+    declared_count: Option<i64>,
+    levels: Vec<Option<i64>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -342,8 +350,12 @@ pub(crate) fn store(
             line_font_definition: (entry.line_font < 0)
                 .then(|| format!("iges:entity:directory#{}", entry.line_font.unsigned_abs())),
             level_number: entry.level,
-            level_definition: (entry.level < 0)
-                .then(|| format!("iges:entity:directory#{}", entry.level.unsigned_abs())),
+            level_definition: (entry.level < 0).then(|| {
+                format!(
+                    "iges:presentation:definition-levels#D{}",
+                    entry.level.unsigned_abs()
+                )
+            }),
             view: entry.view,
             line_weight_number: entry.line_weight,
             color_number: entry.color,
@@ -394,6 +406,25 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let definition_levels = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 406 && entry.form == 1)
+        .map(|entry| {
+            let parameters = by_directory.get(&entry.sequence).copied();
+            let count = parameters
+                .and_then(|record| record.integer(1))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            NativeDefinitionLevels {
+                id: format!("iges:presentation:definition-levels#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                declared_count: parameters.and_then(|record| record.integer(1)),
+                levels: (0..count)
+                    .map(|index| parameters.and_then(|record| record.integer(2 + index)))
+                    .collect(),
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -404,5 +435,6 @@ pub(crate) fn store(
     namespace.set_arena("colors", &colors)?;
     namespace.set_arena("display_attributes", &display_attributes)?;
     namespace.set_arena("line_fonts", &line_fonts)?;
+    namespace.set_arena("definition_levels", &definition_levels)?;
     Ok(())
 }
