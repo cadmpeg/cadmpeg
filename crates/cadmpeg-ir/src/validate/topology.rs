@@ -91,32 +91,35 @@ fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
                         && pattern_is_valid(&stage.pattern, true)
                         && !matches!(*stage.pattern, PatternKind::Composite { .. })
                 });
-            let mut occurrences = None;
-            let composition_valid = stages.iter().enumerate().all(|(index, stage)| {
-                let Some(stage_count) = pattern_occurrence_count(&stage.pattern) else {
-                    return true;
-                };
-                if stage_count == 0 {
-                    return false;
-                }
-                if index == 0 {
-                    occurrences = Some(stage_count);
-                    return true;
-                }
-                match stage.combination {
-                    PatternStageCombination::CartesianProduct => {
-                        occurrences = occurrences.and_then(|count| count.checked_mul(stage_count));
-                        occurrences.is_some()
-                    }
-                    PatternStageCombination::AlignedSlices => {
-                        occurrences.is_none_or(|count| count % stage_count == 0)
-                    }
-                    PatternStageCombination::Initialize => false,
-                }
-            });
-            structure_valid && composition_valid
+            structure_valid && composite_composition_is_valid(stages)
         }
     }
+}
+
+fn composite_composition_is_valid(stages: &[crate::features::PatternStage]) -> bool {
+    let mut occurrences = None;
+    stages.iter().enumerate().all(|(index, stage)| {
+        let Some(stage_count) = pattern_occurrence_count(&stage.pattern) else {
+            return true;
+        };
+        if stage_count == 0 {
+            return false;
+        }
+        if index == 0 {
+            occurrences = Some(stage_count);
+            return true;
+        }
+        match stage.combination {
+            PatternStageCombination::CartesianProduct => {
+                occurrences = occurrences.and_then(|count| count.checked_mul(stage_count));
+                occurrences.is_some()
+            }
+            PatternStageCombination::AlignedSlices => {
+                occurrences.is_none_or(|count| count % stage_count == 0)
+            }
+            PatternStageCombination::Initialize => false,
+        }
+    })
 }
 
 fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
@@ -129,6 +132,34 @@ fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
         PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
         PatternKind::Mirror { .. } => Some(2),
         PatternKind::Unresolved { .. } | PatternKind::Composite { .. } => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_count_composite_stage_is_compositionally_invalid() {
+        let stages = [
+            crate::features::PatternStage {
+                pattern: Box::new(PatternKind::Linear {
+                    direction: None,
+                    spacing: Length(1.0),
+                    count: 1,
+                }),
+                combination: PatternStageCombination::Initialize,
+            },
+            crate::features::PatternStage {
+                pattern: Box::new(PatternKind::Scale {
+                    center: crate::features::PatternScaleCenter::FirstSeedCentroid,
+                    final_factor: 2.0,
+                    count: 0,
+                }),
+                combination: PatternStageCombination::AlignedSlices,
+            },
+        ];
+        assert!(!composite_composition_is_valid(&stages));
     }
 }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of `GuiDocument.xml` object appearance into neutral presentation records.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::CodecError;
@@ -738,39 +738,30 @@ fn transfer_topology_colors(
         return Ok(());
     };
     // FreeCAD uses a single list entry as a uniform color for every mapped subelement.
-    if count != 1 && group.names.len() != count {
+    if group.names.is_empty() || (count != 1 && group.names.len() != count) {
         return Ok(());
     }
     for (index, bytes) in bytes[4..].chunks_exact(4).enumerate() {
-        let names = if count == 1 {
-            group.names.iter().flatten().collect::<Vec<_>>()
-        } else {
-            group.names[index].iter().collect::<Vec<_>>()
-        };
         let packed = u32::from_le_bytes(bytes.try_into().expect("four-byte color"));
         let lower = kind.name().to_ascii_lowercase();
         let appearance_id = AppearanceId(format!(
             "fcstd:appearance:{lower}#{provider_name}:{}",
             index + 1
         ));
-        ir.model.appearances.push(Appearance {
-            id: appearance_id.clone(),
-            name: Some(format!(
-                "{provider_name} {}{} appearance",
-                kind.name(),
-                index + 1
-            )),
-            asset_guid: None,
-            visual_guid: None,
-            physical_token: None,
-            schema: Some(kind.schema().into()),
-            category: None,
-            base_color: Some(decode_color(packed, None)),
-            properties: BTreeMap::new(),
-        });
-        for topology_id in names
+        let uniform_names = (count == 1)
+            .then_some(&group.names)
             .into_iter()
+            .flat_map(|groups| groups.iter().flatten());
+        let indexed_names = (count != 1)
+            .then_some(&group.names[index])
+            .into_iter()
+            .flat_map(|names| names.iter());
+        let mut emitted_appearance = false;
+        let mut bound_topology = HashSet::new();
+        for topology_id in uniform_names
+            .chain(indexed_names)
             .flat_map(|name| &name.topology_ids)
+            .filter(|id| bound_topology.insert((*id).clone()))
             .filter(|id| match kind {
                 TopologyColorKind::Face => ir.model.faces.iter().any(|face| face.id.0 == **id),
                 TopologyColorKind::Edge => ir.model.edges.iter().any(|edge| edge.id.0 == **id),
@@ -779,6 +770,24 @@ fn transfer_topology_colors(
                 }
             })
         {
+            if !emitted_appearance {
+                ir.model.appearances.push(Appearance {
+                    id: appearance_id.clone(),
+                    name: Some(format!(
+                        "{provider_name} {}{} appearance",
+                        kind.name(),
+                        index + 1
+                    )),
+                    asset_guid: None,
+                    visual_guid: None,
+                    physical_token: None,
+                    schema: Some(kind.schema().into()),
+                    category: None,
+                    base_color: Some(decode_color(packed, None)),
+                    properties: BTreeMap::new(),
+                });
+                emitted_appearance = true;
+            }
             let target = match kind {
                 TopologyColorKind::Face => {
                     AppearanceTarget::Face(cadmpeg_ir::ids::FaceId(topology_id.clone()))

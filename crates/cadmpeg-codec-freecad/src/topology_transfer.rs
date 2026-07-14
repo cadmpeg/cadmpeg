@@ -531,6 +531,10 @@ impl<'a> Builder<'a> {
                 .collect::<Vec<_>>();
             (index, triangulation, vertices, triangles)
         });
+        let triangulation_scale = located_triangulation
+            .as_ref()
+            .map(|_| similarity(face_transform).map(|similarity| similarity.scale))
+            .transpose()?;
         let surface_id = if surface != 0 {
             self.located_surface(ir, surface, surface_transform)?
         } else if let Some((index, triangulation, vertices, triangles)) = &located_triangulation {
@@ -539,7 +543,7 @@ impl<'a> Builder<'a> {
                 &self.payload.id,
                 format!("triangulation:{index}@{face_key}"),
             ));
-            let deflection_scale = similarity(face_transform)?.scale;
+            let deflection_scale = triangulation_scale.expect("triangulation scale");
             if self.emitted_surfaces.insert(id.clone()) {
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
@@ -557,7 +561,7 @@ impl<'a> Builder<'a> {
         };
         if let Some((index, triangulation, vertices, triangles)) = located_triangulation {
             self.emitted_triangulations.insert(index);
-            let deflection_scale = similarity(face_transform)?.scale;
+            let deflection_scale = triangulation_scale.expect("triangulation scale");
             let normals = triangulation
                 .normals
                 .as_ref()

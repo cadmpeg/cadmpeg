@@ -2511,7 +2511,7 @@ fn feature_operation_geometry_is_validated() {
                         pattern: Box::new(PatternKind::Scale {
                             center: crate::features::PatternScaleCenter::FirstSeedCentroid,
                             final_factor: 2.0,
-                            count: 0,
+                            count: 2,
                         }),
                         combination: crate::features::PatternStageCombination::AlignedSlices,
                     },
