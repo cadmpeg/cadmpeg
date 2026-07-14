@@ -1005,6 +1005,35 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
         .collect()
 }
 
+fn depdb_recipe_choices(data: &[u8], sections: &[Section]) -> Vec<FeatureChoice> {
+    let mut choices = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "DEPDB_DATA")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
+        let recipe_operations = feature::operations(payload)
+            .into_iter()
+            .filter(|operation| operation.recipe.is_some())
+            .collect::<Vec<_>>();
+        let [operation] = recipe_operations.as_slice() else {
+            continue;
+        };
+        choices.extend(
+            feature::depdb_recipe_choices(payload, operation.feature_id)
+                .into_iter()
+                .map(|mut choice| {
+                    choice.payload_offset += section.offset;
+                    choice.offset += section.offset;
+                    choice
+                }),
+        );
+    }
+    choices.sort_by_key(|choice| choice.offset);
+    choices
+}
+
 fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u32> {
     let section = sections
         .iter()
@@ -1073,7 +1102,9 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let datum_planes = datum_planes(&data, &sections);
     let feature_ids = feature_ids(&data, &sections, &surface_rows);
     let feature_rows = feature_rows(&data, &sections, &feature_ids);
-    let feature_choices = feature::choices(&feature_rows);
+    let mut feature_choices = feature::choices(&feature_rows);
+    feature_choices.extend(depdb_recipe_choices(&data, &sections));
+    feature_choices.sort_by_key(|choice| choice.offset);
     let feature_choice_fields = feature::choice_fields(&feature_choices);
     let depdb_recipe_rows = depdb_recipe_rows(&data, &sections);
     let mut feature_geometry_tables = feature::geometry_tables(&feature_rows);

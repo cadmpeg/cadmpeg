@@ -1016,6 +1016,31 @@ pub fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
     result
 }
 
+/// Decode the bounded procedural-choice record stored at DEPDB section scope.
+pub fn depdb_recipe_choices(payload: &[u8], feature_id: u32) -> Vec<FeatureChoice> {
+    const ANCHOR: &[u8] = b"\xe0\x00param_choice_ptr\0\xe3";
+    const FIRST: &[u8] = b"\xe0\x01blend_choice\0";
+    const TERMINATOR: &[u8] = b"\xe0\x01misc_choice\0";
+    let Some(anchor) = find_bytes(payload, ANCHOR, 0, payload.len()) else {
+        return Vec::new();
+    };
+    let start_search = anchor + ANCHOR.len();
+    let Some(start) = find_bytes(payload, FIRST, start_search, payload.len()) else {
+        return Vec::new();
+    };
+    let Some(end) = find_bytes(payload, TERMINATOR, start, payload.len()) else {
+        return Vec::new();
+    };
+    choices(&[FeatureRow {
+        feature_id,
+        header: [0; 2],
+        root_schema_class: None,
+        body: payload[start..end].to_vec(),
+        body_offset: start,
+        offset: start,
+    }])
+}
+
 fn decode_exact_scalars(
     payload: &[u8],
     slot_count: usize,
@@ -3881,5 +3906,23 @@ mod tests {
         assert_eq!(operations[1].recipe, Some(FeatureRecipeKind::Extrude));
         assert_eq!(operations[1].root_schema_class, Some(917));
         assert_eq!(operations[1].parent_feature_id, Some(8051));
+    }
+
+    #[test]
+    fn bounds_depdb_recipe_choices_before_miscellaneous_persistence_data() {
+        let payload = b"prefix\xe0\x00param_choice_ptr\0\xe3\
+            \xe0\x01blend_choice\0\x00\
+            \xe0\x01depth_choice\0\x01\
+            \xe0\x01angle_choice\0\x02\
+            \xe0\x01misc_choice\0\xf8\x01\x07\
+            \xe0\x01unrelated\0\x09";
+
+        let choices = depdb_recipe_choices(payload, 41);
+        assert_eq!(choices.len(), 3);
+        assert_eq!(choices[0].feature_id, 41);
+        assert_eq!(choices[0].label, "blend_choice");
+        assert_eq!(choices[0].payload, [0]);
+        assert_eq!(choices[2].label, "angle_choice");
+        assert_eq!(choices[2].payload, [2]);
     }
 }
