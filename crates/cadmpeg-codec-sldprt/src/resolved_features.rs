@@ -3728,6 +3728,13 @@ pub(crate) fn project_relation_bindings(
         .iter()
         .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
         .collect::<HashMap<_, _>>();
+    let mut claimed_parameter_ids = lanes
+        .iter()
+        .flat_map(|lane| &lane.relation_instances)
+        .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+        .filter_map(|scalar| parameters_by_scalar.get(scalar))
+        .map(|parameter| parameter.id.clone())
+        .collect::<HashSet<_>>();
 
     for lane in lanes {
         let lane_key = lane
@@ -3735,17 +3742,28 @@ pub(crate) fn project_relation_bindings(
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         for relation in &lane.relation_instances {
-            if relation.parameter_scalar_ref.is_none() {
-                continue;
-            }
             let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
                 continue;
             };
-            let parameter = relation
+            let direct_parameter = relation
                 .parameter_scalar_ref
                 .as_deref()
                 .and_then(|scalar| parameters_by_scalar.get(scalar))
                 .copied();
+            let display_parameter = relation
+                .parameter_scalar_ref
+                .is_none()
+                .then(|| relation_parameter_by_display_name(relation, lane, features, parameters))
+                .flatten();
+            let parameter = direct_parameter.or(display_parameter);
+            if relation.parameter_scalar_ref.is_none() && parameter.is_none() {
+                continue;
+            }
+            if let Some(parameter) = display_parameter {
+                if !claimed_parameter_ids.insert(parameter.id.clone()) {
+                    continue;
+                }
+            }
             let parameter_id = parameter.map(|parameter| parameter.id.clone());
             let native_kind = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance => "sgLLDist",
@@ -3822,6 +3840,45 @@ pub(crate) fn project_relation_bindings(
             });
         }
     }
+}
+
+fn relation_parameter_by_display_name<'a>(
+    relation: &FeatureInputRelationInstance,
+    lane: &FeatureInputLane,
+    features: &[cadmpeg_ir::features::Feature],
+    parameters: &'a [cadmpeg_ir::features::DesignParameter],
+) -> Option<&'a cadmpeg_ir::features::DesignParameter> {
+    let owner = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(relation.feature_ref.as_str()))?
+        .id
+        .clone();
+    let scalars = lane
+        .scalars
+        .iter()
+        .map(|scalar| (scalar.id.as_str(), scalar))
+        .collect::<HashMap<_, _>>();
+    let names = lane
+        .names
+        .iter()
+        .map(|name| (name.id.as_str(), name.value.as_str()))
+        .collect::<HashMap<_, _>>();
+    let owner = &owner;
+    let mut matches = relation
+        .scalar_refs
+        .iter()
+        .filter_map(|scalar| scalars.get(scalar.as_str()))
+        .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
+        .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
+        .flat_map(|name| {
+            parameters
+                .iter()
+                .filter(move |parameter| &parameter.owner == owner && parameter.name == name)
+        });
+    let first = matches.next()?;
+    matches
+        .all(|parameter| parameter.id == first.id)
+        .then_some(first)
 }
 
 fn typed_marker_relation_definition(
@@ -5156,13 +5213,14 @@ mod profile_join_tests {
         bind_circular_profile_by_dimension, constrain_dimensioned_circle_transforms,
         dimensioned_circle_surface_transforms, dimensioned_circle_transform,
         implicit_circle_marker, marker_entities, profile_loci_by_marker,
-        project_dimensioned_sketch_geometry, sketch_frame_marker_transform,
-        typed_marker_relation_definition, typed_relation_definition,
+        project_dimensioned_sketch_geometry, relation_parameter_by_display_name,
+        sketch_frame_marker_transform, typed_marker_relation_definition, typed_relation_definition,
         unique_compatible_marker_transform, unique_marker_transform, MarkerTransform,
     };
     use crate::records::{
-        FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
-        FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
+        FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
+        FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
+        FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchInputLink,
         SketchRelationKind,
     };
     use cadmpeg_ir::features::{
@@ -5192,6 +5250,94 @@ mod profile_join_tests {
             links: Vec::new(),
             link_selector: None,
         }
+    }
+
+    #[test]
+    fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
+        let feature = Feature {
+            id: FeatureId("feature".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: None,
+            },
+            native_ref: Some("native-feature".into()),
+        };
+        let parameter = DesignParameter {
+            id: ParameterId("parameter".into()),
+            owner: feature.id.clone(),
+            name: "D1".into(),
+            ordinal: 0,
+            expression: "12".into(),
+            value: Some(ParameterValue::Length(Length(12.0))),
+            display: None,
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+            dependencies: Vec::new(),
+        };
+        let scalar = FeatureInputScalar {
+            id: "scalar".into(),
+            parent: "lane".into(),
+            feature_ref: Some("native-feature".into()),
+            ordinal: 0,
+            offset: 10,
+            object_id: 1,
+            name: "name".into(),
+            value: 0.012,
+            role: FeatureInputScalarRole::Display,
+            entity_indices: Vec::new(),
+            operands: Vec::new(),
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: vec![FeatureInputName {
+                id: "name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                value: "D1".into(),
+                object_id: None,
+            }],
+            scalars: vec![scalar],
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let relation = FeatureInputRelationInstance {
+            id: "relation".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 10,
+            family: FeatureInputRelationFamily::PointPointDistance,
+            class_ref: "class".into(),
+            feature_ref: "native-feature".into(),
+            scalar_refs: vec!["scalar".into()],
+            parameter_scalar_ref: None,
+            display_scalar_ref: Some("scalar".into()),
+            operands: Vec::new(),
+        };
+        assert_eq!(
+            relation_parameter_by_display_name(&relation, &lane, &[feature], &[parameter.clone()])
+                .map(|parameter| &parameter.id),
+            Some(&parameter.id)
+        );
     }
 
     #[test]
