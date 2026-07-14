@@ -3401,6 +3401,20 @@ fn parse_parameter_scope(
         return None;
     };
     let reference_table_end = kind_at.checked_sub(4)?;
+    let feature_ordinal = u32_at(bytes, kind_end)?;
+    if feature_ordinal == 0 {
+        return None;
+    }
+    let history_state_id_offset = reference_table_end;
+    let history_state_id = match u32_at(bytes, history_state_id_offset)? {
+        u32::MAX => None,
+        state_id => Some(i64::from(state_id)),
+    };
+    let previous_history_state_id_offset = kind_end.checked_add(31)?;
+    let previous_history_state_id = match u32_at(bytes, previous_history_state_id_offset)? {
+        u32::MAX => None,
+        state_id => Some(i64::from(state_id)),
+    };
     let mut reference_tables = Vec::new();
     for count_at in start + 11..reference_table_end {
         let count = usize::try_from(u32_at(bytes, count_at)?).ok()?;
@@ -3441,6 +3455,12 @@ fn parse_parameter_scope(
         frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
         kind: kind.clone(),
         kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
+        feature_ordinal,
+        feature_ordinal_offset: u64::try_from(kind_end).ok()?,
+        history_state_id,
+        history_state_id_offset: u64::try_from(history_state_id_offset).ok()?,
+        previous_history_state_id,
+        previous_history_state_id_offset: u64::try_from(previous_history_state_id_offset).ok()?,
         reference_count_offset: u64::try_from(*reference_count_at).ok()?,
         reference_members: reference_members.clone(),
         reference_member_offsets: reference_member_offsets.clone(),
@@ -5594,7 +5614,11 @@ mod relation_tests {
         bytes.extend_from_slice(&[0; 6]);
         bytes.extend_from_slice(&7u32.to_le_bytes());
         lp_utf16(&mut bytes, "Sketch");
-        bytes.extend_from_slice(&[0; 78]);
+        let feature_ordinal_at = bytes.len();
+        let mut tail = [0; 78];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[31..35].copy_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&tail);
         let paired_at = bytes.len();
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"261");
@@ -5608,6 +5632,10 @@ mod relation_tests {
 
         let scope = parse_parameter_scope(&bytes, &header).unwrap();
         assert_eq!(scope.kind, "Sketch");
+        assert_eq!(scope.feature_ordinal, 1);
+        assert_eq!(scope.feature_ordinal_offset, feature_ordinal_at as u64);
+        assert_eq!(scope.history_state_id, Some(7));
+        assert_eq!(scope.previous_history_state_id, Some(2));
         assert_eq!(scope.reference_count_offset, reference_count_at as u64);
         assert_eq!(scope.reference_members, [55]);
         assert_eq!(scope.reference_member_offsets, [reference_at as u64]);
@@ -5680,6 +5708,12 @@ mod relation_tests {
             frame_length: 200,
             kind: "Extrude".into(),
             kind_offset: 1100,
+            feature_ordinal: 1,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
             reference_count_offset: 1080,
             reference_members: vec![100, 200, 201],
             reference_member_offsets: vec![1085, 1096, 1107],
@@ -5822,6 +5856,12 @@ mod relation_tests {
             frame_length: 200,
             kind: "Extrude".into(),
             kind_offset: 1100,
+            feature_ordinal: 1,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
             reference_count_offset: 1080,
             reference_members: vec![100],
             reference_member_offsets: vec![1085],
@@ -5966,6 +6006,12 @@ mod relation_tests {
             frame_length: 200,
             kind: "Fillet".into(),
             kind_offset: 1100,
+            feature_ordinal: 1,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
             reference_count_offset: 1080,
             reference_members: vec![100],
             reference_member_offsets: vec![1085],
@@ -6520,6 +6566,12 @@ mod relation_tests {
             frame_length: 200,
             kind: "Extrude".into(),
             kind_offset: 210,
+            feature_ordinal: 1,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
             reference_count_offset: 180,
             reference_members: vec![44],
             reference_member_offsets: vec![185],
@@ -6573,6 +6625,12 @@ mod relation_tests {
             frame_length: 200,
             kind: "Extrude".into(),
             kind_offset: 210,
+            feature_ordinal: 1,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
             reference_count_offset: 180,
             reference_members: vec![100],
             reference_member_offsets: vec![185],
@@ -6704,6 +6762,12 @@ mod relation_tests {
             frame_length: 200,
             kind: kind.into(),
             kind_offset: byte_offset + 100,
+            feature_ordinal: 1,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
             reference_count_offset: byte_offset + 80,
             reference_members: vec![record_index + 1],
             reference_member_offsets: vec![byte_offset + 85],
@@ -6769,6 +6833,12 @@ mod relation_tests {
             frame_length: 200,
             kind: "Fillet".into(),
             kind_offset: 210,
+            feature_ordinal: 1,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
             reference_count_offset: 180,
             reference_members: vec![100, 101],
             reference_member_offsets: vec![185, 196],
@@ -6927,6 +6997,12 @@ mod relation_tests {
             frame_length: 200,
             kind: kind.into(),
             kind_offset: byte_offset + 100,
+            feature_ordinal: 1,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
             reference_count_offset: byte_offset + 80,
             reference_members: vec![record_index + 1],
             reference_member_offsets: vec![byte_offset + 85],

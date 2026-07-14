@@ -208,7 +208,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             )
         })
         .collect::<std::collections::HashMap<_, _>>();
+    let asm_state_ids = native
+        .asm_histories
+        .iter()
+        .flat_map(|history| &history.states)
+        .map(|state| state.state_id)
+        .collect::<HashSet<_>>();
     let mut scope_indices = HashSet::new();
+    let mut scope_ordinals = HashSet::new();
     for scope in &native.design_parameter_scopes {
         let native_stream = design_stream(&scope.id);
         let unique_index = scope_indices.insert((native_stream, scope.record_index));
@@ -271,6 +278,19 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && scope.paired_byte_offset == scope.byte_offset.saturating_add(scope.frame_length)
             && scope.kind_offset > scope.byte_offset
             && scope.kind_offset < scope.paired_byte_offset.saturating_sub(78)
+            && scope.feature_ordinal > 0
+            && scope.feature_ordinal_offset == scope.paired_byte_offset.saturating_sub(78)
+            && scope.history_state_id_offset == scope.kind_offset.saturating_sub(8)
+            && scope.previous_history_state_id_offset
+                == scope.feature_ordinal_offset.saturating_add(31)
+            && scope.history_state_id.is_some() == scope.previous_history_state_id.is_some()
+            && scope
+                .history_state_id
+                .is_none_or(|state_id| asm_state_ids.contains(&state_id))
+            && scope
+                .previous_history_state_id
+                .is_none_or(|state_id| asm_state_ids.contains(&state_id))
+            && scope_ordinals.insert((native_stream, scope.kind.as_str(), scope.feature_ordinal))
             && scope.reference_count_offset > scope.byte_offset
             && scope.reference_count_offset < scope.kind_offset
             && !scope.reference_members.is_empty()

@@ -513,6 +513,20 @@ pub struct DesignParameterScope {
     pub kind: String,
     /// Byte offset of the kind's UTF-16LE code units.
     pub kind_offset: u64,
+    /// One-based ordinal among scopes of the same feature family.
+    pub feature_ordinal: u32,
+    /// Byte offset of `feature_ordinal`.
+    pub feature_ordinal_offset: u64,
+    /// ASM delta-state identity produced by this scope, when active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_state_id: Option<i64>,
+    /// Byte offset of the encoded history-state identity or null sentinel.
+    pub history_state_id_offset: u64,
+    /// ASM delta-state identity immediately preceding this scope, when active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_history_state_id: Option<i64>,
+    /// Byte offset of the encoded preceding-state identity or null sentinel.
+    pub previous_history_state_id_offset: u64,
     /// Byte offset of the ordered reference-table count.
     pub reference_count_offset: u64,
     /// Ordered indexed-record references carried by the scope.
