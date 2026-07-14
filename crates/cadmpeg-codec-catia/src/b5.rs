@@ -33,6 +33,8 @@ pub struct B5Graph {
     pub surfaces: BTreeMap<u32, B5Surface>,
     /// `b5 03 30` offset constructions, keyed by their result surface id.
     pub offset_surfaces: BTreeMap<u32, B5OffsetSurface>,
+    /// `b5 03 37/3b` support-bound constructions, keyed by result surface id.
+    pub supported_surfaces: BTreeMap<u32, B5SupportedSurface>,
     /// World-frame `05 08 01` vertex coordinates, in stream order.
     pub vertex_points: Vec<[f64; 3]>,
     /// Logical vertex coordinates resolved from native `5d` identity. Their
@@ -193,6 +195,25 @@ pub struct B5OffsetSurface {
     pub parameter_bounds: [[f64; 2]; 2],
 }
 
+/// A support-bound surface construction with an explicit result carrier.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B5SupportedSurface {
+    /// This construction's result surface id.
+    pub object_id: u32,
+    /// Native construction class (`0x37` or `0x3b`).
+    pub class: u8,
+    /// Explicit carrier for the result geometry and chart.
+    pub carrier_surface: u32,
+    /// Ordered construction support surfaces.
+    pub support_surfaces: [u32; 2],
+    /// Ordered pcurves, one bound to each support surface.
+    pub support_pcurves: [u32; 2],
+    /// Six native control bytes surrounding the scalar fields.
+    pub controls: [u8; 6],
+    /// Two finite native construction scalars.
+    pub scalars: [f64; 2],
+}
+
 /// A resolved `b5 03 18`, `b5 03 19`, or `b5 03 21` pcurve node, represented as a 2D
 /// B-spline curve in a surface's
 /// parameter space ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
@@ -344,6 +365,17 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         };
         surfaces.insert(record.object_id, carrier);
         offset_surfaces.insert(record.object_id, offset);
+    }
+    let mut supported_surfaces = BTreeMap::new();
+    for record in &records {
+        let Some(construction) = parse_supported_surface(record, &by_id, &surfaces) else {
+            continue;
+        };
+        let Some(carrier) = surfaces.get(&construction.carrier_surface).cloned() else {
+            continue;
+        };
+        surfaces.insert(record.object_id, carrier);
+        supported_surfaces.insert(record.object_id, construction);
     }
     let profiles: BTreeMap<u32, B5Profile> = records
         .iter()
@@ -504,6 +536,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         opaque_pcurves,
         surfaces,
         offset_surfaces,
+        supported_surfaces,
         vertex_points,
         logical_vertex_points,
         logical_vertex_refs,
@@ -1106,6 +1139,56 @@ fn parse_offset_surface(
         distance,
         carrier_kind,
         parameter_bounds: [[u0, u1], [v0, v1]],
+    })
+}
+
+fn parse_supported_surface(
+    record: &B5Record,
+    by_id: &HashMap<u32, &B5Record>,
+    surfaces: &BTreeMap<u32, B5Surface>,
+) -> Option<B5SupportedSurface> {
+    (record.family == 0xb5
+        && matches!(record.class, 0x37 | 0x3b)
+        && record.payload.first() == Some(&0x85))
+    .then_some(())?;
+    let mut position = 1;
+    let references: [u32; 5] = (0..5)
+        .map(|_| reference(&record.payload, &mut position, record.object_id))
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()?;
+    surfaces.get(&references[0])?;
+    surfaces.get(&references[1])?;
+    surfaces.get(&references[2])?;
+    for lane in 0..2 {
+        let pcurve = by_id.get(&references[3 + lane])?;
+        let mut pcurve_position = 1;
+        (pcurve.payload.first() == Some(&0x81)
+            && reference(&pcurve.payload, &mut pcurve_position, pcurve.object_id)?
+                == references[1 + lane])
+            .then_some(())?;
+    }
+    (record.payload.len() == position.checked_add(22)?).then_some(())?;
+    let controls = [
+        record.payload[position],
+        record.payload[position + 1],
+        record.payload[position + 10],
+        record.payload[position + 11],
+        record.payload[position + 20],
+        record.payload[position + 21],
+    ];
+    let scalars = [
+        scalar(&record.payload, position + 2)?,
+        scalar(&record.payload, position + 12)?,
+    ];
+    Some(B5SupportedSurface {
+        object_id: record.object_id,
+        class: record.class,
+        carrier_surface: references[0],
+        support_surfaces: [references[1], references[2]],
+        support_pcurves: [references[3], references[4]],
+        controls,
+        scalars,
     })
 }
 
@@ -2265,6 +2348,52 @@ mod tests {
                 distance: -0.5,
                 carrier_kind: 0x15,
                 parameter_bounds: [[-2.0, 3.0], [-4.0, 5.0]],
+            })
+        );
+    }
+
+    #[test]
+    fn supported_surface_binds_ordered_support_pcurves() {
+        let plane = B5Surface::Plane {
+            origin: [0.0; 3],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+        };
+        let surfaces = BTreeMap::from([(2, plane.clone()), (3, plane.clone()), (4, plane)]);
+        let pcurve0 = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x18,
+            object_id: 5,
+            payload: vec![0x81, 0x83],
+        };
+        let pcurve1 = B5Record {
+            object_id: 6,
+            payload: vec![0x81, 0x84],
+            ..pcurve0.clone()
+        };
+        let mut payload = vec![0x85, 0x82, 0x83, 0x84, 0x85, 0x86, 0x09, 0x05];
+        payload.extend_from_slice(&2.5f64.to_le_bytes());
+        payload.extend_from_slice(&[0x03, 0x05]);
+        payload.extend_from_slice(&0.0f64.to_le_bytes());
+        payload.extend_from_slice(&[0x01, 0x05]);
+        let record = B5Record {
+            class: 0x37,
+            object_id: 7,
+            payload,
+            ..pcurve0.clone()
+        };
+        let records = HashMap::from([(5, &pcurve0), (6, &pcurve1)]);
+        assert_eq!(
+            parse_supported_surface(&record, &records, &surfaces),
+            Some(B5SupportedSurface {
+                object_id: 7,
+                class: 0x37,
+                carrier_surface: 2,
+                support_surfaces: [3, 4],
+                support_pcurves: [5, 6],
+                controls: [0x09, 0x05, 0x03, 0x05, 0x01, 0x05],
+                scalars: [2.5, 0.0],
             })
         );
     }

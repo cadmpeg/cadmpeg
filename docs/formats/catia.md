@@ -362,7 +362,7 @@ payload boundary. Repeated byte-identical typed records with the same object id
 are one object. A unique isolated geometry frame is admitted when a retained
 `5f` or `62` topology record references its object id; an unreferenced isolated
 frame is not part of the topology graph. Surface classes `2c`, `2e`, `30`,
-`37`, `38`, and `3b` retain their identity and payload as opaque carriers, so
+`38` retains its identity and payload as an opaque carrier, so
 their faces and loops remain connected without assigning unsupported geometry.
 
 - `b5 03 5f` (per-face node): first ref token names the surface (`b5 03 27` plane / `28` cylinder / `2d` revolution / `a8 03 34` bspline), resolved through the object-id map. The bspline subset binds injectively to `a8 03 34`. The `5f` stream rank is the native face ordinal.
@@ -374,6 +374,7 @@ their faces and loops remain connected without assigning unsupported geometry.
 - `b5 03 1a/1d` (conic pcurves): both begin `81 surface_ref`. Class `1a` then stores `2f64 05 05 7f64`; class `1d` stores `4f64 05 81 3f64 1d 5f64`. Every scalar is finite. The support reference binds the record to its loop surface.
 - `b5 03 2e` (freeform surface alias): the complete payload is one reference token naming an `a8 03 34` freeform surface. The alias and target identify the same surface carrier and parameter chart.
 - `b5 03 30` (offset surface): payload `82 result_carrier_ref source_surface_ref <distance:f64le> <carrier_kind:u8> <u0:f64le> <u1:f64le> <v0:f64le> <v1:f64le>`. The bounds are strictly increasing. `carrier_kind` is `15` for a plane result carrier, `05` for a cylinder, and `0d` for a torus. The first reference supplies the exact result geometry and parameter chart; the second reference and signed distance define the offset construction.
+- `b5 03 37/3b` (support-bound surface constructions): payload `85 result_carrier_ref support0_ref support1_ref pcurve0_ref pcurve1_ref <control0:u8> <control1:u8> <scalar0:f64le> <control2:u8> <control3:u8> <scalar1:f64le> <control4:u8> <control5:u8>`. Both scalars are finite. Each pcurve begins with the reference of its index-aligned support. The first reference supplies the exact result geometry and parameter chart.
 - `b5 03 5f` (face node): dominant payload `<0x80 + n_refs> surface_ref loop_ref... <05-tail>`; the first reference is the carrier and the remaining references are owned loops.
 - `b5 03 5e` (edge node): payload `85 curve_ref start_vertex_ref end_vertex_ref start_parameter_ref end_parameter_ref <tail>`. The tail is `21` or `22` in the object-stream topology and `01` in the standard stream's co-stored identity table. The second and third references are native `5d` vertex identities. Their sharing closes the fixed loop sequence exactly; coincident coordinate loci do not merge distinct identities.
 - `b2/b3/b4 03 5e` (width-coded edge node): after the B-family payload length and width-coded header token, the payload is `curve_ref start_vertex_ref end_vertex_ref start_parameter_ref end_parameter_ref <tail>`, with all five references encoded by `compact_int`. The terminal byte is retained independently. The second and third references are native vertex identities.
