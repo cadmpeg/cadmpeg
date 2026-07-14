@@ -1561,6 +1561,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 reference,
                 &native.persistent_subentity_tags,
             );
+            reference.candidate_edges = design::dimension_recipe_candidate_edges(
+                reference,
+                &native.persistent_subentity_tags,
+            );
         }
         let valid = record.class_tag.len() == 3
             && record.class_tag.bytes().all(|byte| byte.is_ascii_digit())

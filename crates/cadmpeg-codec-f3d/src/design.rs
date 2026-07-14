@@ -4719,19 +4719,43 @@ pub(crate) fn decode_dimension_recipe_references(
             design_reference: i64::from(design_reference),
             design_reference_offset: prefix_offset.saturating_add((marker_at + 4) as u64),
             candidate_faces: Vec::new(),
+            candidate_edges: Vec::new(),
         });
     }
     references
 }
 
-/// Join dimension-recipe selector/reference pairs to active solved faces.
+/// Join dimension-recipe selector/reference pairs to active solved subentities.
 pub fn bind_dimension_recipe_reference_candidates(
     records: &mut [DesignDimensionRecipeRecord],
     tags: &[PersistentSubentityTag],
 ) {
     for reference in records.iter_mut().flat_map(|record| &mut record.references) {
         reference.candidate_faces = dimension_recipe_candidate_faces(reference, tags);
+        reference.candidate_edges = dimension_recipe_candidate_edges(reference, tags);
     }
+}
+
+pub(crate) fn dimension_recipe_candidate_edges(
+    reference: &crate::records::DesignDimensionRecipeReference,
+    tags: &[PersistentSubentityTag],
+) -> Vec<cadmpeg_ir::ids::EdgeId> {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let mut edges = tags
+        .iter()
+        .filter(|tag| {
+            tag.token == reference.token
+                && tag.design_references.contains(&reference.design_reference)
+        })
+        .filter_map(|tag| match &tag.target {
+            AttributeTarget::Edge(edge) => Some(edge.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    edges.sort_by(|left, right| left.0.cmp(&right.0));
+    edges.dedup();
+    edges
 }
 
 pub(crate) fn dimension_recipe_candidate_faces(
@@ -9081,7 +9105,7 @@ mod relation_tests {
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, Length, ParameterValue, SketchProfileRegion,
     };
-    use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
+    use cadmpeg_ir::ids::{EdgeId, FaceId, ShellId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId,
@@ -9898,9 +9922,31 @@ mod relation_tests {
                         design_references: vec![999],
                         ordinal: 0,
                     },
+                    PersistentSubentityTag {
+                        id: "matching-edge".into(),
+                        target: AttributeTarget::Edge(EdgeId("edge-b".into())),
+                        selector: 1,
+                        token: "13".into(),
+                        design_references: vec![331],
+                        ordinal: 0,
+                    },
                 ],
             ),
             [FaceId("face-b".into())]
+        );
+        assert_eq!(
+            super::dimension_recipe_candidate_edges(
+                &references[0],
+                &[PersistentSubentityTag {
+                    id: "matching-edge".into(),
+                    target: AttributeTarget::Edge(EdgeId("edge-b".into())),
+                    selector: 1,
+                    token: "13".into(),
+                    design_references: vec![331],
+                    ordinal: 0,
+                }],
+            ),
+            [EdgeId("edge-b".into())]
         );
     }
 

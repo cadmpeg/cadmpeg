@@ -474,6 +474,9 @@ pub struct DesignDimensionRecipeReference {
     /// Active solved faces carrying the exact selector/reference pair.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_faces: Vec<FaceId>,
+    /// Active solved edges carrying the exact selector/reference pair.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidate_edges: Vec<EdgeId>,
 }
 
 /// Paired-locus frame nested under a dimensional parameter companion.
