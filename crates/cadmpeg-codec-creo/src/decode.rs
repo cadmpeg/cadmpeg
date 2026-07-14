@@ -247,7 +247,13 @@ fn transfer_curve_expression_features(
             let external_dependencies = assignment
                 .dependencies
                 .iter()
-                .filter(|name| !parameters_by_name.contains_key(*name))
+                .filter(|name| name.as_str() != "t" && !parameters_by_name.contains_key(*name))
+                .cloned()
+                .collect::<Vec<_>>();
+            let intrinsic_dependencies = assignment
+                .dependencies
+                .iter()
+                .filter(|name| name.as_str() == "t")
                 .cloned()
                 .collect::<Vec<_>>();
             let mut properties = BTreeMap::new();
@@ -255,6 +261,12 @@ fn transfer_curve_expression_features(
                 properties.insert(
                     "external_dependencies".to_string(),
                     external_dependencies.join(","),
+                );
+            }
+            if !intrinsic_dependencies.is_empty() {
+                properties.insert(
+                    "independent_variables".to_string(),
+                    intrinsic_dependencies.join(","),
                 );
             }
             annotate(

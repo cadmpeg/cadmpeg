@@ -1707,9 +1707,12 @@ fn decode_preserves_counted_curve_expression_programs() {
         [result.ir.model.parameters[1].id.clone()]
     );
     assert_eq!(
-        result.ir.model.parameters[2].properties["external_dependencies"],
+        result.ir.model.parameters[2].properties["independent_variables"],
         "t"
     );
+    assert!(!result.ir.model.parameters[2]
+        .properties
+        .contains_key("external_dependencies"));
     assert_eq!(
         result.ir.model.features[0].source_content,
         result
