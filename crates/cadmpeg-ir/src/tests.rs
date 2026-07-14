@@ -1769,6 +1769,12 @@ fn periodic_curve_parameter_domain_is_checked() {
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
+
+    ir.model.edges[0].param_range = Some([-std::f64::consts::PI, std::f64::consts::PI]);
+    assert!(!validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ParameterDomain));
 }
 
 #[test]

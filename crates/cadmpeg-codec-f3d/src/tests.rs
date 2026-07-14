@@ -4717,6 +4717,182 @@ fn generated_source_less_face_writes_cylinder_surface_carrier() {
 }
 
 #[test]
+fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() {
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
+        VertexId,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+    };
+
+    let mut source_less = CadIr::empty(Default::default());
+    let body = BodyId("synthetic:cylinder-band:body#0".into());
+    let region = RegionId("synthetic:cylinder-band:region#0".into());
+    let shell = ShellId("synthetic:cylinder-band:shell#0".into());
+    let face = FaceId("synthetic:cylinder-band:face#0".into());
+    let surface = SurfaceId("synthetic:cylinder-band:surface#0".into());
+    let loops = [
+        LoopId("synthetic:cylinder-band:loop#bottom".into()),
+        LoopId("synthetic:cylinder-band:loop#top".into()),
+    ];
+    let coedges = [
+        CoedgeId("synthetic:cylinder-band:coedge#bottom".into()),
+        CoedgeId("synthetic:cylinder-band:coedge#top".into()),
+    ];
+    let edges = [
+        EdgeId("synthetic:cylinder-band:edge#bottom".into()),
+        EdgeId("synthetic:cylinder-band:edge#top".into()),
+    ];
+    let curves = [
+        CurveId("synthetic:cylinder-band:curve#bottom".into()),
+        CurveId("synthetic:cylinder-band:curve#top".into()),
+    ];
+    let vertices = [
+        VertexId("synthetic:cylinder-band:vertex#bottom".into()),
+        VertexId("synthetic:cylinder-band:vertex#top".into()),
+    ];
+    let points = [
+        PointId("synthetic:cylinder-band:point#bottom".into()),
+        PointId("synthetic:cylinder-band:point#top".into()),
+    ];
+
+    source_less.model.bodies.push(Body {
+        id: body.clone(),
+        kind: BodyKind::Sheet,
+        regions: vec![region.clone()],
+        transform: None,
+        name: Some("closed cylinder band".into()),
+        color: None,
+        visible: None,
+    });
+    source_less.model.regions.push(Region {
+        id: region.clone(),
+        body,
+        shells: vec![shell.clone()],
+    });
+    source_less.model.shells.push(Shell {
+        id: shell.clone(),
+        region,
+        faces: vec![face.clone()],
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    });
+    source_less.model.faces.push(Face {
+        id: face.clone(),
+        shell,
+        surface: surface.clone(),
+        sense: Sense::Forward,
+        loops: loops.to_vec(),
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    source_less.model.surfaces.push(Surface {
+        id: surface,
+        geometry: SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 5.0,
+        },
+        source_object: None,
+    });
+    for index in 0..2 {
+        let z = index as f64 * 10.0;
+        source_less.model.loops.push(Loop {
+            id: loops[index].clone(),
+            face: face.clone(),
+            coedges: vec![coedges[index].clone()],
+        });
+        source_less.model.coedges.push(Coedge {
+            id: coedges[index].clone(),
+            owner_loop: loops[index].clone(),
+            edge: edges[index].clone(),
+            next: coedges[index].clone(),
+            previous: coedges[index].clone(),
+            radial_next: coedges[index].clone(),
+            sense: if index == 0 {
+                Sense::Forward
+            } else {
+                Sense::Reversed
+            },
+            pcurve: None,
+            pcurve_parameter_range: None,
+        });
+        source_less.model.edges.push(Edge {
+            id: edges[index].clone(),
+            curve: Some(curves[index].clone()),
+            start: vertices[index].clone(),
+            end: vertices[index].clone(),
+            param_range: Some([-std::f64::consts::PI, std::f64::consts::PI]),
+            tolerance: None,
+        });
+        source_less.model.curves.push(Curve {
+            id: curves[index].clone(),
+            geometry: CurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, z),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 5.0,
+            },
+            source_object: None,
+        });
+        source_less.model.vertices.push(Vertex {
+            id: vertices[index].clone(),
+            point: points[index].clone(),
+            tolerance: None,
+        });
+        source_less.model.points.push(Point {
+            id: points[index].clone(),
+            position: Point3::new(-5.0, 0.0, z),
+        });
+    }
+    source_less.finalize();
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less closed cylinder band encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less closed cylinder band round trip");
+
+    assert_eq!(round_trip.ir.model.faces.len(), 1);
+    assert_eq!(round_trip.ir.model.loops.len(), 2);
+    assert_eq!(round_trip.ir.model.coedges.len(), 2);
+    assert_eq!(round_trip.ir.model.edges.len(), 2);
+    assert!(
+        round_trip.ir.model.edges.iter().all(|edge| {
+            edge.start == edge.end
+                && edge.param_range.is_some_and(|range| {
+                    (range[0] + std::f64::consts::PI).abs() < 1.0e-12
+                        && (range[1] - std::f64::consts::PI).abs() < 1.0e-12
+                })
+        }),
+        "{:?}",
+        round_trip.ir.model.edges
+    );
+    assert!(round_trip.ir.model.loops.iter().all(|loop_| {
+        loop_.coedges.len() == 1
+            && round_trip
+                .ir
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == loop_.coedges[0])
+                .is_some_and(|coedge| {
+                    coedge.next == coedge.id
+                        && coedge.previous == coedge.id
+                        && coedge.radial_next == coedge.id
+                })
+    }));
+}
+
+#[test]
 fn generated_source_less_face_writes_signed_sphere_surface_carrier() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 

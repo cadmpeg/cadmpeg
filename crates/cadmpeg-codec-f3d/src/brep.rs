@@ -3918,11 +3918,14 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             // so the range still anchors on the edge's
                             // vertices.
                             let sweep = b - a;
-                            a = a.rem_euclid(std::f64::consts::TAU);
-                            if std::f64::consts::TAU - a < 1.0e-9 {
-                                a = 0.0;
+                            let full_period = (sweep.abs() - std::f64::consts::TAU).abs() < 1.0e-9;
+                            if !full_period {
+                                a = a.rem_euclid(std::f64::consts::TAU);
+                                if std::f64::consts::TAU - a < 1.0e-9 {
+                                    a = 0.0;
+                                }
+                                b = a + sweep;
                             }
-                            b = a + sweep;
                         } else if curve_record.head == "straight" {
                             // Native line parameters are multiples of the
                             // stored direction vector, whose length is the

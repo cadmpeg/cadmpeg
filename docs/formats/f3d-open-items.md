@@ -8,7 +8,7 @@ This document records F3D semantics that the format specification does not yet d
 - The payload grammars for `crv_crv_v_bl_spl_sur`, `crv_srf_v_bl_spl_sur`, `sfcv_free_bl_spl_sur`, `VBL_OFFSURF` / `offsetvbsur`, `skin_spl_sur2`, and `sub_spl_sur` / `subsur` are undefined. These names cannot select the existing variable-blend, skin, or offset layouts without subtype-specific field boundaries.
 - The basic surface record names `offset` and `sur-sur-int` are registered carrier names, but their record payloads and exact-geometry relations are undefined. They remain unknown surface carriers unless a spline subtype supplies a solved cache and construction graph.
 - Variable-arity algebraic `readLaw` operators `MIN`, `MAX`, `SET`, `ROTATE`, and `STEP` have no defined serialized child-count or terminating delimiter. Their recursive boundaries cannot yet be decoded or written losslessly inside law, net, skin, and sweep payloads.
-- The full closed-sphere and closed-torus seam conventions remain unspecified.
+- The native loop and degenerate-edge layouts for untrimmed closed spheres and tori are unspecified.
 - The semantic role of the `POSITION` field after `cyl_spl_sur.extrusion_direction` is unresolved.
 - The `subset_int_cur`, `comp_int_cur`, and labelled two-curve `offset_int_cur` field sequences with source curve blocks serialized flat before the cache lack real-stream confirmation. The observed `offset_int_cur` form opens with its cache and nests the progenitor curve in a trailing subtype scope, and its offset-law fields are unresolved.
 

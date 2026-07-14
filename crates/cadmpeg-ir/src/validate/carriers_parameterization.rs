@@ -570,8 +570,12 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                 CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
                     // Canonical periodic domain: the start angle wrapped into
                     // one turn, the sweep at most a full turn. An arc crossing
-                    // the seam ends past `τ`.
-                    valid &= (0.0..tau).contains(&start) && end - start <= tau;
+                    // the seam ends past `τ`. A full-period edge retains
+                    // its serialized phase, which may use any equivalent
+                    // angular branch.
+                    let sweep = end - start;
+                    let full_period = (sweep - tau).abs() < 1.0e-9;
+                    valid &= sweep <= tau + 1.0e-9 && (full_period || (0.0..tau).contains(&start));
                 }
                 CurveGeometry::Nurbs(nurbs) => {
                     if let (Some(first), Some(last)) = (nurbs.knots.first(), nurbs.knots.last()) {
