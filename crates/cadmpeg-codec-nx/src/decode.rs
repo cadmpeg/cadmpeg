@@ -739,6 +739,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             &mut annotations,
         );
         complete_ext11_support_uv(&mut ir, &pending_ext11_support_uv);
+        complete_parameterization_equivalent_support_uv(&mut ir);
         complete_support_uv(&mut ir, &pending_ext11_support_uv);
         attach_completed_intersection_pcurves(
             &mut ir,
@@ -1824,6 +1825,120 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
             context.sides[side].pcurve = Some(pcurve);
         }
     }
+}
+
+pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
+    let replacements = ir
+        .model
+        .procedural_curves
+        .iter()
+        .enumerate()
+        .filter_map(|(procedural_index, procedural)| {
+            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            else {
+                return None;
+            };
+            let missing = context
+                .sides
+                .each_ref()
+                .map(|side| pcurve_requires_completion(side.pcurve.as_ref()));
+            let target = match missing {
+                [true, false] => 0,
+                [false, true] => 1,
+                _ => return None,
+            };
+            let source = 1 - target;
+            let (Some(target_surface), Some(source_surface), Some(source_pcurve)) = (
+                context.sides[target].surface.as_ref(),
+                context.sides[source].surface.as_ref(),
+                context.sides[source].pcurve.as_ref(),
+            ) else {
+                return None;
+            };
+            parameterization_equivalent_surfaces(ir, target_surface, source_surface)
+                .then(|| (procedural_index, target, source_pcurve.clone()))
+        })
+        .collect::<Vec<_>>();
+    for (procedural_index, side, pcurve) in replacements {
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            &mut ir.model.procedural_curves[procedural_index].definition
+        else {
+            unreachable!("definition selected above");
+        };
+        if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
+            context.sides[side].pcurve = Some(pcurve);
+        }
+    }
+}
+
+pub(crate) fn parameterization_equivalent_surfaces(
+    ir: &CadIr,
+    first: &SurfaceId,
+    second: &SurfaceId,
+) -> bool {
+    fn equivalent(
+        ir: &CadIr,
+        first: &SurfaceId,
+        second: &SurfaceId,
+        visited: &mut BTreeSet<(SurfaceId, SurfaceId)>,
+    ) -> bool {
+        if first == second {
+            return true;
+        }
+        if !visited.insert((first.clone(), second.clone())) {
+            return false;
+        }
+        let geometry = |id: &SurfaceId| {
+            ir.model
+                .surfaces
+                .iter()
+                .find(|surface| &surface.id == id)
+                .map(|surface| &surface.geometry)
+        };
+        let (Some(first_geometry), Some(second_geometry)) = (geometry(first), geometry(second))
+        else {
+            return false;
+        };
+        if first_geometry == second_geometry {
+            return true;
+        }
+        let construction = |geometry: &SurfaceGeometry| {
+            let SurfaceGeometry::Procedural { construction } = geometry else {
+                return None;
+            };
+            ir.model
+                .procedural_surfaces
+                .iter()
+                .find(|procedural| &procedural.id == construction)
+                .map(|procedural| &procedural.definition)
+        };
+        let (
+            Some(ProceduralSurfaceDefinition::Offset {
+                support: first_support,
+                distance: first_distance,
+                u_sense: first_u_sense,
+                v_sense: first_v_sense,
+                extension_flags: first_extensions,
+            }),
+            Some(ProceduralSurfaceDefinition::Offset {
+                support: second_support,
+                distance: second_distance,
+                u_sense: second_u_sense,
+                v_sense: second_v_sense,
+                extension_flags: second_extensions,
+            }),
+        ) = (construction(first_geometry), construction(second_geometry))
+        else {
+            return false;
+        };
+        first_distance.to_bits() == second_distance.to_bits()
+            && first_u_sense == second_u_sense
+            && first_v_sense == second_v_sense
+            && first_extensions == second_extensions
+            && equivalent(ir, first_support, second_support, visited)
+    }
+
+    equivalent(ir, first, second, &mut BTreeSet::new())
 }
 
 pub(crate) fn attach_completed_intersection_pcurves(
