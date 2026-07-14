@@ -360,6 +360,14 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
         records[0].fields["opaque_spans"].as_array().unwrap().len(),
         0
     );
+    assert_eq!(records[0].fields["terminal_scalar_frame"]["offset"], 0);
+    assert_eq!(
+        records[0].fields["terminal_scalar_frame"]["slots"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -378,6 +386,14 @@ fn decode_preserves_unframed_surface_parameter_spans() {
     assert_eq!(record.fields["opaque_spans"][0]["raw"][0], 0x11);
     assert_eq!(record.fields["opaque_spans"][1]["offset"], 2);
     assert_eq!(record.fields["opaque_spans"][1]["length"], 2);
+    assert_eq!(record.fields["terminal_scalar_frame"]["offset"], 4);
+    assert_eq!(
+        record.fields["terminal_scalar_frame"]["slots"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]

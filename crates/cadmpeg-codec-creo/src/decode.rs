@@ -259,9 +259,16 @@ struct CreoSurfaceParameterRecord {
     body: Vec<u8>,
     slots: Vec<CreoSurfaceParameterSlot>,
     opaque_spans: Vec<CreoSurfaceParameterOpaqueSpan>,
+    terminal_scalar_frame: Option<CreoSurfaceParameterScalarFrame>,
     row_offset: usize,
     body_offset: usize,
     source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoSurfaceParameterScalarFrame {
+    offset: usize,
+    slots: Vec<CreoSurfaceParameterSlot>,
 }
 
 #[derive(Serialize)]
@@ -336,6 +343,21 @@ fn surface_parameter_records(scan: &ContainerScan) -> Vec<CreoSurfaceParameterRe
                         length: span.length,
                     })
                     .collect(),
+                terminal_scalar_frame: record.terminal_scalar_frame.as_ref().map(|frame| {
+                    CreoSurfaceParameterScalarFrame {
+                        offset: frame.offset,
+                        slots: frame
+                            .slots
+                            .iter()
+                            .map(|slot| CreoSurfaceParameterSlot {
+                                value: slot.value,
+                                raw: slot.raw.clone(),
+                                offset: slot.offset,
+                                length: slot.length,
+                            })
+                            .collect(),
+                    }
+                }),
                 row_offset: record.offset,
                 body_offset: record.body_offset,
                 source_section,
