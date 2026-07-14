@@ -66,11 +66,19 @@ fn push_generated_scalar(bytes: &mut Vec<u8>, value: f64) {
 fn push_generated_plane_row(
     payload: &mut Vec<u8>,
     surface_id: u8,
+    reversed: bool,
     u_axis: [f64; 3],
     v_axis: [f64; 3],
     origin: [f64; 3],
 ) {
-    payload.extend_from_slice(&[surface_id, 0x22, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[
+        surface_id,
+        0x22,
+        4,
+        if reversed { 0xf6 } else { 0x01 },
+        0,
+        0,
+    ]);
     let normal = [
         u_axis[1] * v_axis[2] - u_axis[2] * v_axis[1],
         u_axis[2] * v_axis[0] - u_axis[0] * v_axis[2],
@@ -573,6 +581,7 @@ fn decode_types_schema_datum_from_its_unique_plane_carrier() {
     push_generated_plane_row(
         &mut geometry,
         7,
+        false,
         [1.0, 0.0, 0.0],
         [0.0, 1.0, 0.0],
         [0.0, 0.0, 1.0],
@@ -2202,6 +2211,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
     push_generated_plane_row(
         &mut payload,
         1,
+        true,
         [0.0, 1.0, 0.0],
         [0.0, 0.0, 1.0],
         [0.0, 0.0, 0.0],
@@ -2209,6 +2219,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
     push_generated_plane_row(
         &mut payload,
         2,
+        false,
         [0.0, 0.0, 1.0],
         [1.0, 0.0, 0.0],
         [0.0, 0.0, 0.0],
@@ -2216,6 +2227,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
     push_generated_plane_row(
         &mut payload,
         3,
+        false,
         [1.0, 0.0, 0.0],
         [0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0],
@@ -2223,6 +2235,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
     push_generated_plane_row(
         &mut payload,
         4,
+        false,
         [-2.0, -1.0, 2.0],
         [2.0, -2.0, 1.0],
         [1.0, 0.0, 0.0],
@@ -2262,6 +2275,24 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(model.curves.len(), 6);
     assert!(model.edges.iter().all(|edge| edge.curve.is_some()));
     assert_eq!(model.faces.len(), 4);
+    assert_eq!(
+        model
+            .faces
+            .iter()
+            .find(|face| face.id.as_str() == "creo:visibgeom:face#1")
+            .expect("reversed face")
+            .sense,
+        cadmpeg_ir::topology::Sense::Reversed
+    );
+    assert_eq!(
+        model
+            .faces
+            .iter()
+            .find(|face| face.id.as_str() == "creo:visibgeom:face#2")
+            .expect("forward face")
+            .sense,
+        cadmpeg_ir::topology::Sense::Forward
+    );
     assert_eq!(model.loops.len(), 4);
     assert_eq!(model.coedges.len(), 12);
     assert_eq!(model.shells.len(), 1);

@@ -5938,6 +5938,17 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                 .iter()
                 .find(|row| row.id == *face_id)
                 .map_or(0, |row| row.offset);
+            let face_sense = scan
+                .surface_rows
+                .iter()
+                .find(|row| row.id == *face_id)
+                .map_or(Sense::Forward, |row| {
+                    if row.reversed {
+                        Sense::Reversed
+                    } else {
+                        Sense::Forward
+                    }
+                });
             annotate(
                 annotations,
                 &face,
@@ -5960,7 +5971,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                 id: face.clone(),
                 shell: shell_id.clone(),
                 surface: SurfaceId(format!("creo:visibgeom:surface#{face_id}")),
-                sense: Sense::Forward,
+                sense: face_sense,
                 loops: loop_ids.clone(),
                 name: None,
                 color: None,
