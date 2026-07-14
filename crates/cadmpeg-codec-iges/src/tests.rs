@@ -1956,6 +1956,115 @@ fn multi_pcurve_boundary_file() -> Vec<u8> {
     ])
 }
 
+fn trimmed_plane_with_inner_loop_file() -> Vec<u8> {
+    let outer = "106,1,5,0,0,0,1,0,1,1,0,1,0,0;";
+    let inner = "106,1,5,0,0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75,0.25,0.25;";
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 108,
+            form: 0,
+            label: "PLANE".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "OUTMODEL".into(),
+            status: "00010000",
+            parameters: outer.into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "OUTPCURV".into(),
+            status: "00010500",
+            parameters: outer.into(),
+        },
+        OwnedTestEntity {
+            entity_type: 142,
+            form: 0,
+            label: "OUTBOUND".into(),
+            status: "00010000",
+            parameters: "142,0,1,5,3,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "INMODEL".into(),
+            status: "00010000",
+            parameters: inner.into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "INPCURVE".into(),
+            status: "00010500",
+            parameters: inner.into(),
+        },
+        OwnedTestEntity {
+            entity_type: 142,
+            form: 0,
+            label: "INBOUND".into(),
+            status: "00010000",
+            parameters: "142,0,1,11,9,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: "ANNULUS".into(),
+            status: "00000000",
+            parameters: "144,1,1,1,7,13;".into(),
+        },
+    ])
+}
+
+#[test]
+fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_with_inner_loop_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D15")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report.losses));
+    assert_eq!(face.loops.len(), 2);
+    let roles = face
+        .loops
+        .iter()
+        .map(|id| {
+            result
+                .ir
+                .model
+                .loops
+                .iter()
+                .find(|loop_| loop_.id == *id)
+                .unwrap()
+                .boundary_role
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        roles,
+        vec![
+            cadmpeg_ir::topology::LoopBoundaryRole::Outer,
+            cadmpeg_ir::topology::LoopBoundaryRole::Inner,
+        ]
+    );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn decode_preserves_ordered_type_141_pcurve_collections() {
     let result = IgesCodec
