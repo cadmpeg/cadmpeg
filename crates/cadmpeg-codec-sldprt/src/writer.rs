@@ -1644,6 +1644,21 @@ pub(crate) fn brep_body(
     schema_32001: bool,
 ) -> Result<Vec<u8>, CodecError> {
     let mut next = 2u16;
+    let derived_sphere_seam_curves = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            matches!(curve.geometry, CurveGeometry::Degenerate { .. })
+                && ir
+                    .annotations
+                    .provenance
+                    .get(&curve.id.0)
+                    .and_then(|note| note.tag.as_deref())
+                    == Some("derived_sphere_seam")
+        })
+        .map(|curve| curve.id.clone())
+        .collect::<HashSet<_>>();
     let surfaces = ir
         .model
         .surfaces
@@ -1654,6 +1669,7 @@ pub(crate) fn brep_body(
         .model
         .curves
         .iter()
+        .filter(|item| !derived_sphere_seam_curves.contains(&item.id))
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let points = ir
@@ -1709,6 +1725,9 @@ pub(crate) fn brep_body(
         compact(&mut out, kind, surfaces[&surface.id], &values);
     }
     for curve in &ir.model.curves {
+        if derived_sphere_seam_curves.contains(&curve.id) {
+            continue;
+        }
         if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
             write_nurbs_curve(&mut out, curves[&curve.id], nurbs, &mut next, length_scale)?;
             continue;
@@ -1755,7 +1774,11 @@ pub(crate) fn brep_body(
             0,
             0,
             0,
-            edge.curve.as_ref().map_or(0, |id| curves[id]),
+            edge.curve
+                .as_ref()
+                .and_then(|id| curves.get(id))
+                .copied()
+                .unwrap_or(0),
             0,
             0,
         ] {

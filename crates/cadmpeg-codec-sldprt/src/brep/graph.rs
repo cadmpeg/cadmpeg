@@ -2489,6 +2489,100 @@ fn synthesize_sphere_seams(
     annotations: &mut AnnotationBuilder,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
 ) {
+    let surface_geometry = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, &surface.geometry))
+        .collect::<HashMap<_, _>>();
+    let loop_coedges = out
+        .loops
+        .iter()
+        .map(|lp| (&lp.id, &lp.coedges))
+        .collect::<HashMap<_, _>>();
+    let coedge_edges = out
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, &coedge.edge))
+        .collect::<HashMap<_, _>>();
+    let edge_indices = out
+        .edges
+        .iter()
+        .enumerate()
+        .map(|(index, edge)| (&edge.id, index))
+        .collect::<HashMap<_, _>>();
+    let curve_geometry = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<HashMap<_, _>>();
+    let mut existing = Vec::new();
+    for face in &out.faces {
+        let Some(SurfaceGeometry::Sphere {
+            center,
+            radius,
+            axis,
+            ..
+        }) = surface_geometry.get(&face.surface).copied()
+        else {
+            continue;
+        };
+        let [loop_id] = face.loops.as_slice() else {
+            continue;
+        };
+        let Some(coedge_ids) = loop_coedges.get(loop_id).copied() else {
+            continue;
+        };
+        if coedge_ids.len() != 4 {
+            continue;
+        }
+        let seam_edges = coedge_ids
+            .iter()
+            .filter_map(|coedge| coedge_edges.get(coedge).copied())
+            .filter_map(|edge| edge_indices.get(edge).map(|index| (edge.clone(), *index)))
+            .filter(|(_, index)| out.edges[*index].curve.is_none())
+            .collect::<Vec<_>>();
+        let circle_count = coedge_ids
+            .iter()
+            .filter_map(|coedge| coedge_edges.get(coedge).copied())
+            .filter_map(|edge| edge_indices.get(edge).copied())
+            .filter(|index| {
+                out.edges[*index]
+                    .curve
+                    .as_ref()
+                    .and_then(|curve| curve_geometry.get(curve))
+                    .is_some_and(|geometry| matches!(geometry, CurveGeometry::Circle { .. }))
+            })
+            .count();
+        if let [(edge_id, edge_index)] = seam_edges.as_slice() {
+            if circle_count != 3 {
+                continue;
+            }
+            existing.push((
+                edge_id.clone(),
+                *edge_index,
+                cadmpeg_ir::math::Point3::new(
+                    center.x + radius * axis.x,
+                    center.y + radius * axis.y,
+                    center.z + radius * axis.z,
+                ),
+            ));
+        }
+    }
+    for (edge_id, edge_index, point) in existing {
+        let suffix = edge_id.0.rsplit('#').next().unwrap_or("0");
+        let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam:{suffix}"));
+        annotations
+            .note(&curve_id.0, source_stream, 0)
+            .tag("derived_sphere_seam");
+        annotations.exactness(&curve_id.0, Exactness::Derived);
+        out.curves.push(Curve {
+            id: curve_id.clone(),
+            source_object: None,
+            geometry: CurveGeometry::Degenerate { point },
+        });
+        out.edges[edge_index].curve = Some(curve_id);
+    }
+
     let surfaces: HashMap<_, _> = out
         .surfaces
         .iter()
@@ -2554,12 +2648,14 @@ fn synthesize_sphere_seams(
         let suffix = face.0.rsplit('#').next().unwrap_or("0");
         let point_id = PointId(format!("sldprt:brep:point#sphere-seam:{suffix}"));
         let vertex_id = VertexId(format!("sldprt:brep:vertex#sphere-seam:{suffix}"));
+        let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam:{suffix}"));
         let edge_id = EdgeId(format!("sldprt:brep:edge#sphere-seam:{suffix}"));
         let coedge_id = CoedgeId(format!("sldprt:brep:coedge#sphere-seam:{suffix}"));
         let pcurve_id = PcurveId(format!("sldprt:brep:pcurve#sphere-seam:{suffix}"));
         for id in [
             &point_id.0,
             &vertex_id.0,
+            &curve_id.0,
             &edge_id.0,
             &coedge_id.0,
             &pcurve_id.0,
@@ -2569,13 +2665,19 @@ fn synthesize_sphere_seams(
                 .tag("derived_sphere_seam");
             annotations.exactness(id, Exactness::Derived);
         }
+        let seam_point = cadmpeg_ir::math::Point3::new(
+            center.x + radius * axis.x,
+            center.y + radius * axis.y,
+            center.z + radius * axis.z,
+        );
         out.points.push(Point {
             id: point_id.clone(),
-            position: cadmpeg_ir::math::Point3::new(
-                center.x + radius * axis.x,
-                center.y + radius * axis.y,
-                center.z + radius * axis.z,
-            ),
+            position: seam_point,
+        });
+        out.curves.push(Curve {
+            id: curve_id.clone(),
+            source_object: None,
+            geometry: CurveGeometry::Degenerate { point: seam_point },
         });
         out.vertices.push(Vertex {
             id: vertex_id.clone(),
@@ -2584,7 +2686,7 @@ fn synthesize_sphere_seams(
         });
         out.edges.push(Edge {
             id: edge_id.clone(),
-            curve: None,
+            curve: Some(curve_id),
             start: vertex_id.clone(),
             end: vertex_id,
             param_range: None,

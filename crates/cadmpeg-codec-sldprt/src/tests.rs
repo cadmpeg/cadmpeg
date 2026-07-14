@@ -5478,6 +5478,18 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         })
         .expect("sphere seam");
     assert_eq!(seam.start, seam.end);
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| seam.curve.as_ref() == Some(&curve.id))
+        .expect("sphere seam curve");
+    assert!(matches!(
+        curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Degenerate { point }
+            if point == cadmpeg_ir::math::Point3::new(0.0, 0.0, 1000.0)
+    ));
     let vertex = result
         .ir
         .model
