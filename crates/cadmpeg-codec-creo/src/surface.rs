@@ -580,6 +580,11 @@ const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
     "frst_cntr_crv_hdr_ptr",
 ];
 
+fn prototype_parameter_allowed(family: &SurfacePrototypeFamily, name: &str) -> bool {
+    PROTOTYPE_PARAMETER_NAMES.contains(&name)
+        && !(matches!(family, SurfacePrototypeFamily::Torus) && matches!(name, "i_pnts" | "c_pnts"))
+}
+
 fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamedValue {
     let scalar_field = matches!(name, "radius" | "radius1" | "radius2" | "half_angle");
     if scalar_field && body == [0x18] {
@@ -667,7 +672,8 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
         let Some(close) = find(payload, b")\0", family_start) else {
             break;
         };
-        let family = String::from_utf8_lossy(&payload[family_start..close]);
+        let family_name = String::from_utf8_lossy(&payload[family_start..close]);
+        let family = SurfacePrototypeFamily::from_name(&family_name);
         let mut record_end = find(payload, b"srf_prim_ptr(", close + 2).unwrap_or(payload.len());
         if let Some(at) = find(payload, b"srf_prim_ptr\0", close + 2) {
             record_end = record_end.min(at);
@@ -696,7 +702,7 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
             let name_start = token_offset + 2;
             let name_end = token_offset + token.length - 1;
             let name = String::from_utf8_lossy(&payload[name_start..name_end]);
-            if !PROTOTYPE_PARAMETER_NAMES.contains(&name.as_ref()) {
+            if !prototype_parameter_allowed(&family, &name) {
                 continue;
             }
             let value_offset = token_offset + token.length;
@@ -720,7 +726,7 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
             });
         }
         records.push(SurfacePrototypeRecord {
-            family: SurfacePrototypeFamily::from_name(&family),
+            family,
             parameters,
             offset: record_start,
         });
@@ -1559,6 +1565,28 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].parameters.len(), 1);
         assert_eq!(records[0].parameters[0].name, "local_sys");
+    }
+
+    #[test]
+    fn analytic_prototype_does_not_claim_nested_curve_parameters() {
+        let payload = b"srf_prim_ptr(torus)\0\
+            \xe0\x02local_sys\0\xf9\x04\x03\x0f\x18\xe5\x0f\x18\xe5\x0f\x18\xe5\
+            \xe0\x02radius1\0\x18\
+            \xe0\x02radius2\0\x2f\x05\x00\
+            \xe0\x00curve(b_spline)\0\xe3\
+            \xe0\x00c_pnts\0\xf8\x04\xf7\x50\xfb";
+
+        let records = named_prototype_records(payload);
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            records[0]
+                .parameters
+                .iter()
+                .map(|parameter| parameter.name.as_str())
+                .collect::<Vec<_>>(),
+            ["local_sys", "radius1", "radius2"]
+        );
     }
 
     #[test]
