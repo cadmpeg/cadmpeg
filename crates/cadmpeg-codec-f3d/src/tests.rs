@@ -4460,7 +4460,7 @@ fn generated_source_less_f3d_rejects_subds() {
 }
 
 #[test]
-fn generated_source_less_f3d_rejects_design_parameters() {
+fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -4490,9 +4490,100 @@ fn generated_source_less_f3d_rejects_design_parameters() {
     let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(message)
-            if message.contains("Design parameter records are not writable")
+        cadmpeg_ir::codec::CodecError::Malformed(message)
+            if message.contains("must equal the projection")
     ));
+}
+
+#[test]
+fn generated_source_less_f3d_writes_document_design_parameters() {
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let native_id = format!("f3d:{stream}:design-parameter#0");
+    f3d_native_mut(&mut source_less)
+        .design_parameters
+        .push(crate::records::DesignParameter {
+            id: native_id.clone(),
+            byte_offset: 0,
+            class_tag: "305".into(),
+            record_index: 700,
+            prefix_value: 0,
+            prefix_value_offset: 22,
+            source_ordinal: 0,
+            owner_record_index: None,
+            expression: "Width / 2".into(),
+            expression_offset: 36,
+            source_kind: "User Parameter".into(),
+            source_kind_offset: 70,
+            kind: crate::records::DesignParameterKind::User,
+            unit: Some("mm".into()),
+            unit_offset: Some(110),
+            name: "HalfWidth".into(),
+            name_offset: 120,
+            evaluated_value: 3.0,
+            evaluated_value_offset: 150,
+        });
+    f3d_native_mut(&mut source_less)
+        .design_parameters
+        .push(crate::records::DesignParameter {
+            id: format!("f3d:{stream}:design-parameter#1"),
+            byte_offset: 0,
+            class_tag: "305".into(),
+            record_index: 701,
+            prefix_value: 0,
+            prefix_value_offset: 22,
+            source_ordinal: 1,
+            owner_record_index: None,
+            expression: "60 mm".into(),
+            expression_offset: 36,
+            source_kind: "User Parameter".into(),
+            source_kind_offset: 70,
+            kind: crate::records::DesignParameterKind::User,
+            unit: Some("mm".into()),
+            unit_offset: Some(110),
+            name: "Width".into(),
+            name_offset: 120,
+            evaluated_value: 6.0,
+            evaluated_value_offset: 150,
+        });
+    let (_, parameters) = crate::design::project_parameter_design(
+        &f3d_native(&source_less).design_parameters,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    source_less.model.parameters = parameters;
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less document parameter encode");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less document parameter round trip");
+    let mut round_trip_parameters = decoded.ir.model.parameters.clone();
+    let mut expected_parameters = source_less.model.parameters.clone();
+    for parameter in &mut round_trip_parameters {
+        parameter.native_ref = None;
+    }
+    for parameter in &mut expected_parameters {
+        parameter.native_ref = None;
+    }
+    assert_eq!(round_trip_parameters, expected_parameters);
+    assert_eq!(f3d_native(&decoded.ir).design_parameters.len(), 2);
+    assert_eq!(
+        decoded.ir.model.parameters[0].dependencies,
+        [cadmpeg_ir::features::ParameterId(format!(
+            "f3d:model:parameter#f3d:{stream}@701"
+        ))]
+    );
+    assert_eq!(
+        f3d_native(&decoded.ir).design_parameters[0].evaluated_value,
+        3.0
+    );
 }
 
 #[test]

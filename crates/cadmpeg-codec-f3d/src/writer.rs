@@ -456,12 +456,41 @@ fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecErro
 }
 
 fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), CodecError> {
+    let mut parameter_indices = BTreeSet::new();
+    let mut parameter_ordinals = BTreeSet::new();
     for parameter in &native.design_parameters {
         let expected_prefix = crate::design::design_parameter_prefix(&parameter.source_kind);
         if parameter.prefix_value != expected_prefix {
             return Err(CodecError::Malformed(format!(
                 "F3D Design parameter {} has discriminator {}, expected {expected_prefix} for {}",
                 parameter.id, parameter.prefix_value, parameter.source_kind
+            )));
+        }
+        validate_dynamic_class_tag(&parameter.class_tag, "Design parameter")?;
+        if parameter.kind != crate::records::DesignParameterKind::User
+            || parameter.source_kind != "User Parameter"
+            || parameter.owner_record_index.is_some()
+        {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D owned Design parameter records are not writable".into(),
+            ));
+        }
+        if parameter.expression.is_empty()
+            || parameter.name.is_empty()
+            || parameter.unit.as_ref().is_some_and(String::is_empty)
+            || !parameter.evaluated_value.is_finite()
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design parameter {} has an invalid document parameter value",
+                parameter.id
+            )));
+        }
+        if !parameter_indices.insert(parameter.record_index)
+            || !parameter_ordinals.insert(parameter.source_ordinal)
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design parameter {} duplicates a record index or source ordinal",
+                parameter.id
             )));
         }
     }
@@ -1247,9 +1276,21 @@ fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
 
 fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
     let native = f3d_native(target)?.unwrap_or_default();
-    if !target.model.parameters.is_empty()
-        || !native.design_parameters.is_empty()
-        || !native.design_parameter_companions.is_empty()
+    let (_, projected_parameters) = crate::design::project_parameter_design(
+        &native.design_parameters,
+        &native.design_parameter_owners,
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_fillet_radius_groups,
+        &native.design_face_operands,
+        &native.design_sketch_placements,
+    );
+    if target.model.parameters != projected_parameters {
+        return Err(CodecError::Malformed(
+            "neutral F3D parameters must equal the projection of native Design parameters".into(),
+        ));
+    }
+    if !native.design_parameter_companions.is_empty()
         || !native.design_dimension_locus_pairs.is_empty()
         || !native.design_dimension_locus_groups.is_empty()
         || !native.design_dimension_null_locus_pairs.is_empty()
@@ -1267,7 +1308,8 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         .bodies
         .iter()
         .any(|body| body.visible.is_some());
-    if native.construction_recipes.is_empty()
+    if native.design_parameters.is_empty()
+        && native.construction_recipes.is_empty()
         && native.persistent_references.is_empty()
         && native.lost_edge_references.is_empty()
         && native.design_body_members.is_empty()
@@ -1283,6 +1325,9 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
     }
 
     let mut out = Vec::new();
+    for parameter in &native.design_parameters {
+        encode_document_parameter(&mut out, parameter)?;
+    }
     let mut body_map = native
         .design_material_assignments
         .iter()
@@ -1469,6 +1514,34 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
     }
     Ok(Some(out))
+}
+
+fn encode_document_parameter(
+    out: &mut Vec<u8>,
+    parameter: &crate::records::DesignParameter,
+) -> Result<(), CodecError> {
+    validate_dynamic_class_tag(&parameter.class_tag, "Design parameter")?;
+    native_lp_ascii(out, &parameter.class_tag)?;
+    out.extend_from_slice(&parameter.record_index.to_le_bytes());
+    out.extend_from_slice(&[0; 11]);
+    out.extend_from_slice(&parameter.prefix_value.to_le_bytes());
+    out.push(0);
+    out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
+    out.push(0);
+    native_lp_utf16(out, &parameter.expression)?;
+    out.extend_from_slice(&[0; 8]);
+    out.push(1);
+    native_lp_utf16(out, &parameter.source_kind)?;
+    out.extend_from_slice(&0u32.to_le_bytes());
+    if let Some(unit) = &parameter.unit {
+        native_lp_utf16(out, unit)?;
+    } else {
+        out.extend_from_slice(&0u32.to_le_bytes());
+    }
+    native_lp_utf16(out, &parameter.name)?;
+    out.extend_from_slice(&parameter.evaluated_value.to_le_bytes());
+    out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    Ok(())
 }
 
 fn encode_sketch_record_header(
