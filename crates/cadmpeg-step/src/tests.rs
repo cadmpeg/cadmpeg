@@ -1259,13 +1259,34 @@ fn decode_transfers_ap242_semantic_pmi() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let options = StepWriteOptions {
         schema: StepSchema::Ap242Edition3,
-        unsupported: StepUnsupportedPolicy::Reject,
         ..StepWriteOptions::default()
     };
     let mut output = Vec::new();
-    let error = write_step(&result.ir, &mut output, &options).expect_err("PMI refusal");
-    assert!(matches!(error, StepError::Unsupported(message) if message.contains("PMI annotation")));
-    assert!(output.is_empty());
+    let report = write_step(&result.ir, &mut output, &options).expect("write semantic PMI");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("PMI annotation")));
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written semantic PMI");
+    assert_eq!(roundtrip.ir.model.pmi.len(), 5);
+    assert!(roundtrip.ir.model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::DatumSystem { references }
+            if references.len() == 1
+                && references[0].modifiers
+                    == ["maximum_material_requirement", "distance:0.2"]
+    )));
+    assert!(roundtrip.ir.model.pmi.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::Dimension {
+            nominal: Some(cadmpeg_ir::PmiValue { value: 12.0, .. }),
+            lower_deviation: Some(cadmpeg_ir::PmiValue { value: -0.1, .. }),
+            upper_deviation: Some(cadmpeg_ir::PmiValue { value: 0.2, .. }),
+            ..
+        }
+    )));
 }
 
 #[test]

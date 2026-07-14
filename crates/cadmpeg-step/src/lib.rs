@@ -166,6 +166,10 @@ impl StepSchema {
         )
     }
 
+    const fn supports_semantic_pmi(self) -> bool {
+        self.supports_tessellation()
+    }
+
     const fn application_protocol(self) -> (&'static str, &'static str, i32) {
         match self {
             Self::Ap203Edition1 => (
@@ -329,6 +333,7 @@ struct Builder<'a> {
     /// Display colors that could not be attached to an emitted STEP item.
     unstyled_colors: usize,
     unsupported_standalone_geometry: usize,
+    written_pmi: usize,
 }
 
 impl<'a> Builder<'a> {
@@ -405,6 +410,7 @@ impl<'a> Builder<'a> {
             body_shape_refs: HashMap::new(),
             unstyled_colors: 0,
             unsupported_standalone_geometry: 0,
+            written_pmi: 0,
         }
     }
 
@@ -470,6 +476,7 @@ impl<'a> Builder<'a> {
         self.emit_presentation(context);
         self.emit_tessellations(context);
         self.emit_layers();
+        self.emit_pmi(context);
         self.note_unrepresented();
     }
 
@@ -1631,6 +1638,257 @@ impl<'a> Builder<'a> {
         Some(r)
     }
 
+    fn emit_pmi(&mut self, context: Ref) {
+        use cadmpeg_ir::pmi::{DimensionKind, GeometricToleranceKind, PmiDefinition, PmiTarget};
+
+        if self.ir.model.pmi.is_empty() || !self.schema.supports_semantic_pmi() {
+            return;
+        }
+        let annotations = self.ir.model.pmi.clone();
+        let pds = self
+            .emitter
+            .emit("PRODUCT_DEFINITION_SHAPE", "'PMI shape','',$");
+        let mut annotation_refs = HashMap::new();
+        let mut aspects = HashMap::<String, Ref>::new();
+        for annotation in &annotations {
+            for target in &annotation.targets {
+                let PmiTarget::ShapeAspect { source_id } = target else {
+                    continue;
+                };
+                aspects.entry(source_id.clone()).or_insert_with(|| {
+                    self.emitter.emit(
+                        "SHAPE_ASPECT",
+                        &format!("{},'',{pds},.T.", string(source_id)),
+                    )
+                });
+            }
+        }
+        let fallback_aspect = self
+            .emitter
+            .emit("SHAPE_ASPECT", &format!("'PMI target','',{pds},.T."));
+        let target_ref = |annotation: &cadmpeg_ir::PmiAnnotation| {
+            annotation.targets.iter().find_map(|target| {
+                if let PmiTarget::ShapeAspect { source_id } = target {
+                    aspects.get(source_id).copied()
+                } else {
+                    None
+                }
+            })
+        };
+        let targets_exact = |annotation: &cadmpeg_ir::PmiAnnotation| {
+            annotation
+                .targets
+                .iter()
+                .all(|target| matches!(target, PmiTarget::ShapeAspect { .. }))
+        };
+
+        for annotation in &annotations {
+            if let PmiDefinition::Datum { identification } = &annotation.definition {
+                let datum = self.emitter.emit(
+                    "DATUM",
+                    &format!(
+                        "{},$,{pds},.F.,{}",
+                        string(annotation.name.as_deref().unwrap_or("")),
+                        string(identification)
+                    ),
+                );
+                annotation_refs.insert(annotation.id.clone(), datum);
+                self.written_pmi += usize::from(targets_exact(annotation));
+            }
+        }
+        for annotation in &annotations {
+            if let PmiDefinition::DatumSystem { references } = &annotation.definition {
+                let compartments = references
+                    .iter()
+                    .filter_map(|reference| {
+                        let datum = annotation_refs.get(&reference.datum)?;
+                        let mut modifiers = Vec::new();
+                        for modifier in &reference.modifiers {
+                            if let Some((kind, value)) = modifier.split_once(':') {
+                                let value = value.parse::<f64>().ok()?;
+                                let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue {
+                                    value,
+                                    quantity: cadmpeg_ir::PmiQuantity::Length,
+                                });
+                                modifiers.push(
+                                    self.emitter
+                                        .emit(
+                                            "DATUM_REFERENCE_MODIFIER_WITH_VALUE",
+                                            &format!(
+                                                ".{},{measure}",
+                                                format!("{}.", kind.to_ascii_uppercase())
+                                            ),
+                                        )
+                                        .to_string(),
+                                );
+                            } else {
+                                modifiers.push(format!(".{}.", modifier.to_ascii_uppercase()));
+                            }
+                        }
+                        let modifiers = modifiers.join(",");
+                        Some(self.emitter.emit(
+                            "DATUM_REFERENCE_COMPARTMENT",
+                            &format!("'',$,{pds},.F.,{datum},({modifiers})"),
+                        ))
+                    })
+                    .collect::<Vec<_>>();
+                let system = self.emitter.emit(
+                    "DATUM_SYSTEM",
+                    &format!(
+                        "{},'',{pds},.F.,{}",
+                        string(annotation.name.as_deref().unwrap_or("")),
+                        refs(&compartments)
+                    ),
+                );
+                annotation_refs.insert(annotation.id.clone(), system);
+                self.written_pmi += usize::from(targets_exact(annotation));
+            }
+        }
+        for annotation in &annotations {
+            match &annotation.definition {
+                PmiDefinition::Dimension {
+                    dimension,
+                    nominal,
+                    lower_deviation,
+                    upper_deviation,
+                    limits_and_fits,
+                } => {
+                    let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
+                    let name = annotation.name.as_deref().unwrap_or("");
+                    let entity = match dimension {
+                        DimensionKind::Size => "DIMENSIONAL_SIZE",
+                        DimensionKind::Location => "DIMENSIONAL_LOCATION",
+                        DimensionKind::Angular => "ANGULAR_SIZE",
+                        DimensionKind::Diameter => "DIAMETER_SIZE",
+                        DimensionKind::Radius => "RADIUS_SIZE",
+                        DimensionKind::Other(value) => {
+                            let upper = value.to_ascii_uppercase();
+                            if upper.ends_with("_SIZE") || upper.ends_with("_LOCATION") {
+                                Box::leak(upper.into_boxed_str())
+                            } else {
+                                "DIMENSIONAL_SIZE"
+                            }
+                        }
+                    };
+                    let parameters = match dimension {
+                        DimensionKind::Location => format!("{aspect},{aspect},{}", string(name)),
+                        DimensionKind::Angular => format!("{aspect},{},.SMALL.", string(name)),
+                        _ => format!("{aspect},{}", string(name)),
+                    };
+                    let characteristic = self.emitter.emit(entity, &parameters);
+                    if let Some(value) = nominal {
+                        let measure = self.emit_pmi_measure(*value);
+                        let representation = self.emitter.emit(
+                            "SHAPE_DIMENSION_REPRESENTATION",
+                            &format!("'',({measure}),{context}"),
+                        );
+                        self.emitter.emit(
+                            "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION",
+                            &format!("{characteristic},{representation}"),
+                        );
+                    }
+                    if let (Some(lower), Some(upper)) = (lower_deviation, upper_deviation) {
+                        let lower = self.emit_pmi_measure(*lower);
+                        let upper = self.emit_pmi_measure(*upper);
+                        let tolerance = self
+                            .emitter
+                            .emit("TOLERANCE_VALUE", &format!("{lower},{upper}"));
+                        self.emitter.emit(
+                            "PLUS_MINUS_TOLERANCE",
+                            &format!("{tolerance},{characteristic}"),
+                        );
+                    }
+                    if let Some(fit) = limits_and_fits {
+                        let fit = self.emitter.emit(
+                            "LIMITS_AND_FITS",
+                            &format!(
+                                "{},{},{},{}",
+                                string(&fit.form_variance),
+                                string(&fit.zone_variance),
+                                string(&fit.grade),
+                                string(&fit.source)
+                            ),
+                        );
+                        self.emitter
+                            .emit("PLUS_MINUS_TOLERANCE", &format!("{fit},{characteristic}"));
+                    }
+                    annotation_refs.insert(annotation.id.clone(), characteristic);
+                    let deviations_exact = lower_deviation.is_some() == upper_deviation.is_some();
+                    self.written_pmi += usize::from(targets_exact(annotation) && deviations_exact);
+                }
+                PmiDefinition::GeometricTolerance {
+                    tolerance,
+                    magnitude,
+                    datum_system,
+                } => {
+                    let kind_exact = !matches!(tolerance, GeometricToleranceKind::Other(value) if value != "geometric_tolerance");
+                    let entity = match tolerance {
+                        GeometricToleranceKind::Straightness => "STRAIGHTNESS_TOLERANCE",
+                        GeometricToleranceKind::Flatness => "FLATNESS_TOLERANCE",
+                        GeometricToleranceKind::Roundness => "ROUNDNESS_TOLERANCE",
+                        GeometricToleranceKind::Cylindricity => "CYLINDRICITY_TOLERANCE",
+                        GeometricToleranceKind::LineProfile => "LINE_PROFILE_TOLERANCE",
+                        GeometricToleranceKind::SurfaceProfile => "SURFACE_PROFILE_TOLERANCE",
+                        GeometricToleranceKind::Angularity => "ANGULARITY_TOLERANCE",
+                        GeometricToleranceKind::Perpendicularity => "PERPENDICULARITY_TOLERANCE",
+                        GeometricToleranceKind::Parallelism => "PARALLELISM_TOLERANCE",
+                        GeometricToleranceKind::Position => "POSITION_TOLERANCE",
+                        GeometricToleranceKind::Concentricity => "CONCENTRICITY_TOLERANCE",
+                        GeometricToleranceKind::Symmetry => "SYMMETRY_TOLERANCE",
+                        GeometricToleranceKind::CircularRunout => "CIRCULAR_RUNOUT_TOLERANCE",
+                        GeometricToleranceKind::TotalRunout => "TOTAL_RUNOUT_TOLERANCE",
+                        GeometricToleranceKind::Other(_) => "GEOMETRIC_TOLERANCE",
+                    };
+                    let measure = self.emit_pmi_measure(*magnitude);
+                    let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
+                    let datum = datum_system
+                        .as_ref()
+                        .and_then(|id| annotation_refs.get(id))
+                        .map_or_else(String::new, |datum| format!(",{datum}"));
+                    let tolerance_ref = self.emitter.emit(
+                        entity,
+                        &format!(
+                            "{},'',{measure},{aspect}{datum}",
+                            string(annotation.name.as_deref().unwrap_or(""))
+                        ),
+                    );
+                    annotation_refs.insert(annotation.id.clone(), tolerance_ref);
+                    self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
+                }
+                PmiDefinition::Datum { .. }
+                | PmiDefinition::DatumSystem { .. }
+                | PmiDefinition::Presentation { .. } => {}
+            }
+        }
+    }
+
+    fn emit_pmi_measure(&mut self, value: cadmpeg_ir::PmiValue) -> Ref {
+        use cadmpeg_ir::pmi::PmiQuantity;
+        let (entity, typed, unit) = match value.quantity {
+            PmiQuantity::Length => (
+                "LENGTH_MEASURE_WITH_UNIT",
+                "LENGTH_MEASURE",
+                self.emit_length_unit(),
+            ),
+            PmiQuantity::Angle => (
+                "PLANE_ANGLE_MEASURE_WITH_UNIT",
+                "PLANE_ANGLE_MEASURE",
+                self.emitter.emit_raw(
+                    "PLANE_ANGLE_UNIT",
+                    "( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) )",
+                ),
+            ),
+            PmiQuantity::Ratio => (
+                "MEASURE_WITH_UNIT",
+                "RATIO_MEASURE",
+                self.emitter
+                    .emit_raw("RATIO_UNIT", "( NAMED_UNIT(*) RATIO_UNIT() )"),
+            ),
+        };
+        self.emitter
+            .emit(entity, &format!("{typed}({}),{unit}", real(value.value)))
+    }
+
     /// Record aggregate loss notes for IR content the writer does not carry.
     fn note_unrepresented(&mut self) {
         let nonstandard_analytic_surfaces = self
@@ -1747,13 +2005,14 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.ir.model.pmi.is_empty() {
+        let unwritten_pmi = self.ir.model.pmi.len().saturating_sub(self.written_pmi);
+        if unwritten_pmi > 0 {
             self.loss(
                 LossCategory::Attribute,
                 Severity::Warning,
                 format!(
                     "{} PMI annotation(s) were not written to STEP",
-                    self.ir.model.pmi.len()
+                    unwritten_pmi
                 ),
             );
         }
