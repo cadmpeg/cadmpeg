@@ -39,7 +39,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | SolidWorks `.sldprt`                       | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
 | Rhino `.3dm` (archive 50/60/70/80)         | **L3 tested**  | SubD control cages, display meshes, native extrusion and instance constructions                       |
 | CATIA V5 `.CATPart` (standard-nested band) | **L2 claimed** | conditionally connected B-rep                                                                         |
-| Siemens NX `.prt` (`RMFastLoad`-selected body images) | **L3 claimed** | external-dependency inspection, numeric expressions, named arrangements                 |
+| Siemens NX `.prt` (selected or terminal-lineage-resolved body images) | **L3 claimed** | external-dependency inspection, numeric expressions, named arrangements                 |
 | Siemens NX `.prt` (unselected multi-partition history) | **L2 claimed** | connected candidate B-reps, external-dependency inspection                              |
 | CATIA V5 `.CATPart` (other layout bands)   | **L1 claimed** |                                                                                                       |
 | Creo Parametric `.prt`                     | **L1 claimed** | derived datum planes, prototype geometry census                                                       |
@@ -66,7 +66,7 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 - **SolidWorks `.sldprt` (L4 tested):** connected model reads, typed design records, native writes, and round trips.
 - **Rhino `.3dm` (L3 tested for archive 50/60/70/80):** curves, surfaces, meshes, connected B-rep, SubD, extrusions, and expanded instances. V3/V4 score L1; V1/V2 and archive 5 score L0. Read only.
 - **CATIA V5 `.CATPart` (L2 claimed for the standard-nested band):** exact carriers and conditionally connected topology. Other layout bands score L1. Read only.
-- **Siemens NX `.prt` (L3 claimed for `RMFastLoad`-selected single- and multi-body images; L2 claimed for unselected multi-partition history):** exact carriers and connected topology. Read only.
+- **Siemens NX `.prt` (L3 claimed for single-body, `RMFastLoad`-selected, and terminal-feature-lineage-resolved body images; L2 claimed for unresolved multi-partition history):** exact carriers and connected topology. Read only.
 - **Creo Parametric `.prt` (L1 claimed):** container navigation, derived datum planes, and prototype geometry inspection. Read only.
 - **STEP AP214 (translation):** partial B-rep export with explicit loss reporting.
 
@@ -149,7 +149,7 @@ See [`formats/f3d.md`](formats/f3d.md) and [`formats/f3d-open-items.md`](formats
 
 **Kernel:** Parasolid in an SPLMSSTR container
 
-**Ladder: L3 claimed for `RMFastLoad`-selected single- and multi-body images; L2 claimed for unselected multi-partition history.** L4 requires ordered feature and sketch records with dependencies. Unselected multi-partition history requires final body composition to reach L3.
+**Ladder: L3 claimed for single-body, `RMFastLoad`-selected, and terminal-feature-lineage-resolved body images; L2 claimed for unresolved multi-partition history.** L4 requires ordered feature and sketch records with dependencies. Multi-partition histories remain L2 unless every emitted partition receives one unambiguous terminal lineage status.
 
 ### Read profile
 
