@@ -890,36 +890,90 @@ fn constraint_kind(kind: i64) -> &'static str {
 
 fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchGeometry {
     let number = |name: &str| attributes.get(name).and_then(|value| value.parse().ok());
+    let native = || SketchGeometry::Native {
+        native_kind: kind.to_owned(),
+    };
     if kind.contains("Line") {
-        SketchGeometry::Line {
-            start: Point2::new(
-                number("StartX").unwrap_or(0.0),
-                number("StartY").unwrap_or(0.0),
-            ),
-            end: Point2::new(number("EndX").unwrap_or(0.0), number("EndY").unwrap_or(0.0)),
+        match (
+            number("StartX"),
+            number("StartY"),
+            number("EndX"),
+            number("EndY"),
+        ) {
+            (Some(start_x), Some(start_y), Some(end_x), Some(end_y)) => SketchGeometry::Line {
+                start: Point2::new(start_x, start_y),
+                end: Point2::new(end_x, end_y),
+            },
+            _ => native(),
+        }
+    } else if kind.contains("Ellipse") {
+        let major_angle = number("MajorAngle")
+            .or_else(|| number("AngleXU"))
+            .or_else(|| Some(number("MajorAxisY")?.atan2(number("MajorAxisX")?)));
+        let bounds = if kind.contains("Arc") {
+            number("FirstParameter")
+                .zip(number("LastParameter"))
+                .map(|(start, end)| (Some(start), Some(end)))
+        } else {
+            Some((None, None))
+        };
+        match (
+            number("CenterX"),
+            number("CenterY"),
+            major_angle,
+            number("MajorRadius"),
+            number("MinorRadius"),
+            bounds,
+        ) {
+            (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some((start, end)))
+                if major > 0.0 && minor > 0.0 =>
+            {
+                SketchGeometry::Ellipse {
+                    center: Point2::new(x, y),
+                    major_angle: cadmpeg_ir::features::Angle(angle),
+                    major_radius: Length(major),
+                    minor_radius: Length(minor),
+                    start_angle: start.map(cadmpeg_ir::features::Angle),
+                    end_angle: end.map(cadmpeg_ir::features::Angle),
+                }
+            }
+            _ => native(),
         }
     } else if kind.contains("Arc") {
-        SketchGeometry::Arc {
-            center: Point2::new(
-                number("CenterX").unwrap_or(0.0),
-                number("CenterY").unwrap_or(0.0),
-            ),
-            radius: Length(number("Radius").unwrap_or(0.0)),
-            start_angle: cadmpeg_ir::features::Angle(number("FirstParameter").unwrap_or(0.0)),
-            end_angle: cadmpeg_ir::features::Angle(number("LastParameter").unwrap_or(0.0)),
+        match (
+            number("CenterX"),
+            number("CenterY"),
+            number("Radius"),
+            number("FirstParameter"),
+            number("LastParameter"),
+        ) {
+            (Some(x), Some(y), Some(radius), Some(start), Some(end)) if radius > 0.0 => {
+                SketchGeometry::Arc {
+                    center: Point2::new(x, y),
+                    radius: Length(radius),
+                    start_angle: cadmpeg_ir::features::Angle(start),
+                    end_angle: cadmpeg_ir::features::Angle(end),
+                }
+            }
+            _ => native(),
         }
     } else if kind.contains("Circle") {
-        SketchGeometry::Circle {
-            center: Point2::new(
-                number("CenterX").unwrap_or(0.0),
-                number("CenterY").unwrap_or(0.0),
-            ),
-            radius: Length(number("Radius").unwrap_or(0.0)),
+        match (number("CenterX"), number("CenterY"), number("Radius")) {
+            (Some(x), Some(y), Some(radius)) if radius > 0.0 => SketchGeometry::Circle {
+                center: Point2::new(x, y),
+                radius: Length(radius),
+            },
+            _ => native(),
+        }
+    } else if kind.contains("Point") {
+        match (number("X"), number("Y")) {
+            (Some(x), Some(y)) => SketchGeometry::Point {
+                position: Point2::new(x, y),
+            },
+            _ => native(),
         }
     } else {
-        SketchGeometry::Native {
-            native_kind: kind.to_owned(),
-        }
+        native()
     }
 }
 

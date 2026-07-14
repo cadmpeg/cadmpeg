@@ -251,3 +251,10 @@ subelement identity separately from the map mode. The persisted resolved `Placem
 `AttachmentOffset` remain distinct matrices. Neutral geometry uses the resolved placement when it
 is present and otherwise the offset; the decoder never multiplies both speculatively. Validation
 checks support identity, finite matrices, and this effective-frame rule.
+
+Sketch point, line, circle, circular-arc, ellipse, and elliptical-arc carriers transfer only when
+all family-required numeric fields are present and finite. Ellipse orientation may be carried as a
+major-axis angle or a two-component major-axis direction. Bounded ellipses additionally require
+both parameter bounds. Missing radii, coordinates, orientation, or bounds leave the carrier as a
+named native geometry record; the decoder does not synthesize zero coordinates or full-curve
+bounds.

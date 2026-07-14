@@ -26,6 +26,53 @@ fn rejects_malformed_sketch_record_counts() {
 }
 
 #[test]
+fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="4">
+ <Geometry type="Part::GeomPoint"><Point X="1" Y="2"/></Geometry>
+ <Geometry type="Part::GeomEllipse"><Ellipse CenterX="3" CenterY="4" MajorRadius="6" MinorRadius="2" MajorAxisX="0" MajorAxisY="1"/></Geometry>
+ <Geometry type="Part::GeomArcOfEllipse"><ArcOfEllipse CenterX="0" CenterY="0" MajorRadius="5" MinorRadius="3" MajorAngle="0.25" FirstParameter="0.5" LastParameter="1.5"/></Geometry>
+ <Geometry type="Part::GeomCircle"><Circle CenterX="9" CenterY="9"/></Geometry>
+</GeometryList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("sketch geometry");
+    let entities = &result.ir.model.sketch_entities;
+    assert!(matches!(
+        entities[0].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Point { position }
+            if position == cadmpeg_ir::math::Point2::new(1.0, 2.0)
+    ));
+    assert!(matches!(
+        entities[1].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Ellipse {
+            major_angle: cadmpeg_ir::features::Angle(angle),
+            start_angle: None,
+            end_angle: None,
+            ..
+        } if (angle - std::f64::consts::FRAC_PI_2).abs() < 1e-12
+    ));
+    assert!(matches!(
+        entities[2].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Ellipse {
+            start_angle: Some(cadmpeg_ir::features::Angle(0.5)),
+            end_angle: Some(cadmpeg_ir::features::Angle(1.5)),
+            ..
+        }
+    ));
+    assert!(matches!(
+        entities[3].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+    ));
+}
+
+#[test]
 fn transfers_revolution_fillet_and_chamfer_semantics() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
