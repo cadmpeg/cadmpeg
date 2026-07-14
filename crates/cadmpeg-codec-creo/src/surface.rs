@@ -604,7 +604,7 @@ fn scalar_values(body: &[u8], cache: &scalar::ScalarCache) -> Vec<f64> {
     let mut values = Vec::new();
     let mut cursor = 0;
     while cursor < body.len() {
-        if let Some((value, next)) = scalar::decode_in_row_lane(body, cursor, cache) {
+        if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache) {
             values.push(value);
             cursor = next;
         } else {
@@ -721,7 +721,8 @@ fn scalar_slots_with_tokens_and_end(
         if body[cursor] == 0x18 && cursor + 1 == body.len() {
             slots.push((Some(0.0), vec![0x18]));
             cursor += 1;
-        } else if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) {
+        } else if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache)
+        {
             slots.push((Some(value), body[cursor..next].to_vec()));
             cursor = next;
         } else if matches!(body.get(cursor), Some(0x73 | 0xbb)) && cursor + 7 <= body.len() {
@@ -769,7 +770,7 @@ fn row_scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> V
             cursor += 1;
             continue;
         }
-        if let Some((value, next)) = scalar::decode_in_row_lane(body, cursor, cache) {
+        if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache) {
             slots.push(Some(value));
             cursor = next;
         } else {

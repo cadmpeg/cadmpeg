@@ -115,6 +115,22 @@ pub fn decode_in_row_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Op
     decode_in_lane(data, offset, cache)
 }
 
+/// Decode one scalar in a positional surface-row lane.
+pub fn decode_in_surface_row_lane(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0xa0) {
+        let tail = data.get(offset + 1..offset + 7)?;
+        let mut raw = [0; 8];
+        raw[..2].copy_from_slice(&[0xc0, 0x15]);
+        raw[2..].copy_from_slice(tail);
+        return Some((f64::from_be_bytes(raw), offset + 7));
+    }
+    decode_in_row_lane(data, offset, cache)
+}
+
 /// Decode one scalar with a defined byte-to-IEEE mapping.
 ///
 /// Returns the value and first unread offset. Returns `None` when the prefix
@@ -245,6 +261,20 @@ mod tests {
             decode_in_lane(&data, 0, &cache).map(|(_, end)| end),
             Some(8)
         );
+    }
+
+    #[test]
+    fn surface_row_lane_decodes_negative_a0_dict_form() {
+        let cache = ScalarCache::default();
+        let data = [0xa0, 0x5c, 0x28, 0xf5, 0xc2, 0x8f, 0x5c, 0xe4];
+        assert_eq!(
+            decode_in_surface_row_lane(&data, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xc0, 0x15, 0x5c, 0x28, 0xf5, 0xc2, 0x8f, 0x5c]),
+                7
+            ))
+        );
+        assert_eq!(decode_in_surface_row_lane(&data, 7, &cache), Some((1.0, 8)));
     }
 
     #[test]

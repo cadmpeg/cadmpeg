@@ -135,6 +135,8 @@ Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leadi
 In positional surface and curve row lanes, `71 <tail6>` is a seven-byte
 sub-unit form reconstructed as `3F <tail6> 00`. In named scalar lanes, `71`
 occupies eight source bytes and reconstructs as `3F <tail7>`.
+In a positional surface row, `a0 <tail6>` is the negative DICT form
+`C0 15 <tail6>`.
 
 Each record grammar defines the DICT lane for its scalar slots. A decoder must not apply DICT sign rules across unrelated record grammars.
 
