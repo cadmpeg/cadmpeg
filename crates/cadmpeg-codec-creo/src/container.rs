@@ -853,7 +853,10 @@ fn feature_entity_graph(
 
 fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefinition> {
     let mut definitions = Vec::new();
-    for section in sections.iter().filter(|section| section.name == "FeatDefs") {
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "FeatDefs" || section.name == "DEPDB_DATA")
+    {
         let end = (section.offset + section.length).min(data.len());
         definitions.extend(
             feature::definitions(&data[section.offset..end])

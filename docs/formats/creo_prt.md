@@ -38,7 +38,7 @@ PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology ma
 | `FeatDefs`                       | Feature definitions, section recipes, placement records, outlines, dimensions, and saved section entities.           |
 | `Geomlists`                      | Body-count and quilt-discriminator fields.                                                                           |
 | `ActDatums`                      | Active datum-plane geometry under `act_datum_geoms → srf_array`.                                                     |
-| `DEPDB_DATA`                     | Persistence data used by DEPDB-layout parts.                                                                         |
+| `DEPDB_DATA`                     | Persistence data used by DEPDB-layout parts, including embedded geometry namespaces and feature-definition records.  |
 | `FamilyInf`                      | Family-table driver pointer for configurations.                                                                       |
 | `NeuPrtSld` and display sections | Material, appearance, display, and tessellation data.                                                                |
 | `THMB_IMG_MAIN`                  | JPEG thumbnail. The payload begins with `FF D8 FF` and does not contain model geometry.                              |
@@ -369,8 +369,8 @@ Within one current-state record, `protextrude` identifies a linear section
 sweep and `protrevolve` identifies a rotational section sweep. The recipe name
 precedes the `<Kind> id <N>` operation name and applies to that feature state.
 
-A `FeatDefs` record-name identifier belongs to the feature-definition record
-namespace. A unique canonical named `feat_id` inside the bounded record is the
+A `feat_defs_<id>` record-name identifier in `FeatDefs` or `DEPDB_DATA` belongs
+to the feature-definition record namespace. A unique canonical named `feat_id` inside the bounded record is the
 owning modeling feature identifier and joins `MdlStatus` and `AllFeatur`; `f6`
 in this slot is null. When `feat_id` is null, the unique `DatumIds` generated
 table containing the section's `sketch_plane_entity_id` identifies the owning
