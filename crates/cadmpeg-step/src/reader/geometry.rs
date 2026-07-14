@@ -92,6 +92,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
         if matches!(
             record.simple_name(),
+            Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
+        ) {
+            if let Some(items) = record.parameter(1).and_then(Value::list) {
+                point_carriers.extend(
+                    items
+                        .iter()
+                        .filter_map(Value::reference)
+                        .filter(|id| points.contains_key(id)),
+                );
+            }
+        }
+        if matches!(
+            record.simple_name(),
             Some("STYLED_ITEM" | "OVER_RIDING_STYLED_ITEM")
         ) {
             if let Some(id) = record.parameter(2).and_then(Value::reference) {

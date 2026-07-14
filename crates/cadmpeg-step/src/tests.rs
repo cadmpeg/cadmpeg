@@ -416,6 +416,16 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("STYLED_ITEM #43")));
+    assert_eq!(
+        result
+            .ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| binding.source_entity_id.as_deref() == Some("#47"))
+            .count(),
+        2
+    );
     assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Plane { origin, normal, .. }

@@ -126,68 +126,72 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
                 id
             })
             .clone();
-        let face_id = format!("step:data:face#{target_step}");
-        let body_id = format!("step:data:body#{target_step}");
-        let edge_id = format!("step:data:edge#{target_step}");
-        let surface_id = format!("step:data:surface#{target_step}");
-        let curve_id = format!("step:data:curve#{target_step}");
-        let point_id = format!("step:data:point#{target_step}");
-        let tessellation_id = format!("step:tessellation:mesh#{target_step}");
-        let target = if let Some(&index) = face_indices.get(&face_id) {
-            ir.model.faces[index].color = Some(color);
-            AppearanceTarget::Face(FaceId(face_id))
-        } else if let Some(&index) = body_indices.get(&body_id) {
-            ir.model.bodies[index].color = Some(color);
-            AppearanceTarget::Body(BodyId(body_id))
-        } else if ir
-            .model
-            .edges
-            .iter()
-            .any(|edge| edge.id.as_str() == edge_id)
-        {
-            AppearanceTarget::Edge(EdgeId(edge_id))
-        } else if ir
-            .model
-            .surfaces
-            .iter()
-            .any(|surface| surface.id.as_str() == surface_id)
-        {
-            AppearanceTarget::Surface(SurfaceId(surface_id))
-        } else if ir
-            .model
-            .curves
-            .iter()
-            .any(|curve| curve.id.as_str() == curve_id)
-        {
-            AppearanceTarget::Curve(CurveId(curve_id))
-        } else if ir
-            .model
-            .points
-            .iter()
-            .any(|point| point.id.as_str() == point_id)
-        {
-            AppearanceTarget::Point(PointId(point_id))
-        } else if ir
-            .model
-            .tessellations
-            .iter()
-            .any(|mesh| mesh.id == tessellation_id)
-        {
-            AppearanceTarget::Tessellation(tessellation_id)
-        } else {
-            warnings.push(format!(
-                "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
-            ));
-            continue;
-        };
-        ir.model.appearance_bindings.push(AppearanceBinding {
-            id: format!("step:presentation:binding#{style_id}"),
-            target,
-            appearance: appearance_id,
-            source_entity_id: Some(format!("#{style_id}")),
-            object_type: None,
-            channels: BTreeMap::new(),
-        });
+        let target_steps =
+            expand_style_targets(target_step, exchange, &mut typed, &mut BTreeSet::new());
+        for (ordinal, target_step) in target_steps.into_iter().enumerate() {
+            let face_id = format!("step:data:face#{target_step}");
+            let body_id = format!("step:data:body#{target_step}");
+            let edge_id = format!("step:data:edge#{target_step}");
+            let surface_id = format!("step:data:surface#{target_step}");
+            let curve_id = format!("step:data:curve#{target_step}");
+            let point_id = format!("step:data:point#{target_step}");
+            let tessellation_id = format!("step:tessellation:mesh#{target_step}");
+            let target = if let Some(&index) = face_indices.get(&face_id) {
+                ir.model.faces[index].color = Some(color);
+                AppearanceTarget::Face(FaceId(face_id))
+            } else if let Some(&index) = body_indices.get(&body_id) {
+                ir.model.bodies[index].color = Some(color);
+                AppearanceTarget::Body(BodyId(body_id))
+            } else if ir
+                .model
+                .edges
+                .iter()
+                .any(|edge| edge.id.as_str() == edge_id)
+            {
+                AppearanceTarget::Edge(EdgeId(edge_id))
+            } else if ir
+                .model
+                .surfaces
+                .iter()
+                .any(|surface| surface.id.as_str() == surface_id)
+            {
+                AppearanceTarget::Surface(SurfaceId(surface_id))
+            } else if ir
+                .model
+                .curves
+                .iter()
+                .any(|curve| curve.id.as_str() == curve_id)
+            {
+                AppearanceTarget::Curve(CurveId(curve_id))
+            } else if ir
+                .model
+                .points
+                .iter()
+                .any(|point| point.id.as_str() == point_id)
+            {
+                AppearanceTarget::Point(PointId(point_id))
+            } else if ir
+                .model
+                .tessellations
+                .iter()
+                .any(|mesh| mesh.id == tessellation_id)
+            {
+                AppearanceTarget::Tessellation(tessellation_id)
+            } else {
+                warnings.push(format!(
+                    "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
+                ));
+                continue;
+            };
+            ir.model.appearance_bindings.push(AppearanceBinding {
+                id: format!("step:presentation:binding#{style_id}:{ordinal}"),
+                target,
+                appearance: appearance_id.clone(),
+                source_entity_id: Some(format!("#{style_id}")),
+                object_type: None,
+                channels: BTreeMap::new(),
+            });
+        }
         typed.insert(style_id);
         if let Some(overridden) = overridden_style(style) {
             typed.insert(overridden);
@@ -199,6 +203,38 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
         typed_records: typed,
         warnings,
     }
+}
+
+fn expand_style_targets(
+    id: u64,
+    exchange: &Exchange,
+    typed: &mut BTreeSet<u64>,
+    active: &mut BTreeSet<u64>,
+) -> Vec<u64> {
+    if !active.insert(id) {
+        return Vec::new();
+    }
+    let Some(record) = exchange.records.get(&id) else {
+        return vec![id];
+    };
+    if !matches!(
+        record.simple_name(),
+        Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
+    ) {
+        active.remove(&id);
+        return vec![id];
+    }
+    typed.insert(id);
+    let targets = record
+        .parameter(1)
+        .and_then(ValueExt::list)
+        .into_iter()
+        .flatten()
+        .filter_map(ValueExt::reference)
+        .flat_map(|item| expand_style_targets(item, exchange, typed, active))
+        .collect();
+    active.remove(&id);
+    targets
 }
 
 fn presentation_item(id: u64, exchange: &Exchange, ir: &CadIr) -> PresentationItem {
