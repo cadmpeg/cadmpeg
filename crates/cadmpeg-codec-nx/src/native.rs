@@ -3672,7 +3672,10 @@ pub fn feature_block_dimensions(
                     if matches.next().is_some() || expression.unit != ExpressionUnit::Millimeter {
                         return None;
                     }
-                    Some((expression, expression.value?))
+                    Some((
+                        expression,
+                        expression.value.filter(|value| value.is_finite())?,
+                    ))
                 })
                 .collect::<Option<Vec<_>>>()?
                 .try_into()
