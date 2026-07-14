@@ -144,19 +144,58 @@ pub fn decode_in_surface_row_lane(
 
 /// Decode the first coordinate of a tabulated-cylinder directrix control point.
 ///
-/// In this lane, `0x46` and `0x4a` select eight- and seven-byte negative IEEE
-/// forms with a `0xc0` high byte. The seven-byte form has an implicit zero low
-/// byte.
+/// This lane has its own signed DICT lattices and fixed-width forms. They take
+/// precedence over the same prefix bytes in positional surface-row lanes.
 pub fn decode_tabulated_cylinder_first_coordinate(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
+    let head = *data.get(offset)?;
+    if head == 0x28 {
+        return ieee8(data, offset, 0x3f);
+    }
+    if head == 0x2d {
+        return ieee8(data, offset, 0x40);
+    }
+    if head == 0x31 {
+        return ieee7(data, offset, 0x40);
+    }
+    if head == 0x41 {
+        return ieee8(data, offset, 0x3f);
+    }
+    if matches!(head, 0x2c | 0x4e..=0x4f | 0x52 | 0x54 | 0x58..=0x5a) {
+        return ieee7(data, offset, 0x3f);
+    }
+    if head == 0x45 {
+        return ieee7(data, offset, 0xbf);
+    }
     if data.get(offset) == Some(&0x46) {
         return ieee8(data, offset, 0xc0);
     }
     if data.get(offset) == Some(&0x4a) {
         return ieee7(data, offset, 0xc0);
+    }
+    if matches!(head, 0x5b..=0xa3) {
+        return ieee7_dict(data, offset, 0x3f75 + u16::from(head));
+    }
+    if matches!(head, 0xa5..=0xa6) {
+        return ieee7_dict(data, offset, 0xbf2b + u16::from(head));
+    }
+    if matches!(head, 0xa7..=0xae) {
+        return ieee7_dict(data, offset, 0xbf2c + u16::from(head));
+    }
+    if matches!(head, 0xb2..=0xcf) {
+        return ieee7_dict(data, offset, 0xbf2d + u16::from(head));
+    }
+    if matches!(head, 0xd0..=0xdc) {
+        return ieee7_dict(data, offset, 0xbf2e + u16::from(head));
+    }
+    if head == 0xdd {
+        return ieee7_dict(data, offset, 0xbf2f + u16::from(head));
+    }
+    if matches!(head, 0xde..=0xdf) {
+        return ieee7_dict(data, offset, 0xbf32 + u16::from(head));
     }
     decode_in_surface_row_lane(data, offset, cache)
 }
@@ -171,13 +210,23 @@ pub fn decode_tabulated_cylinder_second_coordinate(
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
     let head = *data.get(offset)?;
-    if matches!(head, 0x78..=0x8a | 0xa1..=0xa3) {
-        let high = 0x3f75_u16 + u16::from(head);
-        let tail = data.get(offset + 1..offset + 7)?;
-        let mut raw = [0; 8];
-        raw[..2].copy_from_slice(&high.to_be_bytes());
-        raw[2..].copy_from_slice(tail);
-        return Some((f64::from_be_bytes(raw), offset + 7));
+    if matches!(head, 0x28 | 0x41) {
+        return ieee8(data, offset, 0x3f);
+    }
+    if matches!(head, 0x2c | 0x4c..=0x4d | 0x50 | 0x54) {
+        return ieee7(data, offset, 0x3f);
+    }
+    if matches!(head, 0x5e..=0xa3) {
+        return ieee7_dict(data, offset, 0x3f75 + u16::from(head));
+    }
+    if matches!(head, 0xa4..=0xa6) {
+        return ieee7_dict(data, offset, 0xbf2b + u16::from(head));
+    }
+    if matches!(head, 0xa7..=0xb1) {
+        return ieee7_dict(data, offset, 0xbf2c + u16::from(head));
+    }
+    if matches!(head, 0xb2..=0xc7) {
+        return ieee7_dict(data, offset, 0xbf2d + u16::from(head));
     }
     decode_in_surface_row_lane(data, offset, cache)
 }
@@ -256,6 +305,14 @@ fn ieee7_with_prefix(data: &[u8], offset: usize, first: u8, second: u8) -> Optio
     Some((f64::from_be_bytes(raw), offset + 7))
 }
 
+fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
+    let tail = data.get(offset + 1..offset + 7)?;
+    let mut raw = [0; 8];
+    raw[..2].copy_from_slice(&high.to_be_bytes());
+    raw[2..].copy_from_slice(tail);
+    Some((f64::from_be_bytes(raw), offset + 7))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,7 +344,18 @@ mod tests {
         let cache = ScalarCache::default();
         let first_eight = [0x46, 0x13, 0x77, 0x9f, 0x89, 0x00, 0x00, 0x00];
         let first = [0x4a, 0x13, 0x21, 0xe3, 0xe3, 0x00, 0x00];
+        let first_positive_dict = [0x96, 0x02, 0xf4, 0x7a, 0, 0, 0];
+        let first_negative_dict = [0xd7, 0xd4, 0x8d, 0x46, 0, 0, 0];
+        let first_negative_subunit = [0xc8, 0xd6, 0xa3, 0x0c, 0, 0, 0];
+        let first_negative_large = [0xde, 0xbe, 0x21, 0xc3, 0, 0, 0];
+        let first_negative_reserved_gap = [0xdd, 0x9f, 0xe4, 0x46, 0, 0, 0];
+        let first_negative_subunit_gap = [0xa7, 0x6b, 0x7c, 0x32, 0x0d, 0x03, 0xd0];
+        let first_positive_seven = [0x54, 0xad, 0xf7, 0xa0, 0, 0, 0];
+        let first_positive_eight = [0x41, 0xb9, 0x9d, 0x5b, 0x81, 0x25, 0x62, 0xc0];
+        let first_negative_low = [0xb2, 0x05, 0xe8, 0xa6, 0, 0, 0];
         let second = [0x7f, 0x24, 0x57, 0x89, 0x13, 0x66, 0x08];
+        let second_positive_low = [0x69, 0x91, 0x22, 0x33, 0x44, 0x55, 0x66];
+        let second_negative = [0xc7, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
         assert_eq!(
             decode_tabulated_cylinder_first_coordinate(&first_eight, 0, &cache),
             Some((
@@ -303,9 +371,83 @@ mod tests {
             ))
         );
         assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&first_positive_dict, 0, &cache),
+            Some((
+                f64::from_be_bytes([0x40, 0x0b, 0x02, 0xf4, 0x7a, 0, 0, 0]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&first_negative_dict, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xc0, 0x05, 0xd4, 0x8d, 0x46, 0, 0, 0]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&first_negative_subunit, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xbf, 0xf5, 0xd6, 0xa3, 0x0c, 0, 0, 0]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&first_negative_large, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xc0, 0x10, 0xbe, 0x21, 0xc3, 0, 0, 0]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&first_negative_reserved_gap, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xc0, 0x0c, 0x9f, 0xe4, 0x46, 0, 0, 0]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&first_negative_subunit_gap, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xbf, 0xd3, 0x6b, 0x7c, 0x32, 0x0d, 0x03, 0xd0]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&first_positive_seven, 0, &cache),
+            Some((f64::from_be_bytes([0x3f, 0xad, 0xf7, 0xa0, 0, 0, 0, 0]), 7))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&first_positive_eight, 0, &cache),
+            Some((
+                f64::from_be_bytes([0x3f, 0xb9, 0x9d, 0x5b, 0x81, 0x25, 0x62, 0xc0]),
+                8
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&first_negative_low, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xbf, 0xdf, 0x05, 0xe8, 0xa6, 0, 0, 0]),
+                7
+            ))
+        );
+        assert_eq!(
             decode_tabulated_cylinder_second_coordinate(&second, 0, &cache),
             Some((
                 f64::from_be_bytes([0x3f, 0xf4, 0x24, 0x57, 0x89, 0x13, 0x66, 0x08]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_second_coordinate(&second_positive_low, 0, &cache),
+            Some((
+                f64::from_be_bytes([0x3f, 0xde, 0x91, 0x22, 0x33, 0x44, 0x55, 0x66]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_second_coordinate(&second_negative, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xbf, 0xf4, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77]),
                 7
             ))
         );

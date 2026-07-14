@@ -322,7 +322,7 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
         vec![0x18, 0xe2],
         vec![0x18, 0xf2, 0xf7, 37, 0xf6, 0xe3],
     ] {
-        payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+        payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
         payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
         payload.extend_from_slice(&separator);
     }
@@ -339,7 +339,7 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
     assert_eq!(replay.parameter_body, [0x18, 0xe6, 0x0f, 0xe6]);
     assert_eq!(replay.control_point_ids, [32, 33, 34, 35]);
     assert_eq!(replay.successor_reference, 36);
-    assert_eq!(replay.control_point_bodies[0][0], 0x2d);
+    assert_eq!(replay.control_point_bodies[0][0], 0x46);
     assert_eq!(replay.control_point_bodies[3][8], 0x46);
     assert_eq!(replay.control_points, [Some([-3.0, 3.0]); 4]);
     assert_eq!(replay.terminal_reference, 37);

@@ -8,9 +8,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - The remaining lane-specific DICT sign lattices are unspecified.
 - Per-instance overrides for cone half-angle and `geom_type = 26` torus/sphere radii are unspecified.
 - Packed B-spline surface bodies and surface-intersection curves are unspecified.
-- The remaining scalar prefixes inside the four packed `tab_cyl` two-coordinate
-  control-point bodies are unspecified. The prototype-adjacent `tab_cyl`
-  instance rows use a separate construction from the repeated cubic replay.
+- The prototype-adjacent `tab_cyl` instance rows use a construction distinct
+  from the repeated cubic replay; its point and parameter fields are unspecified.
 - The remaining `fc` curve-body grammars are unspecified, including `fc 05` variants, `fc 08`, `fc 13` field roles, `fc 02` slot semantics, and `fc 04`, `fc 07`, `fc 09`, and `fc 0a`.
 - Rotational-sweep angular termination fields are unspecified; the recipe discriminator and resolved axis do not define one-sided, symmetric, two-sided, or full-turn travel.
 - Model-space analytic equations for non-plane surface rows are unspecified, including cylinder axis and location and cone apex and axis.
