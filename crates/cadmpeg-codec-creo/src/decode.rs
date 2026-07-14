@@ -15576,8 +15576,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             "PSB container decoded structurally: {} section(s), {} layout, VisibGeom namespace \
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
-             Outline-backed planes, guarded non-axis support frames, complete first-instance \
-             analytic prototypes, unbound straight positional surface-of-extrusion planes, \
+             Outline-backed planes, guarded non-axis support frames, complete ND first-instance \
+             plane and torus prototypes, unbound straight positional surface-of-extrusion planes, \
              topology-bound `fc 05` \
              cylinders with a resolved axis-normal cap plane, four-entry circular-sweep cylinders, \
              and four-entry simple-hole cylinders with complete cap outlines transfer as carriers; \
@@ -15600,9 +15600,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             "General model B-rep transfer remains incomplete. Exact planar components transfer \
              when every loop is solved from placed-plane intersections and one strict containment \
              outer boundary exists per face. Selected \
-             cylinders transfer when a complete named prototype binds the adjacent first \
-             positional instance, an exact `fc 05` record and placed cap outline binds a row, or a \
-             four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
+             cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, \
+             or a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
              square cap outline establishes the complete axis placement, parameterization, and \
              radius. Later positional instances do not inherit prototype placement or scalar \
              defaults; they require their per-instance parameter bodies \
@@ -15629,8 +15628,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Transferred {first_instance_prototype_surface_count} first-instance analytic \
-                 surface carrier(s) from complete named local frames and parameters."
+                "Transferred {first_instance_prototype_surface_count} first-instance ND plane or \
+                 torus carrier(s) from complete named local frames and parameters."
             ),
             provenance: None,
         });
