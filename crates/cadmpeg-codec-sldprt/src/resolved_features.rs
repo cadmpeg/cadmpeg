@@ -234,12 +234,17 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     (first.is_finite() && second.is_finite()).then_some([first, second])
 }
 
+pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00])
+}
+
 #[cfg(test)]
 mod marker_tests {
     use super::{
         arc_angle_relation_kind, compact_body_selection_at, compact_body_selection_vector,
-        marker_coordinates, marker_local_id, marker_local_links, named_scalars, object_names,
-        unique_locus, unique_marker_candidate, NAME_MARKER, SCALAR_HEADER,
+        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
+        named_scalars, object_names, unique_locus, unique_marker_candidate, NAME_MARKER,
+        SCALAR_HEADER,
     };
     use crate::records::SketchRelationKind;
     use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
@@ -362,6 +367,17 @@ mod marker_tests {
         payload[64..66].copy_from_slice(&[0x1e, 0x00]);
         payload[5] = 0;
         assert_eq!(marker_coordinates(&payload, 0), None);
+    }
+
+    #[test]
+    fn geometry_locus_role_excludes_display_handles() {
+        let mut payload = vec![0; 27];
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        assert!(marker_is_geometry_locus(&payload, 0));
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        assert!(!marker_is_geometry_locus(&payload, 0));
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x02, 0x00]);
+        assert!(!marker_is_geometry_locus(&payload, 0));
     }
 
     #[test]
@@ -2465,7 +2481,13 @@ fn profile_loci_by_marker(
             let Some(feature) = marker.feature_ref.as_deref() else {
                 continue;
             };
-            if marker.coordinates_m.is_some() && sketches_by_feature.contains_key(feature) {
+            let Some(offset) = usize::try_from(marker.offset).ok() else {
+                continue;
+            };
+            if marker.coordinates_m.is_some()
+                && marker_is_geometry_locus(&lane.native_payload, offset)
+                && sketches_by_feature.contains_key(feature)
+            {
                 markers_by_feature.entry(feature).or_default().push(marker);
             }
         }
@@ -2973,10 +2995,23 @@ mod profile_join_tests {
         ];
         reference.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
         reference.link_selector = Some(0);
+        let mut native_payload = vec![0; 108];
+        for offset in [0, 27, 54] {
+            native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        }
+        native_payload[81 + 23..81 + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        let mut marker_a = marker("marker-a", Some([0.0, 0.0]));
+        marker_a.offset = 0;
+        let mut marker_b = marker("marker-b", Some([0.01, 0.0]));
+        marker_b.offset = 27;
+        let mut marker_c = marker("marker-c", Some([0.01, 0.01]));
+        marker_c.offset = 54;
+        let mut display = marker("display", Some([0.1, 0.1]));
+        display.offset = 81;
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload,
             classes: Vec::new(),
             names: Vec::new(),
             scalars: Vec::new(),
@@ -2984,18 +3019,14 @@ mod profile_join_tests {
             relation_instances: Vec::new(),
             body_selections: Vec::new(),
             references: Vec::new(),
-            sketch_entities: vec![
-                marker("marker-a", Some([0.0, 0.0])),
-                marker("marker-b", Some([0.01, 0.0])),
-                marker("marker-c", Some([0.01, 0.01])),
-                reference,
-            ],
+            sketch_entities: vec![marker_a, marker_b, marker_c, display, reference],
         };
 
         let joins = profile_loci_by_marker(&[feature], &entities, std::slice::from_ref(&lane));
         assert!(joins.contains_key("marker-a"));
         assert!(joins.contains_key("marker-b"));
         assert!(joins.contains_key("marker-c"));
+        assert!(!joins.contains_key("display"));
         let mut markers = lane
             .sketch_entities
             .iter()
@@ -5413,6 +5444,7 @@ fn append_coordinate_marker(
     payload[start + 5..start + 13].fill(0xff);
     payload[start + 13..start + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
     payload[start + 17..start + 21].copy_from_slice(&kind.native_code().to_le_bytes());
+    payload[start + 23..start + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     payload[start + 48..start + 56].copy_from_slice(&1.0f64.to_le_bytes());
     payload[start + 64..start + 66].copy_from_slice(&[0x1e, 0x00]);
     payload[start + 66..start + 74].copy_from_slice(&coordinates_m[0].to_le_bytes());
