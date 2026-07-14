@@ -2718,7 +2718,7 @@ fn build_geometry_report(
     losses.push(LossNote {
         category: LossCategory::Attribute,
         severity: Severity::Warning,
-        message: "Materials, appearances, entity-owned attributes, complete feature parameters, \
+        message: "Materials, appearances, complete entity-owned attributes, complete feature parameters, \
                   sketch geometry, constraints, and assembly occurrence placements were not transferred: \
                   they live in NX object-model per-class field serialization that is not decoded."
             .to_string(),
@@ -3296,6 +3296,13 @@ fn attach_native_object_model(
             values: vec![AttributeValue::String(attribute.value.clone())],
         });
     }
+    attach_parasolid_face_string_attributes(
+        ir,
+        &parasolid_topology_attribute_list_references,
+        &parasolid_entity_51_string_uses,
+        &parasolid_entity_54_string_records,
+        annotations,
+    );
     for record in &external_reference_records {
         annotations
             .note(&record.id, annotation_stream, record.source_offset)
@@ -3412,7 +3419,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(118);
+    namespace.version = namespace.version.max(119);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3801,6 +3808,88 @@ fn attach_native_object_model(
         namespace.set_arena("external_reference_records", &external_reference_records)?;
     }
     Ok(())
+}
+
+fn attach_parasolid_face_string_attributes(
+    ir: &mut CadIr,
+    topology_references: &[crate::native::ParasolidTopologyAttributeListReference],
+    string_uses: &[crate::native::ParasolidEntity51StringUse],
+    strings: &[crate::native::ParasolidEntity54StringRecord],
+    annotations: &mut AnnotationBuilder,
+) {
+    let strings_by_id = strings
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let mut uses_by_entity =
+        BTreeMap::<&str, Vec<&crate::native::ParasolidEntity51StringUse>>::new();
+    for string_use in string_uses {
+        uses_by_entity
+            .entry(string_use.entity_51_record.as_str())
+            .or_default()
+            .push(string_use);
+    }
+    for uses in uses_by_entity.values_mut() {
+        uses.sort_by_key(|string_use| string_use.reference_ordinal);
+    }
+    let mut references_by_face =
+        BTreeMap::<String, Vec<&crate::native::ParasolidTopologyAttributeListReference>>::new();
+    for reference in topology_references
+        .iter()
+        .filter(|reference| reference.topology_type == 14)
+    {
+        references_by_face
+            .entry(format!(
+                "nx:s{}:face#{}",
+                reference.stream_ordinal, reference.topology_xmt
+            ))
+            .or_default()
+            .push(reference);
+    }
+    let emitted_faces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.0.as_str(), face.id.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for (face_key, references) in references_by_face {
+        let [reference] = references.as_slice() else {
+            continue;
+        };
+        let Some(face) = emitted_faces.get(face_key.as_str()) else {
+            continue;
+        };
+        let Some(entity) = reference.attribute_list_record.as_deref() else {
+            continue;
+        };
+        for string_use in uses_by_entity.get(entity).into_iter().flatten() {
+            let Some(string) = strings_by_id.get(string_use.string_record.as_str()) else {
+                continue;
+            };
+            let id = AttributeId(format!(
+                "nx:s{}:face-string-attribute#{}-{}",
+                reference.stream_ordinal, reference.topology_xmt, string_use.reference_ordinal
+            ));
+            let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
+            annotations
+                .note(&id.0, source_stream, string.inflated_offset)
+                .tag("ENTITY_54_STRING_ATTRIBUTE");
+            annotations.derived(&id.0, "target");
+            annotations.derived(&id.0, "name");
+            ir.model.attributes.push(SourceAttribute {
+                id,
+                target: AttributeTarget::Face(face.clone()),
+                name: format!(
+                    "parasolid_type_84_reference_{}",
+                    string_use.reference_ordinal
+                ),
+                values: vec![AttributeValue::String(string.value.clone())],
+            });
+        }
+    }
+    ir.model
+        .attributes
+        .sort_by(|first, second| first.id.0.cmp(&second.id.0));
 }
 
 #[derive(Clone, Copy)]
