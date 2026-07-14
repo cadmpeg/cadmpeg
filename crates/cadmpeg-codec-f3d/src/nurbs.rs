@@ -4362,8 +4362,8 @@ pub(crate) struct EmbeddedTwoSidedOffset {
 
 /// Embedded support carriers and shared fields of an `int_int_cur`.
 pub(crate) struct EmbeddedIntersection {
-    pub(crate) surfaces: [SurfaceGeometry; 2],
-    pub(crate) pcurves: [NurbsPcurve; 2],
+    pub(crate) surfaces: [Option<SurfaceGeometry>; 2],
+    pub(crate) pcurves: [Option<NurbsPcurve>; 2],
     pub(crate) parameter_range: [f64; 2],
     pub(crate) discontinuities: [Vec<f64>; 3],
 }
@@ -4540,6 +4540,8 @@ fn decode_procedural_curve_recursive(
         } else {
             decode_helix_definition(bytes).or_else(|| decode_two_sided_offset(bytes, int_width))
         };
+        let embedded_intersection =
+            decode_embedded_intersection(bytes, int_width, &decoded.curve, active_bytes, tables);
         return Some(DecodedProceduralCurve {
             curve: decoded.curve,
             native_kind,
@@ -4548,7 +4550,7 @@ fn decode_procedural_curve_recursive(
             subset,
             compound,
             embedded_two_sided_offset: decode_embedded_two_sided_offset(bytes, int_width),
-            embedded_intersection: decode_embedded_intersection(bytes, int_width),
+            embedded_intersection,
             embedded_three_surface_intersection: decode_embedded_three_surface_intersection(
                 bytes, int_width,
             ),
@@ -4664,8 +4666,8 @@ fn decode_embedded_law_curve(bytes: &[u8], int_width: usize) -> Option<EmbeddedL
         .collect::<Option<Vec<_>>>()?;
     Some(EmbeddedLawCurve {
         context: EmbeddedIntersection {
-            surfaces,
-            pcurves: [first_pcurve, second_pcurve],
+            surfaces: surfaces.map(Some),
+            pcurves: [Some(first_pcurve), Some(second_pcurve)],
             parameter_range,
             discontinuities,
         },
@@ -5077,8 +5079,8 @@ fn decode_embedded_surface_offset(bytes: &[u8], int_width: usize) -> Option<Embe
     ];
     Some(EmbeddedSurfaceOffset {
         context: EmbeddedIntersection {
-            surfaces,
-            pcurves: [first_pcurve, second_pcurve],
+            surfaces: surfaces.map(Some),
+            pcurves: [Some(first_pcurve), Some(second_pcurve)],
             parameter_range,
             discontinuities,
         },
@@ -5207,8 +5209,8 @@ fn decode_embedded_silhouette(bytes: &[u8], int_width: usize) -> Option<Embedded
     }
     Some(EmbeddedSilhouette {
         context: EmbeddedIntersection {
-            surfaces,
-            pcurves: [first_pcurve, second_pcurve],
+            surfaces: surfaces.map(Some),
+            pcurves: [Some(first_pcurve), Some(second_pcurve)],
             parameter_range,
             discontinuities,
         },
@@ -5329,8 +5331,8 @@ fn decode_embedded_surface_curve(
     Some((
         family,
         EmbeddedIntersection {
-            surfaces,
-            pcurves: [first_pcurve, second_pcurve],
+            surfaces: surfaces.map(Some),
+            pcurves: [Some(first_pcurve), Some(second_pcurve)],
             parameter_range,
             discontinuities,
         },
@@ -5585,6 +5587,9 @@ pub(crate) fn projection_patch_layout(
 fn decode_embedded_intersection(
     bytes: &[u8],
     int_width: usize,
+    solved: &NurbsCurve,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
 ) -> Option<(EmbeddedIntersection, bool)> {
     let names: [&[u8]; 3] = [b"int_int_cur", b"surf_surf_int_cur", b"surfintcur"];
     let (marker, name) = names.into_iter().find_map(|name| {
@@ -5598,7 +5603,17 @@ fn decode_embedded_intersection(
             })
             .map(|marker| (marker, name))
     })?;
-    let mut position = marker + name.len() + 3;
+    let position = marker + name.len() + 3;
+    decode_context_first_intersection(bytes, position, int_width).or_else(|| {
+        decode_cache_first_intersection(bytes, position, int_width, solved, active_bytes, tables)
+    })
+}
+
+fn decode_context_first_intersection(
+    bytes: &[u8],
+    mut position: usize,
+    int_width: usize,
+) -> Option<(EmbeddedIntersection, bool)> {
     let surfaces = [
         decode_embedded_surface(bytes, &mut position, int_width)?,
         decode_embedded_surface(bytes, &mut position, int_width)?,
@@ -5619,8 +5634,61 @@ fn decode_embedded_intersection(
     let discontinuity_flag = take_bool(bytes, &mut position)?;
     Some((
         EmbeddedIntersection {
+            surfaces: surfaces.map(Some),
+            pcurves: [Some(first_pcurve), Some(second_pcurve)],
+            parameter_range,
+            discontinuities,
+        },
+        discontinuity_flag,
+    ))
+}
+
+fn decode_cache_first_intersection(
+    bytes: &[u8],
+    mut position: usize,
+    int_width: usize,
+    solved: &NurbsCurve,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<(EmbeddedIntersection, bool)> {
+    (take_tagged_int(bytes, &mut position, 0x04, int_width)? > 0).then_some(())?;
+    (take_tagged_int(bytes, &mut position, 0x15, int_width)? == 0).then_some(())?;
+    position = decode_curve_block(bytes, position, int_width)?.end;
+    take_f64(bytes, &mut position)?;
+    let first_surface = decode_optional_embedded_surface_resolving_ref(
+        bytes,
+        &mut position,
+        int_width,
+        active_bytes,
+        tables,
+    )?;
+    let second_surface = decode_optional_embedded_surface_resolving_ref(
+        bytes,
+        &mut position,
+        int_width,
+        active_bytes,
+        tables,
+    )?;
+    let surfaces = [first_surface, second_surface];
+    let pcurves = [
+        decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
+        decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
+    ];
+    let domain = nurbs_curve_parameter_domain(solved)?;
+    let parameter_range = [
+        take_optional_range_value(bytes, &mut position)?.unwrap_or(domain[0]),
+        take_optional_range_value(bytes, &mut position)?.unwrap_or(domain[1]),
+    ];
+    let discontinuities = [
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+    ];
+    let discontinuity_flag = take_tagged_int(bytes, &mut position, 0x04, int_width)? != 0;
+    Some((
+        EmbeddedIntersection {
             surfaces,
-            pcurves: [first_pcurve, second_pcurve],
+            pcurves,
             parameter_range,
             discontinuities,
         },
@@ -5941,6 +6009,51 @@ fn decode_embedded_surface(
     }
 }
 
+#[allow(clippy::option_option)] // Outer None is parse failure; inner None is an unresolved ref.
+fn decode_optional_embedded_surface_resolving_ref(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<Option<SurfaceGeometry>> {
+    let saved = *position;
+    let kind = take_native_ident(bytes, position);
+    if kind.as_deref() == Some("spline") {
+        if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
+            take_bool(bytes, position)?;
+        }
+        let reference = *position;
+        let marker = b"\x0f\x0d\x03ref\x04";
+        if bytes.get(reference..)?.starts_with(marker) {
+            let index =
+                usize::try_from(read_int(bytes, reference + marker.len(), int_width)?).ok()?;
+            let reference_span = subtype_span(bytes, reference, int_width)?;
+            *position = reference + reference_span.len();
+            let surface = tables
+                .for_width(int_width)
+                .get(index)
+                .and_then(|target| subtype_span(active_bytes, *target, int_width))
+                .and_then(|target| {
+                    decode_surface_cache_resolving_refs(target, active_bytes, tables)
+                })
+                .map(SurfaceGeometry::Nurbs);
+            for _ in 0..4 {
+                take_optional_range_value(bytes, position)?;
+            }
+            return Some(surface);
+        }
+    }
+    *position = saved;
+    let surface = decode_embedded_surface(bytes, position, int_width)?;
+    if kind.as_deref() == Some("plane") || kind.as_deref() == Some("spline") {
+        for _ in 0..4 {
+            take_bool(bytes, position)?;
+        }
+    }
+    Some(Some(surface))
+}
+
 fn take_f64(bytes: &[u8], position: &mut usize) -> Option<f64> {
     if bytes.get(*position) != Some(&0x06) {
         return None;
@@ -6207,6 +6320,30 @@ fn take_range_value(bytes: &[u8], position: &mut usize) -> Option<f64> {
     let value = read_f64(bytes, *position + 1)?;
     *position += 9;
     Some(value)
+}
+
+#[allow(clippy::option_option)] // Outer None is parse failure; inner None is an absent bound.
+fn take_optional_range_value(bytes: &[u8], position: &mut usize) -> Option<Option<f64>> {
+    match bytes.get(*position)? {
+        0x0a => {
+            *position += 1;
+            take_f64(bytes, position).map(Some)
+        }
+        0x0b => {
+            *position += 1;
+            Some(None)
+        }
+        0x06 => take_f64(bytes, position).map(Some),
+        _ => None,
+    }
+}
+
+fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
+    let degree = usize::try_from(curve.degree).ok()?;
+    Some([
+        *curve.knots.get(degree)?,
+        *curve.knots.get(curve.control_points.len())?,
+    ])
 }
 
 fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> Option<[f64; 3]> {
@@ -7114,6 +7251,68 @@ mod width_tests {
                     3
                 );
             }
+        }
+    }
+
+    #[test]
+    fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
+        for int_width in [4usize, 8] {
+            let mut support = vec![0x0f];
+            push_ident(&mut support, "intersection_support");
+            support.extend_from_slice(&surface_block(int_width));
+            support.push(0x10);
+
+            let mut record = vec![0x0f];
+            push_ident(&mut record, "int_int_cur");
+            push_int(&mut record, 0x04, 22_507, int_width);
+            push_int(&mut record, 0x15, 0, int_width);
+            record.extend_from_slice(&curve_block(int_width));
+            push_f64(&mut record, 1.0e-6);
+            push_ident(&mut record, "plane");
+            push_position(&mut record, [0.0, 0.0, 0.0]);
+            push_vector(&mut record, [0.0, 0.0, 1.0]);
+            push_vector(&mut record, [1.0, 0.0, 0.0]);
+            record.push(0x0b);
+            record.extend_from_slice(&[0x0b; 4]);
+            push_ident(&mut record, "spline");
+            record.push(0x0b);
+            record.push(0x0f);
+            push_ident(&mut record, "ref");
+            push_int(&mut record, 0x04, 0, int_width);
+            record.push(0x10);
+            for value in [-2.0, 2.0, -3.0, 3.0] {
+                record.push(0x0a);
+                push_f64(&mut record, value);
+            }
+            push_ident(&mut record, "nullbs");
+            record.extend_from_slice(&pcurve_block(int_width));
+            record.extend_from_slice(&[0x0b, 0x0b]);
+            for _ in 0..4 {
+                push_int(&mut record, 0x04, 0, int_width);
+            }
+            record.push(0x10);
+
+            let mut active = support;
+            active.extend_from_slice(&record);
+            let tables = SubtypeTables::from_stream(&active);
+            let decoded = decode_procedural_curve_resolving_refs(&record, &active, &tables)
+                .unwrap_or_else(|| panic!("cache-first intersection at width {int_width}"));
+            let (context, flag) = decoded
+                .embedded_intersection
+                .expect("typed intersection context");
+            assert!(!flag);
+            assert_eq!(context.parameter_range, [0.0, 1.0]);
+            assert!(matches!(
+                context.surfaces[0],
+                Some(SurfaceGeometry::Plane { .. })
+            ));
+            assert!(matches!(
+                context.surfaces[1],
+                Some(SurfaceGeometry::Nurbs(_))
+            ));
+            assert!(context.pcurves[0].is_none());
+            assert!(context.pcurves[1].is_some());
+            assert!(context.discontinuities.iter().all(Vec::is_empty));
         }
     }
 
