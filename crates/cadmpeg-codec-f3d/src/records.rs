@@ -418,6 +418,12 @@ pub struct DesignDimensionRecipeRecord {
     /// Number of bytes from this header to the next indexed header or the end
     /// of the companion-owned payload.
     pub frame_length: u64,
+    /// Byte offset of the recipe-specific prefix after the indexed header.
+    pub prefix_offset: u64,
+    /// Complete recipe-specific prefix before the length-prefixed family name.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub prefix_bytes: Vec<u8>,
     /// Byte offset of the first i32 after the recipe-family name.
     pub program_offset: u64,
     /// Complete little-endian i32 program through the indexed-record boundary.

@@ -3572,6 +3572,14 @@ pub fn decode_dimension_recipe_records(
             else {
                 continue;
             };
+            let Some((prefix_offset, prefix_bytes)) = dimension_recipe_prefix(
+                bytes,
+                at,
+                recipe_offset,
+                construction_recipe_family_name_len(recipe.kind),
+            ) else {
+                continue;
+            };
             let Some(program) = contiguous_i32_program(bytes, program_offset, record_end) else {
                 continue;
             };
@@ -3587,6 +3595,8 @@ pub fn decode_dimension_recipe_records(
                 class_tag,
                 record_index,
                 frame_length: u64::try_from(record_end - at).unwrap_or(u64::MAX),
+                prefix_offset: u64::try_from(prefix_offset).unwrap_or(u64::MAX),
+                prefix_bytes,
                 program_offset: u64::try_from(program_offset).unwrap_or(u64::MAX),
                 program,
             });
@@ -3594,6 +3604,21 @@ pub fn decode_dimension_recipe_records(
     }
     out.sort_by_key(|record| record.id.clone());
     Ok(out)
+}
+
+fn dimension_recipe_prefix(
+    bytes: &[u8],
+    record_offset: usize,
+    family_name_offset: usize,
+    family_name_len: usize,
+) -> Option<(usize, Vec<u8>)> {
+    let prefix_offset = record_offset.checked_add(11)?;
+    let prefix_end = family_name_offset.checked_sub(4)?;
+    if u32_at(bytes, prefix_end)? != u32::try_from(family_name_len).ok()? {
+        return None;
+    }
+    let prefix = bytes.get(prefix_offset..prefix_end)?;
+    (!prefix.is_empty()).then(|| (prefix_offset, prefix.to_vec()))
 }
 
 fn indexed_record_containing(
@@ -7843,20 +7868,20 @@ mod relation_tests {
         bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
         bind_parameter_companion_payloads, bind_sketch_graph, body_bound_candidates,
         closed_sketch_profiles, companion_owned_interval, contiguous_i32_program,
-        decode_fillet_radius_groups, directional_point_dimension, exact_atomic_constraint,
-        exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
-        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
-        indexed_record_containing, indirect_angular_lines, neutral_sketch_entity_id,
-        neutral_sketch_id, next_indexed_record_offset, null_locus_dimension_definition,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
-        remove_dimension_frame_relations, resolved_extrude_profile_selection, resolved_face_group,
-        two_locus_distance_dimension,
+        decode_fillet_radius_groups, dimension_recipe_prefix, directional_point_dimension,
+        exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
+        exact_offset_constraint, find_dimension_locus_groups, find_dimension_locus_pair,
+        identity_matrix, indexed_record_containing, indirect_angular_lines,
+        neutral_sketch_entity_id, neutral_sketch_id, next_indexed_record_offset,
+        null_locus_dimension_definition, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design, remove_dimension_frame_relations,
+        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -8113,6 +8138,21 @@ mod relation_tests {
             Some(vec![-1, -1])
         );
         assert_eq!(contiguous_i32_program(&[0; 7], 0, 7), None);
+
+        let mut framed = vec![0; 11];
+        framed.extend_from_slice(&[7, 8, 9]);
+        framed.extend_from_slice(&16u32.to_le_bytes());
+        let family_name_offset = framed.len();
+        framed.extend_from_slice(b"edge_recipe_data");
+        assert_eq!(
+            dimension_recipe_prefix(&framed, 0, family_name_offset, 16),
+            Some((11, vec![7, 8, 9]))
+        );
+        framed[14..18].copy_from_slice(&15u32.to_le_bytes());
+        assert_eq!(
+            dimension_recipe_prefix(&framed, 0, family_name_offset, 16),
+            None
+        );
     }
 
     #[test]
