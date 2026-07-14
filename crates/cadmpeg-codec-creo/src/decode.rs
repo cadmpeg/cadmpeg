@@ -7398,7 +7398,7 @@ mod resolved_sketch_tests {
             next_surface: 0,
             offset: 0,
         };
-        let rows = vec![
+        let mut rows = vec![
             row(10, crate::surface::SurfaceKind::Plane),
             row(11, crate::surface::SurfaceKind::Plane),
             row(13, crate::surface::SurfaceKind::Cylinder),
@@ -7423,6 +7423,23 @@ mod resolved_sketch_tests {
             &BTreeSet::new(),
             std::slice::from_ref(&table),
             &rows,
+        )
+        .is_empty());
+        rows[2].reversed = true;
+        assert_eq!(
+            rowless_round_face_orientations(
+                &BTreeSet::from([23]),
+                std::slice::from_ref(&table),
+                &rows,
+                &BTreeSet::from([12]),
+            ),
+            BTreeMap::from([(12, true)])
+        );
+        assert!(rowless_round_face_orientations(
+            &BTreeSet::from([23]),
+            std::slice::from_ref(&table),
+            &rows,
+            &BTreeSet::new(),
         )
         .is_empty());
         let mut materialized_rowless = rows;
@@ -11049,9 +11066,68 @@ fn ordered_face_loops<'a>(
     }
 }
 
+fn rowless_round_face_orientations(
+    round_feature_ids: &BTreeSet<u32>,
+    tables: &[crate::feature::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+    available_surfaces: &BTreeSet<u32>,
+) -> BTreeMap<u32, bool> {
+    let mut orientations = BTreeMap::new();
+    for (rowless_id, sibling_id, _) in rowless_round_cylinder_pairs(round_feature_ids, tables, rows)
+    {
+        if !available_surfaces.contains(&rowless_id) {
+            continue;
+        }
+        let Some(reversed) = rows
+            .iter()
+            .find(|row| row.id == sibling_id)
+            .map(|row| row.reversed)
+        else {
+            continue;
+        };
+        orientations.insert(rowless_id, reversed);
+    }
+    orientations
+}
+
+fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, bool> {
+    let mut orientations = scan
+        .surface_rows
+        .iter()
+        .map(|row| (row.id, row.reversed))
+        .collect::<BTreeMap<_, _>>();
+    let round_feature_ids = scan
+        .feature_rows
+        .iter()
+        .filter(|row| row.root_schema_class == Some(913))
+        .map(|row| row.feature_id)
+        .collect::<BTreeSet<_>>();
+    let available_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            surface
+                .id
+                .0
+                .strip_prefix("creo:visibgeom:surface#")?
+                .parse()
+                .ok()
+        })
+        .collect::<BTreeSet<_>>();
+    orientations.extend(rowless_round_face_orientations(
+        &round_feature_ids,
+        &scan.feature_entity_tables,
+        &scan.surface_rows,
+        &available_surfaces,
+    ));
+    orientations
+}
+
 fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     let planes = placed_planes(scan);
     let carriers = placed_carriers(scan, ir);
+    let face_orientations = native_face_orientations(scan, ir);
     let half_edges = scan
         .half_edges
         .iter()
@@ -11103,10 +11179,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
     let eligible_faces = loops_by_face
         .into_iter()
         .filter_map(|(face_id, loops)| {
-            scan.surface_rows
-                .iter()
-                .any(|row| row.id == face_id)
-                .then_some(())?;
+            face_orientations.contains_key(&face_id).then_some(())?;
             loops
                 .iter()
                 .all(|lp| {
@@ -11364,17 +11437,11 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                     }),
                 });
             }
-            let face_sense = scan
-                .surface_rows
-                .iter()
-                .find(|row| row.id == *face_id)
-                .map_or(Sense::Forward, |row| {
-                    if row.reversed {
-                        Sense::Reversed
-                    } else {
-                        Sense::Forward
-                    }
-                });
+            let face_sense = if face_orientations[face_id] {
+                Sense::Reversed
+            } else {
+                Sense::Forward
+            };
             annotate(
                 annotations,
                 &face,
