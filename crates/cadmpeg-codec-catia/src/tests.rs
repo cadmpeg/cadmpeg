@@ -220,21 +220,25 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
         (
             1,
             [
-                [0x02_0000u32, 0x01_0011, 0x02_0001],
-                [0x02_0001, 0x01_0013, 0x02_0002],
+                [0x01_0010u32, 0x01_0011],
+                [0x01_0011, 0x01_0012],
+                [0x01_0012, 0x01_0013],
+                [0x01_0013, 0x01_0014],
             ],
         ),
         (
             2,
             [
-                [0x02_0002u32, 0x01_0015, 0x02_0003],
-                [0x02_0003, 0x01_0017, 0x02_0000],
+                [0x01_0014u32, 0x01_0015],
+                [0x01_0015, 0x01_0016],
+                [0x01_0016, 0x01_0017],
+                [0x01_0017, 0x01_0010],
             ],
         ),
     ] {
-        bytes.extend_from_slice(&[0x01, kind, 2]);
+        bytes.extend_from_slice(&[0x01, kind, 4]);
         for row in rows {
-            bytes.extend_from_slice(&[0x02, 3]);
+            bytes.extend_from_slice(&[0x02, 2]);
             for handle in row {
                 bytes.extend_from_slice(&handle.to_be_bytes()[1..]);
             }
@@ -250,12 +254,9 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     }
 
     let topology = crate::topology::parse_fbb(&bytes).expect("valid FBB topology");
-    assert_eq!(
-        topology.edge_rows()[0].handles,
-        vec![0x02_0000, 0x01_0011, 0x02_0001]
-    );
-    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
-    assert_eq!(topology.logical_vertex_count(), 4);
+    assert_eq!(topology.edge_rows()[0].handles, vec![0x01_0010, 0x01_0011]);
+    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
+    assert_eq!(topology.logical_vertex_count(), 8);
     assert!(topology.vertex_points().is_empty());
     assert_eq!(
         crate::topology::standard_vertex_points(&bytes)

@@ -165,16 +165,50 @@ fn unique_bijections(
     }
 }
 
-/// One row of the counted standard/FBB edge table: `02 <arity_u8>
-/// <payload[arity*2]>` ([spec ?5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)), handles read big-endian.
+/// The boundary meaning of an edge-row handle sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EdgeBoundaryLayout {
+    /// The first and last handles are endpoint ports outside the trim-handle
+    /// namespace; the handles between them match the boundary.
+    InteriorWithFlankingCorners,
+    /// Every handle belongs to the trim boundary, including both endpoints.
+    CompleteBoundaryRun,
+}
+
+/// One row of a counted standard/FBB edge table, with handles read big-endian.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EdgeRow {
     /// Table-kind byte the row was parsed under (`0x01` or `0x02`; spec
     /// ?5.2 `count_header`).
     pub kind: u8,
-    /// The row's BE handle sequence `[p0, interior?, p1]`; the first and
-    /// last entries are the row's graph endpoint ports ([spec ?5.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#54-physical-edge-identity-and-portvertex-collapse)).
+    /// The row's BE handle sequence.
     pub handles: Vec<u32>,
+    /// How the handle sequence maps onto a trim boundary.
+    pub boundary_layout: EdgeBoundaryLayout,
+}
+
+impl EdgeRow {
+    fn boundary_pattern(&self) -> Option<&[u32]> {
+        match self.boundary_layout {
+            EdgeBoundaryLayout::InteriorWithFlankingCorners => {
+                self.handles.get(1..self.handles.len().checked_sub(1)?)
+            }
+            EdgeBoundaryLayout::CompleteBoundaryRun => Some(self.handles.as_slice()),
+        }
+        .filter(|pattern| !pattern.is_empty())
+    }
+
+    fn boundary_span(&self, pattern_start: usize, cycle_len: usize) -> Option<(usize, usize)> {
+        match self.boundary_layout {
+            EdgeBoundaryLayout::InteriorWithFlankingCorners => Some((
+                (pattern_start + cycle_len.checked_sub(1)?) % cycle_len,
+                self.handles.len().checked_sub(1)?,
+            )),
+            EdgeBoundaryLayout::CompleteBoundaryRun => {
+                Some((pattern_start, self.handles.len().checked_sub(1)?))
+            }
+        }
+    }
 }
 
 /// One face's reconstructed boundary cycles ([spec ?5.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#53-trim-records-indexed-triangle-mesh-packets)): one outer cycle
@@ -585,14 +619,13 @@ pub(crate) fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
         }
         let mut corners = HashMap::new();
         for (edge, row) in edge_rows.iter().enumerate() {
-            let interior = row.handles.get(1..row.handles.len() - 1)?;
-            if interior.is_empty() {
+            let Some(_) = row.boundary_pattern() else {
                 continue;
-            }
+            };
             for occurrence in &occurrences[edge] {
                 let cycle = &cycles[occurrence.face][occurrence.cycle];
-                let before = (occurrence.start + cycle.len() - 1) % cycle.len();
-                let after = (occurrence.start + interior.len()) % cycle.len();
+                let (before, segment_count) = row.boundary_span(occurrence.start, cycle.len())?;
+                let after = (before + segment_count) % cycle.len();
                 let before_node = *corners
                     .entry((occurrence.face, occurrence.cycle, before))
                     .or_insert_with(|| union.push());
@@ -651,14 +684,13 @@ fn mesh_edge_occurrences(
     edge_rows
         .iter()
         .map(|row| {
-            let interior = row.handles.get(1..row.handles.len() - 1)?;
-            if interior.is_empty() {
+            let Some(pattern) = row.boundary_pattern() else {
                 return Some(Vec::new());
-            }
+            };
             let mut matches = HashMap::<(usize, usize, usize), bool>::new();
-            for &(face, cycle, start) in locations.get(&interior[0]).into_iter().flatten() {
+            for &(face, cycle, start) in locations.get(&pattern[0]).into_iter().flatten() {
                 let handles = &cycles[face][cycle];
-                if interior
+                if pattern
                     .iter()
                     .enumerate()
                     .all(|(offset, handle)| handles[(start + offset) % handles.len()] == *handle)
@@ -666,9 +698,9 @@ fn mesh_edge_occurrences(
                     matches.insert((face, cycle, start), false);
                 }
             }
-            for &(face, cycle, start) in locations.get(interior.last()?).into_iter().flatten() {
+            for &(face, cycle, start) in locations.get(pattern.last()?).into_iter().flatten() {
                 let handles = &cycles[face][cycle];
-                if interior
+                if pattern
                     .iter()
                     .rev()
                     .enumerate()
@@ -758,12 +790,12 @@ pub fn standard_mesh_face_coverage(
             for (cycle_index, cycle) in face_cycles.iter().enumerate() {
                 let mut covered = vec![false; cycle.len()];
                 for (edge, values) in occurrences.iter().enumerate() {
-                    let interior_len = edge_rows[edge].handles.len().checked_sub(2)?;
                     for occurrence in values.iter().filter(|occurrence| {
                         occurrence.face == face && occurrence.cycle == cycle_index
                     }) {
-                        let start = (occurrence.start + cycle.len() - 1) % cycle.len();
-                        for offset in 0..=interior_len {
+                        let (start, segment_count) =
+                            edge_rows[edge].boundary_span(occurrence.start, cycle.len())?;
+                        for offset in 0..segment_count {
                             let slot = &mut covered[(start + offset) % cycle.len()];
                             if *slot {
                                 return None;
@@ -1338,7 +1370,11 @@ fn parse_fbb_edge_tables(bytes: &[u8], mut position: usize) -> Option<(Vec<EdgeR
                 ]));
                 position += 3;
             }
-            rows.push(EdgeRow { kind, handles });
+            rows.push(EdgeRow {
+                kind,
+                handles,
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            });
         }
         table_count += 1;
         if bytes.get(position..)?.starts_with(&EDGE_DELIMITER) {
@@ -1421,7 +1457,11 @@ fn parse_edge_tables_at(bytes: &[u8], mut position: usize) -> Option<(Vec<EdgeRo
                 )));
                 position += 2;
             }
-            rows.push(EdgeRow { kind, handles });
+            rows.push(EdgeRow {
+                kind,
+                handles,
+                boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            });
         }
         let mut saw_delimiter = false;
         while bytes.get(position..)?.starts_with(&EDGE_DELIMITER) {
@@ -1734,28 +1774,23 @@ fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
 }
 
 fn cover_cycle(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -> Option<Boundary> {
-    cover_cycle_by_interiors(cycle, rows, union)
+    cover_cycle_by_rows(cycle, rows, union)
 }
 
-fn cover_cycle_by_interiors(
-    cycle: &[u32],
-    rows: &[EdgeRow],
-    union: &mut UnionFind,
-) -> Option<Boundary> {
+fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -> Option<Boundary> {
     let length = cycle.len();
     let mut matches = Vec::new();
     for (edge_row, row) in rows.iter().enumerate() {
-        let interior = row.handles.get(1..row.handles.len() - 1)?;
-        if interior.is_empty() {
+        let Some(pattern) = row.boundary_pattern() else {
             continue;
-        }
+        };
         let mut row_matches = Vec::new();
         for start in 0..length {
-            let forward = interior
+            let forward = pattern
                 .iter()
                 .enumerate()
                 .all(|(offset, handle)| cycle[(start + offset) % length] == *handle);
-            let reversed = interior
+            let reversed = pattern
                 .iter()
                 .rev()
                 .enumerate()
@@ -1768,7 +1803,8 @@ fn cover_cycle_by_interiors(
         }
         if row_matches.len() == 1 {
             let (start, reversed) = row_matches[0];
-            matches.push((start + length - 1, interior.len() + 1, edge_row, reversed));
+            let (boundary_start, segment_count) = row.boundary_span(start, length)?;
+            matches.push((boundary_start, segment_count, edge_row, reversed));
         } else if !row_matches.is_empty() {
             return None;
         }
@@ -1862,7 +1898,8 @@ impl UnionFind {
 mod motif_tests {
     use super::{
         bind_edge_port_candidates, motif_port_points, parse_trim_chain, propagate_edge_port_points,
-        reconstruct_incidence, reconstruct_incidence_candidates, EdgeRow, TrimRecord,
+        reconstruct_incidence, reconstruct_incidence_candidates, EdgeBoundaryLayout, EdgeRow,
+        TrimRecord,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -1925,6 +1962,7 @@ mod motif_tests {
             .map(|edge| EdgeRow {
                 kind: 1,
                 handles: vec![edge * 2, edge * 2 + 1],
+                boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
             })
             .collect();
         let points = vec![
@@ -1959,6 +1997,7 @@ mod motif_tests {
             .map(|edge| EdgeRow {
                 kind: 1,
                 handles: vec![edge * 2, edge * 2 + 1],
+                boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
             })
             .collect();
         let points = vec![
@@ -1988,6 +2027,7 @@ mod motif_tests {
             .map(|edge| EdgeRow {
                 kind: 1,
                 handles: vec![edge * 2, edge * 2 + 1],
+                boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
             })
             .collect();
         let points = (0..12).map(|point| [f64::from(point), 0.0, 0.0]).collect();
