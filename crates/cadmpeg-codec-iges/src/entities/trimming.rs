@@ -18,10 +18,10 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct BoundarySegment {
     model_curve: u32,
-    pcurve: Option<u32>,
+    pcurves: Vec<u32>,
     sense: Sense,
 }
 
@@ -37,7 +37,7 @@ struct BoundaryItem {
     source_edge: Edge,
     start: Point3,
     end: Point3,
-    pcurve: Option<(PcurveGeometry, [f64; 2])>,
+    pcurves: Vec<(PcurveGeometry, [f64; 2])>,
 }
 
 fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
@@ -221,7 +221,7 @@ pub(super) fn project(
             BoundaryDefinition {
                 surface,
                 segments: vec![BoundarySegment {
-                    pcurve: Some(pcurve),
+                    pcurves: vec![pcurve],
                     model_curve,
                     sense: Sense::Forward,
                 }],
@@ -291,37 +291,42 @@ pub(super) fn project(
                 break;
             };
             if (boundary_type == 0 && pcurve_count != 0)
-                || (boundary_type == 1 && pcurve_count != 1)
+                || (boundary_type == 1 && pcurve_count == 0)
             {
                 losses.push(entity_loss(
                     entry,
-                    "boundary pcurve collection does not contain the required zero or one member",
+                    "boundary pcurve collection cardinality disagrees with its representation type",
                 ));
                 valid = false;
                 break;
             }
-            let pcurve = if pcurve_count == 1 {
-                let Some(pcurve) = pointer(record, index + 3) else {
-                    losses.push(entity_loss(entry, "boundary pcurve pointer is invalid"));
-                    valid = false;
+            let mut pcurves = Vec::with_capacity(pcurve_count);
+            for pcurve_index in 0..pcurve_count {
+                let Some(pcurve) = pointer(record, index + 3 + pcurve_index) else {
+                    pcurves.clear();
                     break;
                 };
-                let pcurve_entry = entries.get(&pcurve).copied();
-                if pcurve_entry.is_none_or(|entry| entry.status.use_flag != 5) {
+                if entries
+                    .get(&pcurve)
+                    .is_none_or(|entry| entry.status.use_flag != 5)
+                {
                     losses.push(entity_loss(
                         entry,
                         "boundary pcurve does not have entity-use flag 05",
                     ));
-                    valid = false;
+                    pcurves.clear();
                     break;
                 }
-                Some(pcurve)
-            } else {
-                None
-            };
+                pcurves.push(pcurve);
+            }
+            if pcurves.len() != pcurve_count {
+                losses.push(entity_loss(entry, "boundary pcurve pointer is invalid"));
+                valid = false;
+                break;
+            }
             segments.push(BoundarySegment {
                 model_curve,
-                pcurve,
+                pcurves,
                 sense,
             });
             index += 3 + pcurve_count;
@@ -433,12 +438,12 @@ pub(super) fn project(
                         && boundary
                             .segments
                             .iter()
-                            .all(|segment| segment.pcurve.is_none()))
+                            .all(|segment| segment.pcurves.is_empty()))
                         || (representation == 1
                             && boundary
                                 .segments
                                 .iter()
-                                .all(|segment| segment.pcurve.is_some()))
+                                .all(|segment| !segment.pcurves.is_empty()))
                 }) {
                     sequences.push(sequence);
                 } else {
@@ -521,28 +526,26 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                let pcurve = match segment.pcurve {
-                    Some(sequence) => {
-                        let Some(pcurve) = pcurve_geometry(ir, sequence, &support.geometry, factor)
-                        else {
-                            losses.push(entity_loss(
-                                entry,
-                                "boundary parameter curve has no NURBS carrier",
-                            ));
-                            valid = false;
-                            break;
-                        };
-                        Some(pcurve)
-                    }
-                    None => None,
+                let pcurves = segment
+                    .pcurves
+                    .iter()
+                    .map(|sequence| pcurve_geometry(ir, *sequence, &support.geometry, factor))
+                    .collect::<Option<Vec<_>>>();
+                let Some(pcurves) = pcurves else {
+                    losses.push(entity_loss(
+                        entry,
+                        "boundary parameter curve has no NURBS carrier",
+                    ));
+                    valid = false;
+                    break;
                 };
                 items.push(BoundaryItem {
-                    segment: *segment,
+                    segment: segment.clone(),
                     model_curve: model_curve_id,
                     source_edge,
                     start,
                     end,
-                    pcurve,
+                    pcurves,
                 });
             }
             if !valid {
@@ -598,20 +601,28 @@ pub(super) fn project(
                     param_range: item.source_edge.param_range,
                     tolerance: None,
                 });
-                let pcurve_id = item.pcurve.map(|(geometry, parameter_range)| {
-                    let id = PcurveId(format!(
-                        "iges:model:pcurve#{stem}:{boundary_index}:{segment_index}"
-                    ));
-                    candidate.model.pcurves.push(Pcurve {
-                        id: id.clone(),
-                        geometry,
-                        wrapper_reversed: None,
-                        native_tail_flags: None,
-                        parameter_range: Some(parameter_range),
-                        fit_tolerance: None,
-                    });
-                    id
-                });
+                let pcurve_uses = item
+                    .pcurves
+                    .into_iter()
+                    .enumerate()
+                    .map(|(pcurve_index, (geometry, parameter_range))| {
+                        let id = PcurveId(format!(
+                            "iges:model:pcurve#{stem}:{boundary_index}:{segment_index}:{pcurve_index}"
+                        ));
+                        candidate.model.pcurves.push(Pcurve {
+                            id: id.clone(),
+                            geometry,
+                            wrapper_reversed: None,
+                            native_tail_flags: None,
+                            parameter_range: Some(parameter_range),
+                            fit_tolerance: None,
+                        });
+                        PcurveUse {
+                            pcurve: id,
+                            isoparametric: None,
+                        }
+                    })
+                    .collect();
                 let coedge_id = coedge_ids[segment_index].clone();
                 candidate.model.coedges.push(Coedge {
                     id: coedge_id.clone(),
@@ -622,13 +633,7 @@ pub(super) fn project(
                         .clone(),
                     radial_next: coedge_id,
                     sense: item.segment.sense,
-                    pcurves: pcurve_id
-                        .into_iter()
-                        .map(|pcurve| PcurveUse {
-                            pcurve,
-                            isoparametric: None,
-                        })
-                        .collect(),
+                    pcurves: pcurve_uses,
                 });
             }
             candidate.model.loops.push(Loop {

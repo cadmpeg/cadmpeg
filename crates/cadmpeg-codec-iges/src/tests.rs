@@ -1905,6 +1905,80 @@ fn explicit_cylinder_seam_file() -> Vec<u8> {
     ])
 }
 
+fn multi_pcurve_boundary_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 108,
+            form: 0,
+            label: "PLANE".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "MODEL".into(),
+            status: "00010000",
+            parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 1,
+            label: "PCURVE1".into(),
+            status: "00010500",
+            parameters: "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,1,1,0,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 1,
+            label: "PCURVE2".into(),
+            status: "00010500",
+            parameters: "126,1,1,1,0,1,0,0,0,1,1,1,1,1,1,0,0,0,0,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 141,
+            form: 0,
+            label: "BOUNDARY".into(),
+            status: "00010000",
+            parameters: "141,1,3,1,1,3,1,2,5,7;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 143,
+            form: 0,
+            label: "BOUNDED".into(),
+            status: "00000000",
+            parameters: "143,1,1,1,9;".into(),
+        },
+    ])
+}
+
+#[test]
+fn decode_preserves_ordered_type_141_pcurve_collections() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(multi_pcurve_boundary_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let coedge = result
+        .ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id.0 == "iges:model:coedge#D11:0:0")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report.losses));
+    assert_eq!(coedge.pcurves.len(), 2);
+    assert!(coedge.pcurves[0].pcurve.0.ends_with(":0:0:0"));
+    assert!(coedge.pcurves[1].pcurve.0.ends_with(":0:0:1"));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn decode_preserves_two_uses_and_periodic_images_of_a_cylinder_seam() {
     let result = IgesCodec

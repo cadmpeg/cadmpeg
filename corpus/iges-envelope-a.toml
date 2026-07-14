@@ -201,12 +201,12 @@ assertions = ["source-definition", "signed-distance", "byte-coverage"]
 [[entity]]
 type = 141
 name = "boundary"
-forms = [0, 1]
+forms = [0]
 domain = "topology"
 decoder = "entities::trimming::decode_boundary"
 destination = "model.loops,model.coedges,model.edges,model.pcurves"
 fixture_classes = ["surface-boundaries"]
-assertions = ["orientation", "pcurve-links", "model-curve-links", "byte-coverage"]
+assertions = ["orientation", "ordered-pcurve-collections", "pcurve-links", "model-curve-links", "byte-coverage"]
 
 [[entity]]
 type = 142

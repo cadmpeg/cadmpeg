@@ -52,6 +52,8 @@ Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, a
 
 Boundary, curve-on-surface, bounded-surface, and trimmed-surface entities carry face-local boundaries. They produce sheet regions whose loops, coedges, edges, and vertices are owned by the source face. No cross-face edge sharing is inferred without a shared source topology entity. A topology candidate is attached only after the complete neutral ownership and reference graph validates.
 
+A Form 0 Boundary Entity (Type 141) stores `TYPE`, `PREF`, the support-surface pointer, and a positive model-curve count. Each ordered model-curve item stores its curve pointer, sense (`1` forward or `2` reversed), pcurve count, and that many parameter-curve pointers. `TYPE=0` requires every pcurve count to be zero. `TYPE=1` requires every pcurve count to be positive. The parameter curves of one item remain ordered and together form that coedge's parameter-space image.
+
 ## Byte accounting
 
 Every source byte belongs to one nonempty half-open ledger span. Typed spans cover values with decoded semantics. Structural spans cover framing, delimiters, padding, and sequence fields. Opaque spans name the native record that retains their bytes or their length and digest. Canonical ledger order is ascending start offset. Adjacent spans may be coalesced only when class, owner, and meaning are identical. Coverage starts at zero, ends at source length, and has neither gaps nor overlaps.
