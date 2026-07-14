@@ -5903,14 +5903,19 @@ fn marker_entities_inner(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     visited: &mut HashSet<String>,
 ) -> Vec<SketchEntityId> {
-    if let Some(loci) = loci_by_marker.get(marker_id) {
-        return loci.iter().map(locus_entity).collect();
+    let direct = loci_by_marker.get(marker_id).map(|loci| {
+        loci.iter()
+            .map(locus_entity)
+            .collect::<HashSet<SketchEntityId>>()
+    });
+    if direct.as_ref().is_some_and(|entities| entities.len() == 1) {
+        return direct.into_iter().flatten().collect();
     }
     if !visited.insert(marker_id.to_string()) {
         return Vec::new();
     }
     let Some(marker) = markers_by_id.get(marker_id) else {
-        return Vec::new();
+        return direct.into_iter().flatten().collect();
     };
     let mut linked = marker
         .links
@@ -5927,7 +5932,11 @@ fn marker_entities_inner(
             .collect::<HashSet<_>>()
         })
         .filter(|entities| !entities.is_empty());
-    let Some(mut entities) = linked.next() else {
+    let mut entities = if let Some(direct) = direct {
+        direct
+    } else if let Some(linked) = linked.next() {
+        linked
+    } else {
         return Vec::new();
     };
     for candidates in linked {
@@ -6011,6 +6020,10 @@ mod profile_join_tests {
         assert_eq!(
             resolved_marker_locus(&ambiguous.id, &markers, &loci, &mut HashSet::new()),
             Some(expected)
+        );
+        assert_eq!(
+            marker_entities(&ambiguous.id, &markers, &loci),
+            vec![SketchEntityId("line-a".into())]
         );
     }
 
