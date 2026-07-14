@@ -2,6 +2,7 @@
 //! Typed IGES entity accessors and neutral projection.
 
 pub(crate) mod analytic_surfaces;
+pub(crate) mod annotation;
 pub(crate) mod brep;
 pub(crate) mod composite;
 pub(crate) mod conics;

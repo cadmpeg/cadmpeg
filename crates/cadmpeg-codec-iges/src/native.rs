@@ -458,6 +458,57 @@ struct NativeDrawing {
     units_name: Option<Vec<u8>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeTextRun {
+    declared_character_count: Option<i64>,
+    text: Option<Vec<u8>>,
+    box_size: [Option<f64>; 2],
+    font_code: Option<i64>,
+    font_definition: Option<String>,
+    slant_angle: Option<f64>,
+    rotation_angle: Option<f64>,
+    mirror: Option<i64>,
+    vertical: Option<i64>,
+    start: [Option<f64>; 3],
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeNewTextRun {
+    fixed_or_variable: Option<i64>,
+    character_size: [Option<f64>; 2],
+    character_spacing: Option<f64>,
+    line_spacing: Option<f64>,
+    font_style: Option<i64>,
+    character_angle: Option<f64>,
+    control_codes: Option<Vec<u8>>,
+    text: NativeTextRun,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum NativeAnnotation {
+    GeneralNote {
+        id: String,
+        source_entity: String,
+        declared_string_count: Option<i64>,
+        strings: Vec<NativeTextRun>,
+        transformation: Option<String>,
+    },
+    NewGeneralNote {
+        id: String,
+        source_entity: String,
+        containment_size: [Option<f64>; 2],
+        justification: Option<i64>,
+        containment_origin: [Option<f64>; 3],
+        containment_angle: Option<f64>,
+        baseline_origin: [Option<f64>; 3],
+        normal_interline_spacing: Option<f64>,
+        declared_string_count: Option<i64>,
+        strings: Vec<NativeNewTextRun>,
+        transformation: Option<String>,
+    },
+}
+
 #[derive(Clone)]
 struct OccurrenceDefinition {
     members: Vec<u32>,
@@ -1866,6 +1917,133 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let font_definition = |value: Option<i64>| {
+        value
+            .filter(|value| *value < 0)
+            .and_then(i64::checked_neg)
+            .map(|sequence| format!("iges:presentation:text-font#D{sequence}"))
+    };
+    let text_run = |record: Option<&ParameterRecord>, start: usize| {
+        let font_code = record.and_then(|record| record.integer(start + 3));
+        NativeTextRun {
+            declared_character_count: record.and_then(|record| record.integer(start)),
+            text: record
+                .and_then(|record| record.string(start + 11))
+                .map(<[u8]>::to_vec),
+            box_size: [
+                record.and_then(|record| record.number(start + 1)),
+                record.and_then(|record| record.number(start + 2)),
+            ],
+            font_code,
+            font_definition: font_definition(font_code),
+            slant_angle: record.and_then(|record| record.number(start + 4)),
+            rotation_angle: record.and_then(|record| record.number(start + 5)),
+            mirror: record.and_then(|record| record.integer(start + 6)),
+            vertical: record.and_then(|record| record.integer(start + 7)),
+            start: [
+                record.and_then(|record| record.number(start + 8)),
+                record.and_then(|record| record.number(start + 9)),
+                record.and_then(|record| record.number(start + 10)),
+            ],
+        }
+    };
+    let annotations = directory
+        .iter()
+        .filter(|entry| matches!(entry.entity_type, 212 | 213) && entry.form == 0)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let transformation = (entry.transform > 0)
+                .then(|| format!("iges:native:transformation#D{}", entry.transform));
+            if entry.entity_type == 212 {
+                let count = record
+                    .and_then(|record| record.integer(1))
+                    .and_then(|value| usize::try_from(value).ok())
+                    .unwrap_or_default();
+                NativeAnnotation::GeneralNote {
+                    id: format!("iges:presentation:annotation#D{}", entry.sequence),
+                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                    declared_string_count: record.and_then(|record| record.integer(1)),
+                    strings: (0..count)
+                        .map(|index| text_run(record, 2 + index * 12))
+                        .collect(),
+                    transformation,
+                }
+            } else {
+                let count = record
+                    .and_then(|record| record.integer(12))
+                    .and_then(|value| usize::try_from(value).ok())
+                    .unwrap_or_default();
+                NativeAnnotation::NewGeneralNote {
+                    id: format!("iges:presentation:annotation#D{}", entry.sequence),
+                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                    containment_size: [
+                        record.and_then(|record| record.number(1)),
+                        record.and_then(|record| record.number(2)),
+                    ],
+                    justification: record.and_then(|record| record.integer(3)),
+                    containment_origin: [
+                        record.and_then(|record| record.number(4)),
+                        record.and_then(|record| record.number(5)),
+                        record.and_then(|record| record.number(6)),
+                    ],
+                    containment_angle: record.and_then(|record| record.number(7)),
+                    baseline_origin: [
+                        record.and_then(|record| record.number(8)),
+                        record.and_then(|record| record.number(9)),
+                        record.and_then(|record| record.number(10)),
+                    ],
+                    normal_interline_spacing: record.and_then(|record| record.number(11)),
+                    declared_string_count: record.and_then(|record| record.integer(12)),
+                    strings: (0..count)
+                        .map(|index| {
+                            let start = 13 + index * 20;
+                            let font_code = record.and_then(|record| record.integer(start + 11));
+                            NativeNewTextRun {
+                                fixed_or_variable: record.and_then(|record| record.integer(start)),
+                                character_size: [
+                                    record.and_then(|record| record.number(start + 1)),
+                                    record.and_then(|record| record.number(start + 2)),
+                                ],
+                                character_spacing: record
+                                    .and_then(|record| record.number(start + 3)),
+                                line_spacing: record.and_then(|record| record.number(start + 4)),
+                                font_style: record.and_then(|record| record.integer(start + 5)),
+                                character_angle: record.and_then(|record| record.number(start + 6)),
+                                control_codes: record
+                                    .and_then(|record| record.string(start + 7))
+                                    .map(<[u8]>::to_vec),
+                                text: NativeTextRun {
+                                    declared_character_count: record
+                                        .and_then(|record| record.integer(start + 8)),
+                                    text: record
+                                        .and_then(|record| record.string(start + 19))
+                                        .map(<[u8]>::to_vec),
+                                    box_size: [
+                                        record.and_then(|record| record.number(start + 9)),
+                                        record.and_then(|record| record.number(start + 10)),
+                                    ],
+                                    font_code,
+                                    font_definition: font_definition(font_code),
+                                    slant_angle: record
+                                        .and_then(|record| record.number(start + 12)),
+                                    rotation_angle: record
+                                        .and_then(|record| record.number(start + 13)),
+                                    mirror: record.and_then(|record| record.integer(start + 14)),
+                                    vertical: record.and_then(|record| record.integer(start + 15)),
+                                    start: [
+                                        record.and_then(|record| record.number(start + 16)),
+                                        record.and_then(|record| record.number(start + 17)),
+                                        record.and_then(|record| record.number(start + 18)),
+                                    ],
+                                },
+                            }
+                        })
+                        .collect(),
+                    transformation,
+                }
+            }
+        })
+        .collect::<Vec<_>>();
     let occurrence_definitions = directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
@@ -1993,6 +2171,7 @@ pub(crate) fn store(
     namespace.set_arena("view_visibility", &view_visibility)?;
     namespace.set_arena("segmented_visibility", &segmented_visibility)?;
     namespace.set_arena("drawings", &drawings)?;
+    namespace.set_arena("annotations", &annotations)?;
     namespace.set_arena("product_occurrences", &product_occurrences)?;
     Ok(())
 }

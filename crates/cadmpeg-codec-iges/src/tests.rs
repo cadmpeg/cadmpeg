@@ -2525,6 +2525,25 @@ fn drawing_with_properties_file() -> Vec<u8> {
     ])
 }
 
+fn text_annotation_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "NOTE".into(),
+            status: "00000100",
+            parameters: "212,2,5,20,4,1,1.5707963267948966,0,0,0,1,2,0,5HALPHA,3,12,3,18,1.5707963267948966,0.25,1,1,4,5,0,3HBET;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 213,
+            form: 0,
+            label: "NEWNOTE".into(),
+            status: "00000100",
+            parameters: "213,40,20,2,0,20,0,0,0,18,0,-5,1,0,2,3,-0.5,0,18,0,4HTUNL,4,12,3,1,1.5707963267948966,0,0,0,2,18,0,4HTOL!;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -3925,6 +3944,35 @@ fn decode_types_drawing_view_placement_annotations_and_sheet_properties() {
     assert_eq!(drawing.fields["units_flag"], 2);
     assert_eq!(drawing.fields["units_name"][0], 77);
     assert_eq!(drawing.fields["name"][0], 68);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(text_annotation_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let annotations = &result.ir.native.namespace("iges").unwrap().arenas["annotations"];
+    assert_eq!(annotations.len(), 2);
+    assert_eq!(annotations[0].fields["kind"], "general_note");
+    assert_eq!(
+        annotations[0].fields["strings"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(annotations[0].fields["strings"][0]["text"][0], 65);
+    assert_eq!(annotations[0].fields["strings"][1]["mirror"], 1);
+    assert_eq!(annotations[0].fields["strings"][1]["vertical"], 1);
+    assert_eq!(annotations[1].fields["kind"], "new_general_note");
+    assert_eq!(annotations[1].fields["justification"], 2);
+    assert_eq!(annotations[1].fields["strings"][0]["control_codes"][0], 84);
+    assert_eq!(annotations[1].fields["strings"][0]["text"]["text"][3], 33);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

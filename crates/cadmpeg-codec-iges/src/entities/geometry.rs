@@ -900,6 +900,10 @@ pub(crate) fn project_geometry(
     handled.extend(drawing.handled);
     decoded.extend(drawing.decoded);
     losses.extend(drawing.losses);
+    let annotation = super::annotation::project(ir, directory, parameters, global);
+    handled.extend(annotation.handled);
+    decoded.extend(annotation.decoded);
+    losses.extend(annotation.losses);
     Projection {
         handled,
         decoded,
