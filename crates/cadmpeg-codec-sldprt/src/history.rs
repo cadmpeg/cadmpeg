@@ -1671,13 +1671,14 @@ fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         radius: Length(radius),
         pitch: Length(pitch),
         revolutions,
+        start_angle: Angle(0.0),
         clockwise,
     })
 }
 
 fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefinition> {
-    let radius = parse_positive_dimension_length_mm(feature.parameters.get("D3")?)?;
-    let height = parse_dimension_length_mm(feature.parameters.get("D4")?)?;
+    let axial_rise = parse_dimension_length_mm(feature.parameters.get("D3")?)?;
+    let pitch = parse_dimension_length_mm(feature.parameters.get("D4")?)?;
     let revolutions = feature
         .parameters
         .get("D5")?
@@ -1693,8 +1694,8 @@ fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefinition> {
         .unwrap_or(false);
     Some(FeatureDefinition::HelixNativeAxis {
         axis_native_ref: feature.id.clone(),
-        radius: Length(radius),
-        height: Length(height),
+        axial_rise: Length(axial_rise),
+        pitch: Length(pitch),
         revolutions,
         start_angle,
         clockwise,
@@ -4920,6 +4921,7 @@ pub fn sync_neutral_features(
                 radius,
                 pitch,
                 revolutions,
+                start_angle,
                 clockwise,
             } => {
                 if ![axis_origin.x, axis_origin.y, axis_origin.z, pitch.0]
@@ -4930,6 +4932,7 @@ pub fn sync_neutral_features(
                     || radius.0 <= 0.0
                     || !revolutions.is_finite()
                     || *revolutions <= 0.0
+                    || !start_angle.0.is_finite()
                 {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has invalid helix geometry",
@@ -4949,6 +4952,7 @@ pub fn sync_neutral_features(
                 parameters.insert("Radius".into(), format_length_mm(radius.0));
                 parameters.insert("Pitch".into(), format_length_mm(pitch.0));
                 parameters.insert("Revolutions".into(), revolutions.to_string());
+                parameters.insert("StartAngle".into(), format_angle_rad(start_angle.0));
                 let mut properties = feature.source_properties.clone();
                 properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
                 properties.insert("AxisDirection".into(), format_vector3(*axis_direction));
@@ -4963,16 +4967,15 @@ pub fn sync_neutral_features(
             }
             FeatureDefinition::HelixNativeAxis {
                 axis_native_ref,
-                radius,
-                height,
+                axial_rise,
+                pitch,
                 revolutions,
                 start_angle,
                 clockwise,
             } => {
                 if axis_native_ref.is_empty()
-                    || !radius.0.is_finite()
-                    || radius.0 <= 0.0
-                    || !height.0.is_finite()
+                    || !axial_rise.0.is_finite()
+                    || !pitch.0.is_finite()
                     || !revolutions.is_finite()
                     || *revolutions <= 0.0
                     || !start_angle.0.is_finite()
@@ -4997,11 +5000,14 @@ pub fn sync_neutral_features(
                 let mut parameters = record.parameters.clone();
                 parameters.insert(
                     "D3".into(),
-                    format_length_like(radius.0, record.parameters.get("D3").map(String::as_str)),
+                    format_length_like(
+                        axial_rise.0,
+                        record.parameters.get("D3").map(String::as_str),
+                    ),
                 );
                 parameters.insert(
                     "D4".into(),
-                    format_length_like(height.0, record.parameters.get("D4").map(String::as_str)),
+                    format_length_like(pitch.0, record.parameters.get("D4").map(String::as_str)),
                 );
                 parameters.insert("D5".into(), revolutions.to_string());
                 parameters.insert(

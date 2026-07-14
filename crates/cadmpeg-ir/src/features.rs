@@ -178,7 +178,7 @@ pub enum ParameterValue {
 pub struct Length(pub f64);
 
 /// An angle in canonical radians.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
 pub struct Angle(pub f64);
 
@@ -337,6 +337,9 @@ pub enum FeatureDefinition {
         pitch: Length,
         /// Positive number of revolutions.
         revolutions: f64,
+        /// Angular position at the curve start.
+        #[serde(default)]
+        start_angle: Angle,
         /// Whether angular travel is clockwise when viewed along the axis.
         clockwise: bool,
     },
@@ -344,10 +347,12 @@ pub enum FeatureDefinition {
     HelixNativeAxis {
         /// Source-native record carrying the unresolved construction axis.
         axis_native_ref: String,
-        /// Initial radial distance from the axis.
-        radius: Length,
         /// Signed total rise along the axis.
-        height: Length,
+        #[serde(alias = "radius")]
+        axial_rise: Length,
+        /// Signed axial rise per revolution.
+        #[serde(alias = "height")]
+        pitch: Length,
         /// Positive number of revolutions.
         revolutions: f64,
         /// Angular position at the curve start.

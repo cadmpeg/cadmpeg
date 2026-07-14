@@ -271,7 +271,7 @@ A coordinate-less point or constrained-point marker linked to two or more resolv
 
 Point-distance operands select explicit profile loci. Line-distance and angular operands select the profile entity shared by their linked endpoint markers. A relation with resolved operands and one driving scalar maps to the corresponding neutral distance, horizontal-distance, vertical-distance, angle, radius, or diameter constraint. Relation-marker coordinates do not identify constraint operands. A relation marker without linked local identifiers does not produce a sketch constraint.
 
-`Helix/Spiral` history records use positional dimensions when explicit axis placement is absent: `D3` is the initial radius, `D4` is the signed total axial rise, `D5` is the positive revolution count, and `D7` is the start angle. The history record owns the unresolved construction axis.
+`Helix/Spiral` history records use positional dimensions when explicit axis placement is absent: `D3` is the signed total axial rise, `D4` is the signed axial rise per revolution, `D5` is the positive revolution count, and `D7` is the start angle. The history record owns the unresolved construction axis and radius.
 
 An `moCurvePattern_c` feature-input object is immediately preceded by its seed feature object and followed by its path feature object. The preceding object identifies the repeated neutral feature. When the following object is an `moProfileFeature_c` sketch with one resolved neutral sketch, that sketch is the curve-driven pattern path. A missing or multiply addressed adjacent object, or a following object that is not a resolved sketch, leaves both pattern inputs unresolved.
 

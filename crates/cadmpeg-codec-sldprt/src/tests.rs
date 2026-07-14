@@ -11425,6 +11425,7 @@ fn semantic_writer_round_trips_helix() {
             pitch: Length(-2.0),
             revolutions: 3.5,
             clockwise: true,
+            ..
         }
     ));
 
@@ -11435,6 +11436,7 @@ fn semantic_writer_round_trips_helix() {
         pitch,
         revolutions,
         clockwise,
+        ..
     } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed helix");
@@ -11480,6 +11482,7 @@ fn semantic_writer_round_trips_helix() {
             pitch: Length(8.0),
             revolutions: 9.25,
             clockwise: false,
+            ..
         }
     ));
 }
@@ -11520,6 +11523,7 @@ fn semantic_writer_round_trips_slash_named_helix() {
         pitch,
         revolutions,
         clockwise,
+        ..
     } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed helix");
@@ -11573,8 +11577,8 @@ fn semantic_writer_round_trips_native_axis_helix() {
         &feature.definition,
         FeatureDefinition::HelixNativeAxis {
             axis_native_ref,
-            radius: Length(3200.0),
-            height: Length(12800.0),
+            axial_rise: Length(3200.0),
+            pitch: Length(12800.0),
             revolutions: 0.25,
             start_angle: Angle(0.0),
             clockwise: false,
@@ -11588,8 +11592,8 @@ fn semantic_writer_round_trips_native_axis_helix() {
     assert!(findings.is_empty(), "{findings:#?}");
 
     let FeatureDefinition::HelixNativeAxis {
-        radius,
-        height,
+        axial_rise,
+        pitch,
         revolutions,
         start_angle,
         clockwise,
@@ -11598,8 +11602,8 @@ fn semantic_writer_round_trips_native_axis_helix() {
     else {
         panic!("typed native-axis helix");
     };
-    *radius = Length(4000.0);
-    *height = Length(16000.0);
+    *axial_rise = Length(4000.0);
+    *pitch = Length(16000.0);
     *revolutions = 0.5;
     *start_angle = Angle(std::f64::consts::FRAC_PI_2);
     *clockwise = true;
@@ -11621,8 +11625,8 @@ fn semantic_writer_round_trips_native_axis_helix() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::HelixNativeAxis {
-            radius: Length(4000.0),
-            height: Length(16000.0),
+            axial_rise: Length(4000.0),
+            pitch: Length(16000.0),
             revolutions: 0.5,
             start_angle: Angle(value),
             clockwise: true,
