@@ -212,7 +212,7 @@ pub struct CoedgeUse {
     pub end_vertex: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TrimRecord {
     triangles: Vec<[u32; 3]>,
     frame_vector: Option<[f64; 3]>,
@@ -253,15 +253,10 @@ pub fn parse_standard(bytes: &[u8]) -> Option<StandardTopology> {
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     let mut solutions = Vec::new();
     for width in [2, 3] {
-        let trims = parse_trim_records_with_width(&bytes[..face_start], width);
-        if trims.len() < face_count {
+        let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
             continue;
-        }
-        if let Some(topology) = reconstruct(
-            edge_rows.clone(),
-            vertex_points.clone(),
-            &trims[trims.len() - face_count..],
-        ) {
+        };
+        if let Some(topology) = reconstruct(edge_rows.clone(), vertex_points.clone(), &trims) {
             solutions.push(topology);
         }
     }
@@ -288,12 +283,10 @@ pub fn parse_standard_motif(
     }
     let mut solutions = Vec::new();
     for width in [2, 3] {
-        let trims = parse_trim_records_with_width(&bytes[..face_start], width);
-        if trims.len() < face_count {
+        let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
             continue;
-        }
-        let trims = &trims[trims.len() - face_count..];
-        let Some(port_points) = motif_port_points(trims, vertex_points.len()) else {
+        };
+        let Some(port_points) = motif_port_points(&trims, vertex_points.len()) else {
             continue;
         };
         let Some(edge_points) = edge_rows
@@ -991,11 +984,8 @@ fn incidence_cycles(
 pub fn parse_fbb(bytes: &[u8]) -> Option<StandardTopology> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, _) = parse_fbb_edge_tables(bytes, after_faces)?;
-    let trims = parse_trim_records_with_width(&bytes[..face_start], 3);
-    if trims.len() < face_count {
-        return None;
-    }
-    reconstruct(edge_rows, Vec::new(), &trims[trims.len() - face_count..])
+    let trims = parse_trim_chain(bytes, face_start, face_count, 3)?;
+    reconstruct(edge_rows, Vec::new(), &trims)
 }
 
 fn reconstruct(
@@ -1211,6 +1201,62 @@ fn parse_trim_records_with_width(bytes: &[u8], width: usize) -> Vec<TrimRecord> 
         }
     }
     records
+}
+
+fn parse_trim_chain(
+    bytes: &[u8],
+    end: usize,
+    record_count: usize,
+    width: usize,
+) -> Option<Vec<TrimRecord>> {
+    fn walk(
+        predecessors: &HashMap<usize, Vec<(usize, TrimRecord)>>,
+        end: usize,
+        remaining: usize,
+        reversed: &mut Vec<TrimRecord>,
+        solutions: &mut Vec<Vec<TrimRecord>>,
+    ) {
+        if solutions.len() > 1 {
+            return;
+        }
+        if remaining == 0 {
+            let mut records = reversed.clone();
+            records.reverse();
+            solutions.push(records);
+            return;
+        }
+        let Some(records) = predecessors.get(&end) else {
+            return;
+        };
+        for (start, record) in records {
+            reversed.push(record.clone());
+            walk(predecessors, *start, remaining - 1, reversed, solutions);
+            reversed.pop();
+        }
+    }
+
+    let prefix = bytes.get(..end)?;
+    let mut predecessors = HashMap::<usize, Vec<(usize, TrimRecord)>>::new();
+    for start in 0..prefix.len() {
+        if let Some(record) = parse_trim_record(prefix, start, width) {
+            predecessors
+                .entry(record.end)
+                .or_default()
+                .push((start, record));
+        }
+    }
+
+    let mut solutions = Vec::new();
+    walk(
+        &predecessors,
+        end,
+        record_count,
+        &mut Vec::with_capacity(record_count),
+        &mut solutions,
+    );
+    <[Vec<TrimRecord>; 1]>::try_from(solutions)
+        .ok()
+        .map(|[records]| records)
 }
 
 fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRecord> {
@@ -1536,9 +1582,33 @@ impl UnionFind {
 #[cfg(test)]
 mod motif_tests {
     use super::{
-        bind_edge_port_candidates, motif_port_points, propagate_edge_port_points,
+        bind_edge_port_candidates, motif_port_points, parse_trim_chain, propagate_edge_port_points,
         reconstruct_incidence, reconstruct_incidence_candidates, EdgeRow, TrimRecord,
     };
+
+    fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
+        let mut bytes = vec![0x01, 0x41, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00];
+        for handle in handles {
+            bytes.extend_from_slice(&handle.to_be_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn trim_chain_requires_exact_packet_count_and_boundary_landing() {
+        let incidental = triangle_packet([90, 91, 92]);
+        let first = triangle_packet([0, 1, 2]);
+        let second = triangle_packet([3, 4, 5]);
+        let mut bytes = incidental;
+        bytes.push(0);
+        bytes.extend_from_slice(&first);
+        bytes.extend_from_slice(&second);
+
+        let records = parse_trim_chain(&bytes, bytes.len(), 2, 2).expect("exact chain");
+        assert_eq!(records[0].handles, [0, 1, 2]);
+        assert_eq!(records[1].handles, [3, 4, 5]);
+        assert!(parse_trim_chain(&bytes, bytes.len(), 2, 3).is_none());
+    }
 
     fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
         TrimRecord {
