@@ -6847,6 +6847,8 @@ fn parse_edge_operand(
         recipe_program,
         recipe_structure,
         candidate_faces: Vec::new(),
+        result_candidate_faces: Vec::new(),
+        result_boundary_edge_slots: Vec::new(),
         preceding_candidate_faces: Vec::new(),
         changed_candidate_faces: Vec::new(),
         preceding_boundary_edge_slots: Vec::new(),

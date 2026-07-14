@@ -658,6 +658,48 @@ fn face_boundary_edges(
     edges
 }
 
+fn edge_recipe_reference_context(
+    reference_ordinal: u32,
+    reference: &crate::records::DesignRecipeReference,
+    result_topology: &AsmHistoricalTopology,
+    result_boundary_edges: &[i64],
+    preceding_topology: &AsmHistoricalTopology,
+    preceding_boundary_edges: &[i64],
+    changed_edges: &HashSet<i64>,
+) -> crate::records::DesignEdgeRecipeReferenceContext {
+    let result_faces = faces_in_topology(&reference.candidate_faces, result_topology);
+    let result_edges = face_boundary_edges(&result_faces, result_topology)
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let result_shared_edge_slots = result_boundary_edges
+        .iter()
+        .copied()
+        .filter(|edge| result_edges.contains(edge))
+        .collect();
+    let preceding_faces = faces_in_topology(&reference.candidate_faces, preceding_topology);
+    let preceding_edges = face_boundary_edges(&preceding_faces, preceding_topology)
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let shared_edge_slots = preceding_boundary_edges
+        .iter()
+        .copied()
+        .filter(|edge| preceding_edges.contains(edge))
+        .collect::<Vec<_>>();
+    let changed_shared_edge_slots = shared_edge_slots
+        .iter()
+        .copied()
+        .filter(|edge| changed_edges.contains(edge))
+        .collect();
+    crate::records::DesignEdgeRecipeReferenceContext {
+        reference_ordinal,
+        result_faces,
+        result_shared_edge_slots,
+        preceding_faces,
+        shared_edge_slots,
+        changed_shared_edge_slots,
+    }
+}
+
 pub(crate) fn bind_edge_operand_history_candidates(
     operands: &mut [crate::records::DesignEdgeOperand],
     scopes: &[crate::records::DesignParameterScope],
@@ -671,6 +713,8 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .or_insert(Some(state));
     }
     for operand in operands {
+        operand.result_candidate_faces.clear();
+        operand.result_boundary_edge_slots.clear();
         operand.preceding_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
         operand.preceding_boundary_edge_slots.clear();
@@ -699,12 +743,18 @@ pub(crate) fn bind_edge_operand_history_candidates(
         else {
             continue;
         };
-        let (Some(transition), Some(topology)) = (&state.transition, &previous.topology) else {
+        let (Some(transition), Some(result_topology), Some(topology)) =
+            (&state.transition, &state.topology, &previous.topology)
+        else {
             continue;
         };
         if transition.previous_state_id != Some(previous_state_id) {
             continue;
         }
+        operand.result_candidate_faces =
+            faces_in_topology(&operand.candidate_faces, result_topology);
+        operand.result_boundary_edge_slots =
+            face_boundary_edges(&operand.result_candidate_faces, result_topology);
         operand.preceding_candidate_faces = faces_in_topology(&operand.candidate_faces, topology);
         operand.changed_candidate_faces =
             faces_changed_by_transition(&operand.preceding_candidate_faces, transition)
@@ -739,27 +789,15 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .enumerate()
             .filter_map(|(ordinal, reference)| {
                 let reference_ordinal = u32::try_from(ordinal).ok()?;
-                let preceding_faces = faces_in_topology(&reference.candidate_faces, topology);
-                let reference_edges = face_boundary_edges(&preceding_faces, topology)
-                    .into_iter()
-                    .collect::<HashSet<_>>();
-                let shared_edge_slots = operand
-                    .preceding_boundary_edge_slots
-                    .iter()
-                    .copied()
-                    .filter(|edge| reference_edges.contains(edge))
-                    .collect::<Vec<_>>();
-                let changed_shared_edge_slots = shared_edge_slots
-                    .iter()
-                    .copied()
-                    .filter(|edge| changed_edges.contains(edge))
-                    .collect();
-                Some(crate::records::DesignEdgeRecipeReferenceContext {
+                Some(edge_recipe_reference_context(
                     reference_ordinal,
-                    preceding_faces,
-                    shared_edge_slots,
-                    changed_shared_edge_slots,
-                })
+                    reference,
+                    result_topology,
+                    &operand.result_boundary_edge_slots,
+                    topology,
+                    &operand.preceding_boundary_edge_slots,
+                    &changed_edges,
+                ))
             })
             .collect();
         operand.recipe_selectors = recipe_selector_candidates(
@@ -1828,6 +1866,29 @@ mod tests {
             faces_changed_by_transition(&candidates, &transition),
             [&candidates[0]]
         );
+        let reference = crate::records::DesignRecipeReference {
+            token: "1".into(),
+            token_offset: 0,
+            design_reference: 1,
+            design_reference_offset: 1,
+            candidate_faces: vec![FaceId(id(4))],
+            candidate_edges: Vec::new(),
+        };
+        let context = edge_recipe_reference_context(
+            2,
+            &reference,
+            &topology,
+            &[7, 99],
+            &topology,
+            &[7, 98],
+            &HashSet::from([7]),
+        );
+        assert_eq!(context.reference_ordinal, 2);
+        assert_eq!(context.result_faces, [FaceId(id(4))]);
+        assert_eq!(context.result_shared_edge_slots, [7]);
+        assert_eq!(context.preceding_faces, [FaceId(id(4))]);
+        assert_eq!(context.shared_edge_slots, [7]);
+        assert_eq!(context.changed_shared_edge_slots, [7]);
     }
 
     #[test]

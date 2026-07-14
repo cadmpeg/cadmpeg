@@ -1065,6 +1065,13 @@ pub struct DesignEdgeOperand {
     /// Active solved faces carrying the recipe's persistent Design reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_faces: Vec<FaceId>,
+    /// Candidate faces present in the ASM topology produced by the owning
+    /// edge-treatment feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub result_candidate_faces: Vec<FaceId>,
+    /// Stable edge slots on the result candidate-face boundaries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub result_boundary_edge_slots: Vec<i64>,
     /// Candidate faces present in the ASM topology immediately preceding the
     /// owning edge-treatment feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1100,6 +1107,11 @@ pub struct DesignEdgeOperand {
 pub struct DesignEdgeRecipeReferenceContext {
     /// Zero-based position in the edge recipe's prefix reference sequence.
     pub reference_ordinal: u32,
+    /// Referenced faces present in the owning feature's result topology.
+    pub result_faces: Vec<FaceId>,
+    /// Stable result edge slots shared by the referenced-face boundaries and
+    /// the primary candidate-face boundaries.
+    pub result_shared_edge_slots: Vec<i64>,
     /// Referenced faces present in the immediately preceding ASM topology.
     pub preceding_faces: Vec<FaceId>,
     /// Stable edge slots shared by the referenced-face boundaries and the
