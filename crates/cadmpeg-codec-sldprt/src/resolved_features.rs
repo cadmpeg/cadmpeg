@@ -4897,8 +4897,11 @@ fn resolved_marker_locus(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     visited: &mut HashSet<String>,
 ) -> Option<SketchLocus> {
-    if let Some(loci) = loci_by_marker.get(marker_id) {
-        return unique_locus(loci);
+    if let Some(locus) = loci_by_marker
+        .get(marker_id)
+        .and_then(|loci| unique_locus(loci))
+    {
+        return Some(locus);
     }
     if !visited.insert(marker_id.to_string()) {
         return None;
@@ -5940,11 +5943,11 @@ mod profile_join_tests {
         dimensioned_circle_surface_transforms, dimensioned_circle_transform,
         implicit_circle_marker, marker_entities, profile_loci_by_marker,
         project_dimensioned_sketch_geometry, project_relation_point_geometry,
-        relation_parameter_by_display_name, select_marker_transforms_by_frame,
-        sketch_frame_marker_transform, type_display_relation_parameters,
-        typed_marker_relation_definition, typed_relation_definition,
-        unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
-        MarkerTransform,
+        relation_parameter_by_display_name, resolved_marker_locus,
+        select_marker_transforms_by_frame, sketch_frame_marker_transform,
+        type_display_relation_parameters, typed_marker_relation_definition,
+        typed_relation_definition, unique_compatible_marker_transform,
+        unique_linked_endpoint_locus, unique_marker_transform, MarkerTransform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
@@ -5979,6 +5982,36 @@ mod profile_join_tests {
             links: Vec::new(),
             link_selector: None,
         }
+    }
+
+    #[test]
+    fn linked_locus_disambiguates_a_coordinate_collision() {
+        let mut ambiguous = marker("ambiguous", None);
+        ambiguous.links = vec![SketchInputLink {
+            local_id: 2,
+            entity_ref: "linked".into(),
+        }];
+        let linked = marker("linked", None);
+        let markers = HashMap::from([
+            (ambiguous.id.as_str(), &ambiguous),
+            (linked.id.as_str(), &linked),
+        ]);
+        let expected = SketchLocus::Start(SketchEntityId("line-a".into()));
+        let loci = HashMap::from([
+            (
+                ambiguous.id.clone(),
+                vec![
+                    expected.clone(),
+                    SketchLocus::End(SketchEntityId("line-b".into())),
+                ],
+            ),
+            (linked.id.clone(), vec![expected.clone()]),
+        ]);
+
+        assert_eq!(
+            resolved_marker_locus(&ambiguous.id, &markers, &loci, &mut HashSet::new()),
+            Some(expected)
+        );
     }
 
     #[test]
