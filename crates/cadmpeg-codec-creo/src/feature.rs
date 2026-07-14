@@ -2027,7 +2027,7 @@ fn trim_vertex_table(
             rows.push(FeatureTrimVertex {
                 vertex_id,
                 entities: [entity_1, entity_2],
-                section_coordinates: line_intersection([entity_1, entity_2], segments, variables),
+                section_coordinates: entity_intersection([entity_1, entity_2], segments, variables),
                 offset: row_offset,
             });
         }
@@ -2104,7 +2104,7 @@ fn positional_trim_vertex_table(
             rows.push(FeatureTrimVertex {
                 vertex_id,
                 entities: [entity_1, entity_2],
-                section_coordinates: line_intersection([entity_1, entity_2], segments, variables),
+                section_coordinates: entity_intersection([entity_1, entity_2], segments, variables),
                 offset: row_offset,
             });
         }
@@ -2116,7 +2116,7 @@ fn positional_trim_vertex_table(
     })
 }
 
-fn line_intersection(
+fn entity_intersection(
     entity_ids: [u32; 2],
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
@@ -2124,9 +2124,10 @@ fn line_intersection(
     let segments = segments?;
     let variables = variables?;
     let segment = |external_id| {
-        segments.rows.iter().find(|segment| {
-            segment.external_id == external_id && segment.kind == FeatureSegmentKind::Line
-        })
+        segments
+            .rows
+            .iter()
+            .find(|segment| segment.external_id == external_id)
     };
     let point = |point_id| {
         variables
@@ -2137,6 +2138,17 @@ fn line_intersection(
     };
     let first = segment(entity_ids[0])?;
     let second = segment(entity_ids[1])?;
+    let shared = first
+        .point_ids
+        .into_iter()
+        .filter(|point_id| second.point_ids.contains(point_id))
+        .collect::<BTreeSet<_>>();
+    if let [point_id] = shared.iter().copied().collect::<Vec<_>>().as_slice() {
+        return point(*point_id);
+    }
+    if first.kind != FeatureSegmentKind::Line || second.kind != FeatureSegmentKind::Line {
+        return None;
+    }
     let [x1, y1] = point(first.point_ids[0])?;
     let [x2, y2] = point(first.point_ids[1])?;
     let [x3, y3] = point(second.point_ids[0])?;
@@ -5650,6 +5662,47 @@ mod tests {
         assert_eq!(vertices.rows.len(), 1);
         assert_eq!(vertices.rows[0].vertex_id, 3);
         assert_eq!(vertices.rows[0].entities, [9, 10]);
+    }
+
+    #[test]
+    fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
+        let segment = |kind, point_ids, external_id| FeatureSegment {
+            kind,
+            directions: [None; 3],
+            point_ids,
+            center_id: (kind == FeatureSegmentKind::Arc).then_some(4),
+            arc_orientation: (kind == FeatureSegmentKind::Arc).then_some(0),
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            offset: 0,
+        };
+        let segments = FeatureSegmentTable {
+            declared_count: 2,
+            entity_ref: None,
+            rows: vec![
+                segment(FeatureSegmentKind::Line, [1, 2], 9),
+                segment(FeatureSegmentKind::Arc, [2, 3], 10),
+            ],
+            offset: 0,
+        };
+        let variables = FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            points: vec![FeatureSectionPoint {
+                point_id: 2,
+                u: Some(3.0),
+                v: Some(4.0),
+            }],
+            offset: 0,
+        };
+
+        assert_eq!(
+            entity_intersection([9, 10], Some(&segments), Some(&variables)),
+            Some([3.0, 4.0])
+        );
     }
 
     #[test]
