@@ -15,7 +15,7 @@ use crate::FcstdWriteOptions;
 pub(crate) fn write(
     ir: &CadIr,
     output: &mut dyn Write,
-    options: &FcstdWriteOptions,
+    options: FcstdWriteOptions,
 ) -> Result<ExportReport, CodecError> {
     if (options.schema_version, options.file_version) != (4, 1) {
         return Err(CodecError::NotImplemented(format!(
@@ -153,7 +153,7 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
                 property.id
             )));
         }
-        if &source_text[start..end] != property.raw_xml {
+        if source_text[start..end] != property.raw_xml {
             return Err(CodecError::Malformed(format!(
                 "retained bytes disagree with property {} provenance",
                 property.id
@@ -249,7 +249,7 @@ fn serialize_value(value: &ValueRecord) -> Result<String, CodecError> {
     Ok(serialized)
 }
 
-fn escape_xml(value: &str, output: &mut String, attribute: bool) {
+pub(crate) fn escape_xml(value: &str, output: &mut String, attribute: bool) {
     for character in value.chars() {
         match character {
             '&' => output.push_str("&amp;"),

@@ -6,6 +6,7 @@ mod application;
 mod application_geometry;
 mod attachment;
 mod brep;
+mod builder;
 mod container;
 mod design;
 mod drawing;
@@ -41,6 +42,8 @@ use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity, SourceObjectAssoci
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FcstdCodec;
 
+pub use builder::{FcstdDocumentBuilder, FcstdPropertyValue};
+
 /// Selects the persistence band emitted by [`FcstdCodec::encode_with_options`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FcstdWriteOptions {
@@ -65,7 +68,7 @@ impl FcstdCodec {
         &self,
         ir: &CadIr,
         writer: &mut dyn std::io::Write,
-        options: &FcstdWriteOptions,
+        options: FcstdWriteOptions,
     ) -> Result<ExportReport, CodecError> {
         writer::write(ir, writer, options)
     }
@@ -1266,7 +1269,7 @@ impl Encoder for FcstdCodec {
         ir: &CadIr,
         output: &mut dyn std::io::Write,
     ) -> Result<ExportReport, CodecError> {
-        self.encode_with_options(ir, output, &FcstdWriteOptions::default())
+        self.encode_with_options(ir, output, FcstdWriteOptions::default())
     }
 }
 
