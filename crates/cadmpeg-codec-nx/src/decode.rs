@@ -15,7 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv, surface_point};
+use cadmpeg_ir::eval::{
+    analytic_surface_parameters, curve_point, model_surface_point, pcurve_uv, surface_point,
+};
 use cadmpeg_ir::features::{
     Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
     FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
@@ -736,6 +738,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             &mut annotations,
         );
         complete_ext11_support_uv(&mut ir, &pending_ext11_support_uv);
+        complete_analytic_support_uv(&mut ir, &pending_ext11_support_uv);
 
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let mut unknown = unknown_stream(si, stream);
@@ -1648,6 +1651,92 @@ pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11S
             if let Some(replacement) = replacement {
                 context.sides[side].pcurve = Some(replacement);
             }
+        }
+    }
+}
+
+pub(crate) fn complete_analytic_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+    let mut replacements = Vec::new();
+    for (procedural_id, points, parameters, fit_tolerance, _) in pending {
+        let Some(procedural) = ir
+            .model
+            .procedural_curves
+            .iter()
+            .find(|procedural| &procedural.id == procedural_id)
+        else {
+            continue;
+        };
+        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+            continue;
+        };
+        for side in 0..2 {
+            if context.sides[side].pcurve.is_some() {
+                continue;
+            }
+            let Some(surface_id) = &context.sides[side].surface else {
+                continue;
+            };
+            let Some(surface) = ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| &surface.id == surface_id)
+            else {
+                continue;
+            };
+            let Some(mut uv) = points
+                .iter()
+                .map(|point| analytic_surface_parameters(&surface.geometry, *point))
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            if matches!(
+                surface.geometry,
+                SurfaceGeometry::Cylinder { .. }
+                    | SurfaceGeometry::Cone { .. }
+                    | SurfaceGeometry::Sphere { .. }
+                    | SurfaceGeometry::Torus { .. }
+            ) {
+                for index in 1..uv.len() {
+                    let turns = ((uv[index - 1].u - uv[index].u) / std::f64::consts::TAU).round();
+                    uv[index].u += turns * std::f64::consts::TAU;
+                }
+            }
+            let reproduces_chart = uv.iter().zip(points).all(|(uv, point)| {
+                surface_point(&surface.geometry, uv.u, uv.v)
+                    .is_some_and(|actual| point_distance(actual, *point) <= *fit_tolerance)
+            });
+            if reproduces_chart {
+                replacements.push((
+                    procedural_id.clone(),
+                    side,
+                    PcurveGeometry::Nurbs {
+                        degree: 1,
+                        knots: linear_knots(parameters),
+                        control_points: uv,
+                        weights: None,
+                        periodic: false,
+                    },
+                ));
+            }
+        }
+    }
+    for (procedural_id, side, pcurve) in replacements {
+        let Some(procedural) = ir
+            .model
+            .procedural_curves
+            .iter_mut()
+            .find(|procedural| procedural.id == procedural_id)
+        else {
+            continue;
+        };
+        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
+        else {
+            continue;
+        };
+        if context.sides[side].pcurve.is_none() {
+            context.sides[side].pcurve = Some(pcurve);
         }
     }
 }
