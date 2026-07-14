@@ -541,7 +541,8 @@ When a class-911 hole owns exactly two complete outline-backed plane rows, their
 stored order is the entry and termination order. The planes are parallel.
 Projecting the second origin minus the first origin onto the first unit normal
 gives the signed blind depth; its magnitude is the hole depth and its sign
-orients the hole axis from the entry plane toward the termination plane.
+orients the hole axis from the entry plane toward the termination plane. The
+first plane row is the hole's native placement-face selection.
 
 A typed schema row that owns a materialized `srf_array` row is an active construction feature. The root schema class supplies its operation family independently of an `MdlStatus` operation name.
 

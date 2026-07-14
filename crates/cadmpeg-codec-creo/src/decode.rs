@@ -16,7 +16,7 @@ use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
-    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
     FeatureSourceContent, FeatureTreeNodeRole, HoleKind, Length, ParameterId, ParameterValue,
     PatternForm, PatternKind, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
 };
@@ -1930,10 +1930,7 @@ fn feature_plane_equations(scan: &ContainerScan, feature_id: u32) -> Vec<([f64; 
         .collect()
 }
 
-fn feature_outline_plane_equations(
-    scan: &ContainerScan,
-    feature_id: u32,
-) -> Vec<([f64; 3], [f64; 3])> {
+fn feature_outline_planes(scan: &ContainerScan, feature_id: u32) -> Vec<(u32, [f64; 3], [f64; 3])> {
     scan.surface_rows
         .iter()
         .filter(|row| {
@@ -1943,7 +1940,7 @@ fn feature_outline_plane_equations(
             scan.outline_planes
                 .iter()
                 .find(|plane| plane.surface_id == row.id)
-                .map(|plane| (plane.origin, plane.normal))
+                .map(|plane| (row.id, plane.origin, plane.normal))
         })
         .collect()
 }
@@ -5883,17 +5880,21 @@ fn schema_feature_definition(
     kind: &str,
 ) -> IrFeatureDefinition {
     if schema_class == 911 {
-        let (direction, extent) = hole_extent_and_direction(feature_outline_plane_equations(
-            scan, feature_id,
-        ))
-        .map_or((None, None), |(direction, extent)| {
-            (
-                Some(Vector3::new(direction[0], direction[1], direction[2])),
-                Some(extent),
-            )
-        });
+        let placement = hole_placement(feature_outline_planes(scan, feature_id));
+        let (face, direction, extent) = placement.map_or(
+            (None, None, None),
+            |(entry_surface_id, direction, extent)| {
+                (
+                    Some(FaceSelection::Native(format!(
+                        "creo:visibgeom:surface#{entry_surface_id}"
+                    ))),
+                    Some(Vector3::new(direction[0], direction[1], direction[2])),
+                    Some(extent),
+                )
+            },
+        );
         return IrFeatureDefinition::Hole {
-            face: None,
+            face,
             position: None,
             direction,
             kind: HoleKind::Unresolved {
@@ -6132,6 +6133,22 @@ fn hole_extent_and_direction(
             length: Length(signed_length.abs()),
         },
     ))
+}
+
+fn hole_placement(
+    planes: impl IntoIterator<Item = (u32, [f64; 3], [f64; 3])>,
+) -> Option<(u32, [f64; 3], Extent)> {
+    let planes = planes.into_iter().collect::<Vec<_>>();
+    let [(entry_id, entry_origin, entry_normal), (_, termination_origin, termination_normal)] =
+        planes.as_slice()
+    else {
+        return None;
+    };
+    let (direction, extent) = hole_extent_and_direction([
+        (*entry_origin, *entry_normal),
+        (*termination_origin, *termination_normal),
+    ])?;
+    Some((*entry_id, direction, extent))
 }
 
 fn extrusion_span(
@@ -6768,6 +6785,28 @@ mod resolved_sketch_tests {
             hole_extent_and_direction([
                 ([0.0; 3], [1.0, 0.0, 0.0]),
                 ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            ]),
+            None
+        );
+
+        assert_eq!(
+            hole_placement([
+                (902, [0.0, 0.0, 0.85], [0.0, 0.0, 1.0]),
+                (905, [0.0, 0.0, 7.35], [0.0, 0.0, -1.0]),
+            ]),
+            Some((
+                902,
+                [0.0, 0.0, 1.0],
+                Extent::Blind {
+                    length: Length(6.5),
+                },
+            ))
+        );
+        assert_eq!(
+            hole_placement([
+                (902, [0.0; 3], [0.0, 0.0, 1.0]),
+                (905, [0.0, 0.0, 1.0], [0.0, 0.0, -1.0]),
+                (908, [0.0, 0.0, 2.0], [0.0, 0.0, -1.0]),
             ]),
             None
         );
