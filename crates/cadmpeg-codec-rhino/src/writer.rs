@@ -76,17 +76,16 @@ const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 const DEFAULT_RELATIVE_TOLERANCE: f64 = 0.01;
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
-    check_representable(ir)?;
-    let breps = brep_scopes(ir)?;
-    let mut objects = breps
+    let plan = prepare_write(ir)?;
+    let mut objects = plan
+        .breps
         .iter()
-        .map(|scope| {
-            let payload = planar_sheet_brep_payload(&scope.ir)?
-                .expect("a Brep scope contains one shape body");
+        .map(|prepared| {
+            let scope = &prepared.scope;
             attributed_object_record(
                 0x10,
                 BREP_CLASS,
-                &payload,
+                &prepared.payload,
                 &scope.body.id.0,
                 scope.body.name.as_deref(),
                 scope.body.color,
@@ -94,17 +93,12 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let general = general_topology_ir(ir);
-    let (mut topology_points, point_groups) = free_vertex_groups(&general)?;
-    for scope in &breps {
-        topology_points.extend(scope.points.iter().cloned());
-    }
 
     objects.extend(
         ir.model
             .points
             .iter()
-            .filter(|point| !topology_points.contains(&point.id.0))
+            .filter(|point| !plan.topology_points.contains(&point.id.0))
             .map(|point| {
                 let position = point.position;
                 let mut payload = vec![0x10];
@@ -115,7 +109,7 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             })
             .collect::<Result<Vec<_>, _>>()?,
     );
-    for group in point_groups {
+    for group in plan.point_groups {
         if group.points.len() == 1 {
             let point = group.points[0];
             let mut payload = vec![0x10];
@@ -144,7 +138,11 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
         }
     }
     for curve in &ir.model.curves {
-        if breps.iter().any(|scope| scope.curves.contains(&curve.id.0)) {
+        if plan
+            .breps
+            .iter()
+            .any(|prepared| prepared.scope.curves.contains(&curve.id.0))
+        {
             continue;
         }
         let (class, payload) = match &curve.geometry {
@@ -171,9 +169,10 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
         )?);
     }
     for surface in &ir.model.surfaces {
-        if breps
+        if plan
+            .breps
             .iter()
-            .any(|scope| scope.surfaces.contains(&surface.id.0))
+            .any(|prepared| prepared.scope.surfaces.contains(&surface.id.0))
         {
             continue;
         }
@@ -267,6 +266,17 @@ struct BrepScope {
     surfaces: std::collections::BTreeSet<String>,
     curves: std::collections::BTreeSet<String>,
     pcurves: std::collections::BTreeSet<String>,
+}
+
+struct PreparedBrep {
+    scope: BrepScope,
+    payload: Vec<u8>,
+}
+
+struct WritePlan {
+    breps: Vec<PreparedBrep>,
+    topology_points: std::collections::BTreeSet<String>,
+    point_groups: Vec<PointGroup>,
 }
 
 fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
@@ -486,7 +496,7 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
     scoped
 }
 
-fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
+fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
     if ir
         .native
         .namespace("rhino")
@@ -533,17 +543,21 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
         ));
     }
     let breps = brep_scopes(ir)?;
-    for scope in &breps {
-        planar_sheet_brep_payload(&scope.ir)?.ok_or_else(|| {
-            CodecError::NotImplemented(format!(
-                "body {} topology is not a writable Brep",
-                scope.body.id.0
-            ))
-        })?;
-    }
-    let used_pcurves = breps
+    let prepared_breps = breps
+        .into_iter()
+        .map(|scope| {
+            let payload = planar_sheet_brep_payload(&scope.ir)?.ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "body {} topology is not a writable Brep",
+                    scope.body.id.0
+                ))
+            })?;
+            Ok(PreparedBrep { scope, payload })
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    let used_pcurves = prepared_breps
         .iter()
-        .flat_map(|scope| scope.pcurves.iter())
+        .flat_map(|prepared| prepared.scope.pcurves.iter())
         .collect::<std::collections::BTreeSet<_>>();
     if used_pcurves.len() != model.pcurves.len() {
         return Err(CodecError::NotImplemented(
@@ -552,9 +566,9 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
     }
     let general = general_topology_ir(ir);
     let scoped_count = |select: fn(&cadmpeg_ir::document::Model) -> usize| {
-        breps
+        prepared_breps
             .iter()
-            .map(|scope| select(&scope.ir.model))
+            .map(|prepared| select(&prepared.scope.ir.model))
             .sum::<usize>()
             + select(&general.model)
     };
@@ -571,9 +585,15 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
             "orphan or unsupported topology is not writable".into(),
         ));
     }
-    free_vertex_groups(&general)?;
+    let (mut topology_points, point_groups) = free_vertex_groups(&general)?;
+    for prepared in &prepared_breps {
+        topology_points.extend(prepared.scope.points.iter().cloned());
+    }
     for curve in &model.curves {
-        if breps.iter().any(|scope| scope.curves.contains(&curve.id.0)) {
+        if prepared_breps
+            .iter()
+            .any(|prepared| prepared.scope.curves.contains(&curve.id.0))
+        {
             continue;
         }
         if curve.source_object.is_some() {
@@ -619,9 +639,9 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
         }
     }
     for surface in &model.surfaces {
-        if breps
+        if prepared_breps
             .iter()
-            .any(|scope| scope.surfaces.contains(&surface.id.0))
+            .any(|prepared| prepared.scope.surfaces.contains(&surface.id.0))
         {
             continue;
         }
@@ -651,7 +671,11 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
     for mesh in &model.tessellations {
         check_mesh(mesh)?;
     }
-    Ok(())
+    Ok(WritePlan {
+        breps: prepared_breps,
+        topology_points,
+        point_groups,
+    })
 }
 
 fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bool {
