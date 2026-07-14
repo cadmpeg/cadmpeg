@@ -15,9 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, DesignParameter, Extent, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, Length, ParameterId, ParameterValue, ProfileRef, RevolutionAxis,
-    RevolutionConstruction,
+    Angle, BooleanOp, DesignParameter, DimensionDisplay, Extent, Feature,
+    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, Length, ParameterId,
+    ParameterValue, ProfileRef, RevolutionAxis, RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition,
@@ -3351,7 +3351,7 @@ fn transfer_feature_dimensions(
                 ordinal: ordinal as u32,
                 name: format!("d{}", dimension.external_id),
                 expression,
-                display: None,
+                display: (dimension.dimension_type == 0x03).then_some(DimensionDisplay::Radius),
                 value: Some(value),
                 dependencies: Vec::new(),
                 properties,

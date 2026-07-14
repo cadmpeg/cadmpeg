@@ -395,6 +395,7 @@ and `0x05` are linear dimensions whose values use model millimeters. `ext_id` is
 within the owning feature definition. In positional dimension rows, a bare
 `18` in the `aux_value` slot encodes zero and does not consume the following
 compact `ext_id`.
+Type `0x03` has radius display semantics.
 
 A `segtab` line whose two endpoint identifiers each have complete type-1 and
 type-2 `var_arr` values is the bounded segment between those two `[u, v]`
