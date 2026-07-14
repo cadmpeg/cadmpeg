@@ -6621,6 +6621,25 @@ mod resolved_sketch_tests {
         assert!(
             carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 6.0), torus).is_none()
         );
+        let torus_tangent_sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [0.0, 0.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 3.0,
+        });
+        assert!(matches!(
+            carrier_intersection_curve(torus_tangent_sphere, torus),
+            Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_sphere_torus_tangent_circle"))
+                if center == Point3::new(0.0, 0.0, 0.0) && (radius - 3.0).abs() < 1e-12
+        ));
+        let torus_sphere_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [3.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        });
+        assert_eq!(
+            solve_carriers(&[torus_tangent_sphere, torus, torus_sphere_plane]),
+            Some([3.0, 0.0, 0.0])
+        );
+        assert!(carrier_intersection_curve(sphere, torus).is_none());
         assert!(point_on_carrier([5.0, 0.0, 2.0], torus));
         assert!(!point_on_carrier([5.0, 0.0, 0.0], torus));
         assert_eq!(
@@ -7131,6 +7150,21 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                         if let Some((geometry, _)) = carrier_intersection_curve(
                             CarrierEquation::Cone(*cone),
                             CarrierEquation::Sphere(*sphere),
+                        ) {
+                            if let Some((center, axis, radius)) = circle_parameters(&geometry) {
+                                candidates.extend(intersect_plane_with_circle(
+                                    *plane, center, axis, radius,
+                                ));
+                            }
+                        }
+                    }
+                } else if let ([plane], [sphere], [torus]) =
+                    (planes.as_slice(), spheres.as_slice(), tori.as_slice())
+                {
+                    if cylinders.is_empty() && cones.is_empty() {
+                        if let Some((geometry, _)) = carrier_intersection_curve(
+                            CarrierEquation::Sphere(*sphere),
+                            CarrierEquation::Torus(*torus),
                         ) {
                             if let Some((center, axis, radius)) = circle_parameters(&geometry) {
                                 candidates.extend(intersect_plane_with_circle(
@@ -8515,13 +8549,61 @@ fn carrier_intersection_curve(
                 "coaxial_cone_sphere_tangent_circle",
             ))
         }
+        (CarrierEquation::Sphere(sphere), CarrierEquation::Torus(torus))
+        | (CarrierEquation::Torus(torus), CarrierEquation::Sphere(sphere)) => {
+            let axis = normalized(torus.axis)?;
+            let relative: [f64; 3] =
+                std::array::from_fn(|index| torus.center[index] - sphere.center[index]);
+            let axial = dot(relative, axis);
+            let transverse: [f64; 3] =
+                std::array::from_fn(|index| relative[index] - axial * axis[index]);
+            let scale = torus
+                .major_radius
+                .max(torus.minor_radius)
+                .max(sphere.radius)
+                .max(1.0);
+            if dot(transverse, transverse).sqrt() > 1e-9 * scale {
+                return None;
+            }
+            let meridian_distance = torus.major_radius.hypot(axial);
+            if meridian_distance <= 1e-12 {
+                return None;
+            }
+            let external = sphere.radius + torus.minor_radius;
+            let internal = (sphere.radius - torus.minor_radius).abs();
+            if (meridian_distance - external).abs() > 1e-9 * scale
+                && (meridian_distance - internal).abs() > 1e-9 * scale
+            {
+                return None;
+            }
+            let sphere_parameter = (meridian_distance * meridian_distance
+                + sphere.radius * sphere.radius
+                - torus.minor_radius * torus.minor_radius)
+                / (2.0 * meridian_distance);
+            let radius = sphere_parameter * torus.major_radius / meridian_distance;
+            if radius <= 1e-12 * scale {
+                return None;
+            }
+            let center_axial = sphere_parameter * axial / meridian_distance;
+            let center: [f64; 3] =
+                std::array::from_fn(|index| sphere.center[index] + center_axial * axis[index]);
+            let reference = normalized(torus.ref_direction)?;
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(axis[0], axis[1], axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius,
+                },
+                "coaxial_sphere_torus_tangent_circle",
+            ))
+        }
         (
             CarrierEquation::Cone(_),
             CarrierEquation::Cylinder(_) | CarrierEquation::Cone(_) | CarrierEquation::Torus(_),
         )
         | (CarrierEquation::Cylinder(_) | CarrierEquation::Torus(_), CarrierEquation::Cone(_))
-        | (CarrierEquation::Torus(_), CarrierEquation::Sphere(_) | CarrierEquation::Torus(_))
-        | (CarrierEquation::Sphere(_), CarrierEquation::Torus(_)) => None,
+        | (CarrierEquation::Torus(_), CarrierEquation::Torus(_)) => None,
     }
 }
 
