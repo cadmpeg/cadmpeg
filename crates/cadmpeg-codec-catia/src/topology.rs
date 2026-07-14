@@ -104,6 +104,21 @@ impl StandardTopology {
         )
     }
 
+    /// Orient every incidence-closed FBB face group independently. Open sheet
+    /// and non-manifold general groups retain their reconstructed loop senses.
+    pub fn orient_solid_body_cycles(&mut self, face_groups: &[usize]) -> Option<()> {
+        let kinds = self.body_kinds(face_groups)?;
+        let mut start = 0usize;
+        for (&count, kind) in face_groups.iter().zip(kinds) {
+            let end = start.checked_add(count)?;
+            if kind == BodyKind::Solid {
+                orient_face_cycles(self.faces.get_mut(start..end)?)?;
+            }
+            start = end;
+        }
+        (start == self.faces.len()).then_some(())
+    }
+
     /// Bind logical port/corner components to coordinate-row indices from one
     /// exact unordered endpoint pair per physical edge. A result is returned
     /// only when the induced bijection is unique.
@@ -5299,6 +5314,65 @@ mod motif_tests {
         assert_eq!(topology.body_kinds(&[1]), None);
         topology.edge_rows.pop();
         assert_eq!(topology.body_kinds(&[1]), Some(vec![BodyKind::Sheet]));
+    }
+
+    #[test]
+    fn solid_body_cycles_orient_independently_from_an_open_sheet_body() {
+        let use_ = |edge_row| CoedgeUse {
+            edge_row,
+            reversed: false,
+            start_vertex: edge_row,
+            end_vertex: 1 - edge_row,
+        };
+        let mut topology = StandardTopology {
+            faces: vec![
+                FaceTopology {
+                    boundaries: vec![Boundary {
+                        coedges: vec![use_(0), use_(1)],
+                    }],
+                },
+                FaceTopology {
+                    boundaries: vec![Boundary {
+                        coedges: vec![use_(0), use_(1)],
+                    }],
+                },
+                FaceTopology {
+                    boundaries: vec![Boundary {
+                        coedges: vec![CoedgeUse {
+                            edge_row: 2,
+                            reversed: false,
+                            start_vertex: 0,
+                            end_vertex: 1,
+                        }],
+                    }],
+                },
+            ],
+            edge_rows: (0..3)
+                .map(|edge| EdgeRow {
+                    kind: 1,
+                    handles: vec![edge * 2, edge * 2 + 1],
+                    boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+                })
+                .collect(),
+            vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            logical_vertex_count: 2,
+        };
+
+        assert_eq!(
+            topology.body_kinds(&[2, 1]),
+            Some(vec![BodyKind::Solid, BodyKind::Sheet])
+        );
+        topology
+            .orient_solid_body_cycles(&[2, 1])
+            .expect("closed group orientation");
+
+        for edge in 0..2 {
+            assert_ne!(
+                topology.faces[0].boundaries[0].coedges[edge].reversed,
+                topology.faces[1].boundaries[0].coedges[1 - edge].reversed,
+            );
+        }
+        assert!(!topology.faces[2].boundaries[0].coedges[0].reversed);
     }
 
     #[test]

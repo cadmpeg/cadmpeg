@@ -4511,7 +4511,7 @@ fn attach_standard_topology(
         })
         .collect();
     let motif_topology = topology::parse_standard_motif(brep, &edge_faces, &circle_anchors);
-    let (topology, point_assignment) = if let Some(bound) = mesh_bound {
+    let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
     } else if let Some(topology) = native_endpoint_pairs
         .as_ref()
@@ -4565,7 +4565,11 @@ fn attach_standard_topology(
     {
         return false;
     }
-    let Some(body_kinds) = topology.body_kinds(&fbb_groups(brep)) else {
+    let face_groups = fbb_groups(brep);
+    if topology.orient_solid_body_cycles(&face_groups).is_none() {
+        return false;
+    }
+    let Some(body_kinds) = topology.body_kinds(&face_groups) else {
         return false;
     };
     let Some(edge_vertices) = topology.edge_vertices() else {
