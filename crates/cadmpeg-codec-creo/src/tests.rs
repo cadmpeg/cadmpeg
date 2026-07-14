@@ -308,6 +308,27 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
 }
 
 #[test]
+fn surface_parameter_body_ignores_compound_close_inside_scalar() {
+    let mut payload = visibgeom_payload(1, 0);
+    let scalar = [0x46, 0x08, 0xe3, 0, 0, 0, 0, 0];
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&scalar);
+    payload.push(0xe3);
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert_eq!(scan.surface_parameters.len(), 1);
+    assert_eq!(scan.surface_parameters[0].body, scalar);
+    assert_eq!(
+        scan.surface_parameters[0].scalar_values,
+        [f64::from_be_bytes([0x40, 0x08, 0xe3, 0, 0, 0, 0, 0])]
+    );
+    assert_eq!(
+        scan.surface_parameters[0].boundary,
+        crate::surface::SurfaceBodyBoundary::CompoundClose
+    );
+}
+
+#[test]
 fn surface_parameter_body_ignores_invalid_embedded_named_marker() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);

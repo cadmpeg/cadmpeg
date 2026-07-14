@@ -18,6 +18,8 @@ pub mod token {
     pub const ENTITY_REF: u8 = 0xf7;
     /// Array close.
     pub const ARRAY_CLOSE: u8 = 0xfb;
+    /// Compound-record close.
+    pub const COMPOUND_CLOSE: u8 = 0xe3;
 }
 
 /// One structurally framed PSB token.

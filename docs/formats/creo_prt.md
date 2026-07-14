@@ -170,7 +170,7 @@ The seven-byte scalar `5e b2 b3 b4 b5 b6 b7` reconstructs IEEE-754 bytes `3f d3 
 
 A positional surface parameter body ends at its compound close, the next validated surface-row header, or a named-record header. A named-record boundary has `e0`, a field-type byte in `00..24`, a nonempty ASCII identifier beginning with a letter, and a null terminator. An `e0` byte inside an opaque numeric or pointer token is not a boundary.
 
-Row bodies end at a valid row-close marker, named-record header, or a following positional row header that matches the row schema. The first row after `srf_array\0` can be a named-record row with the fields `geom_id`, `geom_type`, `feat_id`, `orient`, `boundary_type`, `next_geom_ptr`, `envlp`, `outline`, and `local_sys`.
+Row bodies end at a valid row-close marker, named-record header, or a following positional row header that matches the row schema. Scalar-token length takes precedence over structural-byte interpretation, so an `e3` byte inside a complete scalar does not close the row. The first row after `srf_array\0` can be a named-record row with the fields `geom_id`, `geom_type`, `feat_id`, `orient`, `boundary_type`, `next_geom_ptr`, `envlp`, `outline`, and `local_sys`.
 Plane envelope and post-envelope local-system bodies use the same grammar for
 each defined boundary byte; `boundary_type` does not select their scalar layout.
 

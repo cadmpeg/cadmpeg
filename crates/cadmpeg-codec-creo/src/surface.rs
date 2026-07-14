@@ -687,9 +687,7 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
         } else {
             SurfaceBodyBoundary::SectionEnd
         };
-        if let Some(relative) = payload[*body_start..body_end]
-            .iter()
-            .position(|byte| *byte == 0xe3)
+        if let Some(relative) = surface_body_compound_close(&payload[*body_start..body_end], &cache)
         {
             body_end = body_start + relative;
             boundary = SurfaceBodyBoundary::CompoundClose;
@@ -709,6 +707,23 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
         });
     }
     records
+}
+
+fn surface_body_compound_close(body: &[u8], cache: &scalar::ScalarCache) -> Option<usize> {
+    let mut cursor = 0;
+    while cursor < body.len() {
+        if body[cursor] == psb::token::COMPOUND_CLOSE {
+            return Some(cursor);
+        }
+        if let Some((_, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache) {
+            cursor = next;
+        } else if matches!(body.get(cursor), Some(0x73 | 0xbb)) && cursor + 7 <= body.len() {
+            cursor += 7;
+        } else {
+            cursor += 1;
+        }
+    }
+    None
 }
 
 fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usize> {
