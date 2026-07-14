@@ -222,6 +222,69 @@ fn entity_parameter_end(
         .map_or(record.tokens.len(), |groups| groups.token_start)
 }
 
+fn property_fields_valid(entry: &DirectoryEntry, record: &ParameterRecord, end: usize) -> bool {
+    let exact = |count: i64| record.integer(1) == Some(count) && end == count as usize + 2;
+    let integer_range = |index, range: std::ops::RangeInclusive<i64>| {
+        record
+            .integer(index)
+            .is_some_and(|value| range.contains(&value))
+    };
+    match entry.form {
+        2 => exact(3) && (2..=4).all(|index| integer_range(index, 0..=2)),
+        3 => exact(2) && record.integer(2).is_some() && record.string(3).is_some(),
+        5 => {
+            exact(5)
+                && record
+                    .number(2)
+                    .is_some_and(|value| value.is_finite() && value >= 0.0)
+                && integer_range(3, 0..=1)
+                && integer_range(4, 0..=2)
+                && integer_range(5, 0..=2)
+                && record.number(6).is_some_and(f64::is_finite)
+        }
+        6 => {
+            exact(5)
+                && (2..=3).all(|index| {
+                    record
+                        .number(index)
+                        .is_some_and(|value| value.is_finite() && value >= 0.0)
+                })
+                && integer_range(4, 0..=1)
+                && record
+                    .integer(5)
+                    .zip(record.integer(6))
+                    .is_some_and(|(lower, upper)| lower >= 0 && upper >= lower)
+        }
+        7 | 8 | 15 => exact(1) && record.string(2).is_some_and(|value| !value.is_empty()),
+        9 => exact(4) && (2..=5).all(|index| record.string(index).is_some()),
+        10 => exact(6) && (2..=7).all(|index| integer_range(index, 0..=1)),
+        12 | 14 => record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .is_some_and(|count| {
+                count > 0
+                    && end == count + 2
+                    && (0..count).all(|offset| record.string(2 + offset).is_some())
+            }),
+        13 => {
+            matches!(record.integer(1), Some(2 | 3))
+                && end == record.integer(1).unwrap_or_default() as usize + 2
+                && record.number(2).is_some_and(f64::is_finite)
+                && record.string(3).is_some()
+                && (record.integer(1) == Some(2) || record.string(4).is_some())
+        }
+        18 => {
+            exact(1)
+                && record
+                    .number(2)
+                    .is_some_and(|value| (0.0..=100.0).contains(&value))
+        }
+        19 => exact(1) && record.integer(2).is_some(),
+        20 | 21 => exact(1) && integer_range(2, 0..=1),
+        _ => false,
+    }
+}
+
 fn existing_pointer(
     record: &ParameterRecord,
     index: usize,
@@ -613,10 +676,9 @@ pub(super) fn project(
         })
         .collect::<BTreeMap<_, _>>();
 
-    for entry in directory
-        .iter()
-        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 7 | 15))
-    {
+    for entry in directory.iter().filter(|entry| {
+        entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=10 | 12..=15 | 18..=21)
+    }) {
         handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -631,7 +693,7 @@ pub(super) fn project(
             })
             .collect::<Vec<_>>();
         let fields_valid =
-            record.integer(1) == Some(1) && record.string(2).is_some_and(|value| !value.is_empty());
+            property_fields_valid(entry, record, entity_parameter_end(record, &entries));
         let attachment_valid = entry.status.subordinate == 0 || !owners.is_empty();
         let reference_designator_valid = entry.form != 7
             || owners.iter().all(|owner| {
@@ -644,7 +706,7 @@ pub(super) fn project(
         } else {
             losses.push(entity_loss(
                 entry,
-                "product property value, attachment, or owner kind is invalid",
+                "property value layout, attachment, or owner kind is invalid",
             ));
         }
     }

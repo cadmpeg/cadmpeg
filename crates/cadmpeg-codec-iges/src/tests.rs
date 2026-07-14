@@ -2407,6 +2407,36 @@ fn product_property_file() -> Vec<u8> {
     ])
 }
 
+fn scalar_property_forms_file() -> Vec<u8> {
+    let cases = [
+        (2, "406,3,0,1,2;"),
+        (3, "406,2,17,5HPOWER;"),
+        (5, "406,5,0.25,0,2,1,0.1;"),
+        (6, "406,5,0.5,0.45,1,2,8;"),
+        (8, "406,1,3HPA7;"),
+        (9, "406,4,7HGENERIC,6HMIL123,6HVEND42,5HINT99;"),
+        (10, "406,6,1,0,1,0,1,0;"),
+        (12, "406,2,8HBASE.IGS,10HDETAIL.IGS;"),
+        (13, "406,3,2.5,3HAWG,7HANSI123;"),
+        (14, "406,2,4HMAIN,3HHOT;"),
+        (18, "406,1,12.5;"),
+        (19, "406,1,223;"),
+        (20, "406,1,1;"),
+        (21, "406,1,0;"),
+    ];
+    let entities = cases
+        .into_iter()
+        .map(|(form, parameters)| OwnedTestEntity {
+            entity_type: 406,
+            form,
+            label: format!("PROP{form}"),
+            status: "00000000",
+            parameters: parameters.into(),
+        })
+        .collect::<Vec<_>>();
+    owned_test_file(&entities)
+}
+
 fn view_forms_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4301,6 +4331,37 @@ fn decode_links_product_names_and_reference_designators_to_owners() {
         .is_empty());
     assert_eq!(owner.fields["property_links"][0], "iges:entity:directory#3");
     assert_eq!(owner.fields["property_links"][1], "iges:entity:directory#5");
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_scalar_and_string_property_forms() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(scalar_property_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let properties = &result.ir.native.namespace("iges").unwrap().arenas["properties"];
+    assert_eq!(properties.len(), 14);
+    let property = |form| {
+        properties
+            .iter()
+            .find(|property| property.fields["form"] == form)
+            .unwrap()
+    };
+    assert_eq!(property(2).fields["property_kind"], "region_restriction");
+    assert_eq!(property(2).fields["electrical_circuitry"], 2);
+    assert_eq!(property(5).fields["extension_flag"], 2);
+    assert_eq!(property(12).fields["names"].as_array().unwrap().len(), 2);
+    assert_eq!(property(13).fields["standard"][0], 65);
+    assert_eq!(property(18).fields["percent"], 12.5);
+    assert_eq!(property(20).fields["highlighted"], true);
+    assert_eq!(property(21).fields["pickable"], true);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

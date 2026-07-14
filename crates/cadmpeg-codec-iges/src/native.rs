@@ -504,6 +504,91 @@ struct NativeProductProperty {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "property_kind", rename_all = "snake_case")]
+enum NativePropertyValue {
+    RegionRestriction {
+        electrical_vias: Option<i64>,
+        electrical_components: Option<i64>,
+        electrical_circuitry: Option<i64>,
+    },
+    LevelFunction {
+        function_code: Option<i64>,
+        description: Option<Vec<u8>>,
+    },
+    LineWidening {
+        width: Option<f64>,
+        cornering: Option<i64>,
+        extension_flag: Option<i64>,
+        justification: Option<i64>,
+        extension: Option<f64>,
+    },
+    DrilledHole {
+        drill_diameter: Option<f64>,
+        finished_diameter: Option<f64>,
+        plated: Option<i64>,
+        lower_layer: Option<i64>,
+        upper_layer: Option<i64>,
+    },
+    ReferenceDesignator {
+        value: Option<Vec<u8>>,
+    },
+    PinNumber {
+        value: Option<Vec<u8>>,
+    },
+    PartNumber {
+        generic: Option<Vec<u8>>,
+        military: Option<Vec<u8>>,
+        vendor: Option<Vec<u8>>,
+        internal: Option<Vec<u8>>,
+    },
+    Hierarchy {
+        line_font: Option<i64>,
+        view: Option<i64>,
+        level: Option<i64>,
+        blank: Option<i64>,
+        line_weight: Option<i64>,
+        color: Option<i64>,
+    },
+    ExternalReferenceFileList {
+        names: Vec<Option<Vec<u8>>>,
+    },
+    NominalSize {
+        size: Option<f64>,
+        name: Option<Vec<u8>>,
+        standard: Option<Vec<u8>>,
+    },
+    FlowLineSpecification {
+        values: Vec<Option<Vec<u8>>>,
+    },
+    Name {
+        value: Option<Vec<u8>>,
+    },
+    IntercharacterSpacing {
+        percent: Option<f64>,
+    },
+    LineFont {
+        pattern_code: Option<i64>,
+    },
+    Highlight {
+        highlighted: Option<bool>,
+    },
+    Pick {
+        pickable: Option<bool>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeProperty {
+    id: String,
+    source_entity: String,
+    form: i64,
+    declared_value_count: Option<i64>,
+    owners: Vec<String>,
+    #[serde(flatten)]
+    value: NativePropertyValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeUnitDefinition {
     unit_type: Option<Vec<u8>>,
     unit_value: Option<Vec<u8>>,
@@ -2221,6 +2306,112 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let properties = directory
+        .iter()
+        .filter(|entry| {
+            entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=10 | 12..=15 | 18..=21)
+        })
+        .filter_map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied()?;
+            let count = record
+                .integer(1)
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let strings = |start: usize, count: usize| {
+                (0..count)
+                    .map(|offset| record.string(start + offset).map(<[u8]>::to_vec))
+                    .collect::<Vec<_>>()
+            };
+            let value = match entry.form {
+                2 => NativePropertyValue::RegionRestriction {
+                    electrical_vias: record.integer(2),
+                    electrical_components: record.integer(3),
+                    electrical_circuitry: record.integer(4),
+                },
+                3 => NativePropertyValue::LevelFunction {
+                    function_code: record.integer(2),
+                    description: record.string(3).map(<[u8]>::to_vec),
+                },
+                5 => NativePropertyValue::LineWidening {
+                    width: record.number(2),
+                    cornering: record.integer(3),
+                    extension_flag: record.integer(4),
+                    justification: record.integer(5),
+                    extension: record.number(6),
+                },
+                6 => NativePropertyValue::DrilledHole {
+                    drill_diameter: record.number(2),
+                    finished_diameter: record.number(3),
+                    plated: record.integer(4),
+                    lower_layer: record.integer(5),
+                    upper_layer: record.integer(6),
+                },
+                7 => NativePropertyValue::ReferenceDesignator {
+                    value: record.string(2).map(<[u8]>::to_vec),
+                },
+                8 => NativePropertyValue::PinNumber {
+                    value: record.string(2).map(<[u8]>::to_vec),
+                },
+                9 => NativePropertyValue::PartNumber {
+                    generic: record.string(2).map(<[u8]>::to_vec),
+                    military: record.string(3).map(<[u8]>::to_vec),
+                    vendor: record.string(4).map(<[u8]>::to_vec),
+                    internal: record.string(5).map(<[u8]>::to_vec),
+                },
+                10 => NativePropertyValue::Hierarchy {
+                    line_font: record.integer(2),
+                    view: record.integer(3),
+                    level: record.integer(4),
+                    blank: record.integer(5),
+                    line_weight: record.integer(6),
+                    color: record.integer(7),
+                },
+                12 => NativePropertyValue::ExternalReferenceFileList {
+                    names: strings(2, count),
+                },
+                13 => NativePropertyValue::NominalSize {
+                    size: record.number(2),
+                    name: record.string(3).map(<[u8]>::to_vec),
+                    standard: record.string(4).map(<[u8]>::to_vec),
+                },
+                14 => NativePropertyValue::FlowLineSpecification {
+                    values: strings(2, count),
+                },
+                15 => NativePropertyValue::Name {
+                    value: record.string(2).map(<[u8]>::to_vec),
+                },
+                18 => NativePropertyValue::IntercharacterSpacing {
+                    percent: record.number(2),
+                },
+                19 => NativePropertyValue::LineFont {
+                    pattern_code: record.integer(2),
+                },
+                20 => NativePropertyValue::Highlight {
+                    highlighted: record.integer(2).map(|value| value == 1),
+                },
+                21 => NativePropertyValue::Pick {
+                    pickable: record.integer(2).map(|value| value == 0),
+                },
+                _ => return None,
+            };
+            Some(NativeProperty {
+                id: format!("iges:property#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                declared_value_count: record.integer(1),
+                owners: by_directory
+                    .iter()
+                    .filter(|(sequence, owner)| {
+                        **sequence != entry.sequence
+                            && trailing_pointer_groups(owner, &entries)
+                                .is_some_and(|groups| groups.properties.contains(&entry.sequence))
+                    })
+                    .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
+                    .collect(),
+                value,
+            })
+        })
+        .collect::<Vec<_>>();
     let units_data = directory
         .iter()
         .filter(|entry| entry.entity_type == 316 && entry.form == 0)
@@ -2907,6 +3098,7 @@ pub(crate) fn store(
     namespace.set_arena("attribute_table_definitions", &attribute_table_definitions)?;
     namespace.set_arena("attribute_table_instances", &attribute_table_instances)?;
     namespace.set_arena("product_properties", &product_properties)?;
+    namespace.set_arena("properties", &properties)?;
     namespace.set_arena("units_data", &units_data)?;
     namespace.set_arena("views", &views)?;
     namespace.set_arena("view_visibility", &view_visibility)?;
