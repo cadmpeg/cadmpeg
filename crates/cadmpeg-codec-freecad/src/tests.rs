@@ -520,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "24");
+    assert_eq!(result.ir.ir_version, "25");
     let feature = |name: &str| {
         &result
             .ir
@@ -749,6 +749,50 @@ fn transfers_part_ruled_surface_and_section_intersection() {
     ));
     assert_eq!(feature("Ruled").dependencies.len(), 2);
     assert_eq!(feature("Section").dependencies.len(), 2);
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_standalone_part_mirror_plane_semantics() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Box" name="Source" id="1"/>
+ <Object type="Part::Box" name="PlaneCarrier" id="2"/>
+ <Object type="Part::Mirroring" name="Mirror" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Source"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="3"/></Property></Properties></Object>
+ <Object name="PlaneCarrier"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="4"/></Property><Property name="Width" type="App::PropertyLength"><Float value="5"/></Property><Property name="Height" type="App::PropertyLength"><Float value="6"/></Property></Properties></Object>
+ <Object name="Mirror"><Properties Count="4">
+  <Property name="Source" type="App::PropertyLink"><Link value="Source"/></Property>
+  <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
+  <Property name="Normal" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
+  <Property name="MirrorPlane" type="App::PropertyLinkSub"><Link object="PlaneCarrier" sub="Face1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("standalone Part mirror");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Mirror"))
+        .expect("mirror feature");
+    assert!(matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::MirrorShape {
+            source: cadmpeg_ir::features::BodySelection::Native(source),
+            plane_origin: cadmpeg_ir::math::Point3 { x: 1.0, y: 2.0, z: 3.0 },
+            plane_normal: cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+            plane_reference: Some(cadmpeg_ir::features::FaceSelection::Native(reference)),
+        } if source.ends_with(":property:Source") && reference.ends_with(":property:MirrorPlane")
+    ));
+    assert_eq!(feature.dependencies.len(), 2);
     assert!(result.report.losses.is_empty());
 }
 

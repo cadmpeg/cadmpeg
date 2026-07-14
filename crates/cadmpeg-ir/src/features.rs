@@ -575,6 +575,18 @@ pub enum FeatureDefinition {
         /// Whether the resulting section edges are approximated.
         approximate: bool,
     },
+    /// Reflects one source shape across a model-space plane.
+    MirrorShape {
+        /// Shape transformed into the mirrored result.
+        source: BodySelection,
+        /// Point on the persisted resolved mirror plane.
+        plane_origin: Point3,
+        /// Unit normal of the persisted resolved mirror plane.
+        plane_normal: Vector3,
+        /// Native plane, face, or circle reference that supplied the resolved plane.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plane_reference: Option<FaceSelection>,
+    },
     /// Adds material normal to selected faces.
     Thicken {
         /// Faces offset by the operation.

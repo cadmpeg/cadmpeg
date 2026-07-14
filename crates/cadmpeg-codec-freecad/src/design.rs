@@ -248,6 +248,12 @@ pub(crate) fn transfer(
                 parameters: native_parameters(&owned),
                 properties: BTreeMap::new(),
             })
+        } else if object.type_name == "Part::Mirroring" {
+            mirror_shape_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            })
         } else if object.type_name == "PartDesign::Draft" {
             draft_definition(&owned, objects, &properties_by_owner).unwrap_or_else(|| {
                 FeatureDefinition::Native {
@@ -1984,6 +1990,23 @@ fn section_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDef
     })
 }
 
+fn mirror_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+    let source = property(properties, "Source")?;
+    if source.links.len() != 1 {
+        return None;
+    }
+    let origin = vector_property(properties, "Base")?;
+    let plane_reference = property(properties, "MirrorPlane")
+        .filter(|property| !property.links.is_empty())
+        .map(|property| cadmpeg_ir::features::FaceSelection::Native(property.id.clone()));
+    Some(FeatureDefinition::MirrorShape {
+        source: BodySelection::Native(source.id.clone()),
+        plane_origin: Point3::new(origin.x, origin.y, origin.z),
+        plane_normal: unit_vector(vector_property(properties, "Normal")?)?,
+        plane_reference,
+    })
+}
+
 fn draft_definition(
     properties: &[&PropertyRecord],
     objects: &[ObjectRecord],
@@ -3086,6 +3109,9 @@ fn is_design_object(kind: &str) -> bool {
             kind,
             "Part::Compound" | "Part::Compound2" | "Part::Refine" | "Part::Reverse"
         )
-        || matches!(kind, "Part::RuledSurface" | "Part::Section")
+        || matches!(
+            kind,
+            "Part::RuledSurface" | "Part::Section" | "Part::Mirroring"
+        )
         || kind.contains("PartDesign::Feature")
 }

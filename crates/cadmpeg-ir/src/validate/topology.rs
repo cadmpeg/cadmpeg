@@ -1769,6 +1769,22 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 body_selections.push(first);
                 body_selections.push(second);
             }
+            FeatureDefinition::MirrorShape {
+                source,
+                plane_origin,
+                plane_normal,
+                plane_reference,
+            } => {
+                body_selections.push(source);
+                face_selections.extend(plane_reference);
+                if ![plane_origin.x, plane_origin.y, plane_origin.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    || !valid_feature_direction(*plane_normal)
+                {
+                    feature_geometry_error(findings, feature, "mirror plane is invalid");
+                }
+            }
             FeatureDefinition::Thicken {
                 faces, thickness, ..
             } => {

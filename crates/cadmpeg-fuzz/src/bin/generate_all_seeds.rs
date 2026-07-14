@@ -1177,7 +1177,7 @@ fn generate_ir_seeds() {
         ("unit_cube_v13.json", cube.as_bytes()),
         ("directed_subd_sum_v13.json", directed_subd_sum.as_bytes()),
     ];
-    let valid_v0 = minimal.replacen(r#""ir_version": "24""#, r#""ir_version": "0""#, 1);
+    let valid_v0 = minimal.replacen(r#""ir_version": "25""#, r#""ir_version": "0""#, 1);
 
     let from_json = Path::new("seeds/ir_from_json");
     replace_seed_directory(from_json);
@@ -1192,7 +1192,7 @@ fn generate_ir_seeds() {
     for (name, data) in &canonical {
         let legacy = std::str::from_utf8(data)
             .unwrap()
-            .replacen(r#""ir_version": "24""#, r#""ir_version": "23""#, 1);
+            .replacen(r#""ir_version": "25""#, r#""ir_version": "24""#, 1);
         fs::write(migrate.join(name.replace("_v13.json", "_v12.json")), legacy).unwrap();
     }
 

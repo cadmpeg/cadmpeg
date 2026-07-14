@@ -374,6 +374,11 @@ operands and whether section edges use approximation. Each operand must resolve 
 persisted link; invalid orientation values and incomplete operands remain attributable native
 operations.
 
+Standalone Part mirror operations retain their single source shape and the resolved model-space
+plane as an origin and unit normal. When present, the native plane, face, or circle selection that
+supplied that resolved plane remains attached for attribution and dependency recovery. A missing
+source or zero-length normal leaves the operation attributable and native.
+
 Part extrusions retain their normalized direction, independent forward and reverse lengths, and
 equal forward/reverse taper when both sides are active. PartDesign pads and pockets distinguish
 blind, through-all, first-intersection, last-intersection, face-selected, and shape-selected
