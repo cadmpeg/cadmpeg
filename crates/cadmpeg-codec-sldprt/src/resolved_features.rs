@@ -5458,7 +5458,20 @@ fn typed_marker_relation_definition(
     };
     Some(match kind {
         Horizontal | Vertical | Fixed => {
-            let entities = marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
+            let direct_entities =
+                marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
+            let owner_entities =
+                relation_owner_curve_entities(marker, markers_by_id, loci_by_marker);
+            let entities = match owner_entities.as_slice() {
+                [owner]
+                    if direct_entities.iter().all(|entity| {
+                        entity == owner || entity.0.contains("sketch-entity#relation-point:")
+                    }) =>
+                {
+                    owner_entities
+                }
+                _ => direct_entities,
+            };
             if let [entity] = entities.as_slice() {
                 if matches!(kind, Horizontal | Vertical)
                     && entity.0.contains("sketch-entity#relation-point:")
@@ -5621,6 +5634,26 @@ fn relation_owner_markers<'a>(
         .collect::<Vec<_>>();
     owners.sort_unstable_by_key(|marker| marker.offset);
     owners
+}
+
+fn relation_owner_curve_entities(
+    relation: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Vec<SketchEntityId> {
+    let mut entities = relation_owner_markers(relation, markers_by_id)
+        .into_iter()
+        .filter(|owner| {
+            matches!(
+                owner.kind,
+                SketchInputKind::LineOrCircle | SketchInputKind::Arc
+            )
+        })
+        .flat_map(|owner| marker_entities(&owner.id, markers_by_id, loci_by_marker))
+        .collect::<Vec<_>>();
+    entities.sort_by(|left, right| left.0.cmp(&right.0));
+    entities.dedup();
+    entities
 }
 
 fn line_endpoint_markers<'a>(
@@ -7220,6 +7253,43 @@ mod profile_join_tests {
                     native_ref: Some(point.id),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn unary_relation_uses_one_resolved_reverse_curve_owner() {
+        let mut relation = marker("relation", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+        relation.links = vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: "point".into(),
+        }];
+        let mut owner = marker("owner", Some([1.0, 2.0]));
+        owner.kind = SketchInputKind::LineOrCircle;
+        owner.links = vec![SketchInputLink {
+            local_id: 4,
+            entity_ref: relation.id.clone(),
+        }];
+        let point = marker("point", None);
+        let markers = HashMap::from([
+            (relation.id.as_str(), &relation),
+            (owner.id.as_str(), &owner),
+            (point.id.as_str(), &point),
+        ]);
+        let line = SketchEntityId("line".into());
+        let loci = HashMap::from([
+            (owner.id.clone(), vec![SketchLocus::Entity(line.clone())]),
+            (
+                point.id.clone(),
+                vec![SketchLocus::Entity(SketchEntityId(
+                    "sldprt:model:sketch-entity#relation-point:1".into(),
+                ))],
+            ),
+        ]);
+
+        assert_eq!(
+            typed_marker_relation_definition(&relation, &markers, &loci),
+            Some(SketchConstraintDefinition::Horizontal { entity: line })
         );
     }
 
