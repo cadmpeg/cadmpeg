@@ -737,10 +737,16 @@ fn transfer_topology_colors(
     else {
         return Ok(());
     };
-    if group.names.len() != count {
+    // FreeCAD uses a single list entry as a uniform color for every mapped subelement.
+    if count != 1 && group.names.len() != count {
         return Ok(());
     }
-    for (index, (bytes, names)) in bytes[4..].chunks_exact(4).zip(&group.names).enumerate() {
+    for (index, bytes) in bytes[4..].chunks_exact(4).enumerate() {
+        let names = if count == 1 {
+            group.names.iter().flatten().collect::<Vec<_>>()
+        } else {
+            group.names[index].iter().collect::<Vec<_>>()
+        };
         let packed = u32::from_le_bytes(bytes.try_into().expect("four-byte color"));
         let lower = kind.name().to_ascii_lowercase();
         let appearance_id = AppearanceId(format!(
@@ -762,17 +768,16 @@ fn transfer_topology_colors(
             base_color: Some(decode_color(packed, None)),
             properties: BTreeMap::new(),
         });
-        for topology_id in
-            names
-                .iter()
-                .flat_map(|name| &name.topology_ids)
-                .filter(|id| match kind {
-                    TopologyColorKind::Face => ir.model.faces.iter().any(|face| face.id.0 == **id),
-                    TopologyColorKind::Edge => ir.model.edges.iter().any(|edge| edge.id.0 == **id),
-                    TopologyColorKind::Vertex => {
-                        ir.model.vertices.iter().any(|vertex| vertex.id.0 == **id)
-                    }
-                })
+        for topology_id in names
+            .into_iter()
+            .flat_map(|name| &name.topology_ids)
+            .filter(|id| match kind {
+                TopologyColorKind::Face => ir.model.faces.iter().any(|face| face.id.0 == **id),
+                TopologyColorKind::Edge => ir.model.edges.iter().any(|edge| edge.id.0 == **id),
+                TopologyColorKind::Vertex => {
+                    ir.model.vertices.iter().any(|vertex| vertex.id.0 == **id)
+                }
+            })
         {
             let target = match kind {
                 TopologyColorKind::Face => {

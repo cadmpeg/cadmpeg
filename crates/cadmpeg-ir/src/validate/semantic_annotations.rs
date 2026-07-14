@@ -27,7 +27,8 @@ pub(super) fn check_semantic_annotations(
             .iter()
             .chain(annotation.position.iter().flatten())
             .all(|value| value.is_finite());
-        if !refs_valid || !numeric_valid || !orders.insert(annotation.order) {
+        let order_valid = orders.insert(annotation.order);
+        if !refs_valid || !numeric_valid || !order_valid {
             findings.push(Finding {
                 check: Check::ReferentialIntegrity,
                 severity: Severity::Error,

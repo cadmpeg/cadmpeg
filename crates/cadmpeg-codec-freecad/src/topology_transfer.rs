@@ -515,12 +515,14 @@ impl<'a> Builder<'a> {
         let surface_transform = multiply(face_transform, self.tables.location(location));
         let face_key = self.topology_label(face_use.shape, face_transform);
         let face_id = FaceId(crate::native::model_id("face", &self.payload.id, &face_key));
+        // OCCT triangulation nodes are already expressed in the face's surface-location frame.
+        // Only the owning topological face placement remains to be applied here.
         let located_triangulation = triangulation.map(|index| {
             let triangulation = &self.tables.triangulations[index - 1];
             let vertices = triangulation
                 .nodes
                 .iter()
-                .map(|point| transform_point(surface_transform, *point))
+                .map(|point| transform_point(face_transform, *point))
                 .collect::<Vec<_>>();
             let triangles = triangulation
                 .triangles
@@ -537,7 +539,7 @@ impl<'a> Builder<'a> {
                 &self.payload.id,
                 format!("triangulation:{index}@{face_key}"),
             ));
-            let deflection_scale = similarity(surface_transform)?.scale;
+            let deflection_scale = similarity(face_transform)?.scale;
             if self.emitted_surfaces.insert(id.clone()) {
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
@@ -555,14 +557,14 @@ impl<'a> Builder<'a> {
         };
         if let Some((index, triangulation, vertices, triangles)) = located_triangulation {
             self.emitted_triangulations.insert(index);
-            let deflection_scale = similarity(surface_transform)?.scale;
+            let deflection_scale = similarity(face_transform)?.scale;
             let normals = triangulation
                 .normals
                 .as_ref()
                 .map(|normals| {
                     normals
                         .iter()
-                        .map(|normal| transform_vector(surface_transform, *normal))
+                        .map(|normal| transform_vector(face_transform, *normal))
                         .collect()
                 })
                 .unwrap_or_default();

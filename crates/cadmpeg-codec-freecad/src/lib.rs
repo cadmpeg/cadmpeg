@@ -508,6 +508,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|node| (node.object.as_str(), node))
         .collect::<HashMap<_, _>>();
+    let cyclic_products = product_cycle_nodes(&product_by_object);
     for node in &product_nodes {
         if !object_ids.contains(node.object.as_str())
             || node
@@ -536,7 +537,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(node.id.clone()),
             ));
         }
-        if product_cycle(node.object.as_str(), &product_by_object) {
+        if cyclic_products.contains(node.object.as_str()) {
             findings.push(finding(
                 Check::NativeLinks,
                 format!("{} participates in a product-structure cycle", node.id),
@@ -930,25 +931,69 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     findings
 }
 
-fn product_cycle(start: &str, nodes: &HashMap<&str, &native::ProductNodeRecord>) -> bool {
-    fn visit<'a>(
-        current: &'a str,
-        start: &str,
-        nodes: &HashMap<&'a str, &'a native::ProductNodeRecord>,
-        seen: &mut HashSet<&'a str>,
-    ) -> bool {
-        let Some(node) = nodes.get(current) else {
-            return false;
-        };
-        node.members
-            .iter()
-            .map(String::as_str)
-            .chain(node.prototype.as_deref())
-            .any(|target| {
-                target == start || (seen.insert(target) && visit(target, start, nodes, seen))
-            })
+fn product_cycle_nodes<'a>(
+    nodes: &HashMap<&'a str, &'a native::ProductNodeRecord>,
+) -> HashSet<&'a str> {
+    let edges = |name: &'a str| {
+        nodes.get(name).into_iter().flat_map(|node| {
+            node.members
+                .iter()
+                .map(String::as_str)
+                .chain(node.prototype.as_deref())
+                .filter(|target| nodes.contains_key(target))
+        })
+    };
+    let mut reverse = HashMap::<&str, Vec<&str>>::new();
+    for &source in nodes.keys() {
+        reverse.entry(source).or_default();
+        for target in edges(source) {
+            reverse.entry(target).or_default().push(source);
+        }
     }
-    visit(start, start, nodes, &mut HashSet::from([start]))
+
+    let mut visited = HashSet::new();
+    let mut finish = Vec::with_capacity(nodes.len());
+    for &root in nodes.keys() {
+        if !visited.insert(root) {
+            continue;
+        }
+        let mut stack = vec![(root, false)];
+        while let Some((current, exiting)) = stack.pop() {
+            if exiting {
+                finish.push(current);
+                continue;
+            }
+            stack.push((current, true));
+            for target in edges(current) {
+                if visited.insert(target) {
+                    stack.push((target, false));
+                }
+            }
+        }
+    }
+
+    let mut assigned = HashSet::new();
+    let mut cyclic = HashSet::new();
+    while let Some(root) = finish.pop() {
+        if !assigned.insert(root) {
+            continue;
+        }
+        let mut component = Vec::new();
+        let mut stack = vec![root];
+        while let Some(current) = stack.pop() {
+            component.push(current);
+            for &source in reverse.get(current).into_iter().flatten() {
+                if assigned.insert(source) {
+                    stack.push(source);
+                }
+            }
+        }
+        let self_cycle = component.len() == 1 && edges(component[0]).any(|target| target == root);
+        if component.len() > 1 || self_cycle {
+            cyclic.extend(component);
+        }
+    }
+    cyclic
 }
 
 fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> Finding {

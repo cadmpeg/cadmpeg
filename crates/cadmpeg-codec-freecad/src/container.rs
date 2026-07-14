@@ -165,9 +165,18 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
             uncompressed_size: file.size(),
         });
 
-        let mut bytes = Vec::with_capacity(file.size() as usize);
-        file.read_to_end(&mut bytes)
+        let declared_size = file.size();
+        let mut bytes = Vec::with_capacity(declared_size as usize);
+        (&mut file)
+            .take(declared_size.saturating_add(1))
+            .read_to_end(&mut bytes)
             .map_err(|error| CodecError::Malformed(format!("cannot read {name}: {error}")))?;
+        if u64::try_from(bytes.len()).ok() != Some(declared_size) {
+            return Err(CodecError::Malformed(format!(
+                "entry {name} expanded to {} bytes but declares {declared_size}",
+                bytes.len()
+            )));
+        }
         let mut attributes = BTreeMap::new();
         attributes.insert("crc32".into(), format!("{:08x}", file.crc32()));
         attributes.insert("header_offset".into(), header_start.to_string());

@@ -134,7 +134,7 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
             CodecError::Malformed(format!("missing ObjectData for {}", object.name))
         })?;
         for extensions_node in data
-            .descendants()
+            .children()
             .filter(|node| node.has_tag_name("Extensions"))
         {
             let nodes = extensions_node
@@ -166,10 +166,22 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
                 });
             }
         }
-        for container in data
-            .descendants()
+        let containers = data
+            .children()
             .filter(|node| node.has_tag_name("Properties"))
-        {
+            .chain(
+                data.children()
+                    .filter(|node| node.has_tag_name("Extensions"))
+                    .flat_map(|node| {
+                        node.children()
+                            .filter(|child| child.has_tag_name("Extension"))
+                    })
+                    .flat_map(|node| {
+                        node.children()
+                            .filter(|child| child.has_tag_name("Properties"))
+                    }),
+            );
+        for container in containers {
             let property_owner = container
                 .ancestors()
                 .find(|ancestor| ancestor.has_tag_name("Extension"))

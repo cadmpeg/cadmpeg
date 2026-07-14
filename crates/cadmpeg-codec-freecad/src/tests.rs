@@ -4968,7 +4968,8 @@ fn transfers_triangulation_only_face_and_indexed_edge_polygon() {
 <ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
 </Document>"#;
     let brep = b"CASCADE Topology V3, (c) Open Cascade
-Locations 0
+Locations 1
+1 1 0 0 10 0 1 0 0 0 0 1 0
 Curve2ds 0
 Curves 0
 Polygon3D 0
@@ -4982,7 +4983,7 @@ Ve 0.001 0 0 0 0 0 1001000 *
 Ve 0.001 1 0 0 0 0 1001000 *
 Ed 0.001 1 1 0 6 1 1 0 0 1001000 +7 0 -6 0 *
 Wi 1001000 +5 0 *
-Fa 0 0.001 0 0 2 1 1001000 +4 0 *
+Fa 0 0.001 0 1 2 1 1001000 +4 0 *
 Sh 1001000 +3 0 *
 So 1001000 +2 0 *
 +1 0 *";
@@ -4997,6 +4998,7 @@ So 1001000 +2 0 *
         .expect("triangulation-only topology");
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_eq!(result.ir.model.tessellations.len(), 1);
+    assert_eq!(result.ir.model.tessellations[0].vertices[0].x, 0.0);
     assert!(matches!(
         result.ir.model.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Polygonal {

@@ -96,6 +96,9 @@ fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
                 let Some(stage_count) = pattern_occurrence_count(&stage.pattern) else {
                     return true;
                 };
+                if stage_count == 0 {
+                    return false;
+                }
                 if index == 0 {
                     occurrences = Some(stage_count);
                     return true;

@@ -65,7 +65,8 @@ pub(super) fn check_presentation(
             .into_iter()
             .flatten()
             .all(|value| value.is_finite() && value >= 0.0);
-        if !references_valid || !sizes_valid || !orders.insert(view.order) {
+        let order_valid = orders.insert(view.order);
+        if !references_valid || !sizes_valid || !order_valid {
             invalid(
                 findings,
                 Some(view.id.0.clone()),

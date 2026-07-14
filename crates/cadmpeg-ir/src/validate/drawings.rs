@@ -38,7 +38,8 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &HashSet<String>, findings: &m
                     .sum::<f64>()
                     > f64::EPSILON
             });
-        if !refs_valid || !numeric_valid || !orders.insert(drawing.order) {
+        let order_valid = orders.insert(drawing.order);
+        if !refs_valid || !numeric_valid || !order_valid {
             findings.push(Finding {
                 check: Check::ReferentialIntegrity,
                 severity: Severity::Error,
