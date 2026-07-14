@@ -699,6 +699,24 @@ impl Graph {
         references
     }
 
+    /// Carrier identities required by the surviving fixed topology image.
+    pub fn referenced_carrier_xmts(&self) -> BTreeSet<u32> {
+        let mut references = self.referenced_curve_xmts();
+        references.extend(
+            self.of_kind(14)
+                .filter_map(Node::face_fields)
+                .map(|fields| fields.surface)
+                .filter(|reference| *reference > 1),
+        );
+        references.extend(
+            self.of_kind(18)
+                .filter_map(Node::vertex_fields)
+                .map(|fields| fields.point)
+                .filter(|reference| *reference > 1),
+        );
+        references
+    }
+
     /// Return SHELL nodes whose ownership fields define a body shape.
     pub fn body_shape_shells(&self) -> Vec<&Node> {
         self.of_kind(13)

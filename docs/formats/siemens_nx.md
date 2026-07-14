@@ -250,7 +250,7 @@ FIN omits `node_id` and begins its nine signature references immediately after `
 
 **Tombstone:** a compact 6-byte deletion `type:u16 BE  xmt:u16  00 01`. A whole-record tombstone has this complete form. In a full record, `xmt 01` is a reference and status byte. Tombstone xmts are plain high-range `u16` values (48300+).
 
-Tombstones occur only in the active body's deltas stream. They form descending contiguous xmt runs that can span topology, geometry, and attribute record types. Every sub-body merge is additive: its final face set is its partition face set. Only the active body's surviving-face set depends on resolving the tombstone-to-entity bridge.
+Tombstones form descending contiguous xmt runs that can span topology, geometry, and attribute record types. Partition topology remains authoritative. A tombstone does not remove a point, curve, or surface carrier still referenced by a surviving vertex, fin, edge, or face unless a later full deltas record replaces that carrier. Unreferenced exact-key records follow the last full-record or tombstone event.
 
 ---
 

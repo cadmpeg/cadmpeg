@@ -2635,8 +2635,9 @@ fn build_geometry_report(
                  in validated UG_PART segment order. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, B_SURFACE, and B_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
-                 each key; validated partition topology remained authoritative. Tombstones \
-                 without an exact partition key remain unresolved.",
+                 each key. Validated partition topology remained authoritative, including any \
+                 point, curve, or surface carrier still referenced by surviving topology. \
+                 Tombstones without an exact partition key remain unresolved.",
                 scan.count(StreamKind::Deltas)
             ),
             provenance: None,

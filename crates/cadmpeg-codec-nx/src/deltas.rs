@@ -337,6 +337,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     }
 
     let graph = crate::topology::Graph::parse(partition);
+    let topology_carriers = graph.referenced_carrier_xmts();
     replacements.retain(|key, record| {
         tombstones
             .get(key)
@@ -346,6 +347,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         .into_iter()
         .filter(|(key, tombstone)| {
             graph.get(key.0, key.1).is_some()
+                && !topology_carriers.contains(&key.1)
                 && replacements
                     .get(key)
                     .is_none_or(|record| tombstone.offset > record.offset)

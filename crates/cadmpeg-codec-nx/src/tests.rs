@@ -4095,7 +4095,7 @@ fn merged_deltas_full_record_replaces_partition_node() {
 }
 
 #[test]
-fn merged_exact_key_tombstone_removes_partition_node() {
+fn merged_tombstone_preserves_a_topology_referenced_carrier() {
     let partition = topology_partition_stream();
     let mut tombstone = Vec::new();
     tombstone.extend_from_slice(&29u16.to_be_bytes());
@@ -4106,8 +4106,18 @@ fn merged_exact_key_tombstone_removes_partition_node() {
     assert_eq!(census.tombstones[0].kind, 29);
     assert_eq!(census.tombstones[0].xmt, 11);
     let merged = crate::deltas::merge_full_records(&partition, &tombstone);
+    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_some());
+    assert_eq!(crate::geometry::points(&merged)[0].position.x, 10.0);
+}
+
+#[test]
+fn merged_exact_key_tombstone_removes_unreferenced_partition_node() {
+    let mut partition = record(29, 40);
+    put_ref(&mut partition, 2, 11);
+    put_vec3(&mut partition, 16, [0.01, 0.02, 0.03]);
+    let tombstone = [0, 29, 0, 11, 0, 1];
+    let merged = crate::deltas::merge_full_records(&partition, &tombstone);
     assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_none());
-    assert!(crate::geometry::points(&merged).is_empty());
 }
 
 #[test]
@@ -4125,7 +4135,7 @@ fn merged_deltas_uses_last_full_or_tombstone_event() {
     let mut replace_then_delete = full;
     replace_then_delete.extend_from_slice(&tombstone);
     let merged = crate::deltas::merge_full_records(&partition, &replace_then_delete);
-    assert!(crate::geometry::points(&merged).is_empty());
+    assert_eq!(crate::geometry::points(&merged)[0].position.x, 10.0);
 }
 
 #[test]
