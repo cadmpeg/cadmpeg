@@ -6206,6 +6206,14 @@ mod resolved_sketch_tests {
             Some((CurveGeometry::Circle { center, radius, .. }, "sphere_intersection_circle"))
                 if center.x == 2.0 && (radius - 5.0_f64.sqrt()).abs() < 1e-12
         ));
+        let sphere_circle_tangent = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 5.0_f64.sqrt(), 0.0],
+            normal: [0.0, 1.0, 0.0],
+        });
+        assert_eq!(
+            solve_carriers(&[first_sphere, second_sphere, sphere_circle_tangent]),
+            Some([2.0, 5.0_f64.sqrt(), 0.0])
+        );
         assert!(matches!(
             carrier_intersection_curve(cylinder, sphere),
             Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_sphere_circle"))
@@ -6706,6 +6714,19 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                         if let Some((geometry, _)) = carrier_intersection_curve(
                             CarrierEquation::Cylinder(*cylinder),
                             CarrierEquation::Sphere(*sphere),
+                        ) {
+                            if let Some((center, axis, radius)) = circle_parameters(&geometry) {
+                                candidates.extend(intersect_plane_with_circle(
+                                    *plane, center, axis, radius,
+                                ));
+                            }
+                        }
+                    }
+                } else if let ([plane], [first, second]) = (planes.as_slice(), spheres.as_slice()) {
+                    if cylinders.is_empty() && cones.is_empty() && tori.is_empty() {
+                        if let Some((geometry, _)) = carrier_intersection_curve(
+                            CarrierEquation::Sphere(*first),
+                            CarrierEquation::Sphere(*second),
                         ) {
                             if let Some((center, axis, radius)) = circle_parameters(&geometry) {
                                 candidates.extend(intersect_plane_with_circle(
