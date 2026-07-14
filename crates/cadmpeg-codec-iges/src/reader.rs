@@ -59,15 +59,6 @@ pub(crate) fn decode(
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(source_meta(&global));
     ir.byte_ledger = scan.ledger.clone();
-    native::store(
-        &mut ir,
-        &scan,
-        &directory,
-        &parameters,
-        &references,
-        &global,
-    )?;
-
     let projection = if options.container_only {
         entities::geometry::Projection {
             handled: BTreeSet::default(),
@@ -77,6 +68,14 @@ pub(crate) fn decode(
     } else {
         entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global)
     };
+    native::store(
+        &mut ir,
+        &scan,
+        &directory,
+        &parameters,
+        &references,
+        &global,
+    )?;
 
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;

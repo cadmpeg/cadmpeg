@@ -374,6 +374,7 @@ struct NativeProductOccurrence {
     source_instance: String,
     definition: String,
     member: Option<String>,
+    neutral_links: Vec<String>,
     instance_path: Vec<String>,
     local_transform: [[f64; 4]; 3],
     world_transform: [[f64; 4]; 3],
@@ -514,6 +515,7 @@ struct OccurrenceExpansion<'a> {
     entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
     records: &'a BTreeMap<u32, &'a ParameterRecord>,
     definitions: &'a BTreeMap<u32, OccurrenceDefinition>,
+    neutral_links: &'a BTreeMap<u32, Vec<String>>,
     length_factor: f64,
 }
 
@@ -562,6 +564,7 @@ impl OccurrenceExpansion<'_> {
             source_instance: format!("iges:entity:directory#{instance_sequence}"),
             definition: format!("iges:entity:directory#{definition_sequence}"),
             member: None,
+            neutral_links: Vec::new(),
             instance_path: path_ids.clone(),
             local_transform: local.rows,
             world_transform: world.rows,
@@ -594,6 +597,7 @@ impl OccurrenceExpansion<'_> {
                 source_instance: format!("iges:entity:directory#{instance_sequence}"),
                 definition: format!("iges:entity:directory#{definition_sequence}"),
                 member: Some(format!("iges:entity:directory#{member}")),
+                neutral_links: self.neutral_links.get(member).cloned().unwrap_or_default(),
                 instance_path: path_ids.clone(),
                 local_transform: member_local.rows,
                 world_transform: world.compose(member_local).rows,
@@ -1573,12 +1577,42 @@ pub(crate) fn store(
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
         })
         .collect::<std::collections::BTreeSet<_>>();
+    let mut occurrence_neutral_links = BTreeMap::<u32, Vec<String>>::new();
+    for curve in &ir.model.curves {
+        if let Some(sequence) = curve
+            .source_object
+            .as_ref()
+            .filter(|source| source.format == "iges")
+            .and_then(|source| source.object_id.strip_prefix('D'))
+            .and_then(|value| value.parse::<u32>().ok())
+        {
+            occurrence_neutral_links
+                .entry(sequence)
+                .or_default()
+                .push(curve.id.0.clone());
+        }
+    }
+    for surface in &ir.model.surfaces {
+        if let Some(sequence) = surface
+            .source_object
+            .as_ref()
+            .filter(|source| source.format == "iges")
+            .and_then(|source| source.object_id.strip_prefix('D'))
+            .and_then(|value| value.parse::<u32>().ok())
+        {
+            occurrence_neutral_links
+                .entry(sequence)
+                .or_default()
+                .push(surface.id.0.clone());
+        }
+    }
     let mut product_occurrences = Vec::new();
     if let Some(length_factor) = global.length_factor_mm() {
         let expansion = OccurrenceExpansion {
             entries: &entries,
             records: &by_directory,
             definitions: &occurrence_definitions,
+            neutral_links: &occurrence_neutral_links,
             length_factor,
         };
         for root in directory.iter().filter(|entry| {

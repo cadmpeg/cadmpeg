@@ -3806,6 +3806,7 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
         .find(|occurrence| occurrence.id == "iges:product:occurrence#9/5/D1")
         .unwrap();
     assert_eq!(leaf.fields["member"], "iges:entity:directory#1");
+    assert_eq!(leaf.fields["neutral_links"][0], "iges:model:curve#D1");
     assert_eq!(
         leaf.fields["world_transform"],
         nested.fields["world_transform"]
