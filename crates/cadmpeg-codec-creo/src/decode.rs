@@ -1152,6 +1152,11 @@ fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> 
                 center.v + radius.0 * end_angle.0.sin(),
             ],
         ]),
+        SketchGeometry::Nurbs { control_points, .. } => {
+            let first = control_points.first()?;
+            let last = control_points.last()?;
+            Some([[first.u, first.v], [last.u, last.v]])
+        }
         _ => None,
     }
 }
@@ -5208,10 +5213,6 @@ fn transfer_resolved_sketches(
             });
             saved_section_geometries.push((external_id, geometry, offset, curve_id));
         }
-        profiles.extend(saved_profile_chains(
-            definition.id,
-            &generated_saved_geometries,
-        ));
         for spline in definition
             .saved_section
             .iter()
@@ -5228,9 +5229,29 @@ fn transfer_resolved_sketches(
                 || format!("offset{}", spline.offset),
                 |entity_id| entity_id.to_string(),
             );
-            let entity_id = SketchEntityId(format!(
-                "creo:featdefs:saved_spline#{}:{suffix}",
-                definition.id
+            let external_id = spline.entity_id.and_then(|internal_id| {
+                definition
+                    .order_table
+                    .as_ref()
+                    .and_then(|order| order.external_id(internal_id))
+            });
+            let generated = external_id.is_some_and(|external_id| {
+                saved_entity_is_generated_profile(
+                    definition.owner_feature_id,
+                    external_id,
+                    crate::surface::SurfaceKind::Spline,
+                    &scan.feature_entity_tables,
+                    &scan.surface_rows,
+                )
+            });
+            let entity_id = SketchEntityId(external_id.map_or_else(
+                || format!("creo:featdefs:saved_spline#{}:{suffix}", definition.id),
+                |external_id| {
+                    format!(
+                        "creo:featdefs:sketch_entity#{}:{external_id}",
+                        definition.id
+                    )
+                },
             ));
             let curve_id = CurveId(format!(
                 "creo:featdefs:saved_spline_curve#{}:{suffix}",
@@ -5243,6 +5264,17 @@ fn transfer_resolved_sketches(
             {
                 continue;
             }
+            let geometry = SketchGeometry::Nurbs {
+                degree: nurbs.degree,
+                knots: nurbs.knots.clone(),
+                control_points: nurbs
+                    .control_points
+                    .iter()
+                    .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
+                    .collect(),
+                weights: None,
+                periodic: false,
+            };
             annotate(
                 annotations,
                 &entity_id.0,
@@ -5254,23 +5286,20 @@ fn transfer_resolved_sketches(
             entities.push(SketchEntity {
                 id: entity_id,
                 sketch: sketch_id.clone(),
-                construction: spline.entity_id.is_none(),
+                construction: !generated,
                 native_ref: Some(format!("creo:featdefs:saved_spline#{suffix}")),
                 geometry_ref: Some(curve_id.0.clone()),
                 endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Nurbs {
-                    degree: nurbs.degree,
-                    knots: nurbs.knots.clone(),
-                    control_points: nurbs
-                        .control_points
-                        .iter()
-                        .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
-                        .collect(),
-                    weights: None,
-                    periodic: false,
-                },
+                geometry: geometry.clone(),
             });
+            if let Some(external_id) = external_id.filter(|_| generated) {
+                generated_saved_geometries.push((external_id, geometry));
+            }
         }
+        profiles.extend(saved_profile_chains(
+            definition.id,
+            &generated_saved_geometries,
+        ));
         if entities.is_empty() {
             continue;
         }
@@ -8148,7 +8177,16 @@ mod resolved_sketch_tests {
         };
         let geometries = vec![
             line(12, (0.0, 1.0), (1.0, 1.0)),
-            line(10, (0.0, 0.0), (1.0, 0.0)),
+            (
+                10,
+                SketchGeometry::Nurbs {
+                    degree: 1,
+                    knots: vec![0.0, 0.0, 1.0, 1.0],
+                    control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                    weights: None,
+                    periodic: false,
+                },
+            ),
             line(13, (0.0, 0.0), (0.0, 1.0)),
             line(11, (1.0, 1.0), (1.0, 0.0)),
             line(20, (5.0, 5.0), (6.0, 5.0)),

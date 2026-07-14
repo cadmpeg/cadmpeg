@@ -948,6 +948,11 @@ For line rows, `verhor = 0` constrains the line vertical in section coordinates 
 A `point` record stores a first section coordinate as an IEEE-fill scalar, a point identifier, and a second coordinate as an `18 <index>` reference into the record-local `0x46` cache.
 
 `i_pnts f9 <n> 03`, `end_tangts f9 02 03`, and `params f8 <n>` encode an interpolation-point spline with endpoint tangent angles and parameter values.
+When its saved entity identifier joins `order_table.int_id`, the corresponding
+`order_table.ext_id` is the spline's section-entity identity. A generated
+class-200 entry with that source identifier binds the spline into the owning
+sweep profile and to its generated spline surface. Clamped spline profile
+connectivity uses the first and last evaluated control points.
 
 A curve-from-equation entity stores `expression f8 <count>` followed by exactly `count` NUL-terminated UTF-8 source lines. `entity(crv_fr_eqn)` is the active equation record and `backup_ents(crv_fr_eqn)` is its separately identified backup record. Source-line order is significant. Lines beginning with `/*` are comments. Executable lines use `identifier = expression`; identifiers referenced on the right-hand side are expression dependencies. Numeric literals, previously assigned identifiers, parentheses, and `+`, `-`, `*`, `/` form the arithmetic subset. Evaluate assignments in source order; an assignment remains symbolic when a dependency is unresolved.
 
