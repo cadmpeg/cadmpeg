@@ -1156,7 +1156,7 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 #[cfg(test)]
 mod chart_tests {
     use super::{
-        attach_standard_free_vertices, build_standard_edge_curve,
+        attach_standard_free_vertices, build_standard_edge_curve, canonical_periodic_range,
         circle_parameter_range_from_surface_branch, combine_propagated_endpoint_pairs,
         e5_boundary_curve, e5_occurrence_intersection_context, e5_pcurve_on_surface,
         equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes, include_native_endpoint_pairs,
@@ -1697,6 +1697,15 @@ mod chart_tests {
         assert!(start.v.abs() < 1e-12);
         assert!((end.u - 2.0).abs() < 1e-12);
         assert!(end.v.abs() < 1e-12);
+    }
+
+    #[test]
+    fn canonical_periodic_range_snaps_roundoff_at_the_turn_seam() {
+        let tau = std::f64::consts::TAU;
+        let range =
+            canonical_periodic_range([tau - 1e-14, tau + 0.25]).expect("canonical seam range");
+        assert_eq!(range[0], 0.0);
+        assert!((range[1] - 0.25).abs() < 2e-14);
     }
 
     #[test]
@@ -2271,6 +2280,11 @@ fn transfer_e5_topology(
             continue;
         }
         let Some(context) = e5_occurrence_intersection_context(sides) else {
+            if let Some(side) = sides.first() {
+                surface_curve_plan
+                    .entry(edge_ref)
+                    .or_insert_with(|| side.clone());
+            }
             continue;
         };
         edge_curve_plan.insert(
@@ -3165,7 +3179,10 @@ fn canonical_periodic_range(range: [f64; 2]) -> Option<[f64; 2]> {
     if !sweep.is_finite() || sweep <= 0.0 || sweep > std::f64::consts::TAU + 1e-9 {
         return None;
     }
-    let start = range[0].rem_euclid(std::f64::consts::TAU);
+    let mut start = range[0].rem_euclid(std::f64::consts::TAU);
+    if std::f64::consts::TAU - start <= 1e-9 {
+        start = 0.0;
+    }
     Some([start, start + sweep])
 }
 
