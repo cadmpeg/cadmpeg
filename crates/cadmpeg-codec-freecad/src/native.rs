@@ -5,7 +5,26 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 12;
+pub const VERSION: u32 = 13;
+
+/// Machine-derived semantic projection census for one design object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesignCensusRecord {
+    /// Stable census identity derived from the native object.
+    pub id: String,
+    /// Native application object being classified.
+    pub object: String,
+    /// Persisted runtime type.
+    pub type_name: String,
+    /// Neutral history feature projected from the object.
+    pub feature: String,
+    /// Stable CADIR feature-definition family name.
+    pub semantic_kind: String,
+    /// Whether the operation has neutral semantics instead of only native retention.
+    pub neutral: bool,
+    /// Whether topology post-processing composition wraps the operation.
+    pub post_processed: bool,
+}
 
 /// Machine-derived carrier and topology-family census for one exact shape payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

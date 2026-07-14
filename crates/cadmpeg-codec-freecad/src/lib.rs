@@ -131,6 +131,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
+    let design_census = match namespace.arena_as::<native::DesignCensusRecord>("design_census") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
 
     let mut findings = Vec::new();
     if carrier_census != brep::carrier_census(&shape_payloads) {
@@ -139,6 +143,19 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             "FCStd carrier census does not match parsed shape payloads",
             None,
         ));
+    }
+    match design::census(&objects, &ir.model.features) {
+        Ok(expected) if design_census == expected => {}
+        Ok(_) => findings.push(finding(
+            Check::ReferentialIntegrity,
+            "FCStd design census does not match projected feature semantics",
+            None,
+        )),
+        Err(error) => findings.push(finding(
+            Check::ReferentialIntegrity,
+            error.to_string(),
+            None,
+        )),
     }
     let object_ids = objects
         .iter()
@@ -1009,6 +1026,10 @@ impl Codec for FcstdCodec {
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
             topology_transfer::transfer(&mut ir, &shape_payloads, &graph.properties)?;
             design::transfer(&mut ir, &graph.objects, &graph.properties, &shape_payloads)?;
+            let design_census = design::census(&graph.objects, &ir.model.features)?;
+            ir.native
+                .namespace_mut("fcstd")
+                .set_arena("design_census", &design_census)?;
             let payload_ids = shape_payloads
                 .iter()
                 .map(|payload| (payload.property.as_str(), payload.id.as_str()))

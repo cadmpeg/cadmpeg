@@ -3597,3 +3597,59 @@ fn is_design_object(kind: &str) -> bool {
         )
         || kind.contains("PartDesign::Feature")
 }
+
+pub(crate) fn census(
+    objects: &[ObjectRecord],
+    features: &[Feature],
+) -> Result<Vec<crate::native::DesignCensusRecord>, CodecError> {
+    let features = features
+        .iter()
+        .filter_map(|feature| {
+            feature
+                .native_ref
+                .as_deref()
+                .map(|native_ref| (native_ref, feature))
+        })
+        .collect::<HashMap<_, _>>();
+    objects
+        .iter()
+        .filter(|object| is_design_object(&object.type_name))
+        .map(|object| {
+            let feature = features.get(object.id.as_str()).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "design object {} has no neutral history projection",
+                    object.id
+                ))
+            })?;
+            let (definition, post_processed) = match &feature.definition {
+                FeatureDefinition::PostProcess { operation, .. } => (operation.as_ref(), true),
+                definition => (definition, false),
+            };
+            let value = serde_json::to_value(definition).map_err(|error| {
+                CodecError::Malformed(format!(
+                    "cannot classify design feature {}: {error}",
+                    feature.id
+                ))
+            })?;
+            let semantic_kind = value
+                .get("definition")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "design feature {} has no semantic family tag",
+                        feature.id
+                    ))
+                })?
+                .to_owned();
+            Ok(crate::native::DesignCensusRecord {
+                id: format!("{}:design-census", object.id),
+                object: object.id.clone(),
+                type_name: object.type_name.clone(),
+                feature: feature.id.0.clone(),
+                neutral: !matches!(definition, FeatureDefinition::Native { .. }),
+                semantic_kind,
+                post_processed,
+            })
+        })
+        .collect()
+}

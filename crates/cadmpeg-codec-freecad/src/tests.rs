@@ -1495,6 +1495,40 @@ fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() 
             .and_then(|provenance| provenance.tag.as_deref()),
         Some("fcstd:object:Custom")
     );
+    let census = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<crate::native::DesignCensusRecord>("design_census")
+        .expect("design census");
+    assert_eq!(census.len(), 3);
+    assert!(census.iter().any(|record| {
+        record.object == "fcstd:object:Seed"
+            && record.semantic_kind == "stored_geometry"
+            && record.neutral
+            && !record.post_processed
+    }));
+    assert!(census.iter().any(|record| {
+        record.object == "fcstd:object:Custom"
+            && record.semantic_kind == "native"
+            && !record.neutral
+    }));
+    let mut corrupted = result.ir.clone();
+    let mut stale_census = census;
+    stale_census[0].neutral = !stale_census[0].neutral;
+    corrupted
+        .native
+        .namespace_mut("fcstd")
+        .set_arena("design_census", &stale_census)
+        .expect("replace design census");
+    let corrupted_findings = crate::validate_native(&corrupted);
+    assert!(
+        corrupted_findings.iter().any(|finding| finding
+            .message
+            .contains("design census does not match projected feature semantics")),
+        "{corrupted_findings:?}"
+    );
 }
 
 #[test]
@@ -3515,7 +3549,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 12);
+    assert_eq!(namespace.version, 13);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
         .expect("carrier census");

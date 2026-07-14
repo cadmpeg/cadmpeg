@@ -401,6 +401,12 @@ A plain PartDesign feature is direct stored geometry rather than an unknown para
 Its exact shape payload supplies the feature outputs when present; no replay construction is
 fabricated when the stored feature is empty or frozen.
 
+The native design census contains one record for every object admitted to the design projection.
+Each record binds the persisted object type and neutral feature identity to its CADIR semantic
+family, native-versus-neutral status, and post-processing composition. Native validation derives
+the census again from the object and feature graphs; missing projections and stale classifications
+are errors rather than coverage-report omissions.
+
 Part construction geometry transfers as neutral history rather than relying on cached result
 shapes. This includes standalone vertices, line segments, circular and elliptic angular arcs,
 open or closed ordered polylines, regular polygons, bounded rectangular planes, and faces built
