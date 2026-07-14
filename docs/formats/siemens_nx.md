@@ -39,6 +39,19 @@ FOOTER region at the 48-bit offset: ASCII `FOOTER`, then `entry_count:u32 LE`, t
 
 `/Root/part/arrangements` is a UTF-8 XML document with an `Arrangements` root. Each `Arrangement` child has a nonempty `Name` and a `Default` value of `YES` or `NO`. At most one child is default. Child order is configuration order.
 
+The canonical `/Root/UG_PART/UG_PART` payload begins with a segment index of
+12-byte little-endian rows:
+
+```text
+type_code:u32  subtype_code:u32  value:u32
+```
+
+Row ordinal 1 has `type_code = 1`, `subtype_code = 1`, and a `value` equal to
+the payload-relative byte offset immediately after the index. Complete rows
+occupy the declared region from offset zero; zero to eleven trailing bytes fill
+the remainder when that offset is not divisible by twelve. Row order and all
+three words are significant.
+
 ### 2.1 Stream inventory
 
 | Stream                       | Role                                                                           |

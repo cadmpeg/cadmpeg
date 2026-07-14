@@ -2684,6 +2684,7 @@ fn attach_native_object_model(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let segment_index_rows = crate::native::segment_index_rows(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
     let fields = crate::native::field_definitions(&scan.container);
@@ -2699,7 +2700,8 @@ fn attach_native_object_model(
     let persistent_handles =
         crate::native::persistent_handles(&object_references, &external_reference_records);
     let object_sections = scan.container.indexed_om_sections();
-    if expressions.is_empty()
+    if segment_index_rows.is_empty()
+        && expressions.is_empty()
         && classes.is_empty()
         && fields.is_empty()
         && object_records.is_empty()
@@ -2717,6 +2719,12 @@ fn attach_native_object_model(
         return Ok(());
     }
     let annotation_stream = annotations.stream("nx:container");
+    for row in &segment_index_rows {
+        annotations
+            .note(&row.id, annotation_stream, row.source_offset)
+            .tag("UG_PART_SEGMENT_INDEX_ROW");
+        annotations.exactness(&row.id, Exactness::ByteExact);
+    }
     for header in &store_headers {
         annotations
             .note(&header.id, annotation_stream, header.source_offset)
@@ -2817,7 +2825,10 @@ fn attach_native_object_model(
     }
     attach_expression_parameters(ir, &expressions, annotations);
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(12);
+    namespace.version = namespace.version.max(13);
+    if !segment_index_rows.is_empty() {
+        namespace.set_arena("segment_index_rows", &segment_index_rows)?;
+    }
     if !expressions.is_empty() {
         namespace.set_arena("expressions", &expressions)?;
     }

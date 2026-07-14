@@ -32,6 +32,28 @@ pub enum Region {
     Footer,
 }
 
+/// One 12-byte row in the canonical `UG_PART` segment index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SegmentIndexRow {
+    /// First little-endian row word.
+    pub type_code: u32,
+    /// Second little-endian row word.
+    pub subtype_code: u32,
+    /// Third little-endian row word.
+    pub value: u32,
+}
+
+/// Self-bounded segment index at the start of the canonical `UG_PART` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SegmentIndex<'a> {
+    /// Complete 12-byte rows before the declared table end.
+    pub rows: Vec<SegmentIndexRow>,
+    /// Zero to eleven trailing bytes after the last complete row.
+    pub padding: &'a [u8],
+    /// Declared payload-relative end of the index.
+    pub byte_len: usize,
+}
+
 impl Region {
     /// Return the directory-region label used in summaries.
     pub fn label(self) -> &'static str {
@@ -43,6 +65,41 @@ impl Region {
 }
 
 impl Container {
+    /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
+    pub fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
+        let entry = self
+            .entries
+            .iter()
+            .find(|entry| entry.name == "/Root/UG_PART/UG_PART" && entry.file_span.is_some())?;
+        let (offset, size) = entry.file_span?;
+        let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+        let payload = self.data.get(offset..offset.checked_add(size)?)?;
+        let row_one = payload.get(12..24)?;
+        let type_code = u32_le(row_one, 0)?;
+        let subtype_code = u32_le(row_one, 4)?;
+        let byte_len = usize::try_from(u32_le(row_one, 8)?).ok()?;
+        if type_code != 1 || subtype_code != 1 || !(24..=payload.len()).contains(&byte_len) {
+            return None;
+        }
+        let complete_len = byte_len / 12 * 12;
+        let rows = payload[..complete_len]
+            .chunks_exact(12)
+            .map(|row| SegmentIndexRow {
+                type_code: u32_le(row, 0).expect("complete segment-index row"),
+                subtype_code: u32_le(row, 4).expect("complete segment-index row"),
+                value: u32_le(row, 8).expect("complete segment-index row"),
+            })
+            .collect();
+        Some((
+            entry,
+            SegmentIndex {
+                rows,
+                padding: &payload[complete_len..byte_len],
+                byte_len,
+            },
+        ))
+    }
+
     /// Locate independently size-framed NX object-model sections.
     pub fn om_sections(&self) -> Vec<(&DirEntry, crate::om::Section<'_>)> {
         let mut out = Vec::new();

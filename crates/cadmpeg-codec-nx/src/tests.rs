@@ -30,6 +30,15 @@ fn be_f64(v: f64) -> [u8; 8] {
     v.to_be_bytes()
 }
 
+fn segment_index_payload() -> Vec<u8> {
+    let mut payload = Vec::new();
+    for word in [7u32, 9, 11, 1, 1, 28] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
+    payload
+}
+
 #[test]
 fn nx_expression_parameter_references_preserve_formula_order() {
     assert_eq!(
@@ -286,6 +295,40 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
         sections[0].records[1].bytes,
         b"\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00\x66\x32\x03\x0cSKETCH_001\0\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0\x01\x02\x90\x00\x00"
     );
+}
+
+#[test]
+fn ug_part_segment_index_uses_row_one_self_boundary() {
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
+    let container = container::scan_bytes(file).unwrap();
+    let (_, index) = container.segment_index().expect("segment index");
+    assert_eq!(index.byte_len, 28);
+    assert_eq!(index.rows.len(), 2);
+    assert_eq!(index.rows[0].type_code, 7);
+    assert_eq!(index.rows[0].subtype_code, 9);
+    assert_eq!(index.rows[0].value, 11);
+    assert_eq!(index.rows[1].type_code, 1);
+    assert_eq!(index.rows[1].subtype_code, 1);
+    assert_eq!(index.rows[1].value, 28);
+    assert_eq!(index.padding, &[0xaa, 0xbb, 0xcc, 0xdd]);
+}
+
+#[test]
+fn decode_retains_ordered_ug_part_segment_index_rows() {
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let namespace = result.ir.native.namespace("nx").expect("NX namespace");
+    assert_eq!(namespace.version, 13);
+    let rows = namespace
+        .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].ordinal, 0);
+    assert_eq!(rows[1].value, 28);
+    assert_eq!(rows[1].source_entry, "/Root/UG_PART/UG_PART");
+    assert_eq!(rows[1].source_offset, rows[0].source_offset + 12);
 }
 
 #[test]
@@ -2978,7 +3021,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 12);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 13);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

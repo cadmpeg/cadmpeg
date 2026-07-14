@@ -7,6 +7,47 @@ use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
 
+/// One row retained from the canonical `UG_PART` segment index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SegmentIndexRow {
+    /// Globally unique row identity.
+    pub id: String,
+    /// Zero-based row ordinal.
+    pub ordinal: u32,
+    /// First little-endian row word.
+    pub type_code: u32,
+    /// Second little-endian row word.
+    pub subtype_code: u32,
+    /// Third little-endian row word.
+    pub value: u32,
+    /// Directory entry containing the index.
+    pub source_entry: String,
+    /// Absolute file offset of the row.
+    pub source_offset: u64,
+}
+
+/// Decode the canonical `UG_PART` segment-index rows.
+pub fn segment_index_rows(container: &Container) -> Vec<SegmentIndexRow> {
+    let Some((entry, index)) = container.segment_index() else {
+        return Vec::new();
+    };
+    let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+    index
+        .rows
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, row)| SegmentIndexRow {
+            id: format!("nx:segment-index:row#{ordinal}"),
+            ordinal: ordinal as u32,
+            type_code: row.type_code,
+            subtype_code: row.subtype_code,
+            value: row.value,
+            source_entry: entry.name.clone(),
+            source_offset: entry_offset + (ordinal * 12) as u64,
+        })
+        .collect()
+}
+
 /// Unit declared by an NX numeric expression.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
