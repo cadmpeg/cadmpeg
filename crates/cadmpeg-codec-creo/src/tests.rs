@@ -1014,7 +1014,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
 }
 
 #[test]
-fn resolved_section_points_propagate_line_orientation_equalities() {
+fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
     let definition = crate::feature::FeatureDefinition {
         id: 40,
         owner_feature_id: None,
@@ -1041,6 +1041,16 @@ fn resolved_section_points_propagate_line_orientation_equalities() {
                     u: Some(7.0),
                     v: Some(11.0),
                 },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 4,
+                    u: Some(5.0),
+                    v: Some(20.0),
+                },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 5,
+                    u: None,
+                    v: None,
+                },
             ],
             offset: 0,
         }),
@@ -1063,6 +1073,18 @@ fn resolved_section_points_propagate_line_orientation_equalities() {
                 crate::feature::FeatureSegment {
                     kind: crate::feature::FeatureSegmentKind::Line,
                     directions: [None; 3],
+                    point_ids: [4, 5],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: Some(1),
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 3,
+                    offset: 0,
+                },
+                crate::feature::FeatureSegment {
+                    kind: crate::feature::FeatureSegmentKind::Line,
+                    directions: [None; 3],
                     point_ids: [2, 3],
                     center_id: None,
                     arc_orientation: None,
@@ -1079,8 +1101,42 @@ fn resolved_section_points_propagate_line_orientation_equalities() {
         trim_vertices: None,
         order_table: None,
         section_3d: None,
-        dimensions: None,
-        relations: None,
+        dimensions: Some(crate::feature::FeatureDimensionTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureDimension {
+                dimension_type: 2,
+                value: Some(12.0),
+                value_unit: crate::feature::DimensionUnit::Millimeters,
+                direction_byte: 0,
+                auxiliary_value: Some(0.0),
+                external_id: 1,
+                offset: 0,
+            }],
+            offset: 0,
+        }),
+        relations: Some(crate::feature::FeatureRelationTable {
+            declared_count: 3,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureRelation {
+                relation_id: 1,
+                used: 1,
+                operands: Vec::new(),
+                operand_vectors: Some([
+                    [Some(4), Some(5), None, Some(1)],
+                    [Some(1), Some(1), Some(0), Some(1)],
+                    [Some(15), Some(16), Some(15), Some(1)],
+                ]),
+                sign: 1,
+                dimension_id: 0,
+                relation_type: 0,
+                body: Vec::new(),
+                offset: 0,
+            }],
+            skamps: Vec::new(),
+            triples: Vec::new(),
+            offset: 0,
+        }),
         saved_section: None,
         offset: 0,
     };
@@ -1088,6 +1144,10 @@ fn resolved_section_points_propagate_line_orientation_equalities() {
     assert_eq!(
         crate::decode::resolved_section_points(&definition).get(&2),
         Some(&[7.0, 3.0])
+    );
+    assert_eq!(
+        crate::decode::resolved_section_points(&definition).get(&5),
+        Some(&[17.0, 20.0])
     );
 }
 

@@ -752,6 +752,47 @@ pub(crate) fn resolved_section_points(
         .flat_map(|table| &table.rows)
         .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
         .collect::<Vec<_>>();
+    let signed_dimensions = definition
+        .relations
+        .iter()
+        .flat_map(|table| &table.rows)
+        .filter_map(|relation| {
+            if relation.relation_type != 0 {
+                return None;
+            }
+            let vectors = relation.operand_vectors?;
+            if vectors[0][2..] != [None, Some(1)]
+                || vectors[1] != [Some(1), Some(1), Some(0), Some(1)]
+                || vectors[2] != [Some(15), Some(16), Some(15), Some(1)]
+            {
+                return None;
+            }
+            let [Some(first), Some(second), _, _] = vectors[0] else {
+                return None;
+            };
+            let segment = segments.iter().find(|segment| {
+                segment.point_ids == [first, second] || segment.point_ids == [second, first]
+            })?;
+            let coordinate = match segment.vertical_horizontal {
+                Some(0) => 1,
+                Some(1) => 0,
+                _ => return None,
+            };
+            let magnitude = definition
+                .dimensions
+                .as_ref()?
+                .rows
+                .get(usize::try_from(relation.dimension_id).ok()?)?
+                .value
+                .filter(|value| value.is_finite() && *value >= 0.0)?;
+            let delta = match relation.sign {
+                1 => magnitude,
+                0xf6 => -magnitude,
+                _ => return None,
+            };
+            Some((first, second, coordinate, delta))
+        })
+        .collect::<Vec<_>>();
     loop {
         let mut changed = false;
         for segment in &segments {
@@ -770,6 +811,23 @@ pub(crate) fn resolved_section_points(
                 }
                 [None, Some(value)] => {
                     points.entry(first_id).or_insert([None, None])[coordinate] = Some(value);
+                    changed = true;
+                }
+                _ => {}
+            }
+        }
+        for &(first_id, second_id, coordinate, delta) in &signed_dimensions {
+            let [first, second] =
+                [first_id, second_id].map(|id| points.get(&id).copied().unwrap_or([None, None]));
+            match [first[coordinate], second[coordinate]] {
+                [Some(value), None] => {
+                    points.entry(second_id).or_insert([None, None])[coordinate] =
+                        Some(value + delta);
+                    changed = true;
+                }
+                [None, Some(value)] => {
+                    points.entry(first_id).or_insert([None, None])[coordinate] =
+                        Some(value - delta);
                     changed = true;
                 }
                 _ => {}

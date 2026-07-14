@@ -346,6 +346,13 @@ zero slots and `e6` expands to three zero slots. `e4` is the integer value one,
 and `f6` is a null operand. Expansion is bounded independently at four slots
 for each of `a`, `b`, and `c`.
 
+A type-zero relation with vectors `a=[first_point,second_point,null,1]`,
+`b=[1,1,0,1]`, and `c=[15,16,15,1]` is a segment-aligned linear dimension.
+Its dimension selector is a zero-based index into `dimtab_ptr`. `verhor=1`
+selects the section `u` difference and `verhor=0` selects the section `v`
+difference. Sign `1` defines `second-first=+value`; sign `f6` defines
+`second-first=-value`; sign zero stores only the unsigned magnitude.
+
 The named `segtab` row before its schema close is likewise a data row. Its `type`, `dir`, `pointid`, `cntrid`, `arcorient`, `verhor`, radius, and `ext_id` fields contribute one segment to the declared table count.
 Positional rows may insert the two-byte `c0 80` wrapper before `type`. The
 wrapper does not change the following field layout. A compact `ext_id` value of
