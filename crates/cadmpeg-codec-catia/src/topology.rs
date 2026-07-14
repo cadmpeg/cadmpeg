@@ -1337,29 +1337,34 @@ fn boundary_endpoint_support(
         })
         .collect::<Option<Vec<_>>>()?;
     let first_layer = layers.first()?;
+    let first_points = first_layer
+        .iter()
+        .map(|state| state.start)
+        .collect::<HashSet<_>>();
     let mut supported = layers
         .iter()
         .map(|layer| vec![false; layer.len()])
         .collect::<Vec<_>>();
-    for first in 0..first_layer.len() {
+    for first_point in first_points {
         let mut forward = layers
             .iter()
             .map(|layer| vec![false; layer.len()])
             .collect::<Vec<_>>();
-        forward[0][first] = true;
+        for (state, reachable) in first_layer.iter().zip(&mut forward[0]) {
+            *reachable = state.start == first_point;
+        }
         for layer in 1..layers.len() {
-            *work = work.checked_add(layers[layer - 1].len() * layers[layer].len())?;
+            *work = work.checked_add(layers[layer - 1].len() + layers[layer].len())?;
             if *work > MAX_BOUNDARY_SUPPORT_WORK {
                 return None;
             }
+            let reachable_points = layers[layer - 1]
+                .iter()
+                .zip(&forward[layer - 1])
+                .filter_map(|(state, reachable)| reachable.then_some(state.end))
+                .collect::<HashSet<_>>();
             for (right, right_state) in layers[layer].iter().enumerate() {
-                forward[layer][right] =
-                    layers[layer - 1]
-                        .iter()
-                        .enumerate()
-                        .any(|(left, left_state)| {
-                            forward[layer - 1][left] && left_state.end == right_state.start
-                        });
+                forward[layer][right] = reachable_points.contains(&right_state.start);
             }
         }
         let mut backward = layers
@@ -1371,20 +1376,19 @@ fn boundary_endpoint_support(
             .iter()
             .zip(forward[last].iter().zip(&mut backward[last]))
         {
-            *value = *reachable && state.end == first_layer[first].start;
+            *value = *reachable && state.end == first_point;
         }
         for layer in (0..last).rev() {
+            let supported_points = layers[layer + 1]
+                .iter()
+                .zip(&backward[layer + 1])
+                .filter_map(|(state, supported)| supported.then_some(state.start))
+                .collect::<HashSet<_>>();
             for (left, left_state) in layers[layer].iter().enumerate() {
-                backward[layer][left] =
-                    layers[layer + 1]
-                        .iter()
-                        .enumerate()
-                        .any(|(right, right_state)| {
-                            backward[layer + 1][right] && left_state.end == right_state.start
-                        });
+                backward[layer][left] = supported_points.contains(&left_state.end);
             }
         }
-        if backward[0][first] {
+        if backward[0].iter().any(|supported| *supported) {
             for layer in 0..layers.len() {
                 for state in 0..layers[layer].len() {
                     supported[layer][state] |= forward[layer][state] && backward[layer][state];
@@ -1422,10 +1426,25 @@ pub fn standard_mesh_prune_endpoint_candidates(
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> Option<Vec<Vec<[usize; 2]>>> {
-    if edge_faces.len() != edge_candidates.len() || edge_candidates.iter().any(Vec::is_empty) {
+    if edge_faces.len() != edge_candidates.len() {
         return None;
     }
-    let mut candidates = edge_candidates.to_vec();
+    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let (_, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let point_count = parse_vertex_table(bytes, vertex_header)?.len();
+    let complete_domain = (0..point_count)
+        .flat_map(|left| ((left + 1)..point_count).map(move |right| [left, right]))
+        .collect::<Vec<_>>();
+    let mut candidates = edge_candidates
+        .iter()
+        .map(|domain| {
+            if domain.is_empty() {
+                complete_domain.clone()
+            } else {
+                domain.clone()
+            }
+        })
+        .collect::<Vec<_>>();
     let mut faces = standard_mesh_boundary_assignments(bytes, edge_faces)?;
     loop {
         let before = (

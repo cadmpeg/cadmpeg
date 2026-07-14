@@ -2872,11 +2872,15 @@ fn attach_standard_topology(
             {
                 for (edge, domain) in boundary_domains.into_iter().enumerate() {
                     let previous = options[edge].clone();
-                    options[edge].retain(|pair| {
-                        domain
-                            .iter()
-                            .any(|candidate| topology::same_unordered_pair(*pair, *candidate))
-                    });
+                    if options[edge].is_empty() {
+                        options[edge] = domain;
+                    } else {
+                        options[edge].retain(|pair| {
+                            domain
+                                .iter()
+                                .any(|candidate| topology::same_unordered_pair(*pair, *candidate))
+                        });
+                    }
                     changed |= options[edge] != previous;
                 }
             }

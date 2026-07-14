@@ -299,6 +299,13 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     )
     .expect("ordered boundary endpoint domains");
     assert_eq!(cycle_domains[0], [[0, 1]]);
+    let inferred_cycle_domains = crate::topology::standard_mesh_prune_endpoint_candidates(
+        &bytes,
+        &[[0, 0]; 4],
+        &[Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
+    )
+    .expect("endpoint domain inferred from ordered neighbors");
+    assert_eq!(inferred_cycle_domains[0], [[0, 1]]);
     let endpoint_domains = crate::topology::standard_mesh_placement_endpoint_pairs(
         &bytes,
         &[[0, 0]; 4],
