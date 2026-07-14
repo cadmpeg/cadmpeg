@@ -397,7 +397,7 @@ fn transfers_non_default_revolution_branches() {
   <Property name="Angle" type="App::PropertyAngle"><Float value="120"/></Property>
   <Property name="Angle2" type="App::PropertyAngle"><Float value="30"/></Property>
  </Properties></Object>
- <Object name="Midplane"><Properties Count="9">
+ <Object name="Midplane"><Properties Count="10">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
   <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
   <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="3" z="0"/></Property>
@@ -407,6 +407,7 @@ fn transfers_non_default_revolution_branches() {
   <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="ReferenceAxis" type="App::PropertyLinkSub"><Link object="Sketch" sub="H_Axis"/></Property>
   <Property name="FuseOrder" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
  </Properties></Object>
  <Object name="ThroughAll"><Properties Count="4">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -470,7 +471,7 @@ fn transfers_non_default_revolution_branches() {
     ));
     assert!(matches!(
         definition("Midplane"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { axis: Some(axis), extent: Some(Extent::SymmetricAngle { .. }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), fuse_order: Some(cadmpeg_ir::features::RevolutionFuseOrder::FeatureFirst), solid: Some(true), .. }, .. }
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { axis: Some(axis), extent: Some(Extent::SymmetricAngle { .. }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), fuse_order: Some(cadmpeg_ir::features::RevolutionFuseOrder::FeatureFirst), solid: Some(true), allow_multi_profile_faces: Some(false), .. }, .. }
             if axis.direction.y == -1.0 && reference.ends_with(":property:ReferenceAxis")
     ));
     assert!(matches!(
@@ -525,7 +526,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "33");
+    assert_eq!(result.ir.ir_version, "34");
     let feature = |name: &str| {
         &result
             .ir
@@ -1194,12 +1195,13 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
  <Object name="Section1"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Section2"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Path"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
- <Object name="Loft"><Properties Count="3">
+ <Object name="Loft"><Properties Count="4">
   <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
   <Property name="Closed" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Ruled" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
  </Properties></Object>
- <Object name="Pipe"><Properties Count="10">
+ <Object name="Pipe"><Properties Count="11">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section1"/></Property>
   <Property name="Sections" type="App::PropertyLinkSubList"><LinkList count="2"><Link object="Section1"/><Link object="Section2"/></LinkList></Property>
   <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
@@ -1210,6 +1212,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
   <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
  <Object name="SurfaceLoft"><Properties Count="4">
   <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
@@ -1248,6 +1251,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             closed: true,
             solid: true,
             ruled: true,
+            allow_multi_profile_faces: Some(false),
             op: cadmpeg_ir::features::BooleanOp::Join,
             ..
         } if matches!(profiles.as_slice(), [
@@ -1283,6 +1287,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             transition: Some(cadmpeg_ir::features::SweepTransition::RoundCorner),
             transformation: Some(cadmpeg_ir::features::SweepTransformation::MultiSection),
             path_tangent: true,
+            allow_multi_profile_faces: Some(true),
             ..
         } if path.ends_with(":property:Spine") && sections.len() == 1
     ));
@@ -1642,7 +1647,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
 </Objects>
 <ObjectData Count="3">
  <Object name="Profile"><Properties Count="0"/></Object>
- <Object name="Spring"><Properties Count="13">
+ <Object name="Spring"><Properties Count="14">
   <Property name="Profile" type="App::PropertyLinkSub"><Link object="Profile" sub=""/></Property>
   <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
   <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="1"/></Property>
@@ -1656,6 +1661,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
   <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Outside" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Tolerance" type="App::PropertyFloatConstraint"><Float value="0.25"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
  </Properties></Object>
  <Object name="OutsideCut"><Properties Count="13">
   <Property name="Profile" type="App::PropertyLinkSub"><Link object="Profile" sub=""/></Property>
@@ -1696,7 +1702,8 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
     } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::PitchTurnsAngle
         && construction.axis_origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
         && construction.left_handed && construction.reversed
-        && construction.turns == 2.5 && construction.tolerance == 0.25)
+        && construction.turns == 2.5 && construction.tolerance == 0.25
+        && construction.allow_multi_profile_faces == Some(false))
     );
     assert!(
         matches!(definition("OutsideCut"), cadmpeg_ir::features::FeatureDefinition::HelicalSweep {
@@ -2059,7 +2066,7 @@ fn transfers_branch_complete_threaded_counterdrill_hole() {
   <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
  </Properties></Object>
- <Object name="Hole"><Properties Count="25">
+ <Object name="Hole"><Properties Count="26">
   <Property name="Profile" type="App::PropertyLink"><Link value="Locations"/></Property>
   <Property name="BaseProfileType" type="App::PropertyInteger"><Integer value="7"/></Property>
   <Property name="Diameter" type="App::PropertyLength"><Float value="6.8"/></Property>
@@ -2085,6 +2092,7 @@ fn transfers_branch_complete_threaded_counterdrill_hole() {
   <Property name="ThreadDepthType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="ThreadDepth" type="App::PropertyLength"><Float value="12"/></Property>
   <Property name="UseCustomThreadClearance" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -2109,6 +2117,7 @@ fn transfers_branch_complete_threaded_counterdrill_hole() {
         bottom,
         taper_angle,
         specification,
+        allow_multi_profile_faces,
         ..
     } = &hole.definition
     else {
@@ -2150,6 +2159,7 @@ fn transfers_branch_complete_threaded_counterdrill_hole() {
         })
     ));
     assert!(taper_angle.is_some());
+    assert_eq!(*allow_multi_profile_faces, Some(true));
     let specification = specification.as_deref().expect("thread specification");
     assert_eq!(specification.standard, "ISO metric");
     assert_eq!(specification.designation.as_deref(), Some("M8"));

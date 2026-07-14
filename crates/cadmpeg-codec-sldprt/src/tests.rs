@@ -1734,6 +1734,7 @@ fn encoder_writes_source_less_line_sketches() {
                 solid: Some(true),
                 face_maker_class: None,
                 fuse_order: None,
+                allow_multi_profile_faces: None,
             },
             op: BooleanOp::NewBody,
         },
@@ -1751,6 +1752,7 @@ fn encoder_writes_source_less_line_sketches() {
             linearize: false,
             twist: Some(Angle(0.3)),
             scale: Some(1.5),
+            allow_multi_profile_faces: None,
         },
         FeatureDefinition::Loft {
             profiles: vec![profile.clone(), profile.clone()],
@@ -1761,6 +1763,7 @@ fn encoder_writes_source_less_line_sketches() {
             ruled: false,
             max_degree: None,
             check_compatibility: None,
+            allow_multi_profile_faces: None,
         },
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
@@ -2344,6 +2347,7 @@ fn encoder_writes_source_less_native_features() {
             bottom: None,
             taper_angle: None,
             specification: None,
+            allow_multi_profile_faces: None,
         },
     ];
     for (index, definition) in definitions.into_iter().enumerate() {

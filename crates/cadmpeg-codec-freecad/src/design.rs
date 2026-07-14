@@ -1732,6 +1732,11 @@ fn revolution_definition(
             }),
             face_maker_class,
             fuse_order,
+            allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
+                Some(bool_property(properties, "AllowMultiFace")?)
+            } else {
+                None
+            },
         },
         op: if kind == "Part::Revolution" {
             BooleanOp::NewBody
@@ -2746,6 +2751,11 @@ fn loft_definition(
         } else {
             None
         },
+        allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
+            Some(bool_property(properties, "AllowMultiFace")?)
+        } else {
+            None
+        },
     })
 }
 
@@ -2844,6 +2854,11 @@ fn sweep_definition(
         linearize: bool_property(properties, "Linearize").unwrap_or(false),
         twist: None,
         scale: None,
+        allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
+            Some(bool_property(properties, "AllowMultiFace")?)
+        } else {
+            None
+        },
     })
 }
 
@@ -2973,6 +2988,11 @@ fn hole_definition(
         bottom: Some(bottom),
         taper_angle,
         specification,
+        allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
+            Some(bool_property(properties, "AllowMultiFace")?)
+        } else {
+            None
+        },
     })
 }
 
@@ -3021,6 +3041,11 @@ fn helical_sweep_definition(
         left_handed: bool_property(properties, "LeftHanded")?,
         reversed: bool_property(properties, "Reversed")?,
         tolerance: scalar_named(properties, "Tolerance")?,
+        allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
+            Some(bool_property(properties, "AllowMultiFace")?)
+        } else {
+            None
+        },
     };
     let op = if kind.ends_with("SubtractiveHelix") {
         if bool_property(properties, "Outside").unwrap_or(false) {

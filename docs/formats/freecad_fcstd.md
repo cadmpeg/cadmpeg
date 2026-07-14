@@ -406,7 +406,9 @@ line endpoints, undersized point lists, and empty face sources remain attributab
 Part and PartDesign revolutions retain the resolved axis together with the native edge, datum, or
 sketch-axis selection that supplied it. Standalone Part revolutions additionally retain
 solid-versus-sheet result and the face-maker class used for solids. PartDesign revolutions retain
-the compatibility ordering used when fusing the new feature with the existing body.
+the compatibility ordering used when fusing the new feature with the existing body. Every
+profile-based PartDesign operation—extrusion, revolution, loft, pipe, helix, and hole—retains
+whether a profile containing multiple faces is accepted as one construction input.
 
 Part extrusions retain their normalized direction, custom-vector, selected-edge, or profile-normal
 direction source, independent forward and reverse lengths and tapers, symmetric construction, and

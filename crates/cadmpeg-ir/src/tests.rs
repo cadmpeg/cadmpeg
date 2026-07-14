@@ -622,6 +622,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             linearize: false,
             twist: None,
             scale: None,
+            allow_multi_profile_faces: None,
         },
     ];
     let json = serde_json::to_string(&definitions).unwrap();
@@ -2306,6 +2307,7 @@ fn feature_operation_geometry_is_validated() {
             bottom: None,
             taper_angle: None,
             specification: None,
+            allow_multi_profile_faces: None,
         },
         FeatureDefinition::Thicken {
             faces: FaceSelection::Unresolved,
@@ -2403,6 +2405,7 @@ fn feature_operation_geometry_is_validated() {
                 left_handed: false,
                 reversed: false,
                 tolerance: 0.0,
+                allow_multi_profile_faces: None,
             },
             op: crate::features::BooleanOp::Join,
         },
@@ -2499,6 +2502,7 @@ fn feature_operation_geometry_is_validated() {
             linearize: false,
             twist: None,
             scale: Some(-1.0),
+            allow_multi_profile_faces: None,
         },
         FeatureDefinition::DatumOffsetPlane {
             reference: None,

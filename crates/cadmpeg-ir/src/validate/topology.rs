@@ -2056,6 +2056,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 bottom,
                 taper_angle,
                 specification,
+                ..
             } => {
                 profiles.extend(profile);
                 face_selections.extend(face);

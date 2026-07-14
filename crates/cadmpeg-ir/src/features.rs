@@ -565,6 +565,9 @@ pub enum FeatureDefinition {
         /// End-to-start profile scale ratio, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scale: Option<f64>,
+        /// Whether a profile containing multiple faces is accepted as one operation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_multi_profile_faces: Option<bool>,
     },
     /// Solid sweep of a profile along a parametrically defined helix or spiral.
     HelicalSweep {
@@ -604,6 +607,9 @@ pub enum FeatureDefinition {
         /// Whether section topology is checked and adjusted for compatibility, when carried.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         check_compatibility: Option<bool>,
+        /// Whether profiles containing multiple faces are accepted as one operation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_multi_profile_faces: Option<bool>,
     },
     /// Thin rib grown from a profile.
     Rib {
@@ -923,6 +929,9 @@ pub enum FeatureDefinition {
         /// Standard sizing and thread construction, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         specification: Option<Box<HoleSpecification>>,
+        /// Whether a profile containing multiple faces is accepted as one operation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_multi_profile_faces: Option<bool>,
     },
     /// Repetition or reflection of existing features.
     Pattern {
@@ -1135,6 +1144,9 @@ pub struct RevolutionConstruction {
     /// Compatibility ordering for fusing a `PartDesign` revolution into its body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fuse_order: Option<RevolutionFuseOrder>,
+    /// Whether a profile containing multiple faces is accepted as one operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_multi_profile_faces: Option<bool>,
 }
 
 /// Operand ordering used to fuse a `PartDesign` revolution result.
@@ -1729,6 +1741,9 @@ pub struct HelicalSweepConstruction {
     pub reversed: bool,
     /// Relative tolerance used while joining the generated sweep.
     pub tolerance: f64,
+    /// Whether a profile containing multiple faces is accepted as one operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_multi_profile_faces: Option<bool>,
 }
 
 /// Independent-parameter law used to author a helical sweep.

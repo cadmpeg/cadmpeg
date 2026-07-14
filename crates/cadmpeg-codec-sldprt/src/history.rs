@@ -1780,6 +1780,7 @@ fn project_loft(
         ruled: false,
         max_degree: None,
         check_compatibility: None,
+        allow_multi_profile_faces: None,
     })
 }
 
@@ -1852,6 +1853,7 @@ fn project_sweep(
         linearize: false,
         twist,
         scale,
+        allow_multi_profile_faces: None,
     })
 }
 
@@ -2014,6 +2016,7 @@ fn project_revolve(feature: &Feature, native_by_source: &HashMap<&str, &str>) ->
             solid: Some(true),
             face_maker_class: None,
             fuse_order: None,
+            allow_multi_profile_faces: None,
         },
         op,
     }
@@ -2115,6 +2118,7 @@ fn project_hole(feature: &Feature) -> FeatureDefinition {
         bottom: None,
         taper_angle: None,
         specification: None,
+        allow_multi_profile_faces: None,
     }
 }
 
@@ -6025,12 +6029,14 @@ pub fn sync_neutral_features(
                 bottom,
                 taper_angle,
                 specification,
+                allow_multi_profile_faces,
             } => {
                 if profile.is_some()
                     || profile_filter.is_some()
                     || bottom.is_some()
                     || taper_angle.is_some()
                     || specification.is_some()
+                    || allow_multi_profile_faces.is_some()
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported hole construction semantics",
@@ -6186,6 +6192,7 @@ pub fn sync_neutral_features(
                     || construction.solid == Some(false)
                     || construction.face_maker_class.is_some()
                     || construction.fuse_order.is_some()
+                    || construction.allow_multi_profile_faces.is_some()
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} uses unsupported revolution construction controls",
@@ -6288,6 +6295,7 @@ pub fn sync_neutral_features(
                 linearize,
                 twist,
                 scale,
+                allow_multi_profile_faces,
             } => {
                 if !sections.is_empty()
                     || orientation.is_some()
@@ -6295,6 +6303,7 @@ pub fn sync_neutral_features(
                     || transformation.is_some()
                     || *path_tangent
                     || *linearize
+                    || allow_multi_profile_faces.is_some()
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported sweep construction semantics",
@@ -6412,8 +6421,14 @@ pub fn sync_neutral_features(
                 ruled,
                 max_degree,
                 check_compatibility,
+                allow_multi_profile_faces,
             } => {
-                if !solid || *ruled || max_degree.is_some() || check_compatibility.is_some() {
+                if !solid
+                    || *ruled
+                    || max_degree.is_some()
+                    || check_compatibility.is_some()
+                    || allow_multi_profile_faces.is_some()
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported loft result semantics",
                         feature.id
