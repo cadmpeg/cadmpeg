@@ -2073,6 +2073,7 @@ pub fn decode_dimension_locus_pairs(
     parameters: &[DesignParameter],
     owners: &[DesignParameterOwner],
     companions: &[DesignParameterCompanion],
+    scopes: &[DesignParameterScope],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
 ) -> Result<Vec<DesignDimensionLocusPair>, CodecError> {
@@ -2129,7 +2130,8 @@ pub fn decode_dimension_locus_pairs(
             )
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) = companion_owned_interval(companion, owners, bytes.len()) else {
+        let Some((start, end)) = companion_owned_interval(companion, owners, scopes, bytes.len())
+        else {
             continue;
         };
         let Some(mut pair) =
@@ -2248,6 +2250,7 @@ pub fn decode_dimension_null_locus_pairs(
     parameters: &[DesignParameter],
     owners: &[DesignParameterOwner],
     companions: &[DesignParameterCompanion],
+    scopes: &[DesignParameterScope],
     placements: &[DesignSketchPlacement],
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
@@ -2347,7 +2350,8 @@ pub fn decode_dimension_null_locus_pairs(
             )
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) = companion_owned_interval(companion, owners, bytes.len()) else {
+        let Some((start, end)) = companion_owned_interval(companion, owners, scopes, bytes.len())
+        else {
             continue;
         };
         let parse = |at| {
@@ -2444,11 +2448,13 @@ fn parse_dimension_null_locus_pair(
 
 /// Decode counted typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
+#[allow(clippy::too_many_arguments)]
 pub fn decode_dimension_locus_groups(
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     owners: &[DesignParameterOwner],
     companions: &[DesignParameterCompanion],
+    scopes: &[DesignParameterScope],
     entities: &[DesignEntityHeader],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
@@ -2514,7 +2520,8 @@ pub fn decode_dimension_locus_groups(
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) = companion_owned_interval(companion, owners, bytes.len()) else {
+        let Some((start, end)) = companion_owned_interval(companion, owners, scopes, bytes.len())
+        else {
             continue;
         };
         let candidates = find_dimension_locus_groups(
@@ -2574,18 +2581,29 @@ fn find_dimension_locus_groups(
 fn companion_owned_interval(
     companion: &DesignParameterCompanion,
     owners: &[DesignParameterOwner],
+    scopes: &[DesignParameterScope],
     stream_length: usize,
 ) -> Option<(usize, usize)> {
-    let scope = native_stream(&companion.id)?;
+    let native_scope = native_stream(&companion.id)?;
     let start = usize::try_from(companion.byte_offset)
         .ok()?
         .checked_add(58)?;
     let end = owners
         .iter()
         .filter(|owner| {
-            native_stream(&owner.id) == Some(scope) && owner.byte_offset > companion.byte_offset
+            native_stream(&owner.id) == Some(native_scope)
+                && owner.byte_offset > companion.byte_offset
         })
         .filter_map(|owner| usize::try_from(owner.byte_offset).ok())
+        .chain(
+            scopes
+                .iter()
+                .filter(|scope| {
+                    native_stream(&scope.id) == Some(native_scope)
+                        && scope.byte_offset > companion.byte_offset
+                })
+                .filter_map(|scope| usize::try_from(scope.byte_offset).ok()),
+        )
         .min()
         .unwrap_or(stream_length);
     (start < end && end <= stream_length).then_some((start, end))
@@ -5793,25 +5811,25 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 mod relation_tests {
     use super::{
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
-        bind_face_operand_candidates, bind_sketch_graph, decode_fillet_radius_groups,
-        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix, neutral_sketch_id,
-        next_indexed_record_offset, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design,
+        bind_face_operand_candidates, bind_sketch_graph, companion_owned_interval,
+        decode_fillet_radius_groups, find_dimension_locus_groups, find_dimension_locus_pair,
+        identity_matrix, neutral_sketch_id, next_indexed_record_offset,
+        parse_construction_operand_group, parse_construction_operand_identity,
+        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
         DesignDimensionLocusPair, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
         DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
-        DesignExtrudeStart, DesignObjectKind, DesignParameterKind, DesignParameterOwner,
-        DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, PersistentSubentityTag,
-        SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
-        SketchRelation, SketchRelationOperand,
+        DesignExtrudeStart, DesignObjectKind, DesignParameterCompanion, DesignParameterKind,
+        DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+        SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
@@ -6186,7 +6204,7 @@ mod relation_tests {
             byte_offset: 0,
         };
 
-        let scope = parse_parameter_scope(&bytes, &header).unwrap();
+        let mut scope = parse_parameter_scope(&bytes, &header).unwrap();
         assert_eq!(scope.kind, "Sketch");
         assert_eq!(scope.feature_ordinal, 1);
         assert_eq!(scope.feature_ordinal_offset, feature_ordinal_at as u64);
@@ -6198,6 +6216,27 @@ mod relation_tests {
         assert_eq!(scope.frame_length, paired_at as u64);
         assert_eq!(scope.paired_class_tag, "261");
         assert_eq!(scope.paired_byte_offset, paired_at as u64);
+
+        let companion = DesignParameterCompanion {
+            id: "f3d:native:parameter-companion#11".into(),
+            byte_offset: 0,
+            class_tag: "300".into(),
+            record_index: 11,
+            owner_record_index: 10,
+            opaque_value: 1,
+            opaque_value_offset: 42,
+        };
+        scope.id = "f3d:native:parameter-scope#12".into();
+        scope.byte_offset = 58;
+        assert_eq!(
+            companion_owned_interval(&companion, &[], &[scope.clone()], 100),
+            None
+        );
+        scope.byte_offset = 80;
+        assert_eq!(
+            companion_owned_interval(&companion, &[], &[scope], 100),
+            Some((58, 80))
+        );
     }
 
     #[test]
