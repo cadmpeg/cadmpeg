@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 129);
+    assert_eq!(namespace.version, 130);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6066,15 +6066,11 @@ fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
 }
 
 fn prt_with_arrangements() -> Vec<u8> {
+    let mut arrangements = br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="NO" Name="Exploded"/></Arrangements>"#.to_vec();
+    arrangements.push(0);
     prt_with_named_payloads(&[
-        (
-            "/Root/UG_PART/UG_PART",
-            zlib_compress(&partition_stream()),
-        ),
-        (
-            "/Root/part/arrangements",
-            br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="NO" Name="Exploded"/></Arrangements>"#.to_vec(),
-        ),
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        ("/Root/part/arrangements", arrangements),
     ])
 }
 
@@ -6453,7 +6449,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 129);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 130);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -6631,6 +6627,18 @@ fn nx_part_attributes_require_typed_atomic_xml() {
     assert!(!attributes[0].pdm_based);
     assert!(attributes[0].source_offset > 100);
 
+    let mut terminated = xml.to_vec();
+    terminated.push(0);
+    assert_eq!(
+        crate::native::parse_part_attributes(&terminated, 7, "/Root/part/attrs", 100)
+            .expect("terminated typed attributes"),
+        attributes
+    );
+    terminated.push(0);
+    assert!(
+        crate::native::parse_part_attributes(&terminated, 7, "/Root/part/attrs", 100).is_none()
+    );
+
     let malformed = xml
         .windows(b"pdmBased=\"false\"".len())
         .position(|window| window == b"pdmBased=\"false\"")
@@ -6771,6 +6779,21 @@ fn decode_rejects_ambiguous_nx_arrangement_table_atomically() {
             .unwrap()
             .is_empty()
     }));
+    assert!(result.ir.model.configurations.is_empty());
+}
+
+#[test]
+fn decode_rejects_repeated_nx_arrangement_terminators_atomically() {
+    let mut arrangements =
+        br#"<Arrangements><Arrangement Default="YES" Name="Model"/></Arrangements>"#.to_vec();
+    arrangements.extend_from_slice(&[0, 0]);
+    let file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        ("/Root/part/arrangements", arrangements),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
     assert!(result.ir.model.configurations.is_empty());
 }
 

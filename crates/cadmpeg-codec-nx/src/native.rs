@@ -5867,7 +5867,7 @@ pub fn configurations(container: &Container) -> Vec<Configuration> {
             let payload = container
                 .data
                 .get(offset_usize..offset_usize.checked_add(size)?)?;
-            let xml = std::str::from_utf8(payload).ok()?;
+            let xml = xml_stream_text(payload)?;
             let document = roxmltree::Document::parse(xml).ok()?;
             let root = document.root_element();
             if root.tag_name().name() != "Arrangements" {
@@ -5932,7 +5932,7 @@ pub(crate) fn parse_part_attributes(
     source_entry: &str,
     entry_offset: u64,
 ) -> Option<Vec<PartAttribute>> {
-    let document = roxmltree::Document::parse(std::str::from_utf8(payload).ok()?).ok()?;
+    let document = roxmltree::Document::parse(xml_stream_text(payload)?).ok()?;
     let root = document.root_element();
     if root.tag_name().name() != "UgAttributes"
         || root.attribute("version")?.parse::<u32>().ok()? < 4
@@ -5969,6 +5969,20 @@ pub(crate) fn parse_part_attributes(
             })
         })
         .collect()
+}
+
+/// Return the exact XML document carried by an NX XML stream.
+///
+/// NX permits one C-string terminator after the document. A terminator inside
+/// the document or more than one trailing terminator rejects the whole stream.
+fn xml_stream_text(payload: &[u8]) -> Option<&str> {
+    let document = if let Some(document) = payload.strip_suffix(&[0]) {
+        (!document.ends_with(&[0])).then_some(document)?
+    } else {
+        payload
+    };
+    (!document.contains(&0)).then_some(())?;
+    std::str::from_utf8(document).ok()
 }
 
 /// Decode class definitions from every framed OM section.

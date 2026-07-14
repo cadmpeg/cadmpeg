@@ -37,7 +37,13 @@ Directory entry grammar (HEADER and FOOTER identical): `name_len:u32 LE` + ASCII
 
 FOOTER region at the 48-bit offset: ASCII `FOOTER`, then `entry_count:u32 LE`, then directory entries, then a 4-byte per-save fingerprint (unique per file version). The `/Root/` sentinel node carries UUID `611ec9b3-fa60-d111-8ad9-0800362fb302` across files.
 
-`/Root/part/arrangements` is a UTF-8 XML document with an `Arrangements` root. Each `Arrangement` child has a nonempty `Name` and a `Default` value of `YES` or `NO`. At most one child is default. Child order is configuration order.
+NX XML streams contain one UTF-8 XML document and may carry one terminal `00`
+byte after the document. An embedded `00` or multiple terminal `00` bytes
+invalidate the stream atomically.
+
+`/Root/part/arrangements` has an `Arrangements` root. Each `Arrangement` child
+has a nonempty `Name` and a `Default` value of `YES` or `NO`. At most one child
+is default. Child order is configuration order.
 
 The canonical `/Root/UG_PART/UG_PART` payload begins with a segment index of
 12-byte little-endian rows:
