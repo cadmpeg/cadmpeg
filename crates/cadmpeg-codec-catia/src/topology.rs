@@ -3914,16 +3914,11 @@ impl MeshSelectionSearch<'_> {
             .filter(|(_, selected)| selected.is_none())
             .filter_map(|(face, _)| {
                 self.face_work[face]?;
-                let supported = self.assignments[face]
-                    .iter()
-                    .filter(|assignment| {
-                        measured.assignment_has_option(assignment, self.edge_candidates)
-                    })
-                    .collect::<Vec<_>>();
-                if supported.is_empty() {
+                let assignments = &self.assignments[face];
+                if assignments.is_empty() {
                     return Some((0, 0, 0, 0, face));
                 }
-                let direction_work = supported
+                let direction_work = assignments
                     .iter()
                     .map(|assignment| {
                         let unknown = assignment
@@ -3935,7 +3930,7 @@ impl MeshSelectionSearch<'_> {
                         1usize.checked_shl(unknown as u32).unwrap_or(usize::MAX)
                     })
                     .fold(0usize, usize::saturating_add);
-                let assignment = supported[0];
+                let assignment = &assignments[0];
                 let selected_incidence = assignment
                     .boundaries
                     .iter()
@@ -3954,7 +3949,7 @@ impl MeshSelectionSearch<'_> {
                     })
                     .count();
                 Some((
-                    supported.len(),
+                    assignments.len(),
                     direction_work,
                     usize::MAX - selected_incidence,
                     usize::MAX - constrained,
@@ -4058,9 +4053,6 @@ impl MeshSelectionSearch<'_> {
         let mut options = Vec::new();
         for assignment_index in 0..self.assignments[face].len() {
             let assignment = &self.assignments[face][assignment_index];
-            if !quotient.assignment_has_option(assignment, self.edge_candidates) {
-                continue;
-            }
             options.extend(
                 quotient
                     .assignment_options(assignment, self.edge_candidates)
@@ -4069,6 +4061,9 @@ impl MeshSelectionSearch<'_> {
                         (assignment_index, directions, next_quotient)
                     }),
             );
+        }
+        if options.is_empty() {
+            return;
         }
         let branching = options.len() > 1;
         for (assignment_index, directions, next_quotient) in options {
