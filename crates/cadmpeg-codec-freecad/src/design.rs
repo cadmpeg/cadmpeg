@@ -134,12 +134,17 @@ pub(crate) fn transfer(
                 }
             })
         } else if is_pattern(&object.type_name) {
-            pattern_definition(&object.type_name, &owned, &feature_ids).unwrap_or_else(|| {
-                FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
-                    parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
-                }
+            pattern_definition(
+                &object.type_name,
+                &owned,
+                &feature_ids,
+                objects,
+                &properties_by_owner,
+            )
+            .unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
             })
         } else if is_extrusion(&object.type_name) {
             let profile = profile_ref(&owned, &sketch_ids);
@@ -201,6 +206,14 @@ pub(crate) fn transfer(
                 kind: object.type_name.clone(),
                 parameters: native_parameters(&owned),
                 properties: BTreeMap::new(),
+            })
+        } else if object.type_name == "PartDesign::Draft" {
+            draft_definition(&owned, objects, &properties_by_owner).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
             })
         } else if object.type_name.contains("Fillet") {
             FeatureDefinition::Fillet {
@@ -1317,6 +1330,36 @@ fn thickness_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinit
     })
 }
 
+fn draft_definition(
+    properties: &[&PropertyRecord],
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+) -> Option<FeatureDefinition> {
+    let faces = property(properties, "Base")?;
+    let neutral_plane = property(properties, "NeutralPlane")?;
+    let (_, plane_normal) =
+        plane_reference(properties, "NeutralPlane", objects, properties_by_owner)?;
+    let pull_direction = if property(properties, "PullDirection")
+        .is_some_and(|property| !property.links.is_empty())
+    {
+        axis_reference(properties, "PullDirection", objects, properties_by_owner)?.1
+    } else {
+        plane_normal
+    };
+    let reversed = bool_property(properties, "Reversed").unwrap_or(false);
+    let angle = scalar_named(properties, "Angle")?;
+    if !angle.is_finite() {
+        return None;
+    }
+    Some(FeatureDefinition::Draft {
+        faces: cadmpeg_ir::features::FaceSelection::Native(faces.id.clone()),
+        neutral_plane: cadmpeg_ir::features::FaceSelection::Native(neutral_plane.id.clone()),
+        pull_direction,
+        angle: cadmpeg_ir::features::Angle(if reversed { -angle } else { angle }.to_radians()),
+        outward: reversed,
+    })
+}
+
 fn chamfer_spec(properties: &[&PropertyRecord]) -> ChamferSpec {
     let mode = property(properties, "ChamferType")
         .and_then(scalar_value)
@@ -1573,6 +1616,8 @@ fn pattern_definition(
     kind: &str,
     properties: &[&PropertyRecord],
     features: &HashMap<&str, FeatureId>,
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<FeatureDefinition> {
     let originals = property(properties, "Originals")?;
     let seeds = originals
@@ -1583,6 +1628,18 @@ fn pattern_definition(
         .collect::<Vec<_>>();
     if seeds.is_empty() || seeds.len() != originals.links.len() {
         return None;
+    }
+
+    if kind.ends_with("Mirrored") {
+        let (plane_origin, plane_normal) =
+            plane_reference(properties, "MirrorPlane", objects, properties_by_owner)?;
+        return Some(FeatureDefinition::Pattern {
+            seeds,
+            pattern: PatternKind::Mirror {
+                plane_origin,
+                plane_normal,
+            },
+        });
     }
 
     let count = integer_property(properties, "Occurrences")?;
@@ -1609,12 +1666,13 @@ fn pattern_definition(
         if !spacing.is_finite() || spacing <= 0.0 {
             return None;
         }
-        let mut direction = vector_property(properties, "Direction");
+        let (_, mut direction) =
+            axis_reference(properties, "Direction", objects, properties_by_owner)?;
         if bool_property(properties, "Reversed").unwrap_or(false) {
-            direction = direction.map(|value| Vector3::new(-value.x, -value.y, -value.z));
+            direction = Vector3::new(-direction.x, -direction.y, -direction.z);
         }
         PatternKind::Linear {
-            direction,
+            direction: Some(direction),
             spacing: Length(spacing),
             count,
         }
@@ -1622,7 +1680,8 @@ fn pattern_definition(
         if has_custom_spacing(properties, "Spacings", "SpacingPattern")? {
             return None;
         }
-        let mut axis_dir = vector_property(properties, "Axis")?;
+        let (axis_origin, mut axis_dir) =
+            axis_reference(properties, "Axis", objects, properties_by_owner)?;
         if bool_property(properties, "Reversed").unwrap_or(false) {
             axis_dir = Vector3::new(-axis_dir.x, -axis_dir.y, -axis_dir.z);
         }
@@ -1632,7 +1691,7 @@ fn pattern_definition(
             _ => return None,
         };
         PatternKind::Circular {
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_origin,
             axis_dir,
             angle: cadmpeg_ir::features::Angle(angle_degrees.to_radians()),
             count,
@@ -1641,6 +1700,90 @@ fn pattern_definition(
         return None;
     };
     Some(FeatureDefinition::Pattern { seeds, pattern })
+}
+
+fn axis_reference(
+    properties: &[&PropertyRecord],
+    name: &str,
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+) -> Option<(Point3, Vector3)> {
+    if let Some(direction) = vector_property(properties, name) {
+        return Some((Point3::new(0.0, 0.0, 0.0), unit_vector(direction)?));
+    }
+    let link = property(properties, name)?.links.first()?;
+    let target = link.object.as_deref()?;
+    let object = objects.iter().find(|object| object.id == target)?;
+    let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
+    let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
+    let selector = link_selectors(link).next();
+    let direction = match object.type_name.as_str() {
+        "PartDesign::Line" => z_axis,
+        "PartDesign::Plane" => z_axis,
+        "PartDesign::CoordinateSystem" => match selector {
+            Some("X_Axis" | "XAxis" | "X") => x_axis,
+            Some("Y_Axis" | "YAxis" | "Y") => y_axis,
+            Some("Z_Axis" | "ZAxis" | "Z") | None => z_axis,
+            _ => return None,
+        },
+        kind if is_sketch(kind) => match selector {
+            Some("H_Axis") => x_axis,
+            Some("V_Axis") => y_axis,
+            Some("N_Axis") | None => z_axis,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some((origin, unit_vector(direction)?))
+}
+
+fn plane_reference(
+    properties: &[&PropertyRecord],
+    name: &str,
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+) -> Option<(Point3, Vector3)> {
+    let link = property(properties, name)?.links.first()?;
+    let target = link.object.as_deref()?;
+    let object = objects.iter().find(|object| object.id == target)?;
+    let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
+    let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
+    let selector = link_selectors(link).next();
+    let normal = match object.type_name.as_str() {
+        "PartDesign::Plane" => z_axis,
+        "PartDesign::CoordinateSystem" => match selector {
+            Some("XY_Plane" | "XYPlane" | "XY") | None => z_axis,
+            Some("XZ_Plane" | "XZPlane" | "XZ") => y_axis,
+            Some("YZ_Plane" | "YZPlane" | "YZ") => x_axis,
+            _ => return None,
+        },
+        kind if is_sketch(kind) => match selector {
+            None | Some("N_Axis") => z_axis,
+            Some("H_Axis") => y_axis,
+            Some("V_Axis") => x_axis,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some((origin, unit_vector(normal)?))
+}
+
+fn unit_vector(vector: Vector3) -> Option<Vector3> {
+    let magnitude = (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
+    (magnitude.is_finite() && magnitude > f64::EPSILON).then(|| {
+        Vector3::new(
+            vector.x / magnitude,
+            vector.y / magnitude,
+            vector.z / magnitude,
+        )
+    })
+}
+
+fn link_selectors(link: &crate::native::LinkTarget) -> impl Iterator<Item = &str> {
+    link.subelements
+        .iter()
+        .flat_map(|selector| selector.split_ascii_whitespace())
+        .filter(|selector| !selector.is_empty())
 }
 
 fn scalar_named(properties: &[&PropertyRecord], name: &str) -> Option<f64> {
@@ -1737,11 +1880,13 @@ fn is_sweep(kind: &str) -> bool {
 fn is_pattern(kind: &str) -> bool {
     matches!(
         kind,
-        "PartDesign::LinearPattern" | "PartDesign::PolarPattern"
+        "PartDesign::LinearPattern" | "PartDesign::PolarPattern" | "PartDesign::Mirrored"
     )
 }
 fn is_dress_up(kind: &str) -> bool {
-    kind.contains("Fillet") || kind.contains("Chamfer") || kind == "PartDesign::Thickness"
+    kind.contains("Fillet")
+        || kind.contains("Chamfer")
+        || matches!(kind, "PartDesign::Thickness" | "PartDesign::Draft")
 }
 fn is_body(kind: &str) -> bool {
     kind.contains("PartDesign::Body")

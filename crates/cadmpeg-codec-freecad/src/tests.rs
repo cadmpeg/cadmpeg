@@ -504,6 +504,76 @@ fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() 
 }
 
 #[test]
+fn resolves_datum_references_for_polar_and_mirror_patterns() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="5">
+ <Object type="Part::Box" name="Seed" id="1"/>
+ <Object type="PartDesign::Line" name="Axis" id="2"/>
+ <Object type="PartDesign::Plane" name="Plane" id="3"/>
+ <Object type="PartDesign::PolarPattern" name="Ring" id="4"/>
+ <Object type="PartDesign::Mirrored" name="Mirror" id="5"/>
+</Objects>
+<ObjectData Count="5">
+ <Object name="Seed"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Axis"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Plane"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Ring"><Properties Count="5">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Axis" type="App::PropertyLinkSub"><Link object="Axis" sub=""/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="360"/></Property>
+  <Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>
+ </Properties></Object>
+ <Object name="Mirror"><Properties Count="2">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="MirrorPlane" type="App::PropertyLinkSub"><Link object="Plane" sub=""/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("referenced patterns");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("pattern")
+            .definition
+    };
+    assert!(matches!(
+        definition("Ring"),
+        cadmpeg_ir::features::FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Circular {
+                axis_origin,
+                axis_dir,
+                angle: cadmpeg_ir::features::Angle(angle),
+                count: 4,
+            },
+            ..
+        } if *axis_origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+            && *axis_dir == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+            && (*angle - std::f64::consts::TAU).abs() < 1e-12
+    ));
+    assert!(matches!(
+        definition("Mirror"),
+        cadmpeg_ir::features::FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Mirror {
+                plane_origin,
+                plane_normal,
+            },
+            ..
+        } if *plane_origin == cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
+            && *plane_normal == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+    ));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
 fn transfers_complete_thickness_construction_controls() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">
@@ -550,6 +620,59 @@ fn transfers_complete_thickness_construction_controls() {
         } if selection.ends_with(":property:Base")
     ));
     assert_eq!(wall.dependencies.len(), 1);
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Box" name="Base" id="1"/>
+ <Object type="PartDesign::Plane" name="Neutral" id="2"/>
+ <Object type="PartDesign::Line" name="Pull" id="3"/>
+ <Object type="PartDesign::Draft" name="Draft" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Base"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="10"/></Property><Property name="Width" type="App::PropertyLength"><Float value="10"/></Property><Property name="Height" type="App::PropertyLength"><Float value="10"/></Property></Properties></Object>
+ <Object name="Neutral"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="2" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Pull"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0.7071067811865476" Q1="0" Q2="0" Q3="0.7071067811865476"/></Property></Properties></Object>
+ <Object name="Draft"><Properties Count="5">
+  <Property name="Base" type="App::PropertyLinkSub"><Link object="Base" sub="Face1 Face3"/></Property>
+  <Property name="NeutralPlane" type="App::PropertyLinkSub"><Link object="Neutral" sub=""/></Property>
+  <Property name="PullDirection" type="App::PropertyLinkSub"><Link object="Pull" sub=""/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="5"/></Property>
+  <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("draft");
+    let draft = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Draft"))
+        .expect("draft feature");
+    assert!(matches!(
+        &draft.definition,
+        cadmpeg_ir::features::FeatureDefinition::Draft {
+            faces: cadmpeg_ir::features::FaceSelection::Native(faces),
+            neutral_plane: cadmpeg_ir::features::FaceSelection::Native(plane),
+            pull_direction,
+            angle: cadmpeg_ir::features::Angle(angle),
+            outward: true,
+        } if faces.ends_with(":property:Base")
+            && plane.ends_with(":property:NeutralPlane")
+            && (pull_direction.x - 0.0).abs() < 1e-12
+            && (pull_direction.y + 1.0).abs() < 1e-12
+            && pull_direction.z.abs() < 1e-12
+            && (*angle + 5f64.to_radians()).abs() < 1e-12
+    ));
+    assert_eq!(draft.dependencies.len(), 3);
     assert!(result.report.losses.is_empty());
 }
 
