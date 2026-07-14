@@ -158,6 +158,11 @@ pub struct IndexedSection<'a> {
     pub fields: Vec<FieldDefinition<'a>>,
     /// Store-level control block bounded by slot zero in an offset-only index.
     pub control: Option<EntityRecord<'a>>,
+    /// Contiguous column-storage region after the control block.
+    ///
+    /// Present only for an offset-only store. Physical block boundaries do not
+    /// delimit logical field lanes within this region.
+    pub column_storage: Option<&'a [u8]>,
     /// Entity records following the reserved zero-offset slot.
     pub records: Vec<EntityRecord<'a>>,
 }
@@ -571,6 +576,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
                 types,
                 fields,
                 control: None,
+                column_storage: None,
                 records,
             });
         }
@@ -639,6 +645,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
                 offset: offsets[0],
                 bytes: &bytes[offsets[0]..offsets[1]],
             }),
+            column_storage: Some(&bytes[offsets[1]..*offsets.last().expect("nonempty offsets")]),
             records,
         });
     }

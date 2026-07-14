@@ -279,6 +279,7 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
         b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables"
     );
     assert_eq!(sections[0].records[1].object_id, Some(0x102));
+    assert_eq!(sections[0].column_storage, None);
     assert_eq!(sections[0].fields.len(), 1);
     assert_eq!(sections[0].fields[0].name, "m_target");
     assert_eq!(
@@ -369,6 +370,10 @@ fn om_offset_only_index_bounds_storage_blocks() {
     assert_eq!(sections[0].base, 0);
     assert_eq!(sections[0].control.as_ref().unwrap().bytes, &[0, 0, 0, 0]);
     assert_eq!(sections[0].records.len(), 2);
+    assert_eq!(
+        sections[0].column_storage.unwrap(),
+        [sections[0].records[0].bytes, sections[0].records[1].bytes].concat()
+    );
     assert_eq!(sections[0].records[0].object_id, None);
     assert!(sections[0].records[0].bytes.starts_with(b"\x04\x01\x0eNX "));
     assert_eq!(sections[0].records[1].object_id, None);

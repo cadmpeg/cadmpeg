@@ -115,7 +115,9 @@ then a record count. Boundary slot zero bounds the store root/control block;
 slots `1..count+1` bound column-storage blocks. These blocks have no individual
 object identity. A block may split a string, fixed array, or field lane across
 adjacent boundaries, so marker-shaped bytes inside one block do not define an
-entity string or reference.
+entity string or reference. Concatenating the column-storage blocks in boundary
+order reconstructs the exact logical storage region; block boundaries add no
+separator or padding.
 
 Each indexed store contains one self-framed product/version header:
 `04 01 text_length:u8 "NX " version_text 00`. `text_length` equals the
