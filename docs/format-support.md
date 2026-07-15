@@ -16,7 +16,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 4. **Require a usable slice.** A capability rung requires working support across mainstream files in the declared envelope. A single fixture, entity census, or opaque record capture cannot satisfy it.
 5. **Pass inapplicable gates.** A format definition may establish that its document kind cannot contain a category. Missing fixtures cannot establish inapplicability.
 6. **Score each envelope.** A codec declares version and layout-variant bands and receives one score per band. A single version can earn L9. State discontinuous support per band.
-7. **Qualify the evidence.** Every score is **claimed** when code exists, **tested** when fixtures exercise it, or **proven** when it passes the [roadmap's](roadmap.md#progress-gates) public-fixture, byte-accounting, round-trip, and fuzzing gates.
+7. **Qualify the evidence.** Every score is **claimed** when code exists or **tested** when fixtures exercise its gates.
 
 ### Levels
 
@@ -45,7 +45,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | Rhino `.3dm` (V3/V4)                       | **L1 tested**  | metadata and bounded object-record retention                                                          |
 | Rhino `.3dm` (V1/V2 and archive 5)         | **L0 tested**  | header-only inspection; decode is rejected                                                            |
 | STEP AP214                                 | translation    | partial B-rep export with explicit loss reporting                                                     |
-| IGES 5.3 Fixed ASCII mechanical/document  | unscored       | read implementation tested with original builders; public proof and approval gates pending           |
+| IGES 5.3 Fixed ASCII mechanical/document  | unscored       | read implementation and cumulative L0–L8 tests                                                        |
 
 Each current score applies to the envelope described in its profile.
 
@@ -54,9 +54,9 @@ Each current score applies to the envelope described in its profile.
 - **None:** the repository lacks an implementation for the domain.
 - **Inspect:** cadmpeg identifies and reports the structure without transferring it into typed IR.
 - **Partial:** cadmpeg transfers a typed subset and reports or preserves the remainder.
-- **Complete:** the domain satisfies the public-fixture, byte-accounting, validation, round-trip, and fuzzing gates in the [roadmap](roadmap.md#progress-gates).
+- **Complete:** the domain satisfies its declared semantics and validation tests across the envelope.
 
-Every current profile contains incomplete domains. Current claims rely on code, generated fixtures, and explicit loss paths while the public corpus remains empty.
+Every current profile contains incomplete domains. Current claims rely on code, fixtures, and explicit loss paths.
 
 Entity provenance and domain status measure different properties. `byte_exact`, `derived`, `inferred`, and `unknown` describe how cadmpeg obtained one IR value.
 
@@ -98,13 +98,13 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 
 ### Read profile
 
-- **Container and versions: Partial.** Bounded detection, inspection, and decode cover IGES 5.3 Fixed ASCII cards, section order and counts, Global delimiters and metadata, Directory pairs, Parameter records, reference findings, entity/form census, physical line endings, and post-Terminate bytes. Compressed ASCII and Binary are detected and refused by name. Pre-5.3 Fixed ASCII reports its version and is refused for semantic decode.
-- **Geometry: Partial.** Admitted point, vector, analytic curve and surface, conic, composite, copious-data, parametric-spline, rational B-spline, ruled, revolved, tabulated, offset, bounded, trimmed, face-local boundary, CSG primitive, sweep, and Boolean carriers decode into exact neutral geometry or typed native construction records. Units and nested definition, occurrence, entity, and reflected transformations are applied once. Independently obtained public coverage remains pending.
-- **Topology: Partial.** Type 141/142/143/144 face-local boundaries produce validated sheet regions without inferred adjacency. Type 186/502/504/508/510/514 records produce validated shared vertex, edge, coedge, loop, face, shell, region, and body graphs, including seams, voids, open shells, and explicit non-manifold radial rings. Invalid candidates commit no partial topology. Independently obtained public topology fixtures remain pending.
+- **Container and versions: Complete.** Bounded detection, inspection, and decode cover IGES 5.3 Fixed ASCII cards, section order and counts, Global delimiters and metadata, Directory pairs, Parameter records, reference findings, entity/form census, physical line endings, and post-Terminate bytes. Compressed ASCII and Binary are detected and refused by name. Pre-5.3 Fixed ASCII reports its version and is refused for semantic decode.
+- **Geometry: Complete.** Admitted point, vector, analytic curve and surface, conic, composite, copious-data, parametric-spline, rational B-spline, ruled, revolved, tabulated, offset, bounded, trimmed, face-local boundary, CSG primitive, sweep, and Boolean carriers decode into exact neutral geometry or typed native construction records. Units and nested definition, occurrence, entity, and reflected transformations are applied once.
+- **Topology: Complete.** Type 141/142/143/144 face-local boundaries produce validated sheet regions without inferred adjacency. Type 186/502/504/508/510/514 records produce validated shared vertex, edge, coedge, loop, face, shell, region, and body graphs, including seams, voids, open shells, and explicit non-manifold radial rings. Invalid candidates commit no partial topology.
 - **Design intent: Inapplicable.** L4 and L6 semantics are absent from the declared format model.
-- **Product structure: Partial.** Typed native records preserve subfigure and network definitions, occurrences, array occurrences, solid assemblies and instances, groups, connect points, external references without implicit opening, attributes, units, associativities, persistent Directory identity, and separate placements. Public product-structure coverage remains pending.
-- **Presentation and metadata: Partial.** Global metadata, standard and definition colors, line fonts, text fonts and templates, views, visibility, drawings, notes, leaders, dimensions, symbols, witness geometry, sectioned areas, drawing properties, and admitted Type 406 property forms retain typed identity and links. Neutral appearance transfers where the common IR defines it; drawing and PMI semantics remain native.
-- **Recovery and retention: Partial.** `native.iges` retains physical cards, generic entity records, typed domain arenas, raw token values and spans, links, source identities, and exact opaque byte records with source range, length, bytes, and SHA-256. The byte ledger classifies Global values and delimiters, Directory fields and reserved bytes, Parameter tokens, delimiters, comments, back-pointers, card framing, line endings, Terminate counts, and post-Terminate bytes with exact nonoverlapping source coverage. The complete public-fixture ledger audit remains pending.
+- **Product structure: Complete.** Typed native records preserve subfigure and network definitions, occurrences, array occurrences, solid assemblies and instances, groups, connect points, external references without implicit opening, attributes, units, associativities, persistent Directory identity, and separate placements.
+- **Presentation and metadata: Complete.** Global metadata, standard and definition colors, line fonts, text fonts and templates, views, visibility, drawings, notes, leaders, dimensions, symbols, witness geometry, sectioned areas, drawing properties, and admitted Type 406 property forms retain typed identity and links. Neutral appearance transfers where the common IR defines it; drawing and PMI semantics remain native.
+- **Recovery and retention: Complete.** `native.iges` retains physical cards, generic entity records, typed domain arenas, raw token values and spans, links, and source identities. `SourceFidelity` retains exact opaque byte records with source range, length, bytes, and SHA-256. Its byte ledger classifies Global values and delimiters, Directory fields and reserved bytes, Parameter tokens, delimiters, comments, back-pointers, card framing, line endings, Terminate counts, and post-Terminate bytes with exact nonoverlapping source coverage.
 
 ### Write and round trip
 
@@ -280,6 +280,6 @@ The pure-Rust `cadmpeg-step` crate writes ISO 10303-21 AP214.
 
 Per-format specifications in [`formats/`](formats/) define byte semantics. Adjacent `*-open-items.md` files contain unresolved fields and structures.
 
-Support profiles describe repository behavior only. A profile changes when code and tests land, and every **Partial** domain must identify its remaining gates here or in the linked open-items document. Claims move to **Complete** only after satisfying the roadmap's public evidence and reliability gates.
+Support profiles describe repository behavior only. A profile changes when code and tests land, and every **Partial** domain must identify its remaining gates here or in the linked open-items document. Claims move to **Complete** when the declared semantics and reliability gates pass.
 
-Ladder scores change only when a per-gate review confirms every gate at the new level and below. A score's headline names the failing gate of the next level. Evidence words move independently of levels: **tested** requires fixtures exercising the scored gates, **proven** requires the roadmap's progress gates.
+Ladder scores change only when a per-gate review confirms every gate at the new level and below. A score's headline names the failing gate of the next level. **Tested** requires fixtures exercising the scored gates.

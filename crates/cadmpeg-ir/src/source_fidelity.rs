@@ -198,7 +198,11 @@ mod tests {
         sidecar
             .hydrate_native_unknown_records(&mut ir, "native")
             .expect("hydrate codec source view");
-        assert_eq!(ir.native_unknowns("native").unwrap(), vec![record]);
+        assert_eq!(
+            ir.native_unknowns("native")
+                .expect("the migrated native namespace is valid"),
+            vec![record]
+        );
     }
 
     fn recovery_sidecar(data: &[u8]) -> SourceFidelity {

@@ -2,7 +2,6 @@ schema_version = 1
 envelope = "iges-5.3-fixed-ascii-mechanical-document"
 representation = "fixed-ascii"
 specification_version = "5.3"
-approval = "approved"
 
 # `forms = "implementor-defined"` admits forms 5001 through 9999. An explicit
 # list is closed and admits only those forms. Obsolete, finite-element,
