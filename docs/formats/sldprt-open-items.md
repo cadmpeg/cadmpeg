@@ -22,7 +22,7 @@
 
 ## Design intent
 
-- `ResolvedFeatures` relation families other than point-point, line-line, point-line, horizontal and vertical distances, angular relations, circular radius and diameter dimensions, unambiguous unary horizontal, vertical, fixed, and fixed arc-angle marker relations, unambiguous binary parallel, perpendicular, tangent, equal, collinear, and concentric marker relations, and unambiguous coincident, horizontal-points, vertical-points, midpoint, and point-locus symmetric marker relations remain unresolved. Operand-to-profile-locus ownership remains unresolved when the marker graph is ambiguous.
+- `ResolvedFeatures` relation families other than point-point, line-line, point-line, horizontal and vertical distances, angular relations, circular radius and diameter dimensions, unambiguous unary horizontal, vertical, fixed, and fixed arc-angle marker relations, unambiguous binary parallel, perpendicular, tangent, equal, collinear, and concentric marker relations, and unambiguous coincident, horizontal-points, vertical-points, midpoint, analytic at-intersection, and point-locus symmetric marker relations remain unresolved. Operand-to-profile-locus ownership remains unresolved when the marker graph is ambiguous.
 - Sketch marker type codes above `27` are unresolved.
 - Marker-to-profile correspondence is unresolved when the feature's coordinate sets admit no unique signed-axis transform or a reference marker's linked loci do not identify one profile entity.
 - The construction-state discriminator for dimensioned circular geometry absent from a selected profile stream is unresolved.

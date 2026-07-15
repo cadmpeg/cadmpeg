@@ -300,6 +300,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             Constraint::Coincident { entities } => entities.len() >= 2,
             Constraint::CoincidentLoci { loci } => loci.len() >= 2,
             Constraint::Distance { entities, .. } => !entities.is_empty(),
+            Constraint::AtIntersection { first, second, .. } => first != second,
             Constraint::Native {
                 native_kind,
                 entities,
@@ -482,7 +483,9 @@ fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
         Constraint::CoincidentLoci { loci } => loci.iter().collect(),
         Constraint::HorizontalPoints { first, second }
         | Constraint::VerticalPoints { first, second } => vec![first, second],
-        Constraint::Midpoint { point, .. } => vec![point],
+        Constraint::Midpoint { point, .. } | Constraint::AtIntersection { point, .. } => {
+            vec![point]
+        }
         Constraint::Symmetric { first, second, .. } => vec![first, second],
         Constraint::DistanceLoci { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }

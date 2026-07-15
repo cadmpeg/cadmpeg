@@ -7780,9 +7780,9 @@ fn typed_marker_relation_definition_in_sketch(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
-        ArcAngle180, ArcAngle270, ArcAngle90, Coincident, Collinear, Concentric, Equal, Fixed,
-        Horizontal, HorizontalPoints, Midpoint, Parallel, Perpendicular, Symmetric, Tangent,
-        Vertical, VerticalPoints,
+        ArcAngle180, ArcAngle270, ArcAngle90, AtIntersection, Coincident, Collinear, Concentric,
+        Equal, Fixed, Horizontal, HorizontalPoints, Midpoint, Parallel, Perpendicular, Symmetric,
+        Tangent, Vertical, VerticalPoints,
     };
     let kind = match marker.kind {
         SketchInputKind::Relation(kind) => Some(kind),
@@ -8109,6 +8109,62 @@ fn typed_marker_relation_definition_in_sketch(
                 _ => unreachable!("relation kind was filtered above"),
             }
         }
+        AtIntersection => {
+            if sketch_entities.is_empty() {
+                return Some(native());
+            }
+            let Some(loci) = marker
+                .links
+                .iter()
+                .map(|link| marker_point_locus(&link.entity_ref, markers_by_id, loci_by_marker))
+                .collect::<Option<Vec<_>>>()
+            else {
+                return Some(native());
+            };
+            let mut point = None;
+            let mut entities = Vec::new();
+            for locus in loci {
+                let Some(entity) = sketch_entities
+                    .iter()
+                    .find(|candidate| candidate.id == locus_entity(&locus))
+                else {
+                    return Some(native());
+                };
+                let entity_locus = matches!(locus, SketchLocus::Entity(_));
+                if entity_locus
+                    && !matches!(
+                        entity.geometry,
+                        SketchGeometry::Point { .. } | SketchGeometry::Native { .. }
+                    )
+                {
+                    entities.push(entity.id.clone());
+                } else if point.replace(locus).is_some() {
+                    return Some(native());
+                }
+            }
+            let (Some(point), [first, second]) = (point, entities.as_slice()) else {
+                return Some(native());
+            };
+            if first == second {
+                return Some(native());
+            }
+            let Some(position) = profile_locus_point(&point, sketch_entities) else {
+                return Some(native());
+            };
+            if [first, second].into_iter().any(|id| {
+                sketch_entities
+                    .iter()
+                    .find(|entity| entity.id == *id)
+                    .is_none_or(|entity| !sketch_entity_contains_point(entity, position))
+            }) {
+                return Some(native());
+            }
+            SketchConstraintDefinition::AtIntersection {
+                point,
+                first: first.clone(),
+                second: second.clone(),
+            }
+        }
         Symmetric => {
             if sketch_entities.is_empty() {
                 return Some(native());
@@ -8240,6 +8296,81 @@ fn sketch_entity_midpoint(entity: &SketchEntity) -> Option<Point2> {
             ))
         }
         _ => None,
+    }
+}
+
+fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2) -> bool {
+    match &entity.geometry {
+        SketchGeometry::Line { start, end } => {
+            let du = end.u - start.u;
+            let dv = end.v - start.v;
+            let length_squared = du * du + dv * dv;
+            if length_squared <= SKETCH_POINT_TOLERANCE * SKETCH_POINT_TOLERANCE {
+                return false;
+            }
+            let parameter = ((point.u - start.u) * du + (point.v - start.v) * dv) / length_squared;
+            let distance =
+                ((point.u - start.u) * dv - (point.v - start.v) * du).abs() / length_squared.sqrt();
+            distance <= SKETCH_POINT_TOLERANCE
+                && (-SKETCH_POINT_TOLERANCE..=1.0 + SKETCH_POINT_TOLERANCE).contains(&parameter)
+        }
+        SketchGeometry::Circle { center, radius } => {
+            same_dimension_length((point.u - center.u).hypot(point.v - center.v), radius.0)
+        }
+        SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            if !same_dimension_length((point.u - center.u).hypot(point.v - center.v), radius.0) {
+                return false;
+            }
+            let raw = end_angle.0 - start_angle.0;
+            let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
+            if sweep <= 1.0e-12 && raw.abs() > 1.0e-12 {
+                sweep = std::f64::consts::TAU;
+            }
+            let parameter = ((point.v - center.v).atan2(point.u - center.u) - start_angle.0)
+                .rem_euclid(std::f64::consts::TAU);
+            parameter <= sweep + 1.0e-9
+        }
+        SketchGeometry::Ellipse {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            start_angle,
+            end_angle,
+        } => {
+            let cosine = major_angle.0.cos();
+            let sine = major_angle.0.sin();
+            let du = point.u - center.u;
+            let dv = point.v - center.v;
+            let x = du * cosine + dv * sine;
+            let y = -du * sine + dv * cosine;
+            let equation = (x / major_radius.0).powi(2) + (y / minor_radius.0).powi(2);
+            if (equation - 1.0).abs() > 1.0e-9 {
+                return false;
+            }
+            match (start_angle, end_angle) {
+                (Some(start), Some(end)) => {
+                    let parameter = ((y / minor_radius.0).atan2(x / major_radius.0) - start.0)
+                        .rem_euclid(std::f64::consts::TAU);
+                    let raw = end.0 - start.0;
+                    let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
+                    if sweep <= 1.0e-12 && raw.abs() > 1.0e-12 {
+                        sweep = std::f64::consts::TAU;
+                    }
+                    parameter <= sweep + 1.0e-9
+                }
+                (None, None) => true,
+                _ => false,
+            }
+        }
+        SketchGeometry::Point { .. }
+        | SketchGeometry::Nurbs { .. }
+        | SketchGeometry::Native { .. } => false,
     }
 }
 
@@ -11769,6 +11900,18 @@ mod profile_join_tests {
             entity_ref: marker.id.clone(),
         })
         .to_vec();
+        let mut at_intersection = marker("at-intersection", None);
+        at_intersection.kind = SketchInputKind::Relation(SketchRelationKind::AtIntersection);
+        at_intersection.links = [
+            (&first_marker, 8),
+            (&line_marker, 9),
+            (&symmetry_axis_marker, 10),
+        ]
+        .map(|(marker, local_id)| SketchInputLink {
+            local_id,
+            entity_ref: marker.id.clone(),
+        })
+        .to_vec();
         let markers = HashMap::from([
             (first_marker.id.as_str(), &first_marker),
             (second_marker.id.as_str(), &second_marker),
@@ -11784,6 +11927,7 @@ mod profile_join_tests {
             (midpoint.id.as_str(), &midpoint),
             (arc_angle.id.as_str(), &arc_angle),
             (symmetric.id.as_str(), &symmetric),
+            (at_intersection.id.as_str(), &at_intersection),
         ]);
         let loci = HashMap::from([
             (
@@ -11863,6 +12007,20 @@ mod profile_join_tests {
                 axis: symmetry_axis.id.clone(),
             })
         );
+        assert_eq!(
+            typed_marker_relation_definition_in_sketch(
+                &at_intersection,
+                &sketch,
+                &[first.clone(), line.clone(), symmetry_axis.clone()],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::AtIntersection {
+                point: SketchLocus::Entity(first.id.clone()),
+                first: line.id.clone(),
+                second: symmetry_axis.id.clone(),
+            })
+        );
 
         second.geometry = SketchGeometry::Point {
             position: Point2::new(1.0, 0.0),
@@ -11882,6 +12040,16 @@ mod profile_join_tests {
             SketchGeometry::Point {
                 position: Point2::new(1.0, 0.0),
             },
+        ));
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &at_intersection,
+                &sketch,
+                &[first.clone(), line.clone(), symmetry_axis.clone()],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Native { .. })
         ));
         assert!(matches!(
             typed_marker_relation_definition_in_sketch(

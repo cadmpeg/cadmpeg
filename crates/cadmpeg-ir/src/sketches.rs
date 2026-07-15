@@ -319,6 +319,15 @@ pub enum SketchConstraintDefinition {
         /// Bounded entity whose midpoint is used.
         entity: SketchEntityId,
     },
+    /// A point locus lies at the intersection of two entities.
+    AtIntersection {
+        /// Point constrained to the intersection.
+        point: SketchLocus,
+        /// First intersecting entity.
+        first: SketchEntityId,
+        /// Second intersecting entity.
+        second: SketchEntityId,
+    },
     /// Circular or elliptical entities share a center.
     Concentric {
         /// First centered entity.
