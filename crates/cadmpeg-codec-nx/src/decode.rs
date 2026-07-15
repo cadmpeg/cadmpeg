@@ -3402,6 +3402,7 @@ pub(crate) fn nurbs_parameters(
     point: Point3,
     seed: Option<Point2>,
 ) -> Option<Point2> {
+    let seed = seed.filter(|seed| seed.u.is_finite() && seed.v.is_finite());
     let u_degree = usize::try_from(surface.u_degree).ok()?;
     let v_degree = usize::try_from(surface.v_degree).ok()?;
     let u_count = usize::try_from(surface.u_count).ok()?;
@@ -3418,16 +3419,21 @@ pub(crate) fn nurbs_parameters(
         return None;
     }
     let squared_distance = |candidate: Point3| point_distance(candidate, point).powi(2);
-    let mut coarse = Vec::with_capacity(81);
+    let mut coarse = vec![None; 81];
     for ui in 0..=8 {
         for vi in 0..=8 {
+            let ui_value = f64::from(u32::try_from(ui).ok()?);
+            let vi_value = f64::from(u32::try_from(vi).ok()?);
             let parameters = Point2::new(
-                u_domain[0] + (u_domain[1] - u_domain[0]) * f64::from(ui) / 8.0,
-                v_domain[0] + (v_domain[1] - v_domain[0]) * f64::from(vi) / 8.0,
+                u_domain[0] + (u_domain[1] - u_domain[0]) * ui_value / 8.0,
+                v_domain[0] + (v_domain[1] - v_domain[0]) * vi_value / 8.0,
             );
-            let position =
-                cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)?;
-            coarse.push((parameters, squared_distance(position)));
+            let Some(position) =
+                cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)
+            else {
+                continue;
+            };
+            coarse[ui * 9 + vi] = Some((parameters, squared_distance(position)));
         }
     }
     let mut starts = Vec::new();
@@ -3437,16 +3443,18 @@ pub(crate) fn nurbs_parameters(
     for ui in 0..=8 {
         for vi in 0..=8 {
             let index = ui * 9 + vi;
-            let distance = coarse[index].1;
+            let Some((parameters, distance)) = coarse[index] else {
+                continue;
+            };
             let local_minimum = ui.saturating_sub(1)..=(ui + 1).min(8);
             if local_minimum
                 .flat_map(|neighbor_u| {
                     (vi.saturating_sub(1)..=(vi + 1).min(8))
                         .map(move |neighbor_v| neighbor_u * 9 + neighbor_v)
                 })
-                .all(|neighbor| distance <= coarse[neighbor].1)
+                .all(|neighbor| coarse[neighbor].is_none_or(|(_, value)| distance <= value))
             {
-                starts.push(coarse[index].0);
+                starts.push(parameters);
             }
         }
     }
@@ -3454,15 +3462,21 @@ pub(crate) fn nurbs_parameters(
     let mut best_distance = f64::INFINITY;
     let mut best_seed_distance = f64::INFINITY;
     for start in starts {
-        let parameters = refine_nurbs_surface_parameters(
+        let Some(parameters) = refine_nurbs_surface_parameters(
             surface,
             point,
             start,
             u_domain,
             v_domain,
             &squared_distance,
-        )?;
-        let position = cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)?;
+        ) else {
+            continue;
+        };
+        let Some(position) =
+            cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)
+        else {
+            continue;
+        };
         let distance = squared_distance(position);
         let seed_distance = seed.map_or(parameters.u.abs() + parameters.v.abs(), |seed| {
             (parameters.u - seed.u).hypot(parameters.v - seed.v)

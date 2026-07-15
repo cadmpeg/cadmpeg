@@ -9267,6 +9267,11 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
     assert!((actual.v - expected.v).abs() < 1.0e-10);
+
+    let after_invalid_seed =
+        crate::decode::nurbs_parameters(&surface, point, Some(Point2::new(f64::NAN, 0.5))).unwrap();
+    assert!((after_invalid_seed.u - expected.u).abs() < 1.0e-10);
+    assert!((after_invalid_seed.v - expected.v).abs() < 1.0e-10);
 }
 
 #[test]
