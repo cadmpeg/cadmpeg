@@ -4767,6 +4767,32 @@ impl MeshSelectionSearch<'_> {
         self.selection_orientable(&completion)
     }
 
+    fn prepare_selected_branch(
+        &self,
+        quotient: &MeshQuotient,
+        changed_edges: &HashSet<usize>,
+    ) -> Option<MeshQuotient> {
+        let mut measured = quotient.clone();
+        if !self.propagate_forced_face_equations_from(&mut measured, Some(changed_edges)) {
+            return None;
+        }
+        let root_count = measured.root_count();
+        if root_count < self.vertex_points.len() {
+            return None;
+        }
+        let remaining_merges = self.remaining_equation_merge_capacity(&mut measured)?;
+        if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
+            return None;
+        }
+        if root_count == self.vertex_points.len()
+            && !measured.point_assignment_exists(self.vertex_points.len(), self.edge_candidates)
+        {
+            return None;
+        }
+        self.fixed_remaining_faces_are_orientable()
+            .then_some(measured)
+    }
+
     fn search(&mut self, quotient: &MeshQuotient) {
         self.search_from(quotient, None);
     }
@@ -4993,17 +5019,22 @@ impl MeshSelectionSearch<'_> {
         });
         let branching = options.len() > 1;
         for (assignment_index, directions, next_quotient) in options {
-            if branching {
-                if self.states >= MAX_SELECTION_STATES {
-                    self.exhausted = true;
-                    return;
-                }
-                self.states += 1;
-            }
             let changed_edges = changed_quotient_edges(&measured, &next_quotient);
             self.selected[face] = Some((assignment_index, directions));
             if self.selected_orientable() {
-                self.search_from(&next_quotient, Some(&changed_edges));
+                if let Some(next_quotient) =
+                    self.prepare_selected_branch(&next_quotient, &changed_edges)
+                {
+                    if branching {
+                        if self.states >= MAX_SELECTION_STATES {
+                            self.exhausted = true;
+                            self.selected[face] = None;
+                            return;
+                        }
+                        self.states += 1;
+                    }
+                    self.search_from(&next_quotient, None);
+                }
             }
             self.selected[face] = None;
             if self.ambiguous || self.exhausted {
