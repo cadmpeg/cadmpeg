@@ -1290,13 +1290,38 @@ struct CreoCurveParameterRecord {
     type_byte: u8,
     body: Vec<u8>,
     scalar_values: Vec<f64>,
+    scalar_tokens: Vec<CreoCurveParameterScalar>,
     skipped_references: Vec<u32>,
+    references: Vec<CreoCurveParameterReference>,
+    opaque_spans: Vec<CreoCurveParameterOpaqueSpan>,
     suffix: &'static str,
     suffix_candidate_count: Option<usize>,
     offset: usize,
     body_offset: usize,
     suffix_offset: usize,
     source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoCurveParameterScalar {
+    value: f64,
+    raw: Vec<u8>,
+    offset: usize,
+    length: usize,
+}
+
+#[derive(Serialize)]
+struct CreoCurveParameterReference {
+    entity_id: u32,
+    offset: usize,
+    length: usize,
+}
+
+#[derive(Serialize)]
+struct CreoCurveParameterOpaqueSpan {
+    raw: Vec<u8>,
+    offset: usize,
+    length: usize,
 }
 
 #[derive(Serialize)]
@@ -1503,7 +1528,35 @@ fn curve_parameter_records(scan: &ContainerScan) -> Vec<CreoCurveParameterRecord
                 type_byte: record.type_byte,
                 body: record.body.clone(),
                 scalar_values: record.scalar_values.clone(),
+                scalar_tokens: record
+                    .scalar_tokens
+                    .iter()
+                    .map(|token| CreoCurveParameterScalar {
+                        value: token.value,
+                        raw: token.raw.clone(),
+                        offset: token.offset,
+                        length: token.length,
+                    })
+                    .collect(),
                 skipped_references: record.skipped_references.clone(),
+                references: record
+                    .references
+                    .iter()
+                    .map(|reference| CreoCurveParameterReference {
+                        entity_id: reference.entity_id,
+                        offset: reference.offset,
+                        length: reference.length,
+                    })
+                    .collect(),
+                opaque_spans: record
+                    .opaque_spans
+                    .iter()
+                    .map(|span| CreoCurveParameterOpaqueSpan {
+                        raw: span.raw.clone(),
+                        offset: span.offset,
+                        length: span.length,
+                    })
+                    .collect(),
                 suffix,
                 suffix_candidate_count,
                 offset: record.offset,

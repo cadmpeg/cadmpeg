@@ -159,8 +159,14 @@ pub struct CurveParameterRecord {
     pub body: Vec<u8>,
     /// Decoded scalar values in byte order.
     pub scalar_values: Vec<f64>,
+    /// Scalar tokens with exact body-relative spans.
+    pub scalar_tokens: Vec<CurveParameterScalar>,
     /// Canonical entity references skipped while walking the scalar lane.
     pub skipped_references: Vec<u32>,
+    /// Canonical entity references with exact body-relative spans.
+    pub references: Vec<CurveParameterReference>,
+    /// Maximal byte spans not claimed by scalar or reference tokens.
+    pub opaque_spans: Vec<CurveParameterOpaqueSpan>,
     /// Whether the topology suffix boundary is unique.
     pub suffix: CurveSuffixStatus,
     /// Byte offset of the positional row in the original stream.
@@ -169,6 +175,41 @@ pub struct CurveParameterRecord {
     pub body_offset: usize,
     /// Byte offset of the selected body/suffix boundary in the original stream.
     pub suffix_offset: usize,
+}
+
+/// One decoded scalar token in a positional curve body.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CurveParameterScalar {
+    /// Decoded scalar value.
+    pub value: f64,
+    /// Exact token bytes.
+    pub raw: Vec<u8>,
+    /// Body-relative token offset.
+    pub offset: usize,
+    /// Token length in bytes.
+    pub length: usize,
+}
+
+/// One canonical entity reference in a positional curve body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurveParameterReference {
+    /// Referenced entity identifier.
+    pub entity_id: u32,
+    /// Body-relative reference-token offset, including `f7`.
+    pub offset: usize,
+    /// Reference-token length in bytes, including `f7`.
+    pub length: usize,
+}
+
+/// One maximal unclaimed byte span in a positional curve body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurveParameterOpaqueSpan {
+    /// Exact unclaimed bytes.
+    pub raw: Vec<u8>,
+    /// Body-relative span offset.
+    pub offset: usize,
+    /// Span length in bytes.
+    pub length: usize,
 }
 
 /// Two pcurve endpoints represented in both adjacent face parameter frames.
@@ -907,14 +948,24 @@ fn curve_scalar_lane(
     body: &[u8],
     type_byte: u8,
     cache: &scalar::ScalarCache,
-) -> (Vec<f64>, Vec<u32>) {
-    let mut values = Vec::new();
+) -> (
+    Vec<CurveParameterScalar>,
+    Vec<CurveParameterReference>,
+    Vec<CurveParameterOpaqueSpan>,
+) {
+    let mut scalars = Vec::new();
     let mut references = Vec::new();
+    let mut claimed = vec![false; body.len()];
     let mut cursor = 0;
     while cursor < body.len() {
         if body[cursor] == psb::token::ENTITY_REF {
             if let Ok((reference, next)) = reference_id(body, cursor + 1) {
-                references.push(reference);
+                references.push(CurveParameterReference {
+                    entity_id: reference,
+                    offset: cursor,
+                    length: next - cursor,
+                });
+                claimed[cursor..next].fill(true);
                 cursor = next;
                 continue;
             }
@@ -922,20 +973,49 @@ fn curve_scalar_lane(
         if body[cursor] == 0x18
             && cursor + 1 == body.len()
             && matches!(type_byte, 0x00 | 0x01 | 0x06 | 0x08)
-            && values.len() < 8
+            && scalars.len() < 8
         {
-            values.push(0.0);
+            scalars.push(CurveParameterScalar {
+                value: 0.0,
+                raw: vec![0x18],
+                offset: cursor,
+                length: 1,
+            });
+            claimed[cursor] = true;
             cursor += 1;
             continue;
         }
         if let Some((value, next)) = scalar::decode_in_row_lane(body, cursor, cache) {
-            values.push(value);
+            scalars.push(CurveParameterScalar {
+                value,
+                raw: body[cursor..next].to_vec(),
+                offset: cursor,
+                length: next - cursor,
+            });
+            claimed[cursor..next].fill(true);
             cursor = next;
         } else {
             cursor += 1;
         }
     }
-    (values, references)
+    let mut opaque_spans = Vec::new();
+    let mut cursor = 0;
+    while cursor < body.len() {
+        if claimed[cursor] {
+            cursor += 1;
+            continue;
+        }
+        let start = cursor;
+        while cursor < body.len() && !claimed[cursor] {
+            cursor += 1;
+        }
+        opaque_spans.push(CurveParameterOpaqueSpan {
+            raw: body[start..cursor].to_vec(),
+            offset: start,
+            length: cursor - start,
+        });
+    }
+    (scalars, references, opaque_spans)
 }
 
 /// Decode analytic bodies from positional curve rows, retaining ambiguous
@@ -962,13 +1042,21 @@ pub fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
             continue;
         };
         let body = row[body_start..suffix_start].to_vec();
-        let (scalar_values, skipped_references) = curve_scalar_lane(&body, type_byte, &cache);
+        let (scalar_tokens, references, opaque_spans) = curve_scalar_lane(&body, type_byte, &cache);
+        let scalar_values = scalar_tokens.iter().map(|token| token.value).collect();
+        let skipped_references = references
+            .iter()
+            .map(|reference| reference.entity_id)
+            .collect();
         records.push(CurveParameterRecord {
             curve_id,
             type_byte,
             body,
             scalar_values,
+            scalar_tokens,
             skipped_references,
+            references,
+            opaque_spans,
             suffix: if candidates.len() == 1 {
                 CurveSuffixStatus::Unique
             } else {

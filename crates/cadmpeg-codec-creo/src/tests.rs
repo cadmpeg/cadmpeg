@@ -3107,7 +3107,16 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(parameters.curve_id, 7);
     assert_eq!(parameters.type_byte, 8);
     assert_eq!(parameters.scalar_values, vec![0.0, 1.0, 3.0]);
+    assert_eq!(parameters.scalar_tokens[2].offset, 5);
+    assert_eq!(parameters.scalar_tokens[2].length, 8);
+    assert_eq!(parameters.scalar_tokens[2].raw[0], 0x46);
     assert_eq!(parameters.skipped_references, vec![256]);
+    assert_eq!(parameters.references[0].entity_id, 256);
+    assert_eq!(parameters.references[0].offset, 2);
+    assert_eq!(parameters.references[0].length, 3);
+    assert_eq!(parameters.opaque_spans.len(), 1);
+    assert_eq!(parameters.opaque_spans[0].offset, 13);
+    assert_eq!(parameters.opaque_spans[0].raw, [0xff]);
     assert_eq!(parameters.suffix, crate::curve::CurveSuffixStatus::Unique);
     assert_eq!(parameters.body.last(), Some(&0xff));
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
@@ -3119,7 +3128,13 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
         parameters.body.len()
     );
     assert_eq!(record.fields["scalar_values"][2], 3.0);
+    assert_eq!(record.fields["scalar_tokens"][2]["offset"], 5);
+    assert_eq!(record.fields["scalar_tokens"][2]["raw"][0], 0x46);
     assert_eq!(record.fields["skipped_references"][0], 256);
+    assert_eq!(record.fields["references"][0]["entity_id"], 256);
+    assert_eq!(record.fields["references"][0]["offset"], 2);
+    assert_eq!(record.fields["opaque_spans"][0]["offset"], 13);
+    assert_eq!(record.fields["opaque_spans"][0]["raw"][0], 0xff);
     assert_eq!(record.fields["suffix"], "unique");
     assert!(record.fields["suffix_candidate_count"].is_null());
     assert_eq!(
