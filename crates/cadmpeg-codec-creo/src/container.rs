@@ -992,16 +992,20 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
         .filter(|section| section.name == "FeatDefs" || section.name == "DEPDB_DATA")
     {
         let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
         definitions.extend(
-            feature::definitions(&data[section.offset..end])
-                .into_iter()
-                .map(|mut definition| {
-                    offset_feature_definition(&mut definition, section.offset);
-                    definition
-                }),
+            (if section.name == "DEPDB_DATA" {
+                feature::depdb_definitions(payload)
+            } else {
+                feature::definitions(payload)
+            })
+            .into_iter()
+            .map(|mut definition| {
+                offset_feature_definition(&mut definition, section.offset);
+                definition
+            }),
         );
         if section.name == "DEPDB_DATA" {
-            let payload = &data[section.offset..end];
             let recipe_operations = feature::operations(payload)
                 .into_iter()
                 .filter(|operation| operation.recipe.is_some())
@@ -1011,7 +1015,14 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
                     feature::depdb_section_definition(payload, operation.feature_id)
                 {
                     offset_feature_definition(&mut definition, section.offset);
-                    definitions.push(definition);
+                    if let Some(existing) = definitions
+                        .iter_mut()
+                        .find(|existing| existing.offset == definition.offset)
+                    {
+                        *existing = definition;
+                    } else {
+                        definitions.push(definition);
+                    }
                 }
             }
         }
@@ -1022,10 +1033,7 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
 
 fn positional_replay_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefinition> {
     let mut definitions = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.name == "FeatDefs" || section.name == "DEPDB_DATA")
-    {
+    for section in sections.iter().filter(|section| section.name == "FeatDefs") {
         let end = (section.offset + section.length).min(data.len());
         definitions.extend(
             feature::positional_replay_definitions(&data[section.offset..end])

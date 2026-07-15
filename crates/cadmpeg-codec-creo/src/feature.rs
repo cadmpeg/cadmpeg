@@ -4929,6 +4929,30 @@ fn definition_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
     starts
 }
 
+fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
+    const GSEC: &[u8] = b"gsec2d_ptr\0";
+    const NAME: &[u8] = b"name\0S2D";
+    payload
+        .windows(GSEC.len())
+        .enumerate()
+        .filter_map(|(start, window)| {
+            (window == GSEC).then_some(())?;
+            let search_end = start.saturating_add(128).min(payload.len());
+            let digits_start = find_bytes(payload, NAME, start, search_end)? + NAME.len();
+            let digits_end = payload[digits_start..search_end]
+                .iter()
+                .position(|byte| *byte == 0)?
+                + digits_start;
+            let digits = payload.get(digits_start..digits_end)?;
+            if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+                return None;
+            }
+            let id = String::from_utf8_lossy(digits).parse::<u32>().ok()?;
+            Some((start, id, None, false))
+        })
+        .collect()
+}
+
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
 /// definition-space parameter frames.
 pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
@@ -4951,6 +4975,25 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         .into_iter()
         .filter(|definition| retained_offsets.contains(&definition.offset))
         .collect()
+}
+
+/// Decode labelled and positional feature definitions embedded directly in a
+/// DEPDB section. A labelled `gsec2d_ptr` definition supplies the table schema
+/// for its following positional `S2D` instances.
+pub fn depdb_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
+    let mut starts = definition_starts(payload);
+    starts.extend(depdb_gsec2d_starts(payload));
+    let replay_markers = s2d_replay_starts(payload);
+    let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
+    starts.extend(
+        replay_markers
+            .into_iter()
+            .filter(|offset| !claimed_markers.contains(offset))
+            .map(|offset| (offset, 0, None, true)),
+    );
+    starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
+    starts.dedup_by_key(|entry| entry.0);
+    definitions_in_ranges(payload, &starts)
 }
 
 fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
@@ -5623,6 +5666,30 @@ mod tests {
         let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
 
         assert_eq!(decoded[1].owner_feature_id, Some(42));
+        assert_eq!(dimensions.entity_ref, Some(88));
+        assert_eq!(dimensions.rows.len(), 1);
+        assert_eq!(dimensions.rows[0].value, Some(3.0));
+        assert_eq!(dimensions.rows[0].external_id, 43);
+    }
+
+    #[test]
+    fn depdb_gsec2d_definition_anchors_positional_table_replay() {
+        let mut payload = b"gsec2d_ptr\0\xe0\x0aname\0S2D0002\0\
+            dimtab_ptr\0\xf8\x01\xf7\x58\xfb\xe2\
+            type\0\x01value\0\xe4direct\0\x00aux_value\0\x18ext_id\0\x04\
+            \xe3S2D0003\0\xf8\x01\xf7\x58\xfb\xe2\xf7\x59"
+            .to_vec();
+        payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
+
+        let decoded = depdb_definitions(&payload);
+        let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
+
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].id, 2);
+        assert_eq!(decoded[1].id, 0);
+        assert!(decoded
+            .iter()
+            .all(|definition| definition.owner_feature_id.is_none()));
         assert_eq!(dimensions.entity_ref, Some(88));
         assert_eq!(dimensions.rows.len(), 1);
         assert_eq!(dimensions.rows[0].value, Some(3.0));

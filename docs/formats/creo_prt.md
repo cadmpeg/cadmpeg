@@ -826,6 +826,11 @@ unlabeled instance. Definitions without this reciprocal unique join have no
 owner. They remain section definitions and retain their complete bounded body.
 Replay order does not define feature identity.
 
+In `DEPDB_DATA`, `gsec2d_ptr 00 e0 0a name 00 S2D<digits> 00` begins a
+labelled section definition. Its labelled table records define the positional
+table classes used by following unlabeled `S2D` definitions. The next labelled
+`gsec2d_ptr`, unlabeled `S2D`, or feature-definition record ends its body.
+
 `AllFeatur` edge-treatment rows are feature recipes. `strong_parents`, `geoms_affected`, `edgs_affected`, and `contours` contain compact-int identifiers for the current body; they are neither coordinate arrays nor global geometry counts. The first edge-treatment row supplies the labelled schema, and later round and chamfer rows replay that schema positionally.
 
 Within an `AllFeatur` `lo_restore` body, named-record type-one fields
