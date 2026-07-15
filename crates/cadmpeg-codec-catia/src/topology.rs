@@ -780,6 +780,55 @@ impl IncidenceCandidateSearch<'_> {
         self.faces_feasible(0..self.face_count)
     }
 
+    fn branch_options(&self) -> Vec<(usize, [usize; 2])> {
+        let mut constrained = None::<Vec<(usize, [usize; 2])>>;
+        for face in 0..self.face_count {
+            for &point in &self.open_points[face] {
+                let mut options = self.face_edges[face]
+                    .iter()
+                    .copied()
+                    .filter(|&edge| self.assignment[edge].is_none())
+                    .flat_map(|edge| {
+                        self.choices[edge]
+                            .iter()
+                            .copied()
+                            .filter(move |pair| pair.contains(&point))
+                            .map(move |pair| (edge, pair))
+                    })
+                    .filter(|(edge, pair)| self.candidate_fits(*edge, *pair))
+                    .collect::<Vec<_>>();
+                options.sort_unstable();
+                options.dedup();
+                if constrained
+                    .as_ref()
+                    .is_none_or(|stored| options.len() < stored.len())
+                {
+                    constrained = Some(options);
+                }
+            }
+        }
+        if let Some(options) = constrained {
+            return options;
+        }
+        let Some(edge) = (0..self.choices.len())
+            .filter(|edge| self.assignment[*edge].is_none())
+            .min_by_key(|&edge| {
+                self.choices[edge]
+                    .iter()
+                    .filter(|pair| self.candidate_fits(edge, **pair))
+                    .count()
+            })
+        else {
+            return Vec::new();
+        };
+        self.choices[edge]
+            .iter()
+            .copied()
+            .filter(|pair| self.candidate_fits(edge, *pair))
+            .map(|pair| (edge, pair))
+            .collect()
+    }
+
     fn search(&mut self) {
         // Candidate incidence is a fallback after native-port and trim-mesh
         // propagation. Keep it bounded so unresolved geometric ambiguity
@@ -799,18 +848,12 @@ impl IncidenceCandidateSearch<'_> {
             return;
         }
         self.states += 1;
-        let next = (0..self.choices.len())
-            .filter(|edge| self.assignment[*edge].is_none())
-            .map(|edge| {
-                let count = self.choices[edge]
-                    .iter()
-                    .filter(|pair| self.candidate_fits(edge, **pair))
-                    .count();
-                (count, edge)
-            })
-            .min();
-        let Some((count, edge)) = next else {
+        let options = self.branch_options();
+        if options.is_empty() {
             let points = self.assignment.iter().copied().collect::<Option<Vec<_>>>();
+            if points.is_none() {
+                return;
+            }
             if self.collect_pairs {
                 if let Some(mut points) = points {
                     for pair in &mut points {
@@ -864,15 +907,8 @@ impl IncidenceCandidateSearch<'_> {
                 }
             }
             return;
-        };
-        if count == 0 {
-            return;
         }
-        for candidate in 0..self.choices[edge].len() {
-            let pair = self.choices[edge][candidate];
-            if !self.candidate_fits(edge, pair) {
-                continue;
-            }
+        for (edge, pair) in options {
             let edge_faces = self.edge_faces[edge];
             let faces = edge_faces
                 .into_iter()
