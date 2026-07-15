@@ -688,7 +688,7 @@ identity_metadata = bytes[index[0], index[1])
 record i = bytes[index[i+1], index[i+2])   # 0 <= i < record_count
 ```
 
-The offset-only form does not assign one fixed-width object ID to every record. Entity identity remains unspecified unless a persistent handle is present in the bounded record.
+The offset-only form does not assign one fixed-width object ID to every record. A bounded record has entity identity only when it contains a persistent handle.
 
 A zero-prefixed offset-only store control-array form is an atomic array of four-byte words. Each word is `00, value:u24 LE`; the array is nonempty and its byte length is divisible by four. Values retain their zero-based word order and byte offsets. A nonzero prefix byte or incomplete final word means the control block uses another form and does not produce this array.
 

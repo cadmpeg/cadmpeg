@@ -6665,7 +6665,6 @@ fn attach_native_object_model(
         && feature_sketch_point_groups.is_empty()
         && offset_store_named_points.is_empty()
         && feature_sketch_named_point_block_uses.is_empty()
-        && feature_sketch_preceding_named_point_uses.is_empty()
         && feature_sketch_point_uses.is_empty()
         && feature_sketch_datum_csys_dependencies.is_empty()
         && feature_boolean_operations.is_empty()

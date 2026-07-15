@@ -1319,8 +1319,8 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .model
         .parameters
         .iter()
-        .map(|parameter| (&parameter.id, &parameter.owner))
-        .collect::<HashMap<_, _>>();
+        .map(|parameter| &parameter.id)
+        .collect::<HashSet<_>>();
     let mut feature_ordinals = HashSet::new();
     for feature in &ir.model.features {
         if !feature_ordinals.insert(feature.ordinal) {
@@ -1373,7 +1373,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             match item {
                 FeatureSourceContent::Text(_) => {}
                 FeatureSourceContent::Parameter(parameter) => {
-                    if !parameters_by_id.contains_key(parameter) {
+                    if !parameters_by_id.contains(parameter) {
                         ref_error(findings, &feature.id.0, "content parameter", &parameter.0);
                     }
                 }

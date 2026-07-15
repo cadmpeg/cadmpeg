@@ -3014,9 +3014,6 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
                 bytes: &bytes[bounds[0]..bounds[1]],
             })
             .collect::<Vec<_>>();
-        if records.len() != record_count {
-            continue;
-        }
         out.push(IndexedSection {
             base: 0,
             entity_index_offset: index_start,
