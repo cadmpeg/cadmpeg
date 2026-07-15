@@ -1546,11 +1546,14 @@ fn surface_variant(type_byte: u8) -> Option<&'static str> {
     }
 }
 
-fn surface_row_records(scan: &ContainerScan) -> Vec<CreoSurfaceRowRecord> {
-    scan.surface_rows
-        .iter()
+fn surface_row_records(
+    scan: &ContainerScan,
+    rows: &[crate::surface::SurfaceRow],
+    namespace: &str,
+) -> Vec<CreoSurfaceRowRecord> {
+    rows.iter()
         .map(|row| CreoSurfaceRowRecord {
-            id: format!("creo:visibgeom:surface_row#{}", row.id),
+            id: format!("creo:{namespace}:surface_row#{}", row.id),
             surface_id: row.id,
             type_byte: row.type_byte,
             surface_family: surface_family(row.kind),
@@ -17122,7 +17125,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     transfer_curve_expression_features(scan, &mut ir, &mut annotations);
     transfer_feature_dimensions(scan, &mut ir, &mut annotations);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
-    let surface_rows = surface_row_records(scan);
+    let surface_rows = surface_row_records(scan, &scan.surface_rows, "visibgeom");
     if !surface_rows.is_empty() {
         for record in &surface_rows {
             annotate(
@@ -17137,6 +17140,26 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("surface_rows", &surface_rows)?;
+    }
+    let cross_section_surface_rows = surface_row_records(
+        scan,
+        &scan.cross_section_surface_rows,
+        "cross_section_geometry",
+    );
+    if !cross_section_surface_rows.is_empty() {
+        for record in &cross_section_surface_rows {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "cross_section_surface_namespace_row",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("cross_section_surface_rows", &cross_section_surface_rows)?;
     }
     let surface_prototypes = surface_prototype_records(scan);
     if !surface_prototypes.is_empty() {
@@ -17693,6 +17716,10 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_surface_row_count".to_string(),
         scan.surface_rows.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_cross_section_surface_row_count".to_string(),
+        scan.cross_section_surface_rows.len().to_string(),
     );
     attributes.insert(
         "decoded_surface_parameter_record_count".to_string(),
