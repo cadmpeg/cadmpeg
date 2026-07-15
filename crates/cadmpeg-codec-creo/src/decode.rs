@@ -13776,6 +13776,55 @@ mod resolved_sketch_tests {
                 parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
         );
+        let mut unresolved_angle = definition.clone();
+        let angle_dimension = &mut unresolved_angle
+            .dimensions
+            .as_mut()
+            .expect("dimensions")
+            .rows[0];
+        angle_dimension.dimension_type = 10;
+        angle_dimension.value_unit = crate::feature::DimensionUnit::Radians;
+        let angle_relation = &mut unresolved_angle.relations.as_mut().expect("relations").rows[0];
+        angle_relation.relation_type = 1;
+        angle_relation.operand_vectors = Some([
+            [Some(4), Some(5), None, Some(1)],
+            [Some(1), None, Some(1), Some(1)],
+            [Some(15), Some(16), Some(15), Some(24)],
+        ]);
+        unresolved_angle.order_table = Some(crate::feature::FeatureOrderTable {
+            declared_count: 2,
+            entity_ref: None,
+            rows: vec![
+                crate::feature::FeatureOrderRow {
+                    external_id: 12,
+                    internal_id: 4,
+                    bitmask: 1,
+                    offset: 90,
+                },
+                crate::feature::FeatureOrderRow {
+                    external_id: 15,
+                    internal_id: 5,
+                    bitmask: 1,
+                    offset: 91,
+                },
+            ],
+            offset: 89,
+        });
+        assert_eq!(
+            section_dimension_constraints(&unresolved_angle, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native {
+                native_kind: "creo:relation:1".to_string(),
+                entities: Vec::new(),
+                parameter: Some(ParameterId("creo:featdefs:parameter#917:40:42".to_string(),)),
+                operands: vec![SketchNativeOperand {
+                    native_kind: "relat_ptr".to_string(),
+                    object_index: 8,
+                    native_ref: Some("creo:featdefs:sketch#917".to_string()),
+                }],
+            }
+        );
         let relations = section_dimension_constraints(&definition, &SketchId("sketch".into()));
         assert_eq!(
             relations[0].0.definition,
