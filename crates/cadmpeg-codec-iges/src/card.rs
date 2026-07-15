@@ -103,19 +103,18 @@ fn take_line(input: &[u8]) -> Option<(&[u8], &[u8])> {
 
 fn sequence(card: &[u8]) -> Option<u32> {
     let field = card.get(73..80)?;
-    if field.iter().any(|byte| !matches!(byte, b' ' | b'0'..=b'9')) {
+    let first_digit = field.iter().position(|byte| *byte != b' ')?;
+    let digits = &field[first_digit..];
+    if digits.iter().any(|byte| !byte.is_ascii_digit()) {
         return None;
     }
-    let digits = field.iter().copied().skip_while(|byte| *byte == b' ');
     let mut value = 0_u32;
-    let mut count = 0_usize;
-    for digit in digits {
-        count += 1;
+    for digit in digits.iter().copied() {
         value = value
             .checked_mul(10)?
             .checked_add(u32::from(digit - b'0'))?;
     }
-    (count > 0 && value > 0).then_some(value)
+    (value > 0).then_some(value)
 }
 
 fn header(line: &[u8]) -> Option<(u8, u32)> {

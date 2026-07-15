@@ -36,6 +36,21 @@ fn fixed_ascii_detection_requires_two_consistent_cards() {
 }
 
 #[test]
+fn malformed_sequence_padding_is_rejected_without_panicking() {
+    let mut bytes = point_file();
+    bytes[73..80].copy_from_slice(b"     1 ");
+
+    assert_eq!(IgesCodec.detect(&bytes), Confidence::No);
+    assert_eq!(
+        IgesCodec
+            .inspect(&mut Cursor::new(bytes))
+            .unwrap_err()
+            .to_string(),
+        "not the expected format: unrecognized IGES representation"
+    );
+}
+
+#[test]
 fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively() {
     let targets = (1..=100_000_u32)
         .map(|sequence| (sequence, sequence + 1))
