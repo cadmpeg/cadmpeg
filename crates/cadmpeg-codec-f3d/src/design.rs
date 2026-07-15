@@ -1039,19 +1039,29 @@ fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i
         .iter()
         .map(|operand| {
             if let Some(edge) = resolved_edge_operand(operand) {
-                Some(vec![edge])
+                Some(Some(vec![edge]))
+            } else if operand.changed_boundary_edge_slots.is_empty() {
+                Some(None)
             } else {
-                edge_assignment_candidates(
+                Some(Some(edge_assignment_candidates(
                     &operand.recipe_selectors,
                     operand
                         .recipe_reference_contexts
                         .iter()
                         .map(|context| context.changed_reference_edge_slots.as_slice()),
-                )
+                )?))
             }
         })
         .collect::<Option<Vec<_>>>()?;
-    unique_bipartite_assignment(&candidate_sets)
+    unique_edge_assignment_with_context(&candidate_sets)
+}
+
+fn unique_edge_assignment_with_context(candidate_sets: &[Option<Vec<i64>>]) -> Option<Vec<i64>> {
+    let edge_candidate_sets = candidate_sets
+        .iter()
+        .filter_map(|candidates| candidates.clone())
+        .collect::<Vec<_>>();
+    unique_bipartite_assignment(&edge_candidate_sets)
 }
 
 fn edge_assignment_candidates<'a>(
@@ -15292,6 +15302,16 @@ mod relation_tests {
             None
         );
         assert_eq!(super::unique_bipartite_assignment(&[]), None);
+        assert_eq!(
+            super::unique_edge_assignment_with_context(
+                &[Some(vec![17, 18]), None, Some(vec![18]),]
+            ),
+            Some(vec![17, 18])
+        );
+        assert_eq!(
+            super::unique_edge_assignment_with_context(&[None, None]),
+            None
+        );
     }
 
     #[test]
