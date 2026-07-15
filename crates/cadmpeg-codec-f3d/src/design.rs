@@ -614,24 +614,53 @@ pub fn project_parameter_design(
                 .or_insert_with(|| Some(parameter.id.clone()));
         }
     }
+    let parameter_owners = parameters
+        .iter()
+        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
+        .collect::<HashMap<_, _>>();
+    let feature_order = features
+        .iter()
+        .map(|feature| (feature.id.clone(), feature.ordinal))
+        .collect::<HashMap<_, _>>();
     for parameter in &mut parameters {
         let scope = parameter_scopes[&parameter.id];
+        let consumer_owner = parameter.owner.clone();
         let mut seen = HashSet::new();
         parameter.dependencies = expression_identifiers(&parameter.expression)
             .filter_map(|identifier| {
                 let candidate = if let Some(owner) = &parameter.owner {
-                    feature_aliases
-                        .get(&(scope, owner.clone(), identifier.clone()))
-                        .or_else(|| document_aliases.get(&(scope, identifier.clone())))
-                        .or_else(|| owned_aliases.get(&(scope, identifier)))?
+                    match feature_aliases.get(&(scope, owner.clone(), identifier.clone())) {
+                        Some(None) => return None,
+                        Some(Some(local)) => Some(local),
+                        None => document_aliases
+                            .get(&(scope, identifier.clone()))
+                            .or_else(|| owned_aliases.get(&(scope, identifier)))?
+                            .as_ref(),
+                    }
                 } else {
-                    document_aliases.get(&(scope, identifier))?
+                    document_aliases.get(&(scope, identifier))?.as_ref()
                 };
-                candidate.clone()
+                candidate.cloned().filter(|dependency| {
+                    let dependency_owner = parameter_owners.get(dependency);
+                    match (dependency_owner, &consumer_owner) {
+                        (Some(Some(dependency_owner)), Some(consumer_owner))
+                            if dependency_owner != consumer_owner =>
+                        {
+                            feature_order
+                                .get(dependency_owner)
+                                .zip(feature_order.get(consumer_owner))
+                                .is_some_and(|(dependency, consumer)| dependency < consumer)
+                        }
+                        (Some(Some(_)), None) => false,
+                        (Some(_), _) => true,
+                        (None, _) => false,
+                    }
+                })
             })
             .filter(|dependency| dependency != &parameter.id && seen.insert(dependency.clone()))
             .collect();
     }
+    normalize_parameter_ordinals(&mut parameters);
     let parameter_owners = parameters
         .iter()
         .filter_map(|parameter| Some((parameter.id.clone(), parameter.owner.clone()?)))
@@ -653,6 +682,65 @@ pub fn project_parameter_design(
     assign_feature_ordinals(&mut features);
     parameters.sort_by_key(|parameter| parameter.id.clone());
     (features, parameters)
+}
+
+fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignParameter]) {
+    use cadmpeg_ir::features::{FeatureId, ParameterId};
+
+    let owners = parameters
+        .iter()
+        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut groups = HashMap::<Option<FeatureId>, Vec<usize>>::new();
+    for (index, parameter) in parameters.iter().enumerate() {
+        groups
+            .entry(parameter.owner.clone())
+            .or_default()
+            .push(index);
+    }
+    for (owner, indices) in groups {
+        let mut ordinals = indices
+            .iter()
+            .map(|index| parameters[*index].ordinal)
+            .collect::<Vec<_>>();
+        ordinals.sort_unstable();
+        let mut unresolved = indices.into_iter().collect::<HashSet<_>>();
+        let mut resolved = HashSet::<ParameterId>::new();
+        let mut order = Vec::with_capacity(unresolved.len());
+        while !unresolved.is_empty() {
+            let mut ready = unresolved
+                .iter()
+                .copied()
+                .filter(|index| {
+                    parameters[*index].dependencies.iter().all(|dependency| {
+                        owners.get(dependency) != Some(&owner) || resolved.contains(dependency)
+                    })
+                })
+                .collect::<Vec<_>>();
+            ready.sort_by_key(|index| (parameters[*index].ordinal, parameters[*index].id.clone()));
+            if ready.is_empty() {
+                let breaker = *unresolved
+                    .iter()
+                    .min_by_key(|index| {
+                        (parameters[**index].ordinal, parameters[**index].id.clone())
+                    })
+                    .expect("nonempty unresolved parameter group");
+                parameters[breaker].dependencies.retain(|dependency| {
+                    owners.get(dependency) != Some(&owner) || resolved.contains(dependency)
+                });
+                ready.push(breaker);
+            }
+            for index in ready {
+                if unresolved.remove(&index) {
+                    resolved.insert(parameters[index].id.clone());
+                    order.push(index);
+                }
+            }
+        }
+        for (index, ordinal) in order.into_iter().zip(ordinals) {
+            parameters[index].ordinal = ordinal;
+        }
+    }
 }
 
 fn assign_feature_ordinals(features: &mut [cadmpeg_ir::features::Feature]) {
@@ -13532,11 +13620,11 @@ mod relation_tests {
                 class_tag: "292".into(),
                 record_index,
                 scope_record_index,
-                local_ordinal: 0,
+                local_ordinal: parameter_record_index,
                 evaluated_value: 1.0,
                 evaluated_value_offset: 0,
                 parameter_record_index,
-                owned_ordinal: 0,
+                owned_ordinal: parameter_record_index,
                 variant: 0,
                 companion_record_index: record_index + 1,
             };
@@ -13579,6 +13667,10 @@ mod relation_tests {
         let remote_half = parameter(Some(103), 23, "Width / 2", "Half");
         let owned_depth = parameter(Some(104), 24, "10 mm", "OwnedDepth");
         let document_half = parameter(None, 25, "OwnedDepth / 2", "DocumentHalf");
+        let document_forward = parameter(None, 26, "Later / 2", "DocumentForward");
+        let document_later = parameter(None, 27, "10 mm", "Later");
+        let cycle_a = parameter(None, 28, "CycleB / 2", "CycleA");
+        let cycle_b = parameter(None, 29, "CycleA / 2", "CycleB");
         let (_, parameters) = project_parameter_design(
             &[
                 document_width,
@@ -13587,6 +13679,10 @@ mod relation_tests {
                 remote_half,
                 owned_depth,
                 document_half,
+                document_forward,
+                document_later,
+                cycle_a,
+                cycle_b,
             ],
             &[
                 owner(101, 21, 201),
@@ -13630,6 +13726,15 @@ mod relation_tests {
         assert!(by_name_and_owner("DocumentHalf", 25)
             .dependencies
             .is_empty());
+        let document_forward = by_name_and_owner("DocumentForward", 26);
+        let document_later = by_name_and_owner("Later", 27);
+        assert_eq!(document_forward.dependencies, [document_later.id.clone()]);
+        assert!(document_later.ordinal < document_forward.ordinal);
+        let cycle_a = by_name_and_owner("CycleA", 28);
+        let cycle_b = by_name_and_owner("CycleB", 29);
+        assert!(cycle_a.dependencies.is_empty());
+        assert_eq!(cycle_b.dependencies, [cycle_a.id.clone()]);
+        assert!(cycle_a.ordinal < cycle_b.ordinal);
     }
 
     #[test]
@@ -14419,9 +14524,20 @@ mod relation_tests {
             &[
                 parameter(44, 45, "Width", "10 mm"),
                 parameter(54, 55, "Depth", "Width / 2"),
+                parameter(74, 75, "Premature", "Future / 2"),
+                parameter(84, 85, "Future", "20 mm"),
             ],
-            &[owner(44, 12, 45), owner(54, 22, 55)],
-            &[scope(12, 100, "Sketch"), scope(22, 200, "Extrude")],
+            &[
+                owner(44, 12, 45),
+                owner(54, 22, 55),
+                owner(74, 22, 75),
+                owner(84, 32, 85),
+            ],
+            &[
+                scope(12, 100, "Sketch"),
+                scope(22, 200, "Extrude"),
+                scope(32, 300, "Fillet"),
+            ],
             &[],
             &[],
             &[],
@@ -14437,6 +14553,11 @@ mod relation_tests {
             .find(|parameter| parameter.name == "Depth")
             .expect("Depth parameter");
         assert_eq!(depth.dependencies, std::slice::from_ref(&width.id));
+        let premature = parameters
+            .iter()
+            .find(|parameter| parameter.name == "Premature")
+            .expect("Premature parameter");
+        assert!(premature.dependencies.is_empty());
         let source = features
             .iter()
             .find(|feature| feature.id == width.owner.clone().expect("Width owner"))
