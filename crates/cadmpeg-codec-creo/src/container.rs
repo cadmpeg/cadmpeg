@@ -25,7 +25,7 @@ use crate::datum::{self, DatumPlane};
 use crate::feature::{
     self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
     FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopRestoreDirection,
-    FeatureOperation, FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
+    FeatureOperation, FeatureRecipe, FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
@@ -1251,30 +1251,54 @@ fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOpe
 }
 
 fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
-    sections
+    fn recipe_end(payload: &[u8], search_start: usize, recipe: FeatureRecipe) -> Option<usize> {
+        let name = match recipe {
+            FeatureRecipe::ProtrudeExtrude => b"protextrude\0".as_slice(),
+            FeatureRecipe::CutExtrude => b"cutextrude\0",
+            FeatureRecipe::ProtrudeRevolve => b"protrevolve\0",
+            FeatureRecipe::CutRevolve => b"cutrevolve\0",
+        };
+        find(payload, name, search_start)?.checked_add(name.len())
+    }
+
+    let mut rows = Vec::new();
+    for section in sections
         .iter()
         .filter(|section| section.name == "DEPDB_DATA")
-        .filter_map(|section| {
-            let end = (section.offset + section.length).min(data.len());
-            let payload = &data[section.offset..end];
-            let recipe_operations = feature::operations(payload)
-                .into_iter()
-                .filter(|operation| operation.recipe.is_some())
-                .collect::<Vec<_>>();
-            let [operation] = recipe_operations.as_slice() else {
-                return None;
+    {
+        let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
+        let mut recipe_operations = feature::operations(payload)
+            .into_iter()
+            .filter(|operation| operation.recipe.is_some())
+            .collect::<Vec<_>>();
+        recipe_operations.sort_by_key(|operation| operation.offset);
+        let mut body_start = 0;
+        for operation in &recipe_operations {
+            let Some(body_end) = recipe_end(
+                payload,
+                operation.offset,
+                operation.recipe.expect("filtered recipe operation"),
+            ) else {
+                continue;
             };
-            Some(FeatureRow {
+            if body_start >= body_end {
+                continue;
+            }
+            rows.push(FeatureRow {
                 feature_id: operation.feature_id,
                 header: [0; 2],
                 root_schema_class: operation.root_schema_class,
                 stream_offset: section.offset,
-                body: payload.to_vec(),
-                body_offset: section.offset,
+                body: payload[body_start..body_end].to_vec(),
+                body_offset: section.offset + body_start,
                 offset: section.offset + operation.offset,
-            })
-        })
-        .collect()
+            });
+            body_start = body_end;
+        }
+    }
+    rows.sort_by_key(|row| row.offset);
+    rows
 }
 
 fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u32> {

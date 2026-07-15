@@ -890,6 +890,11 @@ the constant fillet radius; differing radii define no constant-radius result.
 
 The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, and class 923 is a datum-plane definition. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
 
+Each `DEPDB_DATA` recipe row ends with its canonical `f7` recipe binding. Its
+body begins at the section boundary or immediately after the preceding recipe
+binding. Multiple bindings in one persistence section define independent
+feature rows.
+
 A mixed generated-entity table opens as
 `f8 <count> f7 <table-class> fb e3`. The first entry can begin with
 `f7 <entry-class>`; table and entry schema-class identifiers vary by schema

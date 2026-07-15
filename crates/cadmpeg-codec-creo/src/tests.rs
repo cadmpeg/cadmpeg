@@ -4524,6 +4524,23 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
 }
 
 #[test]
+fn scan_partitions_multiple_depdb_recipe_rows() {
+    let depdb = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
+        \xf7\x50\x9f\x77\x83\x94\xf6\x9f\x75Profile 2\0\xf6\0cutextrude\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
+    let scan = container::scan_bytes(data);
+
+    assert_eq!(scan.depdb_recipe_rows.len(), 2);
+    assert_eq!(scan.depdb_recipe_rows[0].feature_id, 8053);
+    assert_eq!(scan.depdb_recipe_rows[0].root_schema_class, Some(917));
+    assert_eq!(scan.depdb_recipe_rows[1].feature_id, 8055);
+    assert_eq!(scan.depdb_recipe_rows[1].root_schema_class, Some(916));
+    assert!(scan.depdb_recipe_rows[0].offset < scan.depdb_recipe_rows[1].offset);
+    assert!(scan.depdb_recipe_rows[0].body_offset <= scan.depdb_recipe_rows[0].offset);
+}
+
+#[test]
 fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
     let mut depdb = b"gsec2d_ptr\0\xe0\x0aname\0S2D0002\0\
         var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2"
