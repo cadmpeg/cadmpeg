@@ -8898,7 +8898,7 @@ fn typed_relation_definition(
             let line = marker(1).and_then(|marker| {
                 single_marker_curve_entity(marker, markers_by_id, loci_by_marker, sketch_entities)
             });
-            let (point, line) = match (point, line) {
+            let (mut point, mut line) = match (point, line) {
                 (Some(point), Some(line)) => (point, line),
                 (Some(point), None) => (
                     point.clone(),
@@ -8920,7 +8920,13 @@ fn typed_relation_definition(
             if !point_line_distance_value(point_position, line_entity)
                 .is_some_and(|measured| same_dimension_length(measured, expected.0))
             {
-                return None;
+                (point, line) = unique_repaired_profile_point_line_pair(
+                    sketch,
+                    &point,
+                    &line,
+                    parameter,
+                    sketch_entities,
+                )?;
             }
             Some(SketchConstraintDefinition::DistanceLoci {
                 first: point,
@@ -9654,6 +9660,36 @@ fn unique_profile_point_line_pair(
     candidates.sort_by(|(left_locus, left_line), (right_locus, right_line)| {
         locus_key(left_locus)
             .cmp(&locus_key(right_locus))
+            .then_with(|| left_line.cmp(right_line))
+    });
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+fn unique_repaired_profile_point_line_pair(
+    sketch: &SketchId,
+    point: &SketchLocus,
+    line: &SketchEntityId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<(SketchLocus, SketchEntityId)> {
+    let mut candidates = Vec::new();
+    if let Some(candidate_line) =
+        unique_profile_point_line_entity(sketch, point, parameter, sketch_entities)
+    {
+        candidates.push((point.clone(), candidate_line));
+    }
+    if let Some(candidate_point) =
+        unique_profile_line_point_locus(sketch, line, parameter, sketch_entities)
+    {
+        candidates.push((candidate_point, line.clone()));
+    }
+    candidates.sort_by(|(left_point, left_line), (right_point, right_line)| {
+        locus_key(left_point)
+            .cmp(&locus_key(right_point))
             .then_with(|| left_line.cmp(right_line))
     });
     candidates.dedup();
@@ -11183,7 +11219,8 @@ mod profile_join_tests {
         unique_profile_line_distance_entity, unique_profile_line_distance_pair,
         unique_profile_line_point_locus, unique_profile_point_line_entity,
         unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
-        unique_repaired_profile_line_distance_pair, MarkerTransform,
+        unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
+        MarkerTransform,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -12620,7 +12657,67 @@ mod profile_join_tests {
             Some((point_locus, horizontal.id.clone()))
         );
 
+        let wrong = line("wrong", Point2::new(0.0, 2.0), Point2::new(10.0, 2.0));
+        assert_eq!(
+            unique_repaired_profile_point_line_pair(
+                &sketch,
+                &SketchLocus::Entity(point.id.clone()),
+                &wrong.id,
+                &parameter,
+                &[
+                    point.clone(),
+                    wrong.clone(),
+                    horizontal.clone(),
+                    unrelated.clone(),
+                ],
+            ),
+            Some((SketchLocus::Entity(point.id.clone()), horizontal.id.clone(),))
+        );
+
         let ambiguous = line("ambiguous", Point2::new(0.0, 10.0), Point2::new(10.0, 10.0));
+        assert_eq!(
+            unique_repaired_profile_point_line_pair(
+                &sketch,
+                &SketchLocus::Entity(point.id.clone()),
+                &wrong.id,
+                &parameter,
+                &[
+                    point.clone(),
+                    wrong.clone(),
+                    horizontal.clone(),
+                    ambiguous.clone(),
+                ],
+            ),
+            None
+        );
+
+        let unrelated_point = SketchEntity {
+            id: SketchEntityId("unrelated-point".into()),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(20.0, 25.0),
+            },
+            ..point.clone()
+        };
+        let unrelated_line = line(
+            "unrelated-line",
+            Point2::new(20.0, 20.0),
+            Point2::new(30.0, 20.0),
+        );
+        assert_eq!(
+            unique_repaired_profile_point_line_pair(
+                &sketch,
+                &SketchLocus::Entity(point.id.clone()),
+                &wrong.id,
+                &parameter,
+                &[
+                    point.clone(),
+                    wrong.clone(),
+                    unrelated_point,
+                    unrelated_line,
+                ],
+            ),
+            None
+        );
         assert_eq!(
             unique_profile_point_line_pair(
                 &sketch,
