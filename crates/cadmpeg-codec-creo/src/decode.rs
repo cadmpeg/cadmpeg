@@ -346,6 +346,55 @@ struct CreoFeatureDirectionRecord {
     source_section: String,
 }
 
+#[derive(Serialize)]
+struct CreoFeatureChoiceRecord {
+    id: String,
+    owner_feature_id: u32,
+    label: String,
+    type_byte: Option<u8>,
+    payload: Vec<u8>,
+    payload_offset: usize,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoFeatureChoiceFieldRecord {
+    id: String,
+    owner_feature_id: u32,
+    choice_label: String,
+    name: String,
+    type_byte: u8,
+    value: CreoFeatureFieldValue,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum CreoFeatureFieldValue {
+    Empty,
+    CompactInt {
+        value: u32,
+    },
+    CompactIntArray {
+        values: Vec<u32>,
+    },
+    EntityReference {
+        entity_id: u32,
+        terminated: bool,
+    },
+    ScalarArray {
+        dimensions: u8,
+        count: u8,
+        body: Vec<u8>,
+        decoded_values: Option<Vec<f64>>,
+    },
+    Raw {
+        bytes: Vec<u8>,
+    },
+}
+
 fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
     scan.feature_entities
         .iter()
@@ -494,6 +543,69 @@ fn feature_direction_records(scan: &ContainerScan) -> Vec<CreoFeatureDirectionRe
                 offset: record.offset,
                 source_section: source_section(scan, record.offset),
             }
+        })
+        .collect()
+}
+
+fn feature_choice_records(scan: &ContainerScan) -> Vec<CreoFeatureChoiceRecord> {
+    scan.feature_choices
+        .iter()
+        .map(|choice| CreoFeatureChoiceRecord {
+            id: format!("creo:feature:choice#{}", choice.offset),
+            owner_feature_id: choice.feature_id,
+            label: choice.label.clone(),
+            type_byte: choice.type_byte,
+            payload: choice.payload.clone(),
+            payload_offset: choice.payload_offset,
+            offset: choice.offset,
+            source_section: source_section(scan, choice.offset),
+        })
+        .collect()
+}
+
+fn feature_choice_field_records(scan: &ContainerScan) -> Vec<CreoFeatureChoiceFieldRecord> {
+    scan.feature_choice_fields
+        .iter()
+        .map(|field| CreoFeatureChoiceFieldRecord {
+            id: format!("creo:feature:choice_field#{}", field.offset),
+            owner_feature_id: field.feature_id,
+            choice_label: field.choice_label.clone(),
+            name: field.name.clone(),
+            type_byte: field.type_byte,
+            value: match &field.value {
+                crate::feature::FeatureFieldValue::Empty => CreoFeatureFieldValue::Empty,
+                crate::feature::FeatureFieldValue::CompactInt(value) => {
+                    CreoFeatureFieldValue::CompactInt { value: *value }
+                }
+                crate::feature::FeatureFieldValue::CompactIntArray(values) => {
+                    CreoFeatureFieldValue::CompactIntArray {
+                        values: values.clone(),
+                    }
+                }
+                crate::feature::FeatureFieldValue::EntityReference {
+                    entity_id,
+                    terminated,
+                } => CreoFeatureFieldValue::EntityReference {
+                    entity_id: *entity_id,
+                    terminated: *terminated,
+                },
+                crate::feature::FeatureFieldValue::ScalarArray {
+                    dimensions,
+                    count,
+                    body,
+                    decoded_values,
+                } => CreoFeatureFieldValue::ScalarArray {
+                    dimensions: *dimensions,
+                    count: *count,
+                    body: body.clone(),
+                    decoded_values: decoded_values.clone(),
+                },
+                crate::feature::FeatureFieldValue::Raw(bytes) => CreoFeatureFieldValue::Raw {
+                    bytes: bytes.clone(),
+                },
+            },
+            offset: field.offset,
+            source_section: source_section(scan, field.offset),
         })
         .collect()
 }
@@ -15536,6 +15648,38 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("feature_directions", &feature_directions)?;
+    }
+    let feature_choices = feature_choice_records(scan);
+    if !feature_choices.is_empty() {
+        for record in &feature_choices {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "feature_choice",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_choices", &feature_choices)?;
+    }
+    let feature_choice_fields = feature_choice_field_records(scan);
+    if !feature_choice_fields.is_empty() {
+        for record in &feature_choice_fields {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "feature_choice_field",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_choice_fields", &feature_choice_fields)?;
     }
     let sketches = sketch_records(scan);
     if !sketches.is_empty() {

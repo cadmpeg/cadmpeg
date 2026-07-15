@@ -1589,10 +1589,8 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     let mut allfeatur =
         b"\x04\xeb\x04\xe0\x22blend_choice\0\xe0\x21values\0\xf9\x01\x03\x0f\xe4".to_vec();
     allfeatur.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(
         scan.feature_choice_fields[0].value,
@@ -1603,6 +1601,16 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
             decoded_values: Some(vec![0.0, 1.0, 3.0]),
         }
     );
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let namespace = result.ir.native.namespace("creo").unwrap();
+    let choices = &namespace.arenas["feature_choices"];
+    assert_eq!(choices[0].fields["owner_feature_id"], 4);
+    assert_eq!(choices[0].fields["label"], "blend_choice");
+    let fields = &namespace.arenas["feature_choice_fields"];
+    assert_eq!(fields[0].fields["choice_label"], "blend_choice");
+    assert_eq!(fields[0].fields["name"], "values");
+    assert_eq!(fields[0].fields["value"]["kind"], "scalar_array");
+    assert_eq!(fields[0].fields["value"]["decoded_values"][2], 3.0);
 }
 
 #[test]
