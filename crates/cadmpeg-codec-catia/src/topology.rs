@@ -1804,16 +1804,23 @@ fn standard_mesh_missing_edge_assignments_impl(
         Some(search.complete)
     }
 
-    fn full_gap_port_assignments(
+    fn endpoint_trail_assignments(
         face: usize,
         gaps: &[MeshBoundaryGap],
         cycle_lengths: &[usize],
         missing: &[usize],
         rows: &[EdgeRow],
-        edge_ports: &[[u32; 2]],
+        edge_points: &[Option<[usize; 2]>],
+        corner_points: &MeshCornerPoints,
     ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
+        struct EndpointTrail {
+            edges: Vec<usize>,
+            start: usize,
+            end: usize,
+        }
+
         fn order_trails(
-            trails: &[Vec<usize>],
+            trails: &[EndpointTrail],
             used: u64,
             edges: &mut Vec<usize>,
             orders: &mut Vec<Vec<usize>>,
@@ -1827,14 +1834,14 @@ fn standard_mesh_missing_edge_assignments_impl(
                     continue;
                 }
                 for reversed in [false, true] {
-                    if reversed && trail.len() == 1 {
+                    if reversed && trail.edges.len() == 1 {
                         continue;
                     }
                     let before = edges.len();
                     if reversed {
-                        edges.extend(trail.iter().rev());
+                        edges.extend(trail.edges.iter().rev());
                     } else {
-                        edges.extend(trail);
+                        edges.extend(&trail.edges);
                     }
                     order_trails(trails, used | (1 << index), edges, orders);
                     edges.truncate(before);
@@ -1842,32 +1849,16 @@ fn standard_mesh_missing_edge_assignments_impl(
             }
         }
 
-        let [gap] = gaps else {
-            return None;
-        };
-        if cycle_lengths.len() != 1
-            || gap.start != 0
-            || gap.cycle != 0
-            || gap.length != cycle_lengths[0]
-            || gap.length != missing.len()
+        if gaps.is_empty()
             || missing
                 .iter()
-                .any(|&edge| rows[edge].handles.len() != 2 || edge_ports.get(edge).is_none())
+                .any(|&edge| edge_points.get(edge).is_none_or(Option::is_none))
         {
             return None;
         }
-        let point_pairs = edge_ports
-            .iter()
-            .map(|pair| {
-                Some([
-                    usize::try_from(pair[0]).ok()?,
-                    usize::try_from(pair[1]).ok()?,
-                ])
-            })
-            .collect::<Option<Vec<[usize; 2]>>>()?;
         let mut at_point = HashMap::<usize, Vec<usize>>::new();
         for &edge in missing {
-            for point in point_pairs[edge] {
+            for point in edge_points[edge]? {
                 at_point.entry(point).or_default().push(edge);
             }
         }
@@ -1875,19 +1866,18 @@ fn standard_mesh_missing_edge_assignments_impl(
             return None;
         }
         let mut unseen = missing.iter().copied().collect::<HashSet<_>>();
-        let mut trails = Vec::<Vec<usize>>::new();
+        let mut trails = Vec::<EndpointTrail>::new();
         while !unseen.is_empty() {
             let first = unseen
                 .iter()
                 .copied()
                 .filter(|edge| {
-                    point_pairs[*edge]
-                        .iter()
-                        .any(|point| at_point[point].len() == 1)
+                    edge_points[*edge]
+                        .is_some_and(|pair| pair.iter().any(|point| at_point[point].len() == 1))
                 })
                 .min()
                 .or_else(|| unseen.iter().copied().min())?;
-            let endpoints = point_pairs[first];
+            let endpoints = edge_points[first]?;
             let start = endpoints
                 .iter()
                 .copied()
@@ -1901,7 +1891,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                     break;
                 }
                 trail.push(edge);
-                let endpoints = point_pairs[edge];
+                let endpoints = edge_points[edge]?;
                 point = if endpoints[0] == point {
                     endpoints[1]
                 } else if endpoints[1] == point {
@@ -1918,10 +1908,98 @@ fn standard_mesh_missing_edge_assignments_impl(
                 };
                 edge = next;
             }
-            if point == start && trail.len() != missing.len() {
+            if point == start && (gaps.len() != 1 || trail.len() != missing.len()) {
                 return None;
             }
-            trails.push(trail);
+            trails.push(EndpointTrail {
+                edges: trail,
+                start,
+                end: point,
+            });
+        }
+        if gaps.len() > 1 {
+            if trails.len() != gaps.len() {
+                return None;
+            }
+            let mut available = trails;
+            available.sort_by_key(|trail| trail.edges.iter().copied().min());
+            let mut placements = Vec::with_capacity(missing.len());
+            for gap in gaps {
+                let candidates = available
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(index, trail)| {
+                        [false, true].map(move |reversed| (index, trail, reversed))
+                    })
+                    .filter_map(|(index, trail, reversed)| {
+                        let trail_start = if reversed { trail.end } else { trail.start };
+                        let trail_end = if reversed { trail.start } else { trail.end };
+                        let gap_end = (gap.start + gap.length) % cycle_lengths[gap.cycle];
+                        if !corner_points
+                            .get(&(face, gap.cycle, gap.start))?
+                            .contains(&trail_start)
+                            || !corner_points
+                                .get(&(face, gap.cycle, gap_end))?
+                                .contains(&trail_end)
+                        {
+                            return None;
+                        }
+                        let span = trail.edges.iter().try_fold(0usize, |sum, &edge| {
+                            sum.checked_add(rows[edge].handles.len().checked_sub(1)?)
+                        })?;
+                        (span <= gap.length
+                            && (span == gap.length
+                                || trail
+                                    .edges
+                                    .iter()
+                                    .any(|&edge| rows[edge].handles.len() == 2)))
+                        .then_some((index, span, reversed))
+                    })
+                    .collect::<Vec<_>>();
+                let [(trail_index, minimum_span, reversed)] = candidates.as_slice() else {
+                    return None;
+                };
+                let (trail_index, minimum_span, reversed) =
+                    (*trail_index, *minimum_span, *reversed);
+                let trail = available.remove(trail_index);
+                let edges: Box<dyn Iterator<Item = usize>> = if reversed {
+                    Box::new(trail.edges.into_iter().rev())
+                } else {
+                    Box::new(trail.edges.into_iter())
+                };
+                let edges = edges.collect::<Vec<_>>();
+                let slack = gap.length - minimum_span;
+                let flexible = edges.iter().position(|&edge| rows[edge].handles.len() == 2);
+                let mut offset = 0usize;
+                for (index, edge) in edges.into_iter().enumerate() {
+                    let mut segment_count = rows[edge].handles.len().checked_sub(1)?;
+                    if Some(index) == flexible {
+                        segment_count = segment_count.checked_add(slack)?;
+                    }
+                    placements.push(MeshEdgePlacementCandidate {
+                        edge,
+                        face,
+                        cycle: gap.cycle,
+                        start: (gap.start + offset) % cycle_lengths[gap.cycle],
+                        end: (gap.start + offset + segment_count) % cycle_lengths[gap.cycle],
+                        segment_count,
+                    });
+                    offset = offset.checked_add(segment_count)?;
+                }
+            }
+            return Some(vec![placements]);
+        }
+        let [gap] = gaps else {
+            return None;
+        };
+        if cycle_lengths.len() != 1
+            || gap.start != 0
+            || gap.cycle != 0
+            || gap.length != cycle_lengths[0]
+            || gap.length != missing.len()
+            || missing.iter().any(|&edge| rows[edge].handles.len() != 2)
+        {
+            return None;
         }
         if trails.len() > u64::BITS as usize {
             return None;
@@ -1956,7 +2034,16 @@ fn standard_mesh_missing_edge_assignments_impl(
     }
     let coverage = standard_mesh_face_coverage(bytes, edge_faces)?;
     let edge_ports = standard_mesh_edge_ports(bytes)?;
-    let table_ports = standard_edge_port_identities(bytes)?;
+    let singleton_edge_points = edge_candidates.map(|candidates| {
+        candidates
+            .iter()
+            .map(|domain| {
+                <[[usize; 2]; 1]>::try_from(domain.as_slice())
+                    .ok()
+                    .map(|[pair]| pair)
+            })
+            .collect::<Vec<_>>()
+    });
     let edge_runs = standard_mesh_edge_runs(bytes)?;
     let mut solutions = Vec::new();
     for width in [1, 2, 3] {
@@ -2004,52 +2091,58 @@ fn standard_mesh_missing_edge_assignments_impl(
             .iter()
             .map(|face| {
                 let cycle_lengths = cycles[face.face].iter().map(Vec::len).collect::<Vec<_>>();
-                full_gap_port_assignments(
-                    face.face,
-                    &face.gaps,
-                    &cycle_lengths,
-                    &face.missing_edges,
-                    &edge_rows,
-                    &table_ports,
-                )
-                .or_else(|| {
-                    enumerate_face(
-                        face.face,
-                        &face.gaps,
-                        &cycle_lengths,
-                        &face.missing_edges,
-                        &edge_rows,
-                        (
-                            Some(&edge_ports),
-                            &corner_ports,
-                            edge_candidates,
+                let assignments = singleton_edge_points
+                    .as_ref()
+                    .and_then(|edge_points| {
+                        endpoint_trail_assignments(
+                            face.face,
+                            &face.gaps,
+                            &cycle_lengths,
+                            &face.missing_edges,
+                            &edge_rows,
+                            edge_points,
                             &corner_points,
-                        ),
-                        canonicalize_spans,
-                    )
-                })
-                .or_else(|| {
-                    enumerate_face(
-                        face.face,
-                        &face.gaps,
-                        &cycle_lengths,
-                        &face.missing_edges,
-                        &edge_rows,
-                        (None, &HashMap::new(), edge_candidates, &corner_points),
-                        canonicalize_spans,
-                    )
-                })
-                .or_else(|| {
-                    enumerate_face(
-                        face.face,
-                        &face.gaps,
-                        &cycle_lengths,
-                        &face.missing_edges,
-                        &edge_rows,
-                        (None, &HashMap::new(), None, &MeshCornerPoints::new()),
-                        canonicalize_spans,
-                    )
-                })
+                        )
+                    })
+                    .or_else(|| {
+                        enumerate_face(
+                            face.face,
+                            &face.gaps,
+                            &cycle_lengths,
+                            &face.missing_edges,
+                            &edge_rows,
+                            (
+                                Some(&edge_ports),
+                                &corner_ports,
+                                edge_candidates,
+                                &corner_points,
+                            ),
+                            canonicalize_spans,
+                        )
+                    })
+                    .or_else(|| {
+                        enumerate_face(
+                            face.face,
+                            &face.gaps,
+                            &cycle_lengths,
+                            &face.missing_edges,
+                            &edge_rows,
+                            (None, &HashMap::new(), edge_candidates, &corner_points),
+                            canonicalize_spans,
+                        )
+                    })
+                    .or_else(|| {
+                        enumerate_face(
+                            face.face,
+                            &face.gaps,
+                            &cycle_lengths,
+                            &face.missing_edges,
+                            &edge_rows,
+                            (None, &HashMap::new(), None, &MeshCornerPoints::new()),
+                            canonicalize_spans,
+                        )
+                    });
+                assignments
             })
             .collect::<Option<Vec<_>>>()?;
         solutions.push(assignments);
