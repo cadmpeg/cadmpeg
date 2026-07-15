@@ -14894,6 +14894,110 @@ fn decode_retains_generated_rolling_ball_definition() {
 }
 
 #[test]
+fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
+    use cadmpeg_ir::geometry::{
+        BlendRadiusLaw, CurveGeometry, NurbsCurve, ProceduralSurfaceDefinition, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_rb_blend_spl_sur_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated rolling-ball decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let ProceduralSurfaceDefinition::Blend {
+        supports,
+        spine: Some(spine),
+        radius,
+        ..
+    } = &mut source_less.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected rolling-ball definition")
+    };
+    let support_ids = [
+        supports[0].as_ref().expect("first support").surface.clone(),
+        supports[1]
+            .as_ref()
+            .expect("second support")
+            .surface
+            .clone(),
+    ];
+    let spine_id = spine.clone();
+    *radius = BlendRadiusLaw::Constant {
+        signed_radius: -2.0,
+    };
+    let support_geometry = [
+        SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(1.0, 0.0, 0.0),
+            u_axis: Vector3::new(0.0, 1.0, 0.0),
+        },
+        SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+    ];
+    for (id, geometry) in support_ids.into_iter().zip(support_geometry) {
+        source_less
+            .model
+            .surfaces
+            .iter_mut()
+            .find(|surface| surface.id == id)
+            .expect("rolling-ball support")
+            .geometry = geometry;
+    }
+    source_less
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == spine_id)
+        .expect("rolling-ball spine")
+        .geometry = CurveGeometry::Nurbs(NurbsCurve {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        control_points: vec![
+            Point3::new(2.0, 2.0, -4.0),
+            Point3::new(2.0, 2.0, 0.0),
+            Point3::new(2.0, 2.0, 7.0),
+        ],
+        weights: None,
+        periodic: false,
+    });
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less rolling-ball encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less rolling-ball round trip");
+    let carrier_id = &round_trip.ir.model.procedural_surfaces[0].surface;
+    assert!(matches!(
+        round_trip
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| &surface.id == carrier_id)
+            .expect("rolling-ball carrier")
+            .geometry,
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            radius,
+            ..
+        } if origin == Point3::new(2.0, 2.0, -4.0)
+            && axis == Vector3::new(0.0, 0.0, 1.0)
+            && radius == 2.0
+    ));
+}
+
+#[test]
 fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 

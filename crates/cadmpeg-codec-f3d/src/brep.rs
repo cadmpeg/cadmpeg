@@ -854,6 +854,12 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         ) {
             procedural_surface_defs.insert(surf_ref, procedural);
         }
+        if let Some(geometry) = procedural_surface_defs
+            .get(&surf_ref)
+            .and_then(|procedural| analytic_procedural_surface(&procedural.definition))
+        {
+            surface_geo.insert(surf_ref, (geometry, false));
+        }
         let exact_cacheless_construction =
             procedural_surface_defs
                 .get(&surf_ref)
@@ -4806,34 +4812,222 @@ fn procedural_surface_definition_is_exact_carrier(
 fn analytic_procedural_surface(
     definition: &nurbs::DecodedProceduralSurfaceDefinition,
 ) -> Option<SurfaceGeometry> {
-    let nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
-        directrix,
-        direction,
-        ..
-    } = definition
-    else {
+    match definition {
+        nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            direction,
+            ..
+        } => {
+            let (center, normal, ref_direction, radius) = rational_quadratic_circle(directrix)?;
+            let axis = normalized_vector(*direction)?;
+            if 1.0 - dot_vector(axis, normal).abs() > 1.0e-10 {
+                return None;
+            }
+            Some(SurfaceGeometry::Cylinder {
+                origin: center,
+                axis,
+                ref_direction,
+                radius,
+            })
+        }
+        nurbs::DecodedProceduralSurfaceDefinition::Blend {
+            supports,
+            spine: Some(spine),
+            radius: cadmpeg_ir::geometry::BlendRadiusLaw::Constant { signed_radius },
+            cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
+            native,
+        } => analytic_rolling_ball_surface(supports, native.as_deref(), spine, *signed_radius),
+        _ => None,
+    }
+}
+
+fn analytic_rolling_ball_surface(
+    supports: &[Option<SurfaceGeometry>; 2],
+    native: Option<&nurbs::EmbeddedRollingBall>,
+    spine: &cadmpeg_ir::geometry::NurbsCurve,
+    signed_radius: f64,
+) -> Option<SurfaceGeometry> {
+    let radius = signed_radius.abs();
+    if !radius.is_finite() || radius <= f64::EPSILON {
         return None;
+    }
+    let support = |index: usize| {
+        supports[index]
+            .as_ref()
+            .or_else(|| native.and_then(|native| native.sides[index].surface.as_ref()))
     };
-    let (center, normal, ref_direction, radius) = rational_quadratic_circle(directrix)?;
-    let direction_norm = direction.norm();
-    if !direction_norm.is_finite() || direction_norm <= f64::EPSILON {
-        return None;
+    let first = support(0)?;
+    let second = support(1)?;
+
+    if let (
+        SurfaceGeometry::Plane {
+            origin: first_origin,
+            normal: first_normal,
+            ..
+        },
+        SurfaceGeometry::Plane {
+            origin: second_origin,
+            normal: second_normal,
+            ..
+        },
+    ) = (first, second)
+    {
+        let (origin, axis) = linear_nurbs_spine(spine)?;
+        let tolerance = 1.0e-10
+            * radius
+                .max(point_vector(*first_origin, *second_origin).norm())
+                .max(1.0);
+        let first_normal = normalized_vector(*first_normal)?;
+        let second_normal = normalized_vector(*second_normal)?;
+        let support_intersection = cross_vector(first_normal, second_normal);
+        let support_intersection_norm = support_intersection.norm();
+        if support_intersection_norm <= 1.0e-10
+            || 1.0
+                - dot_vector(
+                    axis,
+                    Vector3::new(
+                        support_intersection.x / support_intersection_norm,
+                        support_intersection.y / support_intersection_norm,
+                        support_intersection.z / support_intersection_norm,
+                    ),
+                )
+                .abs()
+                > 1.0e-10
+        {
+            return None;
+        }
+        for (plane_origin, plane_normal) in [
+            (*first_origin, first_normal),
+            (*second_origin, second_normal),
+        ] {
+            if dot_vector(axis, plane_normal).abs() > 1.0e-10
+                || (dot_vector(point_vector(plane_origin, origin), plane_normal).abs() - radius)
+                    .abs()
+                    > tolerance
+            {
+                return None;
+            }
+        }
+        return Some(SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
+            radius,
+        });
     }
-    let axis = Vector3::new(
-        direction.x / direction_norm,
-        direction.y / direction_norm,
-        direction.z / direction_norm,
+
+    let (plane, cylinder) = match (first, second) {
+        (plane @ SurfaceGeometry::Plane { .. }, cylinder @ SurfaceGeometry::Cylinder { .. })
+        | (cylinder @ SurfaceGeometry::Cylinder { .. }, plane @ SurfaceGeometry::Plane { .. }) => {
+            (plane, cylinder)
+        }
+        _ => return None,
+    };
+    let (center, axis, ref_direction, major_radius) = rational_quadratic_circle(spine)?;
+    let SurfaceGeometry::Plane {
+        origin: plane_origin,
+        normal: plane_normal,
+        ..
+    } = plane
+    else {
+        unreachable!()
+    };
+    let SurfaceGeometry::Cylinder {
+        origin: cylinder_origin,
+        axis: cylinder_axis,
+        radius: cylinder_radius,
+        ..
+    } = cylinder
+    else {
+        unreachable!()
+    };
+    let plane_normal = normalized_vector(*plane_normal)?;
+    let cylinder_axis = normalized_vector(*cylinder_axis)?;
+    let scale = major_radius.max(radius).max(cylinder_radius.abs()).max(1.0);
+    let tolerance = 1.0e-10 * scale;
+    let center_offset = point_vector(*cylinder_origin, center);
+    let axial_offset = dot_vector(center_offset, cylinder_axis);
+    let radial_offset = Vector3::new(
+        center_offset.x - axial_offset * cylinder_axis.x,
+        center_offset.y - axial_offset * cylinder_axis.y,
+        center_offset.z - axial_offset * cylinder_axis.z,
     );
-    let alignment = dot_vector(axis, normal).abs();
-    if 1.0 - alignment > 1.0e-10 {
+    if 1.0 - dot_vector(axis, plane_normal).abs() > 1.0e-10
+        || 1.0 - dot_vector(axis, cylinder_axis).abs() > 1.0e-10
+        || (dot_vector(point_vector(*plane_origin, center), plane_normal).abs() - radius).abs()
+            > tolerance
+        || radial_offset.norm() > tolerance
+        || ((major_radius - cylinder_radius.abs()).abs() - radius).abs() > tolerance
+    {
         return None;
     }
-    Some(SurfaceGeometry::Cylinder {
-        origin: center,
+    Some(SurfaceGeometry::Torus {
+        center,
         axis,
         ref_direction,
-        radius,
+        major_radius,
+        minor_radius: signed_radius,
     })
+}
+
+fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point3, Vector3)> {
+    if curve.degree == 0
+        || curve.periodic
+        || curve.control_points.len() <= curve.degree as usize
+        || curve.knots.len() != curve.control_points.len() + curve.degree as usize + 1
+        || curve.knots.iter().any(|knot| !knot.is_finite())
+        || curve.knots.windows(2).any(|pair| pair[0] > pair[1])
+        || curve
+            .control_points
+            .iter()
+            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+    {
+        return None;
+    }
+    if let Some(weights) = curve.weights.as_deref() {
+        let first_sign = weights.first()?.signum();
+        if first_sign == 0.0
+            || weights.len() != curve.control_points.len()
+            || weights
+                .iter()
+                .any(|weight| !weight.is_finite() || weight.signum() != first_sign)
+        {
+            return None;
+        }
+    }
+    let origin = curve.control_points[0];
+    let (_, farthest) = curve
+        .control_points
+        .iter()
+        .copied()
+        .map(|point| (point_vector(origin, point).norm(), point))
+        .max_by(|left, right| left.0.total_cmp(&right.0))?;
+    let extent = point_vector(origin, farthest).norm();
+    if !extent.is_finite() || extent <= f64::EPSILON {
+        return None;
+    }
+    let axis = normalized_vector(point_vector(origin, farthest))?;
+    let tolerance = 1.0e-10 * extent.max(1.0);
+    if curve
+        .control_points
+        .iter()
+        .any(|point| cross_vector(axis, point_vector(origin, *point)).norm() > tolerance)
+    {
+        return None;
+    }
+    Some((origin, axis))
+}
+
+fn normalized_vector(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.norm();
+    if !norm.is_finite() || norm <= f64::EPSILON {
+        return None;
+    }
+    Some(Vector3::new(
+        vector.x / norm,
+        vector.y / norm,
+        vector.z / norm,
+    ))
 }
 
 fn rational_quadratic_circle(
@@ -5733,6 +5927,136 @@ mod topology_tests {
         let mut approximate = exact_circle_directrix();
         approximate.control_points[3].x += 1.0e-5;
         assert!(rational_quadratic_circle(&approximate).is_none());
+    }
+
+    fn plane(origin: Point3, normal: Vector3, u_axis: Vector3) -> SurfaceGeometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        }
+    }
+
+    fn cylinder(origin: Point3, axis: Vector3, radius: f64) -> SurfaceGeometry {
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        }
+    }
+
+    fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::NurbsCurve {
+        cadmpeg_ir::geometry::NurbsCurve {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: points,
+            weights: None,
+            periodic: false,
+        }
+    }
+
+    #[test]
+    fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
+        let mut definition = nurbs::DecodedProceduralSurfaceDefinition::Blend {
+            supports: Box::new([
+                Some(plane(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )),
+                Some(plane(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )),
+            ]),
+            spine: Some(linear_spine(vec![
+                Point3::new(2.0, 2.0, -4.0),
+                Point3::new(2.0, 2.0, 0.0),
+                Point3::new(2.0, 2.0, 7.0),
+            ])),
+            radius: cadmpeg_ir::geometry::BlendRadiusLaw::Constant {
+                signed_radius: -2.0,
+            },
+            cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
+            native: None,
+        };
+        assert!(matches!(
+            analytic_procedural_surface(&definition),
+            Some(SurfaceGeometry::Cylinder {
+                origin,
+                axis,
+                radius,
+                ..
+            }) if origin == Point3::new(2.0, 2.0, -4.0)
+                && axis == Vector3::new(0.0, 0.0, 1.0)
+                && radius == 2.0
+        ));
+
+        let nurbs::DecodedProceduralSurfaceDefinition::Blend {
+            spine: Some(spine), ..
+        } = &mut definition
+        else {
+            unreachable!()
+        };
+        spine.control_points[1].x = 2.1;
+        assert!(analytic_procedural_surface(&definition).is_none());
+    }
+
+    #[test]
+    fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
+        let mut circle = exact_circle_directrix();
+        for point in &mut circle.control_points {
+            point.x -= 2.0;
+            point.y -= 3.0;
+            point.z -= 3.0;
+        }
+        let mut definition = nurbs::DecodedProceduralSurfaceDefinition::Blend {
+            supports: Box::new([
+                Some(plane(
+                    Point3::new(0.0, 0.0, -1.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )),
+                Some(cylinder(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    3.0,
+                )),
+            ]),
+            spine: Some(circle),
+            radius: cadmpeg_ir::geometry::BlendRadiusLaw::Constant {
+                signed_radius: -2.0,
+            },
+            cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
+            native: None,
+        };
+        assert!(matches!(
+            analytic_procedural_surface(&definition),
+            Some(SurfaceGeometry::Torus {
+                center,
+                axis,
+                ref_direction,
+                major_radius,
+                minor_radius,
+            }) if center == Point3::new(0.0, 0.0, 1.0)
+                && axis == Vector3::new(0.0, 0.0, 1.0)
+                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && major_radius == 5.0
+                && minor_radius == -2.0
+        ));
+
+        let nurbs::DecodedProceduralSurfaceDefinition::Blend { supports, .. } = &mut definition
+        else {
+            unreachable!()
+        };
+        supports[0] = Some(plane(
+            Point3::new(0.0, 0.0, -1.0),
+            Vector3::new(0.0, 1.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ));
+        assert!(analytic_procedural_surface(&definition).is_none());
     }
 
     #[test]
