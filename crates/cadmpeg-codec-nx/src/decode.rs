@@ -1750,6 +1750,8 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
             else {
                 continue;
             };
+            let mut blend_grid = None;
+            let mut blend_grid_initialized = false;
             let mut uv = Vec::with_capacity(points.len());
             for (point_index, point) in points.iter().enumerate() {
                 let seed =
@@ -1776,12 +1778,30 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
                             })
                             .or_else(|| offset_surface_parameters(ir, surface_id, *point, seed))
                             .or_else(|| {
-                                blend_surface_parameters_for_fit(
+                                blend_surface_parameters_for_fit_with_grid(
                                     ir,
                                     surface_id,
                                     *point,
                                     seed,
                                     *fit_tolerance,
+                                    BlendParameterGrid::Disabled,
+                                )
+                            })
+                            .or_else(|| {
+                                if !blend_grid_initialized {
+                                    blend_grid = blend_surface_parameter_grid(ir, surface_id, 0);
+                                    blend_grid_initialized = true;
+                                }
+                                blend_surface_parameters_for_fit_with_grid(
+                                    ir,
+                                    surface_id,
+                                    *point,
+                                    seed,
+                                    *fit_tolerance,
+                                    blend_grid.as_deref().map_or(
+                                        BlendParameterGrid::Disabled,
+                                        BlendParameterGrid::Cached,
+                                    ),
                                 )
                             })
                     }
@@ -2176,7 +2196,7 @@ pub(crate) fn blend_surface_parameters(
     point: Point3,
     seed: Option<Point2>,
 ) -> Option<Point2> {
-    blend_surface_parameters_inner(ir, surface, point, seed, None, 0)
+    blend_surface_parameters_inner(ir, surface, point, seed, None, BlendParameterGrid::Build, 0)
 }
 
 pub(crate) fn blend_surface_parameters_for_fit(
@@ -2186,7 +2206,32 @@ pub(crate) fn blend_surface_parameters_for_fit(
     seed: Option<Point2>,
     fit_tolerance: f64,
 ) -> Option<Point2> {
-    blend_surface_parameters_inner(ir, surface, point, seed, Some(fit_tolerance), 0)
+    blend_surface_parameters_for_fit_with_grid(
+        ir,
+        surface,
+        point,
+        seed,
+        fit_tolerance,
+        BlendParameterGrid::Build,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum BlendParameterGrid<'a> {
+    Build,
+    Cached(&'a [(Point2, Point3)]),
+    Disabled,
+}
+
+fn blend_surface_parameters_for_fit_with_grid(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+    fit_tolerance: f64,
+    grid: BlendParameterGrid<'_>,
+) -> Option<Point2> {
+    blend_surface_parameters_inner(ir, surface, point, seed, Some(fit_tolerance), grid, 0)
 }
 
 fn blend_surface_parameters_inner(
@@ -2195,6 +2240,7 @@ fn blend_surface_parameters_inner(
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
+    grid: BlendParameterGrid<'_>,
     depth: usize,
 ) -> Option<Point2> {
     (depth < 32).then_some(())?;
@@ -2260,7 +2306,11 @@ fn blend_surface_parameters_inner(
             }
         }
     }
-    let initial = coarse_blend_surface_parameters(ir, surface, point, depth + 1)?;
+    let initial = match grid {
+        BlendParameterGrid::Build => coarse_blend_surface_parameters(ir, surface, point, depth + 1),
+        BlendParameterGrid::Cached(grid) => closest_blend_surface_grid_parameters(grid, point),
+        BlendParameterGrid::Disabled => None,
+    }?;
     let parameters =
         refine_blend_surface_parameters(ir, surface, point, initial, depth + 1).unwrap_or(initial);
     if !(0.0..=1.0).contains(&parameters.v) {
@@ -2279,6 +2329,15 @@ pub(crate) fn coarse_blend_surface_parameters(
     point: Point3,
     depth: usize,
 ) -> Option<Point2> {
+    let grid = blend_surface_parameter_grid(ir, surface, depth)?;
+    closest_blend_surface_grid_parameters(&grid, point)
+}
+
+fn blend_surface_parameter_grid(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    depth: usize,
+) -> Option<Vec<(Point2, Point3)>> {
     (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
     let curve = ir.model.curves.iter().find(|curve| curve.id == spine)?;
@@ -2291,27 +2350,33 @@ pub(crate) fn coarse_blend_surface_parameters(
     if !domain.into_iter().all(f64::is_finite) || domain[0] >= domain[1] {
         return None;
     }
-    let mut best = None;
-    let mut best_distance = f64::INFINITY;
-    for u_index in 0..=16 {
-        for v_index in 0..=8 {
+    let mut grid = Vec::with_capacity(9 * 5);
+    for u_index in 0..=8 {
+        for v_index in 0..=4 {
             let parameters = Point2::new(
-                domain[0] + (domain[1] - domain[0]) * f64::from(u_index) / 16.0,
-                f64::from(v_index) / 8.0,
+                domain[0] + (domain[1] - domain[0]) * f64::from(u_index) / 8.0,
+                f64::from(v_index) / 4.0,
             );
-            let Some(candidate) =
+            let Some(point) =
                 blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)
             else {
                 continue;
             };
-            let distance = point_distance(candidate, point);
-            if distance < best_distance {
-                best = Some(parameters);
-                best_distance = distance;
-            }
+            grid.push((parameters, point));
         }
     }
-    best
+    (!grid.is_empty()).then_some(grid)
+}
+
+fn closest_blend_surface_grid_parameters(
+    grid: &[(Point2, Point3)],
+    point: Point3,
+) -> Option<Point2> {
+    grid.iter()
+        .min_by(|(_, first), (_, second)| {
+            point_distance(*first, point).total_cmp(&point_distance(*second, point))
+        })
+        .map(|(parameters, _)| *parameters)
 }
 
 pub(crate) fn refine_blend_surface_parameters(
@@ -2797,7 +2862,17 @@ fn surface_contact_direction(
     let parameters = match &carrier.geometry {
         SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, center, None),
         SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, surface, center, None)
-            .or_else(|| blend_surface_parameters_inner(ir, surface, center, None, None, depth + 1)),
+            .or_else(|| {
+                blend_surface_parameters_inner(
+                    ir,
+                    surface,
+                    center,
+                    None,
+                    None,
+                    BlendParameterGrid::Build,
+                    depth + 1,
+                )
+            }),
         geometry => analytic_surface_parameters(geometry, center),
     }?;
     let contact = decoded_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
