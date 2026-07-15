@@ -10,6 +10,7 @@ use cadmpeg_ir::topology::BodyKind;
 
 const FBB_ROW: [u8; 4] = [0x30, 0x04, 0x04, 0xff];
 const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
+const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
 const TRIM_KINDS: [u8; 14] = [
     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
 ];
@@ -4620,9 +4621,11 @@ impl MeshSelectionSearch<'_> {
                         };
                         common.into_iter().collect()
                     };
-                    self.face_equation_cache
-                        .borrow_mut()
-                        .insert(cache_key, equations.clone());
+                    let mut cache = self.face_equation_cache.borrow_mut();
+                    if cache.len() >= MAX_FACE_EQUATION_CACHE_ENTRIES {
+                        cache.clear();
+                    }
+                    cache.insert(cache_key, equations.clone());
                     equations
                 }
             };
@@ -5735,7 +5738,7 @@ mod motif_tests {
         reconstruct_incidence_candidates, standard_face_count, unique_coordinate_bijection,
         Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate,
         MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
-        TrimRecord, UnionFind,
+        TrimRecord, UnionFind, MAX_FACE_EQUATION_CACHE_ENTRIES,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -6963,6 +6966,15 @@ mod motif_tests {
             .expect("component joined to a face port");
         assert!(search.propagate_forced_face_equations(&mut quotient));
         assert_eq!(search.face_equation_cache.borrow().len(), 2);
+        {
+            let mut cache = search.face_equation_cache.borrow_mut();
+            for key in 1..=MAX_FACE_EQUATION_CACHE_ENTRIES {
+                cache.insert((key, Vec::new()), Vec::new());
+            }
+        }
+        quotient.merge(1, 2).expect("new face-component merge");
+        assert!(search.propagate_forced_face_equations(&mut quotient));
+        assert_eq!(search.face_equation_cache.borrow().len(), 1);
     }
 
     #[test]
