@@ -408,6 +408,52 @@ enum CreoFeatureFieldValue {
     },
 }
 
+#[derive(Serialize, Clone)]
+struct CreoHalfEdgeRef {
+    curve_id: u32,
+    side: u8,
+}
+
+#[derive(Serialize)]
+struct CreoHalfEdgeRecord {
+    id: String,
+    curve_id: u32,
+    side: u8,
+    face_id: u32,
+    next: Option<CreoHalfEdgeRef>,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoLoopRecord {
+    id: String,
+    face_id: u32,
+    half_edges: Vec<CreoHalfEdgeRef>,
+}
+
+#[derive(Serialize)]
+struct CreoTopologicalVertexRecord {
+    id: String,
+    vertex_id: u32,
+    half_edges: Vec<CreoHalfEdgeRef>,
+}
+
+#[derive(Serialize)]
+struct CreoHalfEdgeVertexIncidenceRecord {
+    id: String,
+    half_edge: CreoHalfEdgeRef,
+    start_vertex_id: u32,
+    end_vertex_id: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct CreoFaceComponentRecord {
+    id: String,
+    face_ids: Vec<u32>,
+    curve_ids: Vec<u32>,
+}
+
 fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
     scan.feature_entities
         .iter()
@@ -653,6 +699,99 @@ fn feature_choice_field_records(scan: &ContainerScan) -> Vec<CreoFeatureChoiceFi
             },
             offset: field.offset,
             source_section: source_section(scan, field.offset),
+        })
+        .collect()
+}
+
+fn half_edge_ref(id: crate::topology::HalfEdgeId) -> CreoHalfEdgeRef {
+    CreoHalfEdgeRef {
+        curve_id: id.curve_id,
+        side: id.side,
+    }
+}
+
+fn half_edge_records(scan: &ContainerScan) -> Vec<CreoHalfEdgeRecord> {
+    scan.half_edges
+        .iter()
+        .filter_map(|edge| {
+            let row = scan
+                .curve_topology_rows
+                .iter()
+                .find(|row| row.id == edge.id.curve_id)?;
+            Some(CreoHalfEdgeRecord {
+                id: format!(
+                    "creo:topology:half_edge#{}:{}",
+                    edge.id.curve_id, edge.id.side
+                ),
+                curve_id: edge.id.curve_id,
+                side: edge.id.side,
+                face_id: edge.face_id,
+                next: edge.next.map(half_edge_ref),
+                offset: row.offset,
+                source_section: source_section(scan, row.offset),
+            })
+        })
+        .collect()
+}
+
+fn loop_records(scan: &ContainerScan) -> Vec<CreoLoopRecord> {
+    scan.loops
+        .iter()
+        .enumerate()
+        .map(|(index, record)| CreoLoopRecord {
+            id: format!("creo:topology:loop#{}", index + 1),
+            face_id: record.face_id,
+            half_edges: record
+                .half_edges
+                .iter()
+                .copied()
+                .map(half_edge_ref)
+                .collect(),
+        })
+        .collect()
+}
+
+fn topological_vertex_records(scan: &ContainerScan) -> Vec<CreoTopologicalVertexRecord> {
+    scan.topological_vertices
+        .iter()
+        .map(|record| CreoTopologicalVertexRecord {
+            id: format!("creo:topology:vertex#{}", record.id),
+            vertex_id: record.id,
+            half_edges: record
+                .half_edges
+                .iter()
+                .copied()
+                .map(half_edge_ref)
+                .collect(),
+        })
+        .collect()
+}
+
+fn half_edge_vertex_incidence_records(
+    scan: &ContainerScan,
+) -> Vec<CreoHalfEdgeVertexIncidenceRecord> {
+    scan.half_edge_vertex_incidence
+        .iter()
+        .map(|record| CreoHalfEdgeVertexIncidenceRecord {
+            id: format!(
+                "creo:topology:half_edge_vertex_incidence#{}:{}",
+                record.half_edge.curve_id, record.half_edge.side
+            ),
+            half_edge: half_edge_ref(record.half_edge),
+            start_vertex_id: record.start_vertex_id,
+            end_vertex_id: record.end_vertex_id,
+        })
+        .collect()
+}
+
+fn face_component_records(scan: &ContainerScan) -> Vec<CreoFaceComponentRecord> {
+    scan.face_components
+        .iter()
+        .enumerate()
+        .map(|(index, record)| CreoFaceComponentRecord {
+            id: format!("creo:topology:face_component#{}", index + 1),
+            face_ids: record.face_ids.clone(),
+            curve_ids: record.curve_ids.clone(),
         })
         .collect()
 }
@@ -15531,6 +15670,46 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("curve_topology_rows", &curve_topology_rows)?;
+    }
+    let half_edges = half_edge_records(scan);
+    if !half_edges.is_empty() {
+        for record in &half_edges {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "native_half_edge",
+                Exactness::Derived,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("half_edges", &half_edges)?;
+    }
+    let native_loops = loop_records(scan);
+    if !native_loops.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("loops", &native_loops)?;
+    }
+    let topological_vertices = topological_vertex_records(scan);
+    if !topological_vertices.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("topological_vertices", &topological_vertices)?;
+    }
+    let half_edge_vertex_incidence = half_edge_vertex_incidence_records(scan);
+    if !half_edge_vertex_incidence.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("half_edge_vertex_incidence", &half_edge_vertex_incidence)?;
+    }
+    let face_components = face_component_records(scan);
+    if !face_components.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("face_components", &face_components)?;
     }
     let surface_parameters = surface_parameter_records(scan);
     if !surface_parameters.is_empty() {

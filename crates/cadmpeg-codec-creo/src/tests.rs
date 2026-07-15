@@ -3573,6 +3573,14 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(scan.topological_vertices.len(), 4);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let model = &result.ir.model;
+    let namespace = result.ir.native.namespace("creo").unwrap();
+    assert_eq!(namespace.arenas["half_edges"].len(), 12);
+    assert_eq!(namespace.arenas["loops"].len(), 4);
+    assert_eq!(namespace.arenas["topological_vertices"].len(), 4);
+    assert_eq!(namespace.arenas["half_edge_vertex_incidence"].len(), 12);
+    assert_eq!(namespace.arenas["face_components"].len(), 1);
+    assert_eq!(namespace.arenas["half_edges"][0].fields["curve_id"], 10);
+    assert_eq!(namespace.arenas["half_edges"][0].fields["side"], 0);
 
     assert_eq!(model.points.len(), 4);
     assert_eq!(model.vertices.len(), 4);
