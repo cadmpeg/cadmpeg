@@ -2975,7 +2975,7 @@ fn saved_section_line_geometry(
                     .map(|row| row.internal_id)
             })?;
             let internal_id = previous.checked_add(1)?;
-            (next == internal_id + 1
+            (next == internal_id.checked_add(1)?
                 && saved_section.entities.iter().any(|entity| {
                     matches!(entity, crate::feature::FeatureSavedEntity::Line(line) if line.entity_id == internal_id)
                 }))
@@ -9486,6 +9486,9 @@ fn transfer_resolved_revolution_vertex_orbit_curves(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
+        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve) {
+            continue;
+        }
         let Some(definition) = scan
             .feature_definitions
             .iter()

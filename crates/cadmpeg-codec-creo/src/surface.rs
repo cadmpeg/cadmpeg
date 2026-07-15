@@ -947,7 +947,7 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                     <= body
                         .len()
                         .saturating_sub(values_start)
-                        .saturating_mul(16)
+                        .saturating_mul(2)
                         .max(12)
         }) else {
             return SurfaceNamedValue::Opaque(body.to_vec());
@@ -1507,8 +1507,9 @@ fn surface_body_compound_close(
     if kind == SurfaceKind::Extrusion {
         if let Some((_, mut cursor)) = decode_tabulated_cylinder_frame(body, cache) {
             if body.get(cursor) == Some(&psb::token::ENTITY_REF) {
-                let (_, next) = psb::reference_id(body, cursor + 1).ok()?;
-                cursor = next;
+                if let Ok((_, next)) = psb::reference_id(body, cursor + 1) {
+                    cursor = next;
+                }
             }
             if body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE) {
                 return Some(cursor);

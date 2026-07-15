@@ -34,7 +34,7 @@ pub(crate) fn decode(data: &[u8], expected_length: usize) -> Option<Vec<u8>> {
 
     while let Some(raw_code) = reader.next(free_entry, false) {
         if block_mode && raw_code == CLEAR {
-            free_entry = 256;
+            free_entry = 257;
             let Some(code) = reader.next(free_entry, true) else {
                 break;
             };
@@ -182,5 +182,26 @@ mod tests {
             decode(&stream, 25),
             Some(b"TOBEORNOTTOBEORTOBEORNOT\n".to_vec())
         );
+    }
+
+    #[test]
+    fn block_mode_clear_reserves_the_clear_code() {
+        fn codes(values: &[u16]) -> Vec<u8> {
+            let mut bytes = vec![0; values.len().saturating_mul(9).div_ceil(8)];
+            for (index, value) in values.iter().copied().enumerate() {
+                for bit in 0..9 {
+                    bytes[(index * 9 + bit) / 8] |=
+                        u8::try_from((value >> bit) & 1).unwrap() << ((index * 9 + bit) % 8);
+                }
+            }
+            bytes
+        }
+
+        let mut stream = vec![0x1f, 0x9d, 0x90];
+        let mut first_block = codes(&[u16::from(b'A'), CLEAR]);
+        first_block.resize(9, 0);
+        stream.extend(first_block);
+        stream.extend(codes(&[u16::from(b'B'), u16::from(b'C'), 257]));
+        assert_eq!(decode(&stream, 5), Some(b"ABCBC".to_vec()));
     }
 }

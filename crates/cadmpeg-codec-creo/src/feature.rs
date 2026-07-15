@@ -1172,7 +1172,8 @@ fn row_spans(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<(usize, usize, 
         }
     }
     starts.sort_unstable();
-    starts.dedup_by_key(|(_, id)| *id);
+    let mut seen = BTreeSet::new();
+    starts.retain(|(_, id)| seen.insert(*id));
     starts
         .iter()
         .enumerate()

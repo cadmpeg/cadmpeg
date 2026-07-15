@@ -150,7 +150,7 @@ fn named_outline_slots(
                     .or_else(|| (slots.len() == 5).then_some((0.0, offset + 1)))?;
                 (Some(decoded.0), decoded.1)
             }
-            0x0f => (Some(0.0), offset + 1),
+            0x0f | 0xe6 => (Some(0.0), offset + 1),
             0x41 => {
                 let tail = data.get(offset + 1..offset + 8)?;
                 let mut raw = [0; 8];
