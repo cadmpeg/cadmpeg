@@ -1495,6 +1495,7 @@ fn standard_mesh_missing_edge_assignments_impl(
         Option<&'a [Vec<[usize; 2]>]>,
         &'a MeshCornerPoints,
     );
+    type PointTransitions = HashMap<usize, Arc<HashSet<usize>>>;
 
     fn enumerate_face(
         face: usize,
@@ -1512,7 +1513,8 @@ fn standard_mesh_missing_edge_assignments_impl(
             rows: &'a [EdgeRow],
             edge_ports: Option<&'a [[u32; 2]]>,
             corner_ports: &'a HashMap<MeshCorner, u32>,
-            edge_candidates: Option<&'a [Vec<[usize; 2]>]>,
+            edge_points: Option<&'a [Arc<HashSet<usize>>]>,
+            point_transitions: Option<&'a [PointTransitions]>,
             corner_points: &'a MeshCornerPoints,
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
@@ -1524,7 +1526,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                 offset: usize,
                 used: u64,
                 current_port: Option<u32>,
-                current_points: Option<HashSet<usize>>,
+                current_points: Option<Arc<HashSet<usize>>>,
                 placed: &mut Vec<MeshEdgePlacementCandidate>,
             ) -> Option<()> {
                 if self.assignments > MAX_ASSIGNMENTS_PER_FACE {
@@ -1568,6 +1570,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                         self.corner_points
                             .get(&(self.face, next.cycle, next.start))
                             .cloned()
+                            .map(Arc::new)
                     });
                     return self.walk(gap + 1, 0, used, next_port, next_points, placed);
                 }
@@ -1597,25 +1600,31 @@ fn standard_mesh_missing_edge_assignments_impl(
                         };
                         next_ports.sort_unstable();
                         next_ports.dedup();
-                        let next_points = self.edge_candidates.and_then(|candidates| {
-                            let pairs = &candidates[edge];
-                            (!pairs.is_empty()).then(|| {
-                                pairs
-                                    .iter()
-                                    .flat_map(|pair| match &current_points {
-                                        Some(current) => pair
-                                            .iter()
-                                            .enumerate()
-                                            .filter_map(|(side, point)| {
-                                                current.contains(point).then_some(pair[1 - side])
+                        let next_points = self.edge_points.and_then(|edge_points| {
+                            (!edge_points[edge].is_empty()).then(|| match &current_points {
+                                None => edge_points[edge].clone(),
+                                Some(current) if current.len() == 1 => {
+                                    let point = *current.iter().next().expect("singleton domain");
+                                    self.point_transitions
+                                        .and_then(|transitions| {
+                                            transitions[edge].get(&point).cloned()
+                                        })
+                                        .unwrap_or_default()
+                                }
+                                Some(current) => Arc::new(
+                                    current
+                                        .iter()
+                                        .filter_map(|point| {
+                                            self.point_transitions.and_then(|transitions| {
+                                                transitions[edge].get(point)
                                             })
-                                            .collect::<Vec<_>>(),
-                                        None => pair.to_vec(),
-                                    })
-                                    .collect::<HashSet<_>>()
+                                        })
+                                        .flat_map(|points| points.iter().copied())
+                                        .collect(),
+                                ),
                             })
                         });
-                        if next_points.as_ref().is_some_and(HashSet::is_empty) {
+                        if next_points.as_ref().is_some_and(|points| points.is_empty()) {
                             continue;
                         }
                         let value = MeshEdgePlacementCandidate {
@@ -1651,6 +1660,28 @@ fn standard_mesh_missing_edge_assignments_impl(
         if missing.len() > u64::BITS as usize {
             return None;
         }
+        let edge_points = edge_candidates.map(|candidates| {
+            candidates
+                .iter()
+                .map(|pairs| Arc::new(pairs.iter().flatten().copied().collect()))
+                .collect::<Vec<_>>()
+        });
+        let point_transitions = edge_candidates.map(|candidates| {
+            candidates
+                .iter()
+                .map(|pairs| {
+                    let mut transitions = HashMap::<usize, HashSet<usize>>::new();
+                    for [left, right] in pairs {
+                        transitions.entry(*left).or_default().insert(*right);
+                        transitions.entry(*right).or_default().insert(*left);
+                    }
+                    transitions
+                        .into_iter()
+                        .map(|(point, targets)| (point, Arc::new(targets)))
+                        .collect()
+                })
+                .collect::<Vec<_>>()
+        });
         let mut search = Search {
             face,
             gaps,
@@ -1659,7 +1690,8 @@ fn standard_mesh_missing_edge_assignments_impl(
             rows,
             edge_ports,
             corner_ports,
-            edge_candidates,
+            edge_points: edge_points.as_deref(),
+            point_transitions: point_transitions.as_deref(),
             corner_points,
             assignments: 0,
             complete: Vec::new(),
@@ -1669,7 +1701,8 @@ fn standard_mesh_missing_edge_assignments_impl(
             .and_then(|gap| corner_ports.get(&(face, gap.cycle, gap.start)).copied());
         let first_points = gaps
             .first()
-            .and_then(|gap| corner_points.get(&(face, gap.cycle, gap.start)).cloned());
+            .and_then(|gap| corner_points.get(&(face, gap.cycle, gap.start)).cloned())
+            .map(Arc::new);
         search.walk(0, 0, 0, first_port, first_points, &mut Vec::new())?;
         if search.assignments == 0 || search.assignments > MAX_ASSIGNMENTS_PER_FACE {
             return None;
@@ -2318,7 +2351,12 @@ fn standard_mesh_assignment_corner_points(
         return None;
     }
     let runs = standard_mesh_edge_runs(bytes)?;
-    let assignments = standard_mesh_missing_edge_assignments(bytes, edge_faces)?;
+    let edge_candidates = edge_points
+        .iter()
+        .map(|points| points.iter().copied().collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let assignments =
+        standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, Some(&edge_candidates))?;
     let (face_start, face_count, _) = largest_fbb_run(bytes)?;
     let cycle_solutions = [1, 2, 3]
         .into_iter()
