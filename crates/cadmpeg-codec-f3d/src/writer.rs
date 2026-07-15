@@ -7131,10 +7131,10 @@ fn native_law_expression(
                 | "COTH" | "SECH" | "CSCH" | "ARCCOS" | "ARCSIN" | "ARCTAN" | "ARCOT"
                 | "ARCSEC" | "ARCCSC" | "ARCCOSH" | "ARCSINH" | "ARCTANH" | "ARCOTH"
                 | "ARCSECH" | "ARCCSCH" | "ABS" | "EXP" | "LN" | "LOG" | "SIGN" | "SIZE"
-                | "TERM" | "SQRT" | "NORM" | "NOT" => 1,
-                "CROSS" | "DOT" | "DCUR" => 2,
+                | "SET" | "SQRT" | "NORM" | "NOT" => 1,
+                "CROSS" | "DOT" | "DCUR" | "ROTATE" | "TERM" => 2,
                 "VEC" | "DSURF" => 3,
-                "MIN" | "MAX" | "SET" | "ROTATE" | "STEP" => {
+                "MIN" | "MAX" | "STEP" => {
                     return Err(CodecError::NotImplemented(format!(
                         "source-less F3D law operator {operator} has unresolved variable arity"
                     )));

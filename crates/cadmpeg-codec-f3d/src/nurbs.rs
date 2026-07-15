@@ -2041,8 +2041,8 @@ fn decode_law_expression(
                 | "COTH" | "SECH" | "CSCH" | "ARCCOS" | "ARCSIN" | "ARCTAN" | "ARCOT"
                 | "ARCSEC" | "ARCCSC" | "ARCCOSH" | "ARCSINH" | "ARCTANH" | "ARCOTH"
                 | "ARCSECH" | "ARCCSCH" | "ABS" | "EXP" | "LN" | "LOG" | "SIGN" | "SIZE"
-                | "TERM" | "SQRT" | "NORM" | "NOT" => 1,
-                "CROSS" | "DOT" | "DCUR" => 2,
+                | "SET" | "SQRT" | "NORM" | "NOT" => 1,
+                "CROSS" | "DOT" | "DCUR" | "ROTATE" | "TERM" => 2,
                 "VEC" | "DSURF" => 3,
                 _ => return None,
             };
@@ -6981,6 +6981,48 @@ mod width_tests {
         push_ident(&mut bytes, "nullbs");
         push_ident(&mut bytes, "nullbs");
         bytes
+    }
+
+    #[test]
+    fn fixed_arity_law_operators_decode_at_both_integer_widths() {
+        for int_width in [4usize, 8] {
+            let mut bytes = Vec::new();
+            push_string(&mut bytes, "SET");
+            push_f64(&mut bytes, -2.0);
+            push_string(&mut bytes, "ROTATE");
+            push_vector(&mut bytes, [1.0, 2.0, 3.0]);
+            push_string(&mut bytes, "TRANS");
+            for scalar in 0..13 {
+                push_f64(&mut bytes, f64::from(scalar));
+            }
+            for value in [4, 5, 6] {
+                push_int(&mut bytes, 0x15, value, int_width);
+            }
+            push_string(&mut bytes, "TERM");
+            push_vector(&mut bytes, [7.0, 8.0, 9.0]);
+            push_int(&mut bytes, 0x04, 1, int_width);
+
+            let mut position = 0;
+            let set = decode_law_expression(&bytes, &mut position, int_width, 0).unwrap();
+            let rotate = decode_law_expression(&bytes, &mut position, int_width, 0).unwrap();
+            let term = decode_law_expression(&bytes, &mut position, int_width, 0).unwrap();
+            assert_eq!(position, bytes.len());
+            assert!(matches!(
+                set,
+                EmbeddedLawExpression::Algebraic { operator, operands }
+                    if operator == "SET" && operands.len() == 1
+            ));
+            assert!(matches!(
+                rotate,
+                EmbeddedLawExpression::Algebraic { operator, operands }
+                    if operator == "ROTATE" && operands.len() == 2
+            ));
+            assert!(matches!(
+                term,
+                EmbeddedLawExpression::Algebraic { operator, operands }
+                    if operator == "TERM" && operands.len() == 2
+            ));
+        }
     }
 
     #[test]

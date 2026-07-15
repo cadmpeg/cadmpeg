@@ -14183,6 +14183,75 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
 }
 
 #[test]
+fn generated_skin_surface_round_trips_set_rotate_and_term_laws() {
+    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::math::Vector3;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_skin_spl_sur_smbh(2, false))),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let ProceduralSurfaceDefinition::Skin { construction } =
+        &mut source_less.model.procedural_surfaces[0].definition
+    else {
+        panic!()
+    };
+    construction.formula.variables = vec![
+        LawExpression::Algebraic {
+            operator: "SET".into(),
+            operands: vec![LawExpression::Double { value: -2.0 }],
+        },
+        LawExpression::Algebraic {
+            operator: "ROTATE".into(),
+            operands: vec![
+                LawExpression::Vector {
+                    value: Vector3::new(1.0, 2.0, 3.0),
+                },
+                LawExpression::Transform {
+                    scalars: [0.0; 13],
+                    enums: [0, 0, 0],
+                },
+            ],
+        },
+        LawExpression::Algebraic {
+            operator: "TERM".into(),
+            operands: vec![
+                LawExpression::Vector {
+                    value: Vector3::new(4.0, 5.0, 6.0),
+                },
+                LawExpression::Integer { value: 1 },
+            ],
+        },
+    ];
+
+    let mut encoded = Vec::new();
+    F3dCodec.encode(&source_less, &mut encoded).unwrap();
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let ProceduralSurfaceDefinition::Skin { construction } =
+        &round_trip.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!()
+    };
+    assert!(matches!(
+        construction.formula.variables.as_slice(),
+        [
+            LawExpression::Algebraic { operator: set, operands: set_operands },
+            LawExpression::Algebraic { operator: rotate, operands: rotate_operands },
+            LawExpression::Algebraic { operator: term, operands: term_operands },
+        ] if set == "SET" && set_operands.len() == 1
+            && rotate == "ROTATE" && rotate_operands.len() == 2
+            && term == "TERM" && term_operands.len() == 2
+    ));
+}
+
+#[test]
 fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
     use cadmpeg_ir::geometry::{G2BlendFirstShape, LoftBridgeToken, ProceduralSurfaceDefinition};
 
