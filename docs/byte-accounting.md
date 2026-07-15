@@ -12,7 +12,7 @@ Each span contains:
 - `owner`: stable format-owned record identity;
 - `meaning`: stable machine-readable field or framing name.
 
-An opaque span also contains the identity of a sidecar `retained_record`. Each retained record contains its source stream, half-open range, complete bytes, and SHA-256 digest. Typed and structural spans do not duplicate source bytes.
+An opaque span also contains the identity of a sidecar `retained_record`. Each retained record contains its source stream, half-open range, SHA-256 digest, and optional bytes. Every record named by an opaque span contains complete bytes. Records retained only for source identity or integrity accounting may omit bytes. Typed and structural spans do not duplicate source bytes.
 
 The source length and offsets are unsigned 64-bit integers in memory and JSON. A codec must reject a source whose length cannot be represented. Checked conversion is required before using an offset as a platform allocation or slice index.
 
@@ -29,6 +29,8 @@ Canonical order is ascending `(start, end, class, owner, meaning)`. Validation r
 ## Serialization and versioning
 
 `SourceFidelity.schema_version` versions the complete sidecar, including its ledger, retained records, provenance, and exactness. Cadmpeg IR version 6 removes the former top-level ledger from `CadIr`. Version 5 documents migrate their semantic product content by dropping `byte_ledger`; source accounting requires re-decoding because complete ownership cannot be inferred from semantic IR. Future accounting changes increment the sidecar schema version and never `ir_version`.
+
+The reserved product `native.*.unknowns` arenas contain only stable identities and product links. Decoders transfer source offsets, lengths, digests, and retained bytes into `SourceFidelity.retained_records` before returning `DecodeResult`. Encoders that replay or patch a source consume the sidecar explicitly. A source-only retained record has no required product counterpart.
 
 ## Diff behavior
 

@@ -51,7 +51,7 @@ All stored lengths, coordinates, distances, radii, linear tolerances, and length
 | sense            | Orientation relative to the referenced carrier                 |
 | exactness        | Fidelity class of an entity or serialized field                |
 | native namespace | Versioned source-specific data outside the neutral model       |
-| unknown record   | Opaque source byte span with identity and integrity metadata   |
+| unknown record   | Format-specific product identity and related entity links      |
 
 ## Topology
 
@@ -180,11 +180,11 @@ Extents are blind, symmetric, two-sided, through-all, to-face, or angular. Boole
 
 Native records retain typed references into the neutral model but are otherwise opaque to format-neutral consumers. A consumer must not reinterpret, normalize, discard, or synthesize native records it does not own. An exporter either preserves a supported namespace unchanged or reports its omission as loss. Native IDs participate in global uniqueness. Namespace versions change independently of `ir_version`; a consumer that does not support a namespace version may still process the neutral model while treating that namespace as opaque.
 
-## Presentation, attributes, and opaque bytes
+## Presentation, attributes, and source fidelity
 
 Tessellations are display meshes independent of exact B-rep geometry. Appearances describe visual or physical assets. Appearance bindings assign appearances to bodies or faces. Attributes attach source-native values to supported targets.
 
-An unknown record has an ID, source offset, byte length, lowercase hexadecimal SHA-256 digest, optional retained data, and related entity IDs. Retained byte fields use standard RFC 4648 base64 with padding and no line breaks. This rule also applies to native raw-byte payloads and tessellation byte channels. Decoded data length and SHA-256 must match `byte_len` and `sha256`.
+An unknown product record has an ID and related entity IDs. It contains no source offset, byte length, digest, or retained source bytes. Those fields belong to the matching `SourceFidelity.retained_records` entry. Source-only records need not have a product record. Retained sidecar bytes use standard RFC 4648 base64 with padding and no line breaks. Native byte strings that are product values and tessellation byte channels remain product data.
 
 ## Validation
 
