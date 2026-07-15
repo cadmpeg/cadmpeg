@@ -2817,6 +2817,13 @@ pub fn project_dimension_constraints(
             .iter()
             .map(|record_index| projected.get(&(scope, *record_index)).copied())
             .collect::<Option<Vec<_>>>()?;
+        if let [entity] = entities.as_slice() {
+            if let Some(definition) =
+                radial_dimension_definition(entity, source_kind, evaluated_value, parameter.clone())
+            {
+                return Some(definition);
+            }
+        }
         if source_kind.starts_with("Linear Dimension") && entities.len() == 2 {
             return Some(Definition::Distance {
                 entities: entities.iter().map(|entity| entity.id.clone()).collect(),
@@ -2860,6 +2867,16 @@ pub fn project_dimension_constraints(
                     .copied()
             })
             .collect::<Option<Vec<_>>>()?;
+        if let [entity] = entities.as_slice() {
+            if let Some(definition) = radial_dimension_definition(
+                entity,
+                &parameter.source_kind,
+                parameter.evaluated_value,
+                parameter_id.clone(),
+            ) {
+                return Some(definition);
+            }
+        }
         if parameter.source_kind.starts_with("Angular Dimension") {
             let indices = group
                 .loci
@@ -3006,6 +3023,7 @@ pub fn project_dimension_constraints(
                     pair,
                     entity,
                     &parameter.source_kind,
+                    parameter.evaluated_value,
                     parameter_id.clone(),
                 ) {
                     return Some(SketchConstraint {
@@ -3211,12 +3229,18 @@ fn null_locus_dimension_definition(
     pair: &DesignDimensionNullLocusPair,
     entity: &cadmpeg_ir::sketches::SketchEntity,
     source_kind: &str,
+    evaluated_value: f64,
     parameter: cadmpeg_ir::features::ParameterId,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
         SketchAxis, SketchConstraintDefinition as Definition, SketchGeometry,
     };
 
+    if let Some(definition) =
+        radial_dimension_definition(entity, source_kind, evaluated_value, parameter.clone())
+    {
+        return Some(definition);
+    }
     (source_kind == "Angular Dimension-2"
         && pair.null_role == 14
         && pair.geometry_role == 3
@@ -3225,6 +3249,45 @@ fn null_locus_dimension_definition(
         entity: entity.id.clone(),
         axis: SketchAxis::Horizontal,
         parameter,
+    })
+}
+
+fn radial_dimension_definition(
+    entity: &cadmpeg_ir::sketches::SketchEntity,
+    source_kind: &str,
+    evaluated_value: f64,
+    parameter: cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometry as Geometry,
+    };
+
+    let radius = match &entity.geometry {
+        Geometry::Circle { radius, .. } | Geometry::Arc { radius, .. } => radius.0,
+        _ => return None,
+    };
+    let measured = if source_kind.starts_with("Radius Dimension") {
+        radius
+    } else if source_kind.starts_with("Diameter Dimension") {
+        2.0 * radius
+    } else {
+        return None;
+    };
+    let evaluated = evaluated_value * 10.0;
+    let scale = 1.0 + measured.abs().max(evaluated.abs());
+    if !evaluated.is_finite() || (measured - evaluated).abs() > 1.0e-9 * scale {
+        return None;
+    }
+    Some(if source_kind.starts_with("Radius Dimension") {
+        Definition::Radius {
+            entity: entity.id.clone(),
+            parameter,
+        }
+    } else {
+        Definition::Diameter {
+            entity: entity.id.clone(),
+            parameter,
+        }
     })
 }
 
@@ -9648,10 +9711,10 @@ mod relation_tests {
         parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
         parse_sketch_placement_candidates, parse_sketch_relation, point_on_sketch_entity,
         project_dimension_constraints, project_extrude, project_parameter_design,
-        project_sketch_constraints, project_sketch_design, recipe_record_prefix,
-        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
-        resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
-        resolved_face_group, two_locus_distance_dimension,
+        project_sketch_constraints, project_sketch_design, radial_dimension_definition,
+        recipe_record_prefix, region_containing_points, remove_dimension_frame_relations,
+        repeated_linear_dimension, resolved_edge_candidate_intersection,
+        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -10614,6 +10677,7 @@ mod relation_tests {
                 &axis_pair,
                 &entity,
                 "Angular Dimension-2",
+                0.5,
                 parameter.clone(),
             ),
             Some(SketchConstraintDefinition::AngleToAxis {
@@ -10627,9 +10691,81 @@ mod relation_tests {
             &axis_pair,
             &entity,
             "Angular Dimension-2",
+            0.5,
             parameter,
         )
         .is_none());
+    }
+
+    #[test]
+    fn radial_dimensions_require_one_exact_circular_measurement() {
+        let mut entity = SketchEntity {
+            id: SketchEntityId("f3d:model:sketch-entity#circle".into()),
+            sketch: SketchId("f3d:model:sketch#radial".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(2.0, 3.0),
+                radius: Length(5.0),
+            },
+        };
+        let radius_parameter = cadmpeg_ir::features::ParameterId("parameter#radius".into());
+        assert!(matches!(
+            radial_dimension_definition(
+                &entity,
+                "Radius Dimension-2",
+                0.5,
+                radius_parameter.clone(),
+            ),
+            Some(SketchConstraintDefinition::Radius { entity: ref actual, parameter: ref p })
+                if actual == &entity.id && p == &radius_parameter
+        ));
+        let diameter_parameter = cadmpeg_ir::features::ParameterId("parameter#diameter".into());
+        assert!(matches!(
+            radial_dimension_definition(
+                &entity,
+                "Diameter Dimension-2",
+                1.0,
+                diameter_parameter.clone(),
+            ),
+            Some(SketchConstraintDefinition::Diameter { entity: ref actual, parameter: ref p })
+                if actual == &entity.id && p == &diameter_parameter
+        ));
+        assert!(radial_dimension_definition(
+            &entity,
+            "Diameter Dimension-2",
+            0.5,
+            diameter_parameter.clone(),
+        )
+        .is_none());
+
+        entity.geometry = SketchGeometry::Arc {
+            center: Point2::new(2.0, 3.0),
+            radius: Length(5.0),
+            start_angle: cadmpeg_ir::features::Angle(0.0),
+            end_angle: cadmpeg_ir::features::Angle(1.0),
+        };
+        assert!(radial_dimension_definition(
+            &entity,
+            "Diameter Dimension",
+            1.0,
+            diameter_parameter,
+        )
+        .is_some());
+        entity.geometry = SketchGeometry::Ellipse {
+            center: Point2::new(2.0, 3.0),
+            major_angle: cadmpeg_ir::features::Angle(0.0),
+            major_radius: Length(5.0),
+            minor_radius: Length(3.0),
+            start_angle: None,
+            end_angle: None,
+        };
+        assert!(
+            radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter,)
+                .is_none()
+        );
     }
 
     #[test]
