@@ -4501,6 +4501,42 @@ fn attach_standard_topology(
         endpoint_candidates.push(candidates);
     }
     let edge_faces: Vec<[usize; 2]> = supports.iter().map(|support| support.faces).collect();
+    let mut edge_classes = Vec::with_capacity(supports.len());
+    for (edge, support) in supports.iter().enumerate() {
+        let class = supports[..edge]
+            .iter()
+            .position(|candidate| {
+                let mut candidate_faces = candidate.faces;
+                candidate_faces.sort_unstable();
+                let mut support_faces = support.faces;
+                support_faces.sort_unstable();
+                candidate_faces == support_faces
+                    && match (&candidate.geometry, &support.geometry) {
+                        (
+                            geometry::StandardCurveGeometry::Circle {
+                                center: left_center,
+                                radius: left_radius,
+                            },
+                            geometry::StandardCurveGeometry::Circle {
+                                center: right_center,
+                                radius: right_radius,
+                            },
+                        ) => {
+                            left_center.x.to_bits() == right_center.x.to_bits()
+                                && left_center.y.to_bits() == right_center.y.to_bits()
+                                && left_center.z.to_bits() == right_center.z.to_bits()
+                                && left_radius.to_bits() == right_radius.to_bits()
+                        }
+                        (
+                            geometry::StandardCurveGeometry::Line,
+                            geometry::StandardCurveGeometry::Line,
+                        ) => true,
+                        _ => false,
+                    }
+            })
+            .map_or(edge, |candidate| edge_classes[candidate]);
+        edge_classes.push(class);
+    }
     let native_edges = crate::b5::edge_vertex_references(source);
     let graph_endpoint_pairs =
         standard_native_graph_endpoint_pairs(source, &supports, &native_edges, &ir.model.points);
@@ -4808,10 +4844,14 @@ fn attach_standard_topology(
     let motif_topology = topology::parse_standard_motif(brep, &edge_faces, &circle_anchors);
     let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
-    } else if let Some(topology) = native_endpoint_pairs
-        .as_ref()
-        .and_then(|pairs| topology::parse_standard_endpoints(brep, &edge_faces, pairs))
-    {
+    } else if let Some(topology) = native_endpoint_pairs.as_ref().and_then(|pairs| {
+        topology::parse_standard_endpoints_with_edge_classes(
+            brep,
+            &edge_faces,
+            pairs,
+            Some(&edge_classes),
+        )
+    }) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {

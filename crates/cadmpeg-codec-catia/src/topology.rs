@@ -542,11 +542,24 @@ pub fn parse_standard_endpoints(
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
 ) -> Option<StandardTopology> {
+    parse_standard_endpoints_with_edge_classes(bytes, edge_faces, edge_points, None)
+}
+
+/// Reconstruct standard topology while treating equal curve-class identifiers
+/// as interchangeable serialized edge rows during incidence-slot completion.
+#[must_use]
+pub fn parse_standard_endpoints_with_edge_classes(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_points: &[[usize; 2]],
+    edge_classes: Option<&[usize]>,
+) -> Option<StandardTopology> {
     let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_points.len()
+        || edge_classes.is_some_and(|classes| classes.len() != edge_rows.len())
         || edge_points
             .iter()
             .flatten()
@@ -554,12 +567,13 @@ pub fn parse_standard_endpoints(
     {
         return None;
     }
-    reconstruct_incidence(
+    reconstruct_incidence_with_edge_classes(
         edge_rows,
         vertex_points,
         edge_faces,
         edge_points,
         face_count,
+        edge_classes,
     )
 }
 
@@ -2863,7 +2877,31 @@ fn reconstruct_incidence(
     edge_points: &[[usize; 2]],
     face_count: usize,
 ) -> Option<StandardTopology> {
-    let completed_edge_faces = complete_duplicate_face_slots(edge_faces, edge_points, face_count)?;
+    reconstruct_incidence_with_edge_classes(
+        edge_rows,
+        vertex_points,
+        edge_faces,
+        edge_points,
+        face_count,
+        None,
+    )
+}
+
+fn reconstruct_incidence_with_edge_classes(
+    edge_rows: Vec<EdgeRow>,
+    vertex_points: Vec<[f64; 3]>,
+    edge_faces: &[[usize; 2]],
+    edge_points: &[[usize; 2]],
+    face_count: usize,
+    edge_classes: Option<&[usize]>,
+) -> Option<StandardTopology> {
+    let completed_edge_faces = complete_duplicate_face_slots(
+        &edge_rows,
+        edge_faces,
+        edge_points,
+        face_count,
+        edge_classes,
+    )?;
     let edge_faces = completed_edge_faces.as_slice();
     let mut faces = Vec::with_capacity(face_count);
     for face in 0..face_count {
@@ -2908,13 +2946,22 @@ fn reconstruct_incidence(
 }
 
 fn complete_duplicate_face_slots(
+    edge_rows: &[EdgeRow],
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     face_count: usize,
+    edge_classes: Option<&[usize]>,
 ) -> Option<Vec<[usize; 2]>> {
+    struct SearchInputs<'a> {
+        unresolved: &'a [usize],
+        edge_rows: &'a [EdgeRow],
+        edge_faces: &'a [[usize; 2]],
+        edge_points: &'a [[usize; 2]],
+        edge_classes: Option<&'a [usize]>,
+    }
+
     fn search(
-        unresolved: &[usize],
-        edge_points: &[[usize; 2]],
+        inputs: &SearchInputs<'_>,
         degrees: &mut [Vec<u8>],
         assignment: &mut [usize],
         used: &mut [bool],
@@ -2927,6 +2974,17 @@ fn complete_duplicate_face_slots(
             if degrees
                 .iter()
                 .all(|face| face.iter().all(|degree| matches!(degree, 0 | 2)))
+                && solutions.first().is_none_or(|existing| {
+                    !duplicate_face_assignments_equivalent(
+                        inputs.unresolved,
+                        inputs.edge_rows,
+                        inputs.edge_faces,
+                        inputs.edge_points,
+                        inputs.edge_classes,
+                        existing,
+                        assignment,
+                    )
+                })
             {
                 solutions.push(assignment.to_vec());
             }
@@ -2938,14 +2996,15 @@ fn complete_duplicate_face_slots(
                 .position(|degree| *degree == 1)
                 .map(|point| (face, point))
         });
-        let choices = unresolved
+        let choices = inputs
+            .unresolved
             .iter()
             .enumerate()
             .filter(|(index, edge)| {
                 if used[*index] {
                     return false;
                 }
-                let [start, end] = edge_points[**edge];
+                let [start, end] = inputs.edge_points[**edge];
                 deficit.is_none_or(|(_, point)| start == point || end == point)
             })
             .flat_map(|(index, &edge)| {
@@ -2956,13 +3015,13 @@ fn complete_duplicate_face_slots(
                 faces.map(move |face| (index, edge, face))
             })
             .filter(|(_, edge, face)| {
-                let [start, end] = edge_points[*edge];
+                let [start, end] = inputs.edge_points[*edge];
                 degrees[*face][start] + 1 + u8::from(start == end) <= 2
                     && (start == end || degrees[*face][end] < 2)
             })
             .collect::<Vec<_>>();
         for (index, edge, face) in choices {
-            let [start, end] = edge_points[edge];
+            let [start, end] = inputs.edge_points[edge];
             let start_add = 1 + u8::from(start == end);
             degrees[face][start] += start_add;
             if start != end {
@@ -2970,14 +3029,7 @@ fn complete_duplicate_face_slots(
             }
             assignment[index] = face;
             used[index] = true;
-            search(
-                unresolved,
-                edge_points,
-                degrees,
-                assignment,
-                used,
-                solutions,
-            );
+            search(inputs, degrees, assignment, used, solutions);
             used[index] = false;
             degrees[face][start] -= start_add;
             if start != end {
@@ -3029,9 +3081,15 @@ fn complete_duplicate_face_slots(
     });
 
     let mut solutions = Vec::new();
-    search(
-        &unresolved,
+    let inputs = SearchInputs {
+        unresolved: &unresolved,
+        edge_rows,
+        edge_faces,
         edge_points,
+        edge_classes,
+    };
+    search(
+        &inputs,
         &mut degrees,
         &mut vec![0; unresolved.len()],
         &mut vec![false; unresolved.len()],
@@ -3044,6 +3102,54 @@ fn complete_duplicate_face_slots(
         completed[edge][1] = face;
     }
     Some(completed)
+}
+
+fn duplicate_face_assignments_equivalent(
+    unresolved: &[usize],
+    edge_rows: &[EdgeRow],
+    edge_faces: &[[usize; 2]],
+    edge_points: &[[usize; 2]],
+    edge_classes: Option<&[usize]>,
+    left: &[usize],
+    right: &[usize],
+) -> bool {
+    let mut classified = vec![false; unresolved.len()];
+    for first in 0..unresolved.len() {
+        if classified[first] {
+            continue;
+        }
+        let first_edge = unresolved[first];
+        let mut left_faces = Vec::new();
+        let mut right_faces = Vec::new();
+        for (index, &edge) in unresolved.iter().enumerate() {
+            let same_row = edge_classes.is_some_and(|classes| classes[first_edge] == classes[edge])
+                || edge_rows[first_edge].kind == edge_rows[edge].kind
+                    && edge_rows[first_edge].boundary_layout == edge_rows[edge].boundary_layout
+                    && (edge_rows[first_edge].handles == edge_rows[edge].handles
+                        || edge_rows[first_edge]
+                            .handles
+                            .iter()
+                            .eq(edge_rows[edge].handles.iter().rev()));
+            let mut first_points = edge_points[first_edge];
+            let mut points = edge_points[edge];
+            first_points.sort_unstable();
+            points.sort_unstable();
+            if same_row
+                && first_points == points
+                && edge_faces[first_edge][0] == edge_faces[edge][0]
+            {
+                classified[index] = true;
+                left_faces.push(left[index]);
+                right_faces.push(right[index]);
+            }
+        }
+        left_faces.sort_unstable();
+        right_faces.sort_unstable();
+        if left_faces != right_faces {
+            return false;
+        }
+    }
+    true
 }
 
 fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
@@ -7567,11 +7673,61 @@ mod motif_tests {
 
     #[test]
     fn duplicate_face_reference_slot_is_completed_by_face_closure() {
-        let faces =
-            complete_duplicate_face_slots(&[[0, 1], [0, 1], [0, 0]], &[[0, 1], [1, 2], [2, 0]], 2)
-                .expect("unique face-closing slot assignment");
+        let rows = (0..3)
+            .map(|handle| EdgeRow {
+                kind: 0,
+                handles: vec![handle],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            })
+            .collect::<Vec<_>>();
+        let faces = complete_duplicate_face_slots(
+            &rows,
+            &[[0, 1], [0, 1], [0, 0]],
+            &[[0, 1], [1, 2], [2, 0]],
+            2,
+            None,
+        )
+        .expect("unique face-closing slot assignment");
 
         assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
+    }
+
+    #[test]
+    fn equivalent_edge_rows_share_one_incidence_assignment_gauge() {
+        let rows = vec![
+            EdgeRow {
+                kind: 0,
+                handles: vec![0],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            },
+            EdgeRow {
+                kind: 0,
+                handles: vec![1],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            },
+            EdgeRow {
+                kind: 0,
+                handles: vec![2, 3],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            },
+            EdgeRow {
+                kind: 0,
+                handles: vec![4, 5],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            },
+        ];
+        let faces = complete_duplicate_face_slots(
+            &rows,
+            &[[0, 1], [0, 1], [2, 2], [2, 2]],
+            &[[0, 1], [1, 2], [2, 0], [0, 2]],
+            3,
+            Some(&[0, 1, 2, 2]),
+        )
+        .expect("one assignment modulo equivalent edge rows");
+
+        let mut assigned = [faces[2][1], faces[3][1]];
+        assigned.sort_unstable();
+        assert_eq!(assigned, [0, 1]);
     }
 
     #[test]
