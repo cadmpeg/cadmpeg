@@ -954,7 +954,7 @@ fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlane> {
                     plane
                 }),
         );
-        if let Some(mut plane) = datum::named_zero_plane(&data[section.offset..end]) {
+        if let Some(mut plane) = datum::named_plane(&data[section.offset..end]) {
             plane.offset_in_payload += section.offset;
             planes.push(plane);
         }

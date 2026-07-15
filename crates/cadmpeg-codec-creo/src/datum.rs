@@ -79,8 +79,8 @@ pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
     result
 }
 
-/// Decode a named zero-offset datum from matching zero outline coordinates.
-pub fn named_zero_plane(payload: &[u8]) -> Option<DatumPlane> {
+/// Decode a named datum from its matching outline coordinates.
+pub fn named_plane(payload: &[u8]) -> Option<DatumPlane> {
     let marker = b"outline\0\xf9\x02\x03";
     let outline = find(payload, marker, 0)?;
     let id_marker = b"\xe0\x01geom_id\0";
@@ -94,17 +94,27 @@ pub fn named_zero_plane(payload: &[u8]) -> Option<DatumPlane> {
         .windows(feature_marker.len())
         .rposition(|window| window == feature_marker)?;
     let feature_id = *payload.get(feature_at + feature_marker.len())? as u32;
-    let slots = named_outline_slots(payload, outline + marker.len())?;
-    let explicit_zero = |slot: &DatumSlot| matches!(slot.token.as_slice(), [0x18 | 0x0f]);
-    let axis =
-        (0..3).find(|axis| explicit_zero(&slots[*axis]) && explicit_zero(&slots[*axis + 3]))?;
+    let cache = scalar::ScalarCache::from_section(payload);
+    let slots = named_outline_slots(payload, outline + marker.len(), &cache)?;
+    let standalone_zero = |slot: &DatumSlot| matches!(slot.token.as_slice(), [0x18 | 0x0f]);
+    let zero_axis =
+        (0..3).find(|axis| standalone_zero(&slots[*axis]) && standalone_zero(&slots[*axis + 3]));
+    let held = (0..3)
+        .filter(|axis| slot_equal(&slots[*axis], &slots[*axis + 3]) == Some(true))
+        .collect::<Vec<_>>();
+    let axis = match (zero_axis, held.as_slice()) {
+        (Some(axis), _) => axis,
+        (None, [axis]) => *axis,
+        _ => return None,
+    };
+    let offset = slots[axis].value?;
     let mut normal = [0.0; 3];
     normal[axis] = 1.0;
     Some(DatumPlane {
         id,
         feature_id,
         normal,
-        offset: 0.0,
+        offset,
         corners: [
             [slots[0].value, slots[1].value, slots[2].value],
             [slots[3].value, slots[4].value, slots[5].value],
@@ -120,13 +130,27 @@ fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {
         .map(|relative| from + relative)
 }
 
-fn named_outline_slots(data: &[u8], mut offset: usize) -> Option<Vec<DatumSlot>> {
+fn named_outline_slots(
+    data: &[u8],
+    mut offset: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<DatumSlot>> {
     let mut slots = Vec::with_capacity(6);
     while slots.len() < 6 {
         let start = offset;
         let head = *data.get(offset)?;
         let (value, next) = match head {
-            0x18 | 0x0f => (Some(0.0), offset + 1),
+            0x18 => {
+                let next_is_slot = matches!(
+                    data.get(offset + 1),
+                    Some(0x0f | 0x18 | 0x2d | 0x40..=0xbf | 0xd3 | 0xd7 | 0xdf)
+                );
+                let decoded = scalar::decode_in_lane(data, offset, cache)
+                    .or_else(|| next_is_slot.then_some((0.0, offset + 1)))
+                    .or_else(|| (slots.len() == 5).then_some((0.0, offset + 1)))?;
+                (Some(decoded.0), decoded.1)
+            }
+            0x0f => (Some(0.0), offset + 1),
             0x41 => {
                 let tail = data.get(offset + 1..offset + 8)?;
                 let mut raw = [0; 8];
@@ -249,7 +273,7 @@ mod tests {
     #[test]
     fn decodes_named_standard_plane_from_zero_slots() {
         let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x18\x18\x46\x08\0\0\0\0\0\0\x18";
-        let plane = named_zero_plane(data).unwrap();
+        let plane = named_plane(data).unwrap();
         assert_eq!(plane.id, 2);
         assert_eq!(plane.feature_id, 1);
         assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
@@ -266,7 +290,7 @@ mod tests {
     #[test]
     fn named_outline_41_form_occupies_eight_bytes() {
         let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x41\xba\x13\x99\xa9\xb3\xd8\x74\x41\x94\xad\x7e\x6a\xb0\x34\x5e\x18\x93\x29\x5a\xfc\xd5\x60\x69\x8c\x40\x79\xe9\x12\xa5\x83";
-        let plane = named_zero_plane(data).expect("named plane");
+        let plane = named_plane(data).expect("named plane");
         assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
         assert_eq!(plane.corners[0][0], Some(0.0));
         assert_eq!(plane.corners[1][0], Some(0.0));
@@ -290,5 +314,25 @@ mod tests {
 
         assert_eq!(planes(&data)[0].normal, [0.0, 1.0, 0.0]);
         assert_eq!(planes(&data)[0].offset, 0.0);
+    }
+
+    #[test]
+    fn named_outline_resolves_a_cache_indexed_nonzero_offset() {
+        let cached = ieee8(2.5);
+        let mut data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01".to_vec();
+        data.extend(&cached);
+        data.extend(b"outline\0\xf9\x02\x03");
+        data.extend([0x18, 0x00]);
+        data.extend(ieee8(-3.0));
+        data.extend(ieee8(-4.0));
+        data.extend([0x18, 0x00]);
+        data.extend(ieee8(3.0));
+        data.extend(ieee8(4.0));
+
+        let plane = named_plane(&data).expect("cache-indexed named plane");
+        assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
+        assert_eq!(plane.offset, 2.5);
+        assert_eq!(plane.corners[0], [Some(2.5), Some(-3.0), Some(-4.0)]);
+        assert_eq!(plane.corners[1], [Some(2.5), Some(3.0), Some(4.0)]);
     }
 }

@@ -1112,14 +1112,17 @@ The positional row scalar `0e` encodes `-0.5`.
 Positional `ActDatums` plane rows contain flat `envlp(2x2)` and `outline(2x3)` scalar sequences without `f9` array openers. Their outlines use the held-coordinate plane rule of named rows. The datum-plane set includes the named datum row and positional `geom_type = 0x22` rows.
 
 Named `srf_array` plane rows store `outline\0 f9 02 03` followed by two
-model-space corner triples. A complete outline with exactly one equal
-coordinate pair defines the corresponding axis-aligned plane and offset.
+model-space corner triples. The scalar lane resolves `18 <index>` through the
+section-local dictionary of distinct `46` tokens. A complete outline with
+exactly one equal coordinate pair defines the corresponding axis-aligned plane
+and offset.
 
 In the positional datum scalar lane, `a5` and `9f` each occupy seven bytes.
 Their numeric values are not required by the held-coordinate rule: identical
 raw tokens compare equal and distinct raw tokens compare unequal.
 
-In a named datum outline, paired standalone-zero slots at positions `k` and `k+3` identify coordinate axis `k` and plane offset zero. Other outline slots do not affect this rule.
+In a named datum outline, paired standalone-zero slots at positions `k` and
+`k+3` identify coordinate axis `k` and plane offset zero.
 The `41` scalar form in this named outline lane occupies eight bytes: the
 prefix followed by seven payload bytes.
 

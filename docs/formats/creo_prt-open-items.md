@@ -36,7 +36,9 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   unspecified when several section definitions select the same internal
   sketch-plane entity.
 - Sketch-datum resolution without a unique generated-datum parent-table remainder is unspecified, including selection of a perpendicular orienting datum when the nested reference datum is parallel to the sketch normal.
-- In named `ActDatums` outline slots outside the paired standalone-zero axis slots, the value semantics of `18 <index>`, `a5`, `9f`, `5c`, and `45` are unspecified. Their values determine nonzero datum offsets and extents.
+- In named `ActDatums` outline slots, the value semantics of `a5`, `9f`, `5c`,
+  and `45` are unspecified. Their values determine nonzero datum offsets and
+  extents.
 - The direction-bit rule assigning pcurve endpoint pairs A and B to traversal start and end is unspecified, as is the partition of shared surface references into face instances.
 - The referents and traversal roles of `lo_restore` `direction` and
   `direction2` compact integers are unspecified.
