@@ -9355,6 +9355,137 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
 }
 
 #[test]
+fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
+    use cadmpeg_ir::geometry::{BlendSupport, ProceduralSurface, Surface};
+    use cadmpeg_ir::ids::{ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+
+    let stream = two_support_ext11_charted_intersection_curve_stream(false);
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let spine_id = result.ir.model.procedural_curves[0].id.clone();
+    let spine_curve = result.ir.model.procedural_curves[0].curve.clone();
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    let spine_surfaces = context
+        .sides
+        .each_ref()
+        .map(|side| side.surface.clone().unwrap());
+    let radius = 2.0;
+    let offset_surfaces = [0usize, 1usize].map(|side| {
+        let support = result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == spine_surfaces[side])
+            .unwrap();
+        let SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } = support.geometry
+        else {
+            panic!("plane support");
+        };
+        let id = SurfaceId(format!("synthetic:offset-support-{side}"));
+        result.ir.model.surfaces.push(Surface {
+            id: id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: cadmpeg_ir::math::Point3::new(
+                    origin.x + radius * normal.x,
+                    origin.y + radius * normal.y,
+                    origin.z + radius * normal.z,
+                ),
+                normal,
+                u_axis,
+            },
+            source_object: None,
+        });
+        id
+    });
+    let blend = SurfaceId("synthetic:dependent-blend".into());
+    let blend_construction = ProceduralSurfaceId("synthetic:dependent-blend-definition".into());
+    result.ir.model.surfaces.push(Surface {
+        id: blend.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: blend_construction.clone(),
+        },
+        source_object: None,
+    });
+    result.ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: blend_construction,
+        surface: blend.clone(),
+        definition: ProceduralSurfaceDefinition::Blend {
+            supports: offset_surfaces.map(|surface| {
+                Some(BlendSupport {
+                    surface,
+                    reversed: false,
+                })
+            }),
+            spine: Some(spine_curve),
+            radius: BlendRadiusLaw::Constant {
+                signed_radius: radius,
+            },
+            cross_section: BlendCrossSection::Circular,
+            native: None,
+        },
+        cache_fit_tolerance: None,
+    });
+    let parameters = vec![0.0, 0.01];
+    let points = parameters
+        .iter()
+        .map(|parameter| {
+            crate::decode::blend_surface_point(&result.ir, &blend, *parameter, 0.5).unwrap()
+        })
+        .collect::<Vec<_>>();
+
+    let dependent_id = ProceduralCurveId("synthetic:dependent-intersection".into());
+    let mut dependent = result.ir.model.procedural_curves[0].clone();
+    dependent.id = dependent_id.clone();
+    let ProceduralCurveDefinition::Intersection { context, .. } = &mut dependent.definition else {
+        unreachable!()
+    };
+    context.sides[0].surface = Some(blend);
+    context.sides[0].pcurve = None;
+    context.sides[1].surface = None;
+    context.sides[1].pcurve = None;
+    result.ir.model.procedural_curves.insert(0, dependent);
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &mut result.ir.model.procedural_curves[1].definition
+    else {
+        unreachable!()
+    };
+    for side in &mut context.sides {
+        side.pcurve = None;
+    }
+    let pending = vec![
+        (dependent_id, points, parameters.clone(), 0.01, [None, None]),
+        (
+            spine_id,
+            vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
+            ],
+            parameters,
+            0.01,
+            [None, None],
+        ),
+    ];
+
+    crate::decode::complete_support_uv(&mut result.ir, &pending);
+
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    assert!(context.sides[0].pcurve.is_some());
+}
+
+#[test]
 fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let mut cur = Cursor::new(prt_with_partition(&stream));

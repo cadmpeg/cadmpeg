@@ -1722,6 +1722,45 @@ pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11S
 }
 
 pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+    loop {
+        let before = pending_support_lanes_requiring_completion(ir, pending);
+        complete_support_uv_wave(ir, pending);
+        let after = pending_support_lanes_requiring_completion(ir, pending);
+        if after >= before {
+            break;
+        }
+    }
+}
+
+fn pending_support_lanes_requiring_completion(
+    ir: &CadIr,
+    pending: &[PendingExt11SupportUv],
+) -> usize {
+    pending
+        .iter()
+        .filter_map(|(procedural_id, ..)| {
+            ir.model
+                .procedural_curves
+                .iter()
+                .find(|procedural| &procedural.id == procedural_id)
+        })
+        .filter_map(|procedural| {
+            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            else {
+                return None;
+            };
+            Some(
+                context
+                    .sides
+                    .iter()
+                    .filter(|side| pcurve_requires_completion(side.pcurve.as_ref()))
+                    .count(),
+            )
+        })
+        .sum()
+}
+
+fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
     let mut replacements = Vec::new();
     for (procedural_id, points, parameters, fit_tolerance, _) in pending {
         let Some(procedural) = ir
