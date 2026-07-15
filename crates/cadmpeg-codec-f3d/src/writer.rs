@@ -8196,9 +8196,18 @@ fn encode_native_variable_blend(
     for offset in construction.offsets {
         native_f64(bytes, offset / 10.0);
     }
-    native_enum(bytes, construction.radius_kind);
+    native_enum(
+        bytes,
+        match construction.radius_kind {
+            cadmpeg_ir::geometry::VariableBlendRadiusKind::SingleRadius => 0,
+            cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii => 1,
+        },
+    );
     native_variable_blend_value(bytes, &construction.first_value, 0)?;
-    if construction.radius_kind == 1 {
+    if matches!(
+        construction.radius_kind,
+        cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii
+    ) {
         let second = construction.second_value.as_ref().ok_or_else(|| {
             CodecError::Malformed("two-radii variable blend lacks its second value".into())
         })?;
@@ -8208,7 +8217,7 @@ fn encode_native_variable_blend(
             native_enum(bytes, chamfer.chamfer_type);
             native_variable_blend_value(bytes, &chamfer.value, 0)?;
         }
-    } else if construction.radius_kind == 0 {
+    } else {
         if construction.second_value.is_some() || construction.chamfer.is_some() {
             return Err(CodecError::Malformed(
                 "single-radius variable blend carries two-radii payloads".into(),
@@ -8227,10 +8236,6 @@ fn encode_native_variable_blend(
                 native_f64(bytes, parameter);
             }
         }
-    } else {
-        return Err(CodecError::Malformed(
-            "variable blend radius kind must be 0 or 1".into(),
-        ));
     }
     for range in [construction.u_range, construction.v_range] {
         native_f64(bytes, range[0]);

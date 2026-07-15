@@ -845,7 +845,7 @@ pub struct EmbeddedVariableBlend {
     pub(crate) sides: Box<[EmbeddedVariableBlendSide; 2]>,
     pub(crate) primary_curve: NurbsCurve,
     pub(crate) offsets: [f64; 2],
-    pub(crate) radius_kind: i64,
+    pub(crate) radius_kind: cadmpeg_ir::geometry::VariableBlendRadiusKind,
     pub(crate) first_value: cadmpeg_ir::geometry::VariableBlendValue,
     pub(crate) second_value: Option<cadmpeg_ir::geometry::VariableBlendValue>,
     pub(crate) chamfer: Option<Box<cadmpeg_ir::geometry::VariableBlendChamfer>>,
@@ -3937,12 +3937,16 @@ fn decode_var_blend_spl_sur(
         take_f64(span, &mut position)? * LEN_TO_MM,
         take_f64(span, &mut position)? * LEN_TO_MM,
     ];
-    let radius_kind = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    if !matches!(radius_kind, 0 | 1) {
-        return None;
-    }
+    let radius_kind = match take_tagged_int(span, &mut position, 0x15, int_width)? {
+        0 => cadmpeg_ir::geometry::VariableBlendRadiusKind::SingleRadius,
+        1 => cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii,
+        _ => return None,
+    };
     let first_value = decode_variable_blend_value(span, &mut position, int_width, true, 0)?;
-    let second_value = if radius_kind == 1 {
+    let second_value = if matches!(
+        radius_kind,
+        cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii
+    ) {
         Some(decode_variable_blend_value(
             span,
             &mut position,
@@ -3953,8 +3957,10 @@ fn decode_var_blend_spl_sur(
     } else {
         None
     };
-    let chamfer = if radius_kind == 1
-        && span.get(position) == Some(&0x15)
+    let chamfer = if matches!(
+        radius_kind,
+        cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii
+    ) && span.get(position) == Some(&0x15)
         && read_int(span, position + 1, int_width) == Some(3)
     {
         Some(Box::new(VariableBlendChamfer {
@@ -3965,8 +3971,10 @@ fn decode_var_blend_spl_sur(
     } else {
         None
     };
-    let single_radius_tail = if radius_kind == 0
-        && span.get(position) == Some(&0x04)
+    let single_radius_tail = if matches!(
+        radius_kind,
+        cadmpeg_ir::geometry::VariableBlendRadiusKind::SingleRadius
+    ) && span.get(position) == Some(&0x04)
         && matches!(read_int(span, position + 1, int_width), Some(1 | 7))
     {
         Some(VariableBlendSingleRadiusTail {

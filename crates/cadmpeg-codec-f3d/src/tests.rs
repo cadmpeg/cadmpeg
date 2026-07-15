@@ -14875,7 +14875,10 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
         );
         assert_eq!(construction.offsets, [-2.0, 4.0]);
-        assert_eq!(construction.radius_kind, 0);
+        assert_eq!(
+            construction.radius_kind,
+            cadmpeg_ir::geometry::VariableBlendRadiusKind::SingleRadius
+        );
         let VariableBlendValuePayload::TwoEnds { parameters, radii } =
             &construction.first_value.payload
         else {

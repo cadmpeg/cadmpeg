@@ -1184,6 +1184,16 @@ pub enum VariableBlendRenderMode {
     RollingBallSnapshot,
 }
 
+/// Number of independently controlled radii in a variable blend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableBlendRadiusKind {
+    /// One radius law controls both support sides.
+    SingleRadius,
+    /// Each support side has an independent radius law.
+    TwoRadii,
+}
+
 /// One interpolation control point in a variable blend-value law.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VariableBlendInterpolationPoint {
@@ -1303,8 +1313,8 @@ pub struct VariableBlendConstruction {
     pub primary_curve: CurveId,
     /// Two signed support offsets in document length units.
     pub offsets: [f64; 2],
-    /// Native radius-kind enum.
-    pub radius_kind: i64,
+    /// Radius-control cardinality.
+    pub radius_kind: VariableBlendRadiusKind,
     /// First radius-control payload.
     pub first_value: VariableBlendValue,
     /// Second radius-control payload for a two-radii construction.
