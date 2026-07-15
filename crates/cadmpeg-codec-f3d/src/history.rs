@@ -984,7 +984,12 @@ fn edge_recipe_reference_context(
     preceding_boundary_edges: &[i64],
     changed_edges: &HashSet<i64>,
 ) -> crate::records::DesignEdgeRecipeReferenceContext {
-    let result_faces = faces_in_topology(&reference.candidate_faces, result_topology);
+    let candidate_faces = if reference.candidate_faces.is_empty() {
+        reference.alternate_selector_faces.as_slice()
+    } else {
+        reference.candidate_faces.as_slice()
+    };
+    let result_faces = faces_in_topology(candidate_faces, result_topology);
     let result_face_boundaries = face_boundary_contexts(&result_faces, result_topology);
     let result_edges = face_boundary_edges(&result_faces, result_topology)
         .into_iter()
@@ -994,7 +999,7 @@ fn edge_recipe_reference_context(
         .copied()
         .filter(|edge| result_edges.contains(edge))
         .collect();
-    let preceding_faces = faces_in_topology(&reference.candidate_faces, preceding_topology);
+    let preceding_faces = faces_in_topology(candidate_faces, preceding_topology);
     let preceding_face_boundaries = face_boundary_contexts(&preceding_faces, preceding_topology);
     let preceding_support_face_slots =
         preceding_support_face_slots(&result_faces, result_topology, preceding_topology);
@@ -2677,7 +2682,7 @@ mod tests {
             faces_changed_by_transition(&candidates, &transition),
             [&candidates[0]]
         );
-        let reference = crate::records::DesignRecipeReference {
+        let mut reference = crate::records::DesignRecipeReference {
             selector: 1,
             selector_offset: 0,
             token: "1".into(),
@@ -2720,6 +2725,20 @@ mod tests {
         assert_eq!(context.shared_edge_slots, [7]);
         assert_eq!(context.changed_shared_edge_slots, [7]);
         assert_eq!(context.changed_reference_edge_slots, [7]);
+        reference.candidate_faces.clear();
+        reference.alternate_selector_faces = vec![FaceId(id(4))];
+        let alternate_context = edge_recipe_reference_context(
+            2,
+            &reference,
+            &topology,
+            &[7, 99],
+            &topology,
+            &[7, 98],
+            &HashSet::from([7]),
+        );
+        assert_eq!(alternate_context.result_faces, [FaceId(id(4))]);
+        assert_eq!(alternate_context.preceding_faces, [FaceId(id(4))]);
+        assert_eq!(alternate_context.changed_reference_edge_slots, [7]);
         let cyclic = AsmHistoricalTopology {
             edge_vertices: vec![
                 AsmHistoricalEdge {
