@@ -1970,6 +1970,9 @@ fn metadata_fallback_binds_resolved_feature_scalars() {
         ))
     );
     assert!(parameter.native_ref.is_some());
+    assert!(decoded.report.losses.iter().any(|loss| loss
+        .message
+        .contains("typed feature(s) retain native or unresolved required operation operands")));
 }
 
 #[test]

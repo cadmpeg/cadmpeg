@@ -80,7 +80,8 @@ pub fn decode(
     }
 
     let ir = build_metadata_ir(&scan)?;
-    let report = build_container_report(&scan, false);
+    let mut report = build_container_report(&scan, false);
+    append_design_losses(&ir, &mut report);
     Ok(DecodeResult::new(ir, report))
 }
 
