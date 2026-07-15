@@ -2746,7 +2746,7 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
         chordal_deflection: 0.01,
     };
     assert_eq!(
-        crate::eval::curve_point(&decreasing, 2.0),
-        Some(Point3::new(1.0, 0.0, 0.0))
+        crate::eval::curve_point(&decreasing, 2.5),
+        Some(Point3::new(0.5, 0.0, 0.0))
     );
 }

@@ -738,8 +738,15 @@ fn transfer_topology_colors(
         return Ok(());
     };
     // FreeCAD uses a single list entry as a uniform color for every mapped subelement.
-    if group.names.is_empty() || (count != 1 && group.names.len() != count) {
+    if group.names.is_empty() {
         return Ok(());
+    }
+    if count != 1 && group.names.len() != count {
+        return Err(CodecError::Malformed(format!(
+            "{provider_name} {} color count {count} does not match {} mapped subelements",
+            kind.name(),
+            group.names.len()
+        )));
     }
     for (index, bytes) in bytes[4..].chunks_exact(4).enumerate() {
         let packed = u32::from_le_bytes(bytes.try_into().expect("four-byte color"));

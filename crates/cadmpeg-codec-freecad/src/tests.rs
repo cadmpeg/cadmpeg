@@ -3807,7 +3807,7 @@ fn gui_property_counts_ignore_nested_extension_properties() {
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
 <ViewProvider name="Model"><Properties Count="0"/><Extension name="Nested"><Properties Count="1"><Property name="NestedValue" type="App::PropertyString"><String value="kept by extension"/></Property></Properties></Extension></ViewProvider>
 </ViewProviderData></Document>"#;
-    FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[
                 ("Document.xml", document),
@@ -3816,6 +3816,19 @@ fn gui_property_counts_ignore_nested_extension_properties() {
             &DecodeOptions::default(),
         )
         .expect("nested extension properties do not alter the provider's direct count");
+    let native = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("FCStd namespace");
+    assert_eq!(
+        native
+            .arena_as::<crate::native::ObjectRecord>("objects")
+            .expect("objects")
+            .len(),
+        1
+    );
+    assert!(crate::validate_native(&result.ir).is_empty());
 }
 
 #[test]
