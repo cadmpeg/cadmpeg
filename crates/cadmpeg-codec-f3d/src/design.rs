@@ -1041,18 +1041,33 @@ fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i
             if let Some(edge) = resolved_edge_operand(operand) {
                 Some(vec![edge])
             } else {
-                corroborated_edge_candidates(
+                edge_assignment_candidates(
                     &operand.recipe_selectors,
                     operand
                         .recipe_reference_contexts
                         .iter()
                         .map(|context| context.changed_reference_edge_slots.as_slice()),
-                    false,
                 )
             }
         })
         .collect::<Option<Vec<_>>>()?;
     unique_bipartite_assignment(&candidate_sets)
+}
+
+fn edge_assignment_candidates<'a>(
+    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
+) -> Option<Vec<i64>> {
+    let shared_edge_sets = shared_edge_sets.into_iter().collect::<Vec<_>>();
+    if !selector_contexts.is_empty()
+        && selector_contexts
+            .iter()
+            .all(|selector| !selector.incidence_matching_edge_slots.is_empty())
+    {
+        corroborated_edge_candidates(selector_contexts, shared_edge_sets.iter().copied(), false)
+    } else {
+        corroborated_edge_candidates(selector_contexts, shared_edge_sets.iter().copied(), true)
+    }
 }
 
 fn unique_bipartite_assignment(candidate_sets: &[Vec<i64>]) -> Option<Vec<i64>> {
@@ -15108,6 +15123,43 @@ mod relation_tests {
                 [&[17, 18][..]],
             ),
             None
+        );
+        assert_eq!(
+            super::edge_assignment_candidates(
+                &[selector_with_counts(0, &[], &[17, 18])],
+                [&[17][..]],
+            ),
+            Some(vec![17])
+        );
+        assert_eq!(
+            super::edge_assignment_candidates(
+                &[selector_with_counts(0, &[18], &[17, 18])],
+                [&[17, 18][..]],
+            ),
+            Some(vec![18])
+        );
+        assert_eq!(
+            super::edge_assignment_candidates(
+                &[selector_with_counts(0, &[18], &[17, 18])],
+                [&[17][..]],
+            ),
+            None
+        );
+        let assignment_candidates = [
+            super::edge_assignment_candidates(
+                &[selector_with_counts(0, &[], &[17, 18])],
+                [&[17, 18][..]],
+            )
+            .unwrap(),
+            super::edge_assignment_candidates(
+                &[selector_with_counts(0, &[18], &[17, 18])],
+                [&[17, 18][..]],
+            )
+            .unwrap(),
+        ];
+        assert_eq!(
+            super::unique_bipartite_assignment(&assignment_candidates),
+            Some(vec![17, 18])
         );
         let triplet = DesignTopologyRecipeTriplet {
             outer: std::num::NonZeroU32::new(3).unwrap(),
