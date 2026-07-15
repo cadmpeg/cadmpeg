@@ -158,6 +158,33 @@ pub fn decode_in_surface_row_lane(
     decode_in_row_lane(data, offset, cache)
 }
 
+/// Decode one scalar in a positional torus-or-sphere surface-row lane.
+///
+/// This lane stores structurally delimited negative model coordinates beginning
+/// with `0x2d` in a seven-byte form. The token supplies IEEE bytes one through
+/// six after the fixed `0xc0` high byte; the low byte is zero. Unframed `0x2d`
+/// tokens retain the generic row lane's eight-byte form.
+pub fn decode_in_torus_row_lane(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x2d)
+        && (data.get(offset + 7).is_none()
+            || matches!(
+                data.get(offset + 7),
+                Some(0xe0..=0xe3 | 0xf1 | 0xf2 | 0xf6..=0xf8)
+            ))
+    {
+        let tail = data.get(offset + 1..offset + 7)?;
+        let mut raw = [0; 8];
+        raw[0] = 0xc0;
+        raw[1..7].copy_from_slice(tail);
+        return Some((f64::from_be_bytes(raw), offset + 7));
+    }
+    decode_in_surface_row_lane(data, offset, cache)
+}
+
 /// Decode the first coordinate of a tabulated-cylinder directrix control point.
 ///
 /// This lane has its own signed DICT lattices and fixed-width forms. They take
@@ -448,6 +475,18 @@ mod tests {
                 f64::from_be_bytes([0xbf, 0x5c, 0xfa, 0x99, 0x80, 0x36, 0x84, 0]),
                 7
             ))
+        );
+    }
+
+    #[test]
+    fn torus_row_lane_decodes_seven_byte_negative_coordinates() {
+        let data = [0x2d, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf6];
+        let cache = ScalarCache::default();
+
+        assert_eq!(decode_in_torus_row_lane(&data, 0, &cache), Some((-7.0, 7)));
+        assert_ne!(
+            decode_in_surface_row_lane(&data, 0, &cache),
+            Some((-7.0, 7))
         );
     }
 

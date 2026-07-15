@@ -360,6 +360,13 @@ contiguous and the second token ends the body. Earlier scalars in the same
 frame belong to the positional construction. The zero-major-radius sphere form
 uses a different override form.
 
+Within a `geom_type = 26` positional row, `2d b1 b2 b3 b4 b5 b6` immediately
+before a structural control byte or the bounded body end is a seven-byte
+negative coordinate token. Its value is the big-endian IEEE-754 binary64 image
+`c0 b1 b2 b3 b4 b5 b6 00`. The trailing low byte is implicit; the structural
+control byte is not part of the scalar. An unframed `2d` scalar retains the
+generic eight-byte form.
+
 Decoded positional parameter scalars retain their source offset and token length. Structural field binding uses these spans; scalar order alone does not assign frame or radius roles.
 The unresolved seven-byte `73` and `bb` forms retain their exact bytes as one
 scalar slot. Bytes inside either token cannot open another scalar or terminate

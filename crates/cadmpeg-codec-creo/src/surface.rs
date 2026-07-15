@@ -964,12 +964,16 @@ fn positional_body_start(payload: &[u8], row: &SurfaceRow) -> Option<usize> {
 }
 
 fn decode_row_scalar(
-    _kind: SurfaceKind,
+    kind: SurfaceKind,
     body: &[u8],
     offset: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<(f64, usize)> {
-    scalar::decode_in_surface_row_lane(body, offset, cache)
+    if kind == SurfaceKind::TorusOrSphere {
+        scalar::decode_in_torus_row_lane(body, offset, cache)
+    } else {
+        scalar::decode_in_surface_row_lane(body, offset, cache)
+    }
 }
 
 fn scalar_tokens(
@@ -2259,5 +2263,17 @@ mod tests {
         assert_eq!(record.torus_radii(0x24), None);
         record.terminal_scalar_frame.as_mut().expect("frame").slots[1].value = Some(0.0);
         assert_eq!(record.torus_radii(0x26), None);
+    }
+
+    #[test]
+    fn torus_rows_keep_the_byte_after_a_seven_byte_coordinate() {
+        let body = [0x2d, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf6];
+        let cache = scalar::ScalarCache::default();
+
+        assert_eq!(
+            decode_row_scalar(SurfaceKind::TorusOrSphere, &body, 0, &cache),
+            Some((-7.0, 7))
+        );
+        assert_eq!(body[7], 0xf6);
     }
 }
