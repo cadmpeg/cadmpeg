@@ -277,6 +277,42 @@ pub fn decode_named_local_system_coordinate(
     decode_tabulated_cylinder_second_coordinate(data, offset, cache)
 }
 
+/// Decode a complete twelve-slot support frame using the local-system macro
+/// language shared by feature definitions and curve-equation entities.
+pub fn decode_explicit_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
+    let mut values = Vec::with_capacity(12);
+    let mut cursor = 0;
+    while cursor < body.len() && values.len() < 12 {
+        if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
+            values.extend([0.0, 1.0, 0.0]);
+            cursor += 2;
+            continue;
+        }
+        if body.get(cursor) == Some(&0x18)
+            && body
+                .get(cursor + 1)
+                .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
+        {
+            values.push(0.0);
+            cursor += 1;
+            continue;
+        }
+        if body.get(cursor) == Some(&0x10) {
+            values.push(0.0);
+            cursor += 1;
+            continue;
+        }
+        let (value, next) = decode_in_row_lane(body, cursor, cache)?;
+        values.push(value);
+        cursor = next;
+    }
+    (cursor == body.len() && values.len() == 12).then(|| {
+        values
+            .try_into()
+            .expect("twelve bounded local-system slots")
+    })
+}
+
 /// Decode one scalar in a replay-bound tabulated-cylinder envelope frame.
 ///
 /// The frame otherwise uses the second-coordinate lane, but `0x4a` is a

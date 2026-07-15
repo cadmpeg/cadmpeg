@@ -377,7 +377,7 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
                 dimensions,
                 count,
                 explicit_slots: ((dimensions, count) == (4, 3))
-                    .then(|| explicit_local_system_slots(&body, &cache))
+                    .then(|| scalar::decode_explicit_local_system_slots(&body, &cache))
                     .flatten(),
                 body,
                 offset,
@@ -436,40 +436,6 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
         }
     }
     records
-}
-
-fn explicit_local_system_slots(body: &[u8], cache: &scalar::ScalarCache) -> Option<[f64; 12]> {
-    let mut values = Vec::with_capacity(12);
-    let mut cursor = 0;
-    while cursor < body.len() && values.len() < 12 {
-        if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-            values.extend([0.0, 1.0, 0.0]);
-            cursor += 2;
-            continue;
-        }
-        if body.get(cursor) == Some(&0x18)
-            && body
-                .get(cursor + 1)
-                .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
-        {
-            values.push(0.0);
-            cursor += 1;
-            continue;
-        }
-        if body.get(cursor) == Some(&0x10) {
-            values.push(0.0);
-            cursor += 1;
-            continue;
-        }
-        let (value, next) = scalar::decode_in_row_lane(body, cursor, cache)?;
-        values.push(value);
-        cursor = next;
-    }
-    (cursor == body.len() && values.len() == 12).then(|| {
-        values
-            .try_into()
-            .expect("twelve bounded local-system slots")
-    })
 }
 
 fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAssignment> {

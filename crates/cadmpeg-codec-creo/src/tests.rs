@@ -1915,7 +1915,9 @@ fn scan_preserves_allfeatur_recipe_direction_bytes() {
 #[test]
 fn scan_decodes_featdefs_records_and_parameter_frames() {
     let mut payload = b"feat_defs_40\0local_sys\0\xf9\x04\x03".to_vec();
-    payload.extend([0x0f; 12]);
+    for _ in 0..3 {
+        payload.extend_from_slice(&[0x0f, 0x18, 0xe5]);
+    }
     payload.extend_from_slice(b"\xe0\x21transf\0\xf9\x04\x03");
     payload.extend([0xe4; 12]);
     payload.extend_from_slice(b"feat_defs_81\0opaque");
@@ -1931,7 +1933,9 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     );
     assert_eq!(
         scan.feature_definitions[0].parameter_frames[0].decoded_values,
-        Some(vec![0.0; 12])
+        Some(vec![
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0
+        ])
     );
     assert_eq!(
         scan.feature_definitions[0].parameter_frames[1].kind,
@@ -1951,6 +1955,7 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     assert_eq!(frames[0]["kind"], "local_system");
     assert_eq!(frames[0]["decoded_values"].as_array().unwrap().len(), 12);
     assert_eq!(frames[0]["decoded_values"][0], 0.0);
+    assert_eq!(frames[0]["decoded_values"][2], 1.0);
     assert_eq!(frames[1]["kind"], "transform");
     assert_eq!(frames[1]["decoded_values"].as_array().unwrap().len(), 12);
     assert_eq!(frames[1]["decoded_values"][0], 1.0);

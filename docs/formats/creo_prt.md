@@ -821,6 +821,11 @@ Every bounded `feat_defs_<id>` body transfers byte-for-byte to the Creo native
 definition references that record through `native_ref`; ambiguous ownership
 does not produce a reference.
 
+Feature-definition `local_sys f9 04 03` and `transf f9 04 03` bodies use the
+twelve-slot local-system language. `18 e5` expands to `[0, 1, 0]`; `18 10`,
+`18 e4`, `18 e6`, and bare `10` each occupy one zero slot. A frame is numeric
+only when this language consumes the complete bounded body as twelve slots.
+
 A class-923 feature with exactly one resolved plane carrier defines that datum plane by the carrier's model-space origin, normal, and in-plane reference direction.
 
 For a linear section sweep, generated plane carriers parallel to the section normal bound the sweep axially. Their signed offsets are measured from the section origin along the section normal. The extreme nonzero offset on one side defines a blind extrusion from offset zero to that offset; its sign determines the sweep direction. Extreme offsets on opposite sides define a two-sided extrusion. Equal magnitudes select the symmetric form with total length equal to the sum of the magnitudes. Interior axis-normal planes do not shorten the sweep. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain. The first resolved section sweep in feature-definition order forms the base body. A later sweep requires its Boolean operation before it can be committed as an independent body.
