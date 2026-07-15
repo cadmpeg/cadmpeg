@@ -81,6 +81,10 @@ pub(crate) fn transfer(
         .iter()
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
+    let feature_order = objects
+        .iter()
+        .map(|candidate| (feature_id(candidate), candidate.order))
+        .collect::<HashMap<_, _>>();
 
     for object in objects {
         if !is_design_object(&object.type_name) {
@@ -379,9 +383,9 @@ pub(crate) fn transfer(
             .into_iter()
             .filter_map(|dependency| feature_ids.get(dependency).cloned())
             .filter(|dependency| {
-                objects.iter().any(|candidate| {
-                    feature_id(candidate) == *dependency && candidate.order < object.order
-                })
+                feature_order
+                    .get(dependency)
+                    .is_some_and(|order| *order < object.order)
             })
             .collect();
         ir.model.features.push(Feature {
@@ -1382,32 +1386,34 @@ fn bind_parameter_dependencies(parameters: &mut [DesignParameter], objects: &[Ob
             )
         })
         .collect::<Vec<_>>();
+    let mut local = HashMap::<(FeatureId, String), ParameterId>::new();
+    let mut qualified = HashMap::<String, ParameterId>::new();
+    for (id, owner, name) in &candidates {
+        local.insert((owner.clone(), name.clone()), id.clone());
+        if let Some(object) = object_names.get(owner) {
+            qualified.insert(format!("{object}.{name}"), id.clone());
+        }
+    }
     for parameter in parameters {
-        parameter.dependencies = candidates
-            .iter()
-            .filter(|(id, _, _)| *id != parameter.id)
-            .filter(|(_, owner, name)| {
-                let local =
-                    owner == &parameter.owner && contains_identifier(&parameter.expression, name);
-                let qualified = object_names.get(owner).is_some_and(|object| {
-                    contains_identifier(&parameter.expression, &format!("{object}.{name}"))
-                });
-                local || qualified
-            })
-            .map(|(id, _, _)| id.clone())
-            .collect();
+        let mut dependencies = BTreeSet::new();
+        for identifier in expression_identifiers(&parameter.expression) {
+            let dependency = qualified
+                .get(identifier)
+                .or_else(|| local.get(&(parameter.owner.clone(), identifier.to_owned())));
+            if let Some(dependency) = dependency.filter(|id| **id != parameter.id) {
+                dependencies.insert(dependency.clone());
+            }
+        }
+        parameter.dependencies = dependencies.into_iter().collect();
     }
 }
 
-fn contains_identifier(expression: &str, identifier: &str) -> bool {
-    expression.match_indices(identifier).any(|(start, _)| {
-        let end = start + identifier.len();
-        let boundary = |character: Option<char>| {
-            character.is_none_or(|character| !character.is_ascii_alphanumeric() && character != '_')
-        };
-        boundary(expression[..start].chars().next_back())
-            && boundary(expression[end..].chars().next())
-    })
+fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
+    expression
+        .split(|character: char| {
+            !character.is_ascii_alphanumeric() && character != '_' && character != '.'
+        })
+        .filter(|identifier| !identifier.is_empty())
 }
 
 fn neutral_constraint(
@@ -3664,7 +3670,7 @@ fn pattern_kind(
     }
 
     let count = integer_property(properties, "Occurrences")?;
-    if count == 0 || count > u32::MAX as u64 {
+    if count == 0 || count > MAX_SKETCH_RECORDS as u64 {
         return None;
     }
     let count = count as u32;
@@ -3684,7 +3690,7 @@ fn pattern_kind(
     let pattern = if kind.ends_with("LinearPattern") {
         let first = linear_pattern_axis(properties, "", count, mode, objects, properties_by_owner)?;
         let count2 = integer_property(properties, "Occurrences2").unwrap_or(1);
-        if count2 > u32::MAX as u64 {
+        if count2 > MAX_SKETCH_RECORDS as u64 {
             return None;
         }
         if count2 > 1 {

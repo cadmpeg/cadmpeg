@@ -676,15 +676,25 @@ fn partition(len: u64, regions: &[Region]) -> Result<Vec<ArchiveSpan>, CodecErro
         boundaries.insert(region.end);
     }
     let points = boundaries.into_iter().collect::<Vec<_>>();
+    let mut ordered_regions = regions.iter().collect::<Vec<_>>();
+    ordered_regions.sort_by_key(|region| (region.start, region.end));
+    let mut region_index = 0_usize;
     let spans = points
         .windows(2)
         .enumerate()
         .filter_map(|(index, pair)| {
             let (start, end) = (pair[0], pair[1]);
             (start < end).then(|| {
-                let owner = regions
-                    .iter()
-                    .find(|region| region.start <= start && end <= region.end);
+                while ordered_regions
+                    .get(region_index)
+                    .is_some_and(|region| region.end <= start)
+                {
+                    region_index += 1;
+                }
+                let owner = ordered_regions
+                    .get(region_index)
+                    .copied()
+                    .filter(|region| region.start <= start && end <= region.end);
                 let (role, entry) = owner.map_or(("unclassified", None), |region| {
                     (region.role, region.entry.clone())
                 });

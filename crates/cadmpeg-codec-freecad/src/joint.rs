@@ -64,14 +64,12 @@ pub(crate) fn transfer(
                 .collect();
             let placements = slots
                 .iter()
-                .map(|(_, placement, _)| *placement)
-                .collect::<Option<Vec<_>>>()
-                .unwrap_or_default();
+                .map(|(_, placement, _)| placement.unwrap_or_else(crate::product::identity))
+                .collect();
             let offsets = slots
                 .iter()
-                .map(|(_, _, offset)| *offset)
-                .collect::<Option<Vec<_>>>()
-                .unwrap_or_default();
+                .map(|(_, _, offset)| offset.unwrap_or_else(crate::product::identity))
+                .collect();
             (references, placements, offsets)
         };
         let parameters = owned

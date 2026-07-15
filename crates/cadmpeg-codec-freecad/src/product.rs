@@ -336,6 +336,11 @@ fn linked_prototype_transform(
     placements: &HashMap<&str, [[f64; 4]; 4]>,
     stack: &mut Vec<String>,
 ) -> Result<[[f64; 4]; 4], CodecError> {
+    if stack.len() >= 256 {
+        return Err(CodecError::Malformed(
+            "nested link transform depth limit exceeded".into(),
+        ));
+    }
     if record.link_transform != Some(true) || record.external_document.is_some() {
         return Ok(identity());
     }
@@ -439,6 +444,11 @@ fn resolve_container_transform(
     local: [[f64; 4]; 4],
     stack: &mut Vec<String>,
 ) -> Result<[[f64; 4]; 4], CodecError> {
+    if stack.len() >= 256 {
+        return Err(CodecError::Malformed(
+            "product container depth limit exceeded".into(),
+        ));
+    }
     let Some(parent) = parent else {
         return Ok(local);
     };
@@ -464,7 +474,7 @@ fn resolve_container_transform(
     result
 }
 
-fn identity() -> [[f64; 4]; 4] {
+pub(crate) fn identity() -> [[f64; 4]; 4] {
     [
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],

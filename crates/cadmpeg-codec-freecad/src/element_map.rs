@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent string-table and element-map recovery.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -32,6 +32,7 @@ pub(crate) fn parse(
         .collect::<HashMap<_, _>>();
 
     let mut tables = Vec::new();
+    let mut claimed_new_layout_records = HashSet::new();
     for node in xml
         .descendants()
         .filter(|node| node.has_tag_name("StringHasher"))
@@ -48,6 +49,7 @@ pub(crate) fn parse(
                 .find(|sibling| {
                     sibling.has_tag_name("StringHasher2")
                         && sibling.range().start > node.range().end
+                        && !claimed_new_layout_records.contains(&sibling.range().start)
                 })
                 .ok_or_else(|| {
                     CodecError::Malformed("StringHasher new=1 has no StringHasher2 record".into())
@@ -55,6 +57,9 @@ pub(crate) fn parse(
         } else {
             node
         };
+        if new_layout {
+            claimed_new_layout_records.insert(data_node.range().start);
+        }
         let source_entry = data_node.attribute("file").filter(|name| !name.is_empty());
         let bytes = if let Some(name) = source_entry {
             *entry_data.get(name).ok_or_else(|| {
@@ -521,7 +526,7 @@ struct ParsedMap {
 fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("element map is not UTF-8".into()))?;
-    let mut tokens = text.split_whitespace().peekable();
+    let mut tokens = text.split_whitespace();
     if side_entry {
         expect(&mut tokens, "BeginElementMap")?;
         expect(&mut tokens, "v1")?;

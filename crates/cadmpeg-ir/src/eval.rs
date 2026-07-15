@@ -339,10 +339,9 @@ fn polyline_point(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Opti
             .collect::<Vec<_>>();
         &implicit
     };
-    let segment = parameters
-        .windows(2)
-        .position(|window| (t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1]))
-        .or_else(|| (t == *parameters.last()?).then_some(parameters.len() - 2))?;
+    let segment = parameters.windows(2).position(|window| {
+        (t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1])
+    })?;
     let width = parameters[segment + 1] - parameters[segment];
     if width == 0.0 || !width.is_finite() {
         return None;

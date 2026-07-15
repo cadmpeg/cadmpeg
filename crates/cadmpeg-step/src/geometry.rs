@@ -15,7 +15,9 @@ use crate::writer::{real, refs, Emitter, Ref};
 pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
     match surface {
         SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => false,
-        SurfaceGeometry::Transformed { basis, .. } => surface_is_supported(basis),
+        SurfaceGeometry::Transformed { basis, transform } => {
+            similarity_transform(transform) && surface_is_supported(basis)
+        }
         _ => true,
     }
 }
@@ -23,8 +25,79 @@ pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
 pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
     match curve {
         CurveGeometry::Unknown { .. } => false,
-        CurveGeometry::Transformed { basis, .. } => curve_is_supported(basis),
+        CurveGeometry::Transformed { basis, transform } => {
+            similarity_transform(transform) && curve_is_supported(basis)
+        }
         _ => true,
+    }
+}
+
+fn similarity_transform(transform: &Transform) -> bool {
+    if transform
+        .rows
+        .iter()
+        .flatten()
+        .any(|value| !value.is_finite())
+        || transform.rows[3][0].abs() > 1.0e-12
+        || transform.rows[3][1].abs() > 1.0e-12
+        || transform.rows[3][2].abs() > 1.0e-12
+        || (transform.rows[3][3] - 1.0).abs() > 1.0e-12
+    {
+        return false;
+    }
+    let columns = [
+        Vector3::new(
+            transform.rows[0][0],
+            transform.rows[1][0],
+            transform.rows[2][0],
+        ),
+        Vector3::new(
+            transform.rows[0][1],
+            transform.rows[1][1],
+            transform.rows[2][1],
+        ),
+        Vector3::new(
+            transform.rows[0][2],
+            transform.rows[1][2],
+            transform.rows[2][2],
+        ),
+    ];
+    let scale = columns[0].norm();
+    let tolerance = 1.0e-10 * scale.max(1.0);
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    scale > 1.0e-12
+        && columns
+            .iter()
+            .all(|column| (column.norm() - scale).abs() <= tolerance)
+        && dot(columns[0], columns[1]).abs() <= tolerance * scale
+        && dot(columns[0], columns[2]).abs() <= tolerance * scale
+        && dot(columns[1], columns[2]).abs() <= tolerance * scale
+}
+
+#[cfg(test)]
+mod support_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_transform_that_step_operator_cannot_represent() {
+        let anisotropic = Transform {
+            rows: [
+                [2.0, 0.0, 0.0, 0.0],
+                [0.0, 3.0, 0.0, 0.0],
+                [0.0, 0.0, 2.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        };
+        let curve = CurveGeometry::Transformed {
+            basis: Box::new(CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            }),
+            transform: anisotropic,
+        };
+
+        assert!(!curve_is_supported(&curve));
     }
 }
 

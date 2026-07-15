@@ -225,7 +225,13 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
                 property.id
             )));
         }
-        if source_text[start..end] != property.raw_xml {
+        let retained = source_text.get(start..end).ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "retained span for property {} is not on UTF-8 boundaries",
+                property.id
+            ))
+        })?;
+        if retained != property.raw_xml {
             return Err(CodecError::Malformed(format!(
                 "retained bytes disagree with property {} provenance",
                 property.id

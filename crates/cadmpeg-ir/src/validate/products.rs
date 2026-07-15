@@ -226,14 +226,9 @@ fn occurrence_prototype_cycle<'a>(
     components: &HashMap<&'a str, &'a crate::products::Component>,
     occurrence_by_native: &HashMap<&'a str, &'a crate::products::Occurrence>,
 ) -> bool {
-    fn visit<'a>(
-        current: &'a str,
-        start: &str,
-        occurrences: &HashMap<&'a str, &'a crate::products::Occurrence>,
-        components: &HashMap<&'a str, &'a crate::products::Component>,
-        occurrence_by_native: &HashMap<&'a str, &'a crate::products::Occurrence>,
-        seen: &mut HashSet<&'a str>,
-    ) -> bool {
+    let mut current = start;
+    let mut seen = HashSet::from([start]);
+    loop {
         let Some(occurrence) = occurrences.get(current) else {
             return false;
         };
@@ -247,25 +242,14 @@ fn occurrence_prototype_cycle<'a>(
         else {
             return false;
         };
-        target.id.0 == start
-            || (seen.insert(target.id.0.as_str())
-                && visit(
-                    target.id.0.as_str(),
-                    start,
-                    occurrences,
-                    components,
-                    occurrence_by_native,
-                    seen,
-                ))
+        current = target.id.0.as_str();
+        if current == start {
+            return true;
+        }
+        if !seen.insert(current) {
+            return false;
+        }
     }
-    visit(
-        start,
-        start,
-        occurrences,
-        components,
-        occurrence_by_native,
-        &mut HashSet::from([start]),
-    )
 }
 
 fn finite_transform(transform: &[[f64; 4]; 4]) -> bool {
@@ -293,21 +277,22 @@ fn same_transform(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> bool {
 }
 
 fn component_cycle(start: &str, components: &HashMap<&str, &crate::products::Component>) -> bool {
-    fn visit<'a>(
-        current: &'a str,
-        start: &str,
-        components: &HashMap<&'a str, &'a crate::products::Component>,
-        seen: &mut HashSet<&'a str>,
-    ) -> bool {
-        components.get(current).is_some_and(|component| {
-            component.components.iter().any(|child| {
-                child.0 == start
-                    || (seen.insert(child.0.as_str())
-                        && visit(child.0.as_str(), start, components, seen))
-            })
-        })
+    let mut seen = HashSet::from([start]);
+    let mut stack = vec![start];
+    while let Some(current) = stack.pop() {
+        let Some(component) = components.get(current) else {
+            continue;
+        };
+        for child in &component.components {
+            if child.0 == start {
+                return true;
+            }
+            if seen.insert(child.0.as_str()) {
+                stack.push(child.0.as_str());
+            }
+        }
     }
-    visit(start, start, components, &mut HashSet::from([start]))
+    false
 }
 
 fn invalid(findings: &mut Vec<Finding>, entity: &str, message: &str) {

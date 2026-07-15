@@ -853,7 +853,7 @@ impl<'a> Builder<'a> {
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
-                    "{} edge(s) have no typed 3D curve and were omitted from \
+                    "{} edge(s) have no typed 3D curve or carry a STEP-unsupported transform and were omitted from \
                      their edge loops (STEP EDGE_CURVE requires a 3D curve)",
                     self.curveless_edges.len()
                 ),
@@ -864,7 +864,7 @@ impl<'a> Builder<'a> {
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
-                    "{} face(s) rest on an unknown (undecoded) surface and were omitted \
+                    "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
                      from the STEP shell (an ADVANCED_FACE requires a surface); their \
                      topology remains in the IR",
                     self.unknown_surface_faces.len()

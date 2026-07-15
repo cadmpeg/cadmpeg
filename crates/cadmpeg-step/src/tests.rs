@@ -562,8 +562,12 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
         triangles: Vec::new(),
         chordal_deflection: 0.1,
     };
-    write_step(&polygonal, &mut Vec::new(), &StepWriteOptions::default())
+    let report = write_step(&polygonal, &mut Vec::new(), &StepWriteOptions::default())
         .expect("polygonal face is reported as an export loss");
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.message.contains("unknown or STEP-unsupported surface")
+    }));
 
     let mut nested_unknown = unit_cube();
     let curve_id = nested_unknown.model.edges[0].curve.clone().unwrap();
@@ -577,12 +581,16 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
         basis: Box::new(CurveGeometry::Unknown { record: None }),
         transform: cadmpeg_ir::transform::Transform::identity(),
     };
-    write_step(
+    let report = write_step(
         &nested_unknown,
         &mut Vec::new(),
         &StepWriteOptions::default(),
     )
     .expect("transformed unknown curve is reported as an export loss");
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.message.contains("STEP-unsupported transform")
+    }));
 }
 
 #[test]

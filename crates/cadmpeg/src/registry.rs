@@ -45,19 +45,13 @@ impl Registry {
 
     /// Return the strongest codec match above [`Confidence::No`].
     pub fn detect<'a>(&'a self, prefix: &[u8]) -> Option<(&'a dyn Codec, Confidence)> {
-        // Earlier codecs have explicit precedence when generic container
-        // signatures tie; deeper inspection will still validate the choice.
+        // Later codecs have explicit precedence when generic container
+        // signatures tie. This preserves F3D routing for marker-less ZIP prefixes.
         self.codecs
             .iter()
             .map(|c| (c.as_ref(), c.detect(prefix)))
             .filter(|(_, conf)| *conf > Confidence::No)
-            .reduce(|best, candidate| {
-                if candidate.1 > best.1 {
-                    candidate
-                } else {
-                    best
-                }
-            })
+            .max_by_key(|(_, confidence)| *confidence)
     }
 
     /// Return the codec with the given stable format identifier.
@@ -124,10 +118,10 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_zip_uses_first_registered_codec_precedence() {
+    fn ambiguous_zip_uses_last_registered_codec_precedence() {
         let registry = Registry::with_builtins();
         let (codec, confidence) = registry.detect(b"PK\x03\x04 markerless").unwrap();
-        assert_eq!(codec.id(), "fcstd");
+        assert_eq!(codec.id(), "f3d");
         assert_eq!(confidence, cadmpeg_ir::codec::Confidence::Low);
     }
 }

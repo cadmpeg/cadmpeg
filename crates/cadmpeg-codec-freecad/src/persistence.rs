@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generic schema-4 object and property graph recovery.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::codec::CodecError;
 
@@ -9,6 +9,9 @@ use crate::native::{
     DynamicPropertyMeta, ExtensionRecord, LinkTarget, ObjectRecord, PropertyFamily, PropertyRecord,
     ValueRecord,
 };
+
+const MAX_OBJECTS: usize = 1_000_000;
+const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
 
 /// Recovered persistence graph.
 pub struct Graph {
@@ -50,19 +53,32 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
         dependency_map.insert(name, dependencies);
     }
 
-    let data_by_name = data_node
+    let mut data_by_name = HashMap::new();
+    for node in data_node
         .children()
         .filter(|node| node.has_tag_name("Object"))
-        .filter_map(|node| node.attribute("name").map(|name| (name.to_owned(), node)))
-        .collect::<HashMap<_, _>>();
+    {
+        let name = required_attr(node, "name")?;
+        if data_by_name.insert(name.clone(), node).is_some() {
+            return Err(CodecError::Malformed(format!(
+                "duplicate ObjectData name {name}"
+            )));
+        }
+    }
 
     let mut objects = Vec::new();
+    let mut object_names = HashSet::new();
     for (order, node) in objects_node
         .children()
         .filter(|node| node.has_tag_name("Object"))
         .enumerate()
     {
         let name = required_attr(node, "name")?;
+        if !object_names.insert(name.clone()) {
+            return Err(CodecError::Malformed(format!(
+                "duplicate object declaration name {name}"
+            )));
+        }
         let type_name = required_attr(node, "type")?;
         let id = object_id(&name);
         let data_node = data_by_name.get(&name);
@@ -96,6 +112,9 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
             "Objects Count={declared_count} but {} declarations were found",
             objects.len()
         )));
+    }
+    if declared_count > MAX_OBJECTS {
+        return Err(CodecError::Malformed("object count limit exceeded".into()));
     }
     if data_by_name.len() != objects.len() {
         return Err(CodecError::Malformed(
@@ -277,21 +296,34 @@ fn parse_properties(
     for (order, node) in nodes.into_iter().enumerate() {
         let name = required_attr(node, "name")?;
         let type_name = required_attr(node, "type")?;
+        let mut retained_value_bytes = 0_usize;
         let values = node
             .descendants()
             .filter(|value| value.is_element() && *value != node)
             .enumerate()
-            .map(|(value_order, value)| ValueRecord {
-                tag: value.tag_name().name().to_owned(),
-                order: value_order,
-                attributes: value
-                    .attributes()
-                    .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-                    .collect(),
-                text: value.text().map(str::to_owned),
-                raw_xml: text[value.range()].to_owned(),
+            .map(|(value_order, value)| {
+                retained_value_bytes = retained_value_bytes
+                    .checked_add(value.range().len())
+                    .filter(|total| *total <= MAX_PROPERTY_VALUE_XML_BYTES)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "property {name} retained value XML limit exceeded"
+                        ))
+                    })?;
+                Ok(ValueRecord {
+                    tag: value.tag_name().name().to_owned(),
+                    order: value_order,
+                    attributes: value
+                        .attributes()
+                        .map(|attribute| {
+                            (attribute.name().to_owned(), attribute.value().to_owned())
+                        })
+                        .collect(),
+                    text: value.text().map(str::to_owned),
+                    raw_xml: text[value.range()].to_owned(),
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, CodecError>>()?;
         let links = if type_name.contains("PropertyLink") || type_name.contains("PropertyXLink") {
             parse_link_targets(node, &values)
         } else {

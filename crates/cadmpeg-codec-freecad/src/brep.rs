@@ -813,6 +813,11 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
                 let mut factors = Vec::new();
                 let mut transform = Transform::identity();
                 loop {
+                    if factors.len() >= 1_000_000 {
+                        return Err(CodecError::Malformed(
+                            "binary location factor-count limit exceeded".into(),
+                        ));
+                    }
                     let referenced = cursor.i32("binary location factor")?;
                     if referenced == 0 {
                         break;
@@ -2350,7 +2355,7 @@ fn parse_polygons3d(
     let count = section_counts.get("Polygon3D").copied().unwrap_or(0);
     let mut polygons = Vec::with_capacity(count);
     for _ in 0..count {
-        let node_count = cursor.count("3D polygon node count", 10_000_000)?;
+        let node_count = cursor.count("3D polygon node count", 1_000_000)?;
         let has_parameters = cursor.boolean("3D polygon parameter flag")?;
         let deflection = cursor.real("3D polygon deflection")?;
         let mut nodes = Vec::with_capacity(node_count);
@@ -2387,7 +2392,7 @@ fn parse_polygons_on_triangulations(
         .unwrap_or(0);
     let mut polygons = Vec::with_capacity(count);
     for _ in 0..count {
-        let node_count = cursor.count("polygon-on-triangulation node count", 10_000_000)?;
+        let node_count = cursor.count("polygon-on-triangulation node count", 1_000_000)?;
         let mut nodes = Vec::with_capacity(node_count);
         for _ in 0..node_count {
             let node = cursor.count("polygon-on-triangulation node index", u32::MAX as usize)?;
@@ -2433,8 +2438,8 @@ fn parse_triangulations(
     let count = section_counts.get("Triangulations").copied().unwrap_or(0);
     let mut triangulations = Vec::with_capacity(count);
     for _ in 0..count {
-        let node_count = cursor.count("triangulation node count", 10_000_000)?;
-        let triangle_count = cursor.count("triangulation triangle count", 10_000_000)?;
+        let node_count = cursor.count("triangulation node count", 1_000_000)?;
+        let triangle_count = cursor.count("triangulation triangle count", 1_000_000)?;
         let has_uv = cursor.boolean("triangulation UV flag")?;
         let has_normals = topology_version >= 3 && cursor.boolean("triangulation normal flag")?;
         let deflection = cursor.real("triangulation deflection")?;

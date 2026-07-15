@@ -821,7 +821,24 @@ fn decode_color(value: u32, transparency: Option<f32>) -> Color {
         r: ((value >> 24) & 0xff) as f32 / 255.0,
         g: ((value >> 16) & 0xff) as f32 / 255.0,
         b: ((value >> 8) & 0xff) as f32 / 255.0,
-        a: 1.0 - transparency.unwrap_or(0.0),
+        a: transparency.map_or((value & 0xff) as f32 / 255.0, |value| 1.0 - value),
+    }
+}
+
+#[cfg(test)]
+mod color_tests {
+    use super::decode_color;
+
+    #[test]
+    fn packed_alpha_is_used_without_a_transparency_property() {
+        let color = decode_color(0x11223340, None);
+        assert!((color.a - 64.0 / 255.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn transparency_property_overrides_packed_alpha() {
+        let color = decode_color(0x11223300, Some(0.25));
+        assert!((color.a - 0.75).abs() < f32::EPSILON);
     }
 }
 
