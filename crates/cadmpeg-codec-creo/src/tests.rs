@@ -1660,10 +1660,8 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
     let allfeatur = b"\x04\xeb\x04\xe0\x21geoms_affected\0\xf8\x03\x07\x80\x80\x09\
         \xe0\x22contours\0\xf8\x01\x2a\xe0\x01parent_table\0\xf8\x02\x01\x03"
         .to_vec();
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.feature_affected_ids.len(), 3);
     assert_eq!(
@@ -1681,6 +1679,13 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
         crate::feature::AffectedIdKind::Parents
     );
     assert_eq!(scan.feature_affected_ids[2].ids, vec![1, 3]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_affected_ids"];
+    assert_eq!(records.len(), 3);
+    assert_eq!(records[0].fields["owner_feature_id"], 4);
+    assert_eq!(records[0].fields["kind"], "geometry");
+    assert_eq!(records[0].fields["ids"][1], 128);
 }
 
 #[test]
@@ -1845,6 +1850,10 @@ fn scan_partitions_allfeatur_positional_round_operands() {
             radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
         } if selection == "creo:allfeatur:replay_edgs_affected#4:9"
     ));
+    let records =
+        &result.ir.native.namespace("creo").unwrap().arenas["feature_replay_affected_ids"];
+    assert_eq!(records[0].fields["geometry_extent"], "explicit");
+    assert_eq!(records[0].fields["edge_ids"][0], 9);
 }
 
 #[test]
@@ -1852,10 +1861,8 @@ fn scan_preserves_allfeatur_recipe_direction_bytes() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     let allfeatur = b"\x04\xeb\x04\xe0\x21geoms_affected\0\xf8\x01\x07\xe0\x20direction\0\x00\xe0\x20direction2\0\x43".to_vec();
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.feature_direction_bytes.len(), 2);
     assert_eq!(
@@ -1866,6 +1873,12 @@ fn scan_preserves_allfeatur_recipe_direction_bytes() {
         scan.feature_direction_bytes[1].value,
         crate::feature::DirectionValue::Raw(0x43)
     );
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_directions"];
+    assert_eq!(records[0].fields["value_kind"], "side_flag");
+    assert_eq!(records[0].fields["side_flag"], false);
+    assert_eq!(records[1].fields["value_kind"], "raw");
+    assert_eq!(records[1].fields["raw_value"], 0x43);
 }
 
 #[test]

@@ -312,6 +312,40 @@ struct CreoFeatureGeometryTableRecord {
     source_section: String,
 }
 
+#[derive(Serialize)]
+struct CreoFeatureAffectedIdsRecord {
+    id: String,
+    owner_feature_id: u32,
+    kind: &'static str,
+    ids: Vec<u32>,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoFeatureReplayAffectedIdsRecord {
+    id: String,
+    owner_feature_id: u32,
+    geometry_ids: Vec<u32>,
+    edge_ids: Vec<u32>,
+    geometry_extent: &'static str,
+    edge_extent: &'static str,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoFeatureDirectionRecord {
+    id: String,
+    owner_feature_id: u32,
+    lane: &'static str,
+    value_kind: &'static str,
+    side_flag: Option<bool>,
+    raw_value: u8,
+    offset: usize,
+    source_section: String,
+}
+
 fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
     scan.feature_entities
         .iter()
@@ -384,6 +418,82 @@ fn feature_geometry_table_records(scan: &ContainerScan) -> Vec<CreoFeatureGeomet
             entry_ids: table.entry_ids.clone(),
             offset: table.offset,
             source_section: source_section(scan, table.offset),
+        })
+        .collect()
+}
+
+fn affected_kind(kind: crate::feature::AffectedIdKind) -> &'static str {
+    match kind {
+        crate::feature::AffectedIdKind::Geometry => "geometry",
+        crate::feature::AffectedIdKind::Edges => "edges",
+        crate::feature::AffectedIdKind::StrongParents => "strong_parents",
+        crate::feature::AffectedIdKind::Parents => "parents",
+        crate::feature::AffectedIdKind::Contours => "contours",
+    }
+}
+
+fn feature_affected_id_records(scan: &ContainerScan) -> Vec<CreoFeatureAffectedIdsRecord> {
+    scan.feature_affected_ids
+        .iter()
+        .map(|record| CreoFeatureAffectedIdsRecord {
+            id: format!("creo:feature:affected_ids#{}", record.offset),
+            owner_feature_id: record.feature_id,
+            kind: affected_kind(record.kind),
+            ids: record.ids.clone(),
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn extent_source(source: crate::feature::ReplayExtentSource) -> &'static str {
+    match source {
+        crate::feature::ReplayExtentSource::Explicit => "explicit",
+        crate::feature::ReplayExtentSource::Inherited => "inherited",
+    }
+}
+
+fn feature_replay_affected_id_records(
+    scan: &ContainerScan,
+) -> Vec<CreoFeatureReplayAffectedIdsRecord> {
+    scan.feature_replay_affected_ids
+        .iter()
+        .map(|record| CreoFeatureReplayAffectedIdsRecord {
+            id: format!("creo:feature:replay_affected_ids#{}", record.offset),
+            owner_feature_id: record.feature_id,
+            geometry_ids: record.geometry_ids.clone(),
+            edge_ids: record.edge_ids.clone(),
+            geometry_extent: extent_source(record.geometry_extent),
+            edge_extent: extent_source(record.edge_extent),
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn feature_direction_records(scan: &ContainerScan) -> Vec<CreoFeatureDirectionRecord> {
+    scan.feature_direction_bytes
+        .iter()
+        .map(|record| {
+            let (value_kind, side_flag, raw_value) = match record.value {
+                crate::feature::DirectionValue::SideFlag(value) => {
+                    ("side_flag", Some(value), u8::from(value))
+                }
+                crate::feature::DirectionValue::Raw(value) => ("raw", None, value),
+            };
+            CreoFeatureDirectionRecord {
+                id: format!("creo:feature:direction#{}", record.offset),
+                owner_feature_id: record.feature_id,
+                lane: match record.lane {
+                    crate::feature::DirectionLane::Primary => "primary",
+                    crate::feature::DirectionLane::Secondary => "secondary",
+                },
+                value_kind,
+                side_flag,
+                raw_value,
+                offset: record.offset,
+                source_section: source_section(scan, record.offset),
+            }
         })
         .collect()
 }
@@ -15378,6 +15488,54 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("feature_geometry_tables", &feature_geometry_tables)?;
+    }
+    let feature_affected_ids = feature_affected_id_records(scan);
+    if !feature_affected_ids.is_empty() {
+        for record in &feature_affected_ids {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "feature_affected_ids",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_affected_ids", &feature_affected_ids)?;
+    }
+    let feature_replay_affected_ids = feature_replay_affected_id_records(scan);
+    if !feature_replay_affected_ids.is_empty() {
+        for record in &feature_replay_affected_ids {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "feature_replay_affected_ids",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_replay_affected_ids", &feature_replay_affected_ids)?;
+    }
+    let feature_directions = feature_direction_records(scan);
+    if !feature_directions.is_empty() {
+        for record in &feature_directions {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "feature_direction",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_directions", &feature_directions)?;
     }
     let sketches = sketch_records(scan);
     if !sketches.is_empty() {
