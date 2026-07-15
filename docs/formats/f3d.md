@@ -724,7 +724,7 @@ On a body, `generic_tag_attrib_def` supplies a design/construction ID distinct f
 
 #### Edge-recipe incidence matching
 
-For each selector, an edge is an incidence match when, for every present clause entry, its incident loops contain both encoded boundary-count and coedge-ordinal incidences. Each selector retains all matching changed historical edge slots in stable slot order and separately retains the edge slot when that set is a singleton. One selector's incidence set does not resolve the operand independently; resolution uses the complete selector/reference intersection. A construction group with a known preceding history state retains that state and every ordered operand identity even when none of its edge identities resolves.
+For each selector, an edge is an incidence match when, for every present clause entry, its incident loops contain both encoded boundary-count and coedge-ordinal incidences. Each selector retains all matching changed historical edge slots in stable slot order and separately retains the edge slot when that set is a singleton. Primary operand resolution uses the complete selector/reference intersection. When that intersection is empty, exactly one singleton persistent-reference edge resolves the operand when the edge also belongs to the deleted boundary set and appears in a selector's incidence, boundary-count, or topology-triplet candidates. A construction group with a known preceding history state retains that state and every ordered operand identity even when none of its edge identities resolves.
 
 ### 8.2 Materials
 

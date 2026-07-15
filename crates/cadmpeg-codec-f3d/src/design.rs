@@ -1509,6 +1509,48 @@ pub(crate) fn resolve_edge_operand_candidates(operand: &DesignEdgeOperand) -> Op
             .iter()
             .map(|context| context.changed_reference_edge_slots.as_slice()),
     )
+    .or_else(|| {
+        corroborated_deleted_reference_candidate(
+            &operand.recipe_selectors,
+            operand
+                .recipe_reference_contexts
+                .iter()
+                .map(|context| context.changed_reference_edge_slots.as_slice()),
+            &operand.deleted_boundary_edge_slots,
+        )
+    })
+}
+
+fn corroborated_deleted_reference_candidate<'a>(
+    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
+    deleted_boundary_edges: &[i64],
+) -> Option<i64> {
+    let selector_supports = |edge: i64| {
+        selector_contexts.iter().any(|selector| {
+            selector.incidence_matching_edge_slots.contains(&edge)
+                || selector.boundary_count_matching_edge_slots.contains(&edge)
+                || selector
+                    .clause_triplet_edge_slots
+                    .iter()
+                    .flatten()
+                    .any(|pair| pair.iter().any(|edges| edges.contains(&edge)))
+        })
+    };
+    let mut candidates = reference_edge_sets
+        .into_iter()
+        .filter_map(|edges| match edges {
+            [edge] => Some(*edge),
+            _ => None,
+        })
+        .filter(|edge| deleted_boundary_edges.contains(edge) && selector_supports(*edge))
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    match candidates.as_slice() {
+        [edge] => Some(*edge),
+        _ => None,
+    }
 }
 
 fn resolved_edge_candidate_intersection<'a>(
@@ -15674,6 +15716,26 @@ mod relation_tests {
         assert_eq!(
             resolved_edge_candidate_intersection(&[common.clone()], [&[17][..]]),
             Some(17)
+        );
+        assert_eq!(
+            super::corroborated_deleted_reference_candidate(
+                &[common.clone()],
+                [&[20][..], &[17][..]],
+                &[17, 19],
+            ),
+            Some(17)
+        );
+        assert_eq!(
+            super::corroborated_deleted_reference_candidate(
+                &[common.clone()],
+                [&[17][..], &[18][..]],
+                &[17, 18],
+            ),
+            None
+        );
+        assert_eq!(
+            super::corroborated_deleted_reference_candidate(&[common.clone()], [&[17][..]], &[19],),
+            None
         );
         assert_eq!(
             resolved_edge_candidate_intersection(&[common], [&[19][..]]),
