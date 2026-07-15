@@ -20,10 +20,14 @@ pub struct RetainedSourceRecord {
     pub byte_len: u64,
     /// Lowercase hexadecimal SHA-256 of `data`.
     pub sha256: String,
-    /// Retained bytes. Recovery records always contain data.
-    #[serde(with = "crate::bytes")]
-    #[schemars(with = "String")]
-    pub data: Vec<u8>,
+    /// Retained bytes, when available. Opaque ledger recovery requires data.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::bytes::option"
+    )]
+    #[schemars(with = "Option<String>")]
+    pub data: Option<Vec<u8>>,
 }
 
 /// Source-fidelity schema version produced by this build.
@@ -100,7 +104,7 @@ mod tests {
                 offset: 0,
                 byte_len: data.len() as u64,
                 sha256: crate::hash::sha256_hex(data),
-                data: data.to_vec(),
+                data: Some(data.to_vec()),
             }],
             ..SourceFidelity::default()
         }
@@ -143,6 +147,22 @@ mod tests {
         assert!(messages
             .iter()
             .any(|message| message.contains("digest disagrees")));
+    }
+
+    #[test]
+    fn rejects_opaque_recovery_without_retained_bytes() {
+        let mut sidecar = recovery_sidecar(b"opaque");
+        sidecar.retained_records[0].data = None;
+        let report = validate_with_source_fidelity(
+            &CadIr::empty(crate::units::Units::default()),
+            &sidecar,
+            Vec::new(),
+        );
+
+        assert!(report.findings.iter().any(|finding| {
+            finding.check == Check::ByteAccounting
+                && finding.message.contains("has no recovery bytes")
+        }));
     }
 
     #[test]

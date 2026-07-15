@@ -39,23 +39,25 @@ pub(super) fn check_byte_ledger(
                 format!("retained source record {:?} has an empty stream", record.id),
             );
         }
-        if record.byte_len != record.data.len() as u64 {
-            finding(
-                findings,
-                format!(
-                    "retained source record {:?} byte length disagrees with its data",
-                    record.id
-                ),
-            );
-        }
-        if crate::hash::sha256_hex(&record.data) != record.sha256 {
-            finding(
-                findings,
-                format!(
-                    "retained source record {:?} digest disagrees with its data",
-                    record.id
-                ),
-            );
+        if let Some(data) = &record.data {
+            if record.byte_len != data.len() as u64 {
+                finding(
+                    findings,
+                    format!(
+                        "retained source record {:?} byte length disagrees with its data",
+                        record.id
+                    ),
+                );
+            }
+            if crate::hash::sha256_hex(data) != record.sha256 {
+                finding(
+                    findings,
+                    format!(
+                        "retained source record {:?} digest disagrees with its data",
+                        record.id
+                    ),
+                );
+            }
         }
     }
     if ledger.source_length == 0 {
@@ -127,6 +129,14 @@ pub(super) fn check_byte_ledger(
                         findings,
                         format!(
                             "opaque byte ledger span and retained record {id:?} ranges disagree"
+                        ),
+                    );
+                }
+                if record.data.is_none() {
+                    finding(
+                        findings,
+                        format!(
+                            "opaque byte ledger span retained record {id:?} has no recovery bytes"
                         ),
                     );
                 }

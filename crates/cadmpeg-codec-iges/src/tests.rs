@@ -7442,7 +7442,10 @@ fn decode_retains_and_accounts_for_post_terminate_records() {
         .iter()
         .find(|record| Some(record.id.as_str()) == span.retained_record.as_deref())
         .unwrap();
-    assert_eq!(retained.data, b"transport padding");
+    assert_eq!(
+        retained.data.as_deref(),
+        Some(b"transport padding".as_slice())
+    );
     assert_eq!(retained.byte_len, 17);
     assert_eq!(
         retained.sha256,

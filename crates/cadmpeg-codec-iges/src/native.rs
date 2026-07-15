@@ -1265,7 +1265,7 @@ pub(crate) fn store(
                 offset: span.start,
                 byte_len: span.end.saturating_sub(span.start),
                 sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                data: bytes,
+                data: Some(bytes),
             }
         })
         .collect::<Vec<_>>();
