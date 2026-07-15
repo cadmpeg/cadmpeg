@@ -523,7 +523,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralCurveDefinition::Unknown { .. } => {}
         }
     }
-    let native_unknowns = ir.all_native_unknown_refs().unwrap_or_default();
+    let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
     for link in native_unknowns.iter().flat_map(|record| &record.links) {
         surfaces.insert(link);
         curves.insert(link);

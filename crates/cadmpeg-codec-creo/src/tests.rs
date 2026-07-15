@@ -1427,7 +1427,7 @@ fn decode_annotations_cover_every_emitted_entity() {
     let mut reader = Cursor::new(data);
     let result = decode::decode(&mut reader, &DecodeOptions::default()).expect("decode");
 
-    let unknowns = result.ir.native_unknown_refs("creo").unwrap();
+    let unknowns = result.ir.native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 3);
     assert_eq!(result.ir.model.surfaces.len(), 1);
     for unknown in &unknowns {
@@ -1573,7 +1573,7 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
 
     assert!(!result.report.geometry_transferred);
     // The two PSB geometry sections are preserved as unknown records.
-    let unknowns = result.ir.native_unknown_refs("creo").unwrap();
+    let unknowns = result.ir.native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 2);
     assert!(unknowns.iter().any(|u| u.id.0.contains("VisibGeom")));
     assert!(unknowns.iter().any(|u| u.id.0.contains("NovisGeom")));

@@ -68,46 +68,49 @@ fn decode_inner(
     let scan = container::scan(reader)?;
 
     if options.container_only {
-        let (ir, annotations) = build_metadata_ir(&scan)?;
+        let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return decode_result(ir, report, annotations);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
         if let Some((decoded, report)) = try_decode_brep(&scan, &streams) {
-            let (ir, annotations) = build_geometry_ir(
+            let (ir, annotations, unknowns) = build_geometry_ir(
                 &scan,
                 streams[decoded.selected].block,
                 &streams[decoded.selected].header,
                 decoded.brep,
                 &decoded.configuration_bodies,
             )?;
-            return decode_result(ir, report, annotations);
+            return decode_result(ir, report, annotations, unknowns);
         }
     }
 
-    let (ir, annotations) = build_metadata_ir(&scan)?;
+    let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
-    decode_result(ir, report, annotations)
+    decode_result(ir, report, annotations, unknowns)
 }
 
 fn decode_result(
     mut ir: CadIr,
     report: DecodeReport,
     annotations: Annotations,
+    mut unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()
     };
-    source_fidelity.separate_native_unknown_records(&mut ir, "sldprt")?;
-    let product_records = ir
-        .native_unknown_refs("sldprt")?
-        .into_iter()
-        .filter(|record| record.id.0 != "sldprt:file:source-image#0")
-        .collect::<Vec<_>>();
-    ir.set_native_unknown_refs("sldprt", &product_records)?;
+    let source_image = unknowns
+        .iter()
+        .position(|record| record.id.0 == "sldprt:file:source-image#0")
+        .map(|index| unknowns.remove(index));
+    source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", &unknowns)?;
+    if let Some(source_image) = source_image {
+        source_fidelity.retain_unknown_records("sldprt", std::slice::from_ref(&source_image));
+    }
+    set_semantic_hash(&mut ir);
     Ok(DecodeResult::with_source_fidelity(
         ir,
         report,
@@ -298,7 +301,7 @@ fn build_geometry_ir(
     header: &StreamHeader,
     mut brep: Brep,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
-) -> Result<(CadIr, Annotations), CodecError> {
+) -> Result<(CadIr, Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let materials = crate::appearance::materials(scan);
     let unique_material = materials.len() == 1;
@@ -601,9 +604,8 @@ fn build_geometry_ir(
         partition.links.extend(opaque_curves);
     }
     preserve_source_image(scan, &mut annotations, &mut unknowns);
-    ir.set_native_unknowns("sldprt", &unknowns)?;
     set_semantic_hash(&mut ir);
-    Ok((ir, annotations))
+    Ok((ir, annotations, unknowns))
 }
 
 fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::SldprtNative) {
@@ -804,8 +806,11 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
 }
 
-fn build_metadata_ir(scan: &ContainerScan) -> Result<(CadIr, Annotations), CodecError> {
+fn build_metadata_ir(
+    scan: &ContainerScan,
+) -> Result<(CadIr, Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
+    let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
     let mut histories = crate::history::histories(scan, &mut annotations);
     let mut lanes = crate::resolved_features::lanes(scan, &mut annotations);
@@ -848,17 +853,14 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<(CadIr, Annotations), Codec
             "parasolid_stream",
             Exactness::Unknown,
         );
-        ir.push_native_unknown(
-            "sldprt",
-            UnknownRecord {
-                id: UnknownId(id),
-                offset: block.offset as u64,
-                byte_len: block.uncomp_sz as u64,
-                sha256: sha256_hex(&block.payload),
-                data: Some(block.payload.clone()),
-                links: Vec::new(),
-            },
-        )?;
+        unknowns.push(UnknownRecord {
+            id: UnknownId(id),
+            offset: block.offset as u64,
+            byte_len: block.uncomp_sz as u64,
+            sha256: sha256_hex(&block.payload),
+            data: Some(block.payload.clone()),
+            links: Vec::new(),
+        });
     }
 
     ir.source = Some(SourceMeta {
@@ -896,11 +898,9 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<(CadIr, Annotations), Codec
     native.store(ir.native.namespace_mut("sldprt"))?;
     stamp_sketch_baseline(&mut ir, &native);
     mark_active_configuration(&mut ir);
-    let mut unknowns = ir.native_unknowns("sldprt")?;
     preserve_source_image(scan, &mut annotations, &mut unknowns);
-    ir.set_native_unknowns("sldprt", &unknowns)?;
     set_semantic_hash(&mut ir);
-    Ok((ir, annotations))
+    Ok((ir, annotations, unknowns))
 }
 
 fn project_design_history(
@@ -1145,13 +1145,13 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
         source
     });
     let unknowns = ir
-        .native_unknown_refs("sldprt")
+        .native_unknowns("sldprt")
         .unwrap_or_default()
         .into_iter()
         .filter(|record| record.id.0 != "sldprt:file:source-image#0")
         .collect::<Vec<_>>();
     normalized
-        .set_native_unknown_refs("sldprt", &unknowns)
+        .set_native_unknowns("sldprt", &unknowns)
         .expect("SLDPRT unknown records serialize");
     sha256_hex(
         normalized

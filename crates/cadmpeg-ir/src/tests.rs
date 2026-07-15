@@ -20,7 +20,7 @@ use crate::subd::{
 };
 use crate::tessellation::TessellationChannel;
 use crate::topology::Color;
-use crate::unknown::UnknownRecord;
+use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 use crate::validate::validate;
 use crate::{diff, CadIr, LossProvenance};
 use serde::{de::DeserializeOwned, Serialize};
@@ -59,12 +59,8 @@ fn face_on_unknown_surface_validates_clean() {
     let rec = UnknownId("synthetic:cube:unknown#0".into());
     ir.push_native_unknown(
         "synthetic",
-        UnknownRecord {
+        NativeUnknownRecord {
             id: rec.clone(),
-            offset: 0,
-            byte_len: 16,
-            sha256: "0".repeat(64),
-            data: None,
             links: Vec::new(),
         },
     )
@@ -108,15 +104,10 @@ fn unknown_surface_dangling_record_is_flagged() {
     // Link a record id that is not in the unknowns arena.
     make_first_face_surface_unknown(&mut ir, Some(UnknownId("missing".into())));
     let report = validate(&ir, Vec::new());
-    assert!(
-        report
-            .findings
-            .iter()
-            .any(|f| f.check == Check::ReferentialIntegrity),
-        "expected a referential-integrity finding for the dangling record, got: {:?}",
-        report.findings
-    );
-    assert!(!report.is_ok());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.message.contains("missing unknown record `missing`")
+    }));
 }
 
 #[test]
@@ -125,12 +116,8 @@ fn unknown_surface_json_round_trips() {
     let rec = UnknownId("synthetic:cube:unknown#0".into());
     ir.push_native_unknown(
         "synthetic",
-        UnknownRecord {
+        NativeUnknownRecord {
             id: rec.clone(),
-            offset: 0,
-            byte_len: 16,
-            sha256: "0".repeat(64),
-            data: None,
             links: Vec::new(),
         },
     )

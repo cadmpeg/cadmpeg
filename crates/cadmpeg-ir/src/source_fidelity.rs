@@ -84,13 +84,13 @@ impl SourceFidelity {
             }));
     }
 
-    /// Move a native unknown arena's source fields into this sidecar.
-    pub fn separate_native_unknown_records(
+    /// Store source records in this sidecar and source-independent refs in the product model.
+    pub fn attach_native_unknown_records(
         &mut self,
         ir: &mut CadIr,
         format: &str,
+        records: &[UnknownRecord],
     ) -> Result<(), NativeConvertError> {
-        let records = ir.native_unknowns(format)?;
         self.retained_records.extend(records.iter().map(|record| {
             let stream = self
                 .annotations
@@ -112,35 +112,31 @@ impl SourceFidelity {
             .iter()
             .map(crate::NativeUnknownRecord::from)
             .collect::<Vec<_>>();
-        ir.set_native_unknown_refs(format, &product_records)
+        ir.set_native_unknowns(format, &product_records)
     }
 
-    /// Build a codec-local source view by joining product links with retained records.
-    pub fn hydrate_native_unknown_records(
+    /// Join product links with retained records into a codec-local source view.
+    pub fn native_unknown_records(
         &self,
-        ir: &mut CadIr,
+        ir: &CadIr,
         format: &str,
-    ) -> Result<(), NativeConvertError> {
-        let links = ir
-            .native_unknown_refs(format)?
+    ) -> Result<Vec<UnknownRecord>, NativeConvertError> {
+        ir.native_unknowns(format)?
             .into_iter()
-            .map(|record| (record.id.0, record.links))
-            .collect::<std::collections::BTreeMap<_, _>>();
-        let prefix = format!("{format}:");
-        let records = self
-            .retained_records
-            .iter()
-            .filter(|record| record.id.starts_with(&prefix))
-            .map(|record| UnknownRecord {
-                id: crate::ids::UnknownId(record.id.clone()),
-                offset: record.offset,
-                byte_len: record.byte_len,
-                sha256: record.sha256.clone(),
-                data: record.data.clone(),
-                links: links.get(&record.id).cloned().unwrap_or_default(),
+            .map(|reference| {
+                let retained = self.retained_record(&reference.id.0).ok_or_else(|| {
+                    NativeConvertError::MissingRetainedSourceRecord(reference.id.0.clone())
+                })?;
+                Ok(UnknownRecord {
+                    id: reference.id,
+                    offset: retained.offset,
+                    byte_len: retained.byte_len,
+                    sha256: retained.sha256.clone(),
+                    data: retained.data.clone(),
+                    links: reference.links,
+                })
             })
-            .collect::<Vec<_>>();
-        ir.set_native_unknowns(format, &records)
+            .collect()
     }
 
     /// Canonicalize sidecar collections independently from the product model.
@@ -192,16 +188,63 @@ mod tests {
         assert!(value.get("data").is_none());
 
         let mut ir = CadIr::empty(crate::units::Units::default());
-        ir.set_native_unknown_refs("native", &[crate::NativeUnknownRecord::from(&record)])
+        ir.set_native_unknowns("native", &[crate::NativeUnknownRecord::from(&record)])
             .expect("store product record");
-        sidecar
-            .hydrate_native_unknown_records(&mut ir, "native")
-            .expect("hydrate codec source view");
         assert_eq!(
-            ir.native_unknowns("native")
-                .expect("the migrated native namespace is valid"),
+            sidecar
+                .native_unknown_records(&ir, "native")
+                .expect("hydrate codec source view"),
             vec![record]
         );
+    }
+
+    #[test]
+    fn source_view_joins_only_authoritative_product_refs() {
+        let referenced = UnknownRecord {
+            id: UnknownId("native:object#1".into()),
+            offset: 7,
+            byte_len: 3,
+            sha256: crate::hash::sha256_hex(b"abc"),
+            data: Some(b"abc".to_vec()),
+            links: Vec::new(),
+        };
+        let source_only = UnknownRecord {
+            id: UnknownId("native:file:source-image#0".into()),
+            offset: 0,
+            byte_len: 6,
+            sha256: crate::hash::sha256_hex(b"source"),
+            data: Some(b"source".to_vec()),
+            links: Vec::new(),
+        };
+        let mut ir = CadIr::empty(crate::units::Units::default());
+        ir.set_native_unknowns("native", &[crate::NativeUnknownRecord::from(&referenced)])
+            .expect("store product ref");
+        let mut sidecar = SourceFidelity::default();
+        sidecar.retain_unknown_records("native", &[referenced.clone(), source_only]);
+
+        assert_eq!(
+            sidecar.native_unknown_records(&ir, "native").unwrap(),
+            vec![referenced]
+        );
+    }
+
+    #[test]
+    fn source_view_rejects_a_product_ref_without_retained_bytes() {
+        let mut ir = CadIr::empty(crate::units::Units::default());
+        ir.set_native_unknowns(
+            "native",
+            &[crate::NativeUnknownRecord {
+                id: UnknownId("native:missing#1".into()),
+                links: Vec::new(),
+            }],
+        )
+        .expect("store product ref");
+
+        assert!(matches!(
+            SourceFidelity::default().native_unknown_records(&ir, "native"),
+            Err(NativeConvertError::MissingRetainedSourceRecord(id))
+                if id == "native:missing#1"
+        ));
     }
 
     fn recovery_sidecar(data: &[u8]) -> SourceFidelity {

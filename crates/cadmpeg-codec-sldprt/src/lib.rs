@@ -89,6 +89,7 @@ use cadmpeg_ir::codec::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, Check, Finding, Severity, SourceFidelity};
 use std::io::Write;
 
@@ -452,14 +453,14 @@ impl SldprtCodec {
         source_fidelity: &SourceFidelity,
         writer: &mut dyn Write,
     ) -> Result<(), CodecError> {
-        let mut source_view = ir.clone();
-        source_fidelity.hydrate_native_unknown_records(&mut source_view, "sldprt")?;
-        Self::write_preserved_with_annotations(&source_view, &source_fidelity.annotations, writer)
+        let records = source_records(ir, source_fidelity)?;
+        Self::write_preserved_with_annotations(ir, &source_fidelity.annotations, &records, writer)
     }
 
     fn write_preserved_with_annotations(
         ir: &CadIr,
         annotations: &Annotations,
+        records: &[UnknownRecord],
         writer: &mut dyn Write,
     ) -> Result<(), CodecError> {
         let expected = ir
@@ -467,10 +468,9 @@ impl SldprtCodec {
             .as_ref()
             .and_then(|source| source.attributes.get("semantic_sha256"));
         if expected.is_none_or(|expected| decode::semantic_hash(ir) != *expected) {
-            return writer::write_semantic(ir, annotations, writer);
+            return writer::write_semantic_with_records(ir, annotations, records, writer);
         }
-        let unknowns = ir.native_unknowns("sldprt")?;
-        let record = unknowns
+        let record = records
             .iter()
             .find(|record| record.id.0 == "sldprt:file:source-image#0")
             .ok_or_else(|| {
@@ -523,7 +523,7 @@ impl Encoder for SldprtCodec {
     }
 
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        Self::encode_with_annotations(ir, &Annotations::default(), writer)
+        Self::encode_with_annotations(ir, &Annotations::default(), &[], writer)
     }
 
     fn encode_with_source_fidelity(
@@ -534,7 +534,7 @@ impl Encoder for SldprtCodec {
     ) -> Result<ExportReport, CodecError> {
         match source_fidelity {
             Some(value) => Self::encode_with_fidelity(ir, value, writer),
-            None => Self::encode_with_annotations(ir, &Annotations::default(), writer),
+            None => Self::encode_with_annotations(ir, &Annotations::default(), &[], writer),
         }
     }
 }
@@ -545,21 +545,20 @@ impl SldprtCodec {
         source_fidelity: &SourceFidelity,
         writer: &mut dyn Write,
     ) -> Result<ExportReport, CodecError> {
-        let mut source_view = ir.clone();
-        source_fidelity.hydrate_native_unknown_records(&mut source_view, "sldprt")?;
-        Self::encode_with_annotations(&source_view, &source_fidelity.annotations, writer)
+        let records = source_records(ir, source_fidelity)?;
+        Self::encode_with_annotations(ir, &source_fidelity.annotations, &records, writer)
     }
 
     fn encode_with_annotations(
         ir: &CadIr,
         annotations: &Annotations,
+        records: &[UnknownRecord],
         writer: &mut dyn Write,
     ) -> Result<ExportReport, CodecError> {
-        let replay = ir
-            .native_unknowns("sldprt")?
-            .into_iter()
+        let replay = records
+            .iter()
             .any(|record| record.id.0 == "sldprt:file:source-image#0");
-        Self::write_preserved_with_annotations(ir, annotations, writer)?;
+        Self::write_preserved_with_annotations(ir, annotations, records, writer)?;
         let validation = cadmpeg_ir::validate(ir, Vec::new());
         let total_entities = validation.entity_counts.values().sum();
         Ok(ExportReport {
@@ -578,6 +577,24 @@ impl SldprtCodec {
             ],
         })
     }
+}
+
+fn source_records(
+    ir: &CadIr,
+    source_fidelity: &SourceFidelity,
+) -> Result<Vec<UnknownRecord>, CodecError> {
+    let mut records = source_fidelity.native_unknown_records(ir, "sldprt")?;
+    if let Some(source) = source_fidelity.retained_record("sldprt:file:source-image#0") {
+        records.push(UnknownRecord {
+            id: source.id.clone().into(),
+            offset: source.offset,
+            byte_len: source.byte_len,
+            sha256: source.sha256.clone(),
+            data: source.data.clone(),
+            links: Vec::new(),
+        });
+    }
+    Ok(records)
 }
 
 #[cfg(test)]

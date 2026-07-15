@@ -1691,7 +1691,7 @@ fn malformed_bounded_object_is_retained_and_later_point_decodes() {
         assert!(scan.objects[0].framing_degraded);
         set_test_units(&mut scan, 1.0);
         let result = super::decode::decode(&scan);
-        assert_eq!(result.ir.native_unknown_refs("rhino").unwrap().len(), 2);
+        assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 2);
         assert_eq!(result.ir.model.points.len(), 1);
         assert!(result
             .report
@@ -2228,7 +2228,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         .losses
         .iter()
         .any(|loss| loss.severity == Severity::Info));
-    assert_eq!(result.ir.native_unknown_refs("rhino").unwrap().len(), 1);
+    assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 1);
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert_eq!(validation.error_count(), 0);
 }
@@ -2570,19 +2570,15 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
         .collect::<Vec<_>>();
     assert_ne!(body_ids[0], body_ids[1]);
     assert_eq!(
-        result.ir.native_unknown_refs("rhino").unwrap()[0].links,
+        result.ir.native_unknowns("rhino").unwrap()[0].links,
         body_ids
     );
     assert_eq!(
-        result.ir.native_unknown_refs("rhino").unwrap()[1]
-            .links
-            .len(),
+        result.ir.native_unknowns("rhino").unwrap()[1].links.len(),
         1
     );
     assert_eq!(
-        result.ir.native_unknown_refs("rhino").unwrap()[2]
-            .links
-            .len(),
+        result.ir.native_unknowns("rhino").unwrap()[2].links.len(),
         1
     );
     let native = result.ir.native.namespace("rhino").unwrap();
@@ -2757,9 +2753,7 @@ fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments() {
         .flatten()
         .all(|segment| segment.starts_with("record-")));
     assert_eq!(
-        result.ir.native_unknown_refs("rhino").unwrap()[0]
-            .links
-            .len(),
+        result.ir.native_unknowns("rhino").unwrap()[0].links.len(),
         4
     );
     assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
@@ -3084,13 +3078,11 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
         result.ir.model.bodies[0].transform.unwrap().rows[0][3],
         30.0
     );
-    for unknown in &result.ir.native_unknown_refs("rhino").unwrap()[6..15] {
+    for unknown in &result.ir.native_unknowns("rhino").unwrap()[6..15] {
         assert!(unknown.links.is_empty());
     }
     assert_eq!(
-        result.ir.native_unknown_refs("rhino").unwrap()[15]
-            .links
-            .len(),
+        result.ir.native_unknowns("rhino").unwrap()[15].links.len(),
         1
     );
     assert!(result.report.losses.iter().any(|loss| {
@@ -3139,7 +3131,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
         Some(cadmpeg_ir::Exactness::Derived)
     );
     assert_eq!(
-        result.ir.native_unknown_refs("rhino").unwrap()[0].links,
+        result.ir.native_unknowns("rhino").unwrap()[0].links,
         vec![subd.id.to_string()]
     );
     assert!(result.report.geometry_transferred);
@@ -3172,7 +3164,7 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
     set_test_units(&mut scan, 1.0);
     let result = super::decode::decode(&scan);
     assert!(result.ir.model.subds.is_empty());
-    assert_eq!(result.ir.native_unknown_refs("rhino").unwrap().len(), 2);
+    assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 2);
     assert!(result
         .report
         .losses

@@ -560,13 +560,13 @@ pub fn decode(
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(reader)?;
 
-    let (mut ir, annotations) = build_ir(&scan)?;
+    let (mut ir, annotations, unknowns) = build_ir(&scan)?;
     let report = build_report(&scan, options.container_only);
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()
     };
-    source_fidelity.separate_native_unknown_records(&mut ir, "creo")?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "creo", &unknowns)?;
     Ok(DecodeResult::with_source_fidelity(
         ir,
         report,
@@ -575,9 +575,12 @@ pub fn decode(
 }
 
 /// Build source metadata, preserved geometry records, and datum-plane surfaces.
-fn build_ir(scan: &ContainerScan) -> Result<(CadIr, cadmpeg_ir::Annotations), CodecError> {
+fn build_ir(
+    scan: &ContainerScan,
+) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
+    let mut unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
 
     for section in scan.sections.iter().filter(|s| s.role == role::GEOMETRY) {
@@ -592,17 +595,14 @@ fn build_ir(scan: &ContainerScan) -> Result<(CadIr, cadmpeg_ir::Annotations), Co
             "psb_geometry_section",
             Exactness::Unknown,
         );
-        ir.push_native_unknown(
-            "creo",
-            UnknownRecord {
-                id,
-                offset: section.offset as u64,
-                byte_len: bytes.len() as u64,
-                sha256: sha256_hex(bytes),
-                data: Some(bytes.to_vec()),
-                links: Vec::new(),
-            },
-        )?;
+        unknowns.push(UnknownRecord {
+            id,
+            offset: section.offset as u64,
+            byte_len: bytes.len() as u64,
+            sha256: sha256_hex(bytes),
+            data: Some(bytes.to_vec()),
+            links: Vec::new(),
+        });
     }
     for plane in &scan.datum_planes {
         let id = SurfaceId(format!("creo:actdatums:surface#{}", plane.id));
@@ -797,7 +797,7 @@ fn build_ir(scan: &ContainerScan) -> Result<(CadIr, cadmpeg_ir::Annotations), Co
         namespace.version = 1;
         namespace.set_arena("sketches", &sketches)?;
     }
-    Ok((ir, annotations.build()))
+    Ok((ir, annotations.build(), unknowns))
 }
 
 fn annotate(

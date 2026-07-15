@@ -1541,7 +1541,7 @@ fn decode_without_geometry_falls_back_to_metadata() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(!result.report.geometry_transferred);
-    assert_eq!(result.ir.native_unknown_refs("sldprt").unwrap().len(), 1);
+    assert_eq!(result.ir.native_unknowns("sldprt").unwrap().len(), 1);
     assert_eq!(result.source_fidelity.retained_records.len(), 2);
     assert!(result
         .source_fidelity
@@ -5541,7 +5541,7 @@ fn decode_reports_display_list_geometry() {
     assert_eq!(result.ir.model.tessellations[0].channels.len(), 6);
     assert!(result
         .ir
-        .native_unknown_refs("sldprt")
+        .native_unknowns("sldprt")
         .unwrap()
         .iter()
         .any(|record| {
@@ -14206,7 +14206,7 @@ fn face_on_untyped_surface_keeps_topology() {
     else {
         panic!("opaque surface has no replay record");
     };
-    let unknowns = result.ir.native_unknown_refs("sldprt").unwrap();
+    let unknowns = result.ir.native_unknowns("sldprt").unwrap();
     let retained = unknowns
         .iter()
         .find(|unknown| unknown.id == *record)
@@ -14251,7 +14251,7 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
     else {
         panic!("opaque curve has no replay record");
     };
-    let unknowns = decoded.ir.native_unknown_refs("sldprt").unwrap();
+    let unknowns = decoded.ir.native_unknowns("sldprt").unwrap();
     let retained = unknowns
         .iter()
         .find(|unknown| unknown.id == *record)

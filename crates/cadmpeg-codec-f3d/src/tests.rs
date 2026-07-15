@@ -8888,7 +8888,7 @@ fn decode_yields_metadata_and_honest_report() {
 
     // But the active BREP is preserved as an unknown passthrough with a hash,
     // and source metadata was captured.
-    let unknowns = result.ir.native_unknown_refs("f3d").unwrap();
+    let unknowns = result.ir.native_unknowns("f3d").unwrap();
     assert_eq!(unknowns.len(), 1);
     assert_eq!(result.source_fidelity.retained_records.len(), 2);
     assert!(result
@@ -9858,7 +9858,7 @@ fn decode_keeps_face_on_unknown_surface() {
     assert!(
         result
             .ir
-            .native_unknown_refs("f3d")
+            .native_unknowns("f3d")
             .unwrap()
             .iter()
             .any(|u| u.id == *link),

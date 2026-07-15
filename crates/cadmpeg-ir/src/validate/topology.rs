@@ -49,7 +49,7 @@ impl IdSets {
                 .map(|e| e.id.0.clone())
                 .collect(),
             unknowns: ir
-                .all_native_unknown_refs()
+                .all_native_unknowns()
                 .unwrap_or_default()
                 .into_iter()
                 .map(|record| record.id.0)

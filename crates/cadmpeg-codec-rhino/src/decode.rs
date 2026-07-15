@@ -19,7 +19,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::LossProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -318,12 +318,15 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn lightweight_candidate(&mut self) -> CadIr {
-        let payloads = detach_unknown_payloads(&mut self.unknowns);
         let mut candidate = self.ir.clone();
+        let unknowns = self
+            .unknowns
+            .iter()
+            .map(NativeUnknownRecord::from)
+            .collect::<Vec<_>>();
         candidate
-            .set_native_unknowns("rhino", &self.unknowns)
+            .set_native_unknowns("rhino", &unknowns)
             .expect("Rhino unknown records serialize");
-        restore_unknown_payloads(&mut self.unknowns, payloads);
         candidate
     }
 
@@ -344,15 +347,17 @@ impl<'a> DecodeContext<'a> {
                 .added_since(ArenaLengths::capture(&self.ir))
                 .ok_or_else(|| "candidate removed existing IR entities".to_string())?;
             self.expansion_budget.entities(added)?;
-            let payloads = detach_unknown_payloads(&mut self.unknowns);
-            let mut unknowns = candidate
+            let unknowns = candidate
                 .native_unknowns("rhino")
                 .map_err(|error| error.to_string())?;
-            restore_unknown_payloads(&mut unknowns, payloads);
-            candidate
-                .set_native_unknowns("rhino", &unknowns)
-                .map_err(|error| error.to_string())?;
-            self.unknowns = unknowns;
+            for reference in unknowns {
+                let record = self
+                    .unknowns
+                    .iter_mut()
+                    .find(|record| record.id == reference.id)
+                    .ok_or_else(|| format!("candidate introduced unknown {}", reference.id))?;
+                record.links = reference.links;
+            }
             self.ir = candidate;
             self.annotations = annotations;
             Ok(())
@@ -384,7 +389,10 @@ impl<'a> DecodeContext<'a> {
         let mut payloads_detached = false;
         let result = self.validate_candidate(|candidate, _annotations| {
             let mut unknowns = candidate.native_unknowns("rhino").unwrap();
-            payloads_detached = unknowns.iter().all(|record| record.data.is_none());
+            payloads_detached = unknowns.iter().all(|record| {
+                let value = serde_json::to_value(record).unwrap();
+                value.get("data").is_none()
+            });
             if let Some(record) = unknowns.first().cloned() {
                 unknowns.push(record);
             }
@@ -1774,8 +1782,13 @@ impl<'a> DecodeContext<'a> {
         crate::product::install(self.scan, &mut self.ir);
         crate::views::install(self.scan, &mut self.ir);
         crate::accounting::install(self.scan, &mut self.ir);
+        let unknown_refs = self
+            .unknowns
+            .iter()
+            .map(NativeUnknownRecord::from)
+            .collect::<Vec<_>>();
         self.ir
-            .set_native_unknowns("rhino", &self.unknowns)
+            .set_native_unknowns("rhino", &unknown_refs)
             .expect("Rhino unknown records serialize");
         self.ir.finalize();
         let mut losses = Vec::new();
@@ -1892,7 +1905,7 @@ impl<'a> DecodeContext<'a> {
             ..cadmpeg_ir::SourceFidelity::default()
         };
         source_fidelity
-            .separate_native_unknown_records(&mut self.ir, "rhino")
+            .attach_native_unknown_records(&mut self.ir, "rhino", &self.unknowns)
             .expect("Rhino source records separate from product identities");
         DecodeResult::with_source_fidelity(
             self.ir,
@@ -2681,7 +2694,7 @@ fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
     let Some(record) = unknowns.iter_mut().find(|record| record.id == *unknown) else {
         return;
     };
-    append_links_to_record(record, links);
+    append_links_to_native_record(record, links);
     let _ = ir.set_native_unknowns("rhino", &unknowns);
 }
 
@@ -2690,13 +2703,21 @@ fn append_record_links_at(ir: &mut CadIr, source_order: usize, links: &[String])
         return;
     };
     if let Some(record) = unknowns.get_mut(source_order) {
-        append_links_to_record(record, links);
+        append_links_to_native_record(record, links);
     }
     let _ = ir.set_native_unknowns("rhino", &unknowns);
 }
 
 fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {
-    let unknown = record.id.to_string();
+    append_links(&record.id, &mut record.links, links);
+}
+
+fn append_links_to_native_record(record: &mut NativeUnknownRecord, links: &[String]) {
+    append_links(&record.id, &mut record.links, links);
+}
+
+fn append_links(unknown_id: &UnknownId, record_links: &mut Vec<String>, links: &[String]) {
+    let unknown = unknown_id.to_string();
     let mut additions = links
         .iter()
         .filter(|link| *link != &unknown)
@@ -2707,7 +2728,7 @@ fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {
     if additions.is_empty() {
         return;
     }
-    let existing = std::mem::take(&mut record.links);
+    let existing = std::mem::take(record_links);
     let mut merged = Vec::with_capacity(existing.len().saturating_add(additions.len()));
     let (mut left, mut right) = (
         existing.into_iter().peekable(),
@@ -2725,7 +2746,7 @@ fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {
     }
     merged.extend(left);
     merged.extend(right);
-    record.links = merged;
+    *record_links = merged;
 }
 
 fn detach_unknown_payloads(records: &mut [UnknownRecord]) -> Vec<Option<Vec<u8>>> {
@@ -5066,12 +5087,8 @@ mod tests {
         candidate
             .set_native_unknowns(
                 "rhino",
-                &[UnknownRecord {
+                &[NativeUnknownRecord {
                     id: unknown.clone(),
-                    offset: 0,
-                    byte_len: 0,
-                    sha256: sha256_hex(&[]),
-                    data: Some(Vec::new()),
                     links: Vec::new(),
                 }],
             )
@@ -5176,12 +5193,8 @@ mod tests {
         candidate
             .set_native_unknowns(
                 "rhino",
-                &[UnknownRecord {
+                &[NativeUnknownRecord {
                     id: unknown.clone(),
-                    offset: 0,
-                    byte_len: 0,
-                    sha256: sha256_hex(&[]),
-                    data: Some(Vec::new()),
                     links: Vec::new(),
                 }],
             )

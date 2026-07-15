@@ -39,7 +39,7 @@ fn assert_every_entity_has_v1_annotation(ir: &CadIr, annotations: &Annotations) 
     check!(&ir.model.points);
     check!(&ir.model.surfaces);
     check!(&ir.model.curves);
-    let unknowns = ir.native_unknown_refs("catia").unwrap();
+    let unknowns = ir.native_unknowns("catia").unwrap();
     check!(&unknowns);
     assert_eq!(annotations.provenance.len(), entity_count);
 }
@@ -1543,7 +1543,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     // parameters.
     assert_eq!(result.ir.model.surfaces.len(), 2);
     assert_eq!(result.ir.model.curves.len(), 1);
-    let unknowns = result.ir.native_unknown_refs("catia").unwrap();
+    let unknowns = result.ir.native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
     assert_eq!(unknowns[0].id.0, "catia:payload:unknown#brep-stream");
     assert!(unknowns[0]
@@ -3115,7 +3115,7 @@ fn decode_e5_stream_transfers_circle_carrier() {
         result.ir.model.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Circle { .. }
     ));
-    assert!(result.ir.native_unknown_refs("catia").unwrap()[0]
+    assert!(result.ir.native_unknowns("catia").unwrap()[0]
         .links
         .contains(&"catia:e5:surf#0".to_string()));
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
@@ -3164,7 +3164,7 @@ fn container_only_stops_before_geometry() {
     assert!(!result.report.geometry_transferred);
     assert!(result.report.container_only);
     // The reconstructed BREP stream is preserved as an unknown passthrough.
-    let unknowns = result.ir.native_unknown_refs("catia").unwrap();
+    let unknowns = result.ir.native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
     let retained = &result.source_fidelity.retained_records[0];
     assert_eq!(retained.sha256.len(), 64);

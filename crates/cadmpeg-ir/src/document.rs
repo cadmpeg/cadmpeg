@@ -16,7 +16,7 @@ use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{Tolerances, Units};
-use crate::unknown::{NativeUnknownRecord, UnknownRecord};
+use crate::unknown::NativeUnknownRecord;
 
 macro_rules! arena_registry {
     ($macro:ident) => {
@@ -132,7 +132,7 @@ impl CadIr {
     pub fn native_unknowns(
         &self,
         format: &str,
-    ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
+    ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
         self.native.namespace(format).map_or_else(
             || Ok(Vec::new()),
             |namespace| namespace.arena_as("unknowns"),
@@ -141,20 +141,6 @@ impl CadIr {
 
     /// Deserialize every reserved native `unknowns` arena.
     pub fn all_native_unknowns(
-        &self,
-    ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
-        self.native
-            .0
-            .values()
-            .filter(|namespace| namespace.arenas.contains_key("unknowns"))
-            .try_fold(Vec::new(), |mut records, namespace| {
-                records.extend(namespace.arena_as::<UnknownRecord>("unknowns")?);
-                Ok(records)
-            })
-    }
-
-    /// Deserialize every source-independent native `unknowns` arena.
-    pub fn all_native_unknown_refs(
         &self,
     ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
         self.native
@@ -171,30 +157,6 @@ impl CadIr {
     pub fn set_native_unknowns(
         &mut self,
         format: &str,
-        records: &[UnknownRecord],
-    ) -> Result<(), crate::native::NativeConvertError> {
-        let namespace = self.native.namespace_mut(format);
-        if namespace.version == 0 {
-            namespace.version = 1;
-        }
-        namespace.set_arena("unknowns", records)
-    }
-
-    /// Deserialize source-independent records from the reserved `unknowns` arena.
-    pub fn native_unknown_refs(
-        &self,
-        format: &str,
-    ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
-        self.native.namespace(format).map_or_else(
-            || Ok(Vec::new()),
-            |namespace| namespace.arena_as("unknowns"),
-        )
-    }
-
-    /// Replace the reserved `unknowns` arena with source-independent records.
-    pub fn set_native_unknown_refs(
-        &mut self,
-        format: &str,
         records: &[NativeUnknownRecord],
     ) -> Result<(), crate::native::NativeConvertError> {
         let namespace = self.native.namespace_mut(format);
@@ -208,7 +170,7 @@ impl CadIr {
     pub fn push_native_unknown(
         &mut self,
         format: &str,
-        record: UnknownRecord,
+        record: NativeUnknownRecord,
     ) -> Result<(), crate::native::NativeConvertError> {
         let mut records = self.native_unknowns(format)?;
         records.retain(|existing| existing.id != record.id);
