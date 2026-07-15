@@ -373,7 +373,8 @@ mod marker_tests {
         named_scalars, native_scalar_matches_discrete_parameter, object_names,
         ordered_compact_line_profile, ordered_rectangle_corners, resolve_operand_marker,
         resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
+        principal_sketch_frame, solved_tangent, unique_dimensioned_rectangle_markers, unique_locus,
+        unique_marker_candidate,
         COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
@@ -381,7 +382,7 @@ mod marker_tests {
         SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
     };
     use cadmpeg_ir::math::Point2;
-    use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
+    use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchLocus};
     use std::collections::HashSet;
 
     #[test]
@@ -1452,6 +1453,59 @@ mod marker_tests {
         assert_eq!(compact_edge_selection_at(&payload, 12), Some(vec![4, 0, 5]));
         payload[12 + 18 + 28 + 4] ^= 1;
         assert_eq!(compact_edge_selection_at(&payload, 12), Some(vec![4, 0, 5]));
+    }
+
+    #[test]
+    fn compact_edge_selection_rejects_unbounded_counts_and_short_headers() {
+        let mut payload = vec![0; 40];
+        payload[..4].copy_from_slice(&u32::MAX.to_le_bytes());
+        payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+        payload[12..28].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        assert_eq!(compact_edge_selection_at(&payload, 12), None);
+        assert_eq!(compact_edge_component_path_at(&payload, 12), None);
+
+        payload[..16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        assert_eq!(compact_edge_selection_at(&payload, 0), None);
+        assert_eq!(compact_edge_component_path_at(&payload, 0), None);
+        assert_eq!(compact_surface_selection_at(&payload, 0), None);
+    }
+
+    #[test]
+    fn solved_tangent_treats_arcs_as_bounded_circles() {
+        use cadmpeg_ir::features::{Angle, Length};
+
+        let line = SketchGeometry::Line {
+            start: Point2::new(-2.0, 1.0),
+            end: Point2::new(2.0, 1.0),
+        };
+        let arc = SketchGeometry::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(1.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::PI),
+        };
+        let circle = SketchGeometry::Circle {
+            center: Point2::new(2.0, 0.0),
+            radius: Length(1.0),
+        };
+        assert_eq!(solved_tangent(&line, &arc), Some(true));
+        assert_eq!(solved_tangent(&arc, &circle), Some(true));
+    }
+
+    #[test]
+    fn every_principal_plane_has_a_sketch_frame() {
+        use cadmpeg_ir::features::PrincipalPlane;
+
+        for plane in [
+            PrincipalPlane::Front,
+            PrincipalPlane::Top,
+            PrincipalPlane::Right,
+        ] {
+            let (_, normal, u_axis) = principal_sketch_frame(plane).unwrap();
+            assert!((super::dot(normal, normal) - 1.0).abs() <= 1.0e-12);
+            assert!((super::dot(u_axis, u_axis) - 1.0).abs() <= 1.0e-12);
+            assert!(super::dot(normal, u_axis).abs() <= 1.0e-12);
+        }
     }
 
     #[test]
@@ -3336,9 +3390,11 @@ pub(crate) fn compact_surface_selection_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    let count_start = marker.checked_sub(12)?;
+    let kind_start = marker.checked_sub(8)?;
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(marker - 12..marker - 8)? != 6u32.to_le_bytes()
-        || payload.get(marker - 8..marker - 4)? != [0x04, 0x02, 0, 0]
+        || payload.get(count_start..count_start + 4)? != 6u32.to_le_bytes()
+        || payload.get(kind_start..kind_start + 4)? != [0x04, 0x02, 0, 0]
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;
@@ -3427,17 +3483,19 @@ fn compact_edge_selection_vector(payload: &[u8], base: usize) -> Option<(usize, 
 }
 
 pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
+    let count_start = marker.checked_sub(12)?;
+    let kind_start = marker.checked_sub(8)?;
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(marker - 8..marker - 4)? != [0x00, 0x02, 0x00, 0x00]
+        || payload.get(kind_start..kind_start + 4)? != [0x00, 0x02, 0x00, 0x00]
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;
     }
     let count = usize::try_from(u32::from_le_bytes(
-        payload.get(marker - 12..marker - 8)?.try_into().ok()?,
+        payload.get(count_start..count_start + 4)?.try_into().ok()?,
     ))
     .ok()?;
-    if count == 0 {
+    if !(1..=64).contains(&count) {
         return None;
     }
     compact_homogeneous_edge_ids(payload, marker + 18, count)
@@ -3456,17 +3514,19 @@ pub(crate) fn compact_edge_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    let count_start = marker.checked_sub(12)?;
+    let kind_start = marker.checked_sub(8)?;
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(marker - 8..marker - 4)? != [0x00, 0x02, 0x00, 0x00]
+        || payload.get(kind_start..kind_start + 4)? != [0x00, 0x02, 0x00, 0x00]
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;
     }
     let count = usize::try_from(u32::from_le_bytes(
-        payload.get(marker - 12..marker - 8)?.try_into().ok()?,
+        payload.get(count_start..count_start + 4)?.try_into().ok()?,
     ))
     .ok()
-    .filter(|count| *count != 0)?;
+    .filter(|count| (1..=64).contains(count))?;
     compact_edge_component_path(payload, marker, count).map(|(components, _)| components)
 }
 
@@ -5803,7 +5863,16 @@ fn principal_sketch_frame(
             Vector3::new(0.0, -1.0, 0.0),
             Vector3::new(0.0, 0.0, -1.0),
         )),
-        PrincipalPlane::Top | PrincipalPlane::Right => None,
+        PrincipalPlane::Top => Some((
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )),
+        PrincipalPlane::Right => Some((
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        )),
     }
 }
 
@@ -16754,8 +16823,9 @@ fn validate_solved_binary_relation(
 
 fn solved_tangent(first: &SketchGeometry, second: &SketchGeometry) -> Option<bool> {
     match (first, second) {
-        (SketchGeometry::Line { start, end }, SketchGeometry::Circle { center, radius })
-        | (SketchGeometry::Circle { center, radius }, SketchGeometry::Line { start, end }) => {
+        (SketchGeometry::Line { start, end }, circular)
+        | (circular, SketchGeometry::Line { start, end }) => {
+            let (center, radius) = circular_center_radius(circular)?;
             let direction = [end.u - start.u, end.v - start.v];
             let length = vector2_length(direction);
             if length <= SKETCH_POINT_TOLERANCE {
@@ -16763,29 +16833,30 @@ fn solved_tangent(first: &SketchGeometry, second: &SketchGeometry) -> Option<boo
             }
             let distance =
                 cross2([center.u - start.u, center.v - start.v], direction).abs() / length;
-            Some((distance - radius.0).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + radius.0.abs()))
+            Some((distance - radius).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + radius.abs()))
         }
-        (
-            SketchGeometry::Circle {
-                center: first_center,
-                radius: first_radius,
-            },
-            SketchGeometry::Circle {
-                center: second_center,
-                radius: second_radius,
-            },
-        ) => {
+        (first, second) => {
+            let (first_center, first_radius) = circular_center_radius(first)?;
+            let (second_center, second_radius) = circular_center_radius(second)?;
             let distance = vector2_length([
                 second_center.u - first_center.u,
                 second_center.v - first_center.v,
             ]);
-            let external = first_radius.0 + second_radius.0;
-            let internal = (first_radius.0 - second_radius.0).abs();
+            let external = first_radius + second_radius;
+            let internal = (first_radius - second_radius).abs();
             let tolerance = SKETCH_POINT_TOLERANCE * (1.0 + distance.max(external).max(internal));
             Some(
                 (distance - external).abs() <= tolerance
                     || (distance - internal).abs() <= tolerance,
             )
+        }
+    }
+}
+
+fn circular_center_radius(geometry: &SketchGeometry) -> Option<(Point2, f64)> {
+    match geometry {
+        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
+            Some((*center, radius.0))
         }
         _ => None,
     }
