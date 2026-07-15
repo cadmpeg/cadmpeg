@@ -110,6 +110,32 @@ fn parser_bounds_exponential_anchor_expansion() {
 }
 
 #[test]
+fn parser_bounds_aggregate_anchor_materialization() {
+    let mut anchors = String::from("<a0>=(1,1);\n");
+    for index in 1..18 {
+        anchors.push_str(&format!(
+            "<a{index}>=(<a{}>,<a{}>);\n",
+            index - 1,
+            index - 1
+        ));
+    }
+    let records = (1..=8)
+        .map(|id| format!("#{id}=ITEM(<a17>);"))
+        .collect::<String>();
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
+    );
+    let error = crate::parse::parse(source.as_bytes()).unwrap_err();
+    assert!(error.to_string().contains("expanded anchor"));
+}
+
+#[test]
+fn parser_rejects_duplicate_complex_partial_names() {
+    let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=(A()A());ENDSEC;END-ISO-10303-21;";
+    assert!(crate::parse::parse(source).is_err());
+}
+
+#[test]
 fn codec_detects_and_inspects_ap242_exchange_structure() {
     let bytes = include_bytes!("../tests/fixtures/ap242_minimal.p21");
     let codec = StepCodec::default();
@@ -1620,6 +1646,25 @@ fn decode_inline(records: &str) -> cadmpeg_ir::codec::DecodeResult {
     StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode inline STEP")
+}
+
+#[test]
+fn excessive_nurbs_degree_is_rejected_before_knot_allocation() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(1.,0.,0.));
+#3=B_SPLINE_CURVE_WITH_KNOTS('',4294967295,(#1,#2),.UNSPECIFIED.,.F.,.F.,(4294967298),(0.),.UNSPECIFIED.);",
+    );
+    assert!(result.ir.model.curves.is_empty());
+}
+
+#[test]
+fn non_finite_tessellation_coordinates_are_rejected() {
+    let result = decode_inline(
+        "#1=COORDINATES_LIST('',1,((1E400,0.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,1,$,$,((1,1,1)));",
+    );
+    assert!(result.ir.model.tessellations.is_empty());
 }
 
 #[test]
