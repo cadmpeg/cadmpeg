@@ -4585,21 +4585,12 @@ impl MeshSelectionSearch<'_> {
                     };
                     common.into_iter().collect()
                 } else {
-                    let supported = self.assignments[face]
-                        .iter()
-                        .filter(|assignment| {
-                            quotient.assignment_has_option(assignment, self.edge_candidates)
-                        })
-                        .collect::<Vec<_>>();
-                    if supported.is_empty() {
-                        return false;
-                    }
                     let mut common = None::<HashSet<[usize; 2]>>;
-                    for assignment in supported {
+                    for assignment in &self.assignments[face] {
                         let Some(assignment_common) =
                             common_assignment_equations(quotient, assignment, self.edge_candidates)
                         else {
-                            return false;
+                            continue;
                         };
                         match &mut common {
                             Some(common) => {
@@ -4608,7 +4599,10 @@ impl MeshSelectionSearch<'_> {
                             None => common = Some(assignment_common),
                         }
                     }
-                    common.unwrap_or_default().into_iter().collect()
+                    let Some(common) = common else {
+                        return false;
+                    };
+                    common.into_iter().collect()
                 }
             };
             for [left, right] in equations {
@@ -6778,6 +6772,55 @@ mod motif_tests {
         assert!(search.propagate_forced_face_equations(&mut quotient));
         assert_eq!(quotient.union.find(1), quotient.union.find(2));
         assert_eq!(quotient.root_count(), 5);
+    }
+
+    #[test]
+    fn mesh_selection_common_equations_ignore_infeasible_assignments() {
+        let use_ = |edge| MeshBoundaryEdgeCandidate {
+            edge,
+            start: edge,
+            end: edge + 1,
+            reversed: Some(false),
+        };
+        let assignments = vec![vec![
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(0), use_(1)]],
+            },
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(0), use_(2)]],
+            },
+        ]];
+        let candidates = vec![vec![]; 3];
+        let search = MeshSelectionSearch {
+            assignments: &assignments,
+            possible_face_equations: possible_face_equations(&assignments),
+            possible_face_choices: possible_face_choices(
+                &assignments,
+                &possible_face_equations(&assignments),
+            ),
+            face_work: vec![Some(2)],
+            edge_candidates: &candidates,
+            edge_rows: &[],
+            vertex_points: &[],
+            selected: vec![None],
+            states: 0,
+            solution: None,
+            ambiguous: false,
+            exhausted: false,
+        };
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(6),
+            domains: [1, 0, 0, 1, 2, 2]
+                .into_iter()
+                .map(|point| HashSet::from([point]))
+                .collect(),
+            members: (0..6).map(|node| vec![node]).collect(),
+        };
+
+        assert!(search.propagate_forced_face_equations(&mut quotient));
+        assert_eq!(quotient.union.find(1), quotient.union.find(2));
+        assert_eq!(quotient.union.find(3), quotient.union.find(0));
+        assert_eq!(quotient.root_count(), 4);
     }
 
     #[test]
