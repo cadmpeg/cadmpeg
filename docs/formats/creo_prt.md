@@ -362,13 +362,6 @@ row scalar mappings do not apply to these slots.
 Compact token `0e` encodes positive `0.5` in a named prototype local-system
 coordinate slot. Its negative positional-row meaning does not apply.
 
-In a compound-closed `geom_type = 26` row, the final two tokens of the terminal
-scalar frame store the per-instance torus `radius1` and `radius2` in that order
-when both are positive row-radius forms of at most seven bytes. The tokens are
-contiguous and the second token ends the body. Earlier scalars in the same
-frame belong to the positional construction. The zero-major-radius sphere form
-uses a different override form.
-
 Within a `geom_type = 26` positional row, `2d b1 b2 b3 b4 b5 b6` immediately
 before a structural control byte or the bounded body end is a seven-byte
 negative coordinate token. Its value is the big-endian IEEE-754 binary64 image

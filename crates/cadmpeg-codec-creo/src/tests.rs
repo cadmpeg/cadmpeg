@@ -3294,7 +3294,7 @@ fn decode_places_direct_two_direction_named_prototype_frame() {
 }
 
 #[test]
-fn decode_applies_terminal_instance_radii_to_adjacent_torus_prototype() {
+fn decode_does_not_promote_untyped_terminal_torus_scalars() {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
     push_generated_scalar(&mut payload, 2.0);
@@ -3326,7 +3326,7 @@ fn decode_applies_terminal_instance_radii_to_adjacent_torus_prototype() {
             center: cadmpeg_ir::math::Point3::new(2.0, 0.0, -2.0),
             axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
             ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            major_radius: 2.0,
+            major_radius: 1.0,
             minor_radius: 1.0,
         }
     );
