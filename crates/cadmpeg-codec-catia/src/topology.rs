@@ -4,6 +4,7 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
+    sync::Arc,
 };
 
 use cadmpeg_ir::topology::BodyKind;
@@ -3512,7 +3513,7 @@ fn reconstruct_mesh_selection(
 #[derive(Clone)]
 struct MeshQuotient {
     union: UnionFind,
-    domains: Vec<HashSet<usize>>,
+    domains: Vec<Arc<HashSet<usize>>>,
     members: Vec<Vec<usize>>,
 }
 
@@ -3554,7 +3555,7 @@ impl MeshQuotient {
         }
         self.union.union(left, right);
         let root = self.union.find(left);
-        self.domains[root] = intersection;
+        self.domains[root] = Arc::new(intersection);
         let child = if root == left { right } else { left };
         let child_members = std::mem::take(&mut self.members[child]);
         self.members[root].extend(child_members);
@@ -3628,8 +3629,8 @@ impl MeshQuotient {
                 if supported.is_empty() {
                     return false;
                 }
-                if supported != self.domains[start] {
-                    self.domains[start] = supported;
+                if supported != *self.domains[start] {
+                    self.domains[start] = Arc::new(supported);
                     enqueue_component_edges(
                         start,
                         &self.members,
@@ -3668,8 +3669,8 @@ impl MeshQuotient {
             if supported_starts.is_empty() || supported_ends.is_empty() {
                 return false;
             }
-            if supported_starts != self.domains[start] {
-                self.domains[start] = supported_starts;
+            if supported_starts != *self.domains[start] {
+                self.domains[start] = Arc::new(supported_starts);
                 enqueue_component_edges(
                     start,
                     &self.members,
@@ -3678,8 +3679,8 @@ impl MeshQuotient {
                     &mut queued,
                 );
             }
-            if supported_ends != self.domains[end] {
-                self.domains[end] = supported_ends;
+            if supported_ends != *self.domains[end] {
+                self.domains[end] = Arc::new(supported_ends);
                 enqueue_component_edges(
                     end,
                     &self.members,
@@ -4195,7 +4196,7 @@ impl MeshQuotient {
         fn value_viable(
             root: usize,
             point: usize,
-            domains: &[HashSet<usize>],
+            domains: &[Arc<HashSet<usize>>],
             edge_roots: &[[usize; 2]],
             edge_candidates: &[Vec<[usize; 2]>],
             assigned: &[Option<usize>],
@@ -4230,7 +4231,7 @@ impl MeshQuotient {
         }
 
         fn walk(
-            domains: &[HashSet<usize>],
+            domains: &[Arc<HashSet<usize>>],
             edge_roots: &[[usize; 2]],
             edge_candidates: &[Vec<[usize; 2]>],
             assigned: &mut [Option<usize>],
@@ -4637,14 +4638,14 @@ impl MeshSelectionSearch<'_> {
             possible_domains
                 .entry(component)
                 .or_default()
-                .extend(&quotient.domains[node]);
+                .extend(quotient.domains[node].iter());
             *possible_root_counts.entry(component).or_default() += 1;
         }
         let point_count = if self.vertex_points.is_empty() {
             quotient
                 .domains
                 .iter()
-                .flatten()
+                .flat_map(|domain| domain.iter())
                 .max()
                 .map_or(0, |point| point + 1)
         } else {
@@ -5597,13 +5598,15 @@ pub fn parse_standard_mesh_endpoint_candidates(
     if edge_rows.len() != edge_faces.len() || edge_rows.len() != edge_candidates.len() {
         return None;
     }
-    let all_points = (0..vertex_points.len()).collect::<HashSet<_>>();
+    // Unconstrained ports share the immutable universal domain. Quotient
+    // intersections allocate only when a constraint narrows a component.
+    let all_points = Arc::new((0..vertex_points.len()).collect::<HashSet<_>>());
     let mut domains = Vec::with_capacity(edge_rows.len() * 2);
     for candidates in edge_candidates {
         let domain = if candidates.is_empty() {
             all_points.clone()
         } else {
-            candidates.iter().flatten().copied().collect::<HashSet<_>>()
+            Arc::new(candidates.iter().flatten().copied().collect::<HashSet<_>>())
         };
         if domain.is_empty() || domain.iter().any(|point| *point >= vertex_points.len()) {
             return None;
@@ -6317,7 +6320,7 @@ impl UnionFind {
 
 #[cfg(test)]
 mod motif_tests {
-    use std::{cell::RefCell, collections::HashSet};
+    use std::{cell::RefCell, collections::HashSet, sync::Arc};
 
     use cadmpeg_ir::topology::BodyKind;
 
@@ -6636,7 +6639,7 @@ mod motif_tests {
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
             domains: [vec![0], vec![0, 1], vec![0], vec![2]]
-                .map(|domain| domain.into_iter().collect())
+                .map(|domain| Arc::new(domain.into_iter().collect()))
                 .into(),
             members: (0..4).map(|node| vec![node]).collect(),
         };
@@ -6645,19 +6648,36 @@ mod motif_tests {
     }
 
     #[test]
+    fn quotient_clones_share_unconstrained_point_domains() {
+        let all = Arc::new((0..1_000).collect::<HashSet<_>>());
+        let quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: vec![all.clone(), all.clone(), all.clone(), all.clone()],
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+
+        let clone = quotient.clone();
+        assert!(Arc::ptr_eq(&quotient.domains[0], &clone.domains[0]));
+        assert!(Arc::ptr_eq(&quotient.domains[0], &quotient.domains[3]));
+    }
+
+    #[test]
     fn quotient_pair_domains_propagate_through_shared_components() {
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
             domains: [vec![0, 1], vec![2], vec![0, 1], vec![3, 4]]
-                .map(|domain| domain.into_iter().collect())
+                .map(|domain| Arc::new(domain.into_iter().collect()))
                 .into(),
             members: (0..4).map(|node| vec![node]).collect(),
         };
         let root = quotient.merge(0, 2).expect("shared endpoint component");
 
         assert!(quotient.edge_domains_viable(&[vec![[0, 2]], vec![[0, 3], [1, 4]],]));
-        assert_eq!(quotient.domains[root], HashSet::from([0]));
-        assert_eq!(quotient.domains[quotient.union.find(3)], HashSet::from([3]));
+        assert_eq!(*quotient.domains[root], HashSet::from([0]));
+        assert_eq!(
+            *quotient.domains[quotient.union.find(3)],
+            HashSet::from([3])
+        );
     }
 
     #[test]
@@ -6665,7 +6685,7 @@ mod motif_tests {
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
             domains: [vec![0], vec![1], vec![2], vec![3]]
-                .map(|domain| domain.into_iter().collect())
+                .map(|domain| Arc::new(domain.into_iter().collect()))
                 .into(),
             members: (0..4).map(|node| vec![node]).collect(),
         };
@@ -6686,9 +6706,9 @@ mod motif_tests {
             ]],
         };
         assert!(!quotient.assignment_has_option(&assignment, &[vec![], vec![]]));
-        quotient.domains[2].insert(1);
+        Arc::make_mut(&mut quotient.domains[2]).insert(1);
         assert!(!quotient.assignment_has_option(&assignment, &[vec![], vec![]]));
-        quotient.domains[3].insert(0);
+        Arc::make_mut(&mut quotient.domains[3]).insert(0);
         assert!(quotient.assignment_has_option(&assignment, &[vec![], vec![]]));
     }
 
@@ -6697,7 +6717,7 @@ mod motif_tests {
         let quotient = MeshQuotient {
             union: UnionFind::new(6),
             domains: [vec![0], vec![1, 2], vec![2], vec![3], vec![0, 3], vec![0]]
-                .map(|domain| domain.into_iter().collect())
+                .map(|domain| Arc::new(domain.into_iter().collect()))
                 .into(),
             members: (0..6).map(|node| vec![node]).collect(),
         };
@@ -6746,7 +6766,7 @@ mod motif_tests {
         let quotient = || MeshQuotient {
             union: UnionFind::new(4),
             domains: [vec![0, 1], vec![2], vec![0, 1], vec![3]]
-                .map(|domain| domain.into_iter().collect())
+                .map(|domain| Arc::new(domain.into_iter().collect()))
                 .into(),
             members: (0..4).map(|node| vec![node]).collect(),
         };
@@ -6766,7 +6786,7 @@ mod motif_tests {
     fn quotient_point_existence_rejects_an_all_different_conflict() {
         let mut quotient = MeshQuotient {
             union: UnionFind::new(2),
-            domains: vec![HashSet::from([0]), HashSet::from([0])],
+            domains: vec![Arc::new(HashSet::from([0])), Arc::new(HashSet::from([0]))],
             members: vec![vec![0], vec![1]],
         };
 
@@ -7093,7 +7113,7 @@ mod motif_tests {
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
-            domains: vec![HashSet::from([0, 1]); 4],
+            domains: vec![Arc::new(HashSet::from([0, 1])); 4],
             members: (0..4).map(|node| vec![node]).collect(),
         };
 
@@ -7144,7 +7164,7 @@ mod motif_tests {
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
-            domains: vec![HashSet::from([0, 1]); 4],
+            domains: vec![Arc::new(HashSet::from([0, 1])); 4],
             members: (0..4).map(|node| vec![node]).collect(),
         };
 
@@ -7198,7 +7218,7 @@ mod motif_tests {
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
-            domains: vec![HashSet::from([0, 1]); 4],
+            domains: vec![Arc::new(HashSet::from([0, 1])); 4],
             members: (0..4).map(|node| vec![node]).collect(),
         };
 
@@ -7241,10 +7261,10 @@ mod motif_tests {
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
             domains: vec![
-                HashSet::from([0]),
-                HashSet::from([1]),
-                HashSet::from([0]),
-                HashSet::from([2]),
+                Arc::new(HashSet::from([0])),
+                Arc::new(HashSet::from([1])),
+                Arc::new(HashSet::from([0])),
+                Arc::new(HashSet::from([2])),
             ],
             members: (0..4).map(|node| vec![node]).collect(),
         };
@@ -7278,10 +7298,10 @@ mod motif_tests {
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
             domains: vec![
-                HashSet::from([0, 1]),
-                HashSet::from([0, 1]),
-                HashSet::from([0, 1]),
-                HashSet::from([2, 3]),
+                Arc::new(HashSet::from([0, 1])),
+                Arc::new(HashSet::from([0, 1])),
+                Arc::new(HashSet::from([0, 1])),
+                Arc::new(HashSet::from([2, 3])),
             ],
             members: (0..4).map(|node| vec![node]).collect(),
         };
@@ -7315,10 +7335,10 @@ mod motif_tests {
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
             domains: vec![
-                HashSet::from([0]),
-                HashSet::from([0]),
-                HashSet::from([0]),
-                HashSet::from([1, 2]),
+                Arc::new(HashSet::from([0])),
+                Arc::new(HashSet::from([0])),
+                Arc::new(HashSet::from([0])),
+                Arc::new(HashSet::from([1, 2])),
             ],
             members: (0..4).map(|node| vec![node]).collect(),
         };
@@ -7366,7 +7386,7 @@ mod motif_tests {
         };
         let quotient = MeshQuotient {
             union: UnionFind::new(2),
-            domains: vec![HashSet::from([0]); 2],
+            domains: vec![Arc::new(HashSet::from([0])); 2],
             members: (0..2).map(|node| vec![node]).collect(),
         };
 
@@ -7424,7 +7444,7 @@ mod motif_tests {
         };
         let quotient = MeshQuotient {
             union: UnionFind::new(4),
-            domains: vec![HashSet::from([0, 1, 2]); 4],
+            domains: vec![Arc::new(HashSet::from([0, 1, 2])); 4],
             members: (0..4).map(|node| vec![node]).collect(),
         };
 
@@ -7482,7 +7502,7 @@ mod motif_tests {
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(6),
-            domains: (0..6).map(|_| HashSet::from([0, 1, 2])).collect(),
+            domains: (0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect(),
             members: (0..6).map(|node| vec![node]).collect(),
         };
 
@@ -7531,7 +7551,7 @@ mod motif_tests {
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(6),
-            domains: (0..6).map(|_| HashSet::from([0, 1, 2])).collect(),
+            domains: (0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect(),
             members: (0..6).map(|node| vec![node]).collect(),
         };
 
@@ -7580,7 +7600,7 @@ mod motif_tests {
             union: UnionFind::new(6),
             domains: [1, 0, 0, 1, 2, 2]
                 .into_iter()
-                .map(|point| HashSet::from([point]))
+                .map(|point| Arc::new(HashSet::from([point])))
                 .collect(),
             members: (0..6).map(|node| vec![node]).collect(),
         };
@@ -7626,7 +7646,7 @@ mod motif_tests {
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(26),
-            domains: (0..26).map(|_| (0..13).collect()).collect(),
+            domains: (0..26).map(|_| Arc::new((0..13).collect())).collect(),
             members: (0..26).map(|node| vec![node]).collect(),
         };
         for edge in 0..13 {
@@ -7678,7 +7698,7 @@ mod motif_tests {
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(6),
-            domains: (0..6).map(|_| HashSet::from([0, 1, 2])).collect(),
+            domains: (0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect(),
             members: (0..6).map(|node| vec![node]).collect(),
         };
 
@@ -7734,7 +7754,7 @@ mod motif_tests {
     fn quotient_accepts_diagonal_domain_for_closed_edge() {
         let mut quotient = MeshQuotient {
             union: UnionFind::new(2),
-            domains: vec![HashSet::from([2]), HashSet::from([2])],
+            domains: vec![Arc::new(HashSet::from([2])), Arc::new(HashSet::from([2]))],
             members: vec![vec![0], vec![1]],
         };
         quotient.merge(0, 1).expect("closed endpoint merge");
@@ -7746,14 +7766,17 @@ mod motif_tests {
     fn quotient_retains_diagonal_pairs_until_ports_are_merged() {
         let mut quotient = MeshQuotient {
             union: UnionFind::new(2),
-            domains: vec![HashSet::from([1, 2]), HashSet::from([1, 2])],
+            domains: vec![
+                Arc::new(HashSet::from([1, 2])),
+                Arc::new(HashSet::from([1, 2])),
+            ],
             members: vec![vec![0], vec![1]],
         };
 
         assert!(quotient.edge_domains_viable(&[vec![[2, 2]]]));
         assert_eq!(
             quotient.domains,
-            vec![HashSet::from([2]), HashSet::from([2])]
+            vec![Arc::new(HashSet::from([2])), Arc::new(HashSet::from([2]))]
         );
         quotient.merge(0, 1).expect("closed endpoint merge");
         assert!(quotient.edge_domains_viable(&[vec![[2, 2]]]));
