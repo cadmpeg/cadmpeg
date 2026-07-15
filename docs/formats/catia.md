@@ -181,7 +181,7 @@ Invariant `N == 3*A + sum(K)`. Handle **width is family-dependent** and is the o
 
 The trim handle lane is ordered as the `A` independent-triangle triples, then the `B` triangle-strip lists in `K[0:B]` order, then the `C` triangle-fan lists in `K[B:B+C]` order.
 
-For kinds `49`, `4a`, `4b`, `4c`, `4e`, and `4f`, the optional vector is the plane normal. Plane normals come only from the unique complete width-selected trim chain; incidental packet signatures outside that chain do not contribute. The planar trim packets and `00 33 32` plane bounds records bind positionally in their respective record orders. The plane origin is the bounds record's bounding-sphere center.
+For kinds `49`, `4a`, `4b`, `4c`, `4e`, and `4f`, the optional vector is the face frame normal. Frame vectors come only from the unique complete width-selected trim chain; incidental packet signatures outside that chain do not contribute. A plane face takes the vector from its index-aligned trim packet. Its face-roster carrier tag selects the `00 02 00 33 32` bounds record with the same tag. The plane origin is that bounds record's bounding-sphere center. Plane bounds record order does not define frame-vector binding.
 
 Triangle expansion: independent `(H[3i],H[3i+1],H[3i+2])`; strips alternate winding by parity; fans pivot on `q[0]`. Boundary extraction emits directed edges per oriented triangle. A directed edge whose reverse is absent is a boundary segment; multiplicity-one segments form the exact ordered closed boundary cycles. **Loop count = boundary-cycle count**, with one outer cycle and one cycle per hole. Inner-hole loops require edge-row endpoint ports at their family-selected width.
 

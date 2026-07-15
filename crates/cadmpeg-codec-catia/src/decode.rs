@@ -4140,7 +4140,31 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         .filter(|record| matches!(record, geometry::StandardSurfaceRecord::Analytic(_)))
         .count();
     let freeform_record_count = records.len() - analytic_record_count;
-    let plane_normals = topology::standard_plane_normals(brep);
+    let face_frame_vectors = topology::standard_face_frame_vectors(brep);
+    let mut plane_normal_candidates = HashMap::<u32, Option<[f64; 3]>>::new();
+    for (face, record) in records.iter().enumerate() {
+        let geometry::StandardSurfaceRecord::Analytic(prefix) = record else {
+            continue;
+        };
+        if prefix.kind != 0x32 {
+            continue;
+        }
+        let Some(normal) = face_frame_vectors.get(face).copied().flatten() else {
+            continue;
+        };
+        plane_normal_candidates
+            .entry(prefix.target)
+            .and_modify(|stored| {
+                if stored.is_some_and(|stored| stored != normal) {
+                    *stored = None;
+                }
+            })
+            .or_insert(Some(normal));
+    }
+    let plane_normals = plane_normal_candidates
+        .into_iter()
+        .filter_map(|(target, normal)| Some((target, normal?)))
+        .collect::<HashMap<_, _>>();
     let planes: HashMap<u32, geometry::PlaneParams> = geometry::plane_params(brep, &plane_normals)
         .into_iter()
         .map(|plane| (plane.target, plane))
@@ -4861,6 +4885,14 @@ fn attach_standard_topology(
         let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
         include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
     }
+    let max_incidence_search_work = 10_000_000usize;
+    let incidence_search_within_budget = constrained_endpoint_options
+        .as_ref()
+        .and_then(|options| {
+            let choice_count = options.iter().map(Vec::len).sum::<usize>();
+            options.len().checked_mul(choice_count)
+        })
+        .is_some_and(|work| work <= max_incidence_search_work);
     let mesh_bound = topology::parse_standard(brep)
         .or_else(|| topology::parse_fbb_with_native_vertices(brep, native_ports.as_ref()?))
         .and_then(|topology| {
@@ -4913,29 +4945,34 @@ fn attach_standard_topology(
     }) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
-        topology::parse_standard_mesh_incidence_candidates(brep, &edge_faces, options, |pairs| {
-            standard_circle_pair_solution_is_simple(
-                ir,
-                bindings,
-                &surface_indices,
+    } else if let Some(bound) = incidence_search_within_budget
+        .then_some(constrained_endpoint_options.as_ref())
+        .flatten()
+        .and_then(|options| {
+            topology::parse_standard_mesh_incidence_candidates(
                 brep,
-                &supports,
+                &edge_faces,
                 options,
-                pairs,
+                |pairs| {
+                    standard_circle_pair_solution_is_simple(
+                        ir,
+                        bindings,
+                        &surface_indices,
+                        brep,
+                        &supports,
+                        options,
+                        pairs,
+                    )
+                },
             )
+            .or_else(|| {
+                topology::parse_standard_mesh_endpoint_candidates(brep, &edge_faces, options)
+            })
         })
-        .or_else(|| topology::parse_standard_mesh_endpoint_candidates(brep, &edge_faces, options))
-    }) {
+    {
         bound
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
-        const MAX_INCIDENCE_SEARCH_WORK: usize = 10_000_000;
-
-        let choice_count = options.iter().map(Vec::len).sum::<usize>();
-        options
-            .len()
-            .checked_mul(choice_count)
-            .filter(|work| *work <= MAX_INCIDENCE_SEARCH_WORK)?;
+        incidence_search_within_budget.then_some(())?;
         topology::standard_mesh_edge_ports(brep)
             .and_then(|ports| {
                 topology::parse_standard_port_endpoint_candidates(

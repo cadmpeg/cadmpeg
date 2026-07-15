@@ -6,7 +6,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use std::io::Cursor;
+use std::{collections::HashMap, io::Cursor};
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
@@ -653,8 +653,8 @@ fn fbb_topology_reads_u8_mesh_and_edge_handles() {
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
     assert_eq!(
-        crate::topology::standard_plane_normals(&bytes),
-        [[0.0, 0.0, 1.0]]
+        crate::topology::standard_face_frame_vectors(&bytes),
+        [Some([0.0, 0.0, 1.0])]
     );
 }
 
@@ -829,14 +829,14 @@ fn le_f64(v: f64) -> [u8; 8] {
 /// edge-table delimiter, and three `05 08 01` vertex records.
 fn main_stream() -> Vec<u8> {
     let mut b = Vec::new();
-    // Planar trim packet: one triangle and a byte-stored +Z plane normal.
+    // Non-planar positional packet for the first, cylindrical face.
+    b.extend_from_slice(&[0x01, 0x41, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00]);
+    b.extend_from_slice(&[0, 0, 0, 1, 0, 2]);
+    // Planar packet for the second face, with a byte-stored +Z normal.
     b.extend_from_slice(&[0x01, 0x49, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00]);
     for value in [0.0f32, 0.0, 1.0] {
         b.extend_from_slice(&le_f32(value));
     }
-    b.extend_from_slice(&[0, 0, 0, 1, 0, 2]);
-    // Non-planar positional packet for the second face.
-    b.extend_from_slice(&[0x01, 0x41, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00]);
     b.extend_from_slice(&[0, 0, 0, 1, 0, 2]);
     // Two stride-8 FBB rows (`30 04 04 ff` + 4 constant bytes).
     for _ in 0..2 {
@@ -2965,6 +2965,32 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
         StandardSurfaceRecord::Analytic(prefix)
             if prefix.pos == analytic + 5 && prefix.target == 0x5678 && prefix.kind == 0x33
     ));
+}
+
+#[test]
+fn plane_bounds_bind_normals_by_persistent_carrier_tag() {
+    fn bounds_record(tag: u32, center: [f32; 3]) -> Vec<u8> {
+        let mut bytes = vec![0xff];
+        bytes.extend_from_slice(&tag.to_le_bytes()[..3]);
+        bytes.extend_from_slice(&[0x00, 0x02, 0x00, 0x33, 0x32]);
+        for value in [
+            center[0], center[1], center[2], 1.0, 1.0, 1.0, center[0], center[1], center[2], 4.0,
+        ] {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+        bytes
+    }
+
+    let mut bytes = bounds_record(0x010203, [1.0, 2.0, 3.0]);
+    bytes.extend(bounds_record(0x040506, [4.0, 5.0, 6.0]));
+    let normals = HashMap::from([(0x040506, [0.0, 1.0, 0.0]), (0x010203, [1.0, 0.0, 0.0])]);
+    let planes = crate::geometry::plane_params(&bytes, &normals);
+
+    assert_eq!(planes.len(), 2);
+    assert_eq!(planes[0].target, 0x010203);
+    assert_eq!(planes[0].normal, Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(planes[1].target, 0x040506);
+    assert_eq!(planes[1].normal, Vector3::new(0.0, 1.0, 0.0));
 }
 
 #[test]

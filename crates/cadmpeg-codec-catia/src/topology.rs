@@ -416,12 +416,11 @@ struct TrimRecord {
     end: usize,
 }
 
-/// Unit frame vectors carried by framed standard trim packets, in packet order.
-///
-/// Only the planar packet kinds are returned. Their positional order binds them
-/// to the standard plane bounds records.
+/// Unit frame vector for each positional standard trim packet. The result is
+/// index-aligned with the FBB face population; packets without the optional
+/// vector retain an empty slot.
 #[must_use]
-pub fn standard_plane_normals(bytes: &[u8]) -> Vec<[f64; 3]> {
+pub fn standard_face_frame_vectors(bytes: &[u8]) -> Vec<Option<[f64; 3]>> {
     let Some((face_start, face_count, _)) = largest_fbb_run(bytes) else {
         return Vec::new();
     };
@@ -434,8 +433,7 @@ pub fn standard_plane_normals(bytes: &[u8]) -> Vec<[f64; 3]> {
     };
     records
         .into_iter()
-        .filter(|record| matches!(record.kind, 0x49 | 0x4a | 0x4b | 0x4c | 0x4e | 0x4f))
-        .filter_map(|record| record.frame_vector)
+        .map(|record| record.frame_vector)
         .collect()
 }
 
@@ -722,6 +720,7 @@ struct IncidenceCandidateSearch<'a> {
     edge_ports: Option<&'a [[u32; 2]]>,
     assignment: Vec<Option<[usize; 2]>>,
     degrees: Vec<Vec<u8>>,
+    open_points: Vec<HashSet<usize>>,
     solution: Option<StandardTopology>,
     pair_solutions: Vec<Vec<[usize; 2]>>,
     collect_pairs: bool,
@@ -731,6 +730,20 @@ struct IncidenceCandidateSearch<'a> {
 }
 
 impl IncidenceCandidateSearch<'_> {
+    fn adjust_degree(&mut self, face: usize, point: usize, increase: bool) {
+        let degree = &mut self.degrees[face][point];
+        if increase {
+            *degree += 1;
+        } else {
+            *degree -= 1;
+        }
+        if *degree == 1 {
+            self.open_points[face].insert(point);
+        } else {
+            self.open_points[face].remove(&point);
+        }
+    }
+
     fn candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
         let mut faces = self.edge_faces[edge].to_vec();
         faces.sort_unstable();
@@ -745,10 +758,7 @@ impl IncidenceCandidateSearch<'_> {
 
     fn feasible(&self) -> bool {
         for face in 0..self.face_count {
-            for point in 0..self.vertex_points.len() {
-                if self.degrees[face][point] != 1 {
-                    continue;
-                }
+            for &point in &self.open_points[face] {
                 let can_complete = self.face_edges[face].iter().copied().any(|edge| {
                     self.assignment[edge].is_none()
                         && self.edge_faces[edge].contains(&face)
@@ -862,7 +872,7 @@ impl IncidenceCandidateSearch<'_> {
             faces.dedup();
             for &face in &faces {
                 for &point in &pair {
-                    self.degrees[face][point] += 1;
+                    self.adjust_degree(face, point, true);
                 }
             }
             self.assignment[edge] = Some(pair);
@@ -873,7 +883,7 @@ impl IncidenceCandidateSearch<'_> {
             self.assignment[edge] = None;
             for &face in &faces {
                 for &point in &pair {
-                    self.degrees[face][point] -= 1;
+                    self.adjust_degree(face, point, false);
                 }
             }
         }
@@ -914,6 +924,7 @@ fn reconstruct_incidence_candidates(
         edge_ports,
         assignment: vec![None; choices.len()],
         degrees: vec![vec![0; vertex_points.len()]; face_count],
+        open_points: vec![HashSet::new(); face_count],
         solution: None,
         pair_solutions: Vec::new(),
         collect_pairs: false,
@@ -933,7 +944,7 @@ fn reconstruct_incidence_candidates(
         faces.dedup();
         for face in faces {
             for point in pair {
-                search.degrees[face][*point] += 1;
+                search.adjust_degree(face, *point, true);
             }
         }
         search.assignment[edge] = Some(*pair);
@@ -980,6 +991,7 @@ fn incidence_endpoint_pair_solutions(
         edge_ports: None,
         assignment: vec![None; choices.len()],
         degrees: vec![vec![0; vertex_points.len()]; face_count],
+        open_points: vec![HashSet::new(); face_count],
         solution: None,
         pair_solutions: Vec::new(),
         collect_pairs: true,
@@ -999,7 +1011,7 @@ fn incidence_endpoint_pair_solutions(
         faces.dedup();
         for face in faces {
             for point in pair {
-                search.degrees[face][*point] += 1;
+                search.adjust_degree(face, *point, true);
             }
         }
         search.assignment[edge] = Some(*pair);

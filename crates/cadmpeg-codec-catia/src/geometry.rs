@@ -321,9 +321,12 @@ pub fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
     out
 }
 
-/// Locate plane bounds records and bind them positionally to framed planar trim
-/// packet normals.
-pub fn plane_params(brep: &[u8], normals: &[[f64; 3]]) -> Vec<PlaneParams> {
+/// Locate plane bounds records and bind each persistent carrier tag to the
+/// frame vector of its face-local trim packet.
+pub fn plane_params<S: std::hash::BuildHasher>(
+    brep: &[u8],
+    normals: &HashMap<u32, [f64; 3], S>,
+) -> Vec<PlaneParams> {
     const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
 
     let mut out = Vec::new();
@@ -351,11 +354,12 @@ pub fn plane_params(brep: &[u8], normals: &[[f64; 3]]) -> Vec<PlaneParams> {
         {
             continue;
         }
-        let Some(normal) = normals.get(out.len()).copied() else {
+        let target = u24_le(brep, pos - 3);
+        let Some(normal) = normals.get(&target).copied() else {
             continue;
         };
         out.push(PlaneParams {
-            target: u24_le(brep, pos - 3),
+            target,
             pos,
             origin: Point3::new(
                 f64::from(sphere[0]),
