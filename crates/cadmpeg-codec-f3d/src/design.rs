@@ -1295,7 +1295,8 @@ fn resolved_edge_candidate_intersection<'a>(
     });
     let incidence = corroborated_edge_intersection(selector_contexts, &shared_edge_sets, false);
     let boundary_count = corroborated_edge_intersection(selector_contexts, &shared_edge_sets, true);
-    let common_triplet = common_triplet_edge_intersection(selector_contexts);
+    let common_triplet =
+        corroborated_common_triplet_intersection(selector_contexts, &shared_edge_sets);
     let proofs = [reference, incidence, boundary_count, common_triplet]
         .into_iter()
         .flatten()
@@ -1304,8 +1305,9 @@ fn resolved_edge_candidate_intersection<'a>(
     proofs.iter().all(|proof| *proof == edge).then_some(edge)
 }
 
-fn common_triplet_edge_intersection(
+fn corroborated_common_triplet_intersection(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    shared_edge_sets: &[&[i64]],
 ) -> Option<i64> {
     let mut edge_sets = selector_contexts.iter().flat_map(|selector| {
         selector
@@ -1324,6 +1326,12 @@ fn common_triplet_edge_intersection(
     });
     let mut candidates = edge_sets.next()?;
     for edges in edge_sets {
+        candidates.retain(|candidate| edges.contains(candidate));
+        if candidates.is_empty() {
+            return None;
+        }
+    }
+    for edges in shared_edge_sets {
         candidates.retain(|candidate| edges.contains(candidate));
         if candidates.is_empty() {
             return None;
@@ -15112,13 +15120,29 @@ mod relation_tests {
         common.clause_entries[0] = Some(DesignTopologyRecipeEntry {
             selector: 0,
             boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-            topology_triplets: [triplet.clone(), triplet],
+            topology_triplets: [triplet.clone(), triplet.clone()],
             common_incident_edge_ordinal: Some(1),
         });
         common.clause_triplet_edge_slots[0] = Some([vec![17, 18], vec![17]]);
         assert_eq!(
             resolved_edge_candidate_intersection(&[common], [&[17, 18][..]]),
             Some(17)
+        );
+        let mut common = selector(0, &[]);
+        common.clause_entries[0] = Some(DesignTopologyRecipeEntry {
+            selector: 0,
+            boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+            topology_triplets: [triplet.clone(), triplet],
+            common_incident_edge_ordinal: Some(1),
+        });
+        common.clause_triplet_edge_slots[0] = Some([vec![17, 18, 19], vec![17, 18]]);
+        assert_eq!(
+            resolved_edge_candidate_intersection(&[common.clone()], [&[17][..]]),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(&[common], [&[19][..]]),
+            None
         );
     }
 
