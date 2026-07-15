@@ -14999,6 +14999,46 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
 }
 
 #[test]
+fn generated_variable_blend_rejects_cross_branch_radius_payloads() {
+    use cadmpeg_ir::geometry::{
+        LoftBridgeToken, ProceduralSurfaceDefinition, VariableBlendRadiusKind,
+        VariableBlendSingleRadiusTail,
+    };
+
+    let mut decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh(
+                "var_blend_spl_sur",
+            ))),
+            &DecodeOptions::default(),
+        )
+        .expect("variable-blend decode")
+        .ir;
+    decoded.source = None;
+    decoded.set_native_unknowns("f3d", &[]).unwrap();
+    let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &mut decoded.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected variable blend")
+    };
+    construction.radius_kind = VariableBlendRadiusKind::TwoRadii;
+    construction.second_value = Some(construction.first_value.clone());
+    construction.single_radius_tail = Some(VariableBlendSingleRadiusTail {
+        selector: LoftBridgeToken::Integer(1),
+        parameters: [0.25, 0.75],
+    });
+
+    assert!(cadmpeg_ir::validate(&decoded, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == "variable blend construction payload is invalid"));
+    let error = F3dCodec.encode(&decoded, &mut Vec::new()).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("two-radii variable blend carries a single-radius tail"));
+}
+
+#[test]
 fn generated_vertex_blends_decode_all_boundary_variants() {
     use cadmpeg_ir::geometry::{
         ProceduralSurfaceDefinition, SurfaceGeometry, VertexBlendBoundaryGeometry,

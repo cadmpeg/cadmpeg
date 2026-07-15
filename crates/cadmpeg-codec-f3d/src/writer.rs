@@ -8208,6 +8208,11 @@ fn encode_native_variable_blend(
         construction.radius_kind,
         cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii
     ) {
+        if construction.single_radius_tail.is_some() {
+            return Err(CodecError::Malformed(
+                "two-radii variable blend carries a single-radius tail".into(),
+            ));
+        }
         let second = construction.second_value.as_ref().ok_or_else(|| {
             CodecError::Malformed("two-radii variable blend lacks its second value".into())
         })?;

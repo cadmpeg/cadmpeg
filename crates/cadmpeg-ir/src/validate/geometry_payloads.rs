@@ -1327,6 +1327,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if let ProceduralSurfaceDefinition::VariableBlend { construction } = &procedural.definition
         {
+            use crate::geometry::VariableBlendRadiusKind;
+
             let ranges_valid = [
                 construction.u_range,
                 construction.v_range,
@@ -1358,7 +1360,20 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         tail.parameters.iter().all(|value| value.is_finite())
                             && !matches!(tail.selector, crate::geometry::LoftBridgeToken::Double(value) if !value.is_finite())
                     });
-            if !ranges_valid || !sides_valid || !values_valid || !scalar_tail_valid {
+            let radius_branch_valid = match construction.radius_kind {
+                VariableBlendRadiusKind::SingleRadius => {
+                    construction.second_value.is_none() && construction.chamfer.is_none()
+                }
+                VariableBlendRadiusKind::TwoRadii => {
+                    construction.second_value.is_some() && construction.single_radius_tail.is_none()
+                }
+            };
+            if !ranges_valid
+                || !sides_valid
+                || !values_valid
+                || !scalar_tail_valid
+                || !radius_branch_valid
+            {
                 bounds_err(
                     findings,
                     &procedural.id.0,
