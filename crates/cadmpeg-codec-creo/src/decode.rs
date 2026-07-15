@@ -638,6 +638,7 @@ struct CreoPlaneEnvelopeRecord {
     body: Vec<u8>,
     envelope: CreoPlaneEnvelope,
     corner_coordinate_equal: [Option<bool>; 3],
+    scalar_tokens: Vec<Vec<u8>>,
     row_offset: usize,
     offset: usize,
     source_section: String,
@@ -1201,6 +1202,7 @@ fn plane_envelope_records(scan: &ContainerScan) -> Vec<CreoPlaneEnvelopeRecord> 
                 }
             },
             corner_coordinate_equal: record.corner_coordinate_equal,
+            scalar_tokens: record.scalar_tokens.clone(),
             row_offset: record.row_offset,
             offset: record.offset,
             source_section: source_section(scan, record.offset),

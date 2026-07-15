@@ -944,6 +944,7 @@ mod tests {
                 ],
             },
             corner_coordinate_equal: [Some(true), Some(false), Some(true)],
+            scalar_tokens: Vec::new(),
             row_offset: 50,
             offset: 60,
         };

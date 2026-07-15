@@ -457,6 +457,11 @@ When an axis-aligned `local_sys` normal selects an outline coordinate whose two
 stored tokens are equal, that coordinate supplies the plane offset. Equality of
 the other outline coordinates need not be resolved because the support frame
 already fixes the plane orientation.
+A shortened standard outline can store the four bound scalars and first XYZ
+corner followed by one terminal scalar token. The terminal token occupies the
+coordinate selected by the axis-aligned support-frame normal. It establishes
+the held coordinate when its exact token image equals that coordinate's token
+in the first corner; the other two coordinates of the second corner are absent.
 
 A `crv_array` edge whose two face references resolve to nonparallel placed
 planes has the exact model-space carrier given by their intersection line. Its

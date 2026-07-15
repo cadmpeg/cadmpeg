@@ -507,6 +507,8 @@ pub struct PlaneEnvelopeRecord {
     /// Per-coordinate equality of the two stored model-space corners. `None`
     /// means equality cannot be decided from the scalar token pair.
     pub corner_coordinate_equal: [Option<bool>; 3],
+    /// Exact token bytes for each declared envelope scalar slot.
+    pub scalar_tokens: Vec<Vec<u8>>,
     /// Byte offset of the plane row in the original stream.
     pub row_offset: usize,
     /// Byte offset of the envelope body in the original stream.
@@ -602,7 +604,14 @@ pub fn frame_bound_outline_planes(
         let [axis] = axes.as_slice() else {
             continue;
         };
-        if record.corner_coordinate_equal[*axis] != Some(true) {
+        let shortened_held_coordinate = record.scalar_tokens.len() == 10
+            && record.scalar_tokens[..8]
+                .iter()
+                .all(|token| !token.is_empty())
+            && record.scalar_tokens[8..].iter().all(Vec::is_empty)
+            && !record.scalar_tokens[4 + *axis].is_empty()
+            && record.scalar_tokens[4 + *axis] == record.scalar_tokens[7];
+        if record.corner_coordinate_equal[*axis] != Some(true) && !shortened_held_coordinate {
             continue;
         }
         let corners = match &record.envelope {
@@ -1777,9 +1786,11 @@ pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
             continue;
         };
         let body = payload[*body_start..body_end].to_vec();
+        let scalar_tokens;
         let (envelope, corner_coordinate_equal) = if body.first() == Some(&0x0e) {
             let slots = scalar_slots_with_tokens(&body[1..], 9, &cache);
             let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
+            scalar_tokens = slots.iter().map(|slot| slot.1.clone()).collect();
             (
                 PlaneEnvelope::Compact {
                     prefix: [values[0], values[1], values[2]],
@@ -1797,6 +1808,7 @@ pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
         } else {
             let slots = scalar_slots_with_tokens(&body, 10, &cache);
             let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
+            scalar_tokens = slots.iter().map(|slot| slot.1.clone()).collect();
             (
                 PlaneEnvelope::Standard {
                     bounds_2d: [[values[0], values[1]], [values[2], values[3]]],
@@ -1817,6 +1829,7 @@ pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
             body,
             envelope,
             corner_coordinate_equal,
+            scalar_tokens,
             row_offset: row.offset,
             offset: *body_start,
         });
@@ -1865,6 +1878,7 @@ pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
                 slot_equality(&slots[1], &slots[4]),
                 slot_equality(&slots[2], &slots[5]),
             ],
+            scalar_tokens: slots.iter().map(|slot| slot.1.clone()).collect(),
             row_offset: row.offset,
             offset: scalar_start,
         });
@@ -2361,6 +2375,7 @@ mod tests {
                 ],
             },
             corner_coordinate_equal: [Some(true), Some(false), Some(false)],
+            scalar_tokens: Vec::new(),
             row_offset: 10,
             offset: 20,
         }];
@@ -2408,6 +2423,7 @@ mod tests {
                 ],
             },
             corner_coordinate_equal: [Some(false), Some(true), Some(false)],
+            scalar_tokens: Vec::new(),
             row_offset: 10,
             offset: 20,
         }];
@@ -2428,6 +2444,7 @@ mod tests {
                 ],
             },
             corner_coordinate_equal: [Some(false), Some(true), None],
+            scalar_tokens: Vec::new(),
             row_offset: 10,
             offset: 20,
         }];
@@ -2452,6 +2469,52 @@ mod tests {
                 u_axis: [0.0, 0.0, 1.0],
                 offset: 20,
             }]
+        );
+    }
+
+    #[test]
+    fn support_frame_maps_shortened_terminal_outline_coordinate() {
+        let records = [PlaneEnvelopeRecord {
+            surface_id: 42,
+            body: Vec::new(),
+            envelope: PlaneEnvelope::Standard {
+                bounds_2d: [[None; 2]; 2],
+                corners_3d: [
+                    [Some(-3.0), Some(-4.0), Some(7.0)],
+                    [Some(-4.0), None, None],
+                ],
+            },
+            corner_coordinate_equal: [Some(false), None, None],
+            scalar_tokens: vec![
+                vec![1],
+                vec![2],
+                vec![3],
+                vec![4],
+                vec![5],
+                vec![6],
+                vec![7],
+                vec![6],
+                Vec::new(),
+                Vec::new(),
+            ],
+            row_offset: 10,
+            offset: 20,
+        }];
+        let frames = [PlaneLocalSystem {
+            surface_id: 42,
+            body: Vec::new(),
+            slots: Vec::new(),
+            origin: Some([100.0, 200.0, 300.0]),
+            u_axis: Some([0.0, 0.0, 1.0]),
+            normal: Some([0.0, 1.0, 0.0]),
+            classification: LocalSystemClassification::Simple,
+            row_offset: 10,
+            offset: 30,
+        }];
+
+        assert_eq!(
+            frame_bound_outline_planes(&records, &frames)[0].origin,
+            [0.0, -4.0, 0.0]
         );
     }
 
@@ -2604,6 +2667,7 @@ mod tests {
                 ],
             },
             corner_coordinate_equal: [Some(true), Some(true), Some(false)],
+            scalar_tokens: Vec::new(),
             row_offset: 10,
             offset: 20,
         }];
