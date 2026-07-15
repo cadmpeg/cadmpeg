@@ -1035,6 +1035,7 @@ impl<'a> Builder<'a> {
             .filter(|procedural| match &procedural.definition {
                 ProceduralSurfaceDefinition::Exact { .. }
                 | ProceduralSurfaceDefinition::Compound { .. }
+                | ProceduralSurfaceDefinition::SubSurface { .. }
                 | ProceduralSurfaceDefinition::Taper { .. }
                 | ProceduralSurfaceDefinition::Loft { .. }
                 | ProceduralSurfaceDefinition::CompoundLoft { .. }

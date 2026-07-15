@@ -402,6 +402,22 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::SubSurface {
+            parameter_ranges, ..
+        } = &procedural.definition
+        {
+            if !parameter_ranges
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite())
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "sub-surface parameter interval is not finite",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Taper {
             parameter, taper, ..
         } = &procedural.definition

@@ -5893,6 +5893,12 @@ fn native_procedural_surface(
             }
             bytes.push(0x10);
         }
+        ProceduralSurfaceDefinition::SubSurface { .. } => {
+            return Err(CodecError::Malformed(format!(
+                "sub-surface {} must use its exact cacheless carrier",
+                procedural.id
+            )));
+        }
         ProceduralSurfaceDefinition::Taper {
             support,
             reference,
@@ -7070,6 +7076,27 @@ fn native_cacheless_procedural_surface(
             encode_native_law_surface(bytes, target, procedural, construction, None)?;
             return Ok(true);
         }
+    }
+    if let ProceduralSurfaceDefinition::SubSurface {
+        support,
+        parameter_ranges,
+    } = &procedural.definition
+    {
+        let support = target
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == *support)
+            .ok_or_else(|| CodecError::Malformed("sub-surface support is missing".into()))?;
+        native_surface_base(bytes, "spline")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "sub_spl_sur")?;
+        for value in parameter_ranges.iter().flatten() {
+            native_f64(bytes, *value);
+        }
+        native_embedded_surface(bytes, &support.geometry)?;
+        bytes.push(0x10);
+        return Ok(true);
     }
     if let ProceduralSurfaceDefinition::VertexBlend { construction } = &procedural.definition {
         encode_native_vertex_blend(bytes, target, construction)?;

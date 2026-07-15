@@ -1597,6 +1597,23 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 components: component_ids,
                             }
                         }
+                        nurbs::DecodedProceduralSurfaceDefinition::SubSurface {
+                            support,
+                            parameter_ranges,
+                        } => {
+                            let support_id = SurfaceId(format!(
+                                "f3d:brep:procedural_surface#{i}:sub_surface:support"
+                            ));
+                            out.surfaces.push(Surface {
+                                id: support_id.clone(),
+                                geometry: support,
+                                source_object: None,
+                            });
+                            ProceduralSurfaceDefinition::SubSurface {
+                                support: support_id,
+                                parameter_ranges,
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::Taper {
                             support,
                             reference,
@@ -4959,7 +4976,8 @@ fn procedural_surface_definition_is_exact_carrier(
     match definition {
         nurbs::DecodedProceduralSurfaceDefinition::Extrusion { .. }
         | nurbs::DecodedProceduralSurfaceDefinition::Helix(_)
-        | nurbs::DecodedProceduralSurfaceDefinition::VertexBlend(_) => true,
+        | nurbs::DecodedProceduralSurfaceDefinition::VertexBlend(_)
+        | nurbs::DecodedProceduralSurfaceDefinition::SubSurface { .. } => true,
         nurbs::DecodedProceduralSurfaceDefinition::Law(construction) => !matches!(
             construction.tail,
             cadmpeg_ir::geometry::LawSurfaceTail::Full

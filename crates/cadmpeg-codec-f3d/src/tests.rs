@@ -3539,6 +3539,34 @@ fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool, tail_selector: i6
     bytes
 }
 
+fn synthetic_sub_spl_sur_smbh(name: &str) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, name);
+    for value in [-1.0, 2.0, -3.0, 4.0] {
+        t_dbl(&mut surface, value);
+    }
+    t_ident(&mut surface, "plane");
+    t_pos(&mut surface, [0.1, -0.2, 0.3]);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    t_vec(&mut surface, [1.0, 0.0, 0.0]);
+    surface.push(0x0b);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
     push_u8_string(bytes, label);
     t_ident(bytes, "plane");
@@ -14082,6 +14110,66 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
             legacy_ranges.then_some([[-1.0, 2.0], [-3.0, 4.0]])
         );
         assert_eq!(construction.additional.len(), 1);
+    }
+}
+
+#[test]
+fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+
+    for name in ["sub_spl_sur", "subsur"] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_sub_spl_sur_smbh(name))),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let procedural = &decoded.ir.model.procedural_surfaces[0];
+        let ProceduralSurfaceDefinition::SubSurface {
+            support,
+            parameter_ranges,
+        } = &procedural.definition
+        else {
+            panic!("expected sub-surface")
+        };
+        assert_eq!(*parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
+        assert!(matches!(
+            decoded
+                .ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == *support)
+                .map(|surface| &surface.geometry),
+            Some(SurfaceGeometry::Plane { origin, .. })
+                if *origin == cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0)
+        ));
+        assert!(matches!(
+            decoded
+                .ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == procedural.surface)
+                .map(|surface| &surface.geometry),
+            Some(SurfaceGeometry::Procedural { .. })
+        ));
+
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let mut encoded = Vec::new();
+        F3dCodec.encode(&source_less, &mut encoded).unwrap();
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap();
+        assert!(matches!(
+            round_trip.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::SubSurface {
+                parameter_ranges: [[-1.0, 2.0], [-3.0, 4.0]],
+                ..
+            }
+        ));
     }
 }
 

@@ -693,6 +693,13 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Ordered embedded component surfaces.
         components: Vec<SurfaceGeometry>,
     },
+    /// Exact rectangular restriction of an embedded support surface.
+    SubSurface {
+        /// Embedded support surface.
+        support: SurfaceGeometry,
+        /// Ordered U and V parameter intervals.
+        parameter_ranges: [[f64; 2]; 2],
+    },
     /// Native taper family with shared carriers and subtype tail.
     Taper {
         /// Embedded base surface.
@@ -2313,6 +2320,41 @@ fn decode_law_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
             discontinuities,
         })),
         cache_fit_tolerance,
+    })
+}
+
+fn decode_sub_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    let names: [&[u8]; 2] = [b"sub_spl_sur", b"subsur"];
+    let (start, name) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name))
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name.len() + 3;
+    let parameter_ranges = [
+        [
+            take_f64(span, &mut position)?,
+            take_f64(span, &mut position)?,
+        ],
+        [
+            take_f64(span, &mut position)?,
+            take_f64(span, &mut position)?,
+        ],
+    ];
+    let support = decode_embedded_surface(span, &mut position, int_width)?;
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::SubSurface {
+            support,
+            parameter_ranges,
+        },
+        cache_fit_tolerance: None,
     })
 }
 
@@ -4362,6 +4404,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_compound_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_scaled_compound_loft_spl_sur(bytes, int_width))
+        .or_else(|| decode_sub_spl_sur(bytes, int_width))
         .or_else(|| decode_law_spl_sur(bytes, int_width))
         .or_else(|| decode_skin_spl_sur(bytes, int_width))
         .or_else(|| decode_net_spl_sur(bytes, int_width))
@@ -7296,6 +7339,42 @@ mod width_tests {
                         | (cadmpeg_ir::geometry::LawSurfaceTail::Historical, 3)
                         | (cadmpeg_ir::geometry::LawSurfaceTail::Optimal, 4)
                 ));
+            }
+        }
+    }
+
+    #[test]
+    fn sub_surface_layout_decodes_at_both_integer_widths() {
+        for int_width in [4usize, 8] {
+            for name in ["sub_spl_sur", "subsur"] {
+                let mut bytes = vec![0x0f];
+                push_ident(&mut bytes, name);
+                for value in [-1.0, 2.0, -3.0, 4.0] {
+                    push_f64(&mut bytes, value);
+                }
+                push_ident(&mut bytes, "plane");
+                push_position(&mut bytes, [0.1, -0.2, 0.3]);
+                push_vector(&mut bytes, [0.0, 0.0, 1.0]);
+                push_vector(&mut bytes, [1.0, 0.0, 0.0]);
+                bytes.push(0x0b);
+                bytes.push(0x10);
+
+                let decoded = decode_sub_spl_sur(&bytes, int_width)
+                    .unwrap_or_else(|| panic!("{name} at integer width {int_width}"));
+                let DecodedProceduralSurfaceDefinition::SubSurface {
+                    support,
+                    parameter_ranges,
+                } = decoded.definition
+                else {
+                    panic!("expected sub-surface")
+                };
+                assert_eq!(parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
+                assert!(matches!(
+                    support,
+                    SurfaceGeometry::Plane { origin, .. }
+                        if origin == Point3::new(1.0, -2.0, 3.0)
+                ));
+                assert_eq!(decoded.cache_fit_tolerance, None);
             }
         }
     }

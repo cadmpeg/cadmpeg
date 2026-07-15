@@ -311,6 +311,13 @@ pub enum ProceduralSurfaceDefinition {
         /// Ordered component surfaces.
         components: Vec<SurfaceId>,
     },
+    /// Exact rectangular restriction of an embedded support surface.
+    SubSurface {
+        /// Embedded support surface whose parameterization is retained.
+        support: SurfaceId,
+        /// Ordered U and V parameter intervals.
+        parameter_ranges: [[f64; 2]; 2],
+    },
     /// Taper of a support surface around a reference curve.
     Taper {
         /// Base surface being tapered.
