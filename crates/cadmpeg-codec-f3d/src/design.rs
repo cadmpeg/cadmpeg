@@ -1255,17 +1255,43 @@ fn resolved_face_group(
         if matches.next().is_some() {
             return None;
         }
-        let [face] = face_operand_candidates(operand) else {
+        let Some(face) = resolved_face_operand(operand) else {
             return None;
         };
-        if !faces.contains(face) {
-            faces.push(face.clone());
+        if !faces.contains(&face) {
+            faces.push(face);
         }
     }
     (!faces.is_empty()).then(|| cadmpeg_ir::features::FaceSelection::Resolved {
         faces,
         native: group.id.clone(),
     })
+}
+
+fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<cadmpeg_ir::ids::FaceId> {
+    if let Some(slot) = operand.resolved_face_slot {
+        return Some(cadmpeg_ir::ids::FaceId(format!("f3d:brep:entity#{slot}")));
+    }
+    let [face] = face_operand_candidates(operand) else {
+        return None;
+    };
+    Some(face.clone())
+}
+
+pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperand) -> Option<i64> {
+    let candidate = match operand.preceding_candidate_faces.as_slice() {
+        [face] => face,
+        _ => {
+            let [face] = operand.changed_candidate_faces.as_slice() else {
+                return None;
+            };
+            face
+        }
+    };
+    if !face_operand_candidates(operand).contains(candidate) {
+        return None;
+    }
+    candidate.0.rsplit_once('#')?.1.parse().ok()
 }
 
 pub(crate) fn face_operand_candidates(operand: &DesignFaceOperand) -> &[cadmpeg_ir::ids::FaceId] {
@@ -7714,6 +7740,7 @@ fn parse_face_operand(
         unreferenced_candidate_faces: Vec::new(),
         preceding_candidate_faces: Vec::new(),
         changed_candidate_faces: Vec::new(),
+        resolved_face_slot: None,
         next_record_index: indexed[4].1,
         next_byte_offset,
     })
@@ -12190,6 +12217,7 @@ mod relation_tests {
         assert_eq!(operand.recipe_record_index, 103);
         assert_eq!(operand.recipe_kind, ConstructionRecipeKind::BoundedFace);
         assert_eq!(operand.recipe_id, face_recipe.id);
+        assert_eq!(operand.resolved_face_slot, None);
         assert_eq!(
             operand.recipe_program_offset,
             face_recipe_name_at as u64 + 24
@@ -12278,6 +12306,21 @@ mod relation_tests {
             resolved_face_group(&group, std::slice::from_ref(&operand)),
             Some(FaceSelection::Resolved { faces, native })
                 if faces == [FaceId("f3d:brep:entity#51".into())] && native == group.id
+        ));
+        operand
+            .unreferenced_candidate_faces
+            .push(FaceId("f3d:brep:entity#50".into()));
+        assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
+        operand.preceding_candidate_faces = vec![FaceId("f3d:brep:entity#50".into())];
+        assert_eq!(
+            super::resolve_face_operand_history_candidates(&operand),
+            Some(50)
+        );
+        operand.resolved_face_slot = Some(50);
+        assert!(matches!(
+            resolved_face_group(&group, std::slice::from_ref(&operand)),
+            Some(FaceSelection::Resolved { faces, native })
+                if faces == [FaceId("f3d:brep:entity#50".into())] && native == group.id
         ));
     }
 

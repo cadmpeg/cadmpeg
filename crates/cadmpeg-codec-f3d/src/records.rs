@@ -1311,6 +1311,10 @@ pub struct DesignFaceOperand {
     /// exact ASM state transition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed_candidate_faces: Vec<FaceId>,
+    /// Stable historical face slot proven by the preceding topology or exact
+    /// feature transition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_face_slot: Option<i64>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.

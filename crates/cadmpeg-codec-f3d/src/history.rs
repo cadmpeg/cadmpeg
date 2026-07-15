@@ -590,6 +590,7 @@ pub(crate) fn bind_face_operand_history_candidates(
     for operand in operands {
         operand.preceding_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
+        operand.resolved_face_slot = None;
         let stream = crate::design::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -624,6 +625,8 @@ pub(crate) fn bind_face_operand_history_candidates(
                 .into_iter()
                 .cloned()
                 .collect();
+        operand.resolved_face_slot =
+            crate::design::resolve_face_operand_history_candidates(operand);
     }
 }
 
