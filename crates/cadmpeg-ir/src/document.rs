@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::annotations::Annotations;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::features::{DesignConfiguration, DesignParameter, Feature};
@@ -123,9 +122,6 @@ pub struct CadIr {
     pub tolerances: Tolerances,
     /// Format-neutral model.
     pub model: Model,
-    /// Sparse provenance and exactness tables.
-    #[serde(default)]
-    pub annotations: Annotations,
     /// Independently versioned native namespaces.
     #[serde(default)]
     pub native: Native,
@@ -190,7 +186,6 @@ impl CadIr {
             units,
             tolerances: Tolerances::default(),
             model: Model::default(),
-            annotations: Annotations::default(),
             native: Native::default(),
         }
     }

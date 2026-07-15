@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD containers through format codecs into neutral `CadIr` version 6 plus an independently versioned source-fidelity sidecar, then optionally validates and encodes them. [cad-ir.md](cad-ir.md) defines canonical units and parameterization, identity, topology, free carriers, annotations, and native-namespace contracts. [byte-accounting.md](byte-accounting.md) defines sidecar accounting. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
+cadmpeg routes native CAD containers through format codecs into neutral `CadIr` version 6 plus an independently versioned source-fidelity sidecar, then optionally validates and encodes them. [cad-ir.md](cad-ir.md) defines canonical units and parameterization, identity, topology, free carriers, sidecar annotations, and native-namespace contracts. [byte-accounting.md](byte-accounting.md) defines sidecar accounting. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
 
 ## Pipeline
 
@@ -17,7 +17,7 @@ native CAD ── detect + inspect ──> container summary
 - `validate` reads or decodes an input and checks IR invariants.
 - `export` reads or decodes an input and writes CADIR, STEP, or SLDPRT without validation.
 - `convert` performs load/decode, validation, and export. Validation errors stop export unless `--allow-invalid` is set.
-- `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, annotations, native namespaces, and opaque records. ID-bearing records are matched by globally unique IDs. Vector position is not entity identity.
+- `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, and native namespaces. Source-fidelity annotations and byte ownership use the independent sidecar diff. ID-bearing records are matched by globally unique IDs. Vector position is not entity identity.
 
 CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 6, including its required `subds` arena and excluding source-byte accounting. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
 

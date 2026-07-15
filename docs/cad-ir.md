@@ -2,11 +2,11 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"3"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"6"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
-A document has four semantic layers:
+A product document has three semantic layers:
 
 ```text
 CadIr
@@ -15,11 +15,10 @@ CadIr
 │   ├── topology and geometry carriers
 │   ├── procedural constructions and neutral features
 │   └── tessellation, appearance, and attributes
-├── annotations
 └── native
 ```
 
-`model` is format-neutral. `annotations` supplies document-wide source location and exactness information. `native` is a map keyed by format ID. Each value contains an integer `version` and an `arenas` map. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores records with `offset`, `byte_len`, `sha256`, optional base64 `data`, and `links`.
+`model` is format-neutral. `native` is a map keyed by format ID. Each value contains an integer `version` and an `arenas` map. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, retained source records, and byte ownership belong to the independently versioned `SourceFidelity` sidecar and are not serialized in `CadIr`.
 
 The neutral model arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `features`, `tessellations`, `appearances`, `appearance_bindings`, and `attributes`. Every arena is a required flat JSON array. References are string IDs, never array indices. `subds` contains subdivision-surface control cages and is a free carrier arena; it is not owned by B-rep topology.
 
@@ -152,18 +151,18 @@ A blend radius law is constant, linear between endpoint radii, or an explicit NU
 
 Procedural curve definitions are intersection, projection, offset, blend spine, or unknown. Intersection keeps two fixed optional support slots. Projection identifies source curve, support surface, and optional projection direction. Offset identifies source curve, signed distance, and optional support surface.
 
-## Sparse annotations
+## Source-fidelity annotations
 
-`annotations.streams` interns source stream names. `annotations.provenance` maps an entity ID to a stream index, byte offset, and optional source tag. Stream indices must resolve.
+`SourceFidelity.annotations.streams` interns source stream names. `SourceFidelity.annotations.provenance` maps a product or retained-record ID to a stream index, byte offset, and optional source tag. Stream indices must resolve.
 
-`annotations.exactness` maps an entity ID to entity exactness plus field overrides keyed by serialized field path. Exactness values are:
+`SourceFidelity.annotations.exactness` maps an entity ID to entity exactness plus field overrides keyed by serialized field path. Exactness values are:
 
 - `byte_exact`: directly represented source data, including declared unit conversion;
 - `derived`: deterministic computation from byte-exact inputs;
 - `inferred`: selected from context or convention;
 - `unknown`: source fidelity is not established.
 
-Absence from `annotations.exactness` means `byte_exact`. A field override takes precedence over entity exactness. Codecs must record every entity and field that is not byte-exact. Synthetic documents must explicitly mark synthetic entities `inferred`; absence is not valid shorthand for synthetic data. Annotation keys must resolve to globally identified entities. Unknown field paths are warnings so additive fields remain readable.
+Absence from sidecar exactness means `byte_exact` for a decoded source-backed value. A field override takes precedence over entity exactness. Codecs record every decoded entity and field that is not byte-exact. Source-less product documents carry no source-fidelity sidecar. Annotation keys resolve to globally identified product entities or retained source records. Unknown field paths are warnings so additive product fields remain readable.
 
 ## Neutral feature model
 
@@ -230,7 +229,7 @@ Native namespaces may preserve these domains. New neutral fields for them requir
 
 ## Worked cube
 
-[`emit_cube.rs`](../crates/cadmpeg-ir/examples/emit_cube.rs) emits a 10 mm solid cube with one region, one shell, six planar faces, twelve line edges, eight vertices, and twenty-four coedges. Every edge has a two-member radial ring. Synthetic entities carry explicit `inferred` annotations.
+[`emit_cube.rs`](../crates/cadmpeg-ir/examples/emit_cube.rs) emits a 10 mm solid cube with one region, one shell, six planar faces, twelve line edges, eight vertices, and twenty-four coedges. Every edge has a two-member radial ring.
 
 The generated document begins with this complete hierarchy and representative radial pair:
 
@@ -332,20 +331,11 @@ The generated document begins with this complete hierarchy and representative ra
       }
     ]
   },
-  "annotations": {
-    "streams": ["synthetic:"],
-    "provenance": {
-      "body0": { "stream": 0, "offset": 0 }
-    },
-    "exactness": {
-      "body0": { "entity": "inferred" }
-    }
-  },
   "native": {}
 }
 ```
 
-The extract omits repeated faces, loops, coedges, edges, vertices, points, surfaces, curves, and their matching synthetic annotations. Regenerate the complete canonical artifact with:
+The extract omits repeated faces, loops, coedges, edges, vertices, points, surfaces, and curves. Regenerate the complete canonical artifact with:
 
 ```sh
 cargo run -p cadmpeg-ir --example emit_cube > cube.cadir.json

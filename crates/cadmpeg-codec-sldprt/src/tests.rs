@@ -3258,7 +3258,6 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .ir;
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
-    ir.annotations = cadmpeg_ir::Annotations::default();
     ir.model.bodies.iter_mut().for_each(|body| body.name = None);
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     let body_ids = ir

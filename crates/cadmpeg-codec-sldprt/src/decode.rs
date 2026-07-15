@@ -1084,7 +1084,6 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
         units: ir.units.clone(),
         tolerances: ir.tolerances,
         model: ir.model.clone(),
-        annotations: Annotations::default(),
         native: cadmpeg_ir::Native::default(),
     };
     normalized.model.bodies.iter_mut().for_each(|body| {
@@ -1128,7 +1127,6 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
     // largest single payload) is filtered out instead of copied and dropped.
     let mut normalized = ir.clone();
     normalized.finalize();
-    normalized.annotations = Annotations::default();
     normalized.source = ir.source.as_ref().map(|source| {
         let mut source = source.clone();
         source.attributes.remove("semantic_sha256");

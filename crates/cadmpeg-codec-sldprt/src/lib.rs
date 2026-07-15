@@ -456,7 +456,7 @@ impl SldprtCodec {
     /// the semantic writer cannot represent, and [`CodecError::Malformed`] when
     /// the IR or retained source data violates a required invariant.
     pub fn write_preserved(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-        Self::write_preserved_with_annotations(ir, &ir.annotations, writer)
+        Self::write_preserved_with_annotations(ir, &Annotations::default(), writer)
     }
 
     /// Write a decoded document with its retained source-fidelity sidecar.
@@ -535,7 +535,7 @@ impl Encoder for SldprtCodec {
     }
 
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        Self::encode_with_annotations(ir, &ir.annotations, writer)
+        Self::encode_with_annotations(ir, &Annotations::default(), writer)
     }
 
     fn encode_with_source_fidelity(
@@ -544,8 +544,10 @@ impl Encoder for SldprtCodec {
         source_fidelity: Option<&SourceFidelity>,
         writer: &mut dyn Write,
     ) -> Result<ExportReport, CodecError> {
-        let annotations = source_fidelity.map_or(&ir.annotations, |value| &value.annotations);
-        Self::encode_with_annotations(ir, annotations, writer)
+        match source_fidelity {
+            Some(value) => Self::encode_with_annotations(ir, &value.annotations, writer),
+            None => Self::encode_with_annotations(ir, &Annotations::default(), writer),
+        }
     }
 }
 
