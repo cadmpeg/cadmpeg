@@ -216,12 +216,21 @@ impl CodeBits<'_> {
     }
 }
 
+/// Upper bound on values a single arithmetic-coded lane may declare.
+const MAX_ARITHMETIC_VALUES: usize = 1_000_000;
+
 fn decode_arithmetic(
     code_words: &[u8],
     code_bit_len: usize,
     value_count: usize,
     entries: &[ProbabilityEntry],
 ) -> Option<Vec<Option<i32>>> {
+    // Arithmetic symbols can consume zero code bits, so the stream length puts
+    // no floor under `value_count`; an absolute cap bounds the allocation and
+    // the per-value decode work instead.
+    if value_count > MAX_ARITHMETIC_VALUES {
+        return None;
+    }
     let total: u32 = entries
         .iter()
         .try_fold(0u32, |sum, entry| sum.checked_add(entry.occurrence_count))?;
