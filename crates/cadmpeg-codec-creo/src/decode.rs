@@ -9666,11 +9666,7 @@ fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> V
                 .flat_map(|record| &record.ids)
                 .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))),
         );
-    let mut outputs = Vec::new();
-    let evaluated = BodyId(format!("creo:feature:extrusion#{feature_id}:body"));
-    if ir.model.bodies.iter().any(|body| body.id == evaluated) {
-        outputs.push(evaluated);
-    }
+    let mut outputs = evaluated_sweep_output_bodies(ir, feature_id);
     for surface in generated_surfaces {
         for face in ir.model.faces.iter().filter(|face| face.surface == surface) {
             let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == face.shell) else {
@@ -9690,6 +9686,14 @@ fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> V
         }
     }
     outputs
+}
+
+fn evaluated_sweep_output_bodies(ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
+    ["extrusion", "revolution"]
+        .into_iter()
+        .map(|family| BodyId(format!("creo:feature:{family}#{feature_id}:body")))
+        .filter(|id| ir.model.bodies.iter().any(|body| body.id == *id))
+        .collect()
 }
 
 fn feature_field_text(value: &crate::feature::FeatureFieldValue) -> Option<String> {
@@ -13122,6 +13126,33 @@ mod resolved_sketch_tests {
         assert_eq!(
             feature_dimension_parameter_id(917, 40, 3).0,
             "creo:featdefs:parameter#917:40:3"
+        );
+    }
+
+    #[test]
+    fn evaluated_sweep_bodies_are_feature_outputs() {
+        let mut ir = CadIr::empty(Units::default());
+        for id in [
+            "creo:feature:extrusion#40:body",
+            "creo:feature:revolution#40:body",
+            "creo:feature:revolution#41:body",
+        ] {
+            ir.model.bodies.push(Body {
+                id: BodyId(id.to_string()),
+                kind: BodyKind::Solid,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            });
+        }
+        assert_eq!(
+            evaluated_sweep_output_bodies(&ir, 40),
+            vec![
+                BodyId("creo:feature:extrusion#40:body".to_string()),
+                BodyId("creo:feature:revolution#40:body".to_string()),
+            ]
         );
     }
 
