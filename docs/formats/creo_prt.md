@@ -327,10 +327,12 @@ The `_ 46 2f _ 46 2e` layout requires a first-axis intercept magnitude of 30,
 a zero second-axis intercept, and retains the stored sweep-axis sign. The
 `_ 42 7f..86 _ 18 7f..86` layout requires zero intercepts and retains the
 stored sweep-axis sign. Its first and fourth slots accept the complete
-first-coordinate scalar lane. The `_ 2d _ _ 2d _` layout requires a first-axis
-intercept magnitude of 30, a zero second-axis intercept, and reflects the
-sweep-axis sign. Other six-scalar sequences after the marker are not directrix
-envelopes.
+first-coordinate scalar lane. In the `_ 2d _ _ 2d _` layout, slots one and
+four also use the first-coordinate lane. Its directrix charts select exactly
+one of two forms: a zero-offset form retaining the sweep-axis sign, or a
+first-axis intercept magnitude of 30 with a zero second-axis intercept and a
+reflected sweep-axis sign. A missing or non-unique form leaves the frame opaque.
+Other six-scalar sequences after the marker are not directrix envelopes.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 

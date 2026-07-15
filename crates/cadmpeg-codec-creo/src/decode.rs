@@ -3483,6 +3483,7 @@ fn placed_tabulated_cylinder_directrix(
             first_offset: f64,
             reflect_sweep: bool,
         },
+        OffsetSelectedPlanar,
     }
     if parameters.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
         return None;
@@ -3505,7 +3506,9 @@ fn placed_tabulated_cylinder_directrix(
         let mut heads = Vec::with_capacity(6);
         for slot in 0..6 {
             heads.push(*parameters.body.get(cursor)?);
-            let (value, end) = if matches!(slot, 0 | 3) {
+            let (value, end) = if matches!(slot, 0 | 3)
+                || (matches!(slot, 1 | 4) && parameters.body.get(cursor) == Some(&0x2d))
+            {
                 crate::scalar::decode_tabulated_cylinder_first_frame_coordinate(
                     &parameters.body,
                     cursor,
@@ -3541,13 +3544,7 @@ fn placed_tabulated_cylinder_directrix(
                 },
             ))
         } else if matches!(heads.as_slice(), [_, 0x2d, _, _, 0x2d, _]) {
-            Some((
-                values,
-                FrameLayout::SignedPlanar {
-                    first_offset: 30.0,
-                    reflect_sweep: true,
-                },
-            ))
+            Some((values, FrameLayout::OffsetSelectedPlanar))
         } else {
             None
         }
@@ -3613,20 +3610,52 @@ fn placed_tabulated_cylinder_directrix(
     let [(first_axis, second_axis, sweep_axis)] = assignments.as_slice() else {
         return None;
     };
-    let signed_chart = match layout {
-        FrameLayout::LegacyReflected => None,
-        FrameLayout::SignedPlanar { first_offset, .. } => Some((
-            signed_unit_chart(
-                [local_min[0], local_max[0]],
-                [first[*first_axis], second[*first_axis]],
-                first_offset,
-            )?,
-            signed_unit_chart(
-                [local_min[1], local_max[1]],
-                [first[*second_axis], second[*second_axis]],
-                0.0,
-            )?,
-        )),
+    let (signed_chart, reflect_sweep) = match layout {
+        FrameLayout::LegacyReflected => (None, false),
+        FrameLayout::SignedPlanar {
+            first_offset,
+            reflect_sweep,
+        } => (
+            Some((
+                signed_unit_chart(
+                    [local_min[0], local_max[0]],
+                    [first[*first_axis], second[*first_axis]],
+                    first_offset,
+                )?,
+                signed_unit_chart(
+                    [local_min[1], local_max[1]],
+                    [first[*second_axis], second[*second_axis]],
+                    0.0,
+                )?,
+            )),
+            reflect_sweep,
+        ),
+        FrameLayout::OffsetSelectedPlanar => {
+            let candidates = [(0.0, false), (30.0, true)]
+                .into_iter()
+                .filter_map(|(first_offset, reflect_sweep)| {
+                    Some((
+                        (
+                            signed_unit_chart(
+                                [local_min[0], local_max[0]],
+                                [first[*first_axis], second[*first_axis]],
+                                first_offset,
+                            )?,
+                            signed_unit_chart(
+                                [local_min[1], local_max[1]],
+                                [first[*second_axis], second[*second_axis]],
+                                0.0,
+                            )?,
+                        ),
+                        reflect_sweep,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            let [(chart, reflect_sweep)] = candidates.as_slice() else {
+                return None;
+            };
+            (Some(*chart), *reflect_sweep)
+        }
     };
     let control_points = points
         .iter()
@@ -3636,13 +3665,6 @@ fn placed_tabulated_cylinder_directrix(
                 Some(((first_slope, first_intercept), (second_slope, second_intercept))) => {
                     placed[*first_axis] = first_slope * point[0] + first_intercept;
                     placed[*second_axis] = second_slope * point[1] + second_intercept;
-                    let reflect_sweep = matches!(
-                        layout,
-                        FrameLayout::SignedPlanar {
-                            reflect_sweep: true,
-                            ..
-                        }
-                    );
                     placed[*sweep_axis] = if reflect_sweep {
                         -first[*sweep_axis]
                     } else {
@@ -3671,16 +3693,10 @@ fn placed_tabulated_cylinder_directrix(
         })
         .collect();
     let mut sweep = [0.0; 3];
-    sweep[*sweep_axis] = match layout {
-        FrameLayout::SignedPlanar {
-            reflect_sweep: true,
-            ..
-        } => first[*sweep_axis] - second[*sweep_axis],
-        FrameLayout::LegacyReflected
-        | FrameLayout::SignedPlanar {
-            reflect_sweep: false,
-            ..
-        } => second[*sweep_axis] - first[*sweep_axis],
+    sweep[*sweep_axis] = if reflect_sweep {
+        first[*sweep_axis] - second[*sweep_axis]
+    } else {
+        second[*sweep_axis] - first[*sweep_axis]
     };
     (sweep[*sweep_axis].is_finite() && sweep[*sweep_axis] != 0.0).then_some((
         NurbsCurve {
@@ -8398,6 +8414,71 @@ mod resolved_sketch_tests {
         assert!(!is_zero_offset_signed_planar_frame(&[
             0x68, 0x42, 0x84, 0x71, 0x19, 0x86,
         ]));
+    }
+
+    #[test]
+    fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
+        let replay = crate::surface::TabulatedCylinderCurveReplay {
+            surface_id: 815,
+            curve_id: 1,
+            curve_type: 0x13,
+            flip: 1,
+            tangent_condition: 0,
+            degree: 3,
+            parameter_body: Vec::new(),
+            control_point_ids: [1, 2, 3, 4],
+            successor_reference: 0,
+            control_point_bodies: std::array::from_fn(|_| Vec::new()),
+            control_points: [
+                Some([2.603_530_729_189_511_6, -6.634_758_301_120_719]),
+                Some([2.486_761_892_214_414, -6.583_162_851_673_087]),
+                Some([2.403_937_662_020_322, -6.519_347_555_976_829]),
+                Some([2.355_057_866_495_792, -6.440_596_814_034_794]),
+            ],
+            terminal_reference: 0,
+            offset: 0,
+            surface_row_offset: 0,
+        };
+        let body = vec![
+            0x18, 0xe4, 0x0f, 0x00, 0x0c, 0x9a, 0x8d, 0xd7, 0x28, 0x94, 0x26, 0x4b, 0xb2, 0x2d,
+            0x19, 0xc3, 0x2b, 0xcf, 0xac, 0x01, 0x44, 0x9e, 0x1e, 0xb8, 0x51, 0xeb, 0x85, 0x1f,
+            0x8f, 0xd4, 0x07, 0xeb, 0x3f, 0xff, 0xf8, 0x2d, 0x1a, 0x89, 0xfe, 0x14, 0x80, 0xb6,
+            0x48, 0x9e, 0x85, 0x1e, 0xb8, 0x51, 0xeb, 0x85,
+        ];
+        let parameters = crate::surface::SurfaceParameterRecord {
+            surface_id: 815,
+            body,
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan {
+                raw: vec![0, 0x0c, 0x9a],
+                offset: 3,
+                length: 3,
+            }],
+            scalar_frames: vec![crate::surface::SurfaceParameterScalarFrame {
+                offset: 0,
+                slots: vec![
+                    parameter_slot(0.0),
+                    parameter_slot(1.0),
+                    parameter_slot(0.0),
+                ],
+            }],
+            terminal_scalar_frame: None,
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 0,
+            body_offset: 0,
+        };
+        let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &parameters)
+            .expect("zero-offset directrix placement");
+        assert_eq!(
+            curve.control_points[0],
+            Point3::new(2.603_530_729_189_511_6, 6.634_758_301_120_719, 4.78)
+        );
+        assert_eq!(
+            curve.control_points[3],
+            Point3::new(2.355_057_866_495_792, 6.440_596_814_034_794, 4.78)
+        );
+        assert_eq!(sweep, [0.0, 0.0, 0.099_999_999_999_999_64]);
     }
 
     #[test]
