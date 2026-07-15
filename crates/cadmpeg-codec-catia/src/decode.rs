@@ -4790,6 +4790,7 @@ fn attach_standard_topology(
                 &surface_indices,
                 brep,
                 &supports,
+                options,
                 pairs,
             )
         })
@@ -5767,12 +5768,16 @@ fn standard_circle_pair_solution_is_simple(
     surface_indices: &HashMap<SurfaceId, usize>,
     brep: &[u8],
     supports: &[geometry::StandardCurveSupport],
+    endpoint_options: &[Vec<[usize; 2]>],
     pairs: &[[usize; 2]],
 ) -> bool {
     type CircleFaceKey = (u64, u64, u64, u64, usize);
 
     let mut ranges = HashMap::<CircleFaceKey, Vec<[f64; 2]>>::new();
-    for (support, pair) in supports.iter().zip(pairs) {
+    for ((support, options), pair) in supports.iter().zip(endpoint_options).zip(pairs) {
+        if options.len() <= 1 {
+            continue;
+        }
         let geometry::StandardCurveGeometry::Circle { center, radius } = &support.geometry else {
             continue;
         };
