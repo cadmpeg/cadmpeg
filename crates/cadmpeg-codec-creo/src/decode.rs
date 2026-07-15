@@ -130,6 +130,7 @@ struct CreoSketchTrimEntity {
     vertices: [u32; 2],
     center_vertex: Option<u32>,
     kind: &'static str,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -137,6 +138,7 @@ struct CreoSketchTrimVertex {
     vertex_id: u32,
     entities: [u32; 2],
     section_coordinates: Option<[f64; 2]>,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -144,6 +146,7 @@ struct CreoSketchOrderRow {
     external_id: u32,
     internal_id: u32,
     bitmask: u32,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -154,6 +157,7 @@ enum CreoSketchSavedEntity {
         references: Vec<u32>,
         attributes: Vec<[u8; 5]>,
         endpoints: [[Option<f64>; 3]; 2],
+        offset: usize,
     },
     Arc {
         entity_id: u32,
@@ -161,20 +165,24 @@ enum CreoSketchSavedEntity {
         radius: Option<f64>,
         endpoints: [[Option<f64>; 3]; 2],
         parameters: [Option<f64>; 2],
+        offset: usize,
     },
     Circle {
         entity_id: u32,
         center: [Option<f64>; 3],
         radius: Option<f64>,
+        offset: usize,
     },
     Spline {
         entity_id: Option<u32>,
         interpolation_points: Vec<[f64; 3]>,
         endpoint_tangents: Option<[[f64; 3]; 2]>,
         parameters: Option<Vec<f64>>,
+        offset: usize,
     },
     Dummy {
         entity_id: Option<u32>,
+        offset: usize,
     },
 }
 
@@ -186,6 +194,7 @@ struct CreoSketchVariable {
     guess: Option<f64>,
     uvar_id: Option<u32>,
     dimension_driven: bool,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -199,6 +208,7 @@ struct CreoSketchSegment {
     vertical_horizontal_constraint: Option<u32>,
     radius_dimension_id: Option<u32>,
     secondary_radius_dimension_id: Option<u32>,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -209,6 +219,7 @@ struct CreoSketchDimension {
     unit: &'static str,
     direction_byte: u8,
     auxiliary_value: Option<f64>,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -221,6 +232,7 @@ struct CreoSketchRelation {
     dimension_id: u32,
     relation_type: u32,
     body: Vec<u8>,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -230,6 +242,7 @@ struct CreoSketchSkamp {
     flags: u32,
     status: u32,
     items: Vec<CreoSketchSkampItem>,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -246,6 +259,7 @@ struct CreoSketchRelationTriple {
     equation: Option<u32>,
     #[serde(rename = "skamp_id")]
     skamp: Option<u32>,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -2075,6 +2089,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     guess: row.guess,
                     uvar_id: row.uvar_id,
                     dimension_driven: row.dimension_driven,
+                    offset: row.offset,
                 })
                 .collect(),
             segments: definition
@@ -2095,6 +2110,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     vertical_horizontal_constraint: segment.vertical_horizontal,
                     radius_dimension_id: segment.radius_ref,
                     secondary_radius_dimension_id: segment.radius2_ref,
+                    offset: segment.offset,
                 })
                 .collect(),
             trim_entities: definition
@@ -2110,6 +2126,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                         crate::feature::TrimEntityKind::Line => "line",
                         crate::feature::TrimEntityKind::Arc => "arc",
                     },
+                    offset: entity.offset,
                 })
                 .collect(),
             trim_vertices: definition
@@ -2120,6 +2137,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     vertex_id: vertex.vertex_id,
                     entities: vertex.entities,
                     section_coordinates: vertex.section_coordinates,
+                    offset: vertex.offset,
                 })
                 .collect(),
             order_rows: definition
@@ -2130,6 +2148,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     external_id: row.external_id,
                     internal_id: row.internal_id,
                     bitmask: row.bitmask,
+                    offset: row.offset,
                 })
                 .collect(),
             saved_entities: definition
@@ -2142,6 +2161,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                         references: line.references.clone(),
                         attributes: line.attributes.clone(),
                         endpoints: line.endpoints,
+                        offset: line.offset,
                     },
                     crate::feature::FeatureSavedEntity::Arc(arc) => CreoSketchSavedEntity::Arc {
                         entity_id: arc.entity_id,
@@ -2149,12 +2169,14 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                         radius: arc.radius,
                         endpoints: arc.endpoints,
                         parameters: arc.parameters,
+                        offset: arc.offset,
                     },
                     crate::feature::FeatureSavedEntity::Circle(circle) => {
                         CreoSketchSavedEntity::Circle {
                             entity_id: circle.entity_id,
                             center: circle.center,
                             radius: circle.radius,
+                            offset: circle.offset,
                         }
                     }
                     crate::feature::FeatureSavedEntity::Spline(spline) => {
@@ -2163,11 +2185,13 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             interpolation_points: spline.interpolation_points.clone(),
                             endpoint_tangents: spline.endpoint_tangents,
                             parameters: spline.parameters.clone(),
+                            offset: spline.offset,
                         }
                     }
                     crate::feature::FeatureSavedEntity::Dummy(dummy) => {
                         CreoSketchSavedEntity::Dummy {
                             entity_id: dummy.entity_id,
+                            offset: dummy.offset,
                         }
                     }
                 })
@@ -2187,6 +2211,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     },
                     direction_byte: dimension.direction_byte,
                     auxiliary_value: dimension.auxiliary_value,
+                    offset: dimension.offset,
                 })
                 .collect(),
             relations: definition
@@ -2202,6 +2227,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     dimension_id: relation.dimension_id,
                     relation_type: relation.relation_type,
                     body: relation.body.clone(),
+                    offset: relation.offset,
                 })
                 .collect(),
             skamps: definition
@@ -2221,6 +2247,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             sense: item.sense,
                         })
                         .collect(),
+                    offset: skamp.offset,
                 })
                 .collect(),
             relation_triples: definition
@@ -2231,6 +2258,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     relation: triple.relation_id,
                     equation: triple.equation_id,
                     skamp: triple.skamp_id,
+                    offset: triple.offset,
                 })
                 .collect(),
         })

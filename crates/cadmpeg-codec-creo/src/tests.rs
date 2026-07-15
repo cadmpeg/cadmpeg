@@ -2046,7 +2046,9 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
     let definition_length = payload.len();
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let offset = container::scan_bytes(data.clone()).feature_definitions[0].offset as u64;
+    let scan = container::scan_bytes(data.clone());
+    let offset = scan.feature_definitions[0].offset as u64;
+    let variable_offset = scan.feature_definitions[0].variables.as_ref().unwrap().rows[0].offset;
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
 
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
@@ -2078,6 +2080,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(variables.len(), 2);
     assert_eq!(variables[0]["key"], 7);
     assert_eq!(variables[0]["value"], 1.0);
+    assert_eq!(variables[0]["offset"], variable_offset);
     assert_eq!(variables[1]["value"], 3.0);
     assert_annotation(
         &result.ir,
