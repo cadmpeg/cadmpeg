@@ -133,7 +133,9 @@ The `var_arr` coordinate lane also defines the sign pairs
 `7e→3F F3`/`c6→BF F3`, `80→3F F5`/`c8→BF F5`, and
 `97→40 0C`/`dd→C0 0C`. Each prefix is followed by the remaining six IEEE
 bytes. Its negative sub-unit form `d5 <tail6>` reconstructs
-`BF <tail6> 00`.
+`BF <tail6> 00`. Its eight-byte world-coordinate form `2d <tail7>`
+reconstructs `40 <tail7>`; the same form is positive in the saved-section
+coordinate lane.
 
 Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leading byte `40` and implicit trailing `00`; `9e <tail6>` and `a3 <tail6>` for positive and negative forms paired with the section-local `46` cache; `b9`, `d1`, `d3`, `de`, and `df` for negative sub-unit forms with leading byte `BF`; and `41`, `4b`, `66`, `67`, `68`, `77`, and `82..8f` for positive sub-unit forms with leading byte `3F`. A paired form finds the `46 <byte1> <tail6>` token with the same six-byte tail and reconstructs `40 <byte1> <tail6>` for `9e` or `C0 <byte1> <tail6>` for `a3`.
 
@@ -1015,7 +1017,7 @@ The positional `var_arr` scalar lane maps `64`, `69`, `9c`, `9d`, `9f`, `a0`,
 `ad`, `b3`, `cb`, `cc`, `d0`, `d2`, and `d6` to IEEE prefixes `3f d9`,
 `3f de`, `40 11`, `40 12`, `40 14`, `40 15`, `3f d9`, `bf e0`, `bf f8`,
 `bf f9`, `bf fe`, `c0 00`, and `c0 04`. Its `28 <tail7>` form maps to
-`[3f, tail7]`.
+`[3f, tail7]`, and its `2d <tail7>` form maps to `[40, tail7]`.
 The positional generated-arc scalar lane maps `9b`, `9c`, `9d`, `9e`, `9f`, `a0`, `5e`,
 `60`, `64`, `ad`, `cc`, `d0`, `d2`, `d5`, `de`, and `df` to IEEE prefixes
 `40 10`, `40 11`, `40 12`, `40 13`, `40 14`, `40 15`, `3f d3`, `3f d5`, `3f d9`, `3f d9`, `bf f9`, `bf fe`,
@@ -1274,7 +1276,7 @@ The identifiers `r`, `theta`, and `z` define cylindrical curve coordinates over 
 
 A curve-equation entity carries its placement in `local_sys f9 <dimensions> <count> <body>`. The scalar body is bounded by the following named field and uses the stateful local-system lane; it is part of the equation entity rather than a reference to a separate coordinate-system entity. For `f9 04 03`, twelve explicit slots have the same support-frame layout as a plane local system: slots 0 through 2 are the first radial direction, slots 3 through 5 are the zero rank marker, slots 6 through 8 are the second radial direction, and slots 9 through 11 are the origin. The explicit slot language includes the `18 e5` basis-vector triple and the standalone-zero forms defined for plane local systems. Orthogonal equal-scale nonzero radial directions define the unit axis by their normalized cross product. The cylindrical coordinates map through this frame as `origin + u*r*cos(theta) + v*r*sin(theta) + axis*z`.
 
-A `protextrude` or `protrevolve` operation references its sweep axis through `gsec3d_ptr` placement fields rather than an inline axis vector. The `srf_array` row `feat_id` binds each materialized carrier to the generating feature. Extruding a section line yields a plane, extruding an arc yields a cylinder, and extruding an interpolation spline yields a degree-one ruled NURBS surface that retains the spline's degree, knot vector, control points, and weights along the directrix parameter. The feature's cap-plane offsets bound the translation parameter, including symmetric and two-sided spans. A closed profile yields cap planes. Each solved `ent_tab` carrier defines an unbounded surface of revolution independently of the operation's angular trim. A line parallel, angled, or perpendicular to the axis yields a cylinder, circular cone, or plane. A circular arc or complete circle with center on or off the axis yields a sphere or torus. An interpolation spline yields a full-turn tensor-product NURBS carrier. Saved analytic entities use their `order_table` source identity and same-feature generated-surface entry exactly as saved splines do. The projected carrier-to-axis vector defines the zero-azimuth direction; construction segments outside `ent_tab` do not generate surfaces.
+A `protextrude` or `protrevolve` operation references its sweep axis through `gsec3d_ptr` placement fields rather than an inline axis vector. The `srf_array` row `feat_id` binds each materialized carrier to the generating feature. Extruding a section line yields a plane, extruding an arc yields a cylinder, and extruding an interpolation spline yields a degree-one ruled NURBS surface that retains the spline's degree, knot vector, control points, and weights along the directrix parameter. The feature's cap-plane offsets bound the translation parameter, including symmetric and two-sided spans. A closed profile yields cap planes. Each solved carrier in an `ent_tab` profile or a closed point-incidence fallback profile defines an unbounded surface of revolution independently of the operation's angular trim. A line parallel, angled, or perpendicular to the axis yields a cylinder, circular cone, or plane. A circular arc or complete circle with center on or off the axis yields a sphere or torus. An interpolation spline yields a full-turn tensor-product NURBS carrier. Saved analytic entities use their `order_table` source identity and same-feature generated-surface entry exactly as saved splines do. The projected carrier-to-axis vector defines the zero-azimuth direction; construction segments outside the resolved profile do not generate surfaces.
 
 A section with a resolved `gsec3d_ptr` placement is an ordered planar sketch
 history node owning the placed sketch geometry. When the section transform has

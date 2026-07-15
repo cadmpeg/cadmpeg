@@ -1326,6 +1326,21 @@ fn decode_variable_scalar(
         })
 }
 
+fn decode_section_coordinate_scalar(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> (Option<f64>, usize, bool) {
+    if payload.get(offset) == Some(&0x2d) && offset + 8 <= end {
+        let mut raw = [0; 8];
+        raw[0] = 0x40;
+        raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
+        return (Some(f64::from_be_bytes(raw)), offset + 8, false);
+    }
+    decode_variable_scalar(payload, offset, end, cache)
+}
+
 fn variable_table(
     payload: &[u8],
     start: usize,
@@ -1351,9 +1366,9 @@ fn variable_table(
         let key = named_compact_int(payload, b"key\0", cursor, close)?;
         let value_label = find_bytes(payload, b"value\0", cursor, close)? + b"value\0".len();
         let (value, _, dimension_driven) =
-            decode_variable_scalar(payload, value_label, close, cache);
+            decode_section_coordinate_scalar(payload, value_label, close, cache);
         let guess_label = find_bytes(payload, b"guess\0", cursor, close)? + b"guess\0".len();
-        let (guess, _, _) = decode_variable_scalar(payload, guess_label, close, cache);
+        let (guess, _, _) = decode_section_coordinate_scalar(payload, guess_label, close, cache);
         Some(FeatureVariableRow {
             variable_type,
             key,
@@ -1389,9 +1404,10 @@ fn variable_table(
         }
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
-        let (value, next, dimension_driven) = decode_variable_scalar(payload, cursor, end, cache);
+        let (value, next, dimension_driven) =
+            decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
-        let (guess, next, _) = decode_variable_scalar(payload, cursor, end, cache);
+        let (guess, next, _) = decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
         let mut trailing = Vec::new();
         while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
@@ -1487,9 +1503,10 @@ fn positional_variable_table(
         cursor = next;
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
-        let (value, next, dimension_driven) = decode_variable_scalar(payload, cursor, end, cache);
+        let (value, next, dimension_driven) =
+            decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
-        let (guess, next, _) = decode_variable_scalar(payload, cursor, end, cache);
+        let (guess, next, _) = decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
         let mut trailing = Vec::with_capacity(3);
         while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
@@ -3308,6 +3325,12 @@ fn saved_section_scalar(
     if prefix == 0x41 && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
+        raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
+        return (Some(f64::from_be_bytes(raw)), offset + 8);
+    }
+    if prefix == 0x2d && offset + 8 <= end {
+        let mut raw = [0; 8];
+        raw[0] = 0x40;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
         return (Some(f64::from_be_bytes(raw)), offset + 8);
     }
@@ -5814,6 +5837,35 @@ mod tests {
         assert_eq!(value, Some(-0.395_669_107_559_015_74));
         assert_eq!(next, bytes.len());
         assert!(!dimension_driven);
+    }
+
+    #[test]
+    fn var_arr_world_coordinate_2d_is_positive() {
+        let bytes = [0x2d, 0x34, 0x43, 0xf5, 0x12, 0xe8, 0x00, 0x45];
+        let (value, next, dimension_driven) = decode_section_coordinate_scalar(
+            &bytes,
+            0,
+            bytes.len(),
+            &scalar::ScalarCache::default(),
+        );
+
+        assert_eq!(value, Some(20.265_458_280_220_873));
+        assert_eq!(next, bytes.len());
+        assert!(!dimension_driven);
+        assert_eq!(
+            decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()).0,
+            Some(-20.265_458_280_220_873)
+        );
+    }
+
+    #[test]
+    fn saved_section_world_coordinate_2d_is_positive() {
+        let bytes = [0x2d, 0x52, 0xa4, 0x0d, 0xb4, 0x1f, 0x70, 0xed];
+
+        assert_eq!(
+            saved_section_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
+            (Some(74.563_336_401_657_31), bytes.len())
+        );
     }
 
     #[test]

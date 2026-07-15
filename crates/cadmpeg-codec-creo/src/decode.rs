@@ -7924,6 +7924,27 @@ fn ordered_family_surface_bindings(
     bindings
 }
 
+fn profile_segment_ids(
+    definition_id: u32,
+    segments: &[crate::feature::FeatureSegment],
+    profiles: &[Vec<SketchEntityUse>],
+) -> BTreeSet<u32> {
+    segments
+        .iter()
+        .filter(|segment| {
+            let entity_id = SketchEntityId(format!(
+                "creo:featdefs:sketch_entity#{definition_id}:{}",
+                segment.external_id
+            ));
+            profiles
+                .iter()
+                .flatten()
+                .any(|entity_use| entity_use.entity == entity_id)
+        })
+        .map(|segment| segment.external_id)
+        .collect()
+}
+
 fn transfer_resolved_revolution_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -7957,12 +7978,31 @@ fn transfer_resolved_revolution_surfaces(
             _ => None,
         };
         let points = resolved_section_points(definition);
-        let solved_ids = definition
+        let mut generating_ids = definition
             .trim_entities
             .iter()
             .flat_map(|table| &table.rows)
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
+        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
+        if let Some(sketch) = ir
+            .model
+            .sketches
+            .iter()
+            .find(|sketch| sketch.id == sketch_id)
+        {
+            let segments = definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.rows)
+                .cloned()
+                .collect::<Vec<_>>();
+            generating_ids.extend(profile_segment_ids(
+                definition.id,
+                &segments,
+                &sketch.profiles,
+            ));
+        }
         let arc_bindings = definition
             .order_table
             .as_ref()
@@ -7978,7 +8018,7 @@ fn transfer_resolved_revolution_surfaces(
                         .iter()
                         .flat_map(|segments| &segments.rows)
                         .filter(|segment| {
-                            solved_ids.contains(&segment.external_id)
+                            generating_ids.contains(&segment.external_id)
                                 && segment.kind == crate::feature::FeatureSegmentKind::Arc
                         })
                         .map(|segment| segment.external_id),
@@ -8012,7 +8052,7 @@ fn transfer_resolved_revolution_surfaces(
             .segments
             .iter()
             .flat_map(|table| &table.rows)
-            .filter(|segment| solved_ids.contains(&segment.external_id))
+            .filter(|segment| generating_ids.contains(&segment.external_id))
         {
             let Some(geometry) = resolved_section_segment_geometry(definition, &points, segment)
             else {
@@ -9716,6 +9756,38 @@ mod resolved_sketch_tests {
                 &emitted,
             ),
             vec![sketch, parent]
+        );
+    }
+
+    #[test]
+    fn closed_fallback_profile_selects_revolution_segments() {
+        let segment = |external_id| crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [1, 2],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            offset: 0,
+        };
+        let segments = [segment(9), segment(10), segment(11)];
+        let profiles = vec![vec![
+            SketchEntityUse {
+                entity: SketchEntityId("creo:featdefs:sketch_entity#2:9".to_string()),
+                reversed: false,
+            },
+            SketchEntityUse {
+                entity: SketchEntityId("creo:featdefs:sketch_entity#2:11".to_string()),
+                reversed: true,
+            },
+        ]];
+
+        assert_eq!(
+            profile_segment_ids(2, &segments, &profiles),
+            BTreeSet::from([9, 11])
         );
     }
 
