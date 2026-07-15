@@ -7767,7 +7767,6 @@ pub(crate) fn project_relation_point_geometry(
         for marker in &lane.sketch_entities {
             if !referenced.contains(marker.id.as_str())
                 || marker.kind != SketchInputKind::LineOrCircle
-                || marker.links.len() != 2
                 || entities
                     .iter()
                     .any(|entity| entity.native_ref.as_deref() == Some(marker.id.as_str()))
@@ -7781,10 +7780,12 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             };
             let endpoints = line_endpoint_markers(marker, &markers_by_id);
-            let [first, second] = endpoints.as_slice() else {
+            let [first_marker, second_marker] = endpoints.as_slice() else {
                 continue;
             };
-            let (Some(first), Some(second)) = (first.coordinates_m, second.coordinates_m) else {
+            let (Some(first), Some(second)) =
+                (first_marker.coordinates_m, second_marker.coordinates_m)
+            else {
                 continue;
             };
             let first_native = quantize(
@@ -7835,7 +7836,7 @@ pub(crate) fn project_relation_point_geometry(
                 construction: true,
                 native_ref: Some(marker.id.clone()),
                 geometry_ref: None,
-                endpoint_refs: Vec::new(),
+                endpoint_refs: vec![first_marker.id.clone(), second_marker.id.clone()],
                 geometry: SketchGeometry::Line { start, end },
             });
         }
@@ -15271,16 +15272,14 @@ mod profile_join_tests {
         let mut relation_line = marker("relation-line", None);
         relation_line.offset = 84;
         relation_line.kind = SketchInputKind::LineOrCircle;
-        relation_line.links = vec![
-            SketchInputLink {
-                local_id: 1,
-                entity_ref: endpoint_a.id.clone(),
-            },
-            SketchInputLink {
-                local_id: 2,
-                entity_ref: endpoint_b.id.clone(),
-            },
-        ];
+        endpoint_a.links = vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: relation_line.id.clone(),
+        }];
+        endpoint_b.links = vec![SketchInputLink {
+            local_id: 2,
+            entity_ref: relation_line.id.clone(),
+        }];
         let mut support_handle = marker("support-handle", None);
         support_handle.offset = 85;
         support_handle.links = vec![SketchInputLink {
@@ -15450,6 +15449,7 @@ mod profile_join_tests {
         assert!(entities.iter().any(|entity| {
             entity.construction
                 && entity.native_ref.as_deref() == Some("relation-line")
+                && entity.endpoint_refs == ["endpoint-a", "endpoint-b"]
                 && matches!(entity.geometry, SketchGeometry::Line { start, end }
                     if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 7.0))
         }));
