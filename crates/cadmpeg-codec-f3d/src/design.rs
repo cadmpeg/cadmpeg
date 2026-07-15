@@ -2771,9 +2771,6 @@ fn historical_selection_regions(
         .iter()
         .map(|member| historical_member_points(member, histories))
         .collect::<Option<Vec<_>>>()?;
-    if member_points.iter().any(Vec::is_empty) {
-        return None;
-    }
     let tolerance = linear_tolerance.max(1.0e-7);
     let all_points = member_points.iter().flatten().copied().collect::<Vec<_>>();
     if let Some(selection) = selection_containing_points(sketch, entities, &all_points, tolerance) {
@@ -4841,15 +4838,9 @@ fn recipe_linear_dimension_candidates(
 fn recipe_dimension_candidate_entities(
     candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinition],
 ) -> Vec<cadmpeg_ir::sketches::SketchEntityId> {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
+    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
 
     let mut entities = Vec::new();
-    let locus_entity = |locus: &SketchLocus| match locus {
-        SketchLocus::Entity(entity)
-        | SketchLocus::Start(entity)
-        | SketchLocus::End(entity)
-        | SketchLocus::Center(entity) => entity.clone(),
-    };
     for candidate in candidates {
         let candidate_entities = match candidate {
             Definition::Distance {
@@ -4858,7 +4849,10 @@ fn recipe_dimension_candidate_entities(
             } => candidate_entities.clone(),
             Definition::HorizontalDistance { first, second, .. }
             | Definition::VerticalDistance { first, second, .. } => {
-                vec![locus_entity(first), locus_entity(second)]
+                vec![
+                    locus_entity_id(first).clone(),
+                    locus_entity_id(second).clone(),
+                ]
             }
             _ => Vec::new(),
         };

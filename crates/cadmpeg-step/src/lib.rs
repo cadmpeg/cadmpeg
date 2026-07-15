@@ -259,6 +259,15 @@ impl<'a> Builder<'a> {
         });
     }
 
+    fn count_coedges(&self, mut predicate: impl FnMut(&Coedge) -> bool) -> usize {
+        self.ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| predicate(coedge))
+            .count()
+    }
+
     fn build(&mut self) {
         // Product structure and unit-bearing context first; the representation
         // instance that ties them to the geometry is emitted last.
@@ -876,13 +885,7 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let pcurve_count = self
-            .ir
-            .model
-            .coedges
-            .iter()
-            .filter(|c| c.pcurve.is_some())
-            .count();
+        let pcurve_count = self.count_coedges(|coedge| coedge.pcurve.is_some());
         if pcurve_count > 0 {
             self.loss(
                 LossCategory::Geometry,
@@ -894,13 +897,7 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let use_curve_count = self
-            .ir
-            .model
-            .coedges
-            .iter()
-            .filter(|coedge| coedge.use_curve.is_some())
-            .count();
+        let use_curve_count = self.count_coedges(|coedge| coedge.use_curve.is_some());
         if use_curve_count > 0 {
             self.loss(
                 LossCategory::Geometry,
