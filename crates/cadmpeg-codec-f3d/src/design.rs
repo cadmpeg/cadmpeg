@@ -1884,10 +1884,14 @@ pub(crate) fn neutral_dimension_constraint_id(
     parameter: &cadmpeg_ir::features::ParameterId,
     form: &str,
 ) -> cadmpeg_ir::sketches::SketchConstraintId {
+    let parameter_key = parameter
+        .0
+        .split_once('#')
+        .map_or(parameter.0.as_str(), |(_, key)| key);
     cadmpeg_ir::sketches::SketchConstraintId(format!(
-        "f3d:model:sketch-constraint#dimension#{}:{}{}:{}",
-        parameter.0.len(),
-        parameter.0,
+        "f3d:model:sketch-constraint#dimension:{}:{}{}:{}",
+        parameter_key.len(),
+        parameter_key,
         form.len(),
         form,
     ))
@@ -10477,7 +10481,7 @@ mod relation_tests {
 
     #[test]
     fn governing_dimension_identity_uses_parameter_identity() {
-        let parameter = cadmpeg_ir::features::ParameterId("parameter:Design/A:12".into());
+        let parameter = cadmpeg_ir::features::ParameterId("f3d:model:parameter#Design/A:12".into());
         let relocated = neutral_dimension_constraint_id(&parameter, "pair");
         let same = neutral_dimension_constraint_id(&parameter, "pair");
         let other_form = neutral_dimension_constraint_id(&parameter, "null-pair");
@@ -10489,6 +10493,7 @@ mod relation_tests {
         assert_eq!(relocated, same);
         assert_ne!(relocated, other_form);
         assert_ne!(relocated, other_parameter);
+        assert_eq!(relocated.0.matches('#').count(), 1);
     }
 
     #[test]
