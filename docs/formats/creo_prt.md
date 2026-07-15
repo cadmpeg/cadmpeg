@@ -266,6 +266,8 @@ curve parameters. Its `2d <tail7>` form reconstructs `40 <tail7>`. The `params`
 header terminates the preceding `end_tangts` body even when the preceding
 terminal `18` zero slot causes the generic token walk to span the header. A
 terminal `18` in the bounded `end_tangts` body occupies one zero slot.
+`end_tangts` uses the signed coordinate DICT lattice defined for the second
+directrix-coordinate lane.
 
 The direction/directrix form of a `geom_type = 2c` positional body begins with
 a three-scalar model-space sweep-direction frame followed by the bytes

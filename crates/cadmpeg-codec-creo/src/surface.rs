@@ -1442,7 +1442,7 @@ fn named_spline_scalar_slot(
         return scalar::decode_in_lane(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
-    if name == "end_v_tangts" {
+    if matches!(name, "end_v_tangts" | "end_tangts") {
         return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
@@ -2213,28 +2213,29 @@ mod tests {
     }
 
     #[test]
-    fn end_v_tangents_use_the_signed_coordinate_dict_lattice() {
+    fn spline_tangents_use_the_signed_coordinate_dict_lattice() {
         let body = [
             0xce, 1, 2, 3, 4, 5, 6, 0x2d, 1, 2, 3, 4, 5, 6, 7, 0x46, 1, 2, 3, 4, 5, 6, 7,
         ];
-        let slots =
-            named_spline_scalar_slots("end_v_tangts", &body, 3, &scalar::ScalarCache::default());
+        for name in ["end_v_tangts", "end_tangts"] {
+            let slots = named_spline_scalar_slots(name, &body, 3, &scalar::ScalarCache::default());
 
-        assert_eq!(
-            slots[0].0,
-            Some(f64::from_be_bytes([0xbf, 0xfb, 1, 2, 3, 4, 5, 6]))
-        );
-        assert_eq!(slots[0].1, body[..7]);
-        assert_eq!(
-            slots[1].0,
-            Some(f64::from_be_bytes([0xc0, 1, 2, 3, 4, 5, 6, 7]))
-        );
-        assert_eq!(slots[1].1, body[7..15]);
-        assert_eq!(
-            slots[2].0,
-            Some(f64::from_be_bytes([0x40, 1, 2, 3, 4, 5, 6, 7]))
-        );
-        assert_eq!(slots[2].1, body[15..]);
+            assert_eq!(
+                slots[0].0,
+                Some(f64::from_be_bytes([0xbf, 0xfb, 1, 2, 3, 4, 5, 6]))
+            );
+            assert_eq!(slots[0].1, body[..7]);
+            assert_eq!(
+                slots[1].0,
+                Some(f64::from_be_bytes([0xc0, 1, 2, 3, 4, 5, 6, 7]))
+            );
+            assert_eq!(slots[1].1, body[7..15]);
+            assert_eq!(
+                slots[2].0,
+                Some(f64::from_be_bytes([0x40, 1, 2, 3, 4, 5, 6, 7]))
+            );
+            assert_eq!(slots[2].1, body[15..]);
+        }
     }
 
     #[test]
