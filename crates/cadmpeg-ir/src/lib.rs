@@ -34,6 +34,7 @@ pub mod byte_ledger;
 pub mod bytes;
 pub mod codec;
 pub mod compression;
+pub mod cursor;
 
 pub mod diff;
 pub mod document;
