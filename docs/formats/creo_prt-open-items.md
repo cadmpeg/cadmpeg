@@ -29,7 +29,9 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - Fields binding vertex identifiers to XYZ coordinates and rowless face uses are unspecified.
 - Section-to-datum joins, relation equations other than signed type-zero linear dimensions and type-14 radii, type-one angular relation direction selectors, `skamp_ptr` incidence types 10 through 13, 15, and 35, and the `ed ba 10 0c 8d ee 90 b4 0c` solver sentinel are unspecified.
 - The geometric roles and selection order of multiple feature-definition `local_sys` and `transf` twelve-slot frames are unspecified.
-- The entity/locus roles of the three decoded four-slot `relat_ptr` operand vectors are unspecified.
+- Except for the defined type-zero linear-distance, type-one line-angle, and
+  type-14 radius forms, the entity/locus roles of the three decoded four-slot
+  `relat_ptr` operand vectors are unspecified.
 - The DEPDB sweep-axis relation for parts without `ActDatums` is unspecified,
   including the feature-definition datum defaults or standard-datum convention
   that supplies the `protextrude` axis. The current regeneration snapshot is
