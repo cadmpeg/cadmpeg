@@ -35,6 +35,34 @@ pub struct E5Topology {
     pub vertex_refs: Vec<u32>,
 }
 
+impl E5Topology {
+    /// Resolve one edge's start/end parameter records for a referenced
+    /// representation. Each bound must contain that representation exactly
+    /// once.
+    #[must_use]
+    pub fn edge_representation_parameters(
+        &self,
+        edge_ref: u32,
+        representation: u32,
+    ) -> Option<[f64; 2]> {
+        let edge = self.edges.get(&edge_ref)?;
+        [edge.parameter_start, edge.parameter_end]
+            .map(|bound_ref| {
+                let bounds = self.bounds.get(&bound_ref)?;
+                let mut entries = bounds
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.representation == representation);
+                let parameter = entries.next()?.parameter;
+                entries.next().is_none().then_some(parameter)
+            })
+            .into_iter()
+            .collect::<Option<Vec<_>>>()?
+            .try_into()
+            .ok()
+    }
+}
+
 /// A class-`0xc0`/`0xc1` curve-support record: the pcurve(s) an edge curve
 /// evaluates against and the surface parameter range they span ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
@@ -938,7 +966,10 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
 
 #[cfg(test)]
 mod tests {
-    use super::{solve_absolute_orientation, solve_loop_chain, E5Edge, E5Face, E5Loop};
+    use super::{
+        solve_absolute_orientation, solve_loop_chain, E5BoundEntry, E5Bounds, E5Edge, E5Face,
+        E5Loop, E5Topology,
+    };
     use std::collections::BTreeMap;
 
     #[test]
@@ -970,6 +1001,52 @@ mod tests {
             ),
         ]);
         assert_eq!(solve_loop_chain(&[1, 2], &edges), Some(vec![false, false]));
+    }
+
+    #[test]
+    fn edge_parameters_resolve_one_entry_from_each_bound() {
+        let edge = E5Edge {
+            record_id: 1,
+            support: 0,
+            start_vertex: 0,
+            end_vertex: 0,
+            parameter_start: 10,
+            parameter_end: 11,
+            tail: Vec::new(),
+        };
+        let bound = |record_id, parameter| E5Bounds {
+            record_id,
+            entries: vec![E5BoundEntry {
+                representation: 20,
+                parameter,
+                code: 7,
+            }],
+        };
+        let mut topology = E5Topology {
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: BTreeMap::from([(1, edge)]),
+            pcurves: BTreeMap::new(),
+            bounds: BTreeMap::from([(10, bound(10, 0.25)), (11, bound(11, 0.75))]),
+            curve_supports: BTreeMap::new(),
+            vertex_refs: Vec::new(),
+        };
+
+        assert_eq!(
+            topology.edge_representation_parameters(1, 20),
+            Some([0.25, 0.75])
+        );
+        topology
+            .bounds
+            .get_mut(&11)
+            .expect("end bound")
+            .entries
+            .push(E5BoundEntry {
+                representation: 20,
+                parameter: 1.0,
+                code: 8,
+            });
+        assert_eq!(topology.edge_representation_parameters(1, 20), None);
     }
 
     #[test]

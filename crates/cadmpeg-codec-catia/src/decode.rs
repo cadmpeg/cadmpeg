@@ -1211,11 +1211,11 @@ mod chart_tests {
         circle_parameter_range_from_surface_branch, combine_propagated_endpoint_pairs,
         e5_body_kinds, e5_boundary_curve, e5_occurrence_intersection_context, e5_pcurve_on_surface,
         equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes, include_native_endpoint_pairs,
-        intersection_line_direction, ordered_range, point_distance, point_on_known_surface,
-        quintic_jet_pcurve, rational_pcurve_arc, resolve_standard_endpoint_pairs,
-        reverse_e5_pcurve_geometry, standard_circle_endpoint_candidates,
-        standard_circle_param_range, standard_pcurve_geometry, unique_index_owners,
-        unique_native_identity_points,
+        intersection_line_direction, ordered_range, parameter_ranges_reversed, point_distance,
+        point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc,
+        resolve_standard_endpoint_pairs, reverse_e5_pcurve_geometry,
+        standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
+        unique_index_owners, unique_native_identity_points,
     };
     use crate::e5::{E5Edge, E5Face, E5Loop, E5Topology};
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
@@ -1243,6 +1243,19 @@ mod chart_tests {
         assert!(unique_index_owners(&[vec![0]], 2).is_none());
         assert!(unique_index_owners(&[vec![1]], 1).is_none());
         assert!(unique_index_owners(&[Vec::new()], 0).is_none());
+    }
+
+    #[test]
+    fn affine_bound_parameters_preserve_or_reverse_native_direction() {
+        assert_eq!(
+            parameter_ranges_reversed([0.0, 13.0], [0.0, 122.0]),
+            Some(false)
+        );
+        assert_eq!(
+            parameter_ranges_reversed([13.0, 0.0], [0.0, 122.0]),
+            Some(true)
+        );
+        assert_eq!(parameter_ranges_reversed([1.0, 1.0], [0.0, 1.0]), None);
     }
 
     #[test]
@@ -2297,12 +2310,19 @@ fn transfer_e5_topology(
                 };
                 let forward =
                     point_distance(endpoints[0], *start).max(point_distance(endpoints[1], *end));
-                let reversed =
+                let reverse_error =
                     point_distance(endpoints[0], *end).max(point_distance(endpoints[1], *start));
-                if forward.min(reversed) > 2e-3 {
+                let reversed = e5_stored_pcurve_reversed(topology, edge_ref, pcurve_ref, range)
+                    .or_else(|| {
+                        ((forward - reverse_error).abs() > 1e-9).then_some(reverse_error < forward)
+                    });
+                let Some(reversed) = reversed else {
+                    return false;
+                };
+                if if reversed { reverse_error } else { forward } > 2e-3 {
                     return false;
                 }
-                let oriented_pcurve = if reversed < forward {
+                let oriented_pcurve = if reversed {
                     reverse_e5_pcurve_geometry(&geometry, range)
                 } else {
                     geometry.clone()
@@ -2325,7 +2345,7 @@ fn transfer_e5_topology(
                     range,
                     endpoints,
                 ) {
-                    if reversed < forward {
+                    if reversed {
                         let Some(reversed_curve) = reverse_e5_boundary_curve(&curve, curve_range)
                         else {
                             return false;
@@ -2829,6 +2849,23 @@ fn transfer_e5_topology(
         }
     }
     true
+}
+
+fn e5_stored_pcurve_reversed(
+    topology: &crate::e5::E5Topology,
+    edge_ref: u32,
+    pcurve_ref: u32,
+    native_range: [f64; 2],
+) -> Option<bool> {
+    let parameters = topology.edge_representation_parameters(edge_ref, pcurve_ref)?;
+    parameter_ranges_reversed(parameters, native_range)
+}
+
+fn parameter_ranges_reversed(parameters: [f64; 2], native_range: [f64; 2]) -> Option<bool> {
+    let bound_span = parameters[1] - parameters[0];
+    let native_span = native_range[1] - native_range[0];
+    (bound_span.abs() > f64::EPSILON && native_span.abs() > f64::EPSILON)
+        .then_some(bound_span.is_sign_negative() != native_span.is_sign_negative())
 }
 
 fn e5_pcurve_on_surface(
