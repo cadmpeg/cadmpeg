@@ -847,15 +847,12 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             }
         }
         if !surface_geo.contains_key(&surf_ref) && procedural_surface_defs.contains_key(&surf_ref) {
-            let construction_is_exact_carrier = matches!(
+            let construction_is_exact_carrier =
                 procedural_surface_defs
                     .get(&surf_ref)
-                    .map(|procedural| &procedural.definition),
-                Some(
-                    nurbs::DecodedProceduralSurfaceDefinition::Extrusion { .. }
-                        | nurbs::DecodedProceduralSurfaceDefinition::Helix(_)
-                )
-            );
+                    .is_some_and(|procedural| {
+                        procedural_surface_definition_is_exact_carrier(&procedural.definition)
+                    });
             surface_geo.insert(
                 surf_ref,
                 (
@@ -4668,6 +4665,20 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     clamp_edge_ranges_to_carrier_domains(&mut out);
 
     out
+}
+
+fn procedural_surface_definition_is_exact_carrier(
+    definition: &nurbs::DecodedProceduralSurfaceDefinition,
+) -> bool {
+    match definition {
+        nurbs::DecodedProceduralSurfaceDefinition::Extrusion { .. }
+        | nurbs::DecodedProceduralSurfaceDefinition::Helix(_) => true,
+        nurbs::DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(construction) => matches!(
+            construction.shape,
+            nurbs::EmbeddedScaledCompoundLoftShape::None { .. }
+        ),
+        _ => false,
+    }
 }
 
 /// Snap edge parameter ranges that overshoot their B-spline carrier's knot

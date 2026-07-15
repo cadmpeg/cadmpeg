@@ -13549,15 +13549,20 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
         }
     ));
     let owner = decoded.ir.model.procedural_surfaces[0].surface.clone();
+    assert!(matches!(
+        decoded
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == owner)
+            .expect("procedural owner")
+            .geometry,
+        SurfaceGeometry::Procedural { ref construction }
+            if *construction == decoded.ir.model.procedural_surfaces[0].id
+    ));
     let mut source_less = decoded.ir;
     source_less.source = None;
-    source_less
-        .model
-        .surfaces
-        .iter_mut()
-        .find(|surface| surface.id == owner)
-        .expect("procedural owner")
-        .geometry = SurfaceGeometry::Unknown { record: None };
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut unexpected_tolerance = source_less.clone();
     unexpected_tolerance.model.procedural_surfaces[0].cache_fit_tolerance = Some(0.04);
