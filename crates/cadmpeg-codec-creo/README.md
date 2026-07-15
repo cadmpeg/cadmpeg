@@ -49,7 +49,8 @@ surface and curve namespace rows, prototype parameters, native half-edge
 links, active units, feature identifiers, and datum outlines.
 
 Surface prototype parameters are family templates, not placed model geometry.
-Exact plane components and selected cylinders transfer with connected topology;
+Exact plane components and selected cylinders transfer with connected topology.
+Complete named triangle-strip position arrays transfer as display tessellation;
 other per-instance coordinates, curve families, face bindings, and feature
 evaluation remain incomplete. The [`DecodeReport`] records these losses.
 Writing `.prt` files is not supported.
