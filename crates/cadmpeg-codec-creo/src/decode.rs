@@ -560,15 +560,17 @@ pub fn decode(
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(reader)?;
 
-    let (ir, annotations) = build_ir(&scan)?;
+    let (mut ir, annotations) = build_ir(&scan)?;
     let report = build_report(&scan, options.container_only);
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..cadmpeg_ir::SourceFidelity::default()
+    };
+    source_fidelity.separate_native_unknown_records(&mut ir, "creo")?;
     Ok(DecodeResult::with_source_fidelity(
         ir,
         report,
-        cadmpeg_ir::SourceFidelity {
-            annotations,
-            ..cadmpeg_ir::SourceFidelity::default()
-        },
+        source_fidelity,
     ))
 }
 
