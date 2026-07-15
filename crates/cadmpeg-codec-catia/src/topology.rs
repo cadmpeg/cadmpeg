@@ -1516,6 +1516,7 @@ fn standard_mesh_missing_edge_assignments_impl(
             edge_points: Option<&'a [Arc<HashSet<usize>>]>,
             point_transitions: Option<&'a [PointTransitions]>,
             corner_points: &'a MeshCornerPoints,
+            canonical_spans: bool,
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
         }
@@ -1581,12 +1582,27 @@ fn standard_mesh_missing_edge_assignments_impl(
                     let edge = self.missing[rank];
                     let stored_span = self.rows[edge].handles.len().checked_sub(1)?;
                     let remaining = target - offset;
-                    let spans: Box<dyn Iterator<Item = usize>> = if stored_span == 1 {
+                    let canonical_span = (self.canonical_spans && stored_span == 1)
+                        .then(|| {
+                            self.missing
+                                .iter()
+                                .enumerate()
+                                .filter(|(other, _)| *other != rank && used & (1 << other) == 0)
+                                .try_fold(remaining, |available, (_, edge)| {
+                                    available
+                                        .checked_sub(self.rows[*edge].handles.len().checked_sub(1)?)
+                                })
+                        })
+                        .flatten();
+                    let spans: Box<dyn Iterator<Item = usize>> = if let Some(span) = canonical_span
+                    {
+                        Box::new(std::iter::once(span))
+                    } else if stored_span == 1 {
                         Box::new(1..=remaining)
                     } else {
                         Box::new(std::iter::once(stored_span))
                     };
-                    for segment_count in spans.filter(|span| *span <= remaining) {
+                    for segment_count in spans.filter(|span| *span > 0 && *span <= remaining) {
                         let mut next_ports = match (self.edge_ports, current_port) {
                             (Some(edge_ports), Some(current)) if edge_ports[edge][0] == current => {
                                 vec![Some(edge_ports[edge][1])]
@@ -1693,6 +1709,7 @@ fn standard_mesh_missing_edge_assignments_impl(
             edge_points: edge_points.as_deref(),
             point_transitions: point_transitions.as_deref(),
             corner_points,
+            canonical_spans: edge_candidates.is_some() && gaps.len() == 1,
             assignments: 0,
             complete: Vec::new(),
         };
@@ -3682,28 +3699,18 @@ impl MeshQuotient {
 
             let starts = self.domains[start].clone();
             let ends = self.domains[end].clone();
-            let supported_starts = starts
-                .iter()
-                .copied()
-                .filter(|start_point| {
-                    ends.iter().any(|end_point| {
-                        candidates.iter().any(|candidate| {
-                            same_unordered_pair(*candidate, [*start_point, *end_point])
-                        })
-                    })
-                })
-                .collect::<HashSet<_>>();
-            let supported_ends = ends
-                .iter()
-                .copied()
-                .filter(|end_point| {
-                    starts.iter().any(|start_point| {
-                        candidates.iter().any(|candidate| {
-                            same_unordered_pair(*candidate, [*start_point, *end_point])
-                        })
-                    })
-                })
-                .collect::<HashSet<_>>();
+            let mut supported_starts = HashSet::new();
+            let mut supported_ends = HashSet::new();
+            for &[left, right] in candidates {
+                if starts.contains(&left) && ends.contains(&right) {
+                    supported_starts.insert(left);
+                    supported_ends.insert(right);
+                }
+                if starts.contains(&right) && ends.contains(&left) {
+                    supported_starts.insert(right);
+                    supported_ends.insert(left);
+                }
+            }
             if supported_starts.is_empty() || supported_ends.is_empty() {
                 return false;
             }
