@@ -3185,6 +3185,25 @@ pub(crate) fn closest_spine_parameter(
                 + (point.y - origin.y) * direction.y
                 + (point.z - origin.z) * direction.z,
         ),
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            ..
+        }
+        | CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction: ref_direction,
+            ..
+        } => closest_periodic_analytic_curve_parameter(
+            &carrier.geometry,
+            *center,
+            *axis,
+            *ref_direction,
+            point,
+            seed,
+        ),
         CurveGeometry::Nurbs(nurbs) => {
             let degree = usize::try_from(nurbs.degree).ok()?;
             let count = nurbs.control_points.len();
@@ -3203,6 +3222,60 @@ pub(crate) fn closest_spine_parameter(
         }
         _ => None,
     }
+}
+
+fn closest_periodic_analytic_curve_parameter(
+    geometry: &CurveGeometry,
+    center: Point3,
+    axis: Vector3,
+    reference: Vector3,
+    point: Point3,
+    seed: Option<f64>,
+) -> Option<f64> {
+    let transverse = cross_vector(axis, reference);
+    let delta = Vector3::new(point.x - center.x, point.y - center.y, point.z - center.z);
+    let phase = dot_vector(delta, transverse).atan2(dot_vector(delta, reference));
+    phase.is_finite().then_some(())?;
+    let anchor = seed.map_or(phase, |seed| {
+        phase + ((seed - phase) / std::f64::consts::TAU).round() * std::f64::consts::TAU
+    });
+    let lower = anchor - std::f64::consts::PI;
+    let step = std::f64::consts::TAU / 64.0;
+    let squared_distance = |parameter| {
+        let position = curve_point(geometry, parameter)?;
+        Some(
+            (position.x - point.x).powi(2)
+                + (position.y - point.y).powi(2)
+                + (position.z - point.z).powi(2),
+        )
+    };
+    let samples = (0..=64)
+        .map(|index| lower + f64::from(index) * step)
+        .collect::<Vec<_>>();
+    let distances = samples
+        .iter()
+        .map(|parameter| squared_distance(*parameter))
+        .collect::<Option<Vec<_>>>()?;
+    let mut best_index = 0;
+    for index in 1..distances.len() {
+        if distances[index] < distances[best_index]
+            || distances[index] == distances[best_index]
+                && (samples[index] - anchor).abs() < (samples[best_index] - anchor).abs()
+        {
+            best_index = index;
+        }
+    }
+    let bracket_center = match best_index {
+        0 => samples[0] + std::f64::consts::TAU,
+        64 => samples[64] - std::f64::consts::TAU,
+        _ => samples[best_index],
+    };
+    let (parameter, _) = golden_section_minimum(
+        bracket_center - step,
+        bracket_center + step,
+        &squared_distance,
+    )?;
+    Some(parameter + ((anchor - parameter) / std::f64::consts::TAU).round() * std::f64::consts::TAU)
 }
 
 fn closest_nurbs_curve_parameter(

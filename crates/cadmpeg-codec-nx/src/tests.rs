@@ -9961,6 +9961,46 @@ fn blend_contact_matches_concentric_blend_carriers() {
 }
 
 #[test]
+fn closest_spine_parameter_inverts_periodic_analytic_curves() {
+    use cadmpeg_ir::geometry::Curve;
+    use cadmpeg_ir::ids::CurveId;
+    use cadmpeg_ir::math::Point3;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ellipse = CurveId("synthetic:ellipse-spine".into());
+    let geometry = CurveGeometry::Ellipse {
+        center: Point3::new(2.0, 3.0, 4.0),
+        axis: Vector3::new(0.0, 1.0, 0.0),
+        major_direction: Vector3::new(1.0, 0.0, 0.0),
+        major_radius: 12.0,
+        minor_radius: 5.0,
+    };
+    let parameter = 1.2;
+    let mut point = cadmpeg_ir::eval::curve_point(&geometry, parameter).unwrap();
+    point.y += 3.0;
+    ir.model.curves.push(Curve {
+        id: ellipse.clone(),
+        geometry,
+        source_object: None,
+    });
+
+    let first = crate::decode::closest_spine_parameter(&ir, &ellipse, point, None).unwrap();
+    let continued = crate::decode::closest_spine_parameter(
+        &ir,
+        &ellipse,
+        point,
+        Some(parameter + std::f64::consts::TAU),
+    )
+    .unwrap();
+
+    assert!((first - parameter).abs() < 1.0e-8, "{first}");
+    assert!(
+        (continued - parameter - std::f64::consts::TAU).abs() < 1.0e-8,
+        "{continued}"
+    );
+}
+
+#[test]
 fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     use cadmpeg_ir::geometry::{
         BlendSupport, Curve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, Surface,
