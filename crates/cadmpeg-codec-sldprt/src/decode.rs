@@ -70,7 +70,7 @@ fn decode_inner(
     if options.container_only {
         let (ir, annotations) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return Ok(decode_result(ir, report, annotations));
+        return decode_result(ir, report, annotations);
     }
 
     let streams = active_body_streams(&scan);
@@ -83,24 +83,36 @@ fn decode_inner(
                 decoded.brep,
                 &decoded.configuration_bodies,
             )?;
-            return Ok(decode_result(ir, report, annotations));
+            return decode_result(ir, report, annotations);
         }
     }
 
     let (ir, annotations) = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
-    Ok(decode_result(ir, report, annotations))
+    decode_result(ir, report, annotations)
 }
 
-fn decode_result(ir: CadIr, report: DecodeReport, annotations: Annotations) -> DecodeResult {
-    DecodeResult::with_source_fidelity(
+fn decode_result(
+    mut ir: CadIr,
+    report: DecodeReport,
+    annotations: Annotations,
+) -> Result<DecodeResult, CodecError> {
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..cadmpeg_ir::SourceFidelity::default()
+    };
+    source_fidelity.separate_native_unknown_records(&mut ir, "sldprt")?;
+    let product_records = ir
+        .native_unknown_refs("sldprt")?
+        .into_iter()
+        .filter(|record| record.id.0 != "sldprt:file:source-image#0")
+        .collect::<Vec<_>>();
+    ir.set_native_unknown_refs("sldprt", &product_records)?;
+    Ok(DecodeResult::with_source_fidelity(
         ir,
         report,
-        cadmpeg_ir::SourceFidelity {
-            annotations,
-            ..cadmpeg_ir::SourceFidelity::default()
-        },
-    )
+        source_fidelity,
+    ))
 }
 
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream
@@ -1133,13 +1145,13 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
         source
     });
     let unknowns = ir
-        .native_unknowns("sldprt")
+        .native_unknown_refs("sldprt")
         .unwrap_or_default()
         .into_iter()
         .filter(|record| record.id.0 != "sldprt:file:source-image#0")
         .collect::<Vec<_>>();
     normalized
-        .set_native_unknowns("sldprt", &unknowns)
+        .set_native_unknown_refs("sldprt", &unknowns)
         .expect("SLDPRT unknown records serialize");
     sha256_hex(
         normalized

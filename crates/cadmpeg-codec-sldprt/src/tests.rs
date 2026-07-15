@@ -1541,14 +1541,17 @@ fn decode_without_geometry_falls_back_to_metadata() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(!result.report.geometry_transferred);
-    assert_eq!(result.ir.native_unknowns("sldprt").unwrap().len(), 2);
-    let unknowns = result.ir.native_unknowns("sldprt").unwrap();
-    assert!(unknowns
+    assert_eq!(result.ir.native_unknown_refs("sldprt").unwrap().len(), 1);
+    assert_eq!(result.source_fidelity.retained_records.len(), 2);
+    assert!(result
+        .source_fidelity
+        .retained_record("sldprt:file:source-image#0")
+        .is_some_and(|record| record.data.is_some()));
+    assert!(result
+        .source_fidelity
+        .retained_records
         .iter()
-        .any(|record| record.id.0 == "sldprt:file:source-image#0" && record.data.is_some()));
-    assert!(unknowns
-        .iter()
-        .any(|record| record.id.0 != "sldprt:file:source-image#0" && record.sha256.len() == 64));
+        .any(|record| record.id != "sldprt:file:source-image#0" && record.sha256.len() == 64));
     let source = result.ir.source.as_ref().expect("source metadata");
     assert_eq!(source.format, "sldprt");
     assert_eq!(
@@ -2598,7 +2601,11 @@ fn semantic_writer_retains_partial_native_flex_construction() {
         let mut detached = decoded.ir.clone();
         detached.model.features[index].native_ref = None;
         let error = SldprtCodec
-            .write_preserved(&detached, &mut Vec::new())
+            .write_preserved_with_source_fidelity(
+                &detached,
+                &decoded.source_fidelity,
+                &mut Vec::new(),
+            )
             .unwrap_err();
         assert!(error.to_string().contains("unresolved flex construction"));
     }
@@ -3193,7 +3200,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         .iter_mut()
         .for_each(|configuration| configuration.active = false);
     let error = SldprtCodec
-        .write_preserved(&inactive, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&inactive, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(error
         .to_string()
@@ -3430,7 +3437,9 @@ fn decode_synthesizes_sparse_partition_configuration() {
     let mut edited = decoded.ir;
     edited.model.points[0].position.x += 1.0;
     let mut written = Vec::new();
-    SldprtCodec.write_preserved(&edited, &mut written).unwrap();
+    SldprtCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut written)
+        .unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
         .blocks
@@ -3710,7 +3719,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
     solid.ir.model.points[0].position.z += 1.0;
     let mut solid_bytes = Vec::new();
     SldprtCodec
-        .write_preserved(&solid.ir, &mut solid_bytes)
+        .write_preserved_with_source_fidelity(&solid.ir, &solid.source_fidelity, &mut solid_bytes)
         .unwrap();
     let solid_scan = container::scan(&mut Cursor::new(solid_bytes)).unwrap();
     let solid_payload = &solid_scan.blocks[0].payload;
@@ -3730,7 +3739,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
     sheet.ir.model.points[0].position.z += 1.0;
     let mut sheet_bytes = Vec::new();
     SldprtCodec
-        .write_preserved(&sheet.ir, &mut sheet_bytes)
+        .write_preserved_with_source_fidelity(&sheet.ir, &sheet.source_fidelity, &mut sheet_bytes)
         .unwrap();
     let sheet_scan = container::scan(&mut Cursor::new(sheet_bytes)).unwrap();
     let sheet_payload = &sheet_scan.blocks[0].payload;
@@ -5532,7 +5541,7 @@ fn decode_reports_display_list_geometry() {
     assert_eq!(result.ir.model.tessellations[0].channels.len(), 6);
     assert!(result
         .ir
-        .native_unknowns("sldprt")
+        .native_unknown_refs("sldprt")
         .unwrap()
         .iter()
         .any(|record| {
@@ -5543,7 +5552,10 @@ fn decode_reports_display_list_geometry() {
                 .get(&record.id.0)
                 .and_then(|note| note.tag.as_deref())
                 == Some("displaylist_tessellation")
-                && record.data.is_some()
+                && result
+                    .source_fidelity
+                    .retained_record(&record.id.0)
+                    .is_some_and(|source| source.data.is_some())
         }));
 }
 
@@ -5708,7 +5720,9 @@ fn decode_types_non_modeling_feature_tree_nodes() {
     assert!(matches!(definitions[4], FeatureDefinition::Native { .. }));
     decoded.ir.model.features[0].name = Some("Document annotations".into());
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&decoded.ir, &mut encoded).unwrap();
+    SldprtCodec
+        .encode_with_source_fidelity(&decoded.ir, Some(&decoded.source_fidelity), &mut encoded)
+        .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -6100,7 +6114,7 @@ fn semantic_writer_derives_resolved_feature_section_names() {
     });
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved(&unscoped, &mut written)
+        .write_preserved_with_source_fidelity(&unscoped, &decoded.source_fidelity, &mut written)
         .unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
@@ -7089,7 +7103,11 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     regenerated.ir.model.parameters[0].value = Some(ParameterValue::Length(Length(225.0)));
     let mut parameter_encoded = Vec::new();
     SldprtCodec
-        .write_preserved(&regenerated.ir, &mut parameter_encoded)
+        .write_preserved_with_source_fidelity(
+            &regenerated.ir,
+            &regenerated.source_fidelity,
+            &mut parameter_encoded,
+        )
         .unwrap();
     let parameter_regenerated = SldprtCodec
         .decode(
@@ -7424,7 +7442,11 @@ fn decode_dispatches_typed_features_by_xml_family() {
     );
     regenerated.ir.model.features[2].dependencies.pop();
     let error = SldprtCodec
-        .write_preserved(&regenerated.ir, &mut Vec::new())
+        .write_preserved_with_source_fidelity(
+            &regenerated.ir,
+            &regenerated.source_fidelity,
+            &mut Vec::new(),
+        )
         .unwrap_err();
     assert!(error
         .to_string()
@@ -7634,13 +7656,13 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
     let mut detached = decoded.ir.clone();
     detached.model.features[0].native_ref = None;
     let error = SldprtCodec
-        .write_preserved(&detached, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("unresolved fillet radius law"));
     detached.model.features[0] = decoded.ir.model.features[0].clone();
     detached.model.features[1].native_ref = None;
     let error = SldprtCodec
-        .write_preserved(&detached, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("unresolved chamfer dimensions"));
 
@@ -7882,7 +7904,11 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
     };
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved(&regenerated.ir, &mut encoded)
+        .write_preserved_with_source_fidelity(
+            &regenerated.ir,
+            &regenerated.source_fidelity,
+            &mut encoded,
+        )
         .unwrap();
     let final_ir = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -8022,13 +8048,13 @@ fn semantic_writer_retains_partial_native_wall_operations() {
     let mut detached = decoded.ir.clone();
     detached.model.features[0].native_ref = None;
     let error = SldprtCodec
-        .write_preserved(&detached, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("unresolved shell construction"));
     detached.model.features[0] = decoded.ir.model.features[0].clone();
     detached.model.features[1].native_ref = None;
     let error = SldprtCodec
-        .write_preserved(&detached, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(error
         .to_string()
@@ -8401,7 +8427,11 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         let mut detached = decoded.ir.clone();
         detached.model.features[index].native_ref = None;
         let error = SldprtCodec
-            .write_preserved(&detached, &mut Vec::new())
+            .write_preserved_with_source_fidelity(
+                &detached,
+                &decoded.source_fidelity,
+                &mut Vec::new(),
+            )
             .unwrap_err();
         assert!(error.to_string().contains("unresolved scale construction"));
     }
@@ -8755,7 +8785,11 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
     *mode = BodyRetentionMode::KeepSelected;
     let mut resolved_encoded = Vec::new();
     SldprtCodec
-        .write_preserved(&sparse.ir, &mut resolved_encoded)
+        .write_preserved_with_source_fidelity(
+            &sparse.ir,
+            &sparse.source_fidelity,
+            &mut resolved_encoded,
+        )
         .unwrap();
     let resolved = SldprtCodec
         .decode(
@@ -9057,7 +9091,7 @@ fn semantic_writer_retains_partial_native_dome_construction() {
     let mut detached = decoded.ir.clone();
     detached.model.features[0].native_ref = None;
     let error = SldprtCodec
-        .write_preserved(&detached, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("unresolved dome construction"));
 
@@ -9863,7 +9897,7 @@ fn semantic_writer_round_trips_wrap() {
     *depth = None;
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved(&scribed.ir, &mut encoded)
+        .write_preserved_with_source_fidelity(&scribed.ir, &scribed.source_fidelity, &mut encoded)
         .unwrap();
     let scribed = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -9963,7 +9997,11 @@ fn semantic_writer_round_trips_move_copy_body() {
     *copies = 0;
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved(&translated.ir, &mut encoded)
+        .write_preserved_with_source_fidelity(
+            &translated.ir,
+            &translated.source_fidelity,
+            &mut encoded,
+        )
         .unwrap();
     let translated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -10447,7 +10485,11 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
     };
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved(&regenerated.ir, &mut encoded)
+        .write_preserved_with_source_fidelity(
+            &regenerated.ir,
+            &regenerated.source_fidelity,
+            &mut encoded,
+        )
         .unwrap();
     let tangent = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -10718,7 +10760,11 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         let mut detached = decoded.ir.clone();
         detached.model.features[index].native_ref = None;
         let error = SldprtCodec
-            .write_preserved(&detached, &mut Vec::new())
+            .write_preserved_with_source_fidelity(
+                &detached,
+                &decoded.source_fidelity,
+                &mut Vec::new(),
+            )
             .unwrap_err();
         assert!(error.to_string().contains(message));
     }
@@ -10729,7 +10775,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     };
     *kind = HoleKind::Simple;
     let error = SldprtCodec
-        .write_preserved(&detached, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("unresolved hole termination"));
 
@@ -11022,7 +11068,7 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
     let mut detached = decoded.ir.clone();
     detached.model.features[0].native_ref = None;
     let error = SldprtCodec
-        .write_preserved(&detached, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(error
         .to_string()
@@ -11890,7 +11936,7 @@ fn semantic_writer_retains_partial_native_rib_construction() {
     let mut detached = decoded.ir.clone();
     detached.model.features[0].native_ref = None;
     let error = SldprtCodec
-        .write_preserved(&detached, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("unresolved rib construction"));
 
@@ -13247,7 +13293,7 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
     );
 
     let error = SldprtCodec
-        .encode(&decoded.ir, &mut Vec::new())
+        .encode_with_source_fidelity(&decoded.ir, Some(&decoded.source_fidelity), &mut Vec::new())
         .unwrap_err();
     assert!(matches!(
         error,
@@ -14014,16 +14060,15 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
         .unwrap();
 
     assert!(regenerated
-        .ir
-        .native_unknowns("sldprt")
-        .unwrap()
+        .source_fidelity
+        .retained_records
         .iter()
         .any(|record| {
             regenerated
                 .source_fidelity
                 .annotations
                 .provenance
-                .get(&record.id.0)
+                .get(&record.id)
                 .and_then(|note| {
                     regenerated
                         .source_fidelity
@@ -14088,16 +14133,15 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         "20mm"
     );
     assert!(regenerated
-        .ir
-        .native_unknowns("sldprt")
-        .unwrap()
+        .source_fidelity
+        .retained_records
         .iter()
         .any(|record| {
             regenerated
                 .source_fidelity
                 .annotations
                 .provenance
-                .get(&record.id.0)
+                .get(&record.id)
                 .and_then(|note| {
                     regenerated
                         .source_fidelity
@@ -14109,10 +14153,9 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
                 && record.data.as_deref() == Some(b"opaque-state".as_slice())
         }));
 
-    let regenerated_unknowns = regenerated.ir.native_unknowns("sldprt").unwrap();
-    let written = regenerated_unknowns
-        .iter()
-        .find(|record| record.id.0 == "sldprt:file:source-image#0")
+    let written = regenerated
+        .source_fidelity
+        .retained_record("sldprt:file:source-image#0")
         .and_then(|record| record.data.as_ref())
         .unwrap();
     let scan = container::scan_bytes(written);
@@ -14163,7 +14206,7 @@ fn face_on_untyped_surface_keeps_topology() {
     else {
         panic!("opaque surface has no replay record");
     };
-    let unknowns = result.ir.native_unknowns("sldprt").unwrap();
+    let unknowns = result.ir.native_unknown_refs("sldprt").unwrap();
     let retained = unknowns
         .iter()
         .find(|unknown| unknown.id == *record)
@@ -14208,7 +14251,7 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
     else {
         panic!("opaque curve has no replay record");
     };
-    let unknowns = decoded.ir.native_unknowns("sldprt").unwrap();
+    let unknowns = decoded.ir.native_unknown_refs("sldprt").unwrap();
     let retained = unknowns
         .iter()
         .find(|unknown| unknown.id == *record)
@@ -14279,10 +14322,9 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         SurfaceGeometry::Unknown { .. }
     ));
     assert_eq!(regenerated.ir.model.faces.len(), 1);
-    let unknowns = regenerated.ir.native_unknowns("sldprt").unwrap();
-    let written = unknowns
-        .iter()
-        .find(|record| record.id.0 == "sldprt:file:source-image#0")
+    let written = regenerated
+        .source_fidelity
+        .retained_record("sldprt:file:source-image#0")
         .and_then(|record| record.data.as_deref())
         .unwrap();
     let scan = container::scan_bytes(written);

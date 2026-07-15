@@ -445,20 +445,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
 }
 
 impl SldprtCodec {
-    /// Write a decoded or constructed IR as `.sldprt`.
-    ///
-    /// An unchanged decoded document uses its integrity-checked retained source
-    /// image. Modified documents use native partition retention, in-place
-    /// geometry patching, or semantic regeneration according to the changes and
-    /// available provenance.
-    ///
-    /// Returns [`CodecError::NotImplemented`] when the IR contains a construct
-    /// the semantic writer cannot represent, and [`CodecError::Malformed`] when
-    /// the IR or retained source data violates a required invariant.
-    pub fn write_preserved(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-        Self::write_preserved_with_annotations(ir, &Annotations::default(), writer)
-    }
-
     /// Write a decoded document with its retained source-fidelity sidecar.
     pub fn write_preserved_with_source_fidelity(
         &self,
@@ -466,7 +452,9 @@ impl SldprtCodec {
         source_fidelity: &SourceFidelity,
         writer: &mut dyn Write,
     ) -> Result<(), CodecError> {
-        Self::write_preserved_with_annotations(ir, &source_fidelity.annotations, writer)
+        let mut source_view = ir.clone();
+        source_fidelity.hydrate_native_unknown_records(&mut source_view, "sldprt")?;
+        Self::write_preserved_with_annotations(&source_view, &source_fidelity.annotations, writer)
     }
 
     fn write_preserved_with_annotations(
@@ -545,13 +533,23 @@ impl Encoder for SldprtCodec {
         writer: &mut dyn Write,
     ) -> Result<ExportReport, CodecError> {
         match source_fidelity {
-            Some(value) => Self::encode_with_annotations(ir, &value.annotations, writer),
+            Some(value) => Self::encode_with_fidelity(ir, value, writer),
             None => Self::encode_with_annotations(ir, &Annotations::default(), writer),
         }
     }
 }
 
 impl SldprtCodec {
+    fn encode_with_fidelity(
+        ir: &CadIr,
+        source_fidelity: &SourceFidelity,
+        writer: &mut dyn Write,
+    ) -> Result<ExportReport, CodecError> {
+        let mut source_view = ir.clone();
+        source_fidelity.hydrate_native_unknown_records(&mut source_view, "sldprt")?;
+        Self::encode_with_annotations(&source_view, &source_fidelity.annotations, writer)
+    }
+
     fn encode_with_annotations(
         ir: &CadIr,
         annotations: &Annotations,
