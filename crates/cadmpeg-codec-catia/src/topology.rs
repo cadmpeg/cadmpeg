@@ -4327,6 +4327,32 @@ impl MeshQuotient {
     ) -> Vec<HashMap<usize, usize>> {
         type PointNeighbors = HashMap<usize, HashSet<usize>>;
 
+        fn remaining_domains_match(values: &[(usize, Vec<usize>)], point_count: usize) -> bool {
+            fn augment(
+                root: usize,
+                values: &[(usize, Vec<usize>)],
+                point_owner: &mut [Option<usize>],
+                seen: &mut HashSet<usize>,
+            ) -> bool {
+                for point in &values[root].1 {
+                    if *point >= point_owner.len() || !seen.insert(*point) {
+                        continue;
+                    }
+                    if point_owner[*point]
+                        .is_none_or(|owner| augment(owner, values, point_owner, seen))
+                    {
+                        point_owner[*point] = Some(root);
+                        return true;
+                    }
+                }
+                false
+            }
+
+            let mut point_owner = vec![None; point_count];
+            (0..values.len())
+                .all(|root| augment(root, values, &mut point_owner, &mut HashSet::new()))
+        }
+
         #[allow(clippy::too_many_arguments)]
         fn value_viable(
             root: usize,
@@ -4388,7 +4414,7 @@ impl MeshQuotient {
             if solutions.len() >= solution_limit {
                 return;
             }
-            let next = assigned
+            let values = assigned
                 .iter()
                 .enumerate()
                 .filter(|(_, point)| point.is_none())
@@ -4411,13 +4437,22 @@ impl MeshQuotient {
                             )
                         })
                         .collect::<Vec<_>>();
-                    (values.len(), root, values)
+                    (root, values)
                 })
-                .min_by_key(|(count, root, _)| (*count, *root));
-            let Some((_, root, values)) = next else {
+                .collect::<Vec<_>>();
+            if values.is_empty() {
                 if let Some(solution) = assigned.iter().copied().collect::<Option<Vec<_>>>() {
                     solutions.push(solution);
                 }
+                return;
+            }
+            if !remaining_domains_match(&values, assigned.len()) {
+                return;
+            }
+            let Some((root, values)) = values
+                .into_iter()
+                .min_by_key(|(root, values)| (values.len(), *root))
+            else {
                 return;
             };
             for point in values {
