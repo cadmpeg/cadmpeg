@@ -9696,6 +9696,11 @@ fn evaluated_sweep_output_bodies(ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
         .collect()
 }
 
+fn has_evaluated_sweep_body(ir: &CadIr, family: &str, feature_id: u32) -> bool {
+    let id = BodyId(format!("creo:feature:{family}#{feature_id}:body"));
+    ir.model.bodies.iter().any(|body| body.id == id)
+}
+
 fn feature_field_text(value: &crate::feature::FeatureFieldValue) -> Option<String> {
     match value {
         crate::feature::FeatureFieldValue::Empty => Some("empty".to_string()),
@@ -10517,7 +10522,7 @@ fn schema_feature_definition(
                 op: section_sweep_boolean_operation(
                     feature_recipe_effect(scan, feature_id),
                     kind,
-                    false,
+                    has_evaluated_sweep_body(ir, "revolution", feature_id),
                     preceding_features_establish_body(ir),
                 ),
             };
@@ -10558,10 +10563,7 @@ fn schema_feature_definition(
                         op: section_sweep_boolean_operation(
                             feature_recipe_effect(scan, feature_id),
                             kind,
-                            ir.model.bodies.iter().any(|body| {
-                                body.id
-                                    == BodyId(format!("creo:feature:extrusion#{feature_id}:body"))
-                            }),
+                            has_evaluated_sweep_body(ir, "extrusion", feature_id),
                             preceding_features_establish_body(ir),
                         ),
                         draft: None,
@@ -13154,6 +13156,9 @@ mod resolved_sketch_tests {
                 BodyId("creo:feature:revolution#40:body".to_string()),
             ]
         );
+        assert!(has_evaluated_sweep_body(&ir, "extrusion", 40));
+        assert!(has_evaluated_sweep_body(&ir, "revolution", 40));
+        assert!(!has_evaluated_sweep_body(&ir, "revolution", 42));
     }
 
     #[test]
