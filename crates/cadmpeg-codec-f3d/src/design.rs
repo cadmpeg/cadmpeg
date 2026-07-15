@@ -1502,24 +1502,23 @@ fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
 }
 
 pub(crate) fn resolve_edge_operand_candidates(operand: &DesignEdgeOperand) -> Option<i64> {
-    resolved_edge_candidate_intersection_with_deleted_triplets(
+    let deleted_reference = corroborated_deleted_reference_candidate(
         &operand.recipe_selectors,
         operand
             .recipe_reference_contexts
             .iter()
             .map(|context| context.changed_reference_edge_slots.as_slice()),
         &operand.deleted_boundary_edge_slots,
+    );
+    resolved_edge_candidate_intersection_with_deleted_proofs(
+        &operand.recipe_selectors,
+        operand
+            .recipe_reference_contexts
+            .iter()
+            .map(|context| context.changed_reference_edge_slots.as_slice()),
+        &operand.deleted_boundary_edge_slots,
+        deleted_reference,
     )
-    .or_else(|| {
-        corroborated_deleted_reference_candidate(
-            &operand.recipe_selectors,
-            operand
-                .recipe_reference_contexts
-                .iter()
-                .map(|context| context.changed_reference_edge_slots.as_slice()),
-            &operand.deleted_boundary_edge_slots,
-        )
-    })
 }
 
 fn unique_deleted_triplet_candidate(
@@ -1578,6 +1577,7 @@ fn corroborated_deleted_reference_candidate<'a>(
     }
 }
 
+#[cfg(test)]
 fn resolved_edge_candidate_intersection<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
@@ -1585,22 +1585,39 @@ fn resolved_edge_candidate_intersection<'a>(
     resolved_edge_candidate_intersection_with_extra_proof(selector_contexts, shared_edge_sets, None)
 }
 
-fn resolved_edge_candidate_intersection_with_deleted_triplets<'a>(
+fn resolved_edge_candidate_intersection_with_deleted_proofs<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
     deleted_boundary_edges: &[i64],
+    deleted_reference: Option<i64>,
 ) -> Option<i64> {
-    resolved_edge_candidate_intersection_with_extra_proof(
+    resolved_edge_candidate_intersection_with_extra_proofs(
         selector_contexts,
         shared_edge_sets,
-        unique_deleted_triplet_candidate(selector_contexts, deleted_boundary_edges),
+        [
+            unique_deleted_triplet_candidate(selector_contexts, deleted_boundary_edges),
+            deleted_reference,
+        ],
     )
 }
 
+#[cfg(test)]
 fn resolved_edge_candidate_intersection_with_extra_proof<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
     extra_proof: Option<i64>,
+) -> Option<i64> {
+    resolved_edge_candidate_intersection_with_extra_proofs(
+        selector_contexts,
+        shared_edge_sets,
+        [extra_proof],
+    )
+}
+
+fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
+    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
+    extra_proofs: [Option<i64>; N],
 ) -> Option<i64> {
     let ordered_edge_sets = shared_edge_sets.into_iter().collect::<Vec<_>>();
     let shared_edge_sets = ordered_edge_sets
@@ -1609,7 +1626,9 @@ fn resolved_edge_candidate_intersection_with_extra_proof<'a>(
         .filter(|edges| !edges.is_empty())
         .collect::<Vec<_>>();
     if shared_edge_sets.is_empty() {
-        return extra_proof;
+        let proofs = extra_proofs.into_iter().flatten().collect::<Vec<_>>();
+        let edge = *proofs.first()?;
+        return proofs.iter().all(|proof| *proof == edge).then_some(edge);
     }
     let reference = ordered_edge_sets.get(..2).and_then(|sets| {
         sets.iter()
@@ -1621,16 +1640,11 @@ fn resolved_edge_candidate_intersection_with_extra_proof<'a>(
     let boundary_count = corroborated_edge_intersection(selector_contexts, &shared_edge_sets, true);
     let common_triplet =
         corroborated_common_triplet_intersection(selector_contexts, &shared_edge_sets);
-    let proofs = [
-        reference,
-        incidence,
-        boundary_count,
-        common_triplet,
-        extra_proof,
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
+    let proofs = [reference, incidence, boundary_count, common_triplet]
+        .into_iter()
+        .chain(extra_proofs)
+        .flatten()
+        .collect::<Vec<_>>();
     let edge = *proofs.first()?;
     proofs.iter().all(|proof| *proof == edge).then_some(edge)
 }
@@ -15793,18 +15807,29 @@ mod relation_tests {
             Some(17)
         );
         assert_eq!(
-            super::resolved_edge_candidate_intersection_with_deleted_triplets(
+            super::resolved_edge_candidate_intersection_with_deleted_proofs(
                 &[common.clone()],
                 [&[17, 18][..]],
                 &[17, 20],
+                None,
             ),
             Some(17)
         );
         assert_eq!(
-            super::resolved_edge_candidate_intersection_with_deleted_triplets(
+            super::resolved_edge_candidate_intersection_with_deleted_proofs(
                 &[common.clone()],
                 [&[18][..]],
                 &[17, 20],
+                None,
+            ),
+            None
+        );
+        assert_eq!(
+            super::resolved_edge_candidate_intersection_with_deleted_proofs(
+                &[common.clone()],
+                [&[17, 18][..]],
+                &[17, 20],
+                Some(18),
             ),
             None
         );
