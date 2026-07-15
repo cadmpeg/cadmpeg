@@ -3535,12 +3535,29 @@ fn decode_cyl_spl_sur_at(
     let directrix = decode_curve_cache_at(span, int_width)?;
 
     let mut position = name.len() + 3;
-    let parameter_interval = [
-        take_f64(span, &mut position)?,
-        take_f64(span, &mut position)?,
-    ];
-    let direction = take_native_vec3(span, &mut position, 0x14)?;
-    let native_position = take_native_vec3(span, &mut position, 0x13)?;
+    let (parameter_interval, direction, native_position) = if span.get(position) == Some(&0x04) {
+        take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (take_native_ident(span, &mut position)? == "intcurve").then_some(())?;
+        take_bool(span, &mut position)?;
+        let directrix_scope = subtype_span(span, position, int_width)?;
+        position += directrix_scope.len();
+        let start = take_optional_range_value(span, &mut position)?;
+        let end = take_optional_range_value(span, &mut position)?;
+        (
+            [start?, end?],
+            take_native_vec3(span, &mut position, 0x14)?,
+            take_native_vec3(span, &mut position, 0x13)?,
+        )
+    } else {
+        (
+            [
+                take_f64(span, &mut position)?,
+                take_f64(span, &mut position)?,
+            ],
+            take_native_vec3(span, &mut position, 0x14)?,
+            take_native_vec3(span, &mut position, 0x13)?,
+        )
+    };
     let decoded_cache = marker_positions(span)
         .into_iter()
         .filter_map(|at| decode_surface_block(span, at, int_width))

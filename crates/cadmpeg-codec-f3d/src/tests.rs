@@ -2233,6 +2233,43 @@ fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
     synthetic_cyl_spl_sur_with_cache_smbh(true)
 }
 
+fn synthetic_versioned_cyl_spl_sur_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old_offset = records[9].offset;
+    let old_len = records[9].len;
+
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "cyl_spl_sur");
+    t_long(&mut surface, 23100);
+    t_ident(&mut surface, "intcurve");
+    surface.push(0x0a);
+    surface.push(0x0f);
+    t_ident(&mut surface, "exact_int_cur");
+    surface.extend_from_slice(&generated_curve_block());
+    surface.push(0x10);
+    surface.push(0x0a);
+    t_dbl(&mut surface, 0.25);
+    surface.push(0x0a);
+    t_dbl(&mut surface, 0.75);
+    t_vec(&mut surface, [0.0, 0.0, 2.0]);
+    t_pos(&mut surface, [4.0, 5.0, 6.0]);
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.002);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old_offset..old_offset + old_len, surface);
+    bytes
+}
+
 fn synthetic_cacheless_cyl_spl_sur_smbh() -> Vec<u8> {
     synthetic_cyl_spl_sur_with_cache_smbh(false)
 }
@@ -15364,6 +15401,35 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
         panic!("expected NURBS directrix")
     };
     assert_eq!(directrix.control_points.len(), 3);
+}
+
+#[test]
+fn decode_retains_versioned_nested_translational_extrusion() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_versioned_cyl_spl_sur_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("versioned extrusion decode");
+    let procedural = result.ir.model.procedural_surfaces.first().unwrap();
+    assert_eq!(procedural.cache_fit_tolerance, Some(0.02));
+    let ProceduralSurfaceDefinition::Extrusion {
+        direction,
+        parameter_interval,
+        native_position,
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected versioned extrusion")
+    };
+    assert_eq!(*parameter_interval, Some([0.25, 0.75]));
+    assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
+    assert_eq!(
+        *native_position,
+        Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
+    );
 }
 
 #[test]
