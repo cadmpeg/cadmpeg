@@ -122,6 +122,29 @@ pub struct DisplayJtCompression {
     pub inflated_sha256: String,
 }
 
+/// One length-bounded object element in a JT shape-LOD segment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtShapeLodElement {
+    /// Globally unique element identity.
+    pub id: String,
+    /// Owning type-7 segment.
+    pub segment: String,
+    /// Zero-based serialized element order.
+    pub ordinal: u32,
+    /// Exact 16-byte object-type identifier.
+    pub object_type_id: Vec<u8>,
+    /// Serialized object identifier.
+    pub object_id: u32,
+    /// Serialized object-base-type discriminator.
+    pub object_base_type: u8,
+    /// Bytes following the common element header.
+    pub body_byte_len: u32,
+    /// SHA-256 of the bytes following the common element header.
+    pub body_sha256: String,
+    /// Absolute source offset of the element length.
+    pub source_offset: u64,
+}
+
 /// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
 pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
     const JT_HEADER: &[u8] = b"Version ";
@@ -442,6 +465,85 @@ pub fn display_jt_segments(
         }
     }
     segments
+}
+
+/// Decode complete object-element sequences from type-7 shape-LOD segments.
+pub fn display_jt_shape_lod_elements(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+) -> Vec<DisplayJtShapeLodElement> {
+    const END_OBJECT_TYPE: [u8; 16] = [0xff; 16];
+    const SEGMENT_TAIL: [u8; 6] = [1, 0, 0, 0, 0, 0];
+    let mut elements = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 7) {
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let payload = &bytes[24..];
+        let mut cursor = 0usize;
+        let mut ordinal = 0u32;
+        loop {
+            let Some(element_byte_len) = payload
+                .get(cursor..cursor.saturating_add(4))
+                .and_then(|value| value.try_into().ok())
+                .map(u32::from_le_bytes)
+            else {
+                return Vec::new();
+            };
+            let Ok(element_byte_len_usize) = usize::try_from(element_byte_len) else {
+                return Vec::new();
+            };
+            let Some(element_end) = cursor
+                .checked_add(4)
+                .and_then(|value| value.checked_add(element_byte_len_usize))
+            else {
+                return Vec::new();
+            };
+            let Some(element) = payload.get(cursor + 4..element_end) else {
+                return Vec::new();
+            };
+            if element_byte_len == 16 && element == END_OBJECT_TYPE {
+                if payload.get(element_end..) != Some(SEGMENT_TAIL.as_slice()) {
+                    return Vec::new();
+                }
+                break;
+            }
+            let Some(object_type_id) = element.get(..16) else {
+                return Vec::new();
+            };
+            let Some(object_id) = element
+                .get(16..20)
+                .and_then(|value| value.try_into().ok())
+                .map(u32::from_le_bytes)
+            else {
+                return Vec::new();
+            };
+            let Some(&object_base_type) = element.get(20) else {
+                return Vec::new();
+            };
+            let body = &element[21..];
+            elements.push(DisplayJtShapeLodElement {
+                id: format!("{}-element-{ordinal}", segment.id),
+                segment: segment.id.clone(),
+                ordinal,
+                object_type_id: object_type_id.to_vec(),
+                object_id,
+                object_base_type,
+                body_byte_len: body.len() as u32,
+                body_sha256: sha256_hex(body),
+                source_offset: segment.source_offset + 24 + cursor as u64,
+            });
+            ordinal = ordinal.saturating_add(1);
+            cursor = element_end;
+        }
+    }
+    elements
 }
 
 /// Complete typed source record for one Parasolid offset surface.

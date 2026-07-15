@@ -116,6 +116,56 @@ fn display_jt_index_requires_every_declared_header() {
     assert!(crate::native::display_jt_indices(&malformed).is_empty());
 }
 
+#[test]
+fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
+    use crate::container::Container;
+    use crate::native::DisplayJtSegment;
+
+    let object_type_id = [0x5a; 16];
+    let body = [9, 8, 7];
+    let mut data = Vec::new();
+    data.extend_from_slice(&[1; 16]);
+    data.extend_from_slice(&7_u32.to_le_bytes());
+    data.extend_from_slice(&78_u32.to_le_bytes());
+    data.extend_from_slice(&24_u32.to_le_bytes());
+    data.extend_from_slice(&object_type_id);
+    data.extend_from_slice(&42_u32.to_le_bytes());
+    data.push(3);
+    data.extend_from_slice(&body);
+    data.extend_from_slice(&16_u32.to_le_bytes());
+    data.extend_from_slice(&[0xff; 16]);
+    data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
+    let container = Container {
+        data,
+        version: 6,
+        file_tag: 0,
+        footer_offset: 0,
+        entries: Vec::new(),
+    };
+    let segment = DisplayJtSegment {
+        id: "segment".to_string(),
+        document: "document".to_string(),
+        toc_entry: "entry".to_string(),
+        segment_id: vec![1; 16],
+        segment_type: 7,
+        segment_byte_len: 78,
+        payload_sha256: String::new(),
+        compression: None,
+        source_offset: 0,
+    };
+    let elements =
+        crate::native::display_jt_shape_lod_elements(&container, std::slice::from_ref(&segment));
+    assert_eq!(elements.len(), 1);
+    assert_eq!(elements[0].object_type_id, object_type_id);
+    assert_eq!(elements[0].object_id, 42);
+    assert_eq!(elements[0].object_base_type, 3);
+    assert_eq!(elements[0].body_byte_len, 3);
+
+    let mut malformed = container;
+    *malformed.data.last_mut().unwrap() = 1;
+    assert!(crate::native::display_jt_shape_lod_elements(&malformed, &[segment]).is_empty());
+}
+
 fn be_f64(v: f64) -> [u8; 8] {
     v.to_be_bytes()
 }

@@ -6307,6 +6307,8 @@ fn attach_native_object_model(
         crate::native::display_jt_documents(&scan.container, &display_jt_indices);
     let display_jt_segments =
         crate::native::display_jt_segments(&scan.container, &display_jt_documents);
+    let display_jt_shape_lod_elements =
+        crate::native::display_jt_shape_lod_elements(&scan.container, &display_jt_segments);
     let feature_datum_csys_constructions =
         crate::native::feature_datum_csys_constructions(&scan.container);
     let feature_datum_csys_payloads = crate::native::feature_datum_csys_payloads(
@@ -6686,6 +6688,12 @@ fn attach_native_object_model(
             .note(&segment.id, annotation_stream, segment.source_offset)
             .tag("DISPLAY_JT_SEGMENT");
         annotations.exactness(&segment.id, Exactness::ByteExact);
+    }
+    for element in &display_jt_shape_lod_elements {
+        annotations
+            .note(&element.id, annotation_stream, element.source_offset)
+            .tag("DISPLAY_JT_SHAPE_LOD_ELEMENT");
+        annotations.exactness(&element.id, Exactness::ByteExact);
     }
     for row in &segment_index_rows {
         annotations
@@ -7422,6 +7430,12 @@ fn attach_native_object_model(
     }
     if !display_jt_segments.is_empty() {
         namespace.set_arena("display_jt_segments", &display_jt_segments)?;
+    }
+    if !display_jt_shape_lod_elements.is_empty() {
+        namespace.set_arena(
+            "display_jt_shape_lod_elements",
+            &display_jt_shape_lod_elements,
+        )?;
     }
     if !feature_datum_csys_constructions.is_empty() {
         namespace.set_arena(
