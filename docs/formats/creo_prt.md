@@ -827,6 +827,11 @@ owner. Replay order does not define feature identity.
 
 `AllFeatur` edge-treatment rows are feature recipes. `strong_parents`, `geoms_affected`, `edgs_affected`, and `contours` contain compact-int identifiers for the current body; they are neither coordinate arrays nor global geometry counts. The first edge-treatment row supplies the labelled schema, and later round and chamfer rows replay that schema positionally.
 
+Within an `AllFeatur` `lo_restore` body, named-record type-one fields
+`direction` and `direction2` each contain one complete compact integer. They
+belong to the loop-restoration edge records and are not section-sweep direction
+or extent fields.
+
 Named procedural-choice fields belong to their containing feature row. Complete compact integers, compact-integer arrays, entity references, empty alternatives, and fully decoded `f9` scalar arrays are operation parameters qualified by choice and field name. A repeated qualified field name denotes ordered occurrences of the same parameter slot. Incomplete scalar wrappers and undefined field bodies remain opaque.
 
 Class 913 stores `geoms_affected` and `edgs_affected` as the first and second

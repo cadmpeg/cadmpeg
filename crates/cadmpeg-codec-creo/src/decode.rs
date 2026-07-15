@@ -408,13 +408,11 @@ struct CreoFeatureReplayAffectedIdsRecord {
 }
 
 #[derive(Serialize)]
-struct CreoFeatureDirectionRecord {
+struct CreoFeatureLoopRestoreDirectionRecord {
     id: String,
     owner_feature_id: u32,
     lane: &'static str,
-    value_kind: &'static str,
-    side_flag: Option<bool>,
-    raw_value: u8,
+    value: u32,
     offset: usize,
     source_section: String,
 }
@@ -819,29 +817,21 @@ fn feature_replay_affected_id_records(
         .collect()
 }
 
-fn feature_direction_records(scan: &ContainerScan) -> Vec<CreoFeatureDirectionRecord> {
-    scan.feature_direction_bytes
+fn feature_loop_restore_direction_records(
+    scan: &ContainerScan,
+) -> Vec<CreoFeatureLoopRestoreDirectionRecord> {
+    scan.feature_loop_restore_directions
         .iter()
-        .map(|record| {
-            let (value_kind, side_flag, raw_value) = match record.value {
-                crate::feature::DirectionValue::SideFlag(value) => {
-                    ("side_flag", Some(value), u8::from(value))
-                }
-                crate::feature::DirectionValue::Raw(value) => ("raw", None, value),
-            };
-            CreoFeatureDirectionRecord {
-                id: format!("creo:feature:direction#{}", record.offset),
-                owner_feature_id: record.feature_id,
-                lane: match record.lane {
-                    crate::feature::DirectionLane::Primary => "primary",
-                    crate::feature::DirectionLane::Secondary => "secondary",
-                },
-                value_kind,
-                side_flag,
-                raw_value,
-                offset: record.offset,
-                source_section: source_section(scan, record.offset),
-            }
+        .map(|record| CreoFeatureLoopRestoreDirectionRecord {
+            id: format!("creo:feature:loop_restore_direction#{}", record.offset),
+            owner_feature_id: record.feature_id,
+            lane: match record.lane {
+                crate::feature::LoopRestoreDirectionLane::Primary => "primary",
+                crate::feature::LoopRestoreDirectionLane::Secondary => "secondary",
+            },
+            value: record.value,
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
         })
         .collect()
 }
@@ -8559,19 +8549,15 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         );
     }
     for direction in scan
-        .feature_direction_bytes
+        .feature_loop_restore_directions
         .iter()
         .filter(|record| record.feature_id == feature_id)
     {
         let name = match direction.lane {
-            crate::feature::DirectionLane::Primary => "direction",
-            crate::feature::DirectionLane::Secondary => "direction2",
+            crate::feature::LoopRestoreDirectionLane::Primary => "direction",
+            crate::feature::LoopRestoreDirectionLane::Secondary => "direction2",
         };
-        let value = match direction.value {
-            crate::feature::DirectionValue::SideFlag(value) => value.to_string(),
-            crate::feature::DirectionValue::Raw(value) => value.to_string(),
-        };
-        parameters.insert(name.to_string(), value);
+        parameters.insert(format!("loop_restore.{name}"), direction.value.to_string());
     }
     for table in scan
         .feature_entity_tables
@@ -17082,21 +17068,24 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("feature_replay_affected_ids", &feature_replay_affected_ids)?;
     }
-    let feature_directions = feature_direction_records(scan);
-    if !feature_directions.is_empty() {
-        for record in &feature_directions {
+    let feature_loop_restore_directions = feature_loop_restore_direction_records(scan);
+    if !feature_loop_restore_directions.is_empty() {
+        for record in &feature_loop_restore_directions {
             annotate(
                 &mut annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
-                "feature_direction",
+                "feature_loop_restore_direction",
                 Exactness::ByteExact,
             );
         }
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
-        namespace.set_arena("feature_directions", &feature_directions)?;
+        namespace.set_arena(
+            "feature_loop_restore_directions",
+            &feature_loop_restore_directions,
+        )?;
     }
     let feature_rows = feature_row_records(scan);
     if !feature_rows.is_empty() {
@@ -17446,8 +17435,8 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         scan.feature_replay_affected_ids.len().to_string(),
     );
     attributes.insert(
-        "decoded_feature_direction_byte_count".to_string(),
-        scan.feature_direction_bytes.len().to_string(),
+        "decoded_feature_loop_restore_direction_count".to_string(),
+        scan.feature_loop_restore_directions.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_definition_count".to_string(),

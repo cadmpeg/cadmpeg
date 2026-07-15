@@ -507,33 +507,24 @@ pub struct FeatureReplayAffectedIds {
     pub offset: usize,
 }
 
-/// Which named direction lane supplied a recipe byte.
+/// Which named direction lane occurs in a loop-restoration record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DirectionLane {
+pub enum LoopRestoreDirectionLane {
     /// `direction`.
     Primary,
     /// `direction2`.
     Secondary,
 }
 
-/// Interpretation permitted by the direction byte itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DirectionValue {
-    /// Defined boolean side flag (`00` or `01`).
-    SideFlag(bool),
-    /// Any other raw byte; no side semantics are assigned.
-    Raw(u8),
-}
-
-/// One named recipe direction byte.
+/// One named compact direction value in a loop-restoration record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureDirectionByte {
+pub struct FeatureLoopRestoreDirection {
     /// Owning feature identifier.
     pub feature_id: u32,
     /// Primary or secondary direction lane.
-    pub lane: DirectionLane,
-    /// Byte interpretation.
-    pub value: DirectionValue,
+    pub lane: LoopRestoreDirectionLane,
+    /// Complete compact-integer value.
+    pub value: u32,
     /// Byte offset of the named field header in the original stream.
     pub offset: usize,
 }
@@ -4513,11 +4504,12 @@ pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds>
     result
 }
 
-/// Decode genuine named `direction` and `direction2` recipe bytes.
-pub fn direction_bytes(rows: &[FeatureRow]) -> Vec<FeatureDirectionByte> {
-    const FIELDS: &[(&[u8], DirectionLane)] = &[
-        (b"direction", DirectionLane::Primary),
-        (b"direction2", DirectionLane::Secondary),
+/// Decode named `direction` and `direction2` compact integers inside
+/// `lo_restore` records.
+pub fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRestoreDirection> {
+    const FIELDS: &[(&[u8], LoopRestoreDirectionLane)] = &[
+        (b"direction", LoopRestoreDirectionLane::Primary),
+        (b"direction2", LoopRestoreDirectionLane::Secondary),
     ];
     let mut result = Vec::new();
     for row in rows {
@@ -4530,18 +4522,20 @@ pub fn direction_bytes(rows: &[FeatureRow]) -> Vec<FeatureDirectionByte> {
             }) {
                 let label_offset = from + relative;
                 from = label_offset + needle.len();
-                if label_offset < 2 || row.body[label_offset - 2] != psb::token::NAMED_RECORD {
+                if label_offset < 2
+                    || row.body[label_offset - 2] != psb::token::NAMED_RECORD
+                    || row.body[label_offset - 1] != 1
+                    || !row.body[..label_offset - 2]
+                        .windows(b"lo_restore\0".len())
+                        .any(|window| window == b"lo_restore\0")
+                {
                     continue;
                 }
-                let Some(&raw) = row.body.get(from) else {
+                let (value, after) = psb::compact_int(&row.body, from);
+                if after == from {
                     continue;
-                };
-                let value = match raw {
-                    0 => DirectionValue::SideFlag(false),
-                    1 => DirectionValue::SideFlag(true),
-                    value => DirectionValue::Raw(value),
-                };
-                result.push(FeatureDirectionByte {
+                }
+                result.push(FeatureLoopRestoreDirection {
                     feature_id: row.feature_id,
                     lane,
                     value,

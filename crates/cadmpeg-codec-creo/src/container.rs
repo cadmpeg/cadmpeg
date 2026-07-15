@@ -23,9 +23,9 @@ use crate::curve::{
 };
 use crate::datum::{self, DatumPlane};
 use crate::feature::{
-    self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition,
-    FeatureDirectionByte, FeatureEntity, FeatureEntityReference, FeatureEntityTable,
-    FeatureGeometryTable, FeatureOperation, FeatureReplayAffectedIds, FeatureRow,
+    self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
+    FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopRestoreDirection,
+    FeatureOperation, FeatureReplayAffectedIds, FeatureRow,
 };
 use crate::placement::{self, FeatureSectionTransform};
 use crate::psb;
@@ -236,8 +236,8 @@ pub struct ContainerScan {
     pub feature_affected_ids: Vec<FeatureAffectedIds>,
     /// Affected-ID runs from unlabeled positional replay feature rows.
     pub feature_replay_affected_ids: Vec<FeatureReplayAffectedIds>,
-    /// Named direction bytes from feature recipes.
-    pub feature_direction_bytes: Vec<FeatureDirectionByte>,
+    /// Named compact direction values from loop-restoration records.
+    pub feature_loop_restore_directions: Vec<FeatureLoopRestoreDirection>,
     /// Byte-bounded `FeatDefs` records and definition-space parameter frames.
     pub feature_definitions: Vec<FeatureDefinition>,
     /// Section-to-model frames resolved from perpendicular active datums.
@@ -1200,7 +1200,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     feature_affected_ids.extend(feature::affected_ids(&depdb_recipe_rows));
     feature_affected_ids.sort_by_key(|record| record.offset);
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
-    let feature_direction_bytes = feature::direction_bytes(&feature_rows);
+    let feature_loop_restore_directions = feature::loop_restore_directions(&feature_rows);
     let feature_entity_tables =
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
     let mut feature_definitions = feature_definitions(&data, &sections);
@@ -1282,7 +1282,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         feature_geometry_tables,
         feature_affected_ids,
         feature_replay_affected_ids,
-        feature_direction_bytes,
+        feature_loop_restore_directions,
         feature_definitions,
         feature_section_transforms,
         feature_operation_states,

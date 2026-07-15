@@ -1889,28 +1889,22 @@ fn scan_partitions_allfeatur_positional_round_operands() {
 }
 
 #[test]
-fn scan_preserves_allfeatur_recipe_direction_bytes() {
+fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
-    let allfeatur = b"\x04\xeb\x04\xe0\x21geoms_affected\0\xf8\x01\x07\xe0\x20direction\0\x00\xe0\x20direction2\0\x43".to_vec();
+    let allfeatur =
+        b"\x04\xeb\x04lo_restore\0\xe0\x01direction\0\x00\xe0\x01direction2\0\x80\xa7".to_vec();
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_direction_bytes.len(), 2);
-    assert_eq!(
-        scan.feature_direction_bytes[0].value,
-        crate::feature::DirectionValue::SideFlag(false)
-    );
-    assert_eq!(
-        scan.feature_direction_bytes[1].value,
-        crate::feature::DirectionValue::Raw(0x43)
-    );
+    assert_eq!(scan.feature_loop_restore_directions.len(), 2);
+    assert_eq!(scan.feature_loop_restore_directions[0].value, 0);
+    assert_eq!(scan.feature_loop_restore_directions[1].value, 167);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
-    let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_directions"];
-    assert_eq!(records[0].fields["value_kind"], "side_flag");
-    assert_eq!(records[0].fields["side_flag"], false);
-    assert_eq!(records[1].fields["value_kind"], "raw");
-    assert_eq!(records[1].fields["raw_value"], 0x43);
+    let records =
+        &result.ir.native.namespace("creo").unwrap().arenas["feature_loop_restore_directions"];
+    assert_eq!(records[0].fields["value"], 0);
+    assert_eq!(records[1].fields["value"], 167);
 }
 
 #[test]
