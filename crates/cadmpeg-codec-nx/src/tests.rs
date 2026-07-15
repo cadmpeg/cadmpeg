@@ -9578,6 +9578,32 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
 
+    ir.model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == spine)
+        .unwrap()
+        .geometry = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+        degree: 1,
+        knots: vec![0.0, 0.0, 10.0, 10.0],
+        control_points: vec![
+            cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
+            cadmpeg_ir::math::Point3::new(2.0, 2.0, 10.0),
+        ],
+        weights: None,
+        periodic: false,
+    });
+    let coarse = crate::decode::coarse_blend_surface_parameters(&ir, &surface, point, 0).unwrap();
+    let coarse_point =
+        crate::decode::blend_surface_point(&ir, &surface, coarse.u, coarse.v).unwrap();
+    assert!(
+        ((coarse_point.x - point.x).powi(2)
+            + (coarse_point.y - point.y).powi(2)
+            + (coarse_point.z - point.z).powi(2))
+        .sqrt()
+            < 1.0
+    );
+
     let refined = crate::decode::refine_blend_surface_parameters(
         &ir,
         &surface,

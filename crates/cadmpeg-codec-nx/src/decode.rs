@@ -2199,7 +2199,6 @@ fn blend_surface_parameters_inner(
 ) -> Option<Point2> {
     (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
-    let u = closest_spine_parameter(ir, &spine, point, seed.map(|seed| seed.u))?;
     if let Some(fit_tolerance) = fit_tolerance {
         let boundary_parameters = [0usize, 1usize].map(|boundary| {
             blend_boundary_parameter(ir, surface, point, boundary, depth + 1).filter(|parameter| {
@@ -2215,42 +2214,104 @@ fn blend_surface_parameters_inner(
             return Some(Point2::new(parameter, boundary as f64));
         }
     }
-    let (center, tangent, first, second, _) = blend_surface_frame(ir, surface, u, depth + 1)?;
-    let radial = unit_vector(Vector3::new(
-        point.x - center.x,
-        point.y - center.y,
-        point.z - center.z,
-    ))?;
-    let alpha = signed_angle(first, second, tangent);
-    if !alpha.is_finite() || alpha.abs() <= 1.0e-12 {
-        return None;
-    }
-    let theta = signed_angle(first, radial, tangent);
-    let mut best = None;
-    let mut best_distance = f64::INFINITY;
-    let mut best_branch_distance = f64::INFINITY;
-    for turn in -2..=2 {
-        let v = (theta + f64::from(turn) * std::f64::consts::TAU) / alpha;
-        let Some(candidate) = blend_surface_point_inner(ir, surface, u, v, depth + 1) else {
-            continue;
-        };
-        let distance = point_distance(candidate, point);
-        let branch_distance = seed.map_or(v.abs(), |seed| (v - seed.v).abs());
-        let same_point = (distance - best_distance).abs() <= 1.0e-12;
-        if distance < best_distance && !same_point
-            || same_point && branch_distance < best_branch_distance
+    let angular =
+        closest_spine_parameter(ir, &spine, point, seed.map(|seed| seed.u)).and_then(|u| {
+            let (center, tangent, first, second, _) =
+                blend_surface_frame(ir, surface, u, depth + 1)?;
+            let radial = unit_vector(Vector3::new(
+                point.x - center.x,
+                point.y - center.y,
+                point.z - center.z,
+            ))?;
+            let alpha = signed_angle(first, second, tangent);
+            if !alpha.is_finite() || alpha.abs() <= 1.0e-12 {
+                return None;
+            }
+            let theta = signed_angle(first, radial, tangent);
+            (-2..=2)
+                .filter_map(|turn| {
+                    let v = (theta + f64::from(turn) * std::f64::consts::TAU) / alpha;
+                    let candidate = blend_surface_point_inner(ir, surface, u, v, depth + 1)?;
+                    let branch_distance = seed.map_or(v.abs(), |seed| (v - seed.v).abs());
+                    Some((
+                        Point2::new(u, v),
+                        point_distance(candidate, point),
+                        branch_distance,
+                    ))
+                })
+                .min_by(|first, second| {
+                    if (first.1 - second.1).abs() <= 1.0e-12 {
+                        first.2.total_cmp(&second.2)
+                    } else {
+                        first.1.total_cmp(&second.1)
+                    }
+                })
+                .map(|(parameters, _, _)| parameters)
+        });
+    if let Some(initial) = angular {
+        let parameters = refine_blend_surface_parameters(ir, surface, point, initial, depth + 1)
+            .unwrap_or(initial);
+        if let Some(candidate) =
+            blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)
         {
-            best = Some(Point2::new(u, v));
-            best_distance = distance;
-            best_branch_distance = branch_distance;
+            let distance = point_distance(candidate, point);
+            if fit_tolerance.is_none_or(|tolerance| distance <= tolerance) {
+                return Some(parameters);
+            }
         }
     }
-    let initial = best?;
-    let initial_point = blend_surface_point_inner(ir, surface, initial.u, initial.v, depth + 1)?;
-    if fit_tolerance.is_none_or(|tolerance| point_distance(initial_point, point) <= tolerance) {
-        return Some(initial);
+    let initial = coarse_blend_surface_parameters(ir, surface, point, depth + 1)?;
+    let parameters =
+        refine_blend_surface_parameters(ir, surface, point, initial, depth + 1).unwrap_or(initial);
+    if !(0.0..=1.0).contains(&parameters.v) {
+        return None;
     }
-    refine_blend_surface_parameters(ir, surface, point, initial, depth + 1).or(Some(initial))
+    let candidate = blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
+    let distance = point_distance(candidate, point);
+    fit_tolerance
+        .is_none_or(|tolerance| distance <= tolerance)
+        .then_some(parameters)
+}
+
+pub(crate) fn coarse_blend_surface_parameters(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    depth: usize,
+) -> Option<Point2> {
+    (depth < 32).then_some(())?;
+    let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    let curve = ir.model.curves.iter().find(|curve| curve.id == spine)?;
+    let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+        return None;
+    };
+    let degree = usize::try_from(nurbs.degree).ok()?;
+    let count = nurbs.control_points.len();
+    let domain = [*nurbs.knots.get(degree)?, *nurbs.knots.get(count)?];
+    if !domain.into_iter().all(f64::is_finite) || domain[0] >= domain[1] {
+        return None;
+    }
+    let mut best = None;
+    let mut best_distance = f64::INFINITY;
+    for u_index in 0..=16 {
+        for v_index in 0..=8 {
+            let parameters = Point2::new(
+                domain[0] + (domain[1] - domain[0]) * f64::from(u_index) / 16.0,
+                f64::from(v_index) / 8.0,
+            );
+            let Some(candidate) =
+                blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)
+            else {
+                continue;
+            };
+            let distance = point_distance(candidate, point);
+            if distance < best_distance {
+                best = Some(parameters);
+                best_distance = distance;
+            }
+        }
+    }
+    best
 }
 
 pub(crate) fn refine_blend_surface_parameters(
