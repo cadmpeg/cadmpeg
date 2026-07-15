@@ -567,13 +567,14 @@ pub fn parse_standard_endpoints_with_edge_classes(
     {
         return None;
     }
-    reconstruct_incidence_with_edge_classes(
+    reconstruct_incidence_with_edge_classes_and_mesh(
         edge_rows,
         vertex_points,
         edge_faces,
         edge_points,
         face_count,
         edge_classes,
+        Some(bytes),
     )
 }
 
@@ -2933,12 +2934,33 @@ fn reconstruct_incidence_with_edge_classes(
     face_count: usize,
     edge_classes: Option<&[usize]>,
 ) -> Option<StandardTopology> {
+    reconstruct_incidence_with_edge_classes_and_mesh(
+        edge_rows,
+        vertex_points,
+        edge_faces,
+        edge_points,
+        face_count,
+        edge_classes,
+        None,
+    )
+}
+
+fn reconstruct_incidence_with_edge_classes_and_mesh(
+    edge_rows: Vec<EdgeRow>,
+    vertex_points: Vec<[f64; 3]>,
+    edge_faces: &[[usize; 2]],
+    edge_points: &[[usize; 2]],
+    face_count: usize,
+    edge_classes: Option<&[usize]>,
+    mesh_bytes: Option<&[u8]>,
+) -> Option<StandardTopology> {
     let completed_edge_faces = complete_duplicate_face_slots(
         &edge_rows,
         edge_faces,
         edge_points,
         face_count,
         edge_classes,
+        mesh_bytes,
     )?;
     let edge_faces = completed_edge_faces.as_slice();
     let mut faces = Vec::with_capacity(face_count);
@@ -2989,6 +3011,7 @@ fn complete_duplicate_face_slots(
     edge_points: &[[usize; 2]],
     face_count: usize,
     edge_classes: Option<&[usize]>,
+    mesh_bytes: Option<&[u8]>,
 ) -> Option<Vec<[usize; 2]>> {
     struct SearchInputs<'a> {
         unresolved: &'a [usize],
@@ -2996,6 +3019,7 @@ fn complete_duplicate_face_slots(
         edge_faces: &'a [[usize; 2]],
         edge_points: &'a [[usize; 2]],
         edge_classes: Option<&'a [usize]>,
+        mesh_bytes: Option<&'a [u8]>,
     }
 
     fn search(
@@ -3009,9 +3033,18 @@ fn complete_duplicate_face_slots(
             return;
         }
         if used.iter().all(|value| *value) {
-            if degrees
+            let closed = degrees
                 .iter()
-                .all(|face| face.iter().all(|degree| matches!(degree, 0 | 2)))
+                .all(|face| face.iter().all(|degree| matches!(degree, 0 | 2)));
+            let mesh_valid = closed
+                && inputs.mesh_bytes.is_none_or(|bytes| {
+                    let mut completed = inputs.edge_faces.to_vec();
+                    for (&edge, &face) in inputs.unresolved.iter().zip(assignment.iter()) {
+                        completed[edge][1] = face;
+                    }
+                    standard_mesh_boundary_assignments(bytes, &completed).is_some()
+                });
+            if mesh_valid
                 && solutions.first().is_none_or(|existing| {
                     !duplicate_face_assignments_equivalent(
                         inputs.unresolved,
@@ -3125,6 +3158,7 @@ fn complete_duplicate_face_slots(
         edge_faces,
         edge_points,
         edge_classes,
+        mesh_bytes: None,
     };
     search(
         &inputs,
@@ -3133,6 +3167,25 @@ fn complete_duplicate_face_slots(
         &mut vec![false; unresolved.len()],
         &mut solutions,
     );
+    if solutions.len() > 1 {
+        let bytes = mesh_bytes?;
+        solutions.clear();
+        let inputs = SearchInputs {
+            unresolved: &unresolved,
+            edge_rows,
+            edge_faces,
+            edge_points,
+            edge_classes,
+            mesh_bytes: Some(bytes),
+        };
+        search(
+            &inputs,
+            &mut degrees,
+            &mut vec![0; unresolved.len()],
+            &mut vec![false; unresolved.len()],
+            &mut solutions,
+        );
+    }
     let [assignment] = solutions.as_slice() else {
         return None;
     };
@@ -7745,6 +7798,7 @@ mod motif_tests {
             &[[0, 1], [1, 2], [2, 0]],
             2,
             None,
+            Some(&[]),
         )
         .expect("unique face-closing slot assignment");
 
@@ -7800,6 +7854,7 @@ mod motif_tests {
             &[[0, 1], [1, 2], [2, 0], [0, 2]],
             3,
             Some(&[0, 1, 2, 2]),
+            None,
         )
         .expect("one assignment modulo equivalent edge rows");
 
