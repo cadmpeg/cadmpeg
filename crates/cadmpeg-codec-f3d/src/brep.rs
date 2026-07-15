@@ -3262,7 +3262,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     secondary_pcurve: side
                                         .secondary_pcurve
                                         .map(embedded_pcurve_geometry),
-                                    scalar: side.scalar,
+                                    extension_flag: side.extension_flag,
                                     tertiary_pcurve: side
                                         .tertiary_pcurve
                                         .map(embedded_pcurve_geometry),

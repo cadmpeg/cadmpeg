@@ -836,7 +836,7 @@ pub(crate) struct EmbeddedVariableBlendSide {
     pub(crate) pcurve: Option<NurbsPcurve>,
     pub(crate) location: Point3,
     pub(crate) secondary_pcurve: Option<NurbsPcurve>,
-    pub(crate) scalar: f64,
+    pub(crate) extension_flag: Option<bool>,
     pub(crate) tertiary_pcurve: Option<NurbsPcurve>,
 }
 
@@ -3640,9 +3640,20 @@ fn decode_variable_blend_side(
     *position = curve.end;
     let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
     let location = take_native_vec3(bytes, position, 0x13)?;
-    let secondary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-    let scalar = take_f64(bytes, position)?;
-    let tertiary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+    let extension_start = *position;
+    let extension = (|| {
+        let secondary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+        let extension_flag = take_bool(bytes, position)?;
+        let tertiary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+        Some((secondary_pcurve, extension_flag, tertiary_pcurve))
+    })();
+    let (secondary_pcurve, extension_flag, tertiary_pcurve) = match extension {
+        Some((secondary, flag, tertiary)) => (secondary, Some(flag), tertiary),
+        None => {
+            *position = extension_start;
+            (None, None, None)
+        }
+    };
     Some(EmbeddedVariableBlendSide {
         label,
         surface,
@@ -3654,7 +3665,7 @@ fn decode_variable_blend_side(
             location[2] * LEN_TO_MM,
         ),
         secondary_pcurve,
-        scalar,
+        extension_flag,
         tertiary_pcurve,
     })
 }
@@ -7163,6 +7174,38 @@ mod width_tests {
         push_ident(&mut bytes, "nullbs");
         push_ident(&mut bytes, "nullbs");
         bytes
+    }
+
+    fn variable_blend_side(int_width: usize, extension_flag: Option<bool>) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        push_string(&mut bytes, "support");
+        push_ident(&mut bytes, "null_surface");
+        bytes.extend_from_slice(&curve_block(int_width));
+        bytes.extend_from_slice(&pcurve_block(int_width));
+        push_position(&mut bytes, [1.0, 2.0, 3.0]);
+        if let Some(flag) = extension_flag {
+            push_ident(&mut bytes, "nullbs");
+            bytes.push(if flag { 0x0b } else { 0x0a });
+            push_ident(&mut bytes, "nullbs");
+        }
+        bytes
+    }
+
+    #[test]
+    fn variable_blend_side_boolean_extension_decodes_at_both_integer_widths() {
+        for int_width in [4usize, 8] {
+            for expected in [None, Some(false), Some(true)] {
+                let bytes = variable_blend_side(int_width, expected);
+                let mut position = 0;
+                let side = decode_variable_blend_side(&bytes, &mut position, int_width)
+                    .expect("variable-blend support side");
+                assert_eq!(position, bytes.len());
+                assert_eq!(side.extension_flag, expected);
+                assert_eq!(side.location, Point3::new(10.0, 20.0, 30.0));
+                assert!(side.secondary_pcurve.is_none());
+                assert!(side.tertiary_pcurve.is_none());
+            }
+        }
     }
 
     #[test]

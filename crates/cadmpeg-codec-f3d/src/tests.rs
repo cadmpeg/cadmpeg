@@ -3782,7 +3782,7 @@ fn append_generated_variable_blend_side(bytes: &mut Vec<u8>, label: &str, x: f64
     bytes.extend_from_slice(&generated_pcurve_block());
     t_pos(bytes, [x, 2.0, 3.0]);
     t_ident(bytes, "nullbs");
-    t_dbl(bytes, x + 0.5);
+    bytes.push(if x < 2.0 { 0x0a } else { 0x0b });
     t_ident(bytes, "nullbs");
 }
 
@@ -14855,6 +14855,8 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         };
         assert_eq!(construction.sides[0].label, "left");
         assert_eq!(construction.sides[1].label, "right");
+        assert_eq!(construction.sides[0].extension_flag, Some(false));
+        assert_eq!(construction.sides[1].extension_flag, Some(true));
         assert_eq!(
             construction.sides[0].location,
             cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)

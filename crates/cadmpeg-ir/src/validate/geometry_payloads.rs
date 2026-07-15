@@ -1335,8 +1335,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             .iter()
             .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
             let sides_valid = construction.sides.iter().all(|side| {
-                side.scalar.is_finite()
-                    && side.location.x.is_finite()
+                side.location.x.is_finite()
                     && side.location.y.is_finite()
                     && side.location.z.is_finite()
             });

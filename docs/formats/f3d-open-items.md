@@ -9,6 +9,7 @@ This document records F3D semantics that the format specification does not yet d
 - Variable-arity algebraic `readLaw` operators `MIN`, `MAX`, and `STEP` have no defined serialized child-count or terminating delimiter. Their recursive boundaries cannot yet be decoded or written losslessly inside law, net, skin, and sweep payloads.
 - The native loop and degenerate-edge layouts for untrimmed closed spheres and tori are unspecified.
 - The semantic role of the `POSITION` field after `cyl_spl_sur.extrusion_direction` is unresolved.
+- The semantic role of the Boolean between the secondary and tertiary pcurves in a modern variable-blend support side is unresolved.
 
 ## Container, header, and design records
 

@@ -1139,8 +1139,10 @@ pub struct VariableBlendSide {
     /// ASM secondary BS2 pcurve, absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secondary_pcurve: Option<PcurveGeometry>,
-    /// ASM scalar following the secondary pcurve.
-    pub scalar: f64,
+    /// ASM extension Boolean between the secondary and tertiary pcurves;
+    /// absent in releases before the side extension was introduced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extension_flag: Option<bool>,
     /// ASM tertiary BS2 pcurve, absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tertiary_pcurve: Option<PcurveGeometry>,

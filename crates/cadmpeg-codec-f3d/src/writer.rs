@@ -8154,7 +8154,7 @@ fn native_variable_blend_side(
         ],
     );
     native_optional_pcurve(bytes, side.secondary_pcurve.as_ref())?;
-    native_f64(bytes, side.scalar);
+    bytes.push(native_bool(side.extension_flag.unwrap_or(false)));
     native_optional_pcurve(bytes, side.tertiary_pcurve.as_ref())?;
     Ok(())
 }
