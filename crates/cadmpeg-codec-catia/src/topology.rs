@@ -3815,6 +3815,13 @@ fn complete_duplicate_face_slots(
         }
     }
 
+    if edge_rows.len() != edge_faces.len()
+        || edge_rows.len() != edge_points.len()
+        || edge_faces.iter().flatten().any(|face| *face >= face_count)
+    {
+        return None;
+    }
+
     let mut completed = edge_faces.to_vec();
     let mut unresolved = edge_faces
         .iter()
@@ -6622,6 +6629,9 @@ fn parse_fbb_edge_tables_width(
             if arity < 2 {
                 return None;
             }
+            if arity > bytes.len().saturating_sub(position) / handle_width {
+                return None;
+            }
             let mut handles = Vec::with_capacity(arity);
             for _ in 0..arity {
                 let mut encoded = [0u8; 4];
@@ -6734,6 +6744,9 @@ fn parse_edge_tables_scoped_at(
             position += 1;
             let arity = parse_count(bytes, &mut position)?;
             if arity < 2 {
+                return None;
+            }
+            if arity > bytes.len().saturating_sub(position) / 2 {
                 return None;
             }
             let mut handles = Vec::with_capacity(arity);
@@ -6906,9 +6919,13 @@ fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRec
     };
 
     let legacy_42 = kind == 0x42 && b == 2 && width == 2;
-    let mut lengths = Vec::with_capacity(b + c);
+    let primitive_count = b.checked_add(c)?;
+    if !legacy_42 && primitive_count > bytes.len().saturating_sub(position) {
+        return None;
+    }
+    let mut lengths = Vec::with_capacity(primitive_count);
     if !legacy_42 {
-        for _ in 0..b + c {
+        for _ in 0..primitive_count {
             lengths.push(parse_count(bytes, &mut position)?);
         }
         if 3usize.checked_mul(a)?.checked_add(lengths.iter().sum())? != handle_count {
@@ -7178,7 +7195,8 @@ mod motif_tests {
         bind_edge_port_candidates, canonicalize_mesh_vertex_labels, complete_duplicate_face_slots,
         deduplicate_mesh_quotient_assignments, mesh_assignment_can_merge,
         mesh_candidates_equivalent, mesh_edge_points_compatible, motif_port_points,
-        parse_edge_tables_at, parse_trim_chain, possible_face_choices, possible_face_equations,
+        parse_edge_tables_at, parse_edge_tables_scoped_at, parse_fbb_edge_tables_width,
+        parse_trim_chain, parse_trim_record, possible_face_choices, possible_face_equations,
         propagate_edge_port_points, prune_edge_candidates_by_port_domains, reconstruct_incidence,
         reconstruct_incidence_candidates, resolve_edge_faces_from_runs, standard_face_count,
         unique_coordinate_bijection, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
@@ -8807,6 +8825,34 @@ mod motif_tests {
         .expect("unique face-closing slot assignment");
 
         assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
+    }
+
+    #[test]
+    fn counted_edge_arities_are_bounded_by_remaining_bytes() {
+        let oversized_row = [0x01, 0x01, 0x01, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff];
+        assert!(parse_edge_tables_scoped_at(&oversized_row, 0).is_none());
+        assert!(parse_fbb_edge_tables_width(&oversized_row, 0, 3).is_none());
+    }
+
+    #[test]
+    fn trim_primitive_counts_are_bounded_by_remaining_bytes() {
+        let oversized_primitives = [
+            0x01, 0x46, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00,
+            0x00, 0x00,
+        ];
+        assert!(parse_trim_record(&oversized_primitives, 0, 2).is_none());
+    }
+
+    #[test]
+    fn duplicate_face_completion_rejects_out_of_range_faces() {
+        let rows = vec![EdgeRow {
+            kind: 0,
+            handles: vec![0, 1],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        }];
+        assert!(
+            complete_duplicate_face_slots(&rows, &[[0, 2]], &[[0, 1]], 2, None, None,).is_none()
+        );
     }
 
     #[test]

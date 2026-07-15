@@ -1110,10 +1110,13 @@ fn rational_arc(
     interval: [f64; 2],
 ) -> Option<NurbsCurve> {
     let angles = [interval[0] / radius, interval[1] / radius];
-    let span_count = ((angles[1] - angles[0]).abs() / std::f64::consts::FRAC_PI_2)
-        .ceil()
-        .max(1.0) as usize;
-    let mut control_points = Vec::with_capacity(span_count * 2 + 1);
+    let span_count = ((angles[1] - angles[0]).abs() / std::f64::consts::FRAC_PI_2).ceil();
+    if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+        return None;
+    }
+    let span_count = (span_count as usize).max(1);
+    let control_count = span_count.checked_mul(2)?.checked_add(1)?;
+    let mut control_points = Vec::with_capacity(control_count);
     let mut weights = Vec::with_capacity(control_points.capacity());
     let mut knots = Vec::with_capacity(control_points.capacity() + 3);
     for span in 0..span_count {
@@ -1170,10 +1173,12 @@ fn revolve_nurbs(
     angular_interval: [f64; 2],
     native_interval: [f64; 2],
 ) -> Option<NurbsSurface> {
-    let span_count = ((angular_interval[1] - angular_interval[0]).abs()
-        / std::f64::consts::FRAC_PI_2)
-        .ceil()
-        .max(1.0) as usize;
+    let span_count =
+        ((angular_interval[1] - angular_interval[0]).abs() / std::f64::consts::FRAC_PI_2).ceil();
+    if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+        return None;
+    }
+    let span_count = (span_count as usize).max(1);
     let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
     let mut angles = Vec::with_capacity(angular_count);
     let mut angular_weights = Vec::with_capacity(angular_count);
@@ -1455,7 +1460,7 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 mod tests {
     use super::{
         body_kind_if_owned, cylinder_helix, lifted_curve_geometry, neutral_pcurve_point,
-        revolution_surface, transfer_vertex_tolerances, SurfacePlan,
+        rational_arc, revolution_surface, revolve_nurbs, transfer_vertex_tolerances, SurfacePlan,
     };
     use crate::b5::{B5Face, B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
     use cadmpeg_ir::eval::surface_point;
@@ -1465,6 +1470,33 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::BodyKind;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
+        assert!(rational_arc(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            1.0e-300,
+            [0.0, 1.0],
+        )
+        .is_none());
+        let profile = cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
+            weights: None,
+            periodic: false,
+        };
+        assert!(revolve_nurbs(
+            &profile,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [0.0, 1.0e300],
+            [0.0, 1.0],
+        )
+        .is_none());
+    }
 
     #[test]
     fn body_kind_requires_unique_complete_loop_ownership() {

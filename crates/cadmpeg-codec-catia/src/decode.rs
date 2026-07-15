@@ -1370,6 +1370,11 @@ mod chart_tests {
     }
 
     #[test]
+    fn rational_arc_rejects_unbounded_subdivision_counts() {
+        assert!(rational_pcurve_arc([0.0, 0.0], 1.0, [0.0, 1.0e300]).is_none());
+    }
+
+    #[test]
     fn standard_spline_edge_retains_cache_and_exact_intersection_construction() {
         let mut ir = CadIr::empty(Units::default());
         let mut annotations = AnnotationBuilder::new();
@@ -3608,12 +3613,15 @@ fn rational_pcurve_arc(center: [f64; 2], radius: f64, range: [f64; 2]) -> Option
     if !radius.is_finite() || radius <= 0.0 || !span.is_finite() || span.abs() <= 1e-12 {
         return None;
     }
-    let segment_count = usize::try_from((span.abs() / std::f64::consts::FRAC_PI_2).ceil() as u64)
-        .ok()?
-        .max(1);
+    let segment_count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil();
+    if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+        return None;
+    }
+    let segment_count = (segment_count as usize).max(1);
+    let control_count = segment_count.checked_mul(2)?.checked_add(1)?;
     let step = span / segment_count as f64;
-    let mut control_points = Vec::with_capacity(2 * segment_count + 1);
-    let mut weights = Vec::with_capacity(2 * segment_count + 1);
+    let mut control_points = Vec::with_capacity(control_count);
+    let mut weights = Vec::with_capacity(control_count);
     let mut knots = vec![range[0]; 3];
     for index in 0..segment_count {
         let start = range[0] + index as f64 * step;

@@ -1732,11 +1732,14 @@ fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     }
     let start_angle = phase + orientation * start / radius;
     let end_angle = phase + orientation * end / radius;
-    let span_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2)
-        .ceil()
-        .max(1.0) as usize;
-    let mut control_points = Vec::with_capacity(2 * span_count + 1);
-    let mut weights = Vec::with_capacity(2 * span_count + 1);
+    let span_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2).ceil();
+    if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+        return None;
+    }
+    let span_count = (span_count as usize).max(1);
+    let control_count = span_count.checked_mul(2)?.checked_add(1)?;
+    let mut control_points = Vec::with_capacity(control_count);
+    let mut weights = Vec::with_capacity(control_count);
     let mut distinct_knots = vec![start];
     let mut multiplicities = vec![3];
     for span in 0..span_count {
@@ -2270,6 +2273,24 @@ fn reference(bytes: &[u8], position: &mut usize, _anchor: u32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn circle_pcurve_rejects_unbounded_subdivision_counts() {
+        let mut payload = vec![0x81, 0x81];
+        payload.extend_from_slice(&[0; 16]);
+        payload.extend_from_slice(&[0x05, 0x05]);
+        for value in [1.0e-300, 0.0, 1.0, 1.0, 0.0] {
+            payload.extend_from_slice(&f64::to_le_bytes(value));
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x19,
+            object_id: 0,
+            payload,
+        };
+        assert!(parse_circle_pcurve(&record).is_none());
+    }
 
     #[test]
     fn sparse_reference_tokens_fill_selected_id_bytes() {

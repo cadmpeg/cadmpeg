@@ -62,6 +62,10 @@ pub mod value_block;
 pub mod variant;
 pub mod zero_entity;
 
+/// Maximum number of exact rational-quadratic spans materialized for one
+/// angular curve or surface direction from untrusted native parameters.
+pub(crate) const MAX_EXACT_ARC_SPANS: usize = 4_096;
+
 use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
 };
