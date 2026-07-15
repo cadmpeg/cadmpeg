@@ -1068,8 +1068,30 @@ fn resolved_edge_group(
     use cadmpeg_ir::features::EdgeSelection;
     use cadmpeg_ir::ids::HistoricalEdgeId;
 
+    let Some(previous_state_id) = previous_state_id else {
+        return if group.lost_edge_references.is_empty() {
+            EdgeSelection::Native(group.id.clone())
+        } else {
+            EdgeSelection::Unresolved
+        };
+    };
+    let state = feature_input_topology_id(feature_id, previous_state_id);
+    let feature_key = feature_id
+        .0
+        .split_once('#')
+        .map_or(feature_id.0.as_str(), |(_, key)| key);
     if !group.lost_edge_references.is_empty() {
-        return EdgeSelection::Unresolved;
+        return partial_historical_edge_selection(
+            group
+                .lost_edge_references
+                .iter()
+                .map(|identity| (identity.as_str(), None)),
+            previous_state_id,
+            feature_key,
+            state,
+            &group.id,
+        )
+        .expect("lost reference group has at least one unresolved identity");
     }
     let stream = native_stream(&group.id);
     let mut matched_operands = Vec::with_capacity(group.members.len());
@@ -1113,14 +1135,6 @@ fn resolved_edge_group(
             )
         })
         .or_else(|| scope_partition_edge_group_candidates(group, groups, operands));
-    let Some(previous_state_id) = previous_state_id else {
-        return EdgeSelection::Native(group.id.clone());
-    };
-    let state = feature_input_topology_id(feature_id, previous_state_id);
-    let feature_key = feature_id
-        .0
-        .split_once('#')
-        .map_or(feature_id.0.as_str(), |(_, key)| key);
     let Some(resolved_slots) = resolved_slots else {
         return partial_historical_edge_selection(
             matched_operands
@@ -10670,16 +10684,17 @@ mod relation_tests {
         contiguous_i32_program, decode_fillet_radius_groups, design_parameter_prefix,
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
         exact_counted_offset, exact_offset_constraint, expression_identifiers,
-        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
-        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
-        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
-        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
-        null_locus_dimension_definition, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
+        identity_matrix, indexed_record_containing, indirect_angular_lines,
+        neutral_dimension_constraint_id, neutral_feature_id_parts, neutral_parameter_id_parts,
+        neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id,
+        next_indexed_record_offset, null_locus_dimension_definition,
+        parse_construction_operand_group, parse_construction_operand_identity,
+        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation,
         partial_historical_edge_selection, point_on_sketch_entity, project_configurations,
         project_dimension_constraints, project_extrude, project_parameter_design,
         project_sketch_constraints, project_sketch_design, radial_dimension_definition,
@@ -15467,13 +15482,15 @@ mod relation_tests {
         construction_groups[1]
             .lost_edge_references
             .push("f3d:native:lost-edge-reference#1".into());
+        let mut chamfer_scope = scopes[1].clone();
+        chamfer_scope.previous_history_state_id = Some(21);
         let (features, _) = project_parameter_design(
             &[
                 parameter(74, 75, "Distance", "d5", "2 mm", 0.2),
                 parameter(84, 85, "Distance", "d4", "2.5 mm", 0.25),
             ],
             &[owner(74, 22, 75, 1), owner(84, 22, 85, 0)],
-            &scopes[1..],
+            std::slice::from_ref(&chamfer_scope),
             &construction_groups,
             &[],
             &[],
@@ -15485,14 +15502,23 @@ mod relation_tests {
             FeatureDefinition::Chamfer { groups }
                 if matches!(groups.as_slice(), [
                     ChamferGroup {
-                        edges: EdgeSelection::Unresolved,
+                        edges: EdgeSelection::HistoricalPartial {
+                            state,
+                            edges,
+                            unresolved,
+                            native,
+                        },
                         spec: ChamferSpec::Distance { distance: Length(2.5) },
                     },
                     ChamferGroup {
                         edges: EdgeSelection::Native(selection),
                         spec: ChamferSpec::Distance { distance: Length(2.0) },
                     },
-                ] if selection == &construction_groups[0].id)
+                ] if state == &feature_input_topology_id(&features[0].id, 21)
+                    && edges.is_empty()
+                    && unresolved == &["f3d:native:lost-edge-reference#1"]
+                    && native == &construction_groups[1].id
+                    && selection == &construction_groups[0].id)
         ));
     }
 
