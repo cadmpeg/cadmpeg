@@ -366,6 +366,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             None,
             None,
+            None,
             parameters,
         ),
         cadmpeg_ir::features::FeatureDefinition::Native {
@@ -1206,11 +1207,13 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
         SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
     };
     use cadmpeg_ir::document::{CadIr, Model, IR_VERSION};
-    use cadmpeg_ir::geometry::Surface;
-    use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
+    use cadmpeg_ir::ids::{
+        CoedgeId, CurveId, EdgeId, FaceId, LoopId, ShellId, SurfaceId, VertexId,
+    };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::native::Native;
-    use cadmpeg_ir::topology::{Face, Sense};
+    use cadmpeg_ir::topology::{Coedge, Edge, Face, Sense};
     use cadmpeg_ir::units::{Tolerances, Units};
     use cadmpeg_ir::{Annotations, SourceObjectAssociation};
 
@@ -1286,6 +1289,100 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
             ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
         ])
     );
+
+    let mut chamfered = ir.clone();
+    for bore in 0..2 {
+        for end in 0..2 {
+            let surface = SurfaceId(format!("cone-{bore}-{end}"));
+            let face = FaceId(format!("cone-face-{bore}-{end}"));
+            let loops = [
+                LoopId(format!("cone-loop-{bore}-{end}-inner")),
+                LoopId(format!("cone-loop-{bore}-{end}-outer")),
+            ];
+            chamfered.model.surfaces.push(Surface {
+                id: surface.clone(),
+                geometry: SurfaceGeometry::Cone {
+                    origin: Point3::new(bore as f64, end as f64, 0.0),
+                    axis: Vector3::new(0.0, if end == 0 { 1.0 } else { -1.0 }, 0.0),
+                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                    radius: 0.0,
+                    ratio: 1.0,
+                    half_angle: std::f64::consts::FRAC_PI_4,
+                },
+                source_object: None,
+            });
+            chamfered.model.faces.push(Face {
+                id: face,
+                shell: ShellId("shell".into()),
+                surface,
+                sense: Sense::Reversed,
+                loops: loops.to_vec(),
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+            for (boundary, (loop_id, radius)) in loops.into_iter().zip([2.55, 3.55]).enumerate() {
+                let curve = CurveId(format!("cone-curve-{bore}-{end}-{boundary}"));
+                let edge = EdgeId(format!("cone-edge-{bore}-{end}-{boundary}"));
+                let coedge = CoedgeId(format!("cone-coedge-{bore}-{end}-{boundary}"));
+                chamfered.model.curves.push(Curve {
+                    id: curve.clone(),
+                    geometry: CurveGeometry::Circle {
+                        center: Point3::new(bore as f64, end as f64, 0.0),
+                        axis: Vector3::new(0.0, 1.0, 0.0),
+                        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                        radius,
+                    },
+                    source_object: None,
+                });
+                chamfered.model.edges.push(Edge {
+                    id: edge.clone(),
+                    curve: Some(curve),
+                    start: VertexId("vertex".into()),
+                    end: VertexId("vertex".into()),
+                    param_range: None,
+                    tolerance: None,
+                });
+                chamfered.model.coedges.push(Coedge {
+                    id: coedge.clone(),
+                    owner_loop: loop_id,
+                    edge,
+                    next: coedge.clone(),
+                    previous: coedge.clone(),
+                    radial_next: coedge,
+                    sense: Sense::Forward,
+                    pcurve: None,
+                });
+            }
+        }
+    }
+    assert_eq!(
+        crate::decode::simple_hole_chamfers(&chamfered, &templates),
+        std::collections::BTreeMap::from([
+            (
+                "hole-a".into(),
+                cadmpeg_ir::features::HoleKind::Chamfer {
+                    diameter: cadmpeg_ir::features::Length(7.1),
+                    angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+                },
+            ),
+            (
+                "hole-b".into(),
+                cadmpeg_ir::features::HoleKind::Chamfer {
+                    diameter: cadmpeg_ir::features::Length(7.1),
+                    angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+                },
+            ),
+        ])
+    );
+    let mut unequal_chamfers = chamfered;
+    let CurveGeometry::Circle { radius, .. } =
+        &mut unequal_chamfers.model.curves.last_mut().unwrap().geometry
+    else {
+        unreachable!()
+    };
+    *radius += 0.1;
+    assert!(crate::decode::simple_hole_chamfers(&unequal_chamfers, &templates).is_empty());
 
     let mut mismatched = ir;
     let SurfaceGeometry::Cylinder { radius, .. } = &mut mismatched.model.surfaces[1].geometry

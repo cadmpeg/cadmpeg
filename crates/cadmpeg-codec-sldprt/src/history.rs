@@ -5940,6 +5940,12 @@ pub fn sync_neutral_features(
                             .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
                         parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
                     }
+                    HoleKind::Chamfer { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has an unsupported chamfered hole treatment",
+                            feature.id
+                        )));
+                    }
                     HoleKind::Countersink { diameter, angle } => {
                         parameters.remove("CounterboreDiameter");
                         parameters.remove("CounterboreDepth");

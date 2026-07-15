@@ -2141,7 +2141,7 @@ fn hole_kind_valid(kind: &HoleKind) -> bool {
         HoleKind::Counterbore { diameter, depth } => {
             positive_feature_length(*diameter) && positive_feature_length(*depth)
         }
-        HoleKind::Countersink { diameter, angle } => {
+        HoleKind::Chamfer { diameter, angle } | HoleKind::Countersink { diameter, angle } => {
             positive_feature_length(*diameter)
                 && angle.0.is_finite()
                 && angle.0 > 0.0

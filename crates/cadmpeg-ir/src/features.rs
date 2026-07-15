@@ -1294,6 +1294,13 @@ pub enum HoleKind {
         /// Counterbore depth.
         depth: Length,
     },
+    /// Hole with a beveled entry terminating at a wider circular boundary.
+    Chamfer {
+        /// Diameter at the outer edge of the bevel.
+        diameter: Length,
+        /// Included angle of the conical bevel.
+        angle: Angle,
+    },
     /// Hole with a conical countersink at the entry.
     Countersink {
         /// Countersink diameter at the surface, wider than the hole diameter.
