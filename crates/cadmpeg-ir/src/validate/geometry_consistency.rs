@@ -184,15 +184,15 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
     }
 }
 
-/// The parameter extremes over which a pcurve is checked: the stored parameter
-/// range when present, otherwise the NURBS knot extremes. A line pcurve
-/// without a stored range has no intrinsic extent and is skipped.
+/// The parameter extremes over which a pcurve is checked. A NURBS pcurve is
+/// evaluated over its own knot domain, its native parameterization; the stored
+/// `parameter_range` is a separately retained native interval in an unrelated
+/// parameterization and must not override the knot domain. A line pcurve has no
+/// intrinsic extent, so its stored `parameter_range` supplies the endpoints,
+/// and a line without one is skipped.
 fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2]> {
-    if let Some(range) = pcurve.parameter_range {
-        return Some(range);
-    }
     match &pcurve.geometry {
         PcurveGeometry::Nurbs { knots, .. } => Some([*knots.first()?, *knots.last()?]),
-        PcurveGeometry::Line { .. } => None,
+        PcurveGeometry::Line { .. } => pcurve.parameter_range,
     }
 }
