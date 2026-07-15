@@ -383,8 +383,6 @@ Spline and fillet prototypes can carry `i_points`, `tangts`, `end_tangts`,
 `ctr_spline`, `tan_spline`, `par_v_0`, `par_v_1`, and `offset_type` named
 fields. An `f9 <dimensions> <count>` field declares exactly
 `dimensions * count` scalar slots and retains unresolved slots in position.
-The field name and wrapper dimensions do not by themselves assign a NURBS
-control-net, knot, or derivative role to individual slots.
 `u_params` and `v_params` can instead use `f8 <count>` followed by exactly
 `count` scalar slots; unresolved slots retain their declared positions.
 
@@ -396,9 +394,27 @@ searched for nested scalar openers. `i_points` uses eight-byte `28` and `41`
 positive sub-unit forms in addition to eight-byte `2d`/`46` world coordinates,
 the positive DICT lattice, and the `b3`/`b9` negative forms. `end_v_tangts`
 uses the signed coordinate DICT lattice defined for the second directrix
-coordinate lane. `u_params` uses the positive DICT lattice. In `v_params`,
-`28` is an eight-byte positive sub-unit token and `77` is a seven-byte positive
-sub-unit token with an implicit zero low byte.
+coordinate lane. `u_params` and the seven-byte `v_params` forms use the
+positive DICT lattice. `v_params` also uses the eight-byte `28` positive
+sub-unit form.
+
+A complete `splsrf` interpolation surface contains `i_points`,
+`end_u_tangts`, `end_v_tangts`, `end_uv_deriv`, `u_params`, and `v_params`.
+If `u_params` has `U` values and `v_params` has `V` values, `i_points` contains
+`U * V` vectors in u-major order. `end_u_tangts` contains the `V` derivatives
+at the lower-u boundary followed by the `V` derivatives at the upper-u
+boundary. `end_v_tangts` contains the `U` derivatives at the lower-v boundary
+followed by the `U` derivatives at the upper-v boundary. `end_uv_deriv`
+contains the lower-u and upper-u mixed derivatives at the lower-v boundary,
+then the corresponding pair at the upper-v boundary.
+
+Both parameter arrays are strictly increasing. Each direction is a clamped
+cubic interpolation basis. Its control count is the sample count plus two; its
+full knot vector repeats the first parameter four times, contains each interior
+sample parameter once, and repeats the final parameter four times. Position,
+endpoint first-derivative, and corner mixed-derivative equations determine the
+non-rational tensor-product control net. The stored points and derivatives are
+model-space values.
 
 ### 3.4 Planes
 

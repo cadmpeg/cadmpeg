@@ -3368,6 +3368,74 @@ fn decode_places_first_plane_instance_from_named_prototype() {
 }
 
 #[test]
+fn decode_places_first_interpolation_spline_instance_from_named_prototype() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x28, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(b"srf_prim_ptr(splsrf)\0\xe0\x02i_points\0\xf9\x04\x03");
+    for point in [
+        [0.0, 0.0, 0.0],
+        [0.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0],
+        [1.0, 1.0, 2.0],
+    ] {
+        for value in point {
+            push_generated_scalar(&mut payload, value);
+        }
+    }
+    payload.extend_from_slice(b"\xe0\x02end_u_tangts\0\xf9\x04\x03");
+    for _ in 0..4 {
+        for value in [1.0, 0.0, 1.0] {
+            push_generated_scalar(&mut payload, value);
+        }
+    }
+    payload.extend_from_slice(b"\xe0\x02end_v_tangts\0\xf9\x04\x03");
+    for _ in 0..4 {
+        for value in [0.0, 1.0, 1.0] {
+            push_generated_scalar(&mut payload, value);
+        }
+    }
+    payload.extend_from_slice(b"\xe0\x02end_uv_deriv\0\xf9\x04\x03");
+    for _ in 0..12 {
+        push_generated_scalar(&mut payload, 0.0);
+    }
+    for name in ["u_params", "v_params"] {
+        payload.extend_from_slice(&[0xe0, 0x02]);
+        payload.extend_from_slice(name.as_bytes());
+        payload.extend_from_slice(&[0, 0xf8, 0x02]);
+        push_generated_scalar(&mut payload, 0.0);
+        push_generated_scalar(&mut payload, 1.0);
+    }
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let data = build_prt("c", &[("ND:0:VisibGeom:0", payload)]);
+    let scan = container::scan_bytes(data.clone());
+    assert_eq!(scan.surface_rows.len(), 1);
+    assert_eq!(scan.surface_prototype_records.len(), 1);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let surface = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+        .expect("first interpolation spline instance");
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &surface.geometry else {
+        panic!("expected NURBS surface");
+    };
+
+    assert_eq!((nurbs.u_degree, nurbs.v_degree), (3, 3));
+    assert_eq!((nurbs.u_count, nurbs.v_count), (4, 4));
+    assert_eq!(
+        nurbs.control_points[0],
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        nurbs.control_points[15],
+        cadmpeg_ir::math::Point3::new(1.0, 1.0, 2.0)
+    );
+}
+
+#[test]
 fn decode_places_first_sphere_and_torus_instances_from_named_prototypes() {
     let cases = [
         (

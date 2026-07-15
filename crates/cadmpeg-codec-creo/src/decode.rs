@@ -4491,11 +4491,13 @@ fn solve_vector_system(
     Some(values)
 }
 
-fn saved_spline_nurbs(spline: &crate::feature::FeatureSavedSpline) -> Option<NurbsCurve> {
+fn interpolation_curve_data(
+    points: &[[f64; 3]],
+    parameters: &[f64],
+    endpoint_derivatives: [[f64; 3]; 2],
+) -> Option<(Vec<f64>, Vec<[f64; 3]>)> {
     const DEGREE: usize = 3;
-    let parameters = spline.parameters.as_ref()?;
-    let tangents = spline.endpoint_tangents?;
-    let point_count = spline.interpolation_points.len();
+    let point_count = points.len();
     (point_count >= 2 && parameters.len() == point_count).then_some(())?;
     parameters
         .windows(2)
@@ -4523,18 +4525,110 @@ fn saved_spline_nurbs(spline: &crate::feature::FeatureSavedSpline) -> Option<Nur
                 .collect(),
         );
     }
-    let mut values = spline.interpolation_points.clone();
-    values.extend(tangents);
-    let control_points = solve_vector_system(matrix, values)?
+    let mut values = points.to_vec();
+    values.extend(endpoint_derivatives);
+    Some((knots, solve_vector_system(matrix, values)?))
+}
+
+fn saved_spline_nurbs(spline: &crate::feature::FeatureSavedSpline) -> Option<NurbsCurve> {
+    let parameters = spline.parameters.as_ref()?;
+    let tangents = spline.endpoint_tangents?;
+    let (knots, control_points) =
+        interpolation_curve_data(&spline.interpolation_points, parameters, tangents)?;
+    let control_points = control_points
         .into_iter()
         .map(|point| Point3::new(point[0], point[1], point[2]))
         .collect();
     Some(NurbsCurve {
-        degree: DEGREE as u32,
+        degree: 3,
         knots,
         control_points,
         weights: None,
         periodic: false,
+    })
+}
+
+fn interpolation_spline_surface(
+    points: &[[f64; 3]],
+    u_parameters: &[f64],
+    v_parameters: &[f64],
+    end_u_derivatives: &[[f64; 3]],
+    end_v_derivatives: &[[f64; 3]],
+    corner_mixed_derivatives: &[[f64; 3]],
+) -> Option<NurbsSurface> {
+    let u_sample_count = u_parameters.len();
+    let v_sample_count = v_parameters.len();
+    let point_count = u_sample_count.checked_mul(v_sample_count)?;
+    let u_boundary_derivative_count = v_sample_count.checked_mul(2)?;
+    let v_boundary_derivative_count = u_sample_count.checked_mul(2)?;
+    (points.len() == point_count
+        && end_u_derivatives.len() == u_boundary_derivative_count
+        && end_v_derivatives.len() == v_boundary_derivative_count
+        && corner_mixed_derivatives.len() == 4)
+        .then_some(())?;
+
+    let u_control_count = u_sample_count.checked_add(2)?;
+    let v_control_count = v_sample_count.checked_add(2)?;
+    let mut position_controls = vec![vec![[0.0; 3]; v_sample_count]; u_control_count];
+    let mut u_knots = None;
+    for v in 0..v_sample_count {
+        let samples = (0..u_sample_count)
+            .map(|u| points[u * v_sample_count + v])
+            .collect::<Vec<_>>();
+        let (knots, controls) = interpolation_curve_data(
+            &samples,
+            u_parameters,
+            [end_u_derivatives[v], end_u_derivatives[v_sample_count + v]],
+        )?;
+        u_knots.get_or_insert(knots);
+        for (u, control) in controls.into_iter().enumerate() {
+            position_controls[u][v] = control;
+        }
+    }
+
+    let mut v_derivative_controls = vec![vec![[0.0; 3]; u_control_count]; 2];
+    for v_boundary in 0..2 {
+        let samples = (0..u_sample_count)
+            .map(|u| end_v_derivatives[v_boundary * u_sample_count + u])
+            .collect::<Vec<_>>();
+        let (_, controls) = interpolation_curve_data(
+            &samples,
+            u_parameters,
+            [
+                corner_mixed_derivatives[v_boundary * 2],
+                corner_mixed_derivatives[v_boundary * 2 + 1],
+            ],
+        )?;
+        v_derivative_controls[v_boundary] = controls;
+    }
+
+    let mut control_points = Vec::with_capacity(u_control_count * v_control_count);
+    let mut v_knots = None;
+    for u in 0..u_control_count {
+        let (knots, controls) = interpolation_curve_data(
+            &position_controls[u],
+            v_parameters,
+            [v_derivative_controls[0][u], v_derivative_controls[1][u]],
+        )?;
+        v_knots.get_or_insert(knots);
+        control_points.extend(
+            controls
+                .into_iter()
+                .map(|point| Point3::new(point[0], point[1], point[2])),
+        );
+    }
+
+    Some(NurbsSurface {
+        u_degree: 3,
+        v_degree: 3,
+        u_knots: u_knots?,
+        v_knots: v_knots?,
+        u_count: u32::try_from(u_control_count).ok()?,
+        v_count: u32::try_from(v_control_count).ok()?,
+        control_points,
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
     })
 }
 
@@ -12456,6 +12550,42 @@ mod resolved_sketch_tests {
     }
 
     #[test]
+    fn tensor_product_collocation_preserves_position_and_derivative_order() {
+        let points = [
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 2.0],
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 3.0],
+        ];
+        let du = [1.0, 0.0, 1.0];
+        let dv = [0.0, 1.0, 2.0];
+        let zero = [0.0; 3];
+        let nurbs = interpolation_spline_surface(
+            &points,
+            &[0.0, 1.0],
+            &[0.0, 1.0],
+            &[du, du, du, du],
+            &[dv, dv, dv, dv],
+            &[zero, zero, zero, zero],
+        )
+        .expect("bicubic tensor-product surface");
+
+        assert_eq!((nurbs.u_count, nurbs.v_count), (4, 4));
+        assert_eq!(nurbs.u_knots, [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(nurbs.v_knots, nurbs.u_knots);
+        for u in 0..4 {
+            for v in 0..4 {
+                let point = &nurbs.control_points[u * 4 + v];
+                let expected_u = u as f64 / 3.0;
+                let expected_v = v as f64 / 3.0;
+                assert!((point.x - expected_u).abs() < 1e-12);
+                assert!((point.y - expected_v).abs() < 1e-12);
+                assert!((point.z - expected_u - 2.0 * expected_v).abs() < 1e-12);
+            }
+        }
+    }
+
+    #[test]
     fn nonplanar_saved_spline_places_as_model_curve() {
         let transform = crate::placement::FeatureSectionTransform {
             definition_id: 917,
@@ -14548,6 +14678,51 @@ fn prototype_scalar(record: &crate::surface::SurfacePrototypeRecord, name: &str)
     }
 }
 
+fn prototype_vector_array(
+    record: &crate::surface::SurfacePrototypeRecord,
+    name: &str,
+) -> Option<Vec<[f64; 3]>> {
+    let crate::surface::SurfaceNamedValue::ScalarArray {
+        dimensions,
+        count: 3,
+        values,
+        ..
+    } = &record.field(name)?.value
+    else {
+        return None;
+    };
+    let vector_count = usize::from(*dimensions);
+    (values.len() == vector_count.checked_mul(3)?).then_some(())?;
+    values
+        .chunks_exact(3)
+        .map(|coordinates| Some([coordinates[0]?, coordinates[1]?, coordinates[2]?]))
+        .collect()
+}
+
+fn prototype_parameter_array(
+    record: &crate::surface::SurfacePrototypeRecord,
+    name: &str,
+) -> Option<Vec<f64>> {
+    let crate::surface::SurfaceNamedValue::CountedScalarArray { count, values, .. } =
+        &record.field(name)?.value
+    else {
+        return None;
+    };
+    (values.len() == usize::try_from(*count).ok()?).then_some(())?;
+    values.iter().copied().collect()
+}
+
+fn prototype_spline_nurbs(record: &crate::surface::SurfacePrototypeRecord) -> Option<NurbsSurface> {
+    interpolation_spline_surface(
+        &prototype_vector_array(record, "i_points")?,
+        &prototype_parameter_array(record, "u_params")?,
+        &prototype_parameter_array(record, "v_params")?,
+        &prototype_vector_array(record, "end_u_tangts")?,
+        &prototype_vector_array(record, "end_v_tangts")?,
+        &prototype_vector_array(record, "end_uv_deriv")?,
+    )
+}
+
 fn prototype_local_frame(
     record: &crate::surface::SurfacePrototypeRecord,
 ) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
@@ -14605,6 +14780,7 @@ fn transfer_first_instance_prototype_surfaces(
             crate::surface::SurfacePrototypeFamily::Torus => {
                 crate::surface::SurfaceKind::TorusOrSphere
             }
+            crate::surface::SurfacePrototypeFamily::Spline => crate::surface::SurfaceKind::Spline,
             _ => continue,
         };
         let Some(section) = scan.sections.iter().find(|section| {
@@ -14632,19 +14808,24 @@ fn transfer_first_instance_prototype_surfaces(
         let Some(row) = row else {
             continue;
         };
-        let Some((origin, axis, reference)) = prototype_local_frame(record) else {
-            continue;
-        };
-        let point = Point3::new(origin[0], origin[1], origin[2]);
-        let axis = Vector3::new(axis[0], axis[1], axis[2]);
-        let reference = Vector3::new(reference[0], reference[1], reference[2]);
         let geometry = match record.family {
-            crate::surface::SurfacePrototypeFamily::Plane => SurfaceGeometry::Plane {
-                origin: point,
-                normal: axis,
-                u_axis: reference,
-            },
+            crate::surface::SurfacePrototypeFamily::Plane => {
+                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+                    continue;
+                };
+                SurfaceGeometry::Plane {
+                    origin: Point3::new(origin[0], origin[1], origin[2]),
+                    normal: Vector3::new(axis[0], axis[1], axis[2]),
+                    u_axis: Vector3::new(reference[0], reference[1], reference[2]),
+                }
+            }
             crate::surface::SurfacePrototypeFamily::Torus => {
+                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+                    continue;
+                };
+                let point = Point3::new(origin[0], origin[1], origin[2]);
+                let axis = Vector3::new(axis[0], axis[1], axis[2]);
+                let reference = Vector3::new(reference[0], reference[1], reference[2]);
                 let row_radii = scan
                     .surface_parameters
                     .iter()
@@ -14677,6 +14858,12 @@ fn transfer_first_instance_prototype_surfaces(
                         minor_radius: radius2,
                     }
                 }
+            }
+            crate::surface::SurfacePrototypeFamily::Spline => {
+                let Some(nurbs) = prototype_spline_nurbs(record) else {
+                    continue;
+                };
+                SurfaceGeometry::Nurbs(nurbs)
             }
             _ => unreachable!("prototype family was filtered above"),
         };
@@ -17273,7 +17460,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
              Outline-backed planes, guarded non-axis support frames, complete ND first-instance \
-             plane and torus prototypes, unbound straight positional surface-of-extrusion planes, \
+             plane, torus, and interpolation-spline prototypes, unbound straight positional \
+             surface-of-extrusion planes, \
              topology-bound `fc 05` \
              cylinders with a resolved axis-normal cap plane, four-entry circular-sweep cylinders, \
              and four-entry simple-hole cylinders with complete cap outlines transfer as carriers; \
@@ -17324,8 +17512,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Transferred {first_instance_prototype_surface_count} first-instance ND plane or \
-                 torus carrier(s) from complete named local frames and parameters."
+                "Transferred {first_instance_prototype_surface_count} first-instance ND plane, \
+                 torus, or interpolation-spline carrier(s) from complete named parameters."
             ),
             provenance: None,
         });

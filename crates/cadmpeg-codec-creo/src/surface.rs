@@ -1399,6 +1399,10 @@ fn named_spline_scalar_slot(
         return scalar::decode_in_lane(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
+    if matches!(head, 0x29 | 0x2a | 0x2e | 0x2f | 0x42 | 0x43 | 0x47 | 0x48) {
+        return scalar::decode_in_lane(body, offset, cache)
+            .map(|(value, next)| (Some(value), next));
+    }
     if matches!(head, 0x28 | 0x41) || (name == "v_params" && head == 0x28) {
         return named_ieee8(body, offset, 0x3f).map(|(value, next)| (Some(value), next));
     }
@@ -1418,9 +1422,6 @@ fn named_spline_scalar_slot(
             .map(|(value, next)| (Some(value), next));
     }
     if matches!(name, "u_params" | "v_params") {
-        if head == 0x77 {
-            return named_ieee7(body, offset, 0x3f).map(|(value, next)| (Some(value), next));
-        }
         return named_positive_dict(body, offset).map(|(value, next)| (Some(value), next));
     }
     if name == "end_u_tangts" && head == 0x31 {
