@@ -7893,7 +7893,7 @@ fn typed_marker_relation_definition_in_sketch(
                 }
             } else if matches!(kind, Horizontal | Vertical) {
                 let loci =
-                    linked_single_loci(marker, markers_by_id, loci_by_marker).or_else(|| {
+                    relation_operand_loci(marker, markers_by_id, loci_by_marker).or_else(|| {
                         unique_axis_aligned_linked_loci(
                             marker,
                             sketch,
@@ -8051,7 +8051,7 @@ fn typed_marker_relation_definition_in_sketch(
             }
         }
         Coincident => {
-            let Some(loci) = linked_single_loci(marker, markers_by_id, loci_by_marker) else {
+            let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
                 return Some(native());
             };
             if loci.len() < 2 {
@@ -8075,7 +8075,7 @@ fn typed_marker_relation_definition_in_sketch(
             SketchConstraintDefinition::CoincidentLoci { loci }
         }
         HorizontalPoints | VerticalPoints => {
-            let Some(loci) = linked_single_loci(marker, markers_by_id, loci_by_marker) else {
+            let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
                 return Some(native());
             };
             let [first, second] = loci.as_slice() else {
@@ -8694,21 +8694,6 @@ fn linked_midpoint_operands(
         }
     }
     Some((point?, entity?))
-}
-
-fn linked_single_loci(
-    marker: &SketchInputEntity,
-    markers_by_id: &HashMap<&str, &SketchInputEntity>,
-    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-) -> Option<Vec<SketchLocus>> {
-    let mut result = Vec::new();
-    for link in &marker.links {
-        let locus = marker_point_locus(&link.entity_ref, markers_by_id, loci_by_marker)?;
-        if !result.contains(&locus) {
-            result.push(locus);
-        }
-    }
-    Some(result)
 }
 
 fn relation_operand_loci(
