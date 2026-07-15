@@ -1551,12 +1551,6 @@ fn named_spline_scalar_slots(
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while slots.len() < count {
-        if matches!(name, "i_pnts" | "i_points")
-            && body.get(cursor..cursor + 2) == Some(&[psb::token::SCALAR_BODY, 0x00])
-        {
-            cursor += 2;
-            continue;
-        }
         let Some((value, next)) = named_spline_scalar_slot(name, body, cursor, cache) else {
             break;
         };
@@ -1574,6 +1568,11 @@ fn named_spline_scalar_slot(
     cache: &scalar::ScalarCache,
 ) -> Option<(Option<f64>, usize)> {
     let head = *body.get(offset)?;
+    if matches!(name, "i_pnts" | "i_points")
+        && body.get(offset..offset + 2) == Some(&[psb::token::SCALAR_BODY, 0x00])
+    {
+        return Some((None, offset + 2));
+    }
     if head == 0x18 && offset + 1 == body.len() {
         return Some((Some(0.0), offset + 1));
     }
@@ -2422,15 +2421,15 @@ mod tests {
     }
 
     #[test]
-    fn interpolation_point_aliases_skip_tuple_continuation_markers() {
+    fn interpolation_point_aliases_retain_unresolved_f9_zero_slots() {
         let body = [0xe4, 0x0f, 0xe4, 0xf9, 0x00, 0x2f, 0x14, 0x00, 0x18];
         for name in ["i_pnts", "i_points"] {
             let slots = named_spline_scalar_slots(name, &body, 6, &scalar::ScalarCache::default());
             assert_eq!(
                 slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
-                [Some(1.0), Some(0.0), Some(1.0), Some(5.0), Some(0.0), None]
+                [Some(1.0), Some(0.0), Some(1.0), None, Some(5.0), Some(0.0)]
             );
-            assert_eq!(slots[3].1, [0x2f, 0x14, 0x00]);
+            assert_eq!(slots[3].1, [0xf9, 0x00]);
         }
     }
 

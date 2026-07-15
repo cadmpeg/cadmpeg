@@ -295,9 +295,9 @@ terminal `18` in the bounded `end_tangts` body occupies one zero slot.
 `end_tangts` uses the signed coordinate DICT lattice defined for the second
 directrix-coordinate lane.
 `i_pnts` and `i_points` are aliases for the interpolation-point scalar lane.
-Within their bounded `f9` body, `f9 00` between coordinate tuples is a
-continuation marker and occupies no scalar slot. A terminal `18` occupies one
-zero slot; it does not complete additional undeclared coordinates.
+Within their bounded body, `f9 00` occupies one coordinate slot. A terminal
+`18` occupies one zero slot; it does not complete additional undeclared
+coordinates.
 
 The direction/directrix form of a `geom_type = 2c` positional body begins with
 a three-scalar model-space sweep-direction frame followed by the bytes
