@@ -6,7 +6,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_ir::geometry::{
-    derive_reference_direction, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface,
+    derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
@@ -16,6 +16,34 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_SURFACE_POLES: usize = 1_000_000;
+
+fn similarity_orientation(transform: super::geometry::Affine) -> Option<f64> {
+    let column = |index| {
+        Vector3::new(
+            transform.rows[0][index],
+            transform.rows[1][index],
+            transform.rows[2][index],
+        )
+    };
+    let [x, y, z] = [column(0), column(1), column(2)];
+    let squared_scale = dot(x, x);
+    if !squared_scale.is_finite() || squared_scale <= 0.0 {
+        return None;
+    }
+    let tolerance = squared_scale * 1.0e-10;
+    if (dot(y, y) - squared_scale).abs() > tolerance
+        || (dot(z, z) - squared_scale).abs() > tolerance
+        || dot(x, y).abs() > tolerance
+        || dot(x, z).abs() > tolerance
+        || dot(y, z).abs() > tolerance
+    {
+        return None;
+    }
+    let determinant = dot(x, cross(y, z));
+    let determinant_tolerance = squared_scale.sqrt() * squared_scale * 1.0e-10;
+    (determinant.is_finite() && determinant.abs() > determinant_tolerance)
+        .then(|| determinant.signum())
+}
 
 fn cross(left: Vector3, right: Vector3) -> Vector3 {
     Vector3::new(
@@ -608,6 +636,10 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 120 && entry.form == 0)
     {
         handled.insert(entry.sequence);
+        let Some(factor) = global.length_factor_mm() else {
+            losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -644,13 +676,19 @@ pub(super) fn project(
             ));
             continue;
         };
-        if entry.transform != 0 {
-            losses.push(entity_loss(
-                entry,
-                "placed surfaces of revolution require transformed child-carrier projection",
-            ));
-            continue;
-        }
+        let transform = match resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            factor,
+            &mut BTreeSet::new(),
+        ) {
+            Ok(transform) => transform,
+            Err(message) => {
+                losses.push(entity_loss(entry, message));
+                continue;
+            }
+        };
         let axis_id = CurveId(format!("iges:model:curve#D{axis_sequence}"));
         let Some(axis_curve) = ir.model.curves.iter().find(|curve| curve.id == axis_id) else {
             losses.push(entity_loss(entry, "revolution axis carrier is missing"));
@@ -723,10 +761,11 @@ pub(super) fn project(
             for (angle, angular_weight) in &angular_controls {
                 let rotated = rotate(radial, axis_direction, *angle);
                 let radial_control = scale(rotated, 1.0 / angular_weight);
-                control_points.push(add_point_vector(axis_point, radial_control));
+                control_points.push(transform.point(add_point_vector(axis_point, radial_control)));
                 weights.push(u_weight * angular_weight);
             }
         }
+        let placed_generatrix = (entry.transform != 0).then(|| generatrix.clone());
         let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
@@ -744,19 +783,57 @@ pub(super) fn project(
             }),
             source_object: Some(source_object(entry)),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
-            surface: surface_id,
-            definition: ProceduralSurfaceDefinition::Revolution {
-                directrix: CurveId(format!("iges:model:curve#D{generatrix_sequence}")),
-                axis_origin,
-                axis_direction,
-                angular_interval: [start_angle, end_angle],
-                parameter_interval,
-                transposed: false,
-            },
-            cache_fit_tolerance: None,
-        });
+        let mut procedural_directrix = CurveId(format!("iges:model:curve#D{generatrix_sequence}"));
+        let mut procedural_axis_origin = axis_origin;
+        let mut procedural_axis_direction = axis_direction;
+        let procedural_is_exact = if entry.transform == 0 {
+            true
+        } else if let Some(orientation) = similarity_orientation(transform) {
+            let mut placed_generatrix = placed_generatrix
+                .expect("a transformed revolution retains its generatrix until placement");
+            for point in &mut placed_generatrix.control_points {
+                *point = transform.point(*point);
+            }
+            procedural_directrix = CurveId(format!(
+                "iges:model:curve#D{}-placed-generatrix",
+                entry.sequence
+            ));
+            ir.model.curves.push(Curve {
+                id: procedural_directrix.clone(),
+                geometry: CurveGeometry::Nurbs(placed_generatrix),
+                source_object: Some(source_object(entry)),
+            });
+            procedural_axis_origin = transform.point(axis_origin);
+            let Some(direction) = normalized(transform.vector(axis_direction)) else {
+                losses.push(entity_loss(
+                    entry,
+                    "placement collapses the revolution axis",
+                ));
+                continue;
+            };
+            procedural_axis_direction = scale(direction, orientation);
+            true
+        } else {
+            false
+        };
+        if procedural_is_exact {
+            ir.model.procedural_surfaces.push(ProceduralSurface {
+                id: ProceduralSurfaceId(format!(
+                    "iges:model:procedural-surface#D{}",
+                    entry.sequence
+                )),
+                surface: surface_id,
+                definition: ProceduralSurfaceDefinition::Revolution {
+                    directrix: procedural_directrix,
+                    axis_origin: procedural_axis_origin,
+                    axis_direction: procedural_axis_direction,
+                    angular_interval: [start_angle, end_angle],
+                    parameter_interval,
+                    transposed: false,
+                },
+                cache_fit_tolerance: None,
+            });
+        }
         decoded.insert(entry.sequence);
     }
 

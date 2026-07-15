@@ -1205,6 +1205,48 @@ fn surface_of_revolution_file() -> Vec<u8> {
     bytes
 }
 
+fn placed_surface_of_revolution_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (sequence, parameter_start, entity_type, transform, label, status) in [
+        (1, 1, "110", "0", "AXIS", "00010000"),
+        (3, 2, "110", "0", "PROFILE", "00010000"),
+        (5, 3, "124", "0", "PLACE", "00010000"),
+        (7, 4, "120", "5", "REVOLVE", "00000000"),
+    ] {
+        bytes.extend(directory_card(
+            [
+                entity_type,
+                &parameter_start.to_string(),
+                "0",
+                "0",
+                "0",
+                "0",
+                transform,
+                "0",
+                status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [entity_type, "0", "0", "1", "0", "", "", label, "0"],
+            sequence + 1,
+        ));
+    }
+    bytes.extend(parameter_card(b"110,0,0,0,0,0,2;", 1, 1));
+    bytes.extend(parameter_card(b"110,1,0,0,1,0,2;", 3, 2));
+    bytes.extend(parameter_card(b"124,1,0,0,10,0,1,0,0,0,0,1,0;", 5, 3));
+    bytes.extend(parameter_card(b"120,1,3,0,1.5707963267948966;", 7, 4));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000008P0000004").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
 #[test]
 fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
     let result = IgesCodec
@@ -1231,6 +1273,39 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
     assert!(result.report.losses.is_empty());
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(placed_surface_of_revolution_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
+        &result.ir.model.surfaces[0].geometry
+    else {
+        panic!("expected an exact rational revolution cache");
+    };
+    assert_eq!(surface.control_points[0].x, 11.0);
+    let procedural = &result.ir.model.procedural_surfaces[0];
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+        directrix,
+        axis_origin,
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected a revolution definition");
+    };
+    assert_eq!(axis_origin.x, 10.0);
+    assert_eq!(directrix.0, "iges:model:curve#D7-placed-generatrix");
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
 }
 
 #[test]
