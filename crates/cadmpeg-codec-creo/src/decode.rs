@@ -7661,52 +7661,6 @@ fn section_dimension_constraints(
                         parameter,
                     });
                 }
-                if relation.relation_type == 1 {
-                    let dimension = definition
-                        .dimensions
-                        .as_ref()?
-                        .rows
-                        .get(usize::try_from(relation.dimension_id).ok()?)?;
-                    if dimension.dimension_type != 10
-                        || dimension.value_unit != crate::feature::DimensionUnit::Radians
-                    {
-                        return None;
-                    }
-                    let [Some(first_internal), Some(second_internal), None, Some(1)] =
-                        relation.operand_vectors?[0]
-                    else {
-                        return None;
-                    };
-                    let order = definition.order_table.as_ref()?;
-                    let [first_external, second_external] =
-                        [first_internal, second_internal].map(|id| order.external_id(id));
-                    let [Some(first_external), Some(second_external)] =
-                        [first_external, second_external]
-                    else {
-                        return None;
-                    };
-                    if first_external == second_external
-                        || ![first_external, second_external].iter().all(|external| {
-                            segments.iter().any(|segment| {
-                                segment.external_id == *external
-                                    && segment.kind == crate::feature::FeatureSegmentKind::Line
-                            })
-                        })
-                    {
-                        return None;
-                    }
-                    return Some(SketchConstraintDefinition::Angle {
-                        first: SketchEntityId(format!(
-                            "creo:featdefs:sketch_entity#{}:{}",
-                            definition.id, first_external
-                        )),
-                        second: SketchEntityId(format!(
-                            "creo:featdefs:sketch_entity#{}:{}",
-                            definition.id, second_external
-                        )),
-                        parameter,
-                    });
-                }
                 if relation.relation_type != 0 || !matches!(relation.sign, 0 | 1 | 0xf6) {
                     return None;
                 }
@@ -13820,51 +13774,6 @@ mod resolved_sketch_tests {
                     "creo:featdefs:sketch_entity#917:13".to_string(),
                 )),
                 parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
-            }
-        );
-        let mut angle_definition = definition.clone();
-        let angle_dimension = &mut angle_definition
-            .dimensions
-            .as_mut()
-            .expect("dimensions")
-            .rows[0];
-        angle_dimension.dimension_type = 10;
-        angle_dimension.value_unit = crate::feature::DimensionUnit::Radians;
-        let angle_relation = &mut angle_definition.relations.as_mut().expect("relations").rows[0];
-        angle_relation.relation_type = 1;
-        angle_relation.dimension_id = 0;
-        angle_relation.operand_vectors = Some([
-            [Some(4), Some(5), None, Some(1)],
-            [Some(1), None, Some(1), Some(1)],
-            [Some(15), Some(16), Some(15), Some(24)],
-        ]);
-        angle_definition.order_table = Some(crate::feature::FeatureOrderTable {
-            declared_count: 2,
-            entity_ref: None,
-            rows: vec![
-                crate::feature::FeatureOrderRow {
-                    external_id: 12,
-                    internal_id: 4,
-                    bitmask: 1,
-                    offset: 90,
-                },
-                crate::feature::FeatureOrderRow {
-                    external_id: 15,
-                    internal_id: 5,
-                    bitmask: 1,
-                    offset: 91,
-                },
-            ],
-            offset: 89,
-        });
-        assert_eq!(
-            section_dimension_constraints(&angle_definition, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
-            SketchConstraintDefinition::Angle {
-                first: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string(),),
-                second: SketchEntityId("creo:featdefs:sketch_entity#917:15".to_string(),),
-                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string(),),
             }
         );
         let relations = section_dimension_constraints(&definition, &SketchId("sketch".into()));

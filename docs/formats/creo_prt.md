@@ -728,12 +728,6 @@ zero slots and `e6` expands to three zero slots. `e4` is the integer value one,
 and `f6` is a null operand. Expansion is bounded independently at four slots
 for each of `a`, `b`, and `c`.
 
-For a type-one angular relation whose first operand vector is
-`a=[first_internal,second_internal,null,1]`, the first two operands are
-`order_table.int_id` values. Their matching `order_table.ext_id` values name
-the two oriented section lines controlled by the referenced type-`0x0a`
-angular dimension. The dimension value is in radians.
-
 For a type-zero linear-distance relation with operand-vector forms
 `a = [point0, point1, null, 1]`, `b = [0, 0, 0, 0]` or
 `b = [1, 1, 0, 1]`, and
