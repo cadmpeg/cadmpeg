@@ -766,6 +766,13 @@ the constant fillet radius; differing radii define no constant-radius result.
 
 The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, and class 923 is a datum-plane definition. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
 
+When a section-sweep feature has one `dtm_id_tab` entry equal to its
+`gsec3d_ptr.sketch_plane_entity_id`, generated-table entry classes 204 and 203
+in the first two positions identify its section and opposite cap planes. Both
+entries are surface identifiers owned by that feature. Complete, distinct,
+parallel plane equations make the class-204 plane the section-plane equation;
+the class-203 plane is the opposite sweep cap.
+
 For a linear or rotational section-sweep recipe, the stored operation family
 `Protrusion` adds material to an established preceding body and `Cut` removes
 material. A sweep evaluated as an independent body has new-body semantics. A

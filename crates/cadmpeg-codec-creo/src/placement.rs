@@ -248,12 +248,67 @@ fn feature_generated_plane_equation(
     Some((normal, dot(normal, start)))
 }
 
+fn generated_section_cap_plane_equation(
+    sketch_id: u32,
+    feature_id: u32,
+    sources: &PlacementSources<'_>,
+    entity_tables: &[FeatureEntityTable],
+) -> Option<([f64; 3], f64)> {
+    let datum_tables = sources
+        .geometry_tables
+        .iter()
+        .filter(|table| {
+            table.feature_id == feature_id
+                && table.kind == FeatureGeometryTableKind::DatumIds
+                && table.entry_ids.as_deref() == Some(&[sketch_id])
+        })
+        .collect::<Vec<_>>();
+    let [_] = datum_tables.as_slice() else {
+        return None;
+    };
+    let tables = entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    let [first, second, ..] = table.entries.as_slice() else {
+        return None;
+    };
+    if [first.class_id, second.class_id] != [204, 203] {
+        return None;
+    }
+    let first = plane_equation(
+        first.entity_id,
+        sources.datums,
+        sources.model_planes,
+        sources.outline_planes,
+    )?;
+    let second = plane_equation(
+        second.entity_id,
+        sources.datums,
+        sources.model_planes,
+        sources.outline_planes,
+    )?;
+    let oriented_cosine = dot(first.0, second.0);
+    let cosine = oriented_cosine.abs();
+    let second_offset = if oriented_cosine.is_sign_negative() {
+        -second.1
+    } else {
+        second.1
+    };
+    let scale = first.1.abs().max(second.1.abs()).max(1.0);
+    ((cosine - 1.0).abs() <= 1e-12 && (first.1 - second_offset).abs() > 1e-12 * scale)
+        .then_some(first)
+}
+
 /// Resolve feature frames whose sketch and orientation references reduce to
 /// two perpendicular model-space datum planes.
 pub(crate) fn resolve(
     definitions: &[FeatureDefinition],
     sources: &PlacementSources<'_>,
-    _entity_tables: &[FeatureEntityTable],
+    entity_tables: &[FeatureEntityTable],
 ) -> Vec<FeatureSectionTransform> {
     let mut result = Vec::new();
     for definition in definitions {
@@ -263,10 +318,9 @@ pub(crate) fn resolve(
         let Some(sketch_id) = section.sketch_plane_entity_id else {
             continue;
         };
-        let mut reference_ids = section.reference_plane_entity_ids.clone();
-        if let Some(reference_id) = section.reference_plane_datum_geometry_id {
-            reference_ids.push(reference_id);
-        }
+        let mut reference_ids = section
+            .reference_plane_datum_geometry_id
+            .map_or_else(|| section.reference_plane_entity_ids.clone(), |id| vec![id]);
         reference_ids.sort_unstable();
         reference_ids.dedup();
         let direct_sketch = plane_equation(
@@ -274,7 +328,15 @@ pub(crate) fn resolve(
             sources.datums,
             sources.model_planes,
             sources.outline_planes,
-        );
+        )
+        .or_else(|| {
+            generated_section_cap_plane_equation(
+                sketch_id,
+                definition.owner_feature_id?,
+                sources,
+                entity_tables,
+            )
+        });
         let mut candidates = Vec::new();
         for reference_id in reference_ids {
             let direct_reference = plane_equation(
@@ -436,6 +498,115 @@ mod tests {
                 u_axis: [0.0, 0.0, 1.0],
                 v_axis: [0.0, -1.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
+                offset: 100,
+            }]
+        );
+    }
+
+    #[test]
+    fn resolves_generated_section_from_declared_cap_pair() {
+        let definition = FeatureDefinition {
+            id: 917,
+            owner_feature_id: Some(40),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: Some(FeatureSection3d {
+                sketch_plane_entity_id: Some(42),
+                sketch_plane_flip: None,
+                reference_plane_entity_ids: vec![191],
+                reference_plane_datum_geometry_id: Some(2),
+                orientation: FeatureSectionOrientation::default(),
+                dimension_ids: Vec::new(),
+                offset: 100,
+            }),
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 90,
+        };
+        let rows = [43, 92].map(|id| SurfaceRow {
+            id,
+            type_byte: 0x22,
+            kind: SurfaceKind::Plane,
+            feature_id: 40,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: usize::try_from(id).expect("fixture id fits usize"),
+        });
+        let outlines = [
+            OutlinePlane {
+                surface_id: 43,
+                origin: [0.0, 0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                u_axis: [1.0, 0.0, 0.0],
+                offset: 43,
+            },
+            OutlinePlane {
+                surface_id: 92,
+                origin: [0.0, 38.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                u_axis: [1.0, 0.0, 0.0],
+                offset: 92,
+            },
+        ];
+        let geometry_tables = [FeatureGeometryTable {
+            feature_id: 40,
+            kind: FeatureGeometryTableKind::DatumIds,
+            count: 1,
+            entity_class: 1,
+            entry_ids: Some(vec![42]),
+            offset: 80,
+        }];
+        let entries = [(43, 204), (92, 203)].map(|(entity_id, class_id)| {
+            crate::feature::FeatureEntityTableEntry {
+                entity_id,
+                class_id,
+                source_entity_id: None,
+                prefixed: false,
+                offset: usize::try_from(entity_id).expect("fixture id fits usize"),
+                end_offset: usize::try_from(entity_id + 1).expect("fixture id fits usize"),
+            }
+        });
+        let entity_tables = [FeatureEntityTable {
+            feature_id: Some(40),
+            entry_ids: vec![43, 92],
+            entries: entries.to_vec(),
+            surface_ids: vec![43, 92],
+            non_surface_entity_ids: Vec::new(),
+            offset: 70,
+        }];
+
+        assert_eq!(
+            resolve(
+                &[definition],
+                &PlacementSources {
+                    datums: &[
+                        datum(2, [1.0, 0.0, 0.0], 0.0),
+                        datum(191, [1.0, 0.0, 0.0], 8.0),
+                    ],
+                    surface_rows: &rows,
+                    model_planes: &[],
+                    outline_planes: &outlines,
+                    plane_envelopes: &[],
+                    geometry_tables: &geometry_tables,
+                    affected_ids: &[],
+                },
+                &entity_tables,
+            ),
+            vec![FeatureSectionTransform {
+                definition_id: 917,
+                feature_id: Some(40),
+                origin: [0.0, 0.0, 0.0],
+                u_axis: [1.0, 0.0, 0.0],
+                v_axis: [0.0, 0.0, -1.0],
+                normal: [0.0, 1.0, 0.0],
                 offset: 100,
             }]
         );
