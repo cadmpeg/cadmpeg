@@ -4598,6 +4598,7 @@ impl MeshSelectionSearch<'_> {
             let changed_edges = changed_quotient_edges(&before, quotient);
             for (dependent, assignments) in self.assignments.iter().enumerate() {
                 if self.selected[dependent].is_none()
+                    && dependent != face
                     && !queued.contains(&dependent)
                     && assignments
                         .iter()
