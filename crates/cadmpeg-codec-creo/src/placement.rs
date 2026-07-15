@@ -248,31 +248,10 @@ fn feature_generated_plane_equation(
     Some((normal, dot(normal, start)))
 }
 
-fn generated_section_cap_plane_equation(
-    sketch_id: u32,
-    feature_id: u32,
+fn generated_cap_pair_plane_equation(
+    table: &FeatureEntityTable,
     sources: &PlacementSources<'_>,
-    entity_tables: &[FeatureEntityTable],
 ) -> Option<([f64; 3], f64)> {
-    let datum_tables = sources
-        .geometry_tables
-        .iter()
-        .filter(|table| {
-            table.feature_id == feature_id
-                && table.kind == FeatureGeometryTableKind::DatumIds
-                && table.entry_ids.as_deref() == Some(&[sketch_id])
-        })
-        .collect::<Vec<_>>();
-    let [_] = datum_tables.as_slice() else {
-        return None;
-    };
-    let tables = entity_tables
-        .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
     let [first, second, ..] = table.entries.as_slice() else {
         return None;
     };
@@ -301,6 +280,35 @@ fn generated_section_cap_plane_equation(
     let scale = first.1.abs().max(second.1.abs()).max(1.0);
     ((cosine - 1.0).abs() <= 1e-12 && (first.1 - second_offset).abs() > 1e-12 * scale)
         .then_some(first)
+}
+
+fn generated_section_cap_plane_equation(
+    sketch_id: u32,
+    feature_id: u32,
+    sources: &PlacementSources<'_>,
+    entity_tables: &[FeatureEntityTable],
+) -> Option<([f64; 3], f64)> {
+    let datum_tables = sources
+        .geometry_tables
+        .iter()
+        .filter(|table| {
+            table.feature_id == feature_id
+                && table.kind == FeatureGeometryTableKind::DatumIds
+                && table.entry_ids.as_deref() == Some(&[sketch_id])
+        })
+        .collect::<Vec<_>>();
+    let [_] = datum_tables.as_slice() else {
+        return None;
+    };
+    let equations = entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .filter_map(|table| generated_cap_pair_plane_equation(table, sources))
+        .collect::<Vec<_>>();
+    let [equation] = equations.as_slice() else {
+        return None;
+    };
+    Some(*equation)
 }
 
 /// Resolve feature frames whose sketch and orientation references reduce to
@@ -574,14 +582,31 @@ mod tests {
                 end_offset: usize::try_from(entity_id + 1).expect("fixture id fits usize"),
             }
         });
-        let entity_tables = [FeatureEntityTable {
-            feature_id: Some(40),
-            entry_ids: vec![43, 92],
-            entries: entries.to_vec(),
-            surface_ids: vec![43, 92],
-            non_surface_entity_ids: Vec::new(),
-            offset: 70,
-        }];
+        let entity_tables = [
+            FeatureEntityTable {
+                feature_id: Some(40),
+                entry_ids: vec![700],
+                entries: vec![crate::feature::FeatureEntityTableEntry {
+                    entity_id: 700,
+                    class_id: 7,
+                    source_entity_id: None,
+                    prefixed: false,
+                    offset: 60,
+                    end_offset: 61,
+                }],
+                surface_ids: Vec::new(),
+                non_surface_entity_ids: vec![700],
+                offset: 50,
+            },
+            FeatureEntityTable {
+                feature_id: Some(40),
+                entry_ids: vec![43, 92],
+                entries: entries.to_vec(),
+                surface_ids: vec![43, 92],
+                non_surface_entity_ids: Vec::new(),
+                offset: 70,
+            },
+        ];
 
         assert_eq!(
             resolve(

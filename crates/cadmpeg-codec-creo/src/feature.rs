@@ -5144,9 +5144,6 @@ pub fn entity_tables(
             .copied()
             .filter(|id| surface_ids.contains(id))
             .collect::<Vec<_>>();
-        if surface_ids.is_empty() {
-            continue;
-        }
         let non_surface_entity_ids = entry_ids
             .iter()
             .copied()

@@ -3886,7 +3886,7 @@ fn transfer_feature_extrusion_surfaces(
         let tables = scan
             .feature_entity_tables
             .iter()
-            .filter(|table| table.feature_id == Some(feature_id))
+            .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
             .collect::<Vec<_>>();
         let [table] = tables.as_slice() else {
             continue;
@@ -6599,7 +6599,7 @@ fn transfer_resolved_revolution_surfaces(
         let native_table = scan
             .feature_entity_tables
             .iter()
-            .filter(|table| table.feature_id == Some(feature_id))
+            .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
             .collect::<Vec<_>>();
         let native_table = match native_table.as_slice() {
             [table] => Some(*table),
@@ -8067,7 +8067,7 @@ fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleH
     let tables = scan
         .feature_entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
         .collect::<Vec<_>>();
     let [table] = tables.as_slice() else {
         return None;
@@ -8170,7 +8170,7 @@ fn circular_sweep_geometry(scan: &ContainerScan, feature_id: u32) -> Option<Circ
     let tables = scan
         .feature_entity_tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
         .collect::<Vec<_>>();
     let [table] = tables.as_slice() else {
         return None;
