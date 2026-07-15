@@ -619,12 +619,14 @@ pub fn project_parameter_design(
         let mut seen = HashSet::new();
         parameter.dependencies = expression_identifiers(&parameter.expression)
             .filter_map(|identifier| {
-                let local = parameter.owner.as_ref().and_then(|owner| {
-                    feature_aliases.get(&(scope, owner.clone(), identifier.clone()))
-                });
-                let candidate = local
-                    .or_else(|| document_aliases.get(&(scope, identifier.clone())))
-                    .or_else(|| owned_aliases.get(&(scope, identifier)))?;
+                let candidate = if let Some(owner) = &parameter.owner {
+                    feature_aliases
+                        .get(&(scope, owner.clone(), identifier.clone()))
+                        .or_else(|| document_aliases.get(&(scope, identifier.clone())))
+                        .or_else(|| owned_aliases.get(&(scope, identifier)))?
+                } else {
+                    document_aliases.get(&(scope, identifier))?
+                };
                 candidate.clone()
             })
             .filter(|dependency| dependency != &parameter.id && seen.insert(dependency.clone()))
@@ -13575,12 +13577,22 @@ mod relation_tests {
         let local_width = parameter(Some(101), 21, "20 mm", "Width");
         let local_half = parameter(Some(102), 22, "Width / 2", "Half");
         let remote_half = parameter(Some(103), 23, "Width / 2", "Half");
+        let owned_depth = parameter(Some(104), 24, "10 mm", "OwnedDepth");
+        let document_half = parameter(None, 25, "OwnedDepth / 2", "DocumentHalf");
         let (_, parameters) = project_parameter_design(
-            &[document_width, local_width, local_half, remote_half],
+            &[
+                document_width,
+                local_width,
+                local_half,
+                remote_half,
+                owned_depth,
+                document_half,
+            ],
             &[
                 owner(101, 21, 201),
                 owner(102, 22, 201),
                 owner(103, 23, 202),
+                owner(104, 24, 201),
             ],
             &[scope(201), scope(202)],
             &[],
@@ -13615,6 +13627,9 @@ mod relation_tests {
             by_name_and_owner("Half", 23).dependencies,
             [document.id.clone()]
         );
+        assert!(by_name_and_owner("DocumentHalf", 25)
+            .dependencies
+            .is_empty());
     }
 
     #[test]
