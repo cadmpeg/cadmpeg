@@ -14979,6 +14979,16 @@ mod resolved_sketch_tests {
                 if center == Point3::new(0.0, 0.0, 2.0) && radius == 5.0
         ));
         assert!(carrier_intersection_curve(equator, torus).is_none());
+        let plane_torus_candidates = axis_normal_plane_torus_circle_candidates(equator, torus);
+        assert_eq!(plane_torus_candidates.len(), 2);
+        assert!(matches!(
+            select_unique_curve_candidate(
+                plane_torus_candidates,
+                [[7.0, 0.0, 0.0], [0.0, 7.0, 0.0]],
+            ),
+            Some((CurveGeometry::Circle { center, radius, .. }, "plane_torus_secant_circle"))
+                if center == Point3::new(0.0, 0.0, 0.0) && radius == 7.0
+        ));
         let outer_tangent_cylinder = parallel_cylinder([0.0, 0.0, 0.0], 7.0);
         assert!(matches!(
             carrier_intersection_curve(outer_tangent_cylinder, torus),
@@ -18068,6 +18078,56 @@ fn coaxial_cylinder_torus_circle_candidates(
         .collect()
 }
 
+fn axis_normal_plane_torus_circle_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let ((CarrierEquation::Plane(plane), CarrierEquation::Torus(torus))
+    | (CarrierEquation::Torus(torus), CarrierEquation::Plane(plane))) = (first, second)
+    else {
+        return Vec::new();
+    };
+    let (Some(normal), Some(axis), Some(reference)) = (
+        normalized(plane.normal),
+        normalized(torus.axis),
+        normalized(torus.ref_direction),
+    ) else {
+        return Vec::new();
+    };
+    if (dot(normal, axis).abs() - 1.0).abs() > 1e-10 {
+        return Vec::new();
+    }
+    let relative: [f64; 3] = std::array::from_fn(|index| plane.origin[index] - torus.center[index]);
+    let axial = dot(relative, axis);
+    let scale = torus.major_radius.max(torus.minor_radius).max(1.0);
+    let radial_offset_squared = torus
+        .minor_radius
+        .mul_add(torus.minor_radius, -(axial * axial));
+    if radial_offset_squared <= 1e-9 * scale * scale {
+        return Vec::new();
+    }
+    let center: [f64; 3] = std::array::from_fn(|index| torus.center[index] + axial * axis[index]);
+    let radial_offset = radial_offset_squared.sqrt();
+    [
+        torus.major_radius - radial_offset,
+        torus.major_radius + radial_offset,
+    ]
+    .into_iter()
+    .filter(|radius| *radius > 1e-12 * scale)
+    .map(|radius| {
+        (
+            CurveGeometry::Circle {
+                center: Point3::new(center[0], center[1], center[2]),
+                axis: Vector3::new(axis[0], axis[1], axis[2]),
+                ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                radius,
+            },
+            "plane_torus_secant_circle",
+        )
+    })
+    .collect()
+}
+
 fn meridian_circle_intersections(
     first_center: [f64; 2],
     first_radius: f64,
@@ -18341,6 +18401,12 @@ fn transfer_carrier_intersection_curves(
                 .or_else(|| {
                     select_unique_curve_candidate(
                         coaxial_tori_circle_candidates(first, second),
+                        points,
+                    )
+                })
+                .or_else(|| {
+                    select_unique_curve_candidate(
+                        axis_normal_plane_torus_circle_candidates(first, second),
                         points,
                     )
                 })
