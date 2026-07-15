@@ -8941,7 +8941,7 @@ fn typed_relation_definition(
             };
             let first = curve(0);
             let second = curve(1);
-            let (first, second) = match (first, second) {
+            let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
                     known.clone(),
@@ -8978,7 +8978,13 @@ fn typed_relation_definition(
             if !line_line_distance(first_line, second_line)
                 .is_some_and(|measured| same_dimension_length(measured, expected.0))
             {
-                return None;
+                (first, second) = unique_repaired_profile_line_distance_pair(
+                    sketch,
+                    &first,
+                    &second,
+                    parameter,
+                    sketch_entities,
+                )?;
             }
             Some(SketchConstraintDefinition::Distance {
                 entities: vec![first, second],
@@ -8998,7 +9004,7 @@ fn typed_relation_definition(
             };
             let first = curve(0);
             let second = curve(1);
-            let (first, second) = match (first, second) {
+            let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
                     known.clone(),
@@ -9022,7 +9028,13 @@ fn typed_relation_definition(
             if !line_line_angle(first_line, second_line)
                 .is_some_and(|measured| same_dimension_angle(measured, expected.0))
             {
-                return None;
+                (first, second) = unique_repaired_profile_line_angle_pair(
+                    sketch,
+                    &first,
+                    &second,
+                    parameter,
+                    sketch_entities,
+                )?;
             }
             Some(SketchConstraintDefinition::Angle {
                 first,
@@ -9373,6 +9385,31 @@ fn unique_profile_line_distance_pair(
     Some(candidate.clone())
 }
 
+fn unique_repaired_profile_line_distance_pair(
+    sketch: &SketchId,
+    first: &SketchEntityId,
+    second: &SketchEntityId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<(SketchEntityId, SketchEntityId)> {
+    let mut candidates = [first, second]
+        .into_iter()
+        .filter_map(|known| {
+            let partner =
+                unique_profile_line_distance_entity(sketch, known, parameter, sketch_entities)?;
+            let mut pair = [known.clone(), partner];
+            pair.sort();
+            Some((pair[0].clone(), pair[1].clone()))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort();
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
 fn line_line_distance(first: &SketchEntity, second: &SketchEntity) -> Option<f64> {
     let SketchGeometry::Line {
         start: first_start,
@@ -9464,6 +9501,31 @@ fn unique_profile_line_angle_pair(
             }
         }
     }
+    candidates.sort();
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+fn unique_repaired_profile_line_angle_pair(
+    sketch: &SketchId,
+    first: &SketchEntityId,
+    second: &SketchEntityId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<(SketchEntityId, SketchEntityId)> {
+    let mut candidates = [first, second]
+        .into_iter()
+        .filter_map(|known| {
+            let partner =
+                unique_profile_line_angle_entity(sketch, known, parameter, sketch_entities)?;
+            let mut pair = [known.clone(), partner];
+            pair.sort();
+            Some((pair[0].clone(), pair[1].clone()))
+        })
+        .collect::<Vec<_>>();
     candidates.sort();
     candidates.dedup();
     let [candidate] = candidates.as_slice() else {
@@ -11120,7 +11182,8 @@ mod profile_join_tests {
         unique_profile_line_angle_entity, unique_profile_line_angle_pair,
         unique_profile_line_distance_entity, unique_profile_line_distance_pair,
         unique_profile_line_point_locus, unique_profile_point_line_entity,
-        unique_profile_point_line_pair, MarkerTransform,
+        unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
+        unique_repaired_profile_line_distance_pair, MarkerTransform,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -12319,6 +12382,65 @@ mod profile_join_tests {
             Some((first.id.clone(), second.id.clone()))
         );
 
+        let wrong = line("wrong", Point2::new(0.0, 2.0), Point2::new(10.0, 2.0));
+        assert_eq!(
+            unique_repaired_profile_line_distance_pair(
+                &sketch,
+                &first.id,
+                &wrong.id,
+                &parameter,
+                &[
+                    first.clone(),
+                    wrong.clone(),
+                    second.clone(),
+                    unrelated.clone(),
+                ],
+            ),
+            Some((first.id.clone(), second.id.clone()))
+        );
+
+        let other_solved = line(
+            "other-solved",
+            Point2::new(0.0, -5.0),
+            Point2::new(10.0, -5.0),
+        );
+        assert_eq!(
+            unique_repaired_profile_line_distance_pair(
+                &sketch,
+                &first.id,
+                &wrong.id,
+                &parameter,
+                &[first.clone(), wrong.clone(), second.clone(), other_solved,],
+            ),
+            None
+        );
+
+        let unrelated_first = line(
+            "unrelated-first",
+            Point2::new(20.0, 20.0),
+            Point2::new(30.0, 20.0),
+        );
+        let unrelated_second = line(
+            "unrelated-second",
+            Point2::new(20.0, 25.0),
+            Point2::new(30.0, 25.0),
+        );
+        assert_eq!(
+            unique_repaired_profile_line_distance_pair(
+                &sketch,
+                &first.id,
+                &wrong.id,
+                &parameter,
+                &[
+                    first.clone(),
+                    wrong.clone(),
+                    unrelated_first,
+                    unrelated_second,
+                ],
+            ),
+            None
+        );
+
         let ambiguous = line("ambiguous", Point2::new(0.0, 10.0), Point2::new(10.0, 10.0));
         assert_eq!(
             unique_profile_line_distance_pair(
@@ -12368,7 +12490,69 @@ mod profile_join_tests {
             Some((horizontal.id.clone(), vertical.id.clone()))
         );
 
+        let wrong = line(
+            "wrong",
+            Point2::new(0.0, 0.0),
+            Point2::new(3.0_f64.sqrt(), 1.0),
+        );
+        assert_eq!(
+            unique_repaired_profile_line_angle_pair(
+                &sketch,
+                &horizontal.id,
+                &wrong.id,
+                &parameter,
+                &[
+                    horizontal.clone(),
+                    wrong.clone(),
+                    vertical.clone(),
+                    diagonal.clone(),
+                ],
+            ),
+            Some((horizontal.id.clone(), vertical.id.clone()))
+        );
+
         let ambiguous = line("ambiguous", Point2::new(5.0, 0.0), Point2::new(5.0, 10.0));
+        assert_eq!(
+            unique_repaired_profile_line_angle_pair(
+                &sketch,
+                &horizontal.id,
+                &wrong.id,
+                &parameter,
+                &[
+                    horizontal.clone(),
+                    wrong.clone(),
+                    vertical.clone(),
+                    ambiguous.clone(),
+                ],
+            ),
+            None
+        );
+
+        let unrelated_first = line(
+            "unrelated-first",
+            Point2::new(0.0, 0.0),
+            Point2::new(0.5, 3.0_f64.sqrt() * 0.5),
+        );
+        let unrelated_second = line(
+            "unrelated-second",
+            Point2::new(0.0, 0.0),
+            Point2::new(-3.0_f64.sqrt() * 0.5, 0.5),
+        );
+        assert_eq!(
+            unique_repaired_profile_line_angle_pair(
+                &sketch,
+                &horizontal.id,
+                &wrong.id,
+                &parameter,
+                &[
+                    horizontal.clone(),
+                    wrong.clone(),
+                    unrelated_first,
+                    unrelated_second,
+                ],
+            ),
+            None
+        );
         assert_eq!(
             unique_profile_line_angle_pair(
                 &sketch,

@@ -237,7 +237,11 @@ When neither point-distance operand identifies a locus, the operands identify th
 
 When exactly one line-distance operand identifies a profile line, the other operand identifies the sole distinct parallel profile line in the complete owning sketch at the stored perpendicular distance. When neither operand identifies a line, the operands identify the sole unordered parallel line pair at that distance. Zero or multiple compatible lines or pairs leave the missing operands unresolved.
 
+When both line-distance references identify lines whose perpendicular separation differs from the stored distance, each referenced line independently selects its sole distinct parallel line at that distance. The dimension uses the resulting pair only when these searches produce one unique unordered pair. The repaired pair retains a referenced line; ambiguity and unrelated scalar-compatible pairs leave the relation native.
+
 When exactly one angular-dimension operand identifies a profile line, the other operand identifies the sole distinct profile line in the complete owning sketch whose unsigned direction angle equals the stored angle. When neither operand identifies a line, the operands identify the sole unordered profile-line pair at that angle. The unsigned direction angle is the arccosine of the normalized direction dot product and lies in `[0, pi]`. Zero or multiple compatible lines or pairs leave the missing operands unresolved.
+
+When both angular-dimension references identify lines whose unsigned direction angle differs from the stored angle, each referenced line independently selects its sole distinct line at that angle. The dimension uses the resulting pair only when these searches produce one unique unordered pair. The repaired pair retains a referenced line; ambiguity and unrelated angle-compatible pairs leave the relation native.
 
 For a point-line dimension, a resolved point operand identifies the sole profile line in the complete owning sketch at the stored perpendicular distance, and a resolved line operand identifies the sole profile locus at that distance. When neither operand resolves directly, the operands identify the sole ordered profile-locus and profile-line pair at that distance. Zero or multiple compatible candidates leave the missing operands unresolved.
 
