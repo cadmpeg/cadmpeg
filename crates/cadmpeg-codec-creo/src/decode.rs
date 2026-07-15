@@ -71,6 +71,23 @@ struct CreoFeatureDefinitionRecord {
     definition_id: u32,
     owner_feature_id: Option<u32>,
     body: Vec<u8>,
+    parameter_frames: Vec<CreoFeatureParameterFrame>,
+    outlines: Vec<CreoFeatureOutline>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoFeatureParameterFrame {
+    kind: &'static str,
+    body: Vec<u8>,
+    decoded_values: Option<Vec<f64>>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoFeatureOutline {
+    phase: &'static str,
+    local_values: Vec<Option<f64>>,
     offset: usize,
 }
 
@@ -2180,6 +2197,32 @@ fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatureDefinition
             definition_id: definition.id,
             owner_feature_id: definition.owner_feature_id,
             body: definition.body.clone(),
+            parameter_frames: definition
+                .parameter_frames
+                .iter()
+                .map(|frame| CreoFeatureParameterFrame {
+                    kind: match frame.kind {
+                        crate::feature::FeatureParameterFrameKind::LocalSystem => "local_system",
+                        crate::feature::FeatureParameterFrameKind::Transform => "transform",
+                    },
+                    body: frame.body.clone(),
+                    decoded_values: frame.decoded_values.clone(),
+                    offset: frame.offset,
+                })
+                .collect(),
+            outlines: definition
+                .outlines
+                .iter()
+                .map(|outline| CreoFeatureOutline {
+                    phase: match outline.phase {
+                        crate::feature::OutlinePhase::PreRollback => "pre_rollback",
+                        crate::feature::OutlinePhase::PostRollback => "post_rollback",
+                        crate::feature::OutlinePhase::PostRegen => "post_regen",
+                    },
+                    local_values: outline.local_values.clone(),
+                    offset: outline.offset,
+                })
+                .collect(),
             offset: definition.offset,
         })
         .collect()

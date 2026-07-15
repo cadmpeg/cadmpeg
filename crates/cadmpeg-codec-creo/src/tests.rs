@@ -1919,7 +1919,8 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     payload.extend_from_slice(b"\xe0\x21transf\0\xf9\x04\x03");
     payload.extend([0xe4; 12]);
     payload.extend_from_slice(b"feat_defs_81\0opaque");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.feature_definitions.len(), 2);
     assert_eq!(scan.feature_definitions[0].id, 40);
@@ -1940,6 +1941,19 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
         scan.feature_definitions[0].parameter_frames[1].decoded_values,
         Some(vec![1.0; 12])
     );
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let definitions = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
+    let frames = definitions[0].fields["parameter_frames"]
+        .as_array()
+        .expect("parameter frames");
+    assert_eq!(frames.len(), 2);
+    assert_eq!(frames[0]["kind"], "local_system");
+    assert_eq!(frames[0]["decoded_values"].as_array().unwrap().len(), 12);
+    assert_eq!(frames[0]["decoded_values"][0], 0.0);
+    assert_eq!(frames[1]["kind"], "transform");
+    assert_eq!(frames[1]["decoded_values"].as_array().unwrap().len(), 12);
+    assert_eq!(frames[1]["decoded_values"][0], 1.0);
 }
 
 #[test]
@@ -1948,7 +1962,8 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     payload.extend([0x0f; 6]);
     payload.extend_from_slice(b"\xe0\x00post_roll_back\0\xe3\xf7\x01\xf5\x96\x92\x02");
     payload.extend([0xe4; 6]);
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     let outlines = &scan.feature_definitions[0].outlines;
     assert_eq!(outlines.len(), 2);
@@ -1959,6 +1974,19 @@ fn scan_decodes_featdefs_feature_local_outlines() {
         crate::feature::OutlinePhase::PostRollback
     );
     assert_eq!(outlines[1].local_values, vec![Some(1.0); 6]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let definitions = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
+    let outlines = definitions[0].fields["outlines"]
+        .as_array()
+        .expect("outlines");
+    assert_eq!(outlines.len(), 2);
+    assert_eq!(outlines[0]["phase"], "pre_rollback");
+    assert_eq!(outlines[0]["local_values"].as_array().unwrap().len(), 6);
+    assert_eq!(outlines[0]["local_values"][0], 0.0);
+    assert_eq!(outlines[1]["phase"], "post_rollback");
+    assert_eq!(outlines[1]["local_values"].as_array().unwrap().len(), 6);
+    assert_eq!(outlines[1]["local_values"][0], 1.0);
 }
 
 #[test]
