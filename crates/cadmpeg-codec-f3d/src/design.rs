@@ -3006,19 +3006,23 @@ pub fn project_dimension_constraints(
             let sketch = sketches_by_scope
                 .get(&(scope.as_str(), owner.scope_record_index))?
                 .clone();
-            let definition = (parameter.source_kind.starts_with("Linear Dimension"))
+            let linear_candidates = parameter
+                .source_kind
+                .starts_with("Linear Dimension")
                 .then(|| {
-                    unique_recipe_linear_dimension(
+                    recipe_linear_dimension_candidates(
                         entities,
                         &sketch,
                         parameter.evaluated_value * 10.0,
                         &parameter_id,
                     )
                 })
-                .flatten()
-                .unwrap_or_else(|| Definition::Native {
+                .unwrap_or_default();
+            let definition = match linear_candidates.as_slice() {
+                [definition] => definition.clone(),
+                _ => Definition::Native {
                     native_kind: parameter.source_kind.clone(),
-                    entities: Vec::new(),
+                    entities: recipe_dimension_candidate_entities(&linear_candidates),
                     parameter: Some(parameter_id),
                     operands: records
                         .into_iter()
@@ -3028,7 +3032,8 @@ pub fn project_dimension_constraints(
                             native_ref: Some(record.id.clone()),
                         })
                         .collect(),
-                });
+                },
+            };
             Some(SketchConstraint {
                 id: neutral_dimension_constraint_id(
                     &companion.id,
@@ -3485,12 +3490,12 @@ fn directional_point_dimension(
     }
 }
 
-fn unique_recipe_linear_dimension(
+fn recipe_linear_dimension_candidates(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     evaluated_mm: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Vec<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     let sketch_entities = entities
         .iter()
         .filter(|entity| &entity.sketch == sketch)
@@ -3537,7 +3542,40 @@ fn unique_recipe_linear_dimension(
             }
         }
     }
-    (candidates.len() == 1).then(|| candidates.remove(0))
+    candidates
+}
+
+fn recipe_dimension_candidate_entities(
+    candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinition],
+) -> Vec<cadmpeg_ir::sketches::SketchEntityId> {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
+
+    let mut entities = Vec::new();
+    let locus_entity = |locus: &SketchLocus| match locus {
+        SketchLocus::Entity(entity)
+        | SketchLocus::Start(entity)
+        | SketchLocus::End(entity)
+        | SketchLocus::Center(entity) => entity.clone(),
+    };
+    for candidate in candidates {
+        let candidate_entities = match candidate {
+            Definition::Distance {
+                entities: candidate_entities,
+                ..
+            } => candidate_entities.clone(),
+            Definition::HorizontalDistance { first, second, .. }
+            | Definition::VerticalDistance { first, second, .. } => {
+                vec![locus_entity(first), locus_entity(second)]
+            }
+            _ => Vec::new(),
+        };
+        for entity in candidate_entities {
+            if !entities.contains(&entity) {
+                entities.push(entity);
+            }
+        }
+    }
+    entities
 }
 
 fn parallel_line_separation(
@@ -12602,6 +12640,22 @@ mod relation_tests {
             program: vec![-1],
             matching_edge_operand_ids: Vec::new(),
         };
+        let sketch = neutral_sketch_id(&placement);
+        let line = |name: &str, start, end| SketchEntity {
+            id: SketchEntityId(name.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let entities = [
+            line("first", Point2::new(0.0, 0.0), Point2::new(4.0, 0.0)),
+            line("second", Point2::new(0.0, 2.0), Point2::new(4.0, 2.0)),
+            line("third", Point2::new(10.0, 0.0), Point2::new(10.0, 4.0)),
+            line("fourth", Point2::new(12.0, 0.0), Point2::new(12.0, 4.0)),
+        ];
         let constraints = project_dimension_constraints(
             &[placement],
             &[parameter],
@@ -12613,12 +12667,13 @@ mod relation_tests {
             &[recipe(1, 31), recipe(0, 30)],
             &[],
             &[],
-            &[],
+            &entities,
         );
         let [constraint] = constraints.as_slice() else {
             panic!("expected one recipe-backed dimension")
         };
         let SketchConstraintDefinition::Native {
+            entities,
             operands,
             parameter,
             ..
@@ -12627,6 +12682,15 @@ mod relation_tests {
             panic!("expected native recipe-backed dimension")
         };
         assert!(parameter.is_some());
+        assert_eq!(
+            entities,
+            &[
+                SketchEntityId("first".into()),
+                SketchEntityId("second".into()),
+                SketchEntityId("third".into()),
+                SketchEntityId("fourth".into()),
+            ]
+        );
         assert_eq!(
             operands
                 .iter()
@@ -12657,21 +12721,29 @@ mod relation_tests {
             point("unrelated", 10.0, 10.0),
         ];
         assert!(matches!(
-            super::unique_recipe_linear_dimension(
+            super::recipe_linear_dimension_candidates(
                 &entities,
                 &sketch,
                 2.0,
                 &parameter,
-            ),
-            Some(SketchConstraintDefinition::VerticalDistance { first, second, parameter: actual })
-                if first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("first".into()))
-                    && second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("second".into()))
-                    && actual == parameter
+            ).as_slice(),
+            [SketchConstraintDefinition::VerticalDistance { first, second, parameter: actual }]
+                if *first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("first".into()))
+                    && *second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("second".into()))
+                    && *actual == parameter
         ));
         entities.push(point("ambiguous", 10.0, 8.0));
+        let candidates =
+            super::recipe_linear_dimension_candidates(&entities, &sketch, 2.0, &parameter);
+        assert_eq!(candidates.len(), 2);
         assert_eq!(
-            super::unique_recipe_linear_dimension(&entities, &sketch, 2.0, &parameter),
-            None
+            super::recipe_dimension_candidate_entities(&candidates),
+            [
+                SketchEntityId("first".into()),
+                SketchEntityId("second".into()),
+                SketchEntityId("unrelated".into()),
+                SketchEntityId("ambiguous".into()),
+            ]
         );
     }
 
@@ -12693,14 +12765,14 @@ mod relation_tests {
             line("unrelated", Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)),
         ];
         assert!(matches!(
-            super::unique_recipe_linear_dimension(
+            super::recipe_linear_dimension_candidates(
                 &entities,
                 &sketch,
                 2.0,
                 &cadmpeg_ir::features::ParameterId("parameter".into()),
-            ),
-            Some(SketchConstraintDefinition::Distance { entities, .. })
-                if entities == [SketchEntityId("first".into()), SketchEntityId("second".into())]
+            ).as_slice(),
+            [SketchConstraintDefinition::Distance { entities, .. }]
+                if entities.as_slice() == [SketchEntityId("first".into()), SketchEntityId("second".into())]
         ));
     }
 
