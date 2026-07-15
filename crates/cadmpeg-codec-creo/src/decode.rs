@@ -55,6 +55,7 @@ struct CreoSketchRecord {
     owner_feature_id: Option<u32>,
     source_section: String,
     section_3d: Option<CreoSketchSection3d>,
+    table_headers: Vec<CreoSketchTableHeader>,
     variables: Vec<CreoSketchVariable>,
     segments: Vec<CreoSketchSegment>,
     trim_entities: Vec<CreoSketchTrimEntity>,
@@ -65,6 +66,15 @@ struct CreoSketchRecord {
     relations: Vec<CreoSketchRelation>,
     skamps: Vec<CreoSketchSkamp>,
     relation_triples: Vec<CreoSketchRelationTriple>,
+}
+
+#[derive(Serialize)]
+struct CreoSketchTableHeader {
+    kind: &'static str,
+    declared_count: Option<u32>,
+    entity_ref: Option<u32>,
+    row_count: usize,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -2053,6 +2063,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     dimension_ids: section.dimension_ids.clone(),
                     offset: section.offset,
                 }),
+            table_headers: sketch_table_headers(definition),
             variables: definition
                 .variables
                 .iter()
@@ -2224,6 +2235,83 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .collect(),
         })
         .collect()
+}
+
+fn sketch_table_headers(
+    definition: &crate::feature::FeatureDefinition,
+) -> Vec<CreoSketchTableHeader> {
+    let mut headers = Vec::new();
+    let mut push = |kind, declared_count, entity_ref, row_count, offset| {
+        headers.push(CreoSketchTableHeader {
+            kind,
+            declared_count,
+            entity_ref,
+            row_count,
+            offset,
+        });
+    };
+    if let Some(table) = &definition.variables {
+        push(
+            "variables",
+            Some(table.declared_count),
+            table.entity_ref,
+            table.rows.len(),
+            table.offset,
+        );
+    }
+    if let Some(table) = &definition.segments {
+        push(
+            "segments",
+            Some(table.declared_count),
+            table.entity_ref,
+            table.rows.len(),
+            table.offset,
+        );
+    }
+    if let Some(table) = &definition.trim_entities {
+        push("trim_entities", None, None, table.rows.len(), table.offset);
+    }
+    if let Some(table) = &definition.trim_vertices {
+        push("trim_vertices", None, None, table.rows.len(), table.offset);
+    }
+    if let Some(table) = &definition.order_table {
+        push(
+            "order",
+            Some(table.declared_count),
+            table.entity_ref,
+            table.rows.len(),
+            table.offset,
+        );
+    }
+    if let Some(table) = &definition.dimensions {
+        push(
+            "dimensions",
+            Some(table.declared_count),
+            table.entity_ref,
+            table.rows.len(),
+            table.offset,
+        );
+    }
+    if let Some(table) = &definition.relations {
+        push(
+            "relations",
+            Some(table.declared_count),
+            table.entity_ref,
+            table.rows.len(),
+            table.offset,
+        );
+    }
+    if let Some(table) = &definition.saved_section {
+        push(
+            "saved_entities",
+            None,
+            None,
+            table.entities.len(),
+            table.offset,
+        );
+    }
+    headers.sort_by_key(|header| header.offset);
+    headers
 }
 
 fn binary_flag_value(flag: crate::feature::BinaryFlag) -> bool {

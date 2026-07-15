@@ -2064,6 +2064,14 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(sketches[0].id, "creo:featdefs:sketch#40");
     assert_eq!(sketches[0].fields["definition_id"], 40);
     assert!(sketches[0].fields["owner_feature_id"].is_null());
+    let headers = sketches[0].fields["table_headers"]
+        .as_array()
+        .expect("table headers");
+    assert_eq!(headers.len(), 1);
+    assert_eq!(headers[0]["kind"], "variables");
+    assert_eq!(headers[0]["declared_count"], 2);
+    assert_eq!(headers[0]["entity_ref"], 1);
+    assert_eq!(headers[0]["row_count"], 2);
     let variables = sketches[0].fields["variables"]
         .as_array()
         .expect("variables array");
