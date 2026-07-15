@@ -2270,6 +2270,7 @@ fn feature_extents_round_trip_through_json() {
     use crate::ids::FaceId;
 
     let extents = vec![
+        Extent::Unresolved,
         Extent::Blind {
             length: Length(12.5),
         },

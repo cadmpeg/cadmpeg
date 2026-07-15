@@ -4629,7 +4629,8 @@ pub fn sync_neutral_features(
                             feature.id
                         )));
                     }
-                    Extent::Angle { .. }
+                    Extent::Unresolved
+                    | Extent::Angle { .. }
                     | Extent::SymmetricAngle { .. }
                     | Extent::TwoSidedAngles { .. } => {
                         return Err(CodecError::NotImplemented(format!(

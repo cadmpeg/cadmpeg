@@ -392,6 +392,27 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
 }
 
 #[test]
+fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, ProfileRef};
+
+    assert_eq!(
+        crate::decode::extrude_feature_definition(Some("nx:profile#1"), None),
+        Some(FeatureDefinition::Extrude {
+            profile: ProfileRef::Native("nx:profile#1".to_string()),
+            direction: None,
+            extent: Extent::Unresolved,
+            op: BooleanOp::Unresolved,
+            draft: None,
+        })
+    );
+    assert!(crate::decode::extrude_feature_definition(None, None).is_none());
+    assert!(
+        crate::decode::extrude_feature_definition(Some("nx:profile#1"), Some("nx:profile#2"))
+            .is_none()
+    );
+}
+
+#[test]
 fn nx_block_source_content_includes_complete_ordered_dimension_run() {
     use cadmpeg_ir::features::{FeatureSourceContent, ParameterId};
 

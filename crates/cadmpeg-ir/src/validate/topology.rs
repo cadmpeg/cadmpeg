@@ -2060,7 +2060,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 Extent::TwoSidedAngles { first, second } => {
                     first.0.is_finite() && first.0 > 0.0 && second.0.is_finite() && second.0 > 0.0
                 }
-                Extent::ThroughAll | Extent::ToFace { .. } => true,
+                Extent::Unresolved | Extent::ThroughAll | Extent::ToFace { .. } => true,
             };
             if !valid_magnitude {
                 findings.push(Finding {

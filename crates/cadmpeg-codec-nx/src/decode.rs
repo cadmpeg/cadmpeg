@@ -21,9 +21,9 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::features::{
     Angle, BodySelection, BodyTrimSide, BooleanOp, ConfigurationId, DesignConfiguration,
-    DesignParameter, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
+    DesignParameter, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
     FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind, Length, ParameterId,
-    ParameterValue, RadiusForm, RadiusSpec, SketchSpace,
+    ParameterValue, ProfileRef, RadiusForm, RadiusSpec, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -7673,6 +7673,18 @@ fn attach_feature_operations(
                 );
             }
         }
+        let extrude_projection = (label.value == "EXTRUDE")
+            .then(|| {
+                extrude_feature_definition(
+                    extrude_construction_profiles_by_operation
+                        .get(label.id.as_str())
+                        .map(|profile| profile.id.as_str()),
+                    extrude_32_constructions_by_operation
+                        .get(label.id.as_str())
+                        .map(|construction| construction.id.as_str()),
+                )
+            })
+            .flatten();
         let operation_parameter_uses = parameter_uses_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
@@ -7681,6 +7693,7 @@ fn attach_feature_operations(
             || {
                 trim_body_projection
                     .or(sew_projection)
+                    .or(extrude_projection)
                     .or_else(|| blend_projection.map(|(definition, _)| definition))
                     .or_else(|| offset_projection.map(|(definition, _)| definition))
                     .unwrap_or_else(|| {
@@ -7751,6 +7764,26 @@ fn attach_feature_operations(
             last_body_writer.insert(canonical_body(*body), id);
         }
     }
+}
+
+pub(crate) fn extrude_feature_definition(
+    construction_profile: Option<&str>,
+    structured_construction: Option<&str>,
+) -> Option<FeatureDefinition> {
+    let constructions = [construction_profile, structured_construction]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let [construction] = constructions.as_slice() else {
+        return None;
+    };
+    Some(FeatureDefinition::Extrude {
+        profile: ProfileRef::Native((*construction).to_string()),
+        direction: None,
+        extent: Extent::Unresolved,
+        op: BooleanOp::Unresolved,
+        draft: None,
+    })
 }
 
 pub(crate) fn blend_feature_definition(
