@@ -396,7 +396,9 @@ pub fn project_parameter_design(
                             })
                             .map_or_else(
                                 || EdgeSelection::Native(assignment.id.clone()),
-                                |group| resolved_edge_group(group, edge_operands),
+                                |group| {
+                                    resolved_edge_group(group, construction_groups, edge_operands)
+                                },
                             );
                         FilletGroup {
                             edges,
@@ -882,7 +884,7 @@ fn project_chamfer(
             let edge_group = edge_groups.get(index).copied();
             ChamferGroup {
                 edges: match edge_group {
-                    Some(group) => resolved_edge_group(group, edge_operands),
+                    Some(group) => resolved_edge_group(group, construction_groups, edge_operands),
                     None => EdgeSelection::Native(scope.id.clone()),
                 },
                 spec: spec
@@ -896,6 +898,7 @@ fn project_chamfer(
 
 fn resolved_edge_group(
     group: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
 ) -> cadmpeg_ir::features::EdgeSelection {
     use cadmpeg_ir::features::EdgeSelection;
@@ -935,7 +938,8 @@ fn resolved_edge_group(
                     .map(|operand| operand.deleted_boundary_edge_slots.as_slice()),
                 matched_operands.len(),
             )
-        });
+        })
+        .or_else(|| scope_partition_edge_group_candidates(group, groups, operands));
     let Some(resolved_slots) = resolved_slots else {
         return EdgeSelection::Native(group.id.clone());
     };
@@ -954,6 +958,118 @@ fn resolved_edge_group(
             native: group.id.clone(),
         }
     }
+}
+
+fn scope_partition_edge_group_candidates(
+    target: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignEdgeOperand],
+) -> Option<Vec<i64>> {
+    let stream = native_stream(&target.id)?;
+    let mut scope_groups = Vec::new();
+    let mut target_ordinal = None;
+    for group in groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == target.scope_record_index
+            && group.lost_edge_references.is_empty()
+            && !group.members.is_empty()
+    }) {
+        let mut members = Vec::with_capacity(group.members.len());
+        let mut complete = true;
+        for member in &group.members {
+            let matches = operands
+                .iter()
+                .filter(|operand| {
+                    native_stream(&operand.id) == Some(stream)
+                        && operand.scope_record_index == group.scope_record_index
+                        && operand.record_index == *member
+                })
+                .collect::<Vec<_>>();
+            let [operand] = matches.as_slice() else {
+                complete = false;
+                break;
+            };
+            members.push((
+                operand.record_index,
+                resolved_edge_operand(operand),
+                operand.deleted_boundary_edge_slots.clone(),
+            ));
+        }
+        if !complete {
+            continue;
+        }
+        if group.id == target.id {
+            target_ordinal = Some(scope_groups.len());
+        }
+        scope_groups.push(members);
+    }
+    partition_unique_incomplete_edge_group(target_ordinal?, &scope_groups)
+}
+
+fn partition_unique_incomplete_edge_group(
+    target_ordinal: usize,
+    groups: &[Vec<(u32, Option<i64>, Vec<i64>)>],
+) -> Option<Vec<i64>> {
+    if groups.len() < 2 || target_ordinal >= groups.len() {
+        return None;
+    }
+    let mut identities = HashSet::new();
+    let mut universe = None::<Vec<i64>>;
+    for (identity, _, deleted) in groups.iter().flatten() {
+        if !identities.insert(*identity) {
+            return None;
+        }
+        let mut deleted = deleted.clone();
+        deleted.sort_unstable();
+        deleted.dedup();
+        if deleted.is_empty()
+            || universe
+                .as_ref()
+                .is_some_and(|universe| *universe != deleted)
+        {
+            return None;
+        }
+        universe.get_or_insert(deleted);
+    }
+    let universe = universe?;
+    if identities.len() != universe.len() {
+        return None;
+    }
+    let incomplete = groups
+        .iter()
+        .enumerate()
+        .filter(|(_, group)| group.iter().any(|(_, resolved, _)| resolved.is_none()))
+        .map(|(ordinal, _)| ordinal)
+        .collect::<Vec<_>>();
+    if incomplete.as_slice() != [target_ordinal] {
+        return None;
+    }
+    let mut reserved = Vec::new();
+    for (ordinal, group) in groups.iter().enumerate() {
+        if ordinal == target_ordinal {
+            continue;
+        }
+        for (_, resolved, _) in group {
+            let resolved = resolved.as_ref()?;
+            if !universe.contains(resolved) || reserved.contains(resolved) {
+                return None;
+            }
+            reserved.push(*resolved);
+        }
+    }
+    let target = universe
+        .into_iter()
+        .filter(|candidate| !reserved.contains(candidate))
+        .collect::<Vec<_>>();
+    if target.len() != groups[target_ordinal].len()
+        || groups[target_ordinal]
+            .iter()
+            .filter_map(|(_, resolved, _)| *resolved)
+            .any(|resolved| !target.contains(&resolved))
+    {
+        return None;
+    }
+    Some(target)
 }
 
 fn common_deleted_edge_group_candidates<'a>(
@@ -14684,6 +14800,34 @@ mod relation_tests {
         );
         assert_eq!(
             super::common_deleted_edge_group_candidates(std::iter::empty::<&[i64]>(), 0),
+            None
+        );
+        let deleted = vec![17, 18, 19, 20];
+        let groups = vec![
+            vec![
+                (10, Some(17), deleted.clone()),
+                (11, Some(19), deleted.clone()),
+            ],
+            vec![(12, None, deleted.clone()), (13, None, deleted.clone())],
+        ];
+        assert_eq!(
+            super::partition_unique_incomplete_edge_group(1, &groups),
+            Some(vec![18, 20])
+        );
+        assert_eq!(
+            super::partition_unique_incomplete_edge_group(0, &groups),
+            None
+        );
+        let mut two_incomplete = groups.clone();
+        two_incomplete[0][0].1 = None;
+        assert_eq!(
+            super::partition_unique_incomplete_edge_group(1, &two_incomplete),
+            None
+        );
+        let mut duplicate_identity = groups;
+        duplicate_identity[1][0].0 = 11;
+        assert_eq!(
+            super::partition_unique_incomplete_edge_group(1, &duplicate_identity),
             None
         );
     }
