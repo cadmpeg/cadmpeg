@@ -886,6 +886,7 @@ struct IncidenceComponentSearch<'a> {
     assignment: Vec<Option<[usize; 2]>>,
     degrees: Vec<Vec<u8>>,
     solutions: Vec<Vec<(usize, [usize; 2])>>,
+    dead_states: HashSet<Vec<Option<[usize; 2]>>>,
     states: usize,
     exhausted: bool,
 }
@@ -922,6 +923,19 @@ impl IncidenceComponentSearch<'_> {
     }
 
     fn branch_options(&self) -> Option<Vec<(usize, [usize; 2])>> {
+        for &edge in self.edges {
+            if self.assignment[edge].is_some() {
+                continue;
+            }
+            let mut viable = self.choices[edge]
+                .iter()
+                .copied()
+                .filter(|pair| self.candidate_fits(edge, *pair));
+            let pair = viable.next()?;
+            if viable.next().is_none() {
+                return Some(vec![(edge, pair)]);
+            }
+        }
         let mut constrained = None::<Vec<(usize, [usize; 2])>>;
         for &(face, point) in &self.constraints {
             if self.degrees[face][point] != 1 {
@@ -979,6 +993,25 @@ impl IncidenceComponentSearch<'_> {
     }
 
     fn search(&mut self) {
+        if self.exhausted {
+            return;
+        }
+        let state = self
+            .edges
+            .iter()
+            .map(|&edge| self.assignment[edge])
+            .collect::<Vec<_>>();
+        if self.dead_states.contains(&state) {
+            return;
+        }
+        let solutions_before = self.solutions.len();
+        self.search_state();
+        if !self.exhausted && self.solutions.len() == solutions_before {
+            self.dead_states.insert(state);
+        }
+    }
+
+    fn search_state(&mut self) {
         const MAX_STATES: usize = 4_096;
         const MAX_SOLUTIONS: usize = 256;
         if self.exhausted {
@@ -1087,6 +1120,7 @@ fn component_incidence_pair_solutions(
             assignment: fixed.clone(),
             degrees: degrees.clone(),
             solutions: Vec::new(),
+            dead_states: HashSet::new(),
             states: 0,
             exhausted: false,
         };
