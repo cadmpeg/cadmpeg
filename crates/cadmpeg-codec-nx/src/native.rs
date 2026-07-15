@@ -1644,6 +1644,25 @@ pub struct FeatureSketchPointUse {
     pub source_offsets: Vec<u64>,
 }
 
+/// Exact ordered dependency from a sketch point to a datum coordinate system.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSketchDatumCsysDependency {
+    /// Globally unique dependency identity.
+    pub id: String,
+    /// Earlier sketch operation owning the point identity.
+    pub sketch_operation_label: String,
+    /// Later datum-coordinate-system operation consuming the point block.
+    pub datum_csys_operation_label: String,
+    /// Exact sketch-point identity witnessing ownership.
+    pub sketch_point_use: String,
+    /// Exact datum-coordinate-system construction witnessing consumption.
+    pub datum_csys_construction: String,
+    /// Exact offset-store block shared by the point and construction.
+    pub shared_data_block: String,
+    /// Absolute source offset of the first sketch reference witnessing the point identity.
+    pub source_offset: u64,
+}
+
 /// Ordered object reference carried by a bounded sketch-operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchReference {
@@ -4195,6 +4214,74 @@ pub fn feature_sketch_point_uses(
         });
     }
     uses
+}
+
+/// Join one uniquely sketch-owned named-point block to a later datum-CSYS construction.
+pub fn feature_sketch_datum_csys_dependencies(
+    labels: &[FeatureOperationLabel],
+    named_points: &[OffsetStoreNamedPoint],
+    point_uses: &[FeatureSketchPointUse],
+    constructions: &[FeatureDatumCsysConstruction],
+) -> Vec<FeatureSketchDatumCsysDependency> {
+    let positions = labels
+        .iter()
+        .enumerate()
+        .map(|(position, label)| (label.id.as_str(), position))
+        .collect::<BTreeMap<_, _>>();
+    let points = named_points
+        .iter()
+        .map(|point| (point.id.as_str(), point))
+        .collect::<BTreeMap<_, _>>();
+    let mut dependencies = Vec::new();
+    for construction in constructions {
+        let Some(consumer_position) = positions.get(construction.operation_label.as_str()) else {
+            continue;
+        };
+        let mut candidates = Vec::new();
+        for point_use in point_uses {
+            let Some(producer_position) = positions.get(point_use.operation_label.as_str()) else {
+                continue;
+            };
+            if producer_position >= consumer_position {
+                continue;
+            }
+            let Some(point) = points.get(point_use.named_point.as_str()) else {
+                continue;
+            };
+            for shared_block in construction
+                .data_blocks
+                .iter()
+                .filter(|block| point.data_blocks.contains(block))
+            {
+                candidates.push((point_use, shared_block));
+            }
+        }
+        candidates.sort_by(|(left_use, left_block), (right_use, right_block)| {
+            (left_use.id.as_str(), left_block.as_str())
+                .cmp(&(right_use.id.as_str(), right_block.as_str()))
+        });
+        candidates.dedup_by(|(left_use, left_block), (right_use, right_block)| {
+            left_use.id == right_use.id && left_block == right_block
+        });
+        let [(point_use, shared_block)] = candidates.as_slice() else {
+            continue;
+        };
+        dependencies.push(FeatureSketchDatumCsysDependency {
+            id: construction.id.replacen(
+                "datum-csys-construction",
+                "sketch-datum-csys-dependency",
+                1,
+            ),
+            sketch_operation_label: point_use.operation_label.clone(),
+            datum_csys_operation_label: construction.operation_label.clone(),
+            sketch_point_use: point_use.id.clone(),
+            datum_csys_construction: construction.id.clone(),
+            shared_data_block: (*shared_block).clone(),
+            source_offset: point_use.source_offsets[0],
+        });
+    }
+    dependencies.sort_by(|left, right| left.id.cmp(&right.id));
+    dependencies
 }
 
 pub(crate) fn parse_sketch_point_name(value: &str) -> Option<u32> {

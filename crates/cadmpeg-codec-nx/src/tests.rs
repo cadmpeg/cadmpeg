@@ -2220,23 +2220,19 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         source_offsets: [400; 8],
     };
 
-    let dependencies = crate::decode::sketch_datum_csys_dependencies(
+    let dependencies = crate::native::feature_sketch_datum_csys_dependencies(
         &labels,
         std::slice::from_ref(&point),
         std::slice::from_ref(&point_use),
         std::slice::from_ref(&construction),
     );
-    assert_eq!(
-        dependencies.get("csys"),
-        Some(&(
-            "sketch".to_string(),
-            "point-use".to_string(),
-            "shared".to_string()
-        ))
-    );
+    assert_eq!(dependencies[0].datum_csys_operation_label, "csys");
+    assert_eq!(dependencies[0].sketch_operation_label, "sketch");
+    assert_eq!(dependencies[0].sketch_point_use, "point-use");
+    assert_eq!(dependencies[0].shared_data_block, "shared");
 
     let reversed_labels = [label("csys", 0), label("sketch", 1)];
-    assert!(crate::decode::sketch_datum_csys_dependencies(
+    assert!(crate::native::feature_sketch_datum_csys_dependencies(
         &reversed_labels,
         &[point],
         &[point_use],
