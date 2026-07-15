@@ -5375,6 +5375,18 @@ fn revolved_section_circle(
     })
 }
 
+fn extruded_section_line(
+    transform: &crate::placement::FeatureSectionTransform,
+    point: [f64; 2],
+) -> Option<CurveGeometry> {
+    let direction = normalized(transform.normal)?;
+    let origin = section_point_in_model(transform, point);
+    Some(CurveGeometry::Line {
+        origin: Point3::new(origin[0], origin[1], origin[2]),
+        direction: Vector3::new(direction[0], direction[1], direction[2]),
+    })
+}
+
 fn transfer_feature_extrusion_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -5666,6 +5678,60 @@ fn sketch_geometry_endpoints(geometry: &SketchGeometry) -> Option<([f64; 2], [f6
         )),
         _ => None,
     }
+}
+
+fn closed_sketch_profile_vertices(ir: &CadIr, sketch_id: &SketchId) -> Vec<(usize, Vec<[f64; 2]>)> {
+    let Some(sketch) = ir
+        .model
+        .sketches
+        .iter()
+        .find(|sketch| sketch.id == *sketch_id)
+    else {
+        return Vec::new();
+    };
+    let entities = ir
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch_id)
+        .map(|entity| (entity.id.clone(), &entity.geometry))
+        .collect::<BTreeMap<_, _>>();
+    sketch
+        .profiles
+        .iter()
+        .enumerate()
+        .filter_map(|(profile_index, profile)| {
+            (profile.len() >= 2).then_some(())?;
+            let uses = profile
+                .iter()
+                .map(|entity_use| {
+                    let geometry = entities.get(&entity_use.entity)?;
+                    let (mut start, mut end) = sketch_geometry_endpoints(geometry)?;
+                    if entity_use.reversed {
+                        std::mem::swap(&mut start, &mut end);
+                    }
+                    Some((start, end))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let scale = uses
+                .iter()
+                .flat_map(|(start, end)| start.iter().chain(end))
+                .map(|coordinate| coordinate.abs())
+                .fold(1.0, f64::max);
+            uses.iter()
+                .enumerate()
+                .all(|(index, (_, end))| {
+                    let next = uses[(index + 1) % uses.len()].0;
+                    (end[0] - next[0]).hypot(end[1] - next[1]) <= 1e-9 * scale
+                })
+                .then(|| {
+                    (
+                        profile_index,
+                        uses.into_iter().map(|(start, _)| start).collect(),
+                    )
+                })
+        })
+        .collect()
 }
 
 fn oriented_arc_parameterization(reversed: bool, start: f64, end: f64) -> (f64, [f64; 2]) {
@@ -8601,51 +8667,8 @@ fn transfer_resolved_revolution_vertex_orbit_curves(
             continue;
         };
         let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
-        let Some(sketch) = ir
-            .model
-            .sketches
-            .iter()
-            .find(|sketch| sketch.id == sketch_id)
-        else {
-            continue;
-        };
-        let entities = ir
-            .model
-            .sketch_entities
-            .iter()
-            .filter(|entity| entity.sketch == sketch_id)
-            .map(|entity| (entity.id.clone(), &entity.geometry))
-            .collect::<BTreeMap<_, _>>();
-        for (profile_index, profile) in sketch.profiles.iter().enumerate() {
-            if profile.len() < 2 {
-                continue;
-            }
-            let uses = profile
-                .iter()
-                .map(|entity_use| {
-                    let geometry = entities.get(&entity_use.entity)?;
-                    let (mut start, mut end) = sketch_geometry_endpoints(geometry)?;
-                    if entity_use.reversed {
-                        std::mem::swap(&mut start, &mut end);
-                    }
-                    Some((start, end))
-                })
-                .collect::<Option<Vec<_>>>();
-            let Some(uses) = uses else {
-                continue;
-            };
-            let scale = uses
-                .iter()
-                .flat_map(|(start, end)| start.iter().chain(end))
-                .map(|coordinate| coordinate.abs())
-                .fold(1.0, f64::max);
-            if uses.iter().enumerate().any(|(index, (_, end))| {
-                let next = uses[(index + 1) % uses.len()].0;
-                (end[0] - next[0]).hypot(end[1] - next[1]) > 1e-9 * scale
-            }) {
-                continue;
-            }
-            for (vertex_index, (point, _)) in uses.iter().enumerate() {
+        for (profile_index, vertices) in closed_sketch_profile_vertices(ir, &sketch_id) {
+            for (vertex_index, point) in vertices.iter().enumerate() {
                 let Some(geometry) = revolved_section_circle(transform, *point, axis) else {
                     continue;
                 };
@@ -8673,6 +8696,69 @@ fn transfer_resolved_revolution_vertex_orbit_curves(
             "FeatDefs",
             offset as u64,
             "evaluated_revolution_profile_vertex_orbit",
+            Exactness::Derived,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry,
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id,
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
+fn transfer_resolved_extrusion_vertex_orbit_curves(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut pending = Vec::new();
+    for transform in &scan.feature_section_transforms {
+        let Some(feature_id) = transform.feature_id else {
+            continue;
+        };
+        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Extrude) {
+            continue;
+        }
+        let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
+        for (profile_index, vertices) in closed_sketch_profile_vertices(ir, &sketch_id) {
+            for (vertex_index, point) in vertices.iter().enumerate() {
+                let Some(geometry) = extruded_section_line(transform, *point) else {
+                    continue;
+                };
+                pending.push((
+                    CurveId(format!(
+                        "creo:feature:extrusion_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
+                    )),
+                    geometry,
+                    transform.offset,
+                    format!(
+                        "FeatDefs:extrusion#{feature_id}:profile{profile_index}:vertex{vertex_index}"
+                    ),
+                ));
+            }
+        }
+    }
+    let mut transferred = 0;
+    for (id, geometry, offset, object_id) in pending {
+        if ir.model.curves.iter().any(|curve| curve.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "FeatDefs",
+            offset as u64,
+            "evaluated_extrusion_profile_vertex_orbit",
             Exactness::Derived,
         );
         ir.model.curves.push(Curve {
@@ -10646,6 +10732,12 @@ mod resolved_sketch_tests {
                 && radius == 2.0
         ));
         assert!(revolved_section_circle(&transform, [0.0, 3.0], axis).is_none());
+        assert!(matches!(
+            extruded_section_line(&transform, [2.0, 3.0]),
+            Some(CurveGeometry::Line { origin, direction })
+                if origin == Point3::new(2.0, 3.0, 0.0)
+                    && direction == Vector3::new(0.0, 0.0, 1.0)
+        ));
 
         assert!(matches!(
             revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), axis),
@@ -17363,6 +17455,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         transfer_resolved_revolution_vertex_orbit_curves(scan, &mut ir, &mut annotations);
     let feature_extrusion_surface_count =
         transfer_feature_extrusion_surfaces(scan, &mut ir, &mut annotations);
+    let feature_extrusion_vertex_orbit_curve_count =
+        transfer_resolved_extrusion_vertex_orbit_curves(scan, &mut ir, &mut annotations);
     let circular_sweep_cylinder_count =
         transfer_circular_sweep_cylinders(scan, &mut ir, &mut annotations);
     let single_cap_circular_sweep_cylinder_count =
@@ -17406,6 +17500,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         source.attributes.insert(
             "transferred_feature_extrusion_surface_count".to_string(),
             feature_extrusion_surface_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_feature_extrusion_vertex_orbit_curve_count".to_string(),
+            feature_extrusion_vertex_orbit_curve_count.to_string(),
         );
         source.attributes.insert(
             "transferred_circular_sweep_cylinder_count".to_string(),
