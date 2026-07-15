@@ -1406,7 +1406,7 @@ fn decode_types_named_mirror_with_unresolved_operands() {
     assert_eq!(
         feature
             .source_properties
-            .get("mdl_status_prefix")
+            .get("mdl_stored_name_prefix")
             .map(String::as_str),
         Some("o")
     );
@@ -1434,7 +1434,7 @@ fn decode_types_z_prefixed_round_with_unresolved_operands() {
     assert_eq!(
         feature
             .source_properties
-            .get("mdl_status_prefix")
+            .get("mdl_stored_name_prefix")
             .map(String::as_str),
         Some("z")
     );
@@ -4314,9 +4314,9 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     assert_eq!(scan.feature_operations[3].kind, "Draft");
     assert_eq!(scan.feature_operations[4].feature_id, 40);
     assert_eq!(scan.feature_operations[4].kind, "Hole");
-    assert_eq!(scan.feature_operations[4].status_prefix, None);
+    assert_eq!(scan.feature_operations[4].stored_name_prefix, None);
     assert_eq!(scan.feature_operations[5].kind, "Surface");
-    assert_eq!(scan.feature_operations[5].status_prefix, Some(b'y'));
+    assert_eq!(scan.feature_operations[5].stored_name_prefix, Some(b'y'));
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let states = &result.ir.native.namespace("creo").unwrap().arenas["feature_operation_states"];
@@ -4379,7 +4379,7 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
             .find(|feature| feature.id.as_str() == "creo:model:feature#45")
             .expect("state-prefixed feature")
             .source_properties
-            .get("mdl_status_prefix")
+            .get("mdl_stored_name_prefix")
             .map(String::as_str),
         Some("y")
     );

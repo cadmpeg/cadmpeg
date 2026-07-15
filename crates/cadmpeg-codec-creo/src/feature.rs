@@ -93,8 +93,8 @@ pub struct FeatureOperation {
     pub stored_name_bytes: Option<Vec<u8>>,
     /// Stored identifier keyword, preserving `id` versus `ID`.
     pub identifier_keyword: Option<String>,
-    /// Optional one-byte state prefix immediately preceding the family name.
-    pub status_prefix: Option<u8>,
+    /// Optional stored-name byte immediately preceding the family name.
+    pub stored_name_prefix: Option<u8>,
     /// Procedural recipe name stored in the same current-state record.
     pub recipe: Option<FeatureRecipe>,
     /// Root feature-definition schema class from a DEPDB recipe prefix.
@@ -103,7 +103,7 @@ pub struct FeatureOperation {
     pub parent_feature_id: Option<u32>,
     /// Byte offset of the operation name in the original stream.
     pub offset: usize,
-    /// Byte offset including the optional state prefix.
+    /// Byte offset including the optional stored-name prefix.
     pub state_offset: usize,
 }
 
@@ -195,7 +195,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
         if family.is_empty() || family.first() == Some(&b' ') || family.last() == Some(&b' ') {
             continue;
         }
-        let (status_prefix, family) = match family {
+        let (stored_name_prefix, family) = match family {
             [prefix @ (b'o' | b'x' | b'y' | b'z'), first, ..] if first.is_ascii_uppercase() => {
                 offset += 1;
                 (Some(*prefix), &family[1..])
@@ -243,7 +243,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
                 String::from_utf8_lossy(&separator_bytes[1..separator_bytes.len() - 1])
                     .into_owned(),
             ),
-            status_prefix,
+            stored_name_prefix,
             recipe,
             root_schema_class: bound_recipe.map(|binding| binding.root_schema_class),
             parent_feature_id: bound_recipe.map(|binding| binding.parent_feature_id),
@@ -269,7 +269,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             stored_name: None,
             stored_name_bytes: None,
             identifier_keyword: None,
-            status_prefix: None,
+            stored_name_prefix: None,
             recipe: Some(binding.recipe),
             root_schema_class: Some(binding.root_schema_class),
             parent_feature_id: Some(binding.parent_feature_id),
@@ -5695,7 +5695,7 @@ mod tests {
             stored_name: None,
             stored_name_bytes: None,
             identifier_keyword: None,
-            status_prefix: None,
+            stored_name_prefix: None,
             recipe,
             root_schema_class: None,
             parent_feature_id: None,

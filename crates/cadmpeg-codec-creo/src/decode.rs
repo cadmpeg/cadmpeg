@@ -319,7 +319,7 @@ struct CreoFeatureOperationState {
     stored_name: Option<String>,
     stored_name_bytes: Option<Vec<u8>>,
     identifier_keyword: Option<String>,
-    status_prefix: Option<String>,
+    stored_name_prefix: Option<String>,
     recipe: Option<&'static str>,
     root_schema_class: Option<u32>,
     parent_feature_id: Option<u32>,
@@ -1922,8 +1922,8 @@ fn feature_operation_state_records(scan: &ContainerScan) -> Vec<CreoFeatureOpera
                 stored_name: state.stored_name.clone(),
                 stored_name_bytes: state.stored_name_bytes.clone(),
                 identifier_keyword: state.identifier_keyword.clone(),
-                status_prefix: state
-                    .status_prefix
+                stored_name_prefix: state
+                    .stored_name_prefix
                     .map(|prefix| char::from(prefix).to_string()),
                 recipe: state.recipe.map(crate::feature::FeatureRecipe::name),
                 root_schema_class: state.root_schema_class,
@@ -16744,9 +16744,9 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let id = IrFeatureId(format!("creo:model:feature#{}", operation.feature_id));
         let outputs = feature_output_bodies(scan, &ir, operation.feature_id);
         let mut source_properties = feature_source_properties(scan, operation.feature_id);
-        if let Some(prefix) = operation.status_prefix {
+        if let Some(prefix) = operation.stored_name_prefix {
             source_properties.insert(
-                "mdl_status_prefix".to_string(),
+                "mdl_stored_name_prefix".to_string(),
                 char::from(prefix).to_string(),
             );
         }

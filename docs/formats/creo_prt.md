@@ -807,8 +807,8 @@ operation.
 
 Operation names end in ` id <N>` or ` ID <N>`; the stored case follows the
 name's localization. An ASCII `o`, `x`, `y`, or `z` byte immediately preceding
-an uppercase operation-family name is a state prefix, not part of the family
-name. Multiple operation names with the same feature identifier are ordered
+an uppercase operation-family name is a stored-name prefix, not part of the
+family name and not a current-state selector. Multiple operation names with the same feature identifier are ordered
 stored states; the last occurrence is the current state. Decoding the current
 state does not discard the preceding state records. State ordinals are local to
 one feature identifier and increase in byte order from zero. A stored state

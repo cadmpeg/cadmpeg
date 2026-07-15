@@ -45,7 +45,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - The byte-backed relation that assigns shells to body identifiers when face-adjacency components and body-count fields disagree is unspecified.
 - Face-instance bindings for `element_colors`, `NeuPrtSld`, and display-table elements are unspecified.
 - The remaining RGB and component scalar lanes used by appearance records are unspecified.
-- The suppression and deletion meanings of `MdlStatus` `o`, `x`, `y`, and `z` state prefixes are unspecified.
+- The remaining stored-name meanings of `MdlStatus` `o`, `x`, `y`, and `z`
+  prefixes are unspecified. They do not select the current same-ID state.
 
 ## Packed persistence data
 
