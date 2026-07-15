@@ -8113,12 +8113,7 @@ fn typed_marker_relation_definition_in_sketch(
             if sketch_entities.is_empty() {
                 return Some(native());
             }
-            let Some(loci) = marker
-                .links
-                .iter()
-                .map(|link| marker_point_locus(&link.entity_ref, markers_by_id, loci_by_marker))
-                .collect::<Option<Vec<_>>>()
-            else {
+            let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
                 return Some(native());
             };
             let mut point = None;
@@ -8169,12 +8164,7 @@ fn typed_marker_relation_definition_in_sketch(
             if sketch_entities.is_empty() {
                 return Some(native());
             }
-            let Some(loci) = marker
-                .links
-                .iter()
-                .map(|link| marker_point_locus(&link.entity_ref, markers_by_id, loci_by_marker))
-                .collect::<Option<Vec<_>>>()
-            else {
+            let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
                 return Some(native());
             };
             let mut axis = None;
@@ -8719,6 +8709,27 @@ fn linked_single_loci(
         }
     }
     Some(result)
+}
+
+fn relation_operand_loci(
+    relation: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<Vec<SketchLocus>> {
+    let owners = relation_owner_markers(relation, markers_by_id);
+    let loci = relation
+        .links
+        .iter()
+        .map(|link| link.entity_ref.as_str())
+        .chain(owners.iter().map(|owner| owner.id.as_str()))
+        .map(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker))
+        .collect::<Option<Vec<_>>>()?;
+    Some(loci.into_iter().fold(Vec::new(), |mut unique, locus| {
+        if !unique.contains(&locus) {
+            unique.push(locus);
+        }
+        unique
+    }))
 }
 
 fn linked_single_entities(
@@ -11856,7 +11867,7 @@ mod profile_join_tests {
                 end: Point2::new(0.0, 3.0),
             },
         );
-        let first_marker = marker("first-marker", None);
+        let mut first_marker = marker("first-marker", None);
         let second_marker = marker("second-marker", None);
         let mut line_marker = marker("line-marker", None);
         line_marker.kind = SketchInputKind::LineOrCircle;
@@ -11890,28 +11901,28 @@ mod profile_join_tests {
         }];
         let mut symmetric = marker("symmetric", None);
         symmetric.kind = SketchInputKind::Relation(SketchRelationKind::Symmetric);
-        symmetric.links = [
-            (&symmetric_first_marker, 5),
-            (&symmetric_second_marker, 6),
-            (&symmetry_axis_marker, 7),
-        ]
-        .map(|(marker, local_id)| SketchInputLink {
-            local_id,
-            entity_ref: marker.id.clone(),
-        })
-        .to_vec();
+        symmetric.links = [(&symmetric_first_marker, 5), (&symmetric_second_marker, 6)]
+            .map(|(marker, local_id)| SketchInputLink {
+                local_id,
+                entity_ref: marker.id.clone(),
+            })
+            .to_vec();
+        symmetry_axis_marker.links.push(SketchInputLink {
+            local_id: 7,
+            entity_ref: symmetric.id.clone(),
+        });
         let mut at_intersection = marker("at-intersection", None);
         at_intersection.kind = SketchInputKind::Relation(SketchRelationKind::AtIntersection);
-        at_intersection.links = [
-            (&first_marker, 8),
-            (&line_marker, 9),
-            (&symmetry_axis_marker, 10),
-        ]
-        .map(|(marker, local_id)| SketchInputLink {
-            local_id,
-            entity_ref: marker.id.clone(),
-        })
-        .to_vec();
+        at_intersection.links = [(&line_marker, 9), (&symmetry_axis_marker, 10)]
+            .map(|(marker, local_id)| SketchInputLink {
+                local_id,
+                entity_ref: marker.id.clone(),
+            })
+            .to_vec();
+        first_marker.links.push(SketchInputLink {
+            local_id: 8,
+            entity_ref: at_intersection.id.clone(),
+        });
         let markers = HashMap::from([
             (first_marker.id.as_str(), &first_marker),
             (second_marker.id.as_str(), &second_marker),
