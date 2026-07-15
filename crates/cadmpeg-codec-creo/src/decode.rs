@@ -6169,15 +6169,16 @@ fn transfer_resolved_sketches(
             .flat_map(|saved| &saved.entities)
             .filter_map(saved_section_entity_geometry)
         {
-            let Some(external_id) = definition
+            let external_id = definition
                 .order_table
                 .as_ref()
-                .and_then(|order| order.external_id(internal_id))
-            else {
-                continue;
-            };
+                .and_then(|order| order.external_id(internal_id));
+            let suffix = external_id.map_or_else(
+                || format!("saved{internal_id}"),
+                |external_id| external_id.to_string(),
+            );
             let entity_id = SketchEntityId(format!(
-                "creo:featdefs:sketch_entity#{}:{external_id}",
+                "creo:featdefs:sketch_entity#{}:{suffix}",
                 definition.id
             ));
             if entities.iter().any(|entity| entity.id == entity_id) {
@@ -6190,15 +6191,17 @@ fn transfer_resolved_sketches(
                 }
                 _ => continue,
             };
-            let generated = saved_entity_is_generated_profile(
-                definition.owner_feature_id,
-                external_id,
-                generated_kind,
-                &scan.feature_entity_tables,
-                &scan.surface_rows,
-            );
+            let generated = external_id.is_some_and(|external_id| {
+                saved_entity_is_generated_profile(
+                    definition.owner_feature_id,
+                    external_id,
+                    generated_kind,
+                    &scan.feature_entity_tables,
+                    &scan.surface_rows,
+                )
+            });
             let curve_id = CurveId(format!(
-                "creo:featdefs:section_curve#{}:{external_id}",
+                "creo:featdefs:section_curve#{}:{suffix}",
                 definition.id
             ));
             annotate(
@@ -6209,7 +6212,7 @@ fn transfer_resolved_sketches(
                 "saved_section_entity",
                 Exactness::Derived,
             );
-            if generated {
+            if let Some(external_id) = external_id.filter(|_| generated) {
                 generated_saved_geometries.push((external_id, geometry.clone()));
             }
             entities.push(SketchEntity {
@@ -6221,7 +6224,7 @@ fn transfer_resolved_sketches(
                 endpoint_refs: Vec::new(),
                 geometry: geometry.clone(),
             });
-            saved_section_geometries.push((external_id, geometry, offset, curve_id));
+            saved_section_geometries.push((internal_id, external_id, geometry, offset, curve_id));
         }
         for spline in definition
             .saved_section
@@ -6354,7 +6357,7 @@ fn transfer_resolved_sketches(
                 }),
             });
         }
-        for (external_id, section_geometry, offset, id) in saved_section_geometries {
+        for (internal_id, external_id, section_geometry, offset, id) in saved_section_geometries {
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
@@ -6374,7 +6377,10 @@ fn transfer_resolved_sketches(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: "creo".to_string(),
-                    object_id: format!("FeatDefs:section#{}:{external_id}", definition.id),
+                    object_id: external_id.map_or_else(
+                        || format!("FeatDefs:saved_entity#{internal_id}"),
+                        |external_id| format!("FeatDefs:section#{}:{external_id}", definition.id),
+                    ),
                     name: None,
                     color: None,
                     visible: None,

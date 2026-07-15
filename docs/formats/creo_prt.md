@@ -1110,6 +1110,10 @@ A saved entity identifier is an `order_table.int_id`; joining through that row's
 
 A saved line, arc, or circle with complete section-space geometry and an
 `order_table` join defines a neutral sketch entity under that row's `ext_id`.
+Without an `order_table` join, the saved entity retains its internal identifier
+and is a construction sketch entity. A complete model-space section frame maps
+that construction entity to a placed line or circle curve, but does not make it
+a profile member or a generated surface.
 Under a complete model-space section frame, saved line endpoints and saved arc
 or circle centers map through the section axes; saved arcs and circles define
 model-space circle carriers with the section normal and stored radius.
