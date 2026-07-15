@@ -1295,38 +1295,6 @@ fn radius_edge_group_candidates(operands: &[&DesignEdgeOperand], radius: f64) ->
         return None;
     }
     let tolerance = 1.0e-9 * (1.0 + radius.abs());
-    let candidate_sets = operands
-        .iter()
-        .map(|operand| {
-            if let Some(edge) = resolved_edge_operand(operand) {
-                return Some(Some(vec![edge]));
-            }
-            let mut candidates = operand
-                .treatment_radius_candidates
-                .iter()
-                .filter(|candidate| {
-                    (candidate.radius - radius).abs() <= tolerance
-                        && operand
-                            .deleted_boundary_edge_slots
-                            .contains(&candidate.edge_slot)
-                })
-                .map(|candidate| candidate.edge_slot)
-                .collect::<Vec<_>>();
-            candidates.sort_unstable();
-            candidates.dedup();
-            if candidates.is_empty() {
-                operand
-                    .changed_boundary_edge_slots
-                    .is_empty()
-                    .then_some(None)
-            } else {
-                Some(Some(candidates))
-            }
-        })
-        .collect::<Option<Vec<_>>>()?;
-    if let Some(assignment) = unique_edge_assignment_with_context(&candidate_sets) {
-        return Some(assignment);
-    }
     let mut chain = Vec::new();
     for operand in operands {
         let resolved = resolved_edge_operand(operand);

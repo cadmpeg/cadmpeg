@@ -737,7 +737,7 @@ On a body, `generic_tag_attrib_def` supplies a design/construction ID distinct f
 
 #### Constant-radius edge chains
 
-A constant-radius group also has a chain proof. Every member contributes all of its radius-qualified deleted predecessor edges, including candidates outside that member's changed boundary; an individually proven member also contributes its proven edge. A member with neither contribution is permitted only when its changed-boundary-edge set is empty. The group resolves to the increasing stable-slot-order union of these contributions. One operand can therefore denote more than one edge in a connected treatment chain.
+A constant-radius group resolves by a chain proof; the per-member boundary-filtered candidate sets remain assignment diagnostics and do not restrict this proof. Every member contributes all of its radius-qualified deleted predecessor edges, including candidates outside that member's changed boundary; an individually proven member also contributes its proven edge. A member with neither contribution is permitted only when its changed-boundary-edge set is empty. The group resolves to the increasing stable-slot-order union of these contributions. One operand can therefore denote more than one edge in a connected treatment chain.
 
 #### Edge-recipe incidence matching
 
