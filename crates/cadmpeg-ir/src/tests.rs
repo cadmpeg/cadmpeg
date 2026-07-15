@@ -423,6 +423,72 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
 }
 
 #[test]
+fn polygon_constraints_round_trip_and_require_distinct_members() {
+    use crate::math::{Point2, Point3, Vector3};
+    use crate::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchGeometry, SketchId,
+    };
+
+    let mut ir = unit_cube();
+    let sketch = SketchId("synthetic:test:sketch#polygon".into());
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    let members = (0..3)
+        .map(|ordinal| SketchEntityId(format!("synthetic:test:polygon-point#{ordinal}")))
+        .collect::<Vec<_>>();
+    ir.model.sketch_entities.extend(
+        members
+            .iter()
+            .enumerate()
+            .map(|(ordinal, id)| SketchEntity {
+                id: id.clone(),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: Point2::new(ordinal as f64, 0.0),
+                },
+            }),
+    );
+    let constraint = SketchConstraintId("synthetic:test:polygon-constraint#0".into());
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: constraint.clone(),
+        sketch,
+        definition: SketchConstraintDefinition::Polygon {
+            entities: members.clone(),
+        },
+        native_ref: None,
+    });
+    ir.finalize();
+    assert!(validate(&ir, Vec::new()).is_ok());
+    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
+    assert_eq!(
+        round_trip.model.sketch_constraints,
+        ir.model.sketch_constraints
+    );
+
+    ir.model.sketch_constraints[0].definition = SketchConstraintDefinition::Polygon {
+        entities: vec![members[0].clone(), members[1].clone(), members[0].clone()],
+    };
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(constraint.0.as_str())
+            && finding.message.contains("three distinct members")
+    }));
+}
+
+#[test]
 fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     use crate::features::{Length, ParameterId};
     use crate::math::{Point2, Point3, Vector3};

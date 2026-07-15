@@ -4439,6 +4439,19 @@ fn exact_atomic_constraint(
             first: entities[0].id.clone(),
             second: entities[1].id.clone(),
         }),
+        SketchConstraintKind::Polygon
+            if entities.len() >= 3
+                && entities
+                    .iter()
+                    .map(|entity| &entity.id)
+                    .collect::<HashSet<_>>()
+                    .len()
+                    == entities.len() =>
+        {
+            Some(Definition::Polygon {
+                entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+            })
+        }
         _ => None,
     }
 }
@@ -13747,6 +13760,37 @@ mod relation_tests {
             &[&first, &off_axis, &second],
         )
         .is_none());
+    }
+
+    #[test]
+    fn polygon_constraint_requires_three_distinct_resolved_members() {
+        let entity = |id: &str| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+        };
+        let first = entity("generated:point#0");
+        let second = entity("generated:point#1");
+        let third = entity("generated:point#2");
+        assert_eq!(
+            exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &third]),
+            Some(SketchConstraintDefinition::Polygon {
+                entities: vec![first.id.clone(), second.id.clone(), third.id.clone()]
+            })
+        );
+        assert!(
+            exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second]).is_none()
+        );
+        assert!(
+            exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &first])
+                .is_none()
+        );
     }
 
     #[test]

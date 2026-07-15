@@ -250,6 +250,11 @@ pub enum SketchConstraintDefinition {
         /// Coincident entity loci.
         entities: Vec<SketchEntityId>,
     },
+    /// Entities participate in one native polygon relation.
+    Polygon {
+        /// Ordered polygon members.
+        entities: Vec<SketchEntityId>,
+    },
     /// Two or more explicit entity loci coincide.
     CoincidentLoci {
         /// Coincident endpoints, centers, or complete entities.

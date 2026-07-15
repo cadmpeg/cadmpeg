@@ -1193,6 +1193,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         }
         let (entities, parameter) = match &constraint.definition {
             Definition::Coincident { entities }
+            | Definition::Polygon { entities }
             | Definition::Distance {
                 entities,
                 parameter: _,
@@ -1300,6 +1301,17 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             Definition::Distance { parameter, .. } => Some(parameter.0.as_str()),
             _ => None,
         });
+        if let Definition::Polygon { entities } = &constraint.definition {
+            let distinct = entities.iter().collect::<HashSet<_>>();
+            if entities.len() < 3 || distinct.len() != entities.len() {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: "polygon constraint requires at least three distinct members".into(),
+                    entity: Some(constraint.id.0.clone()),
+                });
+            }
+        }
         for entity in entities {
             if !sketch_entities.contains(entity.0.as_str()) {
                 ref_error(findings, &constraint.id.0, "sketch entity", &entity.0);
