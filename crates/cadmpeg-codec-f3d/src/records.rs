@@ -1119,7 +1119,7 @@ pub struct DesignEdgeOperand {
 
 /// Stable surface-support relation from an active face candidate to the
 /// topology preceding its owning feature.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignHistoricalFaceSupportContext {
     /// Stable slot of the active face candidate.
     pub active_face_slot: i64,
@@ -1127,6 +1127,9 @@ pub struct DesignHistoricalFaceSupportContext {
     pub surface_slot: i64,
     /// Preceding face slots owning the surface carrier.
     pub preceding_face_slots: Vec<i64>,
+    /// Ordered loop boundaries of the preceding carrier owners.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preceding_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
     /// Preceding owners deleted or updated by the feature transition.
     pub changed_preceding_face_slots: Vec<i64>,
 }

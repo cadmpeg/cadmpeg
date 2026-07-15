@@ -706,6 +706,10 @@ fn historical_face_support_contexts(
             Some(crate::records::DesignHistoricalFaceSupportContext {
                 active_face_slot,
                 surface_slot: *surface_slot,
+                preceding_face_boundaries: face_boundary_contexts_for_slots(
+                    &preceding_face_slots,
+                    preceding_topology,
+                ),
                 preceding_face_slots,
                 changed_preceding_face_slots,
             })
@@ -2122,6 +2126,7 @@ mod tests {
                 active_face_slot: 40,
                 surface_slot: 20,
                 preceding_face_slots: vec![4, 5],
+                preceding_face_boundaries: Vec::new(),
                 changed_preceding_face_slots: vec![5],
             }]
         );
