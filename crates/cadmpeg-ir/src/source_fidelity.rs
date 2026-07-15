@@ -66,6 +66,11 @@ impl Default for SourceFidelity {
 }
 
 impl SourceFidelity {
+    /// Find one retained source record by stable identifier.
+    pub fn retained_record(&self, id: &str) -> Option<&RetainedSourceRecord> {
+        self.retained_records.iter().find(|record| record.id == id)
+    }
+
     /// Transfer source accounting from decoder records into this sidecar.
     pub fn retain_unknown_records(&mut self, stream: &str, records: &[UnknownRecord]) {
         self.retained_records
