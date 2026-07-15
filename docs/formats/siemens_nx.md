@@ -163,7 +163,7 @@ an unresolved input slot remains absent without reordering the other slots.
 | `/Root/materialsTif/<name>`  | named TIFF material texture                                                    |
 | `/Root/*/ExternalReferences` | `EXTREFSTREAM`; child-part names, filesystem paths, occurrence handles         |
 | `/Root/part/attrs`           | `<UgAttributes>` UTF-8 XML key/value part metadata                             |
-| `/Root/qafmetadata`          | UTF-8 XML preview-folder metadata                                              |
+| `/Root/qafmetadata`          | UTF-8 XML catalog for stored and logical asset paths                           |
 | `/Root/part/arrangements`    | (assemblies) UTF-8 XML arrangement config                                      |
 
 `part/attrs` has an `UgAttributes` root. Each `Attribute` supplies `owner`,
@@ -182,10 +182,22 @@ Each `/Root/materialsTif/<name>` file entry contains one TIFF stream. The first
 eight bytes are byte-order magic `II`, version `42:u16 LE`, and a little-endian
 first-IFD offset, or byte-order magic `MM`, version `42:u16 BE`, and a big-endian
 first-IFD offset. The first IFD begins at an offset of at least eight and before
-the bounded entry end. The path suffix is the material display name. Entry
-offset, entry length, byte order, version, first-IFD offset, and SHA-256 identify
-the texture asset. An invalid TIFF header or out-of-bounds first IFD does not
+the bounded entry end. Entry offset, entry length, byte order, version,
+first-IFD offset, and SHA-256 identify the texture asset. The path suffix is the
+stored stream name; it is not a material display name when the suffix is an
+`unmap$` alias. An invalid TIFF header or out-of-bounds first IFD does not
 produce an asset.
+
+`/Root/qafmetadata` has a `folderContents` root and ordered `folderProperties`
+children. Each child carries `location` and `unmappedLocation` attributes,
+followed by one `createTime` and one `modifyTime` element. A material-texture
+catalog entry exists when `location` begins `materialsTif/` and exactly equals
+the path of a decoded `/Root/materialsTif/<name>` asset after removing
+`/Root/`. `unmappedLocation` begins `materialsTif/` and its nonempty suffix is
+the logical material-texture name. The relation retains both complete relative
+paths and both time strings. Duplicate asset mappings, a missing texture asset,
+an unexpected child element, or incomplete time children invalidate the
+catalog atomically.
 
 `EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + control-free UTF-8)`. The string table contains child `.prt` names and paths.
 

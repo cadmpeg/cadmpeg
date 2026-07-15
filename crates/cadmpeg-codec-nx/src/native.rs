@@ -6844,7 +6844,7 @@ pub struct ExternalReferenceRecord {
 pub struct MaterialTextureAsset {
     /// Globally unique native-record identity.
     pub id: String,
-    /// Material display name carried by the directory path.
+    /// Texture stream leaf name carried by the directory path.
     pub name: String,
     /// TIFF byte order: `little_endian` or `big_endian`.
     pub byte_order: String,
@@ -6859,6 +6859,27 @@ pub struct MaterialTextureAsset {
     /// Directory entry containing the texture.
     pub source_entry: String,
     /// Absolute file offset of the TIFF header.
+    pub source_offset: u64,
+}
+
+/// Exact QAF catalog mapping for one embedded material texture.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterialTextureCatalogEntry {
+    /// Globally unique native relation identity.
+    pub id: String,
+    /// Target in the native `material_texture_assets` arena.
+    pub texture_asset: String,
+    /// Stored path relative to `/Root/`.
+    pub storage_path: String,
+    /// Logical material-texture path recorded by QAF metadata.
+    pub material_path: String,
+    /// Exact QAF creation-time text.
+    pub create_time: String,
+    /// Exact QAF modification-time text.
+    pub modify_time: String,
+    /// Directory entry containing the QAF catalog.
+    pub source_entry: String,
+    /// Absolute file offset of the `folderProperties` element.
     pub source_offset: u64,
 }
 
@@ -6902,6 +6923,96 @@ pub fn material_texture_assets(container: &Container) -> Vec<MaterialTextureAsse
         asset.id = format!("nx:container:material-texture#{ordinal}");
     }
     assets
+}
+
+/// Join QAF material paths to embedded TIFF streams by exact stored path.
+pub fn material_texture_catalog_entries(
+    container: &Container,
+    assets: &[MaterialTextureAsset],
+) -> Vec<MaterialTextureCatalogEntry> {
+    let Some((entry_index, entry)) = container
+        .entries
+        .iter()
+        .enumerate()
+        .find(|(_, entry)| entry.name == "/Root/qafmetadata")
+    else {
+        return Vec::new();
+    };
+    let Some((entry_offset, size)) = entry.file_span else {
+        return Vec::new();
+    };
+    let Some(start) = usize::try_from(entry_offset).ok() else {
+        return Vec::new();
+    };
+    let Some(size) = usize::try_from(size).ok() else {
+        return Vec::new();
+    };
+    let Some(end) = start.checked_add(size) else {
+        return Vec::new();
+    };
+    let Some(payload) = container.data.get(start..end) else {
+        return Vec::new();
+    };
+    let Some(entries) =
+        parse_material_texture_catalog(payload, entry_index, &entry.name, entry_offset, assets)
+    else {
+        return Vec::new();
+    };
+    entries
+}
+
+fn parse_material_texture_catalog(
+    payload: &[u8],
+    entry_index: usize,
+    source_entry: &str,
+    entry_offset: u64,
+    assets: &[MaterialTextureAsset],
+) -> Option<Vec<MaterialTextureCatalogEntry>> {
+    let document = roxmltree::Document::parse(xml_stream_text(payload)?).ok()?;
+    let root = document.root_element();
+    (root.tag_name().name() == "folderContents").then_some(())?;
+    let assets_by_path = assets
+        .iter()
+        .map(|asset| Some((asset.source_entry.strip_prefix("/Root/")?, asset)))
+        .collect::<Option<BTreeMap<_, _>>>()?;
+    let mut catalog = Vec::new();
+    let mut seen_assets = BTreeSet::new();
+    for node in root.children().filter(roxmltree::Node::is_element) {
+        (node.tag_name().name() == "folderProperties").then_some(())?;
+        let storage_path = node.attribute("location")?;
+        let material_path = node.attribute("unmappedLocation")?;
+        let children = node
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect::<Vec<_>>();
+        let [create, modify] = children.as_slice() else {
+            return None;
+        };
+        (create.tag_name().name() == "createTime" && modify.tag_name().name() == "modifyTime")
+            .then_some(())?;
+        let create_time = create.text()?;
+        let modify_time = modify.text()?;
+        if !storage_path.starts_with("materialsTif/") {
+            continue;
+        }
+        let asset = assets_by_path.get(storage_path)?;
+        material_path
+            .strip_prefix("materialsTif/")
+            .filter(|name| !name.is_empty())?;
+        seen_assets.insert(asset.id.as_str()).then_some(())?;
+        let ordinal = catalog.len();
+        catalog.push(MaterialTextureCatalogEntry {
+            id: format!("nx:qafmetadata-{entry_index}:material-texture#{ordinal}"),
+            texture_asset: asset.id.clone(),
+            storage_path: storage_path.to_string(),
+            material_path: material_path.to_string(),
+            create_time: create_time.to_string(),
+            modify_time: modify_time.to_string(),
+            source_entry: source_entry.to_string(),
+            source_offset: entry_offset + node.range().start as u64,
+        });
+    }
+    Some(catalog)
 }
 
 /// Decode end-anchored external child-part string tables.

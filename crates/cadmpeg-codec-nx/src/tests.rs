@@ -8256,6 +8256,44 @@ fn decode_retains_strict_tiff_material_texture_assets() {
 }
 
 #[test]
+fn decode_joins_qaf_material_names_to_texture_assets() {
+    let texture = [b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0];
+    let qaf = br#"<?xml version="1.0" encoding="UTF-8"?>
+<folderContents>
+<folderProperties location="images/preview" unmappedLocation="images/preview"><createTime>2026-07-15T08:00:00</createTime><modifyTime>2026-07-15T08:00:01</modifyTime></folderProperties>
+<folderProperties location="materialsTif/unmap$1" unmappedLocation="materialsTif/Carbon Fiber Harness Satin Coated"><createTime>2026-07-15T08:01:00</createTime><modifyTime>2026-07-15T08:02:00</modifyTime></folderProperties>
+</folderContents>"#;
+    let file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        ("/Root/materialsTif/unmap$1", texture.to_vec()),
+        ("/Root/qafmetadata", qaf.to_vec()),
+    ]);
+
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let namespace = result.ir.native.namespace("nx").unwrap();
+    let assets = namespace
+        .arena_as::<crate::native::MaterialTextureAsset>("material_texture_assets")
+        .unwrap();
+    let catalog = namespace
+        .arena_as::<crate::native::MaterialTextureCatalogEntry>("material_texture_catalog_entries")
+        .unwrap();
+
+    assert_eq!(assets.len(), 1);
+    assert_eq!(catalog.len(), 1);
+    assert_eq!(catalog[0].texture_asset, assets[0].id);
+    assert_eq!(catalog[0].storage_path, "materialsTif/unmap$1");
+    assert_eq!(
+        catalog[0].material_path,
+        "materialsTif/Carbon Fiber Harness Satin Coated"
+    );
+    assert_eq!(catalog[0].create_time, "2026-07-15T08:01:00");
+    assert_eq!(catalog[0].modify_time, "2026-07-15T08:02:00");
+    assert_eq!(catalog[0].source_entry, "/Root/qafmetadata");
+}
+
+#[test]
 fn decode_rejects_ambiguous_nx_arrangement_table_atomically() {
     let file = prt_with_named_payloads(&[
         ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),

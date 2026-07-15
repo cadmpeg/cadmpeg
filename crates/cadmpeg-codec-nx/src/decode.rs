@@ -6520,6 +6520,8 @@ fn attach_native_object_model(
     let external_references = crate::native::external_references(&scan.container);
     let external_reference_records = crate::native::external_reference_records(&scan.container);
     let material_texture_assets = crate::native::material_texture_assets(&scan.container);
+    let material_texture_catalog_entries =
+        crate::native::material_texture_catalog_entries(&scan.container, &material_texture_assets);
     let persistent_handles = crate::native::persistent_handles(
         &object_references,
         &data_block_control_references,
@@ -6627,6 +6629,7 @@ fn attach_native_object_model(
         && external_references.is_empty()
         && external_reference_records.is_empty()
         && material_texture_assets.is_empty()
+        && material_texture_catalog_entries.is_empty()
         && object_sections.is_empty()
     {
         return Ok(());
@@ -7024,6 +7027,12 @@ fn attach_native_object_model(
             .note(&asset.id, annotation_stream, asset.source_offset)
             .tag("TIFF_MATERIAL_TEXTURE");
         annotations.exactness(&asset.id, Exactness::ByteExact);
+    }
+    for entry in &material_texture_catalog_entries {
+        annotations
+            .note(&entry.id, annotation_stream, entry.source_offset)
+            .tag("QAF_MATERIAL_TEXTURE_CATALOG_ENTRY");
+        annotations.exactness(&entry.id, Exactness::Derived);
     }
     let mut unknowns = ir.native_unknowns("nx")?;
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
@@ -7690,6 +7699,12 @@ fn attach_native_object_model(
     }
     if !material_texture_assets.is_empty() {
         namespace.set_arena("material_texture_assets", &material_texture_assets)?;
+    }
+    if !material_texture_catalog_entries.is_empty() {
+        namespace.set_arena(
+            "material_texture_catalog_entries",
+            &material_texture_catalog_entries,
+        )?;
     }
     Ok(())
 }
