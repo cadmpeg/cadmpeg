@@ -3464,7 +3464,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         let id = CurveId(format!("{prefix}:curve"));
                                         out.curves.push(Curve {
                                             id: id.clone(),
-                                            geometry: CurveGeometry::Nurbs(geometry),
+                                            geometry,
                                             source_object: None,
                                         });
                                         id

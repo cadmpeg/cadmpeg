@@ -817,7 +817,7 @@ pub enum DecodedProceduralSurfaceDefinition {
 pub(crate) struct EmbeddedRollingBallSide {
     pub(crate) support_kind: cadmpeg_ir::geometry::VariableBlendSupportKind,
     pub(crate) surface: Option<SurfaceGeometry>,
-    pub(crate) curve: Option<NurbsCurve>,
+    pub(crate) curve: Option<CurveGeometry>,
     pub(crate) pcurve: Option<NurbsPcurve>,
     pub(crate) location: Point3,
     pub(crate) secondary_pcurve: Option<NurbsPcurve>,
@@ -3600,9 +3600,7 @@ fn decode_rolling_ball_side(
         None
     } else {
         *position = saved;
-        let curve = decode_curve_block(bytes, *position, int_width)?;
-        *position = curve.end;
-        Some(curve.curve)
+        Some(decode_rolling_ball_curve(bytes, position, int_width)?)
     };
     let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
     let location = take_native_vec3(bytes, position, 0x13)?;
@@ -3647,6 +3645,18 @@ fn decode_rolling_ball_curve(
         return Some(CurveGeometry::Nurbs(curve.curve));
     }
     let kind = take_native_ident(bytes, position)?;
+    if kind == "intcurve" {
+        take_bool(bytes, position)?;
+        let scope = subtype_span(bytes, *position, int_width)?;
+        let curve = marker_positions(scope)
+            .into_iter()
+            .filter_map(|at| decode_curve_block(scope, at, int_width))
+            .next_back()?;
+        *position += scope.len();
+        take_bool(bytes, position)?;
+        take_bool(bytes, position)?;
+        return Some(CurveGeometry::Nurbs(curve.curve));
+    }
     let geometry = match kind.as_str() {
         "straight" => {
             let origin = take_native_vec3(bytes, position, 0x13)?;
@@ -7648,6 +7658,40 @@ mod width_tests {
                 .radii
                 .map(|offset| f64::from_le_bytes(compact[offset..offset + 8].try_into().unwrap()));
             assert_eq!(values, [-1.5, -2.5]);
+        }
+    }
+
+    #[test]
+    fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
+        for int_width in [4usize, 8] {
+            let mut straight = Vec::new();
+            push_ident(&mut straight, "straight");
+            push_position(&mut straight, [1.0, 2.0, 3.0]);
+            push_vector(&mut straight, [0.0, 2.0, 0.0]);
+            straight.extend_from_slice(&[0x0b, 0x0b]);
+            let mut position = 0;
+            assert!(matches!(
+                decode_rolling_ball_curve(&straight, &mut position, int_width),
+                Some(CurveGeometry::Line { origin, direction })
+                    if origin == Point3::new(10.0, 20.0, 30.0)
+                        && direction == Vector3::new(0.0, 1.0, 0.0)
+            ));
+            assert_eq!(position, straight.len());
+
+            let mut intcurve = Vec::new();
+            push_ident(&mut intcurve, "intcurve");
+            intcurve.push(0x0b);
+            intcurve.push(0x0f);
+            push_ident(&mut intcurve, "exact_int_cur");
+            intcurve.extend_from_slice(&curve_block(int_width));
+            intcurve.push(0x10);
+            intcurve.extend_from_slice(&[0x0b, 0x0b]);
+            let mut position = 0;
+            assert!(matches!(
+                decode_rolling_ball_curve(&intcurve, &mut position, int_width),
+                Some(CurveGeometry::Nurbs(curve)) if curve.degree == 1
+            ));
+            assert_eq!(position, intcurve.len());
         }
     }
 
