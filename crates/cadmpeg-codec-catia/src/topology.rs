@@ -4325,6 +4325,8 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         solution_limit: usize,
     ) -> Vec<HashMap<usize, usize>> {
+        type PointNeighbors = HashMap<usize, HashSet<usize>>;
+
         #[allow(clippy::too_many_arguments)]
         fn value_viable(
             root: usize,
@@ -4333,6 +4335,7 @@ impl MeshQuotient {
             edge_roots: &[[usize; 2]],
             root_edges: &[Vec<usize>],
             edge_candidates: &[Vec<[usize; 2]>],
+            edge_neighbors: &[PointNeighbors],
             assigned: &[Option<usize>],
             used: &HashSet<usize>,
         ) -> bool {
@@ -4348,18 +4351,25 @@ impl MeshQuotient {
                 };
                 if let Some(other_point) = assigned[other] {
                     return candidates.is_empty()
-                        || candidates.iter().any(|candidate| {
-                            same_unordered_pair(*candidate, [point, other_point])
-                        });
+                        || edge_neighbors[edge_index]
+                            .get(&point)
+                            .is_some_and(|neighbors| neighbors.contains(&other_point));
                 }
-                domains[other].iter().any(|other_point| {
-                    *other_point != point
-                        && !used.contains(other_point)
-                        && (candidates.is_empty()
-                            || candidates.iter().any(|candidate| {
-                                same_unordered_pair(*candidate, [point, *other_point])
-                            }))
-                })
+                if candidates.is_empty() {
+                    domains[other]
+                        .iter()
+                        .any(|other_point| *other_point != point && !used.contains(other_point))
+                } else {
+                    edge_neighbors[edge_index]
+                        .get(&point)
+                        .is_some_and(|neighbors| {
+                            neighbors.iter().any(|other_point| {
+                                *other_point != point
+                                    && !used.contains(other_point)
+                                    && domains[other].contains(other_point)
+                            })
+                        })
+                }
             })
         }
 
@@ -4369,6 +4379,7 @@ impl MeshQuotient {
             edge_roots: &[[usize; 2]],
             root_edges: &[Vec<usize>],
             edge_candidates: &[Vec<[usize; 2]>],
+            edge_neighbors: &[PointNeighbors],
             assigned: &mut [Option<usize>],
             used: &mut HashSet<usize>,
             solutions: &mut Vec<Vec<usize>>,
@@ -4394,6 +4405,7 @@ impl MeshQuotient {
                                 edge_roots,
                                 root_edges,
                                 edge_candidates,
+                                edge_neighbors,
                                 assigned,
                                 used,
                             )
@@ -4416,6 +4428,7 @@ impl MeshQuotient {
                     edge_roots,
                     root_edges,
                     edge_candidates,
+                    edge_neighbors,
                     assigned,
                     used,
                     solutions,
@@ -4468,6 +4481,17 @@ impl MeshQuotient {
                 root_edges[edge[1]].push(edge_index);
             }
         }
+        let edge_neighbors = edge_candidates
+            .iter()
+            .map(|candidates| {
+                let mut neighbors = PointNeighbors::new();
+                for [left, right] in candidates {
+                    neighbors.entry(*left).or_default().insert(*right);
+                    neighbors.entry(*right).or_default().insert(*left);
+                }
+                neighbors
+            })
+            .collect::<Vec<_>>();
 
         let mut solutions = Vec::new();
         walk(
@@ -4475,6 +4499,7 @@ impl MeshQuotient {
             &edge_roots,
             &root_edges,
             edge_candidates,
+            &edge_neighbors,
             &mut vec![None; domains.len()],
             &mut HashSet::new(),
             &mut solutions,
