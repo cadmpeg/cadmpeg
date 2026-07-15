@@ -7781,8 +7781,8 @@ fn typed_marker_relation_definition_in_sketch(
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
         ArcAngle180, ArcAngle270, ArcAngle90, Coincident, Collinear, Concentric, Equal, Fixed,
-        Horizontal, HorizontalPoints, Midpoint, Parallel, Perpendicular, Tangent, Vertical,
-        VerticalPoints,
+        Horizontal, HorizontalPoints, Midpoint, Parallel, Perpendicular, Symmetric, Tangent,
+        Vertical, VerticalPoints,
     };
     let kind = match marker.kind {
         SketchInputKind::Relation(kind) => Some(kind),
@@ -8107,6 +8107,80 @@ fn typed_marker_relation_definition_in_sketch(
                     second: second.clone(),
                 },
                 _ => unreachable!("relation kind was filtered above"),
+            }
+        }
+        Symmetric => {
+            if sketch_entities.is_empty() {
+                return Some(native());
+            }
+            let Some(loci) = marker
+                .links
+                .iter()
+                .map(|link| marker_point_locus(&link.entity_ref, markers_by_id, loci_by_marker))
+                .collect::<Option<Vec<_>>>()
+            else {
+                return Some(native());
+            };
+            let mut axis = None;
+            let mut points = Vec::new();
+            for locus in loci {
+                let entity = sketch_entities
+                    .iter()
+                    .find(|candidate| candidate.id == locus_entity(&locus));
+                if matches!(locus, SketchLocus::Entity(_))
+                    && entity.is_some_and(|entity| {
+                        matches!(entity.geometry, SketchGeometry::Line { .. })
+                    })
+                {
+                    if axis.replace(locus_entity(&locus)).is_some() {
+                        return Some(native());
+                    }
+                } else {
+                    points.push(locus);
+                }
+            }
+            let (Some(axis), [first, second]) = (axis, points.as_slice()) else {
+                return Some(native());
+            };
+            if first == second {
+                return Some(native());
+            }
+            let Some(first_point) = profile_locus_point(first, sketch_entities) else {
+                return Some(native());
+            };
+            let Some(second_point) = profile_locus_point(second, sketch_entities) else {
+                return Some(native());
+            };
+            let Some(SketchEntity {
+                geometry: SketchGeometry::Line { start, end },
+                ..
+            }) = sketch_entities.iter().find(|entity| entity.id == axis)
+            else {
+                return Some(native());
+            };
+            let du = end.u - start.u;
+            let dv = end.v - start.v;
+            let length = du.hypot(dv);
+            if length <= SKETCH_POINT_TOLERANCE {
+                return Some(native());
+            }
+            let axis_coordinate = |point: Point2| {
+                (
+                    ((point.u - start.u) * du + (point.v - start.v) * dv) / length,
+                    ((point.u - start.u) * dv - (point.v - start.v) * du) / length,
+                )
+            };
+            let (first_along, first_across) = axis_coordinate(first_point);
+            let (second_along, second_across) = axis_coordinate(second_point);
+            if !same_dimension_length(first_along, second_along)
+                || !same_dimension_length(first_across, -second_across)
+            {
+                return Some(native());
+            }
+            SketchConstraintDefinition::Symmetric {
+                first: first.clone(),
+                second: second.clone(),
+                axis,
             }
         }
         Midpoint => {
@@ -11632,12 +11706,35 @@ mod profile_join_tests {
                 end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
             },
         );
+        let symmetric_first = entity(
+            "symmetric-first",
+            SketchGeometry::Point {
+                position: Point2::new(-1.0, 2.0),
+            },
+        );
+        let mut symmetric_second = entity(
+            "symmetric-second",
+            SketchGeometry::Point {
+                position: Point2::new(1.0, 2.0),
+            },
+        );
+        let symmetry_axis = entity(
+            "symmetry-axis",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, -3.0),
+                end: Point2::new(0.0, 3.0),
+            },
+        );
         let first_marker = marker("first-marker", None);
         let second_marker = marker("second-marker", None);
         let mut line_marker = marker("line-marker", None);
         line_marker.kind = SketchInputKind::LineOrCircle;
         let mut arc_marker = marker("arc-marker", None);
         arc_marker.kind = SketchInputKind::Arc;
+        let symmetric_first_marker = marker("symmetric-first-marker", None);
+        let symmetric_second_marker = marker("symmetric-second-marker", None);
+        let mut symmetry_axis_marker = marker("symmetry-axis-marker", None);
+        symmetry_axis_marker.kind = SketchInputKind::LineOrCircle;
         let mut coincident = marker("coincident", None);
         coincident.kind = SketchInputKind::Relation(SketchRelationKind::Coincident);
         coincident.links = [(&first_marker, 1), (&second_marker, 2)]
@@ -11660,14 +11757,33 @@ mod profile_join_tests {
             local_id: 4,
             entity_ref: arc_marker.id.clone(),
         }];
+        let mut symmetric = marker("symmetric", None);
+        symmetric.kind = SketchInputKind::Relation(SketchRelationKind::Symmetric);
+        symmetric.links = [
+            (&symmetric_first_marker, 5),
+            (&symmetric_second_marker, 6),
+            (&symmetry_axis_marker, 7),
+        ]
+        .map(|(marker, local_id)| SketchInputLink {
+            local_id,
+            entity_ref: marker.id.clone(),
+        })
+        .to_vec();
         let markers = HashMap::from([
             (first_marker.id.as_str(), &first_marker),
             (second_marker.id.as_str(), &second_marker),
             (line_marker.id.as_str(), &line_marker),
             (arc_marker.id.as_str(), &arc_marker),
+            (symmetric_first_marker.id.as_str(), &symmetric_first_marker),
+            (
+                symmetric_second_marker.id.as_str(),
+                &symmetric_second_marker,
+            ),
+            (symmetry_axis_marker.id.as_str(), &symmetry_axis_marker),
             (coincident.id.as_str(), &coincident),
             (midpoint.id.as_str(), &midpoint),
             (arc_angle.id.as_str(), &arc_angle),
+            (symmetric.id.as_str(), &symmetric),
         ]);
         let loci = HashMap::from([
             (
@@ -11685,6 +11801,18 @@ mod profile_join_tests {
             (
                 arc_marker.id.clone(),
                 vec![SketchLocus::Entity(arc.id.clone())],
+            ),
+            (
+                symmetric_first_marker.id.clone(),
+                vec![SketchLocus::Entity(symmetric_first.id.clone())],
+            ),
+            (
+                symmetric_second_marker.id.clone(),
+                vec![SketchLocus::Entity(symmetric_second.id.clone())],
+            ),
+            (
+                symmetry_axis_marker.id.clone(),
+                vec![SketchLocus::Entity(symmetry_axis.id.clone())],
             ),
         ]);
         assert!(matches!(
@@ -11717,6 +11845,24 @@ mod profile_join_tests {
             ),
             Some(SketchConstraintDefinition::ArcAngle { .. })
         ));
+        assert_eq!(
+            typed_marker_relation_definition_in_sketch(
+                &symmetric,
+                &sketch,
+                &[
+                    symmetric_first.clone(),
+                    symmetric_second.clone(),
+                    symmetry_axis.clone(),
+                ],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Symmetric {
+                first: SketchLocus::Entity(symmetric_first.id.clone()),
+                second: SketchLocus::Entity(symmetric_second.id.clone()),
+                axis: symmetry_axis.id.clone(),
+            })
+        );
 
         second.geometry = SketchGeometry::Point {
             position: Point2::new(1.0, 0.0),
@@ -11758,6 +11904,19 @@ mod profile_join_tests {
                 &arc_angle,
                 &sketch,
                 &[first.clone(), second.clone(), line.clone(), arc.clone()],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Native { .. })
+        ));
+        symmetric_second.geometry = SketchGeometry::Point {
+            position: Point2::new(2.0, 2.0),
+        };
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &symmetric,
+                &sketch,
+                &[symmetric_first, symmetric_second, symmetry_axis],
                 &markers,
                 &loci,
             ),
