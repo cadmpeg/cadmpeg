@@ -6309,6 +6309,10 @@ fn attach_native_object_model(
         crate::native::display_jt_segments(&scan.container, &display_jt_documents);
     let display_jt_shape_lod_elements =
         crate::native::display_jt_shape_lod_elements(&scan.container, &display_jt_segments);
+    let display_jt_tri_strip_lod_headers = crate::native::display_jt_tri_strip_lod_headers(
+        &scan.container,
+        &display_jt_shape_lod_elements,
+    );
     let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
         crate::native::display_jt_compressed_element_sequences(
             &scan.container,
@@ -6718,6 +6722,12 @@ fn attach_native_object_model(
             .note(&element.id, annotation_stream, element.source_offset)
             .tag("DISPLAY_JT_SHAPE_LOD_ELEMENT");
         annotations.exactness(&element.id, Exactness::ByteExact);
+    }
+    for header in &display_jt_tri_strip_lod_headers {
+        annotations
+            .note(&header.id, annotation_stream, header.source_offset)
+            .tag("DISPLAY_JT_TRI_STRIP_LOD_HEADER");
+        annotations.exactness(&header.id, Exactness::ByteExact);
     }
     for sequence in &display_jt_compressed_element_sequences {
         annotations
@@ -7501,6 +7511,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "display_jt_shape_lod_elements",
             &display_jt_shape_lod_elements,
+        )?;
+    }
+    if !display_jt_tri_strip_lod_headers.is_empty() {
+        namespace.set_arena(
+            "display_jt_tri_strip_lod_headers",
+            &display_jt_tri_strip_lod_headers,
         )?;
     }
     if !display_jt_compressed_element_sequences.is_empty() {

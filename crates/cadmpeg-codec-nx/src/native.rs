@@ -149,6 +149,29 @@ pub struct DisplayJtShapeLodElement {
     pub source_offset: u64,
 }
 
+/// Fixed version and binding header of a JT 9 tri-strip shape-LOD element.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtTriStripLodHeader {
+    /// Globally unique header identity.
+    pub id: String,
+    /// Owning shape-LOD element.
+    pub element: String,
+    /// Base shape-LOD data version.
+    pub base_version: u16,
+    /// Vertex shape-LOD data version.
+    pub vertex_version: u16,
+    /// Packed vertex-channel binding mask.
+    pub vertex_bindings: u64,
+    /// Topological mesh LOD data version.
+    pub topological_mesh_version: u16,
+    /// Bytes following the fixed header.
+    pub compressed_representation_byte_len: u32,
+    /// SHA-256 of the bytes following the fixed header.
+    pub compressed_representation_sha256: String,
+    /// Absolute source offset of the fixed header.
+    pub source_offset: u64,
+}
+
 /// One object element decoded from a compressed JT segment payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DisplayJtCompressedElement {
@@ -396,6 +419,20 @@ pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<(Vec<u16
         .collect::<Vec<_>>();
     let value = String::from_utf16(&code_units).ok()?;
     Some((code_units, value))
+}
+
+pub(crate) fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, &[u8])> {
+    if body.len() < 14 {
+        return None;
+    }
+    let base_version = u16::from_le_bytes(body[0..2].try_into().ok()?);
+    let vertex_version = u16::from_le_bytes(body[2..4].try_into().ok()?);
+    let vertex_bindings = u64::from_le_bytes(body[4..12].try_into().ok()?);
+    let topological_mesh_version = u16::from_le_bytes(body[12..14].try_into().ok()?);
+    if base_version != 1 || vertex_version != 1 || !matches!(topological_mesh_version, 1 | 2) {
+        return None;
+    }
+    Some((vertex_bindings, topological_mesh_version, &body[14..]))
 }
 
 pub(crate) fn parse_jt_base_node_body(
@@ -999,6 +1036,49 @@ pub fn display_jt_shape_lod_elements(
         }
     }
     elements
+}
+
+/// Decode fixed headers from JT 9 tri-strip shape-LOD elements.
+pub fn display_jt_tri_strip_lod_headers(
+    container: &Container,
+    elements: &[DisplayJtShapeLodElement],
+) -> Vec<DisplayJtTriStripLodHeader> {
+    const TRI_STRIP_LOD_TYPE: [u8; 16] = [
+        0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut headers = Vec::new();
+    for element in elements
+        .iter()
+        .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
+    {
+        let Ok(body_start) = usize::try_from(element.source_offset + 25) else {
+            return Vec::new();
+        };
+        let Some(body) = container
+            .data
+            .get(body_start..body_start.saturating_add(element.body_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some((vertex_bindings, topological_mesh_version, compressed_representation)) =
+            parse_jt9_tri_strip_lod_header(body)
+        else {
+            return Vec::new();
+        };
+        headers.push(DisplayJtTriStripLodHeader {
+            id: format!("{}-tri-strip-header", element.id),
+            element: element.id.clone(),
+            base_version: 1,
+            vertex_version: 1,
+            vertex_bindings,
+            topological_mesh_version,
+            compressed_representation_byte_len: compressed_representation.len() as u32,
+            compressed_representation_sha256: sha256_hex(compressed_representation),
+            source_offset: element.source_offset + 25,
+        });
+    }
+    headers
 }
 
 /// Decode element framing and exact post-marker tails from compressed segments.

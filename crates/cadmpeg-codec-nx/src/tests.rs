@@ -293,6 +293,24 @@ fn display_jt_string_property_body_requires_exact_utf16_frame() {
 }
 
 #[test]
+fn display_jt9_tri_strip_header_requires_supported_versions() {
+    let mut body = Vec::new();
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&0x4a_u64.to_le_bytes());
+    body.extend_from_slice(&2_u16.to_le_bytes());
+    body.extend_from_slice(&[9, 8, 7]);
+    let (bindings, mesh_version, compressed) =
+        crate::native::parse_jt9_tri_strip_lod_header(&body).unwrap();
+    assert_eq!(bindings, 0x4a);
+    assert_eq!(mesh_version, 2);
+    assert_eq!(compressed, [9, 8, 7]);
+
+    body[12..14].copy_from_slice(&3_u16.to_le_bytes());
+    assert!(crate::native::parse_jt9_tri_strip_lod_header(&body).is_none());
+}
+
+#[test]
 fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
     let mut body = Vec::new();
     body.extend_from_slice(&1_u16.to_le_bytes());
