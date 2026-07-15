@@ -5828,8 +5828,8 @@ fn parse_edge_tables_scoped_at(
             if bytes.get(position) != Some(&0x02) {
                 return None;
             }
-            let arity = usize::from(*bytes.get(position + 1)?);
-            position += 2;
+            position += 1;
+            let arity = parse_count(bytes, &mut position)?;
             if arity < 2 {
                 return None;
             }
@@ -6272,12 +6272,12 @@ mod motif_tests {
         bind_edge_port_candidates, canonicalize_mesh_vertex_labels, complete_duplicate_face_slots,
         deduplicate_mesh_quotient_assignments, mesh_assignment_can_merge,
         mesh_candidates_equivalent, mesh_edge_points_compatible, motif_port_points,
-        parse_trim_chain, possible_face_choices, possible_face_equations,
+        parse_edge_tables_at, parse_trim_chain, possible_face_choices, possible_face_equations,
         propagate_edge_port_points, prune_edge_candidates_by_port_domains, reconstruct_incidence,
         reconstruct_incidence_candidates, resolve_edge_faces_from_runs, standard_face_count,
         unique_coordinate_bijection, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
         FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun, MeshFaceBoundaryAssignment,
-        MeshQuotient, MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind,
+        MeshQuotient, MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER,
         MAX_FACE_EQUATION_CACHE_ENTRIES,
     };
 
@@ -6303,6 +6303,26 @@ mod motif_tests {
         assert_eq!(records[0].handles, [0, 1, 2]);
         assert_eq!(records[1].handles, [3, 4, 5]);
         assert!(parse_trim_chain(&bytes, bytes.len(), 2, 3).is_none());
+    }
+
+    #[test]
+    fn standard_edge_row_arity_uses_widened_count_form() {
+        let mut bytes = Vec::new();
+        for (kind, handles) in [(1, [10u16, 11]), (2, [20, 21])] {
+            bytes.extend_from_slice(&[0x01, kind, 1, 0x02, 0xff]);
+            bytes.extend_from_slice(&2u32.to_le_bytes());
+            for handle in handles {
+                bytes.extend_from_slice(&handle.to_be_bytes());
+            }
+            bytes.extend_from_slice(&EDGE_DELIMITER);
+        }
+        bytes.extend_from_slice(&[0x01, 0x06, 0]);
+
+        let (rows, vertex_header) = parse_edge_tables_at(&bytes, 0).expect("widened row arity");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].handles, vec![10, 11]);
+        assert_eq!(rows[1].handles, vec![20, 21]);
+        assert_eq!(vertex_header, bytes.len() - 3);
     }
 
     #[test]
