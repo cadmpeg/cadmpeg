@@ -3462,7 +3462,8 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.push(0xe4);
     payload.extend_from_slice(b"topol_ref_data\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.curve_prototype_topology.len(), 1);
     assert_eq!(scan.curve_prototype_topology[0].curve_id, 44);
@@ -3473,6 +3474,16 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
     assert_eq!(
         scan.bound_prototype_pcurves[0].face_0_endpoints,
         [[0.0, 1.0], [1.0, 0.0]]
+    );
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let namespace = result.ir.native.namespace("creo").unwrap();
+    assert_eq!(
+        namespace.arenas["prototype_pcurves"][0].fields["curve_id"],
+        44
+    );
+    assert_eq!(
+        namespace.arenas["curve_prototype_topology"][0].fields["faces"][1],
+        11
     );
 }
 

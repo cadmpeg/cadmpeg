@@ -496,6 +496,26 @@ struct CreoFc05CylinderCapPairRecord {
     source_section: String,
 }
 
+#[derive(Serialize)]
+struct CreoPrototypePcurveRecord {
+    id: String,
+    curve_id: u32,
+    face_0_endpoints: [[f64; 2]; 2],
+    face_1_endpoints: [[f64; 2]; 2],
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoCurvePrototypeTopologyRecord {
+    id: String,
+    curve_id: u32,
+    faces: [u32; 2],
+    next_edges: [u32; 2],
+    offset: usize,
+    source_section: String,
+}
+
 fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
     scan.feature_entities
         .iter()
@@ -886,6 +906,34 @@ fn fc05_cylinder_cap_pair_records(scan: &ContainerScan) -> Vec<CreoFc05CylinderC
             reference_direction_row_frame: record.reference_direction_row_frame,
             parameter_sign: record.parameter_sign,
             cap_ordinates_row_frame: record.cap_ordinates_row_frame.clone(),
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn prototype_pcurve_records(scan: &ContainerScan) -> Vec<CreoPrototypePcurveRecord> {
+    scan.prototype_pcurves
+        .iter()
+        .map(|record| CreoPrototypePcurveRecord {
+            id: format!("creo:curve:prototype_pcurve#{}", record.curve_id),
+            curve_id: record.curve_id,
+            face_0_endpoints: record.face_0_endpoints,
+            face_1_endpoints: record.face_1_endpoints,
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn curve_prototype_topology_records(scan: &ContainerScan) -> Vec<CreoCurvePrototypeTopologyRecord> {
+    scan.curve_prototype_topology
+        .iter()
+        .map(|record| CreoCurvePrototypeTopologyRecord {
+            id: format!("creo:curve:prototype_topology#{}", record.curve_id),
+            curve_id: record.curve_id,
+            faces: record.faces,
+            next_edges: record.next_edges,
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })
@@ -15778,6 +15826,18 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("fc05_cylinder_cap_pairs", &fc05_cylinder_cap_pairs)?;
+    }
+    let prototype_pcurves = prototype_pcurve_records(scan);
+    if !prototype_pcurves.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("prototype_pcurves", &prototype_pcurves)?;
+    }
+    let curve_prototype_topology = curve_prototype_topology_records(scan);
+    if !curve_prototype_topology.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("curve_prototype_topology", &curve_prototype_topology)?;
     }
     let curve_topology_rows = curve_topology_row_records(scan);
     if !curve_topology_rows.is_empty() {
