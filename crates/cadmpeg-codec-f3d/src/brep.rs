@@ -4818,7 +4818,7 @@ fn analytic_procedural_surface(
             direction,
             ..
         } => {
-            let (center, normal, ref_direction, radius) = rational_quadratic_circle(directrix)?;
+            let (center, normal, ref_direction, radius) = rational_four_arc_circle(directrix)?;
             let axis = normalized_vector(*direction)?;
             if 1.0 - dot_vector(axis, normal).abs() > 1.0e-10 {
                 return None;
@@ -4923,7 +4923,7 @@ fn analytic_rolling_ball_surface(
         }
         _ => return None,
     };
-    let (center, axis, ref_direction, major_radius) = rational_quadratic_circle(spine)?;
+    let (center, axis, ref_direction, major_radius) = rational_four_arc_circle(spine)?;
     let SurfaceGeometry::Plane {
         origin: plane_origin,
         normal: plane_normal,
@@ -5030,99 +5030,138 @@ fn normalized_vector(vector: Vector3) -> Option<Vector3> {
     ))
 }
 
-fn rational_quadratic_circle(
+fn rational_four_arc_circle(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
 ) -> Option<(Point3, Vector3, Vector3, f64)> {
     let weights = curve.weights.as_deref()?;
-    if curve.degree != 2
+    let degree = curve.degree as usize;
+    if degree < 2
         || curve.periodic
-        || curve.control_points.len() != 9
-        || weights.len() != 9
-        || curve.knots.len() != 12
+        || curve.control_points.len() != 4 * degree + 1
+        || weights.len() != curve.control_points.len()
+        || curve.knots.len() != curve.control_points.len() + degree + 1
+        || curve.knots.iter().any(|knot| !knot.is_finite())
     {
         return None;
     }
-    let knot_tolerance = 1.0e-12 * (curve.knots[11] - curve.knots[0]).abs().max(1.0);
+    let knot_tolerance = 1.0e-12
+        * (curve.knots[curve.knots.len() - 1] - curve.knots[0])
+            .abs()
+            .max(1.0);
     let spans = [
         curve.knots[0],
-        curve.knots[3],
-        curve.knots[5],
-        curve.knots[7],
-        curve.knots[9],
+        curve.knots[degree + 1],
+        curve.knots[2 * degree + 1],
+        curve.knots[3 * degree + 1],
+        curve.knots[4 * degree + 1],
     ];
-    if !(curve.knots[..3]
-        .iter()
-        .all(|value| (*value - spans[0]).abs() <= knot_tolerance)
-        && curve.knots[3..5]
-            .iter()
-            .all(|value| (*value - spans[1]).abs() <= knot_tolerance)
-        && curve.knots[5..7]
-            .iter()
-            .all(|value| (*value - spans[2]).abs() <= knot_tolerance)
-        && curve.knots[7..9]
-            .iter()
-            .all(|value| (*value - spans[3]).abs() <= knot_tolerance)
-        && curve.knots[9..]
-            .iter()
-            .all(|value| (*value - spans[4]).abs() <= knot_tolerance))
-    {
-        return None;
-    }
-    let step = spans[1] - spans[0];
-    if !step.is_finite()
-        || step <= 0.0
-        || spans
-            .windows(2)
-            .any(|pair| ((pair[1] - pair[0]) - step).abs() > knot_tolerance)
-    {
-        return None;
-    }
-    let weight_tolerance = 1.0e-12;
-    let quadrant_weight = std::f64::consts::FRAC_1_SQRT_2;
-    if weights.iter().enumerate().any(|(index, weight)| {
-        !weight.is_finite()
-            || if index % 2 == 0 {
-                (*weight - 1.0).abs() > weight_tolerance
-            } else {
-                (*weight - quadrant_weight).abs() > weight_tolerance
-            }
-    }) {
-        return None;
-    }
-    let point_distance = |left: Point3, right: Point3| point_vector(left, right).norm();
-    let scale = curve
-        .control_points
+    if spans
         .windows(2)
+        .any(|pair| !pair[0].is_finite() || pair[1] - pair[0] <= knot_tolerance)
+        || (0..5).any(|span| {
+            let range = if span == 0 {
+                0..degree + 1
+            } else if span == 4 {
+                4 * degree + 1..curve.knots.len()
+            } else {
+                span * degree + 1..(span + 1) * degree + 1
+            };
+            curve.knots[range]
+                .iter()
+                .any(|value| (*value - spans[span]).abs() > knot_tolerance)
+        })
+    {
+        return None;
+    }
+    let homogeneous = curve
+        .control_points
+        .iter()
+        .zip(weights)
+        .map(|(point, weight)| {
+            let homogeneous = [
+                point.x * weight,
+                point.y * weight,
+                point.z * weight,
+                *weight,
+            ];
+            (point.x.is_finite()
+                && point.y.is_finite()
+                && point.z.is_finite()
+                && weight.is_finite()
+                && *weight != 0.0
+                && homogeneous.iter().all(|value| value.is_finite()))
+            .then_some(homogeneous)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let quadratics = (0..4)
+        .map(|span| {
+            reduce_homogeneous_bezier_to_quadratic(
+                homogeneous[span * degree..=span * degree + degree].to_vec(),
+            )
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let base_weight = quadratics[0][0][3];
+    let weight_scale = base_weight.abs().max(1.0);
+    let weight_tolerance = 1.0e-10 * weight_scale;
+    if !base_weight.is_finite()
+        || base_weight == 0.0
+        || quadratics.iter().any(|span| {
+            (span[0][3] - base_weight).abs() > weight_tolerance
+                || (span[2][3] - base_weight).abs() > weight_tolerance
+                || (span[1][3] - base_weight * std::f64::consts::FRAC_1_SQRT_2).abs()
+                    > weight_tolerance
+        })
+    {
+        return None;
+    }
+    let quadratic_points = quadratics
+        .iter()
+        .map(|span| {
+            span.map(|point| {
+                Point3::new(
+                    point[0] / point[3],
+                    point[1] / point[3],
+                    point[2] / point[3],
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let point_distance = |left: Point3, right: Point3| point_vector(left, right).norm();
+    let scale = quadratic_points
+        .iter()
+        .flat_map(|span| span.windows(2))
         .map(|pair| point_distance(pair[0], pair[1]))
         .fold(0.0_f64, f64::max)
         .max(1.0);
     let tolerance = 1.0e-10 * scale;
-    if point_distance(curve.control_points[0], curve.control_points[8]) > tolerance {
+    if point_distance(quadratic_points[0][0], quadratic_points[3][2]) > tolerance
+        || quadratic_points
+            .windows(2)
+            .any(|pair| point_distance(pair[0][2], pair[1][0]) > tolerance)
+    {
         return None;
     }
     let first_center = point_sum_difference(
-        curve.control_points[0],
-        curve.control_points[2],
-        curve.control_points[1],
+        quadratic_points[0][0],
+        quadratic_points[0][2],
+        quadratic_points[0][1],
     );
-    for span in 0..4 {
-        let start = curve.control_points[span * 2];
-        let control = curve.control_points[span * 2 + 1];
-        let end = curve.control_points[span * 2 + 2];
+    for span in &quadratic_points {
+        let [start, control, end] = *span;
         let center = point_sum_difference(start, end, control);
         if point_distance(center, first_center) > tolerance {
             return None;
         }
     }
-    let first_radial = point_vector(first_center, curve.control_points[0]);
+    let first_radial = point_vector(first_center, quadratic_points[0][0]);
     let radius = first_radial.norm();
     if !radius.is_finite() || radius <= tolerance {
         return None;
     }
     let mut normal = None;
-    for span in 0..4 {
-        let radial = point_vector(first_center, curve.control_points[span * 2]);
-        let next = point_vector(first_center, curve.control_points[span * 2 + 2]);
+    for span in &quadratic_points {
+        let radial = point_vector(first_center, span[0]);
+        let next = point_vector(first_center, span[2]);
         if (radial.norm() - radius).abs() > tolerance
             || dot_vector(radial, next).abs() > tolerance * radius
         {
@@ -5153,6 +5192,35 @@ fn rational_quadratic_circle(
         ),
         radius,
     ))
+}
+
+fn reduce_homogeneous_bezier_to_quadratic(mut control: Vec<[f64; 4]>) -> Option<[[f64; 4]; 3]> {
+    while control.len() > 3 {
+        let degree = control.len() - 1;
+        let mut reduced = Vec::with_capacity(degree);
+        reduced.push(control[0]);
+        for index in 1..degree {
+            let alpha = index as f64 / degree as f64;
+            let denominator = 1.0 - alpha;
+            reduced.push(std::array::from_fn(|coordinate| {
+                (control[index][coordinate] - alpha * reduced[index - 1][coordinate]) / denominator
+            }));
+        }
+        if reduced.iter().flatten().any(|value| !value.is_finite()) {
+            return None;
+        }
+        let scale = control
+            .iter()
+            .flatten()
+            .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+        if (0..4).any(|coordinate| {
+            (reduced[degree - 1][coordinate] - control[degree][coordinate]).abs() > 1.0e-10 * scale
+        }) {
+            return None;
+        }
+        control = reduced;
+    }
+    control.try_into().ok()
 }
 
 fn point_vector(origin: Point3, point: Point3) -> Vector3 {
@@ -5911,22 +5979,104 @@ mod topology_tests {
             direction,
             native_position: Point3::new(0.0, 0.0, 0.0),
         };
-        assert!(matches!(
-            analytic_procedural_surface(&definition(Vector3::new(0.0, 0.0, -8.0))),
-            Some(SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-            }) if origin == Point3::new(2.0, 3.0, 4.0)
-                && axis == Vector3::new(0.0, 0.0, -1.0)
-                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                && radius == 5.0
-        ));
+        let Some(SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        }) = analytic_procedural_surface(&definition(Vector3::new(0.0, 0.0, -8.0)))
+        else {
+            panic!("exact circle extrusion did not reduce")
+        };
+        assert!(point_vector(Point3::new(2.0, 3.0, 4.0), origin).norm() < 1.0e-12);
+        assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
+        assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
+        assert!(ref_direction.y.abs() < 1.0e-12);
+        assert!(ref_direction.z.abs() < 1.0e-12);
+        assert!((radius - 5.0).abs() < 1.0e-12);
         assert!(analytic_procedural_surface(&definition(Vector3::new(1.0, 0.0, 8.0))).is_none());
         let mut approximate = exact_circle_directrix();
         approximate.control_points[3].x += 1.0e-5;
-        assert!(rational_quadratic_circle(&approximate).is_none());
+        assert!(rational_four_arc_circle(&approximate).is_none());
+    }
+
+    fn degree_elevated_circle() -> cadmpeg_ir::geometry::NurbsCurve {
+        let quadratic = exact_circle_directrix();
+        let weights = quadratic.weights.as_deref().unwrap();
+        let homogeneous = |index: usize| {
+            let point = quadratic.control_points[index];
+            let weight = weights[index] * 7.0;
+            [point.x * weight, point.y * weight, point.z * weight, weight]
+        };
+        let combine = |first: [f64; 4], first_scale: f64, second: [f64; 4], second_scale: f64| {
+            std::array::from_fn(|coordinate| {
+                first_scale * first[coordinate] + second_scale * second[coordinate]
+            })
+        };
+        let mut elevated = Vec::new();
+        for span in 0..4 {
+            let [first, middle, last] = [
+                homogeneous(span * 2),
+                homogeneous(span * 2 + 1),
+                homogeneous(span * 2 + 2),
+            ];
+            let span = [
+                first,
+                combine(first, 1.0 / 3.0, middle, 2.0 / 3.0),
+                combine(middle, 2.0 / 3.0, last, 1.0 / 3.0),
+                last,
+            ];
+            elevated.extend_from_slice(if elevated.is_empty() {
+                &span
+            } else {
+                &span[1..]
+            });
+        }
+        let (control_points, weights): (Vec<_>, Vec<_>) = elevated
+            .into_iter()
+            .map(|point| {
+                (
+                    Point3::new(
+                        point[0] / point[3],
+                        point[1] / point[3],
+                        point[2] / point[3],
+                    ),
+                    point[3],
+                )
+            })
+            .unzip();
+        cadmpeg_ir::geometry::NurbsCurve {
+            degree: 3,
+            knots: vec![
+                0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0,
+            ],
+            control_points,
+            weights: Some(weights),
+            periodic: false,
+        }
+    }
+
+    #[test]
+    fn exact_circle_recognition_is_projective_and_degree_invariant() {
+        let mut scaled = exact_circle_directrix();
+        for weight in scaled.weights.as_mut().unwrap() {
+            *weight *= 7.0;
+        }
+        assert!(rational_four_arc_circle(&scaled).is_some());
+
+        let mut elevated = degree_elevated_circle();
+        assert!(rational_four_arc_circle(&elevated).is_some());
+        assert!(matches!(
+            analytic_procedural_surface(&nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
+                directrix: elevated.clone(),
+                parameter_interval: [0.0, 4.0],
+                direction: Vector3::new(0.0, 0.0, 3.0),
+                native_position: Point3::new(0.0, 0.0, 0.0),
+            }),
+            Some(SurfaceGeometry::Cylinder { .. })
+        ));
+        elevated.control_points[5].x += 1.0e-5;
+        assert!(rational_four_arc_circle(&elevated).is_none());
     }
 
     fn plane(origin: Point3, normal: Vector3, u_axis: Vector3) -> SurfaceGeometry {

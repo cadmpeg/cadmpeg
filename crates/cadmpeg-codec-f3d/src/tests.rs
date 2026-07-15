@@ -6492,7 +6492,7 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
     assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
     assert!(ref_direction.y.abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);
-    assert_eq!(radius, 5.0);
+    assert!((radius - 5.0).abs() < 1.0e-12);
 }
 
 #[test]
