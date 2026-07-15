@@ -4272,6 +4272,17 @@ fn b2_construction_use_parser_reorders_offset_domain() {
 }
 
 #[test]
+fn b2_offset_support_parser_ignores_other_construction_kinds() {
+    let mut record = b2_construction_use_stream();
+    record[17] = 0x19;
+
+    let uses = crate::geometry::b2_construction_uses(&record);
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].kind, 0x19);
+    assert!(crate::geometry::b2_offset_supports(&record).is_empty());
+}
+
+#[test]
 fn b2_composite_parser_reads_embedded_cylinder_frame() {
     let cylinders = crate::geometry::b2_embedded_cylinders(&b2_embedded_cylinder_stream());
     assert_eq!(cylinders.len(), 1);

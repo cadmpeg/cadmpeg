@@ -2553,11 +2553,14 @@ pub fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
         b2_construction_uses(data)
             .into_iter()
             .filter_map(|construction| {
-                (construction.kind == 0x01).then_some(B2OffsetSupport {
+                if construction.kind != 0x01 {
+                    return None;
+                }
+                Some(B2OffsetSupport {
                     pos: construction.pos,
                     support_id: construction.support_id,
                     distance: construction.distance,
-                    domain: construction.domain.expect("kind 0x01 carries a domain"),
+                    domain: construction.domain?,
                 })
             }),
     );
