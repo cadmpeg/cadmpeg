@@ -1148,9 +1148,7 @@ fn resolved_edge_group(
         .or_else(|| scope_partition_edge_group_candidates(group, groups, operands));
     let Some(resolved_slots) = resolved_slots else {
         return partial_historical_edge_selection(
-            matched_operands
-                .iter()
-                .map(|operand| (operand.id.as_str(), resolved_edge_operand(operand))),
+            partial_edge_group_members(&matched_operands),
             previous_state_id,
             feature_key,
             state,
@@ -1178,6 +1176,19 @@ fn resolved_edge_group(
             native: group.id.clone(),
         }
     }
+}
+
+fn partial_edge_group_members<'a>(
+    operands: &[&'a DesignEdgeOperand],
+) -> Vec<(&'a str, Option<i64>)> {
+    operands
+        .iter()
+        .filter_map(|operand| {
+            let resolved = resolved_edge_operand(operand);
+            (resolved.is_some() || !operand.changed_boundary_edge_slots.is_empty())
+                .then_some((operand.id.as_str(), resolved))
+        })
+        .collect()
 }
 
 fn partial_historical_edge_selection<'a>(
@@ -13151,6 +13162,22 @@ mod relation_tests {
         assert_eq!(
             super::radius_edge_group_candidates(&[&edge_operand, &second_operand], 4.0),
             None
+        );
+        let mut resolved_operand = edge_operand.clone();
+        resolved_operand.id = "resolved".into();
+        resolved_operand.resolved_edge_slot = Some(17);
+        let mut context_operand = edge_operand.clone();
+        context_operand.id = "context".into();
+        context_operand.changed_boundary_edge_slots.clear();
+        let mut unresolved_operand = edge_operand.clone();
+        unresolved_operand.id = "unresolved".into();
+        assert_eq!(
+            super::partial_edge_group_members(&[
+                &resolved_operand,
+                &context_operand,
+                &unresolved_operand,
+            ]),
+            [("resolved", Some(17)), ("unresolved", None)]
         );
         assert_eq!(
             edge_operand.recipe_program_offset,
