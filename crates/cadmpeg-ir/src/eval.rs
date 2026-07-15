@@ -9,7 +9,7 @@
 //! ([`CurveGeometry::Unknown`], [`SurfaceGeometry::Unknown`], parabolas, and
 //! hyperbolas) evaluate to `None`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::document::CadIr;
 use crate::geometry::{
@@ -599,69 +599,101 @@ pub fn surface_normal(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Vect
 
 /// Evaluate a model surface by identity, resolving exact procedural carriers.
 pub fn model_surface_point(ir: &CadIr, surface: &SurfaceId, u: f64, v: f64) -> Option<Point3> {
-    model_surface_point_inner(ir, surface, u, v, &mut BTreeSet::new())
+    ModelSurfaceEvaluator::new(ir).point(surface, u, v)
 }
 
-fn model_surface_point_inner(
-    ir: &CadIr,
-    surface: &SurfaceId,
-    u: f64,
-    v: f64,
-    visiting: &mut BTreeSet<SurfaceId>,
-) -> Option<Point3> {
-    visiting.insert(surface.clone()).then_some(())?;
-    let carrier = ir.model.surfaces.iter().find(|item| &item.id == surface)?;
-    let result = match &carrier.geometry {
-        SurfaceGeometry::Procedural { construction } => {
-            let procedural = ir
+pub(crate) struct ModelSurfaceEvaluator<'a> {
+    ir: &'a CadIr,
+    surfaces: HashMap<&'a str, usize>,
+    constructions: HashMap<&'a str, usize>,
+}
+
+impl<'a> ModelSurfaceEvaluator<'a> {
+    pub(crate) fn new(ir: &'a CadIr) -> Self {
+        Self {
+            ir,
+            surfaces: ir
+                .model
+                .surfaces
+                .iter()
+                .enumerate()
+                .map(|(index, surface)| (surface.id.0.as_str(), index))
+                .collect(),
+            constructions: ir
                 .model
                 .procedural_surfaces
                 .iter()
-                .find(|item| &item.id == construction && &item.surface == surface)?;
-            match &procedural.definition {
-                ProceduralSurfaceDefinition::Offset {
-                    support, distance, ..
-                } => {
-                    let point = model_surface_point_inner(ir, support, u, v, visiting)?;
-                    let normal = model_surface_normal(ir, support, u, v, visiting)?;
-                    Some(offset(point, &[(*distance, normal)]))
-                }
-                _ => None,
-            }
+                .enumerate()
+                .map(|(index, construction)| (construction.id.0.as_str(), index))
+                .collect(),
         }
-        geometry => surface_point(geometry, u, v),
-    };
-    visiting.remove(surface);
-    result
-}
+    }
 
-fn model_surface_normal(
-    ir: &CadIr,
-    surface: &SurfaceId,
-    u: f64,
-    v: f64,
-    visiting: &mut BTreeSet<SurfaceId>,
-) -> Option<Vector3> {
-    visiting.insert(surface.clone()).then_some(())?;
-    let carrier = ir.model.surfaces.iter().find(|item| &item.id == surface)?;
-    let result = match &carrier.geometry {
-        SurfaceGeometry::Procedural { construction } => {
-            let procedural = ir
-                .model
-                .procedural_surfaces
-                .iter()
-                .find(|item| &item.id == construction && &item.surface == surface)?;
-            match &procedural.definition {
-                ProceduralSurfaceDefinition::Offset { support, .. } => {
-                    model_surface_normal(ir, support, u, v, visiting)
+    pub(crate) fn point(&self, surface: &SurfaceId, u: f64, v: f64) -> Option<Point3> {
+        self.point_inner(surface, u, v, &mut BTreeSet::new())
+    }
+
+    fn point_inner(
+        &self,
+        surface: &SurfaceId,
+        u: f64,
+        v: f64,
+        visiting: &mut BTreeSet<SurfaceId>,
+    ) -> Option<Point3> {
+        visiting.insert(surface.clone()).then_some(())?;
+        let carrier = &self.ir.model.surfaces[*self.surfaces.get(surface.0.as_str())?];
+        let result = match &carrier.geometry {
+            SurfaceGeometry::Procedural { construction } => {
+                let procedural = &self.ir.model.procedural_surfaces
+                    [*self.constructions.get(construction.0.as_str())?];
+                if &procedural.surface != surface {
+                    return None;
                 }
-                _ => None,
+                match &procedural.definition {
+                    ProceduralSurfaceDefinition::Offset {
+                        support, distance, ..
+                    } => {
+                        let point = self.point_inner(support, u, v, visiting)?;
+                        let normal = self.normal(support, u, v, visiting)?;
+                        Some(offset(point, &[(*distance, normal)]))
+                    }
+                    _ => None,
+                }
             }
-        }
-        geometry => surface_normal(geometry, u, v),
-    };
-    visiting.remove(surface);
-    result
+            geometry => surface_point(geometry, u, v),
+        };
+        visiting.remove(surface);
+        result
+    }
+
+    fn normal(
+        &self,
+        surface: &SurfaceId,
+        u: f64,
+        v: f64,
+        visiting: &mut BTreeSet<SurfaceId>,
+    ) -> Option<Vector3> {
+        visiting.insert(surface.clone()).then_some(())?;
+        let carrier = &self.ir.model.surfaces[*self.surfaces.get(surface.0.as_str())?];
+        let result = match &carrier.geometry {
+            SurfaceGeometry::Procedural { construction } => {
+                let procedural = &self.ir.model.procedural_surfaces
+                    [*self.constructions.get(construction.0.as_str())?];
+                if &procedural.surface != surface {
+                    return None;
+                }
+                match &procedural.definition {
+                    ProceduralSurfaceDefinition::Offset { support, .. } => {
+                        self.normal(support, u, v, visiting)
+                    }
+                    _ => None,
+                }
+            }
+            geometry => surface_normal(geometry, u, v),
+        };
+        visiting.remove(surface);
+        result
+    }
 }
 
 /// Evaluate a pcurve carrier at parameter `t`, yielding a surface `(u, v)`.

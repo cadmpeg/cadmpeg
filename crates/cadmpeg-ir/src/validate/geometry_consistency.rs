@@ -4,7 +4,7 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::eval::{curve_point, model_surface_point, pcurve_uv};
+use crate::eval::{curve_point, pcurve_uv, ModelSurfaceEvaluator};
 use crate::geometry::PcurveGeometry;
 use crate::math::Point3;
 
@@ -108,6 +108,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
 /// pcurve's parameter direction is independent of the edge sense, so either
 /// endpoint assignment satisfies the check.
 pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let surface_evaluator = ModelSurfaceEvaluator::new(ir);
     let surfaces = ir
         .model
         .surfaces
@@ -176,8 +177,8 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             continue;
         };
         let (Some(p0), Some(p1)) = (
-            model_surface_point(ir, &surface.id, uv0.u, uv0.v),
-            model_surface_point(ir, &surface.id, uv1.u, uv1.v),
+            surface_evaluator.point(&surface.id, uv0.u, uv0.v),
+            surface_evaluator.point(&surface.id, uv1.u, uv1.v),
         ) else {
             continue;
         };

@@ -1180,6 +1180,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         &[dimensions],
         &mut annotations,
     );
+    assert_eq!(ir.model.parameters.len(), 3);
     for (ordinal, parameter) in ir.model.parameters.iter().enumerate() {
         assert_eq!(
             parameter.properties[&format!("block_dimension.{ordinal}")],
@@ -10543,7 +10544,36 @@ fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
     )
     .unwrap();
 
-    assert_eq!(assigned, lanes);
+    assert_eq!(assigned, [lanes[0].clone(), None]);
+}
+
+#[test]
+fn topology_selects_one_candidate_at_an_ambiguous_record_offset() {
+    let mut stream = vec![0; 40];
+    stream[..7].copy_from_slice(&[0, 12, 0xff, 0xfe, 0x00, 0x02, 0x01]);
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(graph.of_kind(12).count(), 1);
+    assert_eq!(graph.at_pos(0).map(|node| node.xmt), Some(65_536));
+}
+
+#[test]
+fn trimmed_curves_reject_nonfinite_endpoint_witnesses() {
+    let mut stream = trimmed_topology_partition_stream();
+    let trim = stream
+        .windows(4)
+        .position(|window| window == [0, 133, 0, 12])
+        .expect("trimmed curve");
+    put_f64(&mut stream, trim + 21, f64::NAN);
+    assert!(crate::topology::trimmed_curves(&stream).is_empty());
+}
+
+#[test]
+fn data_block_object_frame_ids_include_the_store_qualifier() {
+    let first = crate::native::data_block_object_frame_id("nx:om-data-blocks-2:block#17", 0);
+    let second = crate::native::data_block_object_frame_id("nx:om-data-blocks-3:block#17", 0);
+    assert_eq!(first, "nx:om-data-block-object-frames-2:block-frame#17-0");
+    assert_eq!(second, "nx:om-data-block-object-frames-3:block-frame#17-0");
+    assert_ne!(first, second);
 }
 
 #[test]

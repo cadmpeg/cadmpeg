@@ -75,7 +75,6 @@ pub struct ShellFields {
     pub sentinel_1: u32,
     /// Owning region.
     pub region: u32,
-    /// Third fixed shell sentinel.
     /// Face ownership anchor, or null when ownership uses the FACE chain.
     pub last_face: u32,
 }
@@ -630,6 +629,13 @@ pub fn trimmed_curves(stream: &[u8]) -> Vec<TrimmedCurve> {
             let basis = read_and_advance(&node.bytes, &mut at)?;
             let mut point_0 = be::vec3_at(&node.bytes, at)?;
             let mut point_1 = be::vec3_at(&node.bytes, at + 24)?;
+            if point_0
+                .iter()
+                .chain(point_1.iter())
+                .any(|coordinate| !coordinate.is_finite())
+            {
+                return None;
+            }
             for coordinate in point_0.iter_mut().chain(point_1.iter_mut()) {
                 *coordinate *= 1000.0;
             }
@@ -669,38 +675,51 @@ impl Graph {
                     candidates.push((xmt, shift + 1));
                 }
             }
-            for (xmt, shift) in candidates {
-                // 1 is Parasolid's null reference. A node itself cannot occupy it.
-                if xmt <= 1 {
-                    continue;
-                }
-                let Some(payload_shift) = payload_shift(stream, pos, kind, shift) else {
-                    continue;
-                };
-                let Some(bytes) = stream.get(pos..pos + len + shift + payload_shift) else {
-                    continue;
-                };
-                let node = Node {
-                    kind,
-                    xmt,
-                    pos,
-                    shift,
-                    bytes: bytes.to_vec(),
-                };
-                if !node.has_valid_family_framing() {
-                    continue;
-                }
-                let key = (kind, xmt);
-                let replace = graph
-                    .nodes
-                    .get(&key)
-                    .is_none_or(|current| node.family_quality() > current.family_quality());
-                if replace {
-                    if let Some(current) = graph.nodes.insert(key, node) {
-                        graph.by_pos.remove(&current.pos);
+            let nodes = candidates
+                .into_iter()
+                .filter_map(|(xmt, shift)| {
+                    // 1 is Parasolid's null reference. A node itself cannot occupy it.
+                    if xmt <= 1 {
+                        return None;
                     }
-                    graph.by_pos.insert(pos, key);
+                    let payload_shift = payload_shift(stream, pos, kind, shift)?;
+                    let bytes = stream.get(pos..pos + len + shift + payload_shift)?;
+                    let node = Node {
+                        kind,
+                        xmt,
+                        pos,
+                        shift,
+                        bytes: bytes.to_vec(),
+                    };
+                    if !node.has_valid_family_framing() {
+                        return None;
+                    }
+                    Some(node)
+                })
+                .collect::<Vec<_>>();
+            let Some(mut node) = nodes.first() else {
+                continue;
+            };
+            if let Some(escaped) = nodes.get(1) {
+                let standard_quality = node.family_quality();
+                let escaped_quality = escaped.family_quality();
+                if escaped_quality > standard_quality
+                    || (escaped_quality == standard_quality && escaped.shift == 1)
+                {
+                    node = escaped;
                 }
+            }
+            let node = node.clone();
+            let key = (kind, node.xmt);
+            let replace = graph
+                .nodes
+                .get(&key)
+                .is_none_or(|current| node.family_quality() > current.family_quality());
+            if replace {
+                if let Some(current) = graph.nodes.insert(key, node) {
+                    graph.by_pos.remove(&current.pos);
+                }
+                graph.by_pos.insert(pos, key);
             }
         }
         graph

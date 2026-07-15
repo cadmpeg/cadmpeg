@@ -2987,6 +2987,9 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         if first < count_offset + 4 || first >= second || second > last || last > bytes.len() {
             continue;
         }
+        if !is_root_record(bytes.get(second..).unwrap_or_default()) {
+            continue;
+        }
         let mut offsets = Vec::with_capacity(offset_count);
         for index in 0..offset_count {
             let Some(offset) = u32_at(bytes, index_start + index * 4).map(|v| v as usize) else {

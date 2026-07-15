@@ -4640,8 +4640,9 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
             let header = section.record_area_header()?;
             let bytes = section.record_area?;
             let entry_offset = link.section_offset.checked_sub(section.offset as u64)?;
+            let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             Some(OmRecordArea {
-                id: format!("nx:om-record-areas:area#{}", header.offset),
+                id: format!("nx:om-record-areas:area#{section_key}-{}", header.offset),
                 section_link: link.id,
                 schema_role: link.schema_role,
                 control_words: header.control_words,
@@ -4756,23 +4757,30 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        records.extend(section.operation_records().into_iter().enumerate().map(
-            |(ordinal, record)| {
-                let operation_label =
-                    format!("nx:feature-history:operation-label#{section_key}-{ordinal}");
-                FeatureOperationRecord {
-                    id: format!("nx:feature-history:operation-record#{section_key}-{ordinal}"),
-                    operation_label,
-                    ordinal: ordinal as u32,
-                    byte_len: record.bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
-                    payload_byte_len: record.payload.len() as u64,
-                    payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload),
-                    payload_source_offset: entry_offset + record.payload_offset as u64,
-                    source_offset: entry_offset + record.offset as u64,
-                }
-            },
-        ));
+        let labels = section.operation_labels();
+        records.extend(
+            section
+                .operation_records()
+                .into_iter()
+                .filter_map(|record| {
+                    let ordinal = labels
+                        .iter()
+                        .position(|label| label.offset == record.label.offset)?;
+                    let operation_label =
+                        format!("nx:feature-history:operation-label#{section_key}-{ordinal}");
+                    Some(FeatureOperationRecord {
+                        id: format!("nx:feature-history:operation-record#{section_key}-{ordinal}"),
+                        operation_label,
+                        ordinal: ordinal as u32,
+                        byte_len: record.bytes.len() as u64,
+                        sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
+                        payload_byte_len: record.payload.len() as u64,
+                        payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload),
+                        payload_source_offset: entry_offset + record.payload_offset as u64,
+                        source_offset: entry_offset + record.offset as u64,
+                    })
+                }),
+        );
     }
     records
 }
@@ -8078,7 +8086,7 @@ pub fn feature_block_dimensions(
                 .ok()?;
             let first = run[0].parameter_index;
             if run.iter().enumerate().any(|(ordinal, declaration)| {
-                declaration.parameter_index != first + ordinal as u32
+                Some(declaration.parameter_index) != first.checked_add(ordinal as u32)
                     || declaration.name != format!("p{}", declaration.parameter_index)
                     || declaration.qualifier.is_some()
             }) {
@@ -8132,13 +8140,7 @@ pub fn data_block_object_frames(container: &Container) -> Vec<DataBlockObjectFra
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, frame)| DataBlockObjectFrame {
-                    id: format!(
-                        "nx:om-data-block-object-frames-{}:frame#{}",
-                        data_block
-                            .rsplit_once('#')
-                            .map_or("unknown", |(_, key)| key),
-                        ordinal
-                    ),
+                    id: data_block_object_frame_id(&data_block, ordinal),
                     data_block: data_block.clone(),
                     ordinal: ordinal as u32,
                     object_id: frame.object_id,
@@ -8147,6 +8149,15 @@ pub fn data_block_object_frames(container: &Container) -> Vec<DataBlockObjectFra
                 .collect::<Vec<_>>()
         })
         .collect()
+}
+
+pub(crate) fn data_block_object_frame_id(data_block: &str, ordinal: usize) -> String {
+    format!(
+        "{}-{ordinal}",
+        data_block
+            .replacen("nx:om-data-blocks-", "nx:om-data-block-object-frames-", 1)
+            .replacen(":block#", ":block-frame#", 1)
+    )
 }
 
 fn unique_offset_data_block(

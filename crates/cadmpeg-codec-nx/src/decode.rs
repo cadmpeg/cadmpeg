@@ -1593,10 +1593,7 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces(
         let assigned_lane = assigned_lanes[assigned_support]?;
         let other_support = 1 - assigned_support;
         let other_lane = 1 - assigned_lane;
-        if lanes[other_lane]
-            .as_ref()
-            .is_some_and(|values| values.len() == points.len())
-        {
+        if lane_matches_surface(surfaces[other_support], other_lane) {
             assigned[other_support].clone_from(&lanes[other_lane]);
         }
     }
