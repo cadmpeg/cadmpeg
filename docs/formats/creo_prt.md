@@ -498,6 +498,13 @@ planes has the exact model-space carrier given by their intersection line. Its
 direction is the normalized cross product of the plane normals; its origin is
 the minimum-norm point satisfying both plane equations.
 
+When a plane is parallel to a placed cylinder axis and cuts the cylinder
+strictly inside its radius, their intersection is two generator lines parallel
+to the axis. The edge's paired half-edge incidences bind its two endpoint
+vertex orbits. If both orbits have unique placed coordinates and exactly one
+generator contains both coordinates, that generator is the edge carrier. Zero
+or two matching generators do not select a carrier.
+
 A topological vertex orbit with three linearly independent placed incident
 planes is their unique intersection point. Additional incident placed planes
 must contain the same point; otherwise the orbit has no placed vertex.

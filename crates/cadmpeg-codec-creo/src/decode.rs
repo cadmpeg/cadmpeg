@@ -14684,6 +14684,23 @@ mod resolved_sketch_tests {
                 if origin.x == 2.0 && direction.z == 1.0
         ));
         assert!(carrier_intersection_curve(secant, cylinder).is_none());
+        let generators = parallel_plane_cylinder_generator_candidates(secant, cylinder);
+        assert_eq!(generators.len(), 2);
+        assert!(matches!(
+            select_parallel_plane_cylinder_generator(
+                secant,
+                cylinder,
+                [[0.0, 2.0, -1.0], [0.0, 2.0, 4.0]],
+            ),
+            Some((CurveGeometry::Line { origin, direction }, "plane_cylinder_secant_generator"))
+                if (origin.y - 2.0).abs() < 1e-12 && direction.z == 1.0
+        ));
+        assert!(select_parallel_plane_cylinder_generator(
+            secant,
+            cylinder,
+            [[0.0, 0.0, -1.0], [0.0, 0.0, 4.0]],
+        )
+        .is_none());
 
         let parallel_cylinder = |origin: [f64; 3], radius| {
             CarrierEquation::Cylinder(CylinderEquation {
@@ -16053,6 +16070,30 @@ fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, b
     orientations
 }
 
+fn solved_topological_vertices(
+    scan: &ContainerScan,
+    carriers: &BTreeMap<u32, CarrierEquation>,
+) -> BTreeMap<u32, [f64; 3]> {
+    let half_edges = scan
+        .half_edges
+        .iter()
+        .map(|half_edge| (half_edge.id, half_edge))
+        .collect::<BTreeMap<_, _>>();
+    scan.topological_vertices
+        .iter()
+        .filter_map(|vertex| {
+            let incident_carriers = vertex
+                .half_edges
+                .iter()
+                .filter_map(|half_edge| half_edges.get(half_edge))
+                .filter_map(|half_edge| carriers.get(&half_edge.face_id))
+                .copied()
+                .collect::<Vec<_>>();
+            solve_carriers(&incident_carriers).map(|point| (vertex.id, point))
+        })
+        .collect()
+}
+
 fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     let planes = placed_planes(scan);
     let carriers = placed_carriers(scan, ir);
@@ -16067,20 +16108,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
         .iter()
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
-    let solved_vertices = scan
-        .topological_vertices
-        .iter()
-        .filter_map(|vertex| {
-            let incident_carriers = vertex
-                .half_edges
-                .iter()
-                .filter_map(|half_edge| half_edges.get(half_edge))
-                .filter_map(|half_edge| carriers.get(&half_edge.face_id))
-                .copied()
-                .collect::<Vec<_>>();
-            solve_carriers(&incident_carriers).map(|point| (vertex.id, point))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let solved_vertices = solved_topological_vertices(scan, &carriers);
     let edge_vertices = scan
         .curve_topology_rows
         .iter()
@@ -17718,12 +17746,100 @@ fn carrier_intersection_curve(
     }
 }
 
+fn parallel_plane_cylinder_generator_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let ((CarrierEquation::Plane(plane), CarrierEquation::Cylinder(cylinder))
+    | (CarrierEquation::Cylinder(cylinder), CarrierEquation::Plane(plane))) = (first, second)
+    else {
+        return Vec::new();
+    };
+    let Some(normal) = normalized(plane.normal) else {
+        return Vec::new();
+    };
+    let Some(axis) = normalized(cylinder.axis) else {
+        return Vec::new();
+    };
+    if dot(normal, axis).abs() > 1e-10 || cylinder.radius <= 0.0 {
+        return Vec::new();
+    }
+    let signed_distance = dot(
+        normal,
+        std::array::from_fn(|index| cylinder.origin[index] - plane.origin[index]),
+    );
+    let scale = cylinder.radius.max(1.0);
+    let offset_squared = cylinder
+        .radius
+        .mul_add(cylinder.radius, -(signed_distance * signed_distance));
+    if offset_squared <= 1e-18 * scale * scale {
+        return Vec::new();
+    }
+    let closest: [f64; 3] =
+        std::array::from_fn(|index| cylinder.origin[index] - signed_distance * normal[index]);
+    let Some(transverse) = normalized(cross(axis, normal)) else {
+        return Vec::new();
+    };
+    let offset = offset_squared.sqrt();
+    [-1.0, 1.0]
+        .into_iter()
+        .map(|sense| {
+            let origin: [f64; 3] =
+                std::array::from_fn(|index| closest[index] + sense * offset * transverse[index]);
+            (
+                CurveGeometry::Line {
+                    origin: Point3::new(origin[0], origin[1], origin[2]),
+                    direction: Vector3::new(axis[0], axis[1], axis[2]),
+                },
+                "plane_cylinder_secant_generator",
+            )
+        })
+        .collect()
+}
+
+fn line_contains_points(geometry: &CurveGeometry, points: [[f64; 3]; 2]) -> bool {
+    let CurveGeometry::Line { origin, direction } = geometry else {
+        return false;
+    };
+    let origin = [origin.x, origin.y, origin.z];
+    let Some(direction) = normalized([direction.x, direction.y, direction.z]) else {
+        return false;
+    };
+    points.into_iter().all(|point| {
+        let relative: [f64; 3] = std::array::from_fn(|index| point[index] - origin[index]);
+        let residual = cross(relative, direction);
+        let scale = dot(relative, relative).sqrt().max(1.0);
+        dot(residual, residual).sqrt() <= 1e-7 * scale
+    })
+}
+
+fn select_parallel_plane_cylinder_generator(
+    first: CarrierEquation,
+    second: CarrierEquation,
+    points: [[f64; 3]; 2],
+) -> Option<(CurveGeometry, &'static str)> {
+    let candidates = parallel_plane_cylinder_generator_candidates(first, second)
+        .into_iter()
+        .filter(|(geometry, _)| line_contains_points(geometry, points))
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
 fn transfer_carrier_intersection_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) {
     let carriers = placed_carriers(scan, ir);
+    let solved_vertices = solved_topological_vertices(scan, &carriers);
+    let incidence = scan
+        .half_edge_vertex_incidence
+        .iter()
+        .map(|binding| (binding.half_edge, binding))
+        .collect::<BTreeMap<_, _>>();
     for row in &scan.curve_topology_rows {
         let (Some(first), Some(second)) = (
             carriers.get(&row.faces[0]).copied(),
@@ -17731,7 +17847,28 @@ fn transfer_carrier_intersection_curves(
         ) else {
             continue;
         };
-        let Some((geometry, tag)) = carrier_intersection_curve(first, second) else {
+        let resolved = carrier_intersection_curve(first, second).or_else(|| {
+            let forward = incidence.get(&HalfEdgeId {
+                curve_id: row.id,
+                side: 0,
+            })?;
+            let reverse = incidence.get(&HalfEdgeId {
+                curve_id: row.id,
+                side: 1,
+            })?;
+            let end = forward.end_vertex_id?;
+            if reverse.start_vertex_id != end
+                || reverse.end_vertex_id != Some(forward.start_vertex_id)
+            {
+                return None;
+            }
+            let points = [
+                *solved_vertices.get(&forward.start_vertex_id)?,
+                *solved_vertices.get(&end)?,
+            ];
+            select_parallel_plane_cylinder_generator(first, second, points)
+        });
+        let Some((geometry, tag)) = resolved else {
             continue;
         };
         let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
