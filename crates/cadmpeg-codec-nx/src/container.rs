@@ -7,6 +7,7 @@
 //! `/Root/UG_PART/UG_PART` span to bound its compressed-stream scan.
 
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::le::{u32_at as u32_le, u64_at as u64_le};
 
 /// The eight-byte signature used to identify an SPLMSSTR container.
@@ -274,7 +275,8 @@ pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(u
             (payload[marker] == 1).then_some(())?;
             let count = u32_le(payload, marker + 1)? as usize;
             let mut pos = marker + 5;
-            (count <= payload.len().saturating_sub(pos) / 3).then_some(())?;
+            // Each entry is a 2-byte length prefix plus at least one non-empty string byte.
+            let count = bounded_len(count as u64, 3, payload.len().saturating_sub(pos))?;
             let mut out = Vec::with_capacity(count);
             for _ in 0..count {
                 let raw_length = payload.get(pos..pos + 2)?;

@@ -288,6 +288,9 @@ fn decode_bitlength(
         bit: 0,
     };
     let mut width = 0i32;
+    // Each emitted value consumes at least the one leading run bit, so no more than
+    // code_bit_len values can decode; a larger declared count cannot fill the run.
+    let value_count = cadmpeg_ir::cursor::bounded_len(value_count as u64, 1, code_bit_len)?;
     let mut values = Vec::with_capacity(value_count);
     while bits.bit < bits.bit_len && values.len() < value_count {
         if bits.next() != 0 {
