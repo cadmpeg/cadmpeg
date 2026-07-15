@@ -3570,6 +3570,7 @@ fn decode_rolling_ball_side(
     bytes: &[u8],
     position: &mut usize,
     int_width: usize,
+    reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<EmbeddedRollingBallSide> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match take_native_string(bytes, position)?.as_str() {
@@ -3600,7 +3601,12 @@ fn decode_rolling_ball_side(
         None
     } else {
         *position = saved;
-        Some(decode_rolling_ball_curve(bytes, position, int_width)?)
+        Some(decode_rolling_ball_curve(
+            bytes,
+            position,
+            int_width,
+            reference_context,
+        )?)
     };
     let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
     let location = take_native_vec3(bytes, position, 0x13)?;
@@ -3638,6 +3644,7 @@ fn decode_rolling_ball_curve(
     bytes: &[u8],
     position: &mut usize,
     int_width: usize,
+    reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<CurveGeometry> {
     if marker_at(bytes, *position).is_some() {
         let curve = decode_curve_block(bytes, *position, int_width)?;
@@ -3648,14 +3655,20 @@ fn decode_rolling_ball_curve(
     if kind == "intcurve" {
         take_bool(bytes, position)?;
         let scope = subtype_span(bytes, *position, int_width)?;
-        let curve = marker_positions(scope)
+        let inline = marker_positions(scope)
             .into_iter()
             .filter_map(|at| decode_curve_block(scope, at, int_width))
-            .next_back()?;
+            .next_back()
+            .map(|decoded| decoded.curve);
+        let curve = reference_context
+            .and_then(|(active_bytes, tables)| {
+                decode_curve_cache_resolving_refs(scope, active_bytes, tables)
+            })
+            .or(inline)?;
         *position += scope.len();
         take_bool(bytes, position)?;
         take_bool(bytes, position)?;
-        return Some(CurveGeometry::Nurbs(curve.curve));
+        return Some(CurveGeometry::Nurbs(curve));
     }
     let geometry = match kind.as_str() {
         "straight" => {
@@ -4326,6 +4339,8 @@ fn decode_vertex_blend_spl_sur(
 fn decode_full_rb_blend_spl_sur(
     record_bytes: &[u8],
     int_width: usize,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
 ) -> Option<DecodedProceduralSurface> {
     let names: [(&[u8], bool); 6] = [
         (b"rb_blend_spl_sur", false),
@@ -4350,10 +4365,11 @@ fn decode_full_rb_blend_spl_sur(
     let mut position = name_len + 3;
     let definition_index = take_tagged_int(span, &mut position, 0x04, int_width)?;
     let sides = Box::new([
-        decode_rolling_ball_side(span, &mut position, int_width)?,
-        decode_rolling_ball_side(span, &mut position, int_width)?,
+        decode_rolling_ball_side(span, &mut position, int_width, Some((active_bytes, tables)))?,
+        decode_rolling_ball_side(span, &mut position, int_width, Some((active_bytes, tables)))?,
     ]);
-    let slice = decode_rolling_ball_curve(span, &mut position, int_width)?;
+    let slice =
+        decode_rolling_ball_curve(span, &mut position, int_width, Some((active_bytes, tables)))?;
     let offsets = [
         take_f64(span, &mut position)? * LEN_TO_MM,
         take_f64(span, &mut position)? * LEN_TO_MM,
@@ -4582,7 +4598,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_cyl_spl_sur_at(bytes, int_width))
         .or_else(|| decode_var_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_vertex_blend_spl_sur(bytes, int_width))
-        .or_else(|| decode_full_rb_blend_spl_sur(bytes, int_width))
+        .or_else(|| decode_full_rb_blend_spl_sur(bytes, int_width, active_bytes, tables))
         .or_else(|| decode_rb_blend_spl_sur_fallback(bytes, int_width))
     {
         if let DecodedProceduralSurfaceDefinition::TSpline(construction) = &mut decoded.definition {
@@ -5417,8 +5433,8 @@ pub(crate) fn rolling_ball_patch_layout(
     let radii = (|| {
         let mut position = payload_start;
         take_tagged_int(span, &mut position, 0x04, int_width)?;
-        decode_rolling_ball_side(span, &mut position, int_width)?;
-        decode_rolling_ball_side(span, &mut position, int_width)?;
+        decode_rolling_ball_side(span, &mut position, int_width, None)?;
+        decode_rolling_ball_side(span, &mut position, int_width, None)?;
         position = decode_curve_block(span, position, int_width)?.end;
         Some([
             start + take_double_payload(span, &mut position)?,
@@ -7671,7 +7687,7 @@ mod width_tests {
             straight.extend_from_slice(&[0x0b, 0x0b]);
             let mut position = 0;
             assert!(matches!(
-                decode_rolling_ball_curve(&straight, &mut position, int_width),
+                decode_rolling_ball_curve(&straight, &mut position, int_width, None),
                 Some(CurveGeometry::Line { origin, direction })
                     if origin == Point3::new(10.0, 20.0, 30.0)
                         && direction == Vector3::new(0.0, 1.0, 0.0)
@@ -7688,7 +7704,37 @@ mod width_tests {
             intcurve.extend_from_slice(&[0x0b, 0x0b]);
             let mut position = 0;
             assert!(matches!(
-                decode_rolling_ball_curve(&intcurve, &mut position, int_width),
+                decode_rolling_ball_curve(&intcurve, &mut position, int_width, None),
+                Some(CurveGeometry::Nurbs(curve)) if curve.degree == 1
+            ));
+            assert_eq!(position, intcurve.len());
+
+            let mut active = vec![0x0f];
+            push_ident(&mut active, "exact_int_cur");
+            active.extend_from_slice(&curve_block(int_width));
+            active.push(0x10);
+            let mut reference = vec![0x0f];
+            push_ident(&mut reference, "holder");
+            reference.push(0x0f);
+            push_ident(&mut reference, "ref");
+            push_int(&mut reference, 0x04, 0, int_width);
+            reference.push(0x10);
+            reference.push(0x10);
+            active.extend_from_slice(&reference);
+            let tables = SubtypeTables::from_stream(&active);
+            let mut intcurve = Vec::new();
+            push_ident(&mut intcurve, "intcurve");
+            intcurve.push(0x0b);
+            intcurve.extend_from_slice(&reference);
+            intcurve.extend_from_slice(&[0x0b, 0x0b]);
+            let mut position = 0;
+            assert!(matches!(
+                decode_rolling_ball_curve(
+                    &intcurve,
+                    &mut position,
+                    int_width,
+                    Some((&active, &tables)),
+                ),
                 Some(CurveGeometry::Nurbs(curve)) if curve.degree == 1
             ));
             assert_eq!(position, intcurve.len());
