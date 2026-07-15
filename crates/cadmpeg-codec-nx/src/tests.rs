@@ -9860,6 +9860,107 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
 }
 
 #[test]
+fn blend_contact_matches_concentric_blend_carriers() {
+    use cadmpeg_ir::geometry::{BlendSupport, ProceduralSurface, Surface};
+    use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+    use cadmpeg_ir::math::Point3;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let first = SurfaceId("synthetic:first".into());
+    let second = SurfaceId("synthetic:second".into());
+    let first_offset = SurfaceId("synthetic:first-offset".into());
+    let second_offset = SurfaceId("synthetic:second-offset".into());
+    let plane = |id, origin, normal, u_axis| Surface {
+        id,
+        geometry: SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        },
+        source_object: None,
+    };
+    ir.model.surfaces.extend([
+        plane(
+            first.clone(),
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+        plane(
+            second.clone(),
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+        plane(
+            first_offset.clone(),
+            Point3::new(3.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+        plane(
+            second_offset.clone(),
+            Point3::new(0.0, 3.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+    ]);
+
+    let spine = CurveId("synthetic:shared-spine".into());
+    let inner = SurfaceId("synthetic:inner-blend".into());
+    let outer = SurfaceId("synthetic:outer-blend".into());
+    for (surface, supports, radius) in [
+        (inner.clone(), [first, second], 0.7),
+        (outer.clone(), [first_offset, second_offset], 3.7),
+    ] {
+        let construction = ProceduralSurfaceId(format!("{}:construction", surface.0));
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: construction.clone(),
+            },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: construction,
+            surface,
+            definition: ProceduralSurfaceDefinition::Blend {
+                supports: supports.map(|surface| {
+                    Some(BlendSupport {
+                        surface,
+                        reversed: false,
+                    })
+                }),
+                spine: Some(spine.clone()),
+                radius: BlendRadiusLaw::Constant {
+                    signed_radius: radius,
+                },
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            cache_fit_tolerance: None,
+        });
+    }
+
+    assert_eq!(
+        crate::decode::constant_surface_offset_between(&ir, &inner, &outer, 0),
+        Some(3.0)
+    );
+    let outer_definition = ir
+        .model
+        .procedural_surfaces
+        .iter_mut()
+        .find(|candidate| candidate.surface == outer)
+        .unwrap();
+    let ProceduralSurfaceDefinition::Blend { supports, .. } = &mut outer_definition.definition
+    else {
+        unreachable!()
+    };
+    supports[0].as_mut().unwrap().reversed = true;
+    assert!(crate::decode::constant_surface_offset_between(&ir, &inner, &outer, 0).is_none());
+}
+
+#[test]
 fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     use cadmpeg_ir::geometry::{
         BlendSupport, Curve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, Surface,

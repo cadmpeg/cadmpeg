@@ -2873,8 +2873,47 @@ pub(crate) fn constant_surface_offset_between(
         .iter()
         .find(|surface| surface.id == offset_base)?
         .geometry;
-    let analytic_offset = analytic_surface_offset(support_geometry, offset_geometry)?;
-    Some(analytic_offset + offset_distance - support_offset)
+    let base_offset = analytic_surface_offset(support_geometry, offset_geometry)
+        .or_else(|| blend_surface_offset(ir, &support_base, &offset_base, depth + 1))?;
+    Some(base_offset + offset_distance - support_offset)
+}
+
+fn blend_surface_offset(
+    ir: &CadIr,
+    support: &SurfaceId,
+    offset: &SurfaceId,
+    depth: usize,
+) -> Option<f64> {
+    (depth < 32).then_some(())?;
+    let (support_carriers, support_spine, support_radius, support_reversed) =
+        blend_surface_definition(ir, support)?;
+    let (offset_carriers, offset_spine, offset_radius, offset_reversed) =
+        blend_surface_definition(ir, offset)?;
+    (support_spine == offset_spine).then_some(())?;
+
+    let distance = offset_radius - support_radius;
+    let magnitude = distance.abs();
+    let matches = [[0usize, 1usize], [1usize, 0usize]]
+        .into_iter()
+        .filter(|permutation| {
+            permutation
+                .iter()
+                .enumerate()
+                .all(|(support_index, &offset_index)| {
+                    support_reversed[support_index] == offset_reversed[offset_index]
+                        && constant_surface_offset_between(
+                            ir,
+                            &support_carriers[support_index],
+                            &offset_carriers[offset_index],
+                            depth + 1,
+                        )
+                        .is_some_and(|carrier_distance| {
+                            blend_contact_offset_matches(0.0, carrier_distance, magnitude, false)
+                        })
+                })
+        })
+        .count();
+    (matches == 1).then_some(distance)
 }
 
 fn analytic_surface_offset(support: &SurfaceGeometry, offset: &SurfaceGeometry) -> Option<f64> {
