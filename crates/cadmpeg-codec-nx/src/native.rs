@@ -208,6 +208,8 @@ pub struct DisplayJtTopologyPacket {
     pub sha256: String,
     /// Mesh-representation-relative packet offset.
     pub representation_offset: u32,
+    /// Reconstructed primal values when the packet codec is decoded.
+    pub values: Option<Vec<i32>>,
 }
 
 /// Complete compressed-topology envelope preceding JT 9 vertex records.
@@ -1557,6 +1559,17 @@ pub fn display_jt_topology_packet_sequences(
             else {
                 return (Vec::new(), Vec::new(), Vec::new());
             };
+            let values = crate::jt::decode_int32_cdp2(packet, 0).and_then(
+                |(residuals, decoded_byte_len)| {
+                    (decoded_byte_len == packet.len()).then(|| {
+                        let predictor = match role.as_str() {
+                            "vertex_flags" | "split_face_symbols" => crate::jt::Predictor::Lag1,
+                            _ => crate::jt::Predictor::Null,
+                        };
+                        crate::jt::unpack_predictor_residuals(&residuals, predictor)
+                    })
+                },
+            );
             packets.push(DisplayJtTopologyPacket {
                 role,
                 value_count,
@@ -1564,6 +1577,7 @@ pub fn display_jt_topology_packet_sequences(
                 byte_len,
                 sha256: sha256_hex(packet),
                 representation_offset,
+                values,
             });
             cursor += byte_len as usize;
         }

@@ -487,6 +487,58 @@ fn jt9_topology_bounds_variable_high_degree_lane_count() {
 }
 
 #[test]
+fn jt9_topology_packets_retain_decoded_primal_values() {
+    use crate::native::{display_jt_topology_packet_sequences, DisplayJtShapeLodElement};
+
+    let mut representation = vec![0; 24 * 4];
+    representation.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
+    representation.extend_from_slice(&10_u64.to_le_bytes());
+    representation.extend_from_slice(&[24, 13, 16, 8]);
+    representation.extend_from_slice(&0_u32.to_le_bytes());
+
+    let mut body = Vec::new();
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&10_u64.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&7_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&representation);
+    let source_offset = 64_u64;
+    let mut data = vec![0; source_offset as usize + 25];
+    data.extend_from_slice(&body);
+    let container = crate::container::Container {
+        data,
+        version: 1,
+        file_tag: 0,
+        footer_offset: 0,
+        entries: Vec::new(),
+    };
+    let elements = [DisplayJtShapeLodElement {
+        id: "shape-lod".into(),
+        segment: "segment".into(),
+        ordinal: 0,
+        object_type_id: vec![
+            0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb,
+            0x59, 0x97,
+        ],
+        object_base_type: 4,
+        object_id: 1,
+        body_byte_len: body.len() as u32,
+        body_sha256: String::new(),
+        source_offset,
+    }];
+
+    let (sequences, _, _) = display_jt_topology_packet_sequences(&container, &elements);
+    assert_eq!(sequences.len(), 1);
+    assert_eq!(sequences[0].packets.len(), 24);
+    assert!(sequences[0]
+        .packets
+        .iter()
+        .all(|packet| packet.values == Some(Vec::new())));
+}
+
+#[test]
 fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
     let mut body = Vec::new();
     body.extend_from_slice(&1_u16.to_le_bytes());
