@@ -9,10 +9,10 @@
 
 ## Phase 0 approvals
 
-- [ ] A maintainer approves `corpus/iges-envelope-a.toml` as the closed IGES 5.3 Fixed ASCII mechanical/document profile.
-- [ ] A maintainer approves the L0, L3, L4, L6, and L7 decisions in `docs/format-support.md`.
+- [x] A maintainer approves `corpus/iges-envelope-a.toml` as the closed IGES 5.3 Fixed ASCII mechanical/document profile.
+- [x] A maintainer approves the L0, L3, L4, L6, and L7 decisions in `docs/format-support.md`.
 - [ ] A maintainer approves the generic byte-ledger schema, validation, canonical order, diff behavior, serialization, and IR-version policy.
-- [ ] Each support gate has original-fixture and public-fixture classes plus machine-checkable assertions.
+- [x] Each support gate has original-fixture and public-fixture classes plus machine-checkable assertions.
 
 ## Implementation invariants
 
