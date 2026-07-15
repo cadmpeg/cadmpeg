@@ -4469,64 +4469,99 @@ impl MeshSelectionSearch<'_> {
             common
         }
 
-        loop {
+        fn changed_edges(left: &mut MeshQuotient, right: &mut MeshQuotient) -> HashSet<usize> {
+            (0..left.union.len())
+                .filter_map(|node| {
+                    let left_root = left.union.find(node);
+                    let right_root = right.union.find(node);
+                    (left_root != right_root
+                        || left.members[left_root] != right.members[right_root]
+                        || left.domains[left_root] != right.domains[right_root])
+                        .then_some(node / 2)
+                })
+                .collect()
+        }
+
+        let mut queue = self
+            .selected
+            .iter()
+            .enumerate()
+            .filter_map(|(face, selected)| selected.is_none().then_some(face))
+            .collect::<VecDeque<_>>();
+        let mut queued = queue.iter().copied().collect::<HashSet<_>>();
+        while let Some(face) = queue.pop_front() {
+            queued.remove(&face);
+            if self.selected[face].is_some() {
+                continue;
+            }
+            let mut before = quotient.clone();
             let mut changed = false;
-            for (face, selected) in self.selected.iter().enumerate() {
-                if selected.is_some() {
+            let supported = self.assignments[face]
+                .iter()
+                .filter(|assignment| {
+                    quotient.assignment_has_option(assignment, self.edge_candidates)
+                })
+                .collect::<Vec<_>>();
+            if supported.is_empty() {
+                return false;
+            }
+            let option_bound = supported.iter().try_fold(0usize, |total, assignment| {
+                let unknown = assignment
+                    .boundaries
+                    .iter()
+                    .flatten()
+                    .filter(|use_| use_.reversed.is_none())
+                    .count();
+                total.checked_add(1usize.checked_shl(unknown as u32)?)
+            });
+            if option_bound.is_none_or(|bound| bound > MAX_FACE_EQUATION_OPTIONS) {
+                continue;
+            }
+            let mut common = None::<HashSet<[usize; 2]>>;
+            for assignment in supported {
+                let Some(assignment_common) =
+                    common_assignment_equations(quotient, assignment, self.edge_candidates)
+                else {
+                    return false;
+                };
+                match &mut common {
+                    Some(common) => {
+                        common.retain(|equation| assignment_common.contains(equation));
+                    }
+                    None => common = Some(assignment_common),
+                }
+            }
+            for [left, right] in common.unwrap_or_default() {
+                if quotient.union.find(left) == quotient.union.find(right) {
                     continue;
                 }
-                let supported = self.assignments[face]
-                    .iter()
-                    .filter(|assignment| {
-                        quotient.assignment_has_option(assignment, self.edge_candidates)
-                    })
-                    .collect::<Vec<_>>();
-                if supported.is_empty() {
+                let Some(root) = quotient.merge(left, right) else {
+                    return false;
+                };
+                if !quotient.propagate_component_edge_domains(root, self.edge_candidates) {
                     return false;
                 }
-                let option_bound = supported.iter().try_fold(0usize, |total, assignment| {
-                    let unknown = assignment
-                        .boundaries
-                        .iter()
-                        .flatten()
-                        .filter(|use_| use_.reversed.is_none())
-                        .count();
-                    total.checked_add(1usize.checked_shl(unknown as u32)?)
-                });
-                if option_bound.is_none_or(|bound| bound > MAX_FACE_EQUATION_OPTIONS) {
-                    continue;
-                }
-                let mut common = None::<HashSet<[usize; 2]>>;
-                for assignment in supported {
-                    let Some(assignment_common) =
-                        common_assignment_equations(quotient, assignment, self.edge_candidates)
-                    else {
-                        return false;
-                    };
-                    match &mut common {
-                        Some(common) => {
-                            common.retain(|equation| assignment_common.contains(equation));
-                        }
-                        None => common = Some(assignment_common),
-                    }
-                }
-                for [left, right] in common.unwrap_or_default() {
-                    if quotient.union.find(left) == quotient.union.find(right) {
-                        continue;
-                    }
-                    let Some(root) = quotient.merge(left, right) else {
-                        return false;
-                    };
-                    if !quotient.propagate_component_edge_domains(root, self.edge_candidates) {
-                        return false;
-                    }
-                    changed = true;
-                }
+                changed = true;
             }
             if !changed {
-                return true;
+                continue;
+            }
+            let changed_edges = changed_edges(&mut before, quotient);
+            for (dependent, assignments) in self.assignments.iter().enumerate() {
+                if self.selected[dependent].is_none()
+                    && !queued.contains(&dependent)
+                    && assignments
+                        .iter()
+                        .flat_map(|assignment| &assignment.boundaries)
+                        .flatten()
+                        .any(|use_| changed_edges.contains(&use_.edge))
+                {
+                    queued.insert(dependent);
+                    queue.push_back(dependent);
+                }
             }
         }
+        true
     }
 
     fn selection_orientable(&self, selection: &[MeshFaceSelection]) -> bool {
