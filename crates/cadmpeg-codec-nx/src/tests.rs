@@ -33,8 +33,8 @@ fn display_jt_index_requires_every_declared_header() {
     let mut inflated = Vec::new();
     inflated.extend_from_slice(&24_u32.to_le_bytes());
     inflated.extend_from_slice(&[3; 16]);
+    inflated.push(1);
     inflated.extend_from_slice(&5_u32.to_le_bytes());
-    inflated.push(0);
     inflated.extend_from_slice(&[9, 8, 7]);
     inflated.extend_from_slice(&16_u32.to_le_bytes());
     inflated.extend_from_slice(&[0xff; 16]);
@@ -123,6 +123,7 @@ fn display_jt_index_requires_every_declared_header() {
     assert_eq!(compressed_elements[0].segment_type, 1);
     assert_eq!(compressed_elements[0].object_type_id, [3; 16]);
     assert_eq!(compressed_elements[0].object_id, 5);
+    assert_eq!(compressed_elements[0].object_base_type, 1);
     assert_eq!(compressed_elements[0].body_byte_len, 3);
     assert_eq!(sequences.len(), 1);
     assert_eq!(sequences[0].framed_byte_len, 48);
@@ -151,8 +152,8 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
     data.extend_from_slice(&78_u32.to_le_bytes());
     data.extend_from_slice(&24_u32.to_le_bytes());
     data.extend_from_slice(&object_type_id);
+    data.push(4);
     data.extend_from_slice(&42_u32.to_le_bytes());
-    data.push(3);
     data.extend_from_slice(&body);
     data.extend_from_slice(&16_u32.to_le_bytes());
     data.extend_from_slice(&[0xff; 16]);
@@ -180,7 +181,7 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
     assert_eq!(elements.len(), 1);
     assert_eq!(elements[0].object_type_id, object_type_id);
     assert_eq!(elements[0].object_id, 42);
-    assert_eq!(elements[0].object_base_type, 3);
+    assert_eq!(elements[0].object_base_type, 4);
     assert_eq!(elements[0].body_byte_len, 3);
 
     let mut malformed = container;

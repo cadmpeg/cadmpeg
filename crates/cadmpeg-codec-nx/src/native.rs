@@ -137,10 +137,10 @@ pub struct DisplayJtShapeLodElement {
     pub ordinal: u32,
     /// Exact 16-byte object-type identifier.
     pub object_type_id: Vec<u8>,
-    /// Serialized object identifier.
-    pub object_id: u32,
     /// Serialized object-base-type discriminator.
     pub object_base_type: u8,
+    /// Serialized object identifier.
+    pub object_id: u32,
     /// Bytes following the common element header.
     pub body_byte_len: u32,
     /// SHA-256 of the bytes following the common element header.
@@ -162,10 +162,10 @@ pub struct DisplayJtCompressedElement {
     pub ordinal: u32,
     /// Exact 16-byte object-type identifier.
     pub object_type_id: Vec<u8>,
-    /// Serialized object identifier.
-    pub object_id: u32,
     /// Serialized object-base-type discriminator.
     pub object_base_type: u8,
+    /// Serialized object identifier.
+    pub object_id: u32,
     /// Bytes following the common element header.
     pub body_byte_len: u32,
     /// SHA-256 of the bytes following the common element header.
@@ -330,11 +330,11 @@ fn parse_jt_element_sequence(payload: &[u8]) -> Option<(Vec<ParsedJtElement<'_>>
             return Some((elements, element_end));
         }
         let object_type_id = element.get(..16)?;
+        let &object_base_type = element.get(16)?;
         let object_id = element
-            .get(16..20)
+            .get(17..21)
             .and_then(|value| value.try_into().ok())
             .map(u32::from_le_bytes)?;
-        let &object_base_type = element.get(20)?;
         elements.push(ParsedJtElement {
             offset: cursor,
             object_type_id,
@@ -951,6 +951,9 @@ pub fn display_jt_shape_lod_elements(
             return Vec::new();
         }
         for (ordinal, element) in parsed.into_iter().enumerate() {
+            if element.object_base_type != 4 {
+                return Vec::new();
+            }
             elements.push(DisplayJtShapeLodElement {
                 id: format!("{}-element-{ordinal}", segment.id),
                 segment: segment.id.clone(),
@@ -1073,7 +1076,7 @@ pub fn display_jt_string_property_atoms(
             return Vec::new();
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
-            if element.object_type_id != STRING_PROPERTY_ATOM_TYPE || element.object_base_type != 0
+            if element.object_type_id != STRING_PROPERTY_ATOM_TYPE || element.object_base_type != 5
             {
                 return Vec::new();
             }
@@ -1133,7 +1136,7 @@ pub fn display_jt_base_node_data(
             return Vec::new();
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
-            if element.object_base_type != 0 {
+            if element.object_base_type > 2 {
                 return Vec::new();
             }
             let Some((version, flags, attribute_object_ids, family_data)) =
