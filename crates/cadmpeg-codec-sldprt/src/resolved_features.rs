@@ -8774,7 +8774,7 @@ fn typed_relation_definition(
         PointPointDistance => {
             let first = point(0);
             let second = point(1);
-            let (first, second) = match (first, second) {
+            let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
                     known.clone(),
@@ -8803,7 +8803,13 @@ fn typed_relation_definition(
                     (second_point.u - first_point.u).hypot(second_point.v - first_point.v),
                     expected.0,
                 ) {
-                    return None;
+                    (first, second) = unique_repaired_profile_distance_loci_pair(
+                        sketch,
+                        &first,
+                        &second,
+                        parameter,
+                        sketch_entities,
+                    )?;
                 }
             }
             Some(SketchConstraintDefinition::DistanceLoci {
@@ -9120,6 +9126,34 @@ fn unique_profile_distance_locus(
     let mut candidates = candidates.into_iter();
     let candidate = candidates.next()?;
     candidates.next().is_none().then_some(candidate)
+}
+
+fn unique_repaired_profile_distance_loci_pair(
+    sketch: &SketchId,
+    first: &SketchLocus,
+    second: &SketchLocus,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<(SketchLocus, SketchLocus)> {
+    let mut candidates = [first, second]
+        .into_iter()
+        .filter_map(|known| {
+            let partner = unique_profile_distance_locus(sketch, known, parameter, sketch_entities)?;
+            let mut pair = [known.clone(), partner];
+            pair.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+            Some((pair[0].clone(), pair[1].clone()))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|(first_left, second_left), (first_right, second_right)| {
+        locus_key(first_left)
+            .cmp(&locus_key(first_right))
+            .then_with(|| locus_key(second_left).cmp(&locus_key(second_right)))
+    });
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 fn unique_profile_axis_distance_locus(
@@ -13028,6 +13062,130 @@ mod profile_join_tests {
         assert_eq!(
             relations[0].operands[1].entity_ref.as_deref(),
             Some("center")
+        );
+    }
+
+    #[test]
+    fn point_distance_uses_unique_solved_pair_when_reference_hints_are_inconsistent() {
+        let sketch = SketchId("sketch".into());
+        let point = |id: &str, u: f64| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: Some(id.into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(u, 0.0),
+            },
+        };
+        let entities = vec![
+            point("hint-a", 0.0),
+            point("hint-b", 2.0),
+            point("solved", 5.0),
+        ];
+        let hint_a = marker("hint-a", Some([0.0, 0.0]));
+        let hint_b = marker("hint-b", Some([0.002, 0.0]));
+        let markers = HashMap::from([(hint_a.id.as_str(), &hint_a), (hint_b.id.as_str(), &hint_b)]);
+        let loci = HashMap::from([
+            (
+                hint_a.id.clone(),
+                vec![SketchLocus::Entity(SketchEntityId("hint-a".into()))],
+            ),
+            (
+                hint_b.id.clone(),
+                vec![SketchLocus::Entity(SketchEntityId("hint-b".into()))],
+            ),
+        ]);
+        let relation = FeatureInputRelationInstance {
+            id: "relation".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            family: FeatureInputRelationFamily::PointPointDistance,
+            class_ref: "class".into(),
+            feature_ref: "feature".into(),
+            scalar_refs: vec!["scalar".into()],
+            parameter_scalar_ref: Some("scalar".into()),
+            display_scalar_ref: None,
+            operands: vec![
+                FeatureInputOperand {
+                    offset: 1,
+                    reference_ref: "reference-a".into(),
+                    kind: FeatureInputOperandKind::D6,
+                    entity_index: 0,
+                    entity_ref: Some(hint_a.id.clone()),
+                },
+                FeatureInputOperand {
+                    offset: 2,
+                    reference_ref: "reference-b".into(),
+                    kind: FeatureInputOperandKind::D6,
+                    entity_index: 1,
+                    entity_ref: Some(hint_b.id.clone()),
+                },
+            ],
+        };
+        let parameter = DesignParameter {
+            id: ParameterId("distance".into()),
+            owner: FeatureId("feature".into()),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "5mm".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(5.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some("scalar".into()),
+        };
+
+        assert!(matches!(
+            typed_relation_definition(
+                &relation,
+                Some(&parameter),
+                &sketch,
+                &entities,
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::DistanceLoci {
+                first: SketchLocus::Entity(first),
+                second: SketchLocus::Entity(second),
+                ..
+            }) if [&first, &second].contains(&&SketchEntityId("hint-a".into()))
+                && [&first, &second].contains(&&SketchEntityId("solved".into()))
+        ));
+
+        let mut ambiguous_entities = entities;
+        ambiguous_entities.push(point("other-solved", -5.0));
+        assert_eq!(
+            typed_relation_definition(
+                &relation,
+                Some(&parameter),
+                &sketch,
+                &ambiguous_entities,
+                &markers,
+                &loci,
+            ),
+            None
+        );
+
+        let unrelated_entities = vec![
+            point("hint-a", 0.0),
+            point("hint-b", 2.0),
+            point("unrelated-a", 10.0),
+            point("unrelated-b", 15.0),
+        ];
+        assert_eq!(
+            typed_relation_definition(
+                &relation,
+                Some(&parameter),
+                &sketch,
+                &unrelated_entities,
+                &markers,
+                &loci,
+            ),
+            None
         );
     }
 

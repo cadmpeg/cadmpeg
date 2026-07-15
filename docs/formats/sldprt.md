@@ -231,6 +231,8 @@ A point-point dimension projects to neutral form only when its operands resolve 
 
 When exactly one point-distance operand identifies a locus, the other operand identifies the sole distinct point locus in the complete owning sketch at the stored distance. Zero or multiple distance-compatible loci leave the operand unresolved.
 
+When both point-distance references identify loci whose separation differs from the stored distance, each referenced locus independently selects its sole distinct locus at the stored distance. The dimension uses the resulting pair only when these searches produce one unique unordered pair. The repaired pair therefore retains a referenced locus; two different pairs, no pair, or a scalar-compatible pair unrelated to both references leaves the relation native.
+
 When neither point-distance operand identifies a locus, the operands identify the sole unordered pair of profile loci in the complete owning sketch separated by the stored distance. Zero or multiple distance-compatible pairs leave both operands unresolved.
 
 When exactly one line-distance operand identifies a profile line, the other operand identifies the sole distinct parallel profile line in the complete owning sketch at the stored perpendicular distance. When neither operand identifies a line, the operands identify the sole unordered parallel line pair at that distance. Zero or multiple compatible lines or pairs leave the missing operands unresolved.
