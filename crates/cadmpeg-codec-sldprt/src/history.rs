@@ -1665,13 +1665,17 @@ fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         .get("Clockwise")
         .and_then(|value| parse_bool(value))
         .unwrap_or(false);
+    let start_angle = match feature.parameters.get("StartAngle") {
+        Some(value) => parse_angle_rad(value)?,
+        None => 0.0,
+    };
     Some(FeatureDefinition::Helix {
         axis_origin,
         axis_direction,
         radius: Length(radius),
         pitch: Length(pitch),
         revolutions,
-        start_angle: Angle(0.0),
+        start_angle: Angle(start_angle),
         clockwise,
     })
 }

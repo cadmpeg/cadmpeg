@@ -8959,10 +8959,8 @@ fn unique_axis_aligned_linked_loci(
             .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
     };
     let known_point = point(&known)?;
-    let mut candidates = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .flat_map(sketch_entity_loci)
+    let mut candidates = canonical_profile_loci(sketch, sketch_entities)
+        .into_iter()
         .filter_map(|(candidate_point, candidate)| {
             let aligned = if horizontal {
                 same_dimension_length(candidate_point.v, known_point.v)
@@ -18205,7 +18203,14 @@ fn patch_line_profiles(
                     let reference = &entity.endpoint_refs[0];
                     let (stream, attr) = parse_point_ref(reference)?;
                     let point = lift_point(*position, sketch.origin, sketch.u_axis, v_axis);
-                    requested.insert((lane_id.clone(), stream, attr), point);
+                    let key = (lane_id.clone(), stream, attr);
+                    if let Some(previous) = requested.insert(key, point) {
+                        if distance(previous, point) > 1.0e-9 {
+                            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                                "SLDPRT shared sketch point {reference} has conflicting positions"
+                            )));
+                        }
+                    }
                 }
                 SketchGeometry::Line { start, end } => {
                     for (reference, point) in entity.endpoint_refs.iter().zip([start, end]) {

@@ -1496,7 +1496,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 weights,
                 ..
             } => {
-                radial_control_points.len() > *degree as usize
+                *degree != 0
+                    && radial_control_points.len() > *degree as usize
                     && axial_control_points.len() == radial_control_points.len()
                     && knots.len() == radial_control_points.len() + *degree as usize + 1
                     && radial_control_points.iter().all(point_finite)
@@ -1515,7 +1516,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 weights,
                 ..
             } => {
-                control_points.len() > *degree as usize
+                *degree != 0
+                    && control_points.len() > *degree as usize
                     && knots.len() == control_points.len() + *degree as usize + 1
                     && control_points.iter().all(point_finite)
                     && weights.as_ref().is_none_or(|weights| {
@@ -1532,7 +1534,15 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let crate::geometry::PcurveGeometry::Nurbs { knots, .. }
         | crate::geometry::PcurveGeometry::PolarNurbs { knots, .. } = &pcurve.geometry
         {
+            if knots.iter().any(|knot| !knot.is_finite()) {
+                bounds_err(findings, &pcurve.id.0, "pcurve knots must be finite");
+            }
             check_knots(findings, &pcurve.id.0, knots, "");
+        }
+        if pcurve.parameter_range.is_some_and(|[start, end]| {
+            !start.is_finite() || !end.is_finite() || start > end
+        }) {
+            bounds_err(findings, &pcurve.id.0, "pcurve parameter range is invalid");
         }
     }
     for procedural in &ir.model.procedural_curves {

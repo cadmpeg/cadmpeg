@@ -2527,7 +2527,7 @@ fn synthesize_sphere_seams(
         .collect::<HashMap<_, _>>();
     let mut existing = Vec::new();
     for face in &out.faces {
-        let Some(SurfaceGeometry::Sphere { .. }) = surface_geometry.get(&face.surface).copied()
+        let Some(SurfaceGeometry::Sphere { center, radius, axis, .. }) = surface_geometry.get(&face.surface).copied()
         else {
             continue;
         };
@@ -2563,12 +2563,31 @@ fn synthesize_sphere_seams(
                 continue;
             }
             let edge = &out.edges[*edge_index];
-            if edge.start != edge.end {
-                continue;
-            }
-            let Some(point) = vertex_points.get(&edge.start).copied() else {
-                continue;
+            let north = cadmpeg_ir::math::Point3::new(
+                center.x + radius * axis.x,
+                center.y + radius * axis.y,
+                center.z + radius * axis.z,
+            );
+            let south = cadmpeg_ir::math::Point3::new(
+                center.x - radius * axis.x,
+                center.y - radius * axis.y,
+                center.z - radius * axis.z,
+            );
+            let squared_distance = |left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3| {
+                (left.x - right.x).powi(2)
+                    + (left.y - right.y).powi(2)
+                    + (left.z - right.z).powi(2)
             };
+            let point = vertex_points
+                .get(&edge.start)
+                .or_else(|| vertex_points.get(&edge.end))
+                .map_or(north, |endpoint| {
+                    if squared_distance(*endpoint, north) <= squared_distance(*endpoint, south) {
+                        north
+                    } else {
+                        south
+                    }
+                });
             existing.push((
                 *edge_index,
                 point,
@@ -2576,7 +2595,8 @@ fn synthesize_sphere_seams(
         }
     }
     for (edge_index, point) in existing {
-        let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam-edge:{edge_index}"));
+        let suffix = out.edges[edge_index].id.0.rsplit('#').next().unwrap_or("0");
+        let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam:{suffix}"));
         annotations
             .note(&curve_id.0, source_stream, 0)
             .tag("derived_sphere_seam");

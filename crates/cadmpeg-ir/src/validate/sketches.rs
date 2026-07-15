@@ -238,10 +238,13 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 end_angle,
             } => {
                 let perpendicular = normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z;
+                let perpendicular_tolerance = 1.0e-9
+                    * (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z).sqrt()
+                    * (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z).sqrt();
                 if !finite3(*center)
                     || !valid_vector(*normal)
                     || !valid_vector(*u_axis)
-                    || perpendicular.abs() > 1.0e-9
+                    || perpendicular.abs() > perpendicular_tolerance
                     || nonpositive(radius.0)
                     || !start_angle.0.is_finite()
                     || !end_angle.0.is_finite()
