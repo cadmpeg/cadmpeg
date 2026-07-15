@@ -217,6 +217,64 @@ fn scan_enumerates_and_classifies_sections() {
 }
 
 #[test]
+fn scan_enumerates_toc_backed_compound_close_section_boundaries() {
+    let mut data = b"#UGC:2 P test\n#-END_OF_UGC_HEADER\n#UGC_TOC\n\
+        DEPDB_DATA 1 2 3\nVisibGeom 4 5 6\nAllFeatur 7 8 9\n\
+        #END_OF_TOC_HEADER\n#DEPDB_DATA\nopaque"
+        .to_vec();
+    data.extend_from_slice(b"\xf1#VisibGeom\npacked\xf1#not_in_toc\ninside");
+    data.extend_from_slice(b"\xf1#AllFeatur\nfeatures");
+
+    let scan = container::scan_bytes(data);
+
+    assert_eq!(
+        scan.sections
+            .iter()
+            .map(|section| section.name.as_str())
+            .collect::<Vec<_>>(),
+        ["DEPDB_DATA", "VisibGeom", "AllFeatur"]
+    );
+    assert_eq!(scan.sections[1].role, role::GEOMETRY);
+    assert_eq!(scan.sections[2].role, role::MODEL_DATA);
+}
+
+#[test]
+fn scan_uses_fixed_width_toc_offsets_for_adjacent_sections() {
+    let mut data = b"#UGC:2 P test\n#-END_OF_UGC_HEADER\n".to_vec();
+    let header_base = data.len();
+    data.extend_from_slice(format!("{:<80}\n", "#UGC_TOC 2 2 81 17").as_bytes());
+    let first_offset = 3 * 81;
+    let first = b"#SolidPrimdata\nabc";
+    let second_offset = first_offset + first.len();
+    let second = b"#VisibGeom\nxyz";
+    data.extend_from_slice(
+        format!(
+            "{:<80}\n",
+            format!("SolidPrimdata {first_offset:x} {:x} 0", first.len())
+        )
+        .as_bytes(),
+    );
+    data.extend_from_slice(
+        format!(
+            "{:<80}\n",
+            format!("VisibGeom {second_offset:x} {:x} 0", second.len())
+        )
+        .as_bytes(),
+    );
+    assert_eq!(data.len(), header_base + first_offset);
+    data.extend_from_slice(first);
+    data.extend_from_slice(second);
+
+    let scan = container::scan_bytes(data);
+
+    assert_eq!(scan.sections.len(), 2);
+    assert_eq!(scan.sections[0].name, "SolidPrimdata");
+    assert_eq!(scan.sections[0].length, first.len());
+    assert_eq!(scan.sections[1].name, "VisibGeom");
+    assert_eq!(scan.sections[1].offset, header_base + second_offset);
+}
+
+#[test]
 fn decode_extracts_jpeg_thumbnail_as_native_asset() {
     let data = build_prt("c", &[("THMB_IMG_MAIN", jpeg_payload())]);
     let result = decode::decode(

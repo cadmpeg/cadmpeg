@@ -21,12 +21,28 @@ The header record `#- CMNM <hhh><name>` stores the native model filename.
 `hhh` is a three-digit ASCII hexadecimal byte count for `name`; padding after
 those bytes is not part of the name.
 
-A body-section header has the byte sequence `#\n#<name>\n`. The preceding section ends at the `#` byte before that sequence. Section names are complete printable runs. A decoder must require both the preceding `#` terminator and a printable name when locating a section boundary. ND-layout section names may include an `ND:0:<Name>:N` decoration or a `ModelView#N` suffix.
+A body-section header is `#<name>\n`. The first header follows the TOC's
+newline. Later headers follow either the text delimiter `#\n` or the PSB
+compound-close byte `f1`. An `f1 #<name>\n` boundary is a section boundary only
+when the initial TOC lists `<name>` as a section entry. Section names are
+complete printable runs. ND-layout section names may include an
+`ND:0:<Name>:N` decoration or a `ModelView#N` suffix.
 
 The ordered section directory stores each validated section's normalized name,
 raw decorated name, semantic role, header offset, and byte length. It enumerates
 decoded and opaque model data, auxiliary assets, and the thumbnail without
 interpreting payload bytes as additional directory entries.
+
+`#UGC_TOC 2 <count> <row-width> ...` is followed by `<count>` fixed-width ASCII
+rows. An ordinary row begins with `<name> <offset-hex> <stored-length-hex>`.
+Offsets are relative to the byte after `#-END_OF_UGC_HEADER\n`; stored lengths
+include the `#<name>\n` section header. A `ModelView` row inserts its decimal
+view identifier before the offset and has raw section name
+`ModelView#<identifier>`. `NEXT_TOC_ENTRY` identifies another TOC block and is
+not a body section. Every TOC-derived entry is valid only when its computed
+offset contains the matching section header and its stored extent is inside the
+file. Valid TOC entries are the authoritative section directory; delimiter
+scanning is the fallback when no TOC entry validates.
 
 PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology may describe some geometric concepts, but it does not define PSB byte semantics.
 

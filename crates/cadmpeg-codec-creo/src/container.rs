@@ -326,7 +326,8 @@ fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
     let search_start = body_start.saturating_sub(1);
     let mut i = search_start;
     while i + 1 < data.len() {
-        if data[i] != b'\n' || data[i + 1] != b'#' {
+        let toc_delimited = data[i] == 0xf1 && data[i + 1] == b'#';
+        if !toc_delimited && (data[i] != b'\n' || data[i + 1] != b'#') {
             i += 1;
             continue;
         }
@@ -349,6 +350,14 @@ fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
         if FRAMING_NAMES.contains(&raw.as_str()) {
             continue;
         }
+        if toc_delimited {
+            let directory_end = hits
+                .first()
+                .map_or(body_start.min(data.len()), |(offset, _)| *offset);
+            if !toc_lists_section(&data[..directory_end], name_bytes) {
+                continue;
+            }
+        }
         hits.push((hash_off, raw));
     }
 
@@ -366,6 +375,96 @@ fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
         });
     }
     sections
+}
+
+fn toc_sections(data: &[u8], header_base: usize) -> Vec<Section> {
+    let mut sections = Vec::new();
+    let mut toc_from = 0;
+    while let Some(toc_offset) = find(data, TOC_START, toc_from) {
+        toc_from = toc_offset + TOC_START.len();
+        let Some(line_end) = find(data, b"\n", toc_offset) else {
+            continue;
+        };
+        let Ok(header) = std::str::from_utf8(&data[toc_offset..line_end]) else {
+            continue;
+        };
+        let header = header.trim_end_matches('#');
+        let fields = header.split_whitespace().collect::<Vec<_>>();
+        let (Some(count), Some(row_width)) = (
+            fields.get(2).and_then(|value| value.parse::<usize>().ok()),
+            fields.get(3).and_then(|value| value.parse::<usize>().ok()),
+        ) else {
+            continue;
+        };
+        let rows_start = line_end + 1;
+        for index in 0..count {
+            let start = rows_start.saturating_add(index.saturating_mul(row_width));
+            let Some(row) = data.get(start..start.saturating_add(row_width)) else {
+                break;
+            };
+            let Ok(row) = std::str::from_utf8(row) else {
+                continue;
+            };
+            let fields = row
+                .trim_end_matches(['#', '\n', '\r', ' '])
+                .split_whitespace()
+                .collect::<Vec<_>>();
+            let Some(name) = fields.first().copied() else {
+                continue;
+            };
+            if name == "NEXT_TOC_ENTRY" {
+                continue;
+            }
+            let (raw_name, offset_field, length_field) = if name == "ModelView" {
+                let (Some(id), Some(offset), Some(length)) =
+                    (fields.get(1), fields.get(2), fields.get(3))
+                else {
+                    continue;
+                };
+                (format!("ModelView#{id}"), *offset, *length)
+            } else {
+                let (Some(offset), Some(length)) = (fields.get(1), fields.get(2)) else {
+                    continue;
+                };
+                (name.to_string(), *offset, *length)
+            };
+            let (Ok(relative_offset), Ok(length)) = (
+                usize::from_str_radix(offset_field, 16),
+                usize::from_str_radix(length_field, 16),
+            ) else {
+                continue;
+            };
+            let Some(offset) = header_base.checked_add(relative_offset) else {
+                continue;
+            };
+            let marker = [b"#".as_slice(), raw_name.as_bytes(), b"\n"].concat();
+            if length < marker.len()
+                || data.get(offset..offset + marker.len()) != Some(marker.as_slice())
+                || offset
+                    .checked_add(length)
+                    .is_none_or(|end| end > data.len())
+            {
+                continue;
+            }
+            let normalized = normalize_name(&raw_name);
+            sections.push(Section {
+                role: classify(&normalized),
+                name: normalized,
+                raw_name,
+                offset,
+                length,
+            });
+        }
+    }
+    sections.sort_by_key(|section| section.offset);
+    sections.dedup_by_key(|section| section.offset);
+    sections
+}
+
+fn toc_lists_section(toc: &[u8], name: &[u8]) -> bool {
+    toc.windows(name.len() + 2).any(|window| {
+        window[0] == b'\n' && &window[1..=name.len()] == name && window[1 + name.len()] == b' '
+    })
 }
 
 /// Section-name bytes: printable ASCII minus space, plus the `ND:` decoration
@@ -1162,7 +1261,12 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         .map(|nl| nl + 1);
     let body_start = toc_end.or(header_end).unwrap_or(0);
 
-    let sections = scan_sections(&data, body_start);
+    let sections = toc_sections(&data, header_end.unwrap_or(0));
+    let sections = if sections.is_empty() {
+        scan_sections(&data, body_start)
+    } else {
+        sections
+    };
     let layout = identify_layout(&sections);
     let census = geom_census(&data, &sections);
     let principal_unit = principal_unit(&data);
