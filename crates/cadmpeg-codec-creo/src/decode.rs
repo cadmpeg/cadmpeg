@@ -531,8 +531,10 @@ struct CreoFcCurveControlPointRecord {
     id: String,
     curve_id: u32,
     subtype: u8,
+    body: Vec<u8>,
     values_mm: Vec<f64>,
     tokens: Vec<CreoFcCurveCoordinateToken>,
+    opaque_spans: Vec<CreoFcCurveOpaqueSpan>,
     offset: usize,
     source_section: String,
 }
@@ -540,6 +542,13 @@ struct CreoFcCurveControlPointRecord {
 #[derive(Serialize)]
 struct CreoFcCurveCoordinateToken {
     value_mm: f64,
+    raw: Vec<u8>,
+    offset: usize,
+    length: usize,
+}
+
+#[derive(Serialize)]
+struct CreoFcCurveOpaqueSpan {
     raw: Vec<u8>,
     offset: usize,
     length: usize,
@@ -1032,6 +1041,7 @@ fn fc_curve_control_point_records(scan: &ContainerScan) -> Vec<CreoFcCurveContro
             id: format!("creo:curve:fc_control_points#{}", record.curve_id),
             curve_id: record.curve_id,
             subtype: record.subtype,
+            body: record.body.clone(),
             values_mm: record.values_mm.clone(),
             tokens: record
                 .tokens
@@ -1041,6 +1051,15 @@ fn fc_curve_control_point_records(scan: &ContainerScan) -> Vec<CreoFcCurveContro
                     raw: token.raw.clone(),
                     offset: token.offset,
                     length: token.length,
+                })
+                .collect(),
+            opaque_spans: record
+                .opaque_spans
+                .iter()
+                .map(|span| CreoFcCurveOpaqueSpan {
+                    raw: span.raw.clone(),
+                    offset: span.offset,
+                    length: span.length,
                 })
                 .collect(),
             offset: record.offset,

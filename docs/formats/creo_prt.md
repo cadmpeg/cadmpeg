@@ -475,7 +475,9 @@ unclaimed trailing bytes invalidate the analytic circle carrier.
 Recognized eight-byte `46` and `2d` world-coordinate tokens in an `fc` body
 retain their decoded millimeter value, exact bytes, body-relative offset, and
 token length. Bytes between recognized tokens remain owned by the enclosing
-curve parameter body; scalar order does not assign point or parameter roles.
+curve parameter body as maximal opaque spans. The coordinate-token and opaque
+span sets partition the complete retained body. Scalar order does not assign
+point or parameter roles.
 
 Within the `fc 05` scalar lane, `8b <tail6>` reconstructs the IEEE-754 bytes `40 00 <tail6>` and consumes seven stored bytes. This lane-specific interpretation takes precedence over the context-independent `8b` scalar form.
 

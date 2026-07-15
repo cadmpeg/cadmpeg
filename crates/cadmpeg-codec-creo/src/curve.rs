@@ -234,10 +234,14 @@ pub struct FcCurveControlPoints {
     pub curve_id: u32,
     /// Byte following the `fc` body prefix.
     pub subtype: u8,
+    /// Exact complete curve parameter body, including the `fc` prefix.
+    pub body: Vec<u8>,
     /// Ordered exact world-coordinate values, in mm.
     pub values_mm: Vec<f64>,
     /// World-coordinate tokens with exact body-relative spans.
     pub tokens: Vec<FcCurveCoordinateToken>,
+    /// Maximal body spans not owned by a recognized coordinate token.
+    pub opaque_spans: Vec<FcCurveOpaqueSpan>,
     /// Byte offset of the source positional curve row.
     pub offset: usize,
 }
@@ -252,6 +256,17 @@ pub struct FcCurveCoordinateToken {
     /// Token offset relative to the complete curve parameter body.
     pub offset: usize,
     /// Number of source bytes occupied by the token.
+    pub length: usize,
+}
+
+/// One maximal unclaimed span in an `fc <subtype>` body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FcCurveOpaqueSpan {
+    /// Exact source bytes in the span.
+    pub raw: Vec<u8>,
+    /// Span offset relative to the complete curve parameter body.
+    pub offset: usize,
+    /// Number of source bytes in the span.
     pub length: usize,
 }
 
@@ -1144,11 +1159,32 @@ pub fn fc_control_points(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCont
             cursor += 1;
         }
         if tokens.len() >= 4 {
+            let mut opaque_spans = Vec::new();
+            let mut unclaimed = 0;
+            for token in &tokens {
+                if unclaimed < token.offset {
+                    opaque_spans.push(FcCurveOpaqueSpan {
+                        raw: record.body[unclaimed..token.offset].to_vec(),
+                        offset: unclaimed,
+                        length: token.offset - unclaimed,
+                    });
+                }
+                unclaimed = token.offset + token.length;
+            }
+            if unclaimed < record.body.len() {
+                opaque_spans.push(FcCurveOpaqueSpan {
+                    raw: record.body[unclaimed..].to_vec(),
+                    offset: unclaimed,
+                    length: record.body.len() - unclaimed,
+                });
+            }
             result.push(FcCurveControlPoints {
                 curve_id: record.curve_id,
                 subtype,
+                body: record.body.clone(),
                 values_mm: tokens.iter().map(|token| token.value_mm).collect(),
                 tokens,
+                opaque_spans,
                 offset: record.offset,
             });
         }
