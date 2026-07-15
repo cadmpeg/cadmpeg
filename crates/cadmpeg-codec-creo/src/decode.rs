@@ -53,6 +53,8 @@ struct CreoSketchRecord {
     id: String,
     definition_id: u32,
     owner_feature_id: Option<u32>,
+    source_section: String,
+    section_3d: Option<CreoSketchSection3d>,
     variables: Vec<CreoSketchVariable>,
     segments: Vec<CreoSketchSegment>,
     trim_entities: Vec<CreoSketchTrimEntity>,
@@ -63,6 +65,25 @@ struct CreoSketchRecord {
     relations: Vec<CreoSketchRelation>,
     skamps: Vec<CreoSketchSkamp>,
     relation_triples: Vec<CreoSketchRelationTriple>,
+}
+
+#[derive(Serialize)]
+struct CreoSketchSection3d {
+    sketch_plane_entity_id: Option<u32>,
+    sketch_plane_flip: Option<bool>,
+    reference_plane_entity_ids: Vec<u32>,
+    reference_plane_datum_geometry_id: Option<u32>,
+    orientation: CreoSketchSectionOrientation,
+    dimension_ids: Vec<u32>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchSectionOrientation {
+    section_flip: Option<bool>,
+    reference_type: Option<u32>,
+    segment_id: Option<u32>,
+    reference_flip: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -2005,6 +2026,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 || definition.trim_entities.is_some()
                 || definition.trim_vertices.is_some()
                 || definition.order_table.is_some()
+                || definition.section_3d.is_some()
                 || definition.saved_section.is_some()
                 || definition.dimensions.is_some()
                 || definition.relations.is_some()
@@ -2013,6 +2035,24 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
             id: format!("creo:featdefs:sketch#{}", definition.id),
             definition_id: definition.id,
             owner_feature_id: definition.owner_feature_id,
+            source_section: source_section(scan, definition.offset),
+            section_3d: definition
+                .section_3d
+                .as_ref()
+                .map(|section| CreoSketchSection3d {
+                    sketch_plane_entity_id: section.sketch_plane_entity_id,
+                    sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
+                    reference_plane_entity_ids: section.reference_plane_entity_ids.clone(),
+                    reference_plane_datum_geometry_id: section.reference_plane_datum_geometry_id,
+                    orientation: CreoSketchSectionOrientation {
+                        section_flip: section.orientation.section_flip.map(binary_flag_value),
+                        reference_type: section.orientation.reference_type,
+                        segment_id: section.orientation.segment_id,
+                        reference_flip: section.orientation.reference_flip.map(binary_flag_value),
+                    },
+                    dimension_ids: section.dimension_ids.clone(),
+                    offset: section.offset,
+                }),
             variables: definition
                 .variables
                 .iter()
@@ -2184,6 +2224,13 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .collect(),
         })
         .collect()
+}
+
+fn binary_flag_value(flag: crate::feature::BinaryFlag) -> bool {
+    match flag {
+        crate::feature::BinaryFlag::Clear => false,
+        crate::feature::BinaryFlag::Set => true,
+    }
 }
 
 fn feature_definition_record_id(definition_id: u32) -> String {

@@ -2548,7 +2548,8 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
         \xe0\x01seg_id\0\x81\x2c\xe0\x01flip_flag\0\x00\
         dim_id_tab\0\xf3\xf8\x02\x07\x81\x01"
         .to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     let section = scan.feature_definitions[0]
         .section_3d
@@ -2572,6 +2573,23 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
         Some(crate::feature::BinaryFlag::Clear)
     );
     assert_eq!(section.dimension_ids, vec![7, 257]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let sketches = &result.ir.native.namespace("creo").unwrap().arenas["sketches"];
+    assert_eq!(sketches.len(), 1);
+    assert_eq!(sketches[0].fields["source_section"], "FeatDefs");
+    let placement = &sketches[0].fields["section_3d"];
+    assert_eq!(placement["sketch_plane_entity_id"], 769);
+    assert_eq!(placement["sketch_plane_flip"], true);
+    assert_eq!(placement["reference_plane_entity_ids"][0], 5);
+    assert_eq!(placement["reference_plane_entity_ids"][1], 256);
+    assert_eq!(placement["reference_plane_datum_geometry_id"], 9);
+    assert_eq!(placement["orientation"]["section_flip"], true);
+    assert_eq!(placement["orientation"]["reference_type"], 2);
+    assert_eq!(placement["orientation"]["segment_id"], 300);
+    assert_eq!(placement["orientation"]["reference_flip"], false);
+    assert_eq!(placement["dimension_ids"][0], 7);
+    assert_eq!(placement["dimension_ids"][1], 257);
 }
 
 #[test]
