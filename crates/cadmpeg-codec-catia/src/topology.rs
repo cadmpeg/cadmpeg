@@ -4350,47 +4350,6 @@ impl MeshSelectionSearch<'_> {
     fn propagate_forced_face_equations(&self, quotient: &mut MeshQuotient) -> bool {
         const MAX_FACE_EQUATION_OPTIONS: usize = 4_096;
 
-        fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
-            use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
-        }
-
-        fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
-            use_.edge
-                .checked_mul(2)?
-                .checked_add(usize::from(!reversed))
-        }
-
-        fn equations(
-            assignment: &MeshFaceBoundaryAssignment,
-            directions: &[Vec<bool>],
-        ) -> Option<HashSet<[usize; 2]>> {
-            if assignment.boundaries.len() != directions.len() {
-                return None;
-            }
-            let mut equations = HashSet::new();
-            for (boundary, directions) in assignment.boundaries.iter().zip(directions) {
-                if boundary.is_empty() || boundary.len() != directions.len() {
-                    return None;
-                }
-                for index in 0..boundary.len() {
-                    let left = boundary[index];
-                    let right = boundary[(index + 1) % boundary.len()];
-                    let left_reversed = left.reversed.unwrap_or(directions[index]);
-                    let right_reversed = right
-                        .reversed
-                        .unwrap_or(directions[(index + 1) % boundary.len()]);
-                    let left_end = edge_end(left, left_reversed)?;
-                    let right_start = edge_start(right, right_reversed)?;
-                    equations.insert(if left_end <= right_start {
-                        [left_end, right_start]
-                    } else {
-                        [right_start, left_end]
-                    });
-                }
-            }
-            Some(equations)
-        }
-
         fn common_assignment_equations(
             quotient: &MeshQuotient,
             assignment: &MeshFaceBoundaryAssignment,
@@ -4399,63 +4358,31 @@ impl MeshSelectionSearch<'_> {
             if assignment.boundaries.iter().any(Vec::is_empty) {
                 return None;
             }
-            let unknown = assignment
+            let mut before = quotient.clone();
+            let mut nodes = assignment
                 .boundaries
                 .iter()
                 .flatten()
-                .filter(|use_| use_.reversed.is_none())
-                .count();
-            let combinations = 1usize.checked_shl(unknown as u32)?;
-            if combinations > MAX_FACE_EQUATION_OPTIONS {
-                return None;
-            }
+                .flat_map(|use_| [use_.edge * 2, use_.edge * 2 + 1])
+                .collect::<Vec<_>>();
+            nodes.sort_unstable();
+            nodes.dedup();
             let mut common = None::<HashSet<[usize; 2]>>;
-            for mask in 0..combinations {
-                let mut variable = 0usize;
-                let directions = assignment
-                    .boundaries
-                    .iter()
-                    .map(|boundary| {
-                        boundary
-                            .iter()
-                            .map(|use_| {
-                                use_.reversed.unwrap_or_else(|| {
-                                    let shift = unknown - variable - 1;
-                                    variable += 1;
-                                    mask & (1usize << shift) != 0
-                                })
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>();
-                let mut option = quotient.clone();
-                let viable =
-                    assignment
-                        .boundaries
-                        .iter()
-                        .zip(&directions)
-                        .all(|(boundary, directions)| {
-                            (0..boundary.len()).all(|index| {
-                                let next = (index + 1) % boundary.len();
-                                let Some(left_end) = edge_end(boundary[index], directions[index])
-                                else {
-                                    return false;
-                                };
-                                let Some(right_start) =
-                                    edge_start(boundary[next], directions[next])
-                                else {
-                                    return false;
-                                };
-                                let Some(root) = option.merge(left_end, right_start) else {
-                                    return false;
-                                };
-                                option.propagate_component_edge_domains(root, edge_candidates)
-                            })
-                        });
-                if !viable {
-                    continue;
+            for (_, mut option) in quotient.assignment_options_limited(
+                assignment,
+                edge_candidates,
+                MAX_FACE_EQUATION_OPTIONS,
+            ) {
+                let mut option_equations = HashSet::new();
+                for (at, left) in nodes.iter().enumerate() {
+                    for right in &nodes[at + 1..] {
+                        if before.union.find(*left) != before.union.find(*right)
+                            && option.union.find(*left) == option.union.find(*right)
+                        {
+                            option_equations.insert([*left, *right]);
+                        }
+                    }
                 }
-                let option_equations = equations(assignment, &directions)?;
                 match &mut common {
                     Some(common) => {
                         common.retain(|equation| option_equations.contains(equation));
