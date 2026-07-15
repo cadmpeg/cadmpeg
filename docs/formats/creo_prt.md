@@ -823,7 +823,8 @@ such boundary ends the instance. Its owner is the unique unclaimed feature
 whose nonempty class-200 source-entity identifier set is contained in the
 instance's `order_table.ext_id` set, provided that feature selects exactly one
 unlabeled instance. Definitions without this reciprocal unique join have no
-owner. Replay order does not define feature identity.
+owner. They remain section definitions and retain their complete bounded body.
+Replay order does not define feature identity.
 
 `AllFeatur` edge-treatment rows are feature recipes. `strong_parents`, `geoms_affected`, `edgs_affected`, and `contours` contain compact-int identifiers for the current body; they are neither coordinate arrays nor global geometry counts. The first edge-treatment row supplies the labelled schema, and later round and chamfer rows replay that schema positionally.
 
@@ -915,7 +916,9 @@ Every bounded `feat_defs_<id>` body transfers byte-for-byte to the Creo native
 `feature_definitions` arena as
 `creo:featdefs:feature_definition#<id>`. A model feature with exactly one owned
 definition references that record through `native_ref`; ambiguous ownership
-does not produce a reference.
+does not produce a reference. An unlabeled positional definition has no
+record-name identifier; until an exact owner join supplies one, its native
+record identity is `creo:featdefs:feature_definition#offset:<offset>`.
 
 Feature-definition `local_sys f9 04 03` and `transf f9 04 03` bodies use the
 twelve-slot local-system language. `18 e5` expands to `[0, 1, 0]`; `18 10`,

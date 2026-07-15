@@ -1022,7 +1022,10 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
 
 fn positional_replay_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefinition> {
     let mut definitions = Vec::new();
-    for section in sections.iter().filter(|section| section.name == "FeatDefs") {
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "FeatDefs" || section.name == "DEPDB_DATA")
+    {
         let end = (section.offset + section.length).min(data.len());
         definitions.extend(
             feature::positional_replay_definitions(&data[section.offset..end])
@@ -1218,11 +1221,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         &feature_entity_tables,
         &claimed_definition_owners,
     );
-    feature_definitions.extend(
-        replay_definitions
-            .into_iter()
-            .filter(|definition| definition.owner_feature_id.is_some()),
-    );
+    feature_definitions.extend(replay_definitions);
     feature_definitions.sort_by_key(|definition| definition.offset);
     let feature_section_transforms = placement::resolve(
         &feature_definitions,

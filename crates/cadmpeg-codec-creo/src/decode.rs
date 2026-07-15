@@ -55,6 +55,7 @@ struct CreoSketchRecord {
     definition_id: u32,
     owner_feature_id: Option<u32>,
     source_section: String,
+    offset: usize,
     section_3d: Option<CreoSketchSection3d>,
     table_headers: Vec<CreoSketchTableHeader>,
     section_points: Vec<CreoSketchSectionPoint>,
@@ -2229,10 +2230,11 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 || definition.relations.is_some()
         })
         .map(|definition| CreoSketchRecord {
-            id: format!("creo:featdefs:sketch#{}", definition.id),
+            id: feature_sketch_record_id(definition),
             definition_id: definition.id,
             owner_feature_id: definition.owner_feature_id,
             source_section: source_section(scan, definition.offset),
+            offset: definition.offset,
             section_3d: definition
                 .section_3d
                 .as_ref()
@@ -2536,15 +2538,30 @@ fn binary_flag_value(flag: crate::feature::BinaryFlag) -> bool {
     }
 }
 
-fn feature_definition_record_id(definition_id: u32) -> String {
-    format!("creo:featdefs:feature_definition#{definition_id}")
+fn feature_definition_record_id(definition: &crate::feature::FeatureDefinition) -> String {
+    if definition.id == 0 && definition.owner_feature_id.is_none() {
+        format!(
+            "creo:featdefs:feature_definition#offset:{}",
+            definition.offset
+        )
+    } else {
+        format!("creo:featdefs:feature_definition#{}", definition.id)
+    }
+}
+
+fn feature_sketch_record_id(definition: &crate::feature::FeatureDefinition) -> String {
+    if definition.id == 0 && definition.owner_feature_id.is_none() {
+        format!("creo:featdefs:sketch#offset:{}", definition.offset)
+    } else {
+        format!("creo:featdefs:sketch#{}", definition.id)
+    }
 }
 
 fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatureDefinitionRecord> {
     scan.feature_definitions
         .iter()
         .map(|definition| CreoFeatureDefinitionRecord {
-            id: feature_definition_record_id(definition.id),
+            id: feature_definition_record_id(definition),
             definition_id: definition.id,
             owner_feature_id: definition.owner_feature_id,
             source_section: source_section(scan, definition.offset),
@@ -2589,7 +2606,7 @@ fn owning_feature_definition_ref(scan: &ContainerScan, feature_id: u32) -> Optio
     let [definition] = definitions.as_slice() else {
         return None;
     };
-    Some(feature_definition_record_id(definition.id))
+    Some(feature_definition_record_id(definition))
 }
 
 fn section_line_geometry(
@@ -17229,16 +17246,11 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let sketches = sketch_records(scan);
     if !sketches.is_empty() {
         for sketch in &sketches {
-            let offset = scan
-                .feature_definitions
-                .iter()
-                .find(|definition| definition.id == sketch.definition_id)
-                .map_or(0, |definition| definition.offset);
             annotate(
                 &mut annotations,
                 &sketch.id,
-                "FeatDefs",
-                offset as u64,
+                &sketch.source_section,
+                sketch.offset as u64,
                 "feature_sketch",
                 Exactness::Derived,
             );

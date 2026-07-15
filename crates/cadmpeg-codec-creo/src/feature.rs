@@ -4991,8 +4991,7 @@ fn claimed_s2d_replay_markers(
 }
 
 /// Decode unlabeled positional `S2D` replay instances without assigning an
-/// owner. Callers must retain only instances with an independently proven
-/// owner.
+/// owner. Ownership remains absent unless an independent entity join proves it.
 pub fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
     let mut starts = definition_starts(payload);
     let replay_markers = s2d_replay_starts(payload);

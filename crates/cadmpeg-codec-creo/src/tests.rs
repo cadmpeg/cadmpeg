@@ -6,6 +6,7 @@
 //! ND/DEPDB layout signals, and the `srf_array`/`crv_array` count headers.
 #![allow(clippy::unwrap_used)]
 
+use std::collections::BTreeSet;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
@@ -4425,6 +4426,37 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
         "feature_definition_record",
         Exactness::ByteExact,
     );
+}
+
+#[test]
+fn decode_preserves_unowned_depdb_section_instances_with_unique_native_ids() {
+    let depdb = b"feat_defs_917\0template\xe3S2D0004\0first\xe3S2D0004\0second".to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
+    let scan = container::scan_bytes(data.clone());
+    let positional = scan
+        .feature_definitions
+        .iter()
+        .filter(|definition| definition.id == 0)
+        .collect::<Vec<_>>();
+
+    assert_eq!(positional.len(), 2);
+    assert!(positional
+        .iter()
+        .all(|definition| definition.owner_feature_id.is_none()));
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
+    let positional_ids = records
+        .iter()
+        .filter(|record| record.fields["definition_id"] == 0)
+        .map(|record| record.id.as_str())
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(positional_ids.len(), 2);
+    assert!(positional_ids
+        .iter()
+        .all(|id| id.starts_with("creo:featdefs:feature_definition#offset:")));
+    assert!(result.ir.model.features.is_empty());
 }
 
 #[test]
