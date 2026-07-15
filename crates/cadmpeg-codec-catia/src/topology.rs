@@ -4528,6 +4528,52 @@ impl MeshQuotient {
             })
             .collect::<Vec<_>>();
 
+        let mut assigned = vec![None; domains.len()];
+        let mut used = HashSet::new();
+        loop {
+            let mut forced = None;
+            for root in 0..assigned.len() {
+                if assigned[root].is_some() {
+                    continue;
+                }
+                let values = domains[root]
+                    .iter()
+                    .copied()
+                    .filter(|point| !used.contains(point))
+                    .filter(|point| {
+                        value_viable(
+                            root,
+                            *point,
+                            &domains,
+                            &edge_roots,
+                            &root_edges,
+                            edge_candidates,
+                            &edge_neighbors,
+                            &assigned,
+                            &used,
+                        )
+                    })
+                    .take(2)
+                    .collect::<Vec<_>>();
+                match values.as_slice() {
+                    [] => return Vec::new(),
+                    [point] => {
+                        forced = Some((root, *point));
+                        break;
+                    }
+                    [_, _] => {}
+                    _ => unreachable!("at most two viability witnesses"),
+                }
+            }
+            let Some((root, point)) = forced else {
+                break;
+            };
+            if !used.insert(point) {
+                return Vec::new();
+            }
+            assigned[root] = Some(point);
+        }
+
         let mut solutions = Vec::new();
         walk(
             &domains,
@@ -4535,8 +4581,8 @@ impl MeshQuotient {
             &root_edges,
             edge_candidates,
             &edge_neighbors,
-            &mut vec![None; domains.len()],
-            &mut HashSet::new(),
+            &mut assigned,
+            &mut used,
             &mut solutions,
             solution_limit,
         );
