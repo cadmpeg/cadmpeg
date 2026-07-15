@@ -300,6 +300,18 @@ struct CreoFeatureEntityTableEntryRecord {
     end_offset: usize,
 }
 
+#[derive(Serialize)]
+struct CreoFeatureGeometryTableRecord {
+    id: String,
+    owner_feature_id: u32,
+    kind: &'static str,
+    declared_count: u32,
+    entity_class_id: u32,
+    entry_ids: Option<Vec<u32>>,
+    offset: usize,
+    source_section: String,
+}
+
 fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
     scan.feature_entities
         .iter()
@@ -349,6 +361,29 @@ fn feature_entity_table_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityTa
             surface_ids: table.surface_ids.clone(),
             non_surface_entity_ids: table.non_surface_entity_ids.clone(),
             offset: table.offset,
+        })
+        .collect()
+}
+
+fn feature_geometry_table_records(scan: &ContainerScan) -> Vec<CreoFeatureGeometryTableRecord> {
+    scan.feature_geometry_tables
+        .iter()
+        .map(|table| CreoFeatureGeometryTableRecord {
+            id: format!("creo:feature:geometry_table#{}", table.offset),
+            owner_feature_id: table.feature_id,
+            kind: match table.kind {
+                crate::feature::FeatureGeometryTableKind::EdgeIds => "edge_ids",
+                crate::feature::FeatureGeometryTableKind::LoopIds => "loop_ids",
+                crate::feature::FeatureGeometryTableKind::Boundaries => "boundaries",
+                crate::feature::FeatureGeometryTableKind::UsedBodies => "used_bodies",
+                crate::feature::FeatureGeometryTableKind::GeometryLists => "geometry_lists",
+                crate::feature::FeatureGeometryTableKind::DatumIds => "datum_ids",
+            },
+            declared_count: table.count,
+            entity_class_id: table.entity_class,
+            entry_ids: table.entry_ids.clone(),
+            offset: table.offset,
+            source_section: source_section(scan, table.offset),
         })
         .collect()
 }
@@ -15327,6 +15362,22 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("feature_entity_tables", &feature_entity_tables)?;
+    }
+    let feature_geometry_tables = feature_geometry_table_records(scan);
+    if !feature_geometry_tables.is_empty() {
+        for table in &feature_geometry_tables {
+            annotate(
+                &mut annotations,
+                &table.id,
+                &table.source_section,
+                table.offset as u64,
+                "feature_geometry_table",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_geometry_tables", &feature_geometry_tables)?;
     }
     let sketches = sketch_records(scan);
     if !sketches.is_empty() {

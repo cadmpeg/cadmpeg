@@ -841,6 +841,12 @@ Evaluating one closed linear-sweep profile produces one side face per oriented p
 
 A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. The array's compact-integer count is not limited to a one-byte or 64-entry range. Each declared entry has an optional `f7 1e` prefix, a canonical entity-reference identifier, a compact entry class, a positional body, and an `e3` close within the bounded feature row. A class `200` entry carries its source section entity's external identifier immediately after the class when that lane is populated; a structural marker in that position leaves the source absent. The record close follows these typed compact lanes; an `e3` byte can be the low byte of their canonical two-byte form. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
 
+`edg_id_tab_ptr`, `lo_id_tab_ptr`, `bnd_type`, `used_bodies`, `geom_lists`,
+and `dtm_id_tab` declare feature-owned geometry tables. Each table retains its
+declared compact count and the entity-class identifier following its `f7`
+marker. The label selects the edge, loop, boundary, body, geometry-list, or
+datum identifier namespace independently of that class identifier.
+
 Named records in `AllFeatur` form one implicit entity table in walker order.
 The zero-based walker ordinal is the entity identifier used by `f7` references.
 Each reference retains its containing source entity, target entity, and target

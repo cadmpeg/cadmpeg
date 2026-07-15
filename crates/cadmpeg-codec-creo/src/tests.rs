@@ -1610,10 +1610,8 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     let allfeatur = b"\x04\xeb\x04edg_id_tab_ptr\0\xf1\xf8\x03\xf7\x53\xfb\xe3used_bodies\0\xf8\x01\xf7\x60\xfb\xe2dtm_id_tab\0\xf2\xf8\x02\xf7\x57\xfb\xe2\xe0\x01dtm_id\0\x2a\xe0\x01dtm_id\0\x2b".to_vec();
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.feature_geometry_tables.len(), 3);
     assert_eq!(scan.feature_geometry_tables[0].feature_id, 4);
@@ -1634,6 +1632,24 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
     assert_eq!(
         scan.feature_geometry_tables[2].entry_ids,
         Some(vec![42, 43])
+    );
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let tables = &result.ir.native.namespace("creo").unwrap().arenas["feature_geometry_tables"];
+    assert_eq!(tables.len(), 3);
+    assert_eq!(tables[0].fields["owner_feature_id"], 4);
+    assert_eq!(tables[0].fields["kind"], "edge_ids");
+    assert_eq!(tables[0].fields["declared_count"], 3);
+    assert_eq!(tables[0].fields["entity_class_id"], 0x53);
+    assert_eq!(tables[2].fields["entry_ids"][0], 42);
+    assert_eq!(tables[2].fields["entry_ids"][1], 43);
+    assert_annotation(
+        &result.ir,
+        &tables[0].id,
+        "creo:AllFeatur",
+        scan.feature_geometry_tables[0].offset as u64,
+        "feature_geometry_table",
+        Exactness::ByteExact,
     );
 }
 
