@@ -11,14 +11,71 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::psb;
 use crate::scalar;
 
-/// Procedural recipe discriminator stored in a feature-state record.
+/// Exact procedural recipe stored in a feature-state record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureRecipe {
+    /// Additive linear section sweep named `protextrude`.
+    ProtrudeExtrude,
+    /// Subtractive linear section sweep named `cutextrude`.
+    CutExtrude,
+    /// Additive rotational section sweep named `protrevolve`.
+    ProtrudeRevolve,
+    /// Subtractive rotational section sweep named `cutrevolve`.
+    CutRevolve,
+}
+
+/// Geometry family selected by a procedural feature recipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureRecipeKind {
-    /// Linear section sweep named `protextrude`.
+    /// Linear section sweep.
     Extrude,
-    /// Rotational section sweep named `protrevolve`.
+    /// Rotational section sweep.
     Revolve,
 }
+
+/// Boolean effect selected by a procedural feature recipe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureRecipeEffect {
+    /// Material-adding operation.
+    Protrude,
+    /// Material-removing operation.
+    Cut,
+}
+
+impl FeatureRecipe {
+    /// Exact stored recipe name without its NUL terminator.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::ProtrudeExtrude => "protextrude",
+            Self::CutExtrude => "cutextrude",
+            Self::ProtrudeRevolve => "protrevolve",
+            Self::CutRevolve => "cutrevolve",
+        }
+    }
+
+    /// Section-sweep geometry family.
+    pub const fn kind(self) -> FeatureRecipeKind {
+        match self {
+            Self::ProtrudeExtrude | Self::CutExtrude => FeatureRecipeKind::Extrude,
+            Self::ProtrudeRevolve | Self::CutRevolve => FeatureRecipeKind::Revolve,
+        }
+    }
+
+    /// Boolean effect of the section sweep.
+    pub const fn effect(self) -> FeatureRecipeEffect {
+        match self {
+            Self::ProtrudeExtrude | Self::ProtrudeRevolve => FeatureRecipeEffect::Protrude,
+            Self::CutExtrude | Self::CutRevolve => FeatureRecipeEffect::Cut,
+        }
+    }
+}
+
+const FEATURE_RECIPES: &[(&[u8], FeatureRecipe)] = &[
+    (b"protextrude\0", FeatureRecipe::ProtrudeExtrude),
+    (b"cutextrude\0", FeatureRecipe::CutExtrude),
+    (b"protrevolve\0", FeatureRecipe::ProtrudeRevolve),
+    (b"cutrevolve\0", FeatureRecipe::CutRevolve),
+];
 
 /// Feature-operation family named by a feature-state record.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,7 +96,7 @@ pub struct FeatureOperation {
     /// Optional one-byte state prefix immediately preceding the family name.
     pub status_prefix: Option<u8>,
     /// Procedural recipe name stored in the same current-state record.
-    pub recipe: Option<FeatureRecipeKind>,
+    pub recipe: Option<FeatureRecipe>,
     /// Root feature-definition schema class from a DEPDB recipe prefix.
     pub root_schema_class: Option<u32>,
     /// Previous or parent feature identifier from a DEPDB recipe prefix.
@@ -52,17 +109,13 @@ pub struct FeatureOperation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FeatureRecipeBinding {
-    kind: FeatureRecipeKind,
+    recipe: FeatureRecipe,
     root_schema_class: u32,
     parent_feature_id: u32,
     offset: usize,
 }
 
 fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeBinding> {
-    const RECIPES: &[(&[u8], FeatureRecipeKind)] = &[
-        (b"protextrude\0", FeatureRecipeKind::Extrude),
-        (b"protrevolve\0", FeatureRecipeKind::Revolve),
-    ];
     let mut bindings = BTreeMap::new();
     for marker in 0..payload.len() {
         if payload.get(marker) != Some(&psb::token::ENTITY_REF) {
@@ -94,14 +147,14 @@ fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeBinding> {
         {
             continue;
         }
-        if let Some((_, kind)) = RECIPES
+        if let Some((_, recipe)) = FEATURE_RECIPES
             .iter()
             .find(|(name, _)| payload.get(recipe_start..recipe_start + name.len()) == Some(*name))
         {
             bindings.insert(
                 feature_id,
                 FeatureRecipeBinding {
-                    kind: *kind,
+                    recipe: *recipe,
                     root_schema_class: schema_class,
                     parent_feature_id,
                     offset: marker,
@@ -165,20 +218,13 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             .map_or(0, |position| position + 1);
         let record = &payload[record_start..offset];
         let bound_recipe = bound_recipes.get(&feature_id).copied();
-        let recipe = bound_recipe.map(|binding| binding.kind).or_else(|| {
-            if record
-                .windows(b"protextrude\0".len())
-                .any(|window| window == b"protextrude\0")
-            {
-                Some(FeatureRecipeKind::Extrude)
-            } else if record
-                .windows(b"protrevolve\0".len())
-                .any(|window| window == b"protrevolve\0")
-            {
-                Some(FeatureRecipeKind::Revolve)
-            } else {
-                None
-            }
+        let recipe = bound_recipe.map(|binding| binding.recipe).or_else(|| {
+            FEATURE_RECIPES.iter().copied().find_map(|(name, recipe)| {
+                record
+                    .windows(name.len())
+                    .any(|window| window == name)
+                    .then_some(recipe)
+            })
         });
         result.push(FeatureOperation {
             feature_id,
@@ -214,7 +260,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
         }
         result.push(FeatureOperation {
             feature_id: *feature_id,
-            kind: match binding.kind {
+            kind: match binding.recipe.kind() {
                 FeatureRecipeKind::Extrude => "Extrude",
                 FeatureRecipeKind::Revolve => "Revolve",
             }
@@ -224,7 +270,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             stored_name_bytes: None,
             identifier_keyword: None,
             status_prefix: None,
-            recipe: Some(binding.kind),
+            recipe: Some(binding.recipe),
             root_schema_class: Some(binding.root_schema_class),
             parent_feature_id: Some(binding.parent_feature_id),
             offset: binding.offset,
@@ -6236,14 +6282,18 @@ mod tests {
     #[test]
     fn decodes_mdlstatus_recipe_discriminators_within_their_records() {
         let payload = b"\xe3icon\0protextrude\0Protrusion id 40\0\xe2\xe3\
-            icon\0protrevolve\0Revolve id 41\0\xe2\xe3Datum Plane id 42\0\xe3K\xc3\xb6rper ID 43\0";
+            icon\0protrevolve\0Revolve id 41\0\xe2\xe3\
+            icon\0cutextrude\0Cut id 42\0\xe2\xe3\
+            icon\0cutrevolve\0Cut id 43\0\xe2\xe3Datum Plane id 44\0\xe3K\xc3\xb6rper ID 45\0";
         let operations = operations(payload);
-        assert_eq!(operations.len(), 4);
-        assert_eq!(operations[0].recipe, Some(FeatureRecipeKind::Extrude));
-        assert_eq!(operations[1].recipe, Some(FeatureRecipeKind::Revolve));
-        assert_eq!(operations[2].recipe, None);
-        assert_eq!(operations[3].kind, "Körper");
-        assert_eq!(operations[3].feature_id, 43);
+        assert_eq!(operations.len(), 6);
+        assert_eq!(operations[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
+        assert_eq!(operations[1].recipe, Some(FeatureRecipe::ProtrudeRevolve));
+        assert_eq!(operations[2].recipe, Some(FeatureRecipe::CutExtrude));
+        assert_eq!(operations[3].recipe, Some(FeatureRecipe::CutRevolve));
+        assert_eq!(operations[4].recipe, None);
+        assert_eq!(operations[5].kind, "Körper");
+        assert_eq!(operations[5].feature_id, 45);
     }
 
     #[test]
@@ -6256,11 +6306,11 @@ mod tests {
         let operations = operations(payload);
         assert_eq!(operations.len(), 2);
         assert_eq!(operations[0].feature_id, 247);
-        assert_eq!(operations[0].recipe, Some(FeatureRecipeKind::Revolve));
+        assert_eq!(operations[0].recipe, Some(FeatureRecipe::ProtrudeRevolve));
         assert_eq!(operations[0].root_schema_class, Some(917));
         assert_eq!(operations[0].parent_feature_id, Some(32));
         assert_eq!(operations[1].feature_id, 8053);
-        assert_eq!(operations[1].recipe, Some(FeatureRecipeKind::Extrude));
+        assert_eq!(operations[1].recipe, Some(FeatureRecipe::ProtrudeExtrude));
         assert_eq!(operations[1].root_schema_class, Some(917));
         assert_eq!(operations[1].parent_feature_id, Some(8051));
     }
@@ -6274,7 +6324,7 @@ mod tests {
         assert_eq!(operations.len(), 1);
         assert_eq!(operations[0].feature_id, 8053);
         assert_eq!(operations[0].kind, "Extrude");
-        assert_eq!(operations[0].recipe, Some(FeatureRecipeKind::Extrude));
+        assert_eq!(operations[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
         assert_eq!(operations[0].root_schema_class, Some(917));
         assert_eq!(operations[0].parent_feature_id, Some(8051));
         assert_eq!(operations[0].offset, 1);

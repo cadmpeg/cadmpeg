@@ -4283,7 +4283,7 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
     assert_eq!(scan.feature_operations[0].feature_id, 17);
     assert_eq!(
         scan.feature_operations[0].recipe,
-        Some(crate::feature::FeatureRecipeKind::Revolve)
+        Some(crate::feature::FeatureRecipe::ProtrudeRevolve)
     );
 }
 

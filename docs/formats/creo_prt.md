@@ -791,9 +791,12 @@ one feature identifier and increase in byte order from zero. A stored state
 retains the prefix-inclusive name bytes, the `id`/`ID` spelling, and the offset
 of the optional prefix; a recipe-only state has no stored operation name.
 
-Within one current-state record, `protextrude` identifies a linear section
-sweep and `protrevolve` identifies a rotational section sweep. The recipe name
-precedes the `<Kind> id <N>` operation name and applies to that feature state.
+Within one current-state record, `protextrude` identifies an additive linear
+section sweep, `cutextrude` identifies a subtractive linear section sweep,
+`protrevolve` identifies an additive rotational section sweep, and
+`cutrevolve` identifies a subtractive rotational section sweep. The recipe
+name precedes the `<Kind> id <N>` operation name and applies to that feature
+state.
 DEPDB stores the same join in
 `f7 <record-ref> <feature-id> <schema-class> f6 <parent-id> <display-name> 00 f6 00 <recipe> 00`.
 The feature identifier owns the operation even when no localized `ID <N>` name
@@ -856,10 +859,11 @@ When both identifiers materialize as plane surfaces owned by the feature,
 complete, distinct, parallel equations make the class-204 plane the
 section-plane equation; the class-203 plane is the opposite sweep cap.
 
-For a linear or rotational section-sweep recipe, the stored operation family
-`Protrusion` adds material to an established preceding body and `Cut` removes
-material. A sweep evaluated as an independent body has new-body semantics. A
-protrusion without either body-state invariant retains an unresolved Boolean.
+The section-sweep recipe determines its Boolean effect independently of the
+localized operation-family display name. A `prot` recipe joins an established
+preceding body and creates a new body when no preceding modeled body exists. A
+`cut` recipe removes material. A sweep whose generated topology already forms
+an independent body has new-body semantics.
 
 When a class-911 hole owns exactly two complete outline-backed plane rows, their
 stored order is the entry and termination order. The planes are parallel.

@@ -1827,10 +1827,7 @@ fn feature_operation_state_records(scan: &ContainerScan) -> Vec<CreoFeatureOpera
                 status_prefix: state
                     .status_prefix
                     .map(|prefix| char::from(prefix).to_string()),
-                recipe: state.recipe.map(|recipe| match recipe {
-                    crate::feature::FeatureRecipeKind::Extrude => "protextrude",
-                    crate::feature::FeatureRecipeKind::Revolve => "protrevolve",
-                }),
+                recipe: state.recipe.map(crate::feature::FeatureRecipe::name),
                 root_schema_class: state.root_schema_class,
                 parent_feature_id: state.parent_feature_id,
                 offset: state.offset,
@@ -6424,7 +6421,8 @@ fn feature_recipe(
         .feature_operations
         .iter()
         .find(|operation| operation.feature_id == feature_id)
-        .and_then(|operation| operation.recipe);
+        .and_then(|operation| operation.recipe)
+        .map(crate::feature::FeatureRecipe::kind);
     let schema_recipe = scan
         .feature_rows
         .iter()
@@ -6434,6 +6432,17 @@ fn feature_recipe(
             _ => None,
         });
     stored_recipe.or(schema_recipe)
+}
+
+fn feature_recipe_effect(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<crate::feature::FeatureRecipeEffect> {
+    scan.feature_operations
+        .iter()
+        .find(|operation| operation.feature_id == feature_id)
+        .and_then(|operation| operation.recipe)
+        .map(crate::feature::FeatureRecipe::effect)
 }
 
 fn line_orientation_definition(
@@ -8649,15 +8658,13 @@ fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
 
 fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
-    if let Some(recipe) = feature_recipe(scan, feature_id) {
-        properties.insert(
-            "recipe".to_string(),
-            match recipe {
-                crate::feature::FeatureRecipeKind::Extrude => "protextrude",
-                crate::feature::FeatureRecipeKind::Revolve => "protrevolve",
-            }
-            .to_string(),
-        );
+    if let Some(recipe) = scan
+        .feature_operations
+        .iter()
+        .find(|operation| operation.feature_id == feature_id)
+        .and_then(|operation| operation.recipe)
+    {
+        properties.insert("recipe".to_string(), recipe.name().to_string());
     }
     if let Some(schema_class) = scan
         .feature_rows
@@ -9106,7 +9113,12 @@ fn schema_feature_definition(
             return circular_sweep_feature_definition(
                 definition.id,
                 &sweep,
-                section_sweep_boolean_operation(kind, false, preceding_features_establish_body(ir)),
+                section_sweep_boolean_operation(
+                    feature_recipe_effect(scan, feature_id),
+                    kind,
+                    false,
+                    preceding_features_establish_body(ir),
+                ),
             );
         }
     }
@@ -9146,6 +9158,7 @@ fn schema_feature_definition(
                         extent: None,
                     },
                     op: section_sweep_boolean_operation(
+                        feature_recipe_effect(scan, feature_id),
                         kind,
                         false,
                         preceding_features_establish_body(ir),
@@ -9187,6 +9200,7 @@ fn schema_feature_definition(
                         direction: Some(Vector3::new(direction[0], direction[1], direction[2])),
                         extent,
                         op: section_sweep_boolean_operation(
+                            feature_recipe_effect(scan, feature_id),
                             kind,
                             ir.model.bodies.iter().any(|body| {
                                 body.id
@@ -9247,13 +9261,21 @@ fn preceding_features_establish_body(ir: &CadIr) -> bool {
     })
 }
 
-fn section_sweep_boolean_operation(kind: &str, creates_body: bool, prior_body: bool) -> BooleanOp {
+fn section_sweep_boolean_operation(
+    recipe_effect: Option<crate::feature::FeatureRecipeEffect>,
+    kind: &str,
+    creates_body: bool,
+    prior_body: bool,
+) -> BooleanOp {
     if creates_body {
         return BooleanOp::NewBody;
     }
-    match kind {
-        "Protrusion" if prior_body => BooleanOp::Join,
-        "Cut" => BooleanOp::Cut,
+    match recipe_effect {
+        Some(crate::feature::FeatureRecipeEffect::Protrude) if prior_body => BooleanOp::Join,
+        Some(crate::feature::FeatureRecipeEffect::Protrude) => BooleanOp::NewBody,
+        Some(crate::feature::FeatureRecipeEffect::Cut) => BooleanOp::Cut,
+        None if kind == "Protrusion" && prior_body => BooleanOp::Join,
+        None if kind == "Cut" => BooleanOp::Cut,
         _ => BooleanOp::Unresolved,
     }
 }
@@ -10494,24 +10516,26 @@ mod resolved_sketch_tests {
 
     #[test]
     fn stored_section_sweep_family_defines_boolean_operation() {
+        use crate::feature::FeatureRecipeEffect::{Cut, Protrude};
+
         assert_eq!(
-            section_sweep_boolean_operation("Protrusion", false, true),
+            section_sweep_boolean_operation(Some(Protrude), "Körper", false, true),
             BooleanOp::Join
         );
         assert_eq!(
-            section_sweep_boolean_operation("Cut", false, false),
+            section_sweep_boolean_operation(Some(Cut), "Ausschnitt", false, false),
             BooleanOp::Cut
         );
         assert_eq!(
-            section_sweep_boolean_operation("Protrusion", true, false),
+            section_sweep_boolean_operation(Some(Protrude), "Protrusion", true, false),
             BooleanOp::NewBody
         );
         assert_eq!(
-            section_sweep_boolean_operation("Protrusion", false, false),
-            BooleanOp::Unresolved
+            section_sweep_boolean_operation(Some(Protrude), "Körper", false, false),
+            BooleanOp::NewBody
         );
         assert_eq!(
-            section_sweep_boolean_operation("Körper", false, true),
+            section_sweep_boolean_operation(None, "Körper", false, true),
             BooleanOp::Unresolved
         );
     }
@@ -16592,10 +16616,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let name = operation
             .display_name_stored
             .then(|| format!("{} id {}", operation.kind, operation.feature_id));
-        let source_tag = operation.recipe.map(|recipe| match recipe {
-            crate::feature::FeatureRecipeKind::Extrude => "protextrude".to_string(),
-            crate::feature::FeatureRecipeKind::Revolve => "protrevolve".to_string(),
-        });
+        let source_tag = operation.recipe.map(|recipe| recipe.name().to_string());
         let native_ref = owning_feature_definition_ref(scan, operation.feature_id);
         if let Some(existing) = ir
             .model
