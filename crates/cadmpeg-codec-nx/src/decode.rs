@@ -6303,6 +6303,8 @@ fn attach_native_object_model(
     let feature_input_block_identity_groups =
         crate::native::feature_input_block_identity_groups(&feature_input_blocks);
     let display_jt_indices = crate::native::display_jt_indices(&scan.container);
+    let display_jt_documents =
+        crate::native::display_jt_documents(&scan.container, &display_jt_indices);
     let feature_datum_csys_constructions =
         crate::native::feature_datum_csys_constructions(&scan.container);
     let feature_datum_csys_payloads = crate::native::feature_datum_csys_payloads(
@@ -6663,6 +6665,18 @@ fn attach_native_object_model(
                 .note(&row.id, annotation_stream, row.source_offset)
                 .tag("DISPLAY_JT_INDEX_ROW");
             annotations.exactness(&row.id, Exactness::ByteExact);
+        }
+    }
+    for document in &display_jt_documents {
+        annotations
+            .note(&document.id, annotation_stream, document.source_offset)
+            .tag("DISPLAY_JT_DOCUMENT");
+        annotations.exactness(&document.id, Exactness::ByteExact);
+        for entry in &document.toc_entries {
+            annotations
+                .note(&entry.id, annotation_stream, entry.source_offset)
+                .tag("DISPLAY_JT_TOC_ENTRY");
+            annotations.exactness(&entry.id, Exactness::ByteExact);
         }
     }
     for row in &segment_index_rows {
@@ -7394,6 +7408,9 @@ fn attach_native_object_model(
     }
     if !display_jt_indices.is_empty() {
         namespace.set_arena("display_jt_indices", &display_jt_indices)?;
+    }
+    if !display_jt_documents.is_empty() {
+        namespace.set_arena("display_jt_documents", &display_jt_documents)?;
     }
     if !feature_datum_csys_constructions.is_empty() {
         namespace.set_arena(

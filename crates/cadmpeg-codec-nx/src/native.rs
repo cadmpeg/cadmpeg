@@ -40,6 +40,48 @@ pub struct DisplayJtIndexRow {
     pub source_offset: u64,
 }
 
+/// One bounded embedded JT document and its table of contents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtDocument {
+    /// Globally unique document identity.
+    pub id: String,
+    /// Owning outer-index row.
+    pub index_row: String,
+    /// Exact 80-byte UTF-8 version field.
+    pub version_field: String,
+    /// Serialized JT byte-order flag.
+    pub byte_order: u8,
+    /// Payload-relative table-of-contents offset.
+    pub toc_offset: u32,
+    /// Exact 16-byte logical scene-graph segment identifier.
+    pub lsg_segment_id: Vec<u8>,
+    /// Ordered table-of-contents entries.
+    pub toc_entries: Vec<DisplayJtTocEntry>,
+    /// Physical byte length ending at the next indexed header or stream boundary.
+    pub physical_byte_len: u64,
+    /// Absolute source offset of the JT version field.
+    pub source_offset: u64,
+}
+
+/// One fixed-width entry in an embedded JT document table of contents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtTocEntry {
+    /// Globally unique TOC-entry identity.
+    pub id: String,
+    /// Zero-based serialized entry order.
+    pub ordinal: u32,
+    /// Exact 16-byte segment identifier.
+    pub segment_id: Vec<u8>,
+    /// Document-relative segment offset.
+    pub segment_offset: u32,
+    /// Physical segment byte length.
+    pub segment_byte_len: u32,
+    /// Exact four-byte segment attribute field.
+    pub attributes: Vec<u8>,
+    /// Absolute source offset of the TOC entry.
+    pub source_offset: u64,
+}
+
 /// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
 pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
     const JT_HEADER: &[u8] = b"Version ";
@@ -101,6 +143,151 @@ pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
             })
         })
         .collect()
+}
+
+/// Decode complete standard JT headers and tables of contents from an outer index.
+pub fn display_jt_documents(
+    container: &Container,
+    indices: &[DisplayJtIndex],
+) -> Vec<DisplayJtDocument> {
+    const VERSION_FIELD_LEN: usize = 80;
+    let entries = container
+        .entries
+        .iter()
+        .filter(|entry| entry.name == "/Root/UG_PART/DisplayJT")
+        .collect::<Vec<_>>();
+    let [entry] = entries.as_slice() else {
+        return Vec::new();
+    };
+    let Some((stream_source_offset, stream_byte_len)) = entry.file_span else {
+        return Vec::new();
+    };
+    let (Ok(stream_start), Ok(stream_byte_len)) = (
+        usize::try_from(stream_source_offset),
+        usize::try_from(stream_byte_len),
+    ) else {
+        return Vec::new();
+    };
+    let Some(stream) = container
+        .data
+        .get(stream_start..stream_start.saturating_add(stream_byte_len))
+    else {
+        return Vec::new();
+    };
+    let [index] = indices else {
+        return Vec::new();
+    };
+    let mut documents = Vec::new();
+    for (row_ordinal, row) in index.rows.iter().enumerate() {
+        let Ok(document_start) = usize::try_from(row.header_offset) else {
+            return Vec::new();
+        };
+        let document_end = index
+            .rows
+            .get(row_ordinal + 1)
+            .map_or(stream.len(), |next| next.header_offset as usize);
+        let Some(document) = stream.get(document_start..document_end) else {
+            return Vec::new();
+        };
+        let Some(version_bytes) = document.get(..VERSION_FIELD_LEN) else {
+            return Vec::new();
+        };
+        if !version_bytes.starts_with(b"Version ")
+            || !version_bytes
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() || byte.is_ascii_whitespace())
+        {
+            return Vec::new();
+        }
+        let Some(version_field) = std::str::from_utf8(version_bytes).ok() else {
+            return Vec::new();
+        };
+        let Some(&byte_order) = document.get(80) else {
+            return Vec::new();
+        };
+        if byte_order != 0 || document.get(81..85) != Some(&[0; 4]) {
+            return Vec::new();
+        }
+        let Some(toc_offset) = document
+            .get(85..89)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+        else {
+            return Vec::new();
+        };
+        let Some(lsg_segment_id) = document.get(89..105) else {
+            return Vec::new();
+        };
+        let Ok(toc_start) = usize::try_from(toc_offset) else {
+            return Vec::new();
+        };
+        let Some(toc_count) = document
+            .get(toc_start..toc_start.saturating_add(4))
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+        else {
+            return Vec::new();
+        };
+        let Ok(toc_count_usize) = usize::try_from(toc_count) else {
+            return Vec::new();
+        };
+        if toc_count_usize == 0 {
+            return Vec::new();
+        }
+        let Some(toc_end) = toc_start
+            .checked_add(4)
+            .and_then(|start| start.checked_add(toc_count_usize.checked_mul(28)?))
+        else {
+            return Vec::new();
+        };
+        if toc_end > document.len() {
+            return Vec::new();
+        }
+        let document_key = row
+            .id
+            .rsplit_once('#')
+            .map_or(row.id.as_str(), |(_, key)| key);
+        let mut toc_entries = Vec::with_capacity(toc_count_usize);
+        for ordinal in 0..toc_count_usize {
+            let offset = toc_start + 4 + ordinal * 28;
+            let bytes = &document[offset..offset + 28];
+            let segment_offset = u32::from_le_bytes(bytes[16..20].try_into().expect("fixed row"));
+            let segment_byte_len = u32::from_le_bytes(bytes[20..24].try_into().expect("fixed row"));
+            let Some(segment_end) = usize::try_from(segment_offset)
+                .ok()
+                .and_then(|start| start.checked_add(segment_byte_len as usize))
+            else {
+                return Vec::new();
+            };
+            if segment_byte_len == 0
+                || (segment_offset as usize) < toc_end
+                || segment_end > document.len()
+            {
+                return Vec::new();
+            }
+            toc_entries.push(DisplayJtTocEntry {
+                id: format!("nx:display-jt:toc-entry#{document_key}-{ordinal}"),
+                ordinal: ordinal as u32,
+                segment_id: bytes[..16].to_vec(),
+                segment_offset,
+                segment_byte_len,
+                attributes: bytes[24..28].to_vec(),
+                source_offset: stream_source_offset + document_start as u64 + offset as u64,
+            });
+        }
+        documents.push(DisplayJtDocument {
+            id: format!("nx:display-jt:document#{document_key}"),
+            index_row: row.id.clone(),
+            version_field: version_field.to_string(),
+            byte_order,
+            toc_offset,
+            lsg_segment_id: lsg_segment_id.to_vec(),
+            toc_entries,
+            physical_byte_len: document.len() as u64,
+            source_offset: stream_source_offset + document_start as u64,
+        });
+    }
+    documents
 }
 
 /// Complete typed source record for one Parasolid offset surface.

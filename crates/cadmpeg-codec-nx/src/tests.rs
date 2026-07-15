@@ -38,7 +38,19 @@ fn display_jt_index_requires_every_declared_header() {
     data.extend_from_slice(&0_u32.to_le_bytes());
     data.extend_from_slice(&28_u32.to_le_bytes());
     data.extend_from_slice(&[0; 4]);
-    data.extend_from_slice(b"Version 9.4 JT");
+    let mut version = [b' '; 80];
+    version[..14].copy_from_slice(b"Version 9.4 JT");
+    data.extend_from_slice(&version);
+    data.push(0);
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&105_u32.to_le_bytes());
+    data.extend_from_slice(&[1; 16]);
+    data.extend_from_slice(&1_u32.to_le_bytes());
+    data.extend_from_slice(&[2; 16]);
+    data.extend_from_slice(&137_u32.to_le_bytes());
+    data.extend_from_slice(&63_u32.to_le_bytes());
+    data.extend_from_slice(&7_u32.to_le_bytes());
+    data.extend_from_slice(&[0xaa; 63]);
     let container = Container {
         data: data.clone(),
         version: 6,
@@ -55,6 +67,13 @@ fn display_jt_index_requires_every_declared_header() {
     assert_eq!(indices[0].declared_count, 1);
     assert_eq!(indices[0].rows[0].header_offset, 28);
     assert_eq!(indices[0].rows[0].value, 100);
+    let documents = crate::native::display_jt_documents(&container, &indices);
+    assert_eq!(documents[0].toc_offset, 105);
+    assert_eq!(documents[0].physical_byte_len, 200);
+    assert_eq!(documents[0].toc_entries.len(), 1);
+    assert_eq!(documents[0].toc_entries[0].segment_offset, 137);
+    assert_eq!(documents[0].toc_entries[0].segment_byte_len, 63);
+    assert_eq!(documents[0].toc_entries[0].attributes, [7, 0, 0, 0]);
 
     let mut malformed = container;
     malformed.data[28] = b'X';
