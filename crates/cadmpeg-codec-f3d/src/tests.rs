@@ -3491,8 +3491,12 @@ fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool, tail_selector: i6
     push_u8_string(&mut surface, "TERM");
     t_vec(&mut surface, [1.0, 2.0, 3.0]);
     t_long(&mut surface, 1);
-    surface.push(0x15);
-    surface.extend_from_slice(&tail_selector.to_le_bytes());
+    if !legacy_ranges {
+        surface.push(0x15);
+        surface.extend_from_slice(&tail_selector.to_le_bytes());
+    } else {
+        assert_eq!(tail_selector, 0);
+    }
     match tail_selector {
         0 => {
             surface.extend_from_slice(&generated_surface_block());

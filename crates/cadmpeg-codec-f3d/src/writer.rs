@@ -7229,7 +7229,9 @@ fn encode_native_law_surface(
             let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
                 CodecError::Malformed("full law surface requires a cache-fit tolerance".into())
             })?;
-            native_enum(bytes, 0);
+            if construction.parameter_ranges.is_none() {
+                native_enum(bytes, 0);
+            }
             native_nurbs_surface(
                 bytes,
                 solved_cache.ok_or_else(|| {

@@ -2226,7 +2226,11 @@ fn decode_law_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
     let additional = (0..count)
         .map(|_| decode_law_formula(span, &mut position, int_width))
         .collect::<Option<Vec<_>>>()?;
-    let selector = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let selector = if parameter_ranges.is_some() && span.get(position..)?.starts_with(NUBS_MARKER) {
+        0
+    } else {
+        take_tagged_int(span, &mut position, 0x15, int_width)?
+    };
     let (tail, cache_fit_tolerance) = match selector {
         0 => {
             let cache = decode_surface_block(span, position, int_width)?;
@@ -7165,9 +7169,6 @@ mod width_tests {
         for int_width in [4usize, 8] {
             let mut bytes = vec![0x0f];
             push_ident(&mut bytes, "law_spl_sur");
-            for value in [-1.0, 2.0, -3.0, 4.0] {
-                push_f64(&mut bytes, value);
-            }
             push_string(&mut bytes, "primary-law");
             push_int(&mut bytes, 0x04, 1, int_width);
             push_string(&mut bytes, "SET");
@@ -7201,13 +7202,44 @@ mod width_tests {
             let DecodedProceduralSurfaceDefinition::Law(construction) = decoded.definition else {
                 panic!("expected law surface at width {int_width}")
             };
+            assert_eq!(construction.parameter_ranges, None);
+            assert_eq!(construction.primary.name, "primary-law");
+            assert_eq!(construction.additional.len(), 1);
+            assert_eq!(construction.discontinuities[1], [0.2, 0.3]);
+            assert_eq!(decoded.cache_fit_tolerance, Some(0.07));
+        }
+    }
+
+    #[test]
+    fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "lawsur");
+            for value in [-1.0, 2.0, -3.0, 4.0] {
+                push_f64(&mut bytes, value);
+            }
+            push_string(&mut bytes, "null_law");
+            push_int(&mut bytes, 0x04, 0, int_width);
+            bytes.extend_from_slice(&surface_block(int_width));
+            push_f64(&mut bytes, 0.007);
+            for _ in 0..6 {
+                push_int(&mut bytes, 0x04, 0, int_width);
+            }
+            bytes.push(0x10);
+
+            let decoded = decode_law_spl_sur(&bytes, int_width)
+                .unwrap_or_else(|| panic!("legacy law surface at width {int_width}"));
+            let DecodedProceduralSurfaceDefinition::Law(construction) = decoded.definition else {
+                panic!("expected legacy law surface")
+            };
             assert_eq!(
                 construction.parameter_ranges,
                 Some([[-1.0, 2.0], [-3.0, 4.0]])
             );
-            assert_eq!(construction.primary.name, "primary-law");
-            assert_eq!(construction.additional.len(), 1);
-            assert_eq!(construction.discontinuities[1], [0.2, 0.3]);
+            assert!(matches!(
+                construction.tail,
+                cadmpeg_ir::geometry::LawSurfaceTail::Full
+            ));
             assert_eq!(decoded.cache_fit_tolerance, Some(0.07));
         }
     }
