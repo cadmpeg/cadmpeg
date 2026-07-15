@@ -238,6 +238,14 @@ fn standard_mesh_ports_bridge_table_local_endpoint_names() {
     let table_ports =
         crate::topology::standard_edge_port_identities(&bytes).expect("table-local ports");
     assert_ne!(table_ports[1][1], table_ports[2][0]);
+    assert_eq!(
+        table_ports
+            .iter()
+            .flatten()
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        8
+    );
     assert_eq!(ports[0][1], ports[1][0]);
     assert_eq!(ports[1][1], ports[2][0]);
     assert_eq!(ports[2][1], ports[3][0]);
@@ -557,7 +565,7 @@ fn fbb_topology_reads_u16_mesh_and_edge_handles() {
 }
 
 #[test]
-fn standard_mesh_gap_assignment_follows_native_port_cycle() {
+fn standard_mesh_gap_assignment_does_not_merge_row_local_endpoint_names() {
     let mut bytes = standard_quad_topology_stream();
     for _ in 0..4 {
         let row = bytes
@@ -571,7 +579,7 @@ fn standard_mesh_gap_assignment_follows_native_port_cycle() {
     let assignments = crate::topology::standard_mesh_missing_edge_assignments(&bytes, &[[0, 0]; 4])
         .expect("native port-ordered full gap");
     assert_eq!(assignments.len(), 1);
-    assert_eq!(assignments[0].len(), 280);
+    assert_eq!(assignments[0].len(), 840);
     assert!(assignments[0].iter().all(|assignment| {
         assignment
             .iter()
@@ -591,7 +599,7 @@ fn standard_mesh_gap_assignment_follows_native_port_cycle() {
 }
 
 #[test]
-fn standard_mesh_endpoint_domains_solve_port_order_independently_of_interior_order() {
+fn standard_mesh_endpoint_domains_ignore_row_local_endpoint_order() {
     let mut bytes = standard_quad_topology_stream();
     let header = bytes
         .windows(3)
@@ -610,8 +618,7 @@ fn standard_mesh_endpoint_domains_solve_port_order_independently_of_interior_ord
     )
     .expect("independent endpoint-port gauge");
     let coedges = &topology.faces()[0].boundaries[0].coedges;
-    assert!(coedges[0].reversed);
-    assert!(coedges[1..].iter().all(|coedge| !coedge.reversed));
+    assert!(coedges.iter().all(|coedge| !coedge.reversed));
 }
 
 #[test]

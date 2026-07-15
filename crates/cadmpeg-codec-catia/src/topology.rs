@@ -1037,25 +1037,13 @@ pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
-    let scopes = parse_edge_tables_scoped_at(bytes, after_faces)
-        .filter(|(rows, _, _)| rows.len() == edge_rows.len())
-        .map_or_else(
-            || edge_rows.iter().map(|row| usize::from(row.kind)).collect(),
-            |(_, scopes, _)| scopes,
-        );
-    let mut identities = HashMap::new();
     edge_rows
         .iter()
-        .zip(scopes)
-        .map(|(row, scope)| {
-            [*row.handles.first()?, *row.handles.last()?]
-                .map(|handle| {
-                    let next = identities.len();
-                    u32::try_from(*identities.entry((scope, handle)).or_insert(next)).ok()
-                })
-                .into_iter()
-                .collect::<Option<Vec<_>>>()
-                .and_then(|ports| <[u32; 2]>::try_from(ports).ok())
+        .enumerate()
+        .map(|(edge, row)| {
+            row.handles.first().zip(row.handles.last())?;
+            let start = edge.checked_mul(2)?;
+            Some([u32::try_from(start).ok()?, u32::try_from(start + 1).ok()?])
         })
         .collect()
 }

@@ -209,7 +209,7 @@ Boundary orientation is a parity problem over the selected face boundaries. The 
 
 Within one FBB face group, physical-edge incidence classifies the body. A nonempty group whose every edge has two uses is solid; a group with an edge having more than two uses is general; every other group is sheet. Every physical edge belongs to at least one face boundary in exactly one FBB group; an unused edge or an edge shared by separate groups invalidates the grouping.
 
-Initialize the quotient by collapsing equal serialized port identities. Use complete mesh-occurrence components when available; otherwise use equality within each `01 01` or `01 02` table-local namespace. Face-boundary corner equations extend this initial quotient.
+Initialize the quotient with two distinct endpoint ports per physical edge row. The endpoint integers stored in a standard edge row are occurrence-local names and do not establish equality with an endpoint integer in another row. Exact mesh occurrences and face-boundary corner equations collapse these initial ports.
 
 Assignments with the same ordered physical-edge rows and the same resolved occurrence directions induce the same logical-corner quotient. Differences confined to boundary-segment allocation do not create distinct quotient choices. Positional assignments remain distinct while deriving trim-corner endpoint constraints.
 
@@ -229,7 +229,7 @@ Endpoint constraints prune complete face assignments atomically. A placement dom
 
 An endpoint-pair candidate is retained only when every incident face has a complete boundary assignment whose ordered edge uses admit a closed head-to-tail traversal containing that pair. Propagate supported pairs through each cycle in both directions, union support across alternative assignments on one face, intersect support across the edge's distinct incident faces, and repeat to a fixpoint.
 
-The standard `u16be` endpoint ports form a larger namespace than the vertex table; a port handle is not a vertex index. Port-handle identity is scoped to its `01 01` or `01 02` edge table. Equal handles in one table name the same port; equal numeric handles across the two tables do not establish identity. Boundary-run corner unions bridge the two table-local namespaces. FBB-only handles instead share the same-width mesh-boundary namespace used by the trim packets; cross-face logical-vertex collapse is applied after complete-run identity is established.
+The standard `u16be` endpoint integers are not vertex indices or reusable port identities. Each row contributes two occurrence-local ports even when another row stores the same endpoint integer. Boundary-run corner unions establish all cross-row port identity. FBB-only handles instead share the same-width mesh-boundary namespace used by the trim packets; cross-face logical-vertex collapse is applied after complete-run identity is established.
 
 The endpoint components induced by exact face-local run matches are provisional. Distinct occurrence components map to one logical vertex when their physical edge endpoints carry the same native endpoint identity, even when adjacent faces use different trim handles. Native endpoint identities are global within the topology; each edge's ordered identity pair is in physical edge-row direction and replaces its provisional corner pair. Coordinate-row indices therefore cannot be assigned directly from component ordinals; the native-identity quotient precedes coordinate binding.
 
