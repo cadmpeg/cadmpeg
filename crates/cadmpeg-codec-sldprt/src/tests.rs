@@ -3792,6 +3792,9 @@ fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     pole.x += dx;
                 }
             }
+            // Procedural curves reference a construction entity; no inline
+            // coordinates to translate.
+            CurveGeometry::Procedural { .. } => {}
             CurveGeometry::Unknown { .. } => {}
         }
     }

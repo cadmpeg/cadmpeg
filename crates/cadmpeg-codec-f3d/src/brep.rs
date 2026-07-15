@@ -25,6 +25,7 @@ use crate::records::{
     TolerantVertexTail, TransformHints, VertexOwnership, WireSide, WireTopology,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::eval;
 use cadmpeg_ir::geometry::{
     BlendSupport, Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -5122,12 +5123,11 @@ fn analytic_rolling_ball_surface(
         });
     }
 
-    let (plane, cylinder) = match (first, second) {
-        (plane @ SurfaceGeometry::Plane { .. }, cylinder @ SurfaceGeometry::Cylinder { .. })
-        | (cylinder @ SurfaceGeometry::Cylinder { .. }, plane @ SurfaceGeometry::Plane { .. }) => {
-            (plane, cylinder)
-        }
-        _ => return None,
+    let ((plane @ SurfaceGeometry::Plane { .. }, cylinder @ SurfaceGeometry::Cylinder { .. })
+    | (cylinder @ SurfaceGeometry::Cylinder { .. }, plane @ SurfaceGeometry::Plane { .. })) =
+        (first, second)
+    else {
+        return None;
     };
     let (center, axis, ref_direction, major_radius) = rational_four_arc_circle(spine)?;
     let SurfaceGeometry::Plane {
@@ -5693,6 +5693,10 @@ fn persistent_subentity_tags(attribute: &SourceAttribute) -> Vec<PersistentSuben
         return Vec::new();
     }
     let Ok(group_count) = usize::try_from(*group_count) else {
+        return Vec::new();
+    };
+    // Each group consumes at least four leading attribute values from `rest`.
+    let Some(group_count) = bounded_len(group_count as u64, 4, rest.len()) else {
         return Vec::new();
     };
     let mut position: usize = 0;

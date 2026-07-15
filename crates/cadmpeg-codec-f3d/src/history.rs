@@ -1204,7 +1204,7 @@ fn treatment_radius_candidates(
         let face = matches.next()?.entity;
         matches.next().is_none().then_some(face)
     };
-    let result_faces = result.faces.iter().copied().collect::<Vec<_>>();
+    let result_faces = result.faces.clone();
     let mut out = Vec::new();
     let candidate_edges = result_candidate_faces
         .iter()

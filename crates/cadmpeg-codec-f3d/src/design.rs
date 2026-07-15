@@ -115,14 +115,13 @@ pub(crate) fn validate_configuration_payload(
     if kind == DesignConfigurationKind::Rule {
         let condition = object.get("when");
         let target = object.get("activate");
-        if condition.is_some() || target.is_some() {
-            if !condition.is_some_and(serde_json::Value::is_string)
-                || !target.is_some_and(serde_json::Value::is_string)
-            {
-                return Err(CodecError::Malformed(format!(
-                    "F3D configuration rule `when` and `activate` must be paired strings: {entry_name}"
-                )));
-            }
+        if (condition.is_some() || target.is_some())
+            && (!condition.is_some_and(serde_json::Value::is_string)
+                || !target.is_some_and(serde_json::Value::is_string))
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D configuration rule `when` and `activate` must be paired strings: {entry_name}"
+            )));
         }
         return Ok(());
     }
@@ -401,6 +400,9 @@ fn neutral_configuration_id(
 
 /// Project parameter scopes and their document- or scope-owned parameters into
 /// the neutral construction history.
+// Faithful signature over eight parallel design-parameter slices; bundling them
+// into a struct would only shift the fan-out to every caller.
+#[allow(clippy::too_many_arguments)]
 pub fn project_parameter_design(
     native: &[DesignParameter],
     owners: &[DesignParameterOwner],
@@ -1288,6 +1290,9 @@ fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i
     unique_edge_assignment_with_context(&candidate_sets)
 }
 
+// Three-state result: outer `None` fails the operand, inner `None` marks "no
+// applicable candidates", inner `Some` carries the resolved edge slots.
+#[allow(clippy::option_option)]
 fn edge_group_assignment_candidates<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
@@ -1346,7 +1351,7 @@ fn radius_edge_group_candidates(operands: &[&DesignEdgeOperand], radius: f64) ->
 fn unique_edge_assignment_with_context(candidate_sets: &[Option<Vec<i64>>]) -> Option<Vec<i64>> {
     let edge_candidate_sets = candidate_sets
         .iter()
-        .filter_map(|candidates| candidates.clone())
+        .filter_map(std::clone::Clone::clone)
         .collect::<Vec<_>>();
     unique_bipartite_assignment(&edge_candidate_sets)
 }
@@ -1433,6 +1438,10 @@ fn bipartite_assignment(
     Some(assignment)
 }
 
+/// Members of one construction operand group: `(identity, resolved edge slot,
+/// deleted boundary edge slots)`.
+type EdgeGroupMembers = Vec<(u32, Option<i64>, Vec<i64>)>;
+
 fn scope_partition_edge_group_candidates(
     target: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
@@ -1481,7 +1490,7 @@ fn scope_partition_edge_group_candidates(
 
 fn partition_unique_incomplete_edge_group(
     target_ordinal: usize,
-    groups: &[Vec<(u32, Option<i64>, Vec<i64>)>],
+    groups: &[EdgeGroupMembers],
 ) -> Option<Vec<i64>> {
     if groups.len() < 2 || target_ordinal >= groups.len() {
         return None;
@@ -2024,9 +2033,7 @@ fn resolved_face_group(
         if matches.next().is_some() {
             return None;
         }
-        let Some(operand_faces) = resolved_face_operand(operand) else {
-            return None;
-        };
+        let operand_faces = resolved_face_operand(operand)?;
         for face in operand_faces {
             if !faces.contains(&face) {
                 faces.push(face);
@@ -2092,7 +2099,7 @@ pub(crate) struct ExtrudeStartPlaneResolution<'a> {
 pub(crate) fn bind_extrude_start_planes(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
-    resolution: ExtrudeStartPlaneResolution<'_>,
+    resolution: &mut ExtrudeStartPlaneResolution<'_>,
 ) {
     use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition, ProfileRef};
 
@@ -4189,18 +4196,16 @@ pub fn project_dimension_constraints(
             let sketch = sketches_by_scope
                 .get(&(scope.as_str(), owner.scope_record_index))?
                 .clone();
-            let linear_candidates = parameter
-                .source_kind
-                .starts_with("Linear Dimension")
-                .then(|| {
-                    recipe_linear_dimension_candidates(
-                        entities,
-                        &sketch,
-                        parameter.evaluated_value * 10.0,
-                        &parameter_id,
-                    )
-                })
-                .unwrap_or_default();
+            let linear_candidates = if parameter.source_kind.starts_with("Linear Dimension") {
+                recipe_linear_dimension_candidates(
+                    entities,
+                    &sketch,
+                    parameter.evaluated_value * 10.0,
+                    &parameter_id,
+                )
+            } else {
+                Vec::default()
+            };
             let repeated = repeated_linear_dimension(&linear_candidates, parameter_id.clone());
             let definition = match (linear_candidates.as_slice(), repeated) {
                 ([definition], _) => definition.clone(),

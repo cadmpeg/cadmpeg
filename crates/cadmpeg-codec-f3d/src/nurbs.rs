@@ -23,6 +23,7 @@
 //! 8. Record bytes omit the stream width, so each decoder tests both layouts
 //! and validates tags, degrees, counts, and block extents.
 
+use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
     SurfaceGeometry,
@@ -1541,6 +1542,12 @@ fn decode_loft_subdata(
         usize::try_from(row_count).ok()?
     };
     let columns_to_read = usize::try_from(column_count).ok()?;
+    // Each row consumes two tagged doubles (2 * 9 bytes) for its parameters.
+    let rows_to_read = bounded_len(
+        rows_to_read as u64,
+        18,
+        bytes.len().saturating_sub(*position),
+    )?;
     let mut rows = Vec::with_capacity(rows_to_read);
     for _ in 0..rows_to_read {
         let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
@@ -1604,11 +1611,19 @@ fn decode_loft_section(
     int_width: usize,
 ) -> Option<Vec<EmbeddedLoftSectionEntry>> {
     let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+    // Each entry consumes at least one tagged double (9 bytes) for its parameter.
+    let count = bounded_len(count as u64, 9, bytes.len().saturating_sub(*position))?;
     let mut entries = Vec::with_capacity(count);
     for _ in 0..count {
         let parameter = take_f64(bytes, position)?;
         let member_count =
             usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+        // Each member consumes at least a tagged type code (1 + int_width bytes).
+        let member_count = bounded_len(
+            member_count as u64,
+            1 + int_width,
+            bytes.len().saturating_sub(*position),
+        )?;
         let mut profile = Vec::with_capacity(member_count);
         for _ in 0..member_count {
             let type_code = take_tagged_int(bytes, position, 0x04, int_width)?;
@@ -1625,6 +1640,12 @@ fn decode_loft_section(
         *position = curve.end;
         let auxiliary_count =
             usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+        // Each auxiliary consumes at least a curve-block marker (6 bytes).
+        let auxiliary_count = bounded_len(
+            auxiliary_count as u64,
+            6,
+            bytes.len().saturating_sub(*position),
+        )?;
         let mut auxiliaries = Vec::with_capacity(auxiliary_count);
         for _ in 0..auxiliary_count {
             let auxiliary = decode_curve_block(bytes, *position, int_width)?;

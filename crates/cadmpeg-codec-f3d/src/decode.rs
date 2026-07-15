@@ -512,7 +512,7 @@ pub fn decode(
             crate::design::bind_extrude_start_planes(
                 &mut ir.model.features,
                 &ir.model.sketches,
-                crate::design::ExtrudeStartPlaneResolution {
+                &mut crate::design::ExtrudeStartPlaneResolution {
                     faces: &ir.model.faces,
                     surfaces: &ir.model.surfaces,
                     groups: &native.design_construction_operand_groups,
@@ -759,7 +759,7 @@ pub fn decode(
     crate::design::bind_extrude_start_planes(
         &mut ir.model.features,
         &ir.model.sketches,
-        crate::design::ExtrudeStartPlaneResolution {
+        &mut crate::design::ExtrudeStartPlaneResolution {
             faces: &ir.model.faces,
             surfaces: &ir.model.surfaces,
             groups: &native.design_construction_operand_groups,

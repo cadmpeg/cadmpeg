@@ -4959,6 +4959,9 @@ mod tests {
                 radial_next: coedge_ids[index].clone(),
                 sense: Sense::Forward,
                 pcurve: None,
+                pcurve_parameter_range: None,
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
         }
         ir.finalize();
@@ -5038,6 +5041,9 @@ mod tests {
                 radial_next: coedge_ids[index].clone(),
                 sense: Sense::Forward,
                 pcurve: None,
+                pcurve_parameter_range: None,
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
         }
         ir.finalize();
@@ -5208,6 +5214,9 @@ mod tests {
                 radial_next: coedge_ids[radial_next].clone(),
                 sense,
                 pcurve: None,
+                pcurve_parameter_range: None,
+                use_curve: None,
+                use_curve_parameter_range: None,
             });
         }
         ir.finalize();
@@ -5386,6 +5395,9 @@ mod tests {
                     radial_next: coedge_ids[index].clone(),
                     sense: face_uses[face][offset].1,
                     pcurve: None,
+                    pcurve_parameter_range: None,
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                 });
             }
         }
