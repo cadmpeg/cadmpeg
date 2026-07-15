@@ -4747,6 +4747,7 @@ fn emit_topology(
     attach_tolerant_edge_intersections(ir, graph, &edges, &prefix, source_stream, annotations);
     complete_intersection_supports_from_edge_incidence(ir);
     complete_intersection_pcurves_from_coedge_incidence(ir);
+    complete_intersection_pcurves_from_opposite_charts(ir);
 
     let owned_edges: BTreeSet<_> = ir
         .model
@@ -4924,6 +4925,251 @@ pub(crate) fn complete_intersection_pcurves_from_coedge_incidence(ir: &mut CadIr
             };
             side.pcurve = Some(carrier.geometry.clone());
         }
+    }
+}
+
+pub(crate) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr) {
+    let edge_tolerances = ir
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| {
+            Some((
+                edge.curve.clone()?,
+                edge.tolerance
+                    .filter(|value| value.is_finite() && *value >= 0.0)?,
+            ))
+        })
+        .fold(
+            BTreeMap::<CurveId, f64>::new(),
+            |mut values, (curve, tolerance)| {
+                values
+                    .entry(curve)
+                    .and_modify(|current| *current = current.min(tolerance))
+                    .or_insert(tolerance);
+                values
+            },
+        );
+    let replacements = ir
+        .model
+        .procedural_curves
+        .iter()
+        .filter_map(|procedural| {
+            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            else {
+                return None;
+            };
+            let missing = context
+                .sides
+                .each_ref()
+                .map(|side| pcurve_requires_completion(side.pcurve.as_ref()));
+            let target = match missing {
+                [true, false] => 0,
+                [false, true] => 1,
+                _ => return None,
+            };
+            let source = 1 - target;
+            let source_surface = context.sides[source].surface.as_ref()?;
+            let source_pcurve = context.sides[source].pcurve.as_ref()?;
+            let target_surface = context.sides[target].surface.as_ref()?;
+            let tolerance = procedural
+                .cache_fit_tolerance
+                .or_else(|| edge_tolerances.get(&procedural.curve).copied())?;
+            let pcurve = transfer_intersection_pcurve(
+                ir,
+                source_surface,
+                source_pcurve,
+                target_surface,
+                context.parameter_range,
+                tolerance,
+            )?;
+            Some((procedural.id.clone(), target, pcurve, tolerance))
+        })
+        .collect::<Vec<_>>();
+    for (procedural_id, side, pcurve, tolerance) in replacements {
+        let Some(procedural) = ir
+            .model
+            .procedural_curves
+            .iter_mut()
+            .find(|procedural| procedural.id == procedural_id)
+        else {
+            continue;
+        };
+        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
+        else {
+            continue;
+        };
+        if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
+            context.sides[side].pcurve = Some(pcurve);
+            procedural.cache_fit_tolerance =
+                Some(procedural.cache_fit_tolerance.unwrap_or(0.0).max(tolerance));
+        }
+    }
+}
+
+fn transfer_intersection_pcurve(
+    ir: &CadIr,
+    source_surface: &SurfaceId,
+    source_pcurve: &PcurveGeometry,
+    target_surface: &SurfaceId,
+    parameter_range: [f64; 2],
+    tolerance: f64,
+) -> Option<PcurveGeometry> {
+    (parameter_range[0].is_finite()
+        && parameter_range[1].is_finite()
+        && parameter_range[0] < parameter_range[1]
+        && tolerance.is_finite()
+        && tolerance >= 0.0)
+        .then_some(())?;
+    let first = transferred_pcurve_sample(
+        ir,
+        source_surface,
+        source_pcurve,
+        target_surface,
+        parameter_range[0],
+        None,
+        tolerance,
+    )?;
+    let last = transferred_pcurve_sample(
+        ir,
+        source_surface,
+        source_pcurve,
+        target_surface,
+        parameter_range[1],
+        Some(first.1),
+        tolerance,
+    )?;
+    let mut samples = vec![first];
+    append_transferred_pcurve_segment(
+        ir,
+        source_surface,
+        source_pcurve,
+        target_surface,
+        first,
+        last,
+        tolerance,
+        0,
+        &mut samples,
+    )?;
+    Some(PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: linear_knots(&samples.iter().map(|sample| sample.0).collect::<Vec<_>>()),
+        control_points: samples.iter().map(|sample| sample.1).collect(),
+        weights: None,
+        periodic: false,
+    })
+}
+
+type TransferredPcurveSample = (f64, Point2, Point3);
+
+fn transferred_pcurve_sample(
+    ir: &CadIr,
+    source_surface: &SurfaceId,
+    source_pcurve: &PcurveGeometry,
+    target_surface: &SurfaceId,
+    parameter: f64,
+    seed: Option<Point2>,
+    tolerance: f64,
+) -> Option<TransferredPcurveSample> {
+    let source_uv = pcurve_uv(source_pcurve, parameter)?;
+    let point = decoded_surface_point(ir, source_surface, source_uv.u, source_uv.v)?;
+    let target_uv = surface_parameters_for_fit(ir, target_surface, point, seed, tolerance)?;
+    decoded_surface_point(ir, target_surface, target_uv.u, target_uv.v)
+        .filter(|candidate| point_distance(*candidate, point) <= tolerance)
+        .map(|_| (parameter, target_uv, point))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn append_transferred_pcurve_segment(
+    ir: &CadIr,
+    source_surface: &SurfaceId,
+    source_pcurve: &PcurveGeometry,
+    target_surface: &SurfaceId,
+    first: TransferredPcurveSample,
+    last: TransferredPcurveSample,
+    tolerance: f64,
+    depth: usize,
+    samples: &mut Vec<TransferredPcurveSample>,
+) -> Option<()> {
+    let midpoint_parameter = f64::midpoint(first.0, last.0);
+    let midpoint_seed = Point2::new(
+        f64::midpoint(first.1.u, last.1.u),
+        f64::midpoint(first.1.v, last.1.v),
+    );
+    let midpoint = transferred_pcurve_sample(
+        ir,
+        source_surface,
+        source_pcurve,
+        target_surface,
+        midpoint_parameter,
+        Some(midpoint_seed),
+        tolerance,
+    )?;
+    let fits = [0.25, 0.5, 0.75].into_iter().all(|fraction| {
+        let parameter = first.0 + fraction * (last.0 - first.0);
+        let uv = Point2::new(
+            first.1.u + fraction * (last.1.u - first.1.u),
+            first.1.v + fraction * (last.1.v - first.1.v),
+        );
+        let Some(source_uv) = pcurve_uv(source_pcurve, parameter) else {
+            return false;
+        };
+        let Some(source_point) =
+            decoded_surface_point(ir, source_surface, source_uv.u, source_uv.v)
+        else {
+            return false;
+        };
+        decoded_surface_point(ir, target_surface, uv.u, uv.v)
+            .is_some_and(|target_point| point_distance(source_point, target_point) <= tolerance)
+    });
+    if fits {
+        samples.push(last);
+        return Some(());
+    }
+    (depth < 16).then_some(())?;
+    append_transferred_pcurve_segment(
+        ir,
+        source_surface,
+        source_pcurve,
+        target_surface,
+        first,
+        midpoint,
+        tolerance,
+        depth + 1,
+        samples,
+    )?;
+    append_transferred_pcurve_segment(
+        ir,
+        source_surface,
+        source_pcurve,
+        target_surface,
+        midpoint,
+        last,
+        tolerance,
+        depth + 1,
+        samples,
+    )
+}
+
+fn surface_parameters_for_fit(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+    tolerance: f64,
+) -> Option<Point2> {
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    match &carrier.geometry {
+        SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, point, seed),
+        SurfaceGeometry::Procedural { .. } => {
+            offset_surface_parameters_with_tolerance(ir, surface, point, seed, Some(tolerance))
+                .or_else(|| blend_surface_parameters_for_fit(ir, surface, point, seed, tolerance))
+        }
+        geometry => analytic_surface_parameters(geometry, point),
     }
 }
 

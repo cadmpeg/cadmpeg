@@ -5434,6 +5434,105 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
 }
 
 #[test]
+fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
+    use cadmpeg_ir::geometry::{
+        Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, Surface,
+    };
+    use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, SurfaceId, VertexId};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::Edge;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let source = SurfaceId("synthetic:source-cylinder".into());
+    let target = SurfaceId("synthetic:target-plane".into());
+    ir.model.surfaces.extend([
+        Surface {
+            id: source.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 10.0,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: target.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let curve = CurveId("synthetic:intersection-curve".into());
+    let construction = ProceduralCurveId("synthetic:intersection".into());
+    ir.model.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Procedural {
+            construction: construction.clone(),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: construction,
+        curve: curve.clone(),
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(source),
+                        pcurve: Some(PcurveGeometry::Line {
+                            origin: Point2::new(0.0, 0.0),
+                            direction: Point2::new(std::f64::consts::TAU, 0.0),
+                        }),
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(target.clone()),
+                        pcurve: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: None,
+    });
+    ir.model.edges.push(Edge {
+        id: EdgeId("synthetic:edge".into()),
+        curve: Some(curve),
+        start: VertexId("synthetic:start".into()),
+        end: VertexId("synthetic:end".into()),
+        param_range: Some([0.0, 1.0]),
+        tolerance: Some(0.01),
+    });
+
+    crate::decode::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &ir.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    let pcurve = context.sides[1].pcurve.as_ref().unwrap();
+    let PcurveGeometry::Nurbs { control_points, .. } = pcurve else {
+        unreachable!()
+    };
+    assert!(control_points.len() > 2);
+    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).unwrap();
+        let point =
+            cadmpeg_ir::eval::surface_point(&ir.model.surfaces[1].geometry, uv.u, uv.v).unwrap();
+        let angle = std::f64::consts::TAU * parameter;
+        assert!((point.x - 10.0 * angle.cos()).abs() < 0.01);
+        assert!((point.y - 10.0 * angle.sin()).abs() < 0.01);
+        assert!(point.z.abs() < 0.01);
+    }
+}
+
+#[test]
 fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     let stream = pcurve_topology_partition_stream();
     let mut input = Cursor::new(prt_with_partition(&stream));
