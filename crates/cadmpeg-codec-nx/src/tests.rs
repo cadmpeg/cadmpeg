@@ -366,6 +366,27 @@ fn jt_int32_cdp2_decodes_arithmetic_single_value_context() {
 }
 
 #[test]
+fn jt_int32_cdp2_decodes_raw_and_split_chopper_packets() {
+    let raw = [4, 0, 0, 0, 4, 0, 4, 0, 0, 0, 0, 0, 0, 0xb0];
+    assert_eq!(
+        crate::jt::decode_int32_cdp2(&raw, 0),
+        Some((vec![1, 0, 1, 1], raw.len()))
+    );
+
+    let msb = [2, 0, 0, 0, 4, 0, 4, 0, 0, 0, 0, 0, 0, 0x60];
+    let lsb = [2, 0, 0, 0, 4, 0, 4, 0, 0, 0, 0, 0, 0, 0xc0];
+    let mut split = vec![2, 0, 0, 0, 4, 2];
+    split.extend_from_slice(&10_i32.to_le_bytes());
+    split.push(4);
+    split.extend_from_slice(&msb);
+    split.extend_from_slice(&lsb);
+    assert_eq!(
+        crate::jt::decode_int32_cdp2(&split, 0),
+        Some((vec![17, 18], split.len()))
+    );
+}
+
+#[test]
 fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
     let mut body = Vec::new();
     body.extend_from_slice(&1_u16.to_le_bytes());
