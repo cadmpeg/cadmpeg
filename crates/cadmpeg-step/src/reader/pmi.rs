@@ -780,6 +780,7 @@ fn measure(
         length_scale,
         angle_scale,
         &mut BTreeSet::new(),
+        0,
     )
 }
 
@@ -789,7 +790,11 @@ fn measure_inner(
     length_scale: f64,
     angle_scale: f64,
     active: &mut BTreeSet<u64>,
+    depth: usize,
 ) -> Option<PmiValue> {
+    if depth >= super::MAX_RECORD_GRAPH_DEPTH {
+        return None;
+    }
     match value {
         Value::Integer(value) => Some(PmiValue {
             value: *value as f64,
@@ -870,14 +875,28 @@ fn measure_inner(
                             quantity,
                         })
                         .or_else(|| {
-                            measure_inner(parameter, exchange, length_scale, angle_scale, active)
+                            measure_inner(
+                                parameter,
+                                exchange,
+                                length_scale,
+                                angle_scale,
+                                active,
+                                depth + 1,
+                            )
                         })
                 });
             result
         }
-        Value::List(values) => values
-            .iter()
-            .find_map(|value| measure_inner(value, exchange, length_scale, angle_scale, active)),
+        Value::List(values) => values.iter().find_map(|value| {
+            measure_inner(
+                value,
+                exchange,
+                length_scale,
+                angle_scale,
+                active,
+                depth + 1,
+            )
+        }),
         _ => None,
     }
 }

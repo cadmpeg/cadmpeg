@@ -108,7 +108,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
         .iter()
         .filter_map(|id| overridden_style(&exchange.records[id]))
         .collect::<BTreeSet<_>>();
-    styles.sort_by_key(|id| style_depth(*id, exchange, &mut BTreeSet::new()).unwrap_or(u32::MAX));
+    styles
+        .sort_by_key(|id| style_depth(*id, exchange, &mut BTreeSet::new(), 0).unwrap_or(u32::MAX));
     for style_id in styles {
         if overridden_styles.contains(&style_id) {
             typed.insert(style_id);
@@ -177,7 +178,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             })
             .clone();
         let target_steps =
-            expand_style_targets(target_step, exchange, &mut typed, &mut BTreeSet::new());
+            expand_style_targets(target_step, exchange, &mut typed, &mut BTreeSet::new(), 0);
         for (ordinal, target_step) in target_steps.into_iter().enumerate() {
             let face_id = format!("step:data:face#{target_step}");
             let body_id = format!("step:data:body#{target_step}");
@@ -264,8 +265,9 @@ fn expand_style_targets(
     exchange: &Exchange,
     typed: &mut BTreeSet<u64>,
     active: &mut BTreeSet<u64>,
+    depth: usize,
 ) -> Vec<u64> {
-    if !active.insert(id) {
+    if depth >= super::MAX_RECORD_GRAPH_DEPTH || !active.insert(id) {
         return Vec::new();
     }
     let Some(record) = exchange.records.get(&id) else {
@@ -285,7 +287,7 @@ fn expand_style_targets(
         .into_iter()
         .flatten()
         .filter_map(ValueExt::reference)
-        .flat_map(|item| expand_style_targets(item, exchange, typed, active))
+        .flat_map(|item| expand_style_targets(item, exchange, typed, active, depth + 1))
         .collect();
     active.remove(&id);
     targets
@@ -395,13 +397,18 @@ fn overridden_style(style: &RawRecord) -> Option<u64> {
         .then(|| style.parameter(3).and_then(ValueExt::reference))?
 }
 
-fn style_depth(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Option<u32> {
-    if !active.insert(id) {
+fn style_depth(
+    id: u64,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    depth: usize,
+) -> Option<u32> {
+    if depth >= super::MAX_RECORD_GRAPH_DEPTH || !active.insert(id) {
         return None;
     }
     let style = exchange.records.get(&id)?;
     let depth = if let Some(base) = overridden_style(style) {
-        style_depth(base, exchange, active)?.checked_add(1)?
+        style_depth(base, exchange, active, depth + 1)?.checked_add(1)?
     } else {
         0
     };

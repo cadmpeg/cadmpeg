@@ -22,6 +22,8 @@ mod tessellation;
 mod topology;
 mod validation;
 
+pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
+
 /// Decode a complete clear-text exchange structure.
 pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, CodecError> {
     let exchange = parse::parse(input).map_err(|error| CodecError::Malformed(error.to_string()))?;

@@ -305,7 +305,7 @@ impl Parser {
                 parts.push(self.partial()?);
             }
             self.at += 1;
-            if !parts.windows(2).all(|w| w[0].name <= w[1].name) {
+            if !parts.windows(2).all(|w| w[0].name < w[1].name) {
                 return self.err_at(start, "complex partial records are not alphabetical");
             }
             parts
@@ -447,6 +447,7 @@ impl Parser {
 struct AnchorResolver<'a> {
     anchors: &'a BTreeMap<String, Value>,
     memo: BTreeMap<String, (Value, usize)>,
+    remaining_nodes: usize,
 }
 
 impl<'a> AnchorResolver<'a> {
@@ -457,12 +458,17 @@ impl<'a> AnchorResolver<'a> {
         Self {
             anchors,
             memo: BTreeMap::new(),
+            remaining_nodes: Self::MAX_EXPANDED_NODES,
         }
     }
 
     fn resolve_root(&mut self, value: &Value) -> Result<Value, String> {
-        self.resolve(value, &mut Vec::new(), Self::MAX_EXPANDED_NODES)
-            .map(|(value, _)| value)
+        let (value, nodes) = self.resolve(value, &mut Vec::new(), self.remaining_nodes, 0)?;
+        self.remaining_nodes = self
+            .remaining_nodes
+            .checked_sub(nodes)
+            .ok_or_else(|| "aggregate expanded anchor graph exceeds 1000000 nodes".to_string())?;
+        Ok(value)
     }
 
     fn resolve(
@@ -470,18 +476,13 @@ impl<'a> AnchorResolver<'a> {
         value: &Value,
         stack: &mut Vec<String>,
         budget: usize,
+        depth: usize,
     ) -> Result<(Value, usize), String> {
-        if budget == 0 {
-            return Err("expanded anchor value exceeds 1000000 nodes".into());
+        if budget == 0 || depth >= Self::MAX_REFERENCE_DEPTH {
+            return Err("expanded anchor graph exceeds its node or depth limit".into());
         }
         match value {
             Value::Resource(name) if self.anchors.contains_key(name) => {
-                if stack.len() >= Self::MAX_REFERENCE_DEPTH {
-                    return Err(format!(
-                        "anchor reference chain exceeds {} levels",
-                        Self::MAX_REFERENCE_DEPTH
-                    ));
-                }
                 if let Some((value, nodes)) = self.memo.get(name) {
                     if *nodes > budget {
                         return Err("expanded anchor value exceeds 1000000 nodes".into());
@@ -493,7 +494,7 @@ impl<'a> AnchorResolver<'a> {
                 }
                 stack.push(name.clone());
                 let source = self.anchors[name].clone();
-                let resolved = self.resolve(&source, stack, budget);
+                let resolved = self.resolve(&source, stack, budget, depth + 1);
                 stack.pop();
                 let (value, nodes) = resolved?;
                 self.memo.insert(name.clone(), (value.clone(), nodes));
@@ -506,7 +507,7 @@ impl<'a> AnchorResolver<'a> {
                     let remaining = budget
                         .checked_sub(nodes)
                         .ok_or_else(|| "expanded anchor value exceeds 1000000 nodes".to_string())?;
-                    let (value, child_nodes) = self.resolve(value, stack, remaining)?;
+                    let (value, child_nodes) = self.resolve(value, stack, remaining, depth + 1)?;
                     nodes = nodes
                         .checked_add(child_nodes)
                         .ok_or_else(|| "expanded anchor value exceeds 1000000 nodes".to_string())?;
@@ -515,7 +516,7 @@ impl<'a> AnchorResolver<'a> {
                 Ok((Value::List(resolved), nodes))
             }
             Value::Typed(name, value) => {
-                let (value, nodes) = self.resolve(value, stack, budget - 1)?;
+                let (value, nodes) = self.resolve(value, stack, budget - 1, depth + 1)?;
                 Ok((Value::Typed(name.clone(), Box::new(value)), nodes + 1))
             }
             value => Ok((value.clone(), 1)),
@@ -524,10 +525,13 @@ impl<'a> AnchorResolver<'a> {
 }
 
 fn references(value: &Value, out: &mut Vec<u64>) {
-    match value {
-        Value::Reference(id) => out.push(*id),
-        Value::List(values) => values.iter().for_each(|v| references(v, out)),
-        Value::Typed(_, value) => references(value, out),
-        _ => {}
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Reference(id) => out.push(*id),
+            Value::List(values) => pending.extend(values.iter().rev()),
+            Value::Typed(_, value) => pending.push(value),
+            _ => {}
+        }
     }
 }

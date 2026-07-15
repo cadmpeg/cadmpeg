@@ -1287,6 +1287,9 @@ fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<Nur
         .into_iter()
         .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
+    if usize::try_from(degree).ok()? >= control_points.len() {
+        return None;
+    }
     let periodic = logical_value(base.parameters.get(offset + 3)?)?.unwrap_or(false);
     let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(3)?;
@@ -1329,6 +1332,9 @@ fn nurbs_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<Pc
         .into_iter()
         .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
+    if usize::try_from(degree).ok()? >= control_points.len() {
+        return None;
+    }
     let periodic = logical_value(base.parameters.get(offset + 3)?)?.unwrap_or(false);
     let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(3)?;
@@ -1397,6 +1403,8 @@ fn nurbs_surface(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<N
     let v_count = u32::try_from(rows.first()?.list()?.len()).ok()?;
     if u_count == 0
         || v_count == 0
+        || u_degree >= u_count
+        || v_degree >= v_count
         || rows.iter().any(|row| {
             row.list()
                 .map_or(true, |values| values.len() != v_count as usize)
@@ -1413,8 +1421,14 @@ fn nurbs_surface(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<N
     let v_periodic = logical_value(base.parameters.get(offset + 5)?)?.unwrap_or(false);
     let knot_leaf = record.partial("B_SPLINE_SURFACE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(5)?;
-    let expected_u = u_count as usize + u_degree as usize + 1;
-    let expected_v = v_count as usize + v_degree as usize + 1;
+    let expected_u = usize::try_from(u_count)
+        .ok()?
+        .checked_add(usize::try_from(u_degree).ok()?)?
+        .checked_add(1)?;
+    let expected_v = usize::try_from(v_count)
+        .ok()?
+        .checked_add(usize::try_from(v_degree).ok()?)?
+        .checked_add(1)?;
     let u_knots = expand_knots(
         &knot_leaf.parameters[tail],
         &knot_leaf.parameters[tail + 2],
