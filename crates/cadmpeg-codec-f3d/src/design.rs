@@ -820,7 +820,12 @@ fn resolved_edge_group(
 }
 
 fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
-    resolved_edge_selectors(&operand.recipe_selectors)
+    let selected = resolved_edge_selectors(&operand.recipe_selectors)?;
+    let shared_edges = operand
+        .recipe_reference_contexts
+        .iter()
+        .map(|context| context.changed_shared_edge_slots.as_slice());
+    edge_is_shared_by_recipe_references(selected, shared_edges).then_some(selected)
 }
 
 fn resolved_edge_selectors(
@@ -831,6 +836,19 @@ fn resolved_edge_selectors(
     selectors
         .all(|selector| selector.unique_incidence_edge_slot == Some(selected))
         .then_some(selected)
+}
+
+fn edge_is_shared_by_recipe_references<'a>(
+    selected: i64,
+    shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
+) -> bool {
+    let mut nonempty = shared_edge_sets
+        .into_iter()
+        .filter(|shared_edges| !shared_edges.is_empty());
+    nonempty
+        .next()
+        .is_some_and(|shared_edges| shared_edges.contains(&selected))
+        && nonempty.all(|shared_edges| shared_edges.contains(&selected))
 }
 
 fn project_extrude(
@@ -9605,11 +9623,11 @@ mod relation_tests {
         bind_face_operand_candidates, bind_lost_edge_groups, bind_parameter_companion_payloads,
         bind_sketch_graph, body_bound_candidates, closed_sketch_profiles, companion_owned_interval,
         contiguous_i32_program, decode_fillet_radius_groups, design_parameter_prefix,
-        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
-        exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
-        find_dimension_locus_pair, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_sketch_entity_id, neutral_sketch_id,
-        next_indexed_record_offset, null_locus_dimension_definition,
+        directional_point_dimension, edge_is_shared_by_recipe_references, exact_atomic_constraint,
+        exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
+        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
+        indexed_record_containing, indirect_angular_lines, neutral_sketch_entity_id,
+        neutral_sketch_id, next_indexed_record_offset, null_locus_dimension_definition,
         parse_construction_operand_group, parse_construction_operand_identity,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -13844,6 +13862,15 @@ mod relation_tests {
             None
         );
         assert_eq!(resolved_edge_selectors(&[]), None);
+        assert!(edge_is_shared_by_recipe_references(
+            17,
+            [&[17, 18][..], &[15, 17][..]]
+        ));
+        assert!(!edge_is_shared_by_recipe_references(
+            17,
+            [&[17, 18][..], &[15, 16][..]]
+        ));
+        assert!(!edge_is_shared_by_recipe_references(17, [&[][..]]));
     }
 
     #[test]
