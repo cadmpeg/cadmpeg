@@ -549,6 +549,24 @@ struct CreoExpandedSectionRecord {
 }
 
 #[derive(Serialize)]
+struct CreoDoubleXarTableRecord {
+    id: String,
+    section_name: String,
+    section_source_offset: usize,
+    expanded_offset: usize,
+    count: u32,
+    entries: Vec<CreoDoubleXarEntryRecord>,
+}
+
+#[derive(Serialize)]
+struct CreoDoubleXarEntryRecord {
+    index: u32,
+    raw: Vec<u8>,
+    value: Option<f64>,
+    kind: &'static str,
+}
+
+#[derive(Serialize)]
 struct CreoPrimitiveScalarArrayRecord {
     id: String,
     field: String,
@@ -596,6 +614,43 @@ fn attach_expanded_sections(
     let namespace = ir.native.namespace_mut("creo");
     namespace.version = 1;
     namespace.set_arena("expanded_sections", &records)?;
+    if !scan.double_xar_tables.is_empty() {
+        let tables = scan
+            .double_xar_tables
+            .iter()
+            .map(|table| CreoDoubleXarTableRecord {
+                id: format!(
+                    "creo:{}:double_xar#{}:{}",
+                    table.section_name, table.section_source_offset, table.expanded_offset
+                ),
+                section_name: table.section_name.clone(),
+                section_source_offset: table.section_source_offset,
+                expanded_offset: table.expanded_offset,
+                count: table.count,
+                entries: table
+                    .entries
+                    .iter()
+                    .map(|entry| CreoDoubleXarEntryRecord {
+                        index: entry.index,
+                        raw: entry.raw.clone(),
+                        value: entry.value,
+                        kind: entry.kind,
+                    })
+                    .collect(),
+            })
+            .collect::<Vec<_>>();
+        for table in &tables {
+            annotate(
+                annotations,
+                &table.id,
+                &table.section_name,
+                table.section_source_offset as u64,
+                "model_scalar_dictionary",
+                Exactness::ByteExact,
+            );
+        }
+        namespace.set_arena("double_xar_tables", &tables)?;
+    }
     let primitive_arrays = scan
         .primitive_scalar_arrays
         .iter()

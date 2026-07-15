@@ -135,6 +135,21 @@ pub struct ExpandedSection {
     pub data: Vec<u8>,
 }
 
+/// One counted model-level `double_xar` dictionary from an expanded section.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelDoubleXarTable {
+    /// Normalized owning section name.
+    pub section_name: String,
+    /// Source-file offset of the compressed section payload.
+    pub section_source_offset: usize,
+    /// Offset of the table label in the expanded section.
+    pub expanded_offset: usize,
+    /// Stored array extent.
+    pub count: u32,
+    /// Entries in stored order.
+    pub entries: Vec<crate::scalar::DoubleXarEntry>,
+}
+
 /// The byte-backed count headers read from the visible-geometry section.
 #[derive(Debug, Clone, Default)]
 pub struct GeomCensus {
@@ -174,6 +189,8 @@ pub struct ContainerScan {
     pub sections: Vec<Section>,
     /// Successfully expanded Unix-compress section payloads.
     pub expanded_sections: Vec<ExpandedSection>,
+    /// Counted model-level scalar dictionaries from expanded sections.
+    pub double_xar_tables: Vec<ModelDoubleXarTable>,
     /// Complete named model-space scalar arrays from expanded primitive data.
     pub primitive_scalar_arrays: Vec<PrimitiveScalarArray>,
     /// Complete named position-only triangle strips from expanded primitive data.
@@ -1520,6 +1537,20 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         sections
     };
     let expanded_sections = expanded_sections(&data, &sections);
+    let double_xar_tables = expanded_sections
+        .iter()
+        .flat_map(|section| {
+            crate::scalar::double_xar_tables(&section.data)
+                .into_iter()
+                .map(|table| ModelDoubleXarTable {
+                    section_name: section.name.clone(),
+                    section_source_offset: section.source_offset,
+                    expanded_offset: table.offset,
+                    count: table.count,
+                    entries: table.entries,
+                })
+        })
+        .collect();
     let primitive_scalar_arrays = expanded_sections
         .iter()
         .filter(|section| section.name == "SolidPrimdata")
@@ -1677,6 +1708,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         model_name,
         sections,
         expanded_sections,
+        double_xar_tables,
         primitive_scalar_arrays,
         primitive_triangle_strips,
         layout,

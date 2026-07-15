@@ -5,6 +5,100 @@ use std::collections::{BTreeMap, HashSet};
 
 use crate::psb::{compact_int, short_form_float};
 
+/// Counted `double_xar` dictionary stored in a model-level scalar section.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DoubleXarTable {
+    /// Offset of the `double_xar` label in the expanded section.
+    pub offset: usize,
+    /// Stored array extent.
+    pub count: u32,
+    /// Entries in stored order, including an explicit terminal null slot.
+    pub entries: Vec<DoubleXarEntry>,
+}
+
+/// One stored slot in a `double_xar` dictionary.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DoubleXarEntry {
+    /// Zero-based array index.
+    pub index: u32,
+    /// Exact bytes occupying the slot.
+    pub raw: Vec<u8>,
+    /// Scalar value when the slot uses a defined literal form.
+    pub value: Option<f64>,
+    /// Structural token family.
+    pub kind: &'static str,
+}
+
+/// Decode every complete counted `double_xar` dictionary in one expanded section.
+#[must_use]
+pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
+    const LABEL: &[u8] = b"double_xar\0";
+    let mut tables = Vec::new();
+    let mut search = 0;
+    while let Some(relative) = data
+        .get(search..)
+        .and_then(|tail| tail.windows(LABEL.len()).position(|window| window == LABEL))
+    {
+        let offset = search + relative;
+        let count_offset = offset + LABEL.len();
+        if data.get(count_offset) != Some(&0xf8) {
+            search = count_offset;
+            continue;
+        }
+        let (count, mut cursor) = compact_int(data, count_offset + 1);
+        if cursor == count_offset + 1 {
+            search = count_offset + 1;
+            continue;
+        }
+        let mut entries = Vec::new();
+        for index in 0..count {
+            let start = cursor;
+            let Some(head) = data.get(cursor).copied() else {
+                entries.clear();
+                break;
+            };
+            let (value, end, kind) = match head {
+                0x0b => (Some(0.0), cursor + 1, "stock_zero"),
+                0x10 => (Some(1.0), cursor + 1, "stock_one"),
+                0xe0 => (None, cursor + 1, "terminal_null"),
+                0xe5 => (None, cursor.saturating_add(5), "dictionary_reference_5"),
+                0xe8 => (None, cursor.saturating_add(4), "dictionary_reference_4"),
+                _ => match decode(data, cursor) {
+                    Some((value, end)) => (Some(value), end, "literal"),
+                    None => {
+                        entries.clear();
+                        break;
+                    }
+                },
+            };
+            let Some(raw) = data.get(start..end) else {
+                entries.clear();
+                break;
+            };
+            entries.push(DoubleXarEntry {
+                index,
+                raw: raw.to_vec(),
+                value,
+                kind,
+            });
+            cursor = end;
+        }
+        if entries.len() == usize::try_from(count).unwrap_or(usize::MAX)
+            && entries
+                .last()
+                .is_some_and(|entry| entry.kind == "terminal_null")
+        {
+            tables.push(DoubleXarTable {
+                offset,
+                count,
+                entries,
+            });
+        }
+        search = count_offset + 1;
+    }
+    tables
+}
+
 /// Section-local dictionary formed by distinct raw `0x46` token images.
 #[derive(Debug, Clone, Default)]
 pub struct ScalarCache {
@@ -489,6 +583,34 @@ fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decodes_counted_double_xar_dictionary() {
+        let mut data = b"prefix double_xar\0".to_vec();
+        data.extend_from_slice(&[
+            0xf8, 0x07, 0x10, 0xe5, 0x07, 0x23, 0x11, 0x2e, 0x0b, 0xe8, 0x26, 0xd6, 0x95, 0x46,
+            0x08, 0, 0, 0, 0, 0, 0, 0x0b, 0xe0,
+        ]);
+        let tables = double_xar_tables(&data);
+        let [table] = tables.as_slice() else {
+            panic!("complete dictionary");
+        };
+        assert_eq!(table.count, 7);
+        assert_eq!(table.entries[0].value, Some(1.0));
+        assert_eq!(table.entries[1].kind, "dictionary_reference_5");
+        assert_eq!(table.entries[2].value, Some(0.0));
+        assert_eq!(table.entries[3].kind, "dictionary_reference_4");
+        assert_eq!(table.entries[4].value, Some(3.0));
+        assert_eq!(table.entries[5].value, Some(0.0));
+        assert_eq!(table.entries[6].kind, "terminal_null");
+    }
+
+    #[test]
+    fn withholds_incomplete_double_xar_dictionary() {
+        assert!(double_xar_tables(b"double_xar\0\xf8\x02\x10").is_empty());
+        assert!(double_xar_tables(b"double_xar\0\xf8\x02\x10\x0b").is_empty());
+    }
+
     #[test]
     fn decodes_defined_ieee_forms() {
         assert_eq!(decode(&[0xe4], 0), Some((1.0, 1)));
