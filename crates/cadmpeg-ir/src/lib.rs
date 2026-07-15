@@ -33,6 +33,7 @@ pub mod be;
 pub mod bytes;
 pub mod codec;
 pub mod compression;
+pub mod cursor;
 
 pub mod diff;
 pub mod document;
