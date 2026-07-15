@@ -387,6 +387,50 @@ fn jt_int32_cdp2_decodes_raw_and_split_chopper_packets() {
 }
 
 #[test]
+fn jt_int32_cdp2_frames_zero_chop_nested_packet() {
+    let nested = [2, 0, 0, 0, 1, 8, 0, 0, 0, 0, 0, 0, 0xcb];
+    let mut packet = vec![2, 0, 0, 0, 4, 0];
+    packet.extend_from_slice(&nested);
+    assert_eq!(
+        crate::jt::frame_int32_cdp2(&packet, 0),
+        Some((2, 4, packet.len()))
+    );
+
+    packet[6] = 3;
+    assert!(crate::jt::frame_int32_cdp2(&packet, 0).is_none());
+}
+
+#[test]
+fn jt9_topology_bounds_variable_high_degree_lane_count() {
+    fn representation(high_degree_lanes: usize, topological_vertices: u32) -> Vec<u8> {
+        let mut bytes = vec![0; (21 + high_degree_lanes + 2) * 4];
+        bytes.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
+        bytes.extend_from_slice(&10_u64.to_le_bytes());
+        bytes.extend_from_slice(&[24, 13, 16, 8]);
+        bytes.extend_from_slice(&topological_vertices.to_le_bytes());
+        if topological_vertices != 0 {
+            bytes.extend_from_slice(&(topological_vertices + 1).to_le_bytes());
+        }
+        bytes
+    }
+
+    let empty = representation(1, 0);
+    assert_eq!(
+        crate::native::jt9_topology_high_degree_lane_count(&empty, 10),
+        Some(1)
+    );
+    let populated = representation(13, 20);
+    assert_eq!(
+        crate::native::jt9_topology_high_degree_lane_count(&populated, 10),
+        Some(13)
+    );
+    assert_eq!(
+        crate::native::jt9_topology_high_degree_lane_count(&populated, 11),
+        None
+    );
+}
+
+#[test]
 fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
     let mut body = Vec::new();
     body.extend_from_slice(&1_u16.to_le_bytes());

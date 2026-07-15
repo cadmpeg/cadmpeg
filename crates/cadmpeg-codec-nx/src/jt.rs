@@ -51,6 +51,65 @@ fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
         .map(u32::from_le_bytes)
 }
 
+/// Bound one complete JT Int32 Compressed Data Packet Mk. 2 without interpreting its symbols.
+pub(crate) fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usize)> {
+    if depth > 3 {
+        return None;
+    }
+    let value_count = read_u32(bytes, 0)?;
+    if value_count == 0 {
+        return Some((0, 0, 4));
+    }
+    let &codec = bytes.get(4)?;
+    if codec == 4 {
+        let &chop_bits = bytes.get(5)?;
+        if chop_bits == 0 {
+            let (nested_count, _, nested_len) = frame_int32_cdp2(bytes.get(6..)?, depth + 1)?;
+            return (nested_count == value_count).then_some((value_count, codec, 6 + nested_len));
+        }
+        let &span_bits = bytes.get(10)?;
+        if chop_bits > span_bits || span_bits > 32 {
+            return None;
+        }
+        let (msb_count, _, msb_len) = frame_int32_cdp2(bytes.get(11..)?, depth + 1)?;
+        let (lsb_count, _, lsb_len) = frame_int32_cdp2(bytes.get(11 + msb_len..)?, depth + 1)?;
+        return (msb_count == value_count && lsb_count == value_count).then_some((
+            value_count,
+            codec,
+            11 + msb_len + lsb_len,
+        ));
+    }
+    if !matches!(codec, 1 | 3) {
+        return None;
+    }
+    let code_bit_len = usize::try_from(read_u32(bytes, 5)?).ok()?;
+    let code_byte_len = code_bit_len.div_ceil(32).checked_mul(4)?;
+    let mut cursor = 9_usize.checked_add(code_byte_len)?;
+    bytes.get(..cursor)?;
+    if codec == 1 {
+        return Some((value_count, codec, cursor));
+    }
+    let (entries, context_len) = parse_probability_context(bytes.get(cursor..)?)?;
+    cursor = cursor.checked_add(context_len)?;
+    let code_words = bytes.get(9..9 + code_byte_len)?;
+    let symbols = decode_arithmetic(
+        code_words,
+        code_bit_len,
+        usize::try_from(value_count).ok()?,
+        &entries,
+    )?;
+    let escape_count = symbols.iter().filter(|value| value.is_none()).count();
+    if escape_count != 0 {
+        let (out_of_band_count, _, out_of_band_len) =
+            frame_int32_cdp2(bytes.get(cursor..)?, depth + 1)?;
+        if usize::try_from(out_of_band_count).ok()? != escape_count {
+            return None;
+        }
+        cursor = cursor.checked_add(out_of_band_len)?;
+    }
+    Some((value_count, codec, cursor))
+}
+
 fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<ProbabilityEntry>, usize)> {
     let entry_count = usize::from(u16::from_be_bytes(bytes.get(..2)?.try_into().ok()?));
     let mut bits = MsbBitReader::new(bytes.get(2..)?);
