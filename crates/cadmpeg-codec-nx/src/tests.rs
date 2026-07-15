@@ -2177,6 +2177,75 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
 }
 
 #[test]
+fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
+    use crate::native::{
+        FeatureDatumCsysConstruction, FeatureOperationLabel, FeatureSketchPointUse,
+        OffsetStoreNamedPoint,
+    };
+
+    let label = |id: &str, ordinal| FeatureOperationLabel {
+        id: id.to_string(),
+        section_link: "section".to_string(),
+        ordinal,
+        value: if ordinal == 0 { "SKETCH" } else { "DATUM_CSYS" }.to_string(),
+        object_indices: [None; 4],
+        source_offset: 100 + u64::from(ordinal),
+    };
+    let labels = [label("sketch", 0), label("csys", 1)];
+    let point = OffsetStoreNamedPoint {
+        id: "point".to_string(),
+        name: "Point1".to_string(),
+        data_blocks: vec!["point-first".to_string(), "shared".to_string()],
+        values: [1.0, 2.0],
+        value_source_offsets: [200, 220],
+        source_offset: 190,
+    };
+    let point_use = FeatureSketchPointUse {
+        id: "point-use".to_string(),
+        operation_label: "sketch".to_string(),
+        sketch_references: vec!["reference".to_string()],
+        block_uses: vec!["block-use".to_string()],
+        sketch_point_group: "point-group".to_string(),
+        named_point: point.id.clone(),
+        source_offsets: vec![300],
+    };
+    let mut blocks = std::array::from_fn(|index| format!("block-{index}"));
+    blocks[3] = "shared".to_string();
+    let construction = FeatureDatumCsysConstruction {
+        id: "construction".to_string(),
+        operation_label: "csys".to_string(),
+        control: 19,
+        object_indices: [0; 8],
+        data_blocks: blocks,
+        source_offsets: [400; 8],
+    };
+
+    let dependencies = crate::decode::sketch_datum_csys_dependencies(
+        &labels,
+        std::slice::from_ref(&point),
+        std::slice::from_ref(&point_use),
+        std::slice::from_ref(&construction),
+    );
+    assert_eq!(
+        dependencies.get("csys"),
+        Some(&(
+            "sketch".to_string(),
+            "point-use".to_string(),
+            "shared".to_string()
+        ))
+    );
+
+    let reversed_labels = [label("csys", 0), label("sketch", 1)];
+    assert!(crate::decode::sketch_datum_csys_dependencies(
+        &reversed_labels,
+        &[point],
+        &[point_use],
+        &[construction],
+    )
+    .is_empty());
+}
+
+#[test]
 fn nx_sketch_point_names_require_positive_decimal_suffixes() {
     assert_eq!(crate::native::parse_sketch_point_name("Point1"), Some(1));
     assert_eq!(

@@ -6179,6 +6179,7 @@ fn attach_native_object_model(
             datum_plane_block_uses: &feature_datum_plane_block_uses,
             datum_plane_payloads: &feature_datum_plane_payloads,
             datum_plane_csys_identity_uses: &feature_datum_plane_csys_identity_uses,
+            named_points: &offset_store_named_points,
             sketch_references: &feature_sketch_references,
             sketch_named_point_block_uses: &feature_sketch_named_point_block_uses,
             sketch_preceding_named_point_uses: &feature_sketch_preceding_named_point_uses,
@@ -7002,6 +7003,7 @@ struct FeatureOperationSources<'a> {
     datum_plane_block_uses: &'a [crate::native::FeatureDatumPlaneBlockUse],
     datum_plane_payloads: &'a [crate::native::FeatureDatumPlanePayload],
     datum_plane_csys_identity_uses: &'a [crate::native::FeatureDatumPlaneCsysIdentityUse],
+    named_points: &'a [crate::native::OffsetStoreNamedPoint],
     sketch_references: &'a [crate::native::FeatureSketchReference],
     sketch_named_point_block_uses: &'a [crate::native::FeatureSketchNamedPointBlockUse],
     sketch_preceding_named_point_uses: &'a [crate::native::FeatureSketchPrecedingNamedPointUse],
@@ -7033,6 +7035,59 @@ struct FeatureOperationSources<'a> {
     body_bindings: &'a [crate::native::SegmentBodyBinding],
 }
 
+pub(crate) fn sketch_datum_csys_dependencies(
+    labels: &[crate::native::FeatureOperationLabel],
+    named_points: &[crate::native::OffsetStoreNamedPoint],
+    point_uses: &[crate::native::FeatureSketchPointUse],
+    constructions: &[crate::native::FeatureDatumCsysConstruction],
+) -> BTreeMap<String, (String, String, String)> {
+    let positions = labels
+        .iter()
+        .enumerate()
+        .map(|(position, label)| (label.id.as_str(), position))
+        .collect::<BTreeMap<_, _>>();
+    let points = named_points
+        .iter()
+        .map(|point| (point.id.as_str(), point))
+        .collect::<BTreeMap<_, _>>();
+    let mut result = BTreeMap::new();
+    for construction in constructions {
+        let Some(consumer_position) = positions.get(construction.operation_label.as_str()) else {
+            continue;
+        };
+        let mut candidates = Vec::new();
+        for point_use in point_uses {
+            let Some(producer_position) = positions.get(point_use.operation_label.as_str()) else {
+                continue;
+            };
+            if producer_position >= consumer_position {
+                continue;
+            }
+            let Some(point) = points.get(point_use.named_point.as_str()) else {
+                continue;
+            };
+            for shared_block in construction
+                .data_blocks
+                .iter()
+                .filter(|block| point.data_blocks.contains(block))
+            {
+                candidates.push((
+                    point_use.operation_label.clone(),
+                    point_use.id.clone(),
+                    shared_block.clone(),
+                ));
+            }
+        }
+        candidates.sort();
+        candidates.dedup();
+        let [candidate] = candidates.as_slice() else {
+            continue;
+        };
+        result.insert(construction.operation_label.clone(), candidate.clone());
+    }
+    result
+}
+
 fn attach_feature_operations(
     ir: &mut CadIr,
     sources: &FeatureOperationSources<'_>,
@@ -7050,6 +7105,7 @@ fn attach_feature_operations(
         datum_plane_block_uses,
         datum_plane_payloads,
         datum_plane_csys_identity_uses,
+        named_points,
         sketch_references,
         sketch_named_point_block_uses,
         sketch_preceding_named_point_uses,
@@ -7148,6 +7204,12 @@ fn attach_feature_operations(
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
         .collect::<BTreeMap<_, _>>();
+    let sketch_datum_csys_dependencies = sketch_datum_csys_dependencies(
+        labels,
+        named_points,
+        sketch_point_uses,
+        datum_csys_constructions,
+    );
     let mut datum_identity_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureDatumPlaneCsysIdentityUse>>::new();
     for identity_use in datum_plane_csys_identity_uses {
@@ -7411,7 +7473,27 @@ fn attach_feature_operations(
                 dependencies.push(dependency);
             }
         }
+        if let Some((sketch_operation, _, _)) =
+            sketch_datum_csys_dependencies.get(label.id.as_str())
+        {
+            let sketch_key = sketch_operation
+                .rsplit_once('#')
+                .map_or("unknown", |(_, key)| key);
+            let dependency = FeatureId(format!("nx:feature-history:feature#{sketch_key}"));
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+        }
         let mut source_properties = BTreeMap::new();
+        if let Some((_, point_use, shared_block)) =
+            sketch_datum_csys_dependencies.get(label.id.as_str())
+        {
+            source_properties.insert("sketch_point_dependency_use".to_string(), point_use.clone());
+            source_properties.insert(
+                "sketch_point_dependency_block".to_string(),
+                shared_block.clone(),
+            );
+        }
         let outputs = body_references
             .get(label.id.as_str())
             .map_or_else(Vec::new, |body| {
