@@ -229,7 +229,7 @@ pub struct PcurveEndpoints {
 
 /// Ordered world-coordinate lane from an `fc <subtype>` dense curve body.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FcCurveControlPoints {
+pub struct FcCurveCoordinates {
     /// Owning curve identifier.
     pub curve_id: u32,
     /// Byte following the `fc` body prefix.
@@ -1132,7 +1132,7 @@ pub fn pcurve_endpoints(
 }
 
 /// Decode exact world-coordinate tokens from FC-prefixed dense curve bodies.
-pub fn fc_control_points(parameters: &[CurveParameterRecord]) -> Vec<FcCurveControlPoints> {
+pub fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCoordinates> {
     let mut result = Vec::new();
     for record in parameters {
         let Some((&0xfc, tail)) = record.body.split_first() else {
@@ -1178,7 +1178,7 @@ pub fn fc_control_points(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCont
                     length: record.body.len() - unclaimed,
                 });
             }
-            result.push(FcCurveControlPoints {
+            result.push(FcCurveCoordinates {
                 curve_id: record.curve_id,
                 subtype,
                 body: record.body.clone(),

@@ -18,8 +18,8 @@ use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveParameterRecord, CurvePrototype,
-    CurvePrototypeTopology, CurveTopologyRow, Fc05Circle, Fc05CylinderCapPair,
-    FcCurveControlPoints, PcurveEndpoints, PrototypePcurveEndpoints,
+    CurvePrototypeTopology, CurveTopologyRow, Fc05Circle, Fc05CylinderCapPair, FcCurveCoordinates,
+    PcurveEndpoints, PrototypePcurveEndpoints,
 };
 use crate::datum::{self, DatumPlane};
 use crate::feature::{
@@ -192,7 +192,7 @@ pub struct ContainerScan {
     /// Complete eight-slot pcurve endpoints in both adjacent face frames.
     pub pcurves: Vec<PcurveEndpoints>,
     /// Ordered world-coordinate lanes from FC-prefixed dense curve rows.
-    pub fc_curve_control_points: Vec<FcCurveControlPoints>,
+    pub fc_curve_coordinates: Vec<FcCurveCoordinates>,
     /// FC05 records whose decoded points prove an exact circle.
     pub fc05_circles: Vec<Fc05Circle>,
     /// Cylinder cap groups joined through typed curve-face topology. Their
@@ -1167,7 +1167,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let curve_parameters = curve_parameters(&data, &sections);
     let curve_topology_rows = curve_topology_rows(&data, &sections);
     let pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
-    let fc_curve_control_points = curve::fc_control_points(&curve_parameters);
+    let fc_curve_coordinates = curve::fc_coordinates(&curve_parameters);
     let fc05_circles = curve::fc05_circles(&curve_parameters);
     let fc05_cylinder_cap_pairs =
         curve::fc05_cylinder_cap_pairs(&fc05_circles, &curve_topology_rows, &surface_rows);
@@ -1252,7 +1252,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         curve_expressions,
         curve_parameters,
         pcurves,
-        fc_curve_control_points,
+        fc_curve_coordinates,
         fc05_circles,
         fc05_cylinder_cap_pairs,
         prototype_pcurves,

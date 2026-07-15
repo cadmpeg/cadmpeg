@@ -527,7 +527,7 @@ struct CreoFaceComponentRecord {
 }
 
 #[derive(Serialize)]
-struct CreoFcCurveControlPointRecord {
+struct CreoFcCurveCoordinateRecord {
     id: String,
     curve_id: u32,
     subtype: u8,
@@ -1034,11 +1034,11 @@ fn face_component_records(scan: &ContainerScan) -> Vec<CreoFaceComponentRecord> 
         .collect()
 }
 
-fn fc_curve_control_point_records(scan: &ContainerScan) -> Vec<CreoFcCurveControlPointRecord> {
-    scan.fc_curve_control_points
+fn fc_curve_coordinate_records(scan: &ContainerScan) -> Vec<CreoFcCurveCoordinateRecord> {
+    scan.fc_curve_coordinates
         .iter()
-        .map(|record| CreoFcCurveControlPointRecord {
-            id: format!("creo:curve:fc_control_points#{}", record.curve_id),
+        .map(|record| CreoFcCurveCoordinateRecord {
+            id: format!("creo:curve:fc_coordinates#{}", record.curve_id),
             curve_id: record.curve_id,
             subtype: record.subtype,
             body: record.body.clone(),
@@ -16341,21 +16341,21 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("curve_parameters", &curve_parameters)?;
     }
-    let fc_curve_control_points = fc_curve_control_point_records(scan);
-    if !fc_curve_control_points.is_empty() {
-        for record in &fc_curve_control_points {
+    let fc_curve_coordinates = fc_curve_coordinate_records(scan);
+    if !fc_curve_coordinates.is_empty() {
+        for record in &fc_curve_coordinates {
             annotate(
                 &mut annotations,
                 &record.id,
                 &record.source_section,
                 record.offset as u64,
-                "fc_curve_control_points",
+                "fc_curve_coordinates",
                 Exactness::ByteExact,
             );
         }
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
-        namespace.set_arena("fc_curve_control_points", &fc_curve_control_points)?;
+        namespace.set_arena("fc_curve_coordinates", &fc_curve_coordinates)?;
     }
     let fc05_circles = fc05_circle_records(scan);
     if !fc05_circles.is_empty() {
@@ -16919,8 +16919,8 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         scan.pcurves.len().to_string(),
     );
     attributes.insert(
-        "decoded_fc_curve_control_point_record_count".to_string(),
-        scan.fc_curve_control_points.len().to_string(),
+        "decoded_fc_curve_coordinate_record_count".to_string(),
+        scan.fc_curve_coordinates.len().to_string(),
     );
     attributes.insert(
         "decoded_fc05_circle_count".to_string(),
