@@ -835,6 +835,288 @@ fn incidence_selection_within_budget(choices: &[Vec<[usize; 2]>]) -> Option<bool
         .map(|work| work <= MAX_SELECTION_WORK)
 }
 
+fn incidence_choice_components(
+    choices: &[Vec<[usize; 2]>],
+    edge_faces: &[[usize; 2]],
+) -> Vec<Vec<usize>> {
+    let mut union = UnionFind::new(choices.len());
+    let mut owner = HashMap::<(usize, usize), usize>::new();
+    let ambiguous = choices
+        .iter()
+        .enumerate()
+        .filter_map(|(edge, pairs)| (pairs.len() > 1).then_some(edge))
+        .collect::<Vec<_>>();
+    for &edge in &ambiguous {
+        let faces = edge_faces[edge];
+        for (rank, face) in faces.into_iter().enumerate() {
+            if rank > 0 && face == faces[0] {
+                continue;
+            }
+            for point in choices[edge].iter().flatten().copied() {
+                match owner.entry((face, point)) {
+                    std::collections::hash_map::Entry::Occupied(entry) => {
+                        union.union(*entry.get(), edge);
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(edge);
+                    }
+                }
+            }
+        }
+    }
+    let mut by_root = HashMap::<usize, Vec<usize>>::new();
+    for edge in ambiguous {
+        by_root.entry(union.find(edge)).or_default().push(edge);
+    }
+    let mut components = by_root.into_values().collect::<Vec<_>>();
+    for component in &mut components {
+        component.sort_unstable();
+    }
+    components.sort_by_key(|component| component[0]);
+    components
+}
+
+struct IncidenceComponentSearch<'a> {
+    choices: &'a [Vec<[usize; 2]>],
+    edge_faces: &'a [[usize; 2]],
+    face_edges: &'a [Vec<usize>],
+    active: Vec<bool>,
+    edges: &'a [usize],
+    constraints: Vec<(usize, usize)>,
+    assignment: Vec<Option<[usize; 2]>>,
+    degrees: Vec<Vec<u8>>,
+    solutions: Vec<Vec<(usize, [usize; 2])>>,
+    states: usize,
+    exhausted: bool,
+}
+
+impl IncidenceComponentSearch<'_> {
+    fn candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
+        let faces = self.edge_faces[edge];
+        faces.into_iter().enumerate().all(|(rank, face)| {
+            (rank > 0 && face == faces[0])
+                || pair.iter().enumerate().all(|(point_rank, &point)| {
+                    let multiplicity = 1 + usize::from(point_rank == 0 && pair[0] == pair[1]);
+                    usize::from(self.degrees[face][point]) + multiplicity <= 2
+                })
+        })
+    }
+
+    fn constraint_options(&self, face: usize, point: usize) -> Vec<(usize, [usize; 2])> {
+        let mut options = self.face_edges[face]
+            .iter()
+            .copied()
+            .filter(|&edge| self.active[edge] && self.assignment[edge].is_none())
+            .flat_map(|edge| {
+                self.choices[edge]
+                    .iter()
+                    .copied()
+                    .filter(move |pair| pair.contains(&point))
+                    .map(move |pair| (edge, pair))
+            })
+            .filter(|(edge, pair)| self.candidate_fits(*edge, *pair))
+            .collect::<Vec<_>>();
+        options.sort_unstable();
+        options.dedup();
+        options
+    }
+
+    fn branch_options(&self) -> Option<Vec<(usize, [usize; 2])>> {
+        let mut constrained = None::<Vec<(usize, [usize; 2])>>;
+        for &(face, point) in &self.constraints {
+            if self.degrees[face][point] != 1 {
+                continue;
+            }
+            let options = self.constraint_options(face, point);
+            if options.is_empty() {
+                return None;
+            }
+            if constrained
+                .as_ref()
+                .is_none_or(|stored| options.len() < stored.len())
+            {
+                constrained = Some(options);
+            }
+        }
+        if constrained.is_some() {
+            return constrained;
+        }
+        let edge = self
+            .edges
+            .iter()
+            .copied()
+            .filter(|&edge| self.assignment[edge].is_none())
+            .min_by_key(|&edge| {
+                self.choices[edge]
+                    .iter()
+                    .filter(|pair| self.candidate_fits(edge, **pair))
+                    .count()
+            });
+        Some(edge.map_or_else(Vec::new, |edge| {
+            self.choices[edge]
+                .iter()
+                .copied()
+                .filter(|pair| self.candidate_fits(edge, *pair))
+                .map(|pair| (edge, pair))
+                .collect()
+        }))
+    }
+
+    fn adjust(&mut self, edge: usize, pair: [usize; 2], increase: bool) {
+        let faces = self.edge_faces[edge];
+        for (rank, face) in faces.into_iter().enumerate() {
+            if rank > 0 && face == faces[0] {
+                continue;
+            }
+            for point in pair {
+                if increase {
+                    self.degrees[face][point] += 1;
+                } else {
+                    self.degrees[face][point] -= 1;
+                }
+            }
+        }
+    }
+
+    fn search(&mut self) {
+        const MAX_STATES: usize = 4_096;
+        const MAX_SOLUTIONS: usize = 256;
+        if self.exhausted {
+            return;
+        }
+        if self.states >= MAX_STATES || self.solutions.len() >= MAX_SOLUTIONS {
+            self.exhausted = true;
+            return;
+        }
+        self.states += 1;
+        let Some(options) = self.branch_options() else {
+            return;
+        };
+        if options.is_empty() {
+            if self
+                .edges
+                .iter()
+                .any(|&edge| self.assignment[edge].is_none())
+                || self
+                    .constraints
+                    .iter()
+                    .any(|&(face, point)| self.degrees[face][point] == 1)
+            {
+                return;
+            }
+            self.solutions.push(
+                self.edges
+                    .iter()
+                    .map(|&edge| Some((edge, self.assignment[edge]?)))
+                    .collect::<Option<Vec<_>>>()
+                    .expect("every component edge is assigned"),
+            );
+            return;
+        }
+        for (edge, pair) in options {
+            if self.assignment[edge].is_some() || !self.candidate_fits(edge, pair) {
+                continue;
+            }
+            self.adjust(edge, pair, true);
+            self.assignment[edge] = Some(pair);
+            self.search();
+            self.assignment[edge] = None;
+            self.adjust(edge, pair, false);
+        }
+    }
+}
+
+fn component_incidence_pair_solutions(
+    choices: &[Vec<[usize; 2]>],
+    edge_faces: &[[usize; 2]],
+    face_count: usize,
+    point_count: usize,
+) -> Option<Vec<Vec<[usize; 2]>>> {
+    const MAX_PAIR_SOLUTIONS: usize = 256;
+    let components = incidence_choice_components(choices, edge_faces);
+    let mut face_edges = vec![Vec::new(); face_count];
+    for (edge, faces) in edge_faces.iter().copied().enumerate() {
+        for (rank, face) in faces.into_iter().enumerate() {
+            if (rank == 0 || face != faces[0]) && !face_edges[face].contains(&edge) {
+                face_edges[face].push(edge);
+            }
+        }
+    }
+    let mut fixed = vec![None; choices.len()];
+    let mut degrees = vec![vec![0u8; point_count]; face_count];
+    for (edge, pairs) in choices.iter().enumerate() {
+        let [pair] = pairs.as_slice() else {
+            continue;
+        };
+        fixed[edge] = Some(*pair);
+        let faces = edge_faces[edge];
+        for (rank, face) in faces.into_iter().enumerate() {
+            if rank > 0 && face == faces[0] {
+                continue;
+            }
+            for point in pair {
+                degrees[face][*point] = degrees[face][*point].checked_add(1)?;
+            }
+        }
+    }
+    let mut combined = vec![fixed.clone()];
+    for component in components {
+        let mut active = vec![false; choices.len()];
+        let mut constraints = HashSet::<(usize, usize)>::new();
+        for &edge in &component {
+            active[edge] = true;
+            let faces = edge_faces[edge];
+            for (rank, face) in faces.into_iter().enumerate() {
+                if rank > 0 && face == faces[0] {
+                    continue;
+                }
+                for point in choices[edge].iter().flatten() {
+                    constraints.insert((face, *point));
+                }
+            }
+        }
+        let mut constraints = constraints.into_iter().collect::<Vec<_>>();
+        constraints.sort_unstable();
+        let mut search = IncidenceComponentSearch {
+            choices,
+            edge_faces,
+            face_edges: &face_edges,
+            active,
+            edges: &component,
+            constraints,
+            assignment: fixed.clone(),
+            degrees: degrees.clone(),
+            solutions: Vec::new(),
+            states: 0,
+            exhausted: false,
+        };
+        search.search();
+        if search.exhausted || search.solutions.is_empty() {
+            return None;
+        }
+        let result_count = combined.len().checked_mul(search.solutions.len())?;
+        if result_count > MAX_PAIR_SOLUTIONS {
+            return None;
+        }
+        combined = combined
+            .into_iter()
+            .flat_map(|assignment| {
+                search.solutions.iter().map(move |solution| {
+                    let mut assignment = assignment.clone();
+                    for &(edge, pair) in solution {
+                        assignment[edge] = Some(pair);
+                    }
+                    assignment
+                })
+            })
+            .collect();
+    }
+    combined
+        .into_iter()
+        .map(|assignment| assignment.into_iter().collect::<Option<Vec<_>>>())
+        .collect()
+}
+
 impl IncidenceCandidateSearch<'_> {
     fn adjust_degree(&mut self, face: usize, point: usize, increase: bool) {
         let degree = &mut self.degrees[face][point];
@@ -1128,57 +1410,19 @@ fn incidence_endpoint_pair_solutions(
         candidates.dedup();
     }
     prune_incidence_choices(&mut choices, edge_faces, face_count, vertex_points.len())?;
-    if !incidence_selection_within_budget(&choices)? {
-        return None;
-    }
-    let mut face_edges = vec![Vec::new(); face_count];
-    for (edge, faces) in edge_faces.iter().enumerate() {
-        for &face in faces {
-            if face < face_count && !face_edges[face].contains(&edge) {
-                face_edges[face].push(edge);
-            }
-        }
-    }
-    let mut search = IncidenceCandidateSearch {
-        choices: &choices,
-        edge_faces,
-        face_edges,
-        edge_rows,
-        vertex_points,
-        face_count,
-        edge_ports: None,
-        assignment: vec![None; choices.len()],
-        degrees: vec![vec![0; vertex_points.len()]; face_count],
-        open_points: vec![HashSet::new(); face_count],
-        solution: None,
-        pair_solutions: Vec::new(),
-        collect_pairs: true,
-        ambiguous: false,
-        exhausted: false,
-        states: 0,
-    };
-    for edge in 0..choices.len() {
-        let [pair] = choices[edge].as_slice() else {
-            continue;
-        };
-        if !search.candidate_fits(edge, *pair) {
-            return None;
-        }
-        let mut faces = edge_faces[edge].to_vec();
-        faces.sort_unstable();
-        faces.dedup();
-        for face in faces {
-            for point in pair {
-                search.adjust_degree(face, *point, true);
-            }
-        }
-        search.assignment[edge] = Some(*pair);
-    }
-    if !search.feasible() {
-        return None;
-    }
-    search.search();
-    (!search.exhausted && !search.pair_solutions.is_empty()).then_some(search.pair_solutions)
+    let mut solutions =
+        component_incidence_pair_solutions(&choices, edge_faces, face_count, vertex_points.len())?;
+    solutions.retain(|points| {
+        reconstruct_incidence(
+            edge_rows.to_vec(),
+            vertex_points.to_vec(),
+            edge_faces,
+            points,
+            face_count,
+        )
+        .is_some()
+    });
+    (!solutions.is_empty()).then_some(solutions)
 }
 
 /// Return the endpoint-port handles for the standard edge table, in physical
@@ -7132,6 +7376,71 @@ mod motif_tests {
         super::prune_incidence_choices(&mut choices, &edge_faces, 1, 5)
             .expect("face incidence is satisfiable");
         assert_eq!(choices, vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]]);
+    }
+
+    #[test]
+    fn incidence_components_join_only_through_shared_face_vertices() {
+        let choices = vec![
+            vec![[0, 1], [0, 2]],
+            vec![[1, 3], [2, 3]],
+            vec![[4, 5], [4, 6]],
+            vec![[7, 8]],
+        ];
+        let edge_faces = [[0, 0], [0, 0], [0, 0], [0, 0]];
+        assert_eq!(
+            super::incidence_choice_components(&choices, &edge_faces),
+            vec![vec![0, 1], vec![2]]
+        );
+    }
+
+    #[test]
+    fn incidence_components_solve_coupled_face_vertex_closures() {
+        let a = vec![[0, 2], [0, 12], [2, 12]];
+        let b = vec![[1, 3], [1, 1969], [3, 1969]];
+        let c = vec![
+            [0, 1],
+            [0, 2],
+            [0, 3],
+            [0, 12],
+            [0, 1969],
+            [1, 2],
+            [1, 3],
+            [1, 12],
+            [1, 1969],
+            [2, 3],
+            [2, 12],
+            [2, 1969],
+            [3, 12],
+            [3, 1969],
+            [12, 1969],
+        ];
+        let choices = vec![
+            a.clone(),
+            b.clone(),
+            a,
+            b,
+            c,
+            vec![[2, 3]],
+            vec![[2, 12]],
+            vec![[12, 1969]],
+            vec![[3, 1969]],
+        ];
+        let edge_faces = [
+            [1, 0],
+            [3, 0],
+            [2, 1],
+            [2, 3],
+            [2, 0],
+            [0, 0],
+            [1, 1],
+            [2, 2],
+            [3, 3],
+        ];
+        let solutions = super::component_incidence_pair_solutions(&choices, &edge_faces, 4, 1970)
+            .expect("component closure solution");
+        assert!(solutions
+            .iter()
+            .any(|solution| { solution[..5] == [[0, 2], [1, 3], [0, 12], [1, 1969], [0, 1]] }));
     }
 
     #[test]
