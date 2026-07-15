@@ -993,7 +993,7 @@ pub(crate) fn resolve_edge_operand_candidates(operand: &DesignEdgeOperand) -> Op
         operand
             .recipe_reference_contexts
             .iter()
-            .map(|context| context.changed_shared_edge_slots.as_slice()),
+            .map(|context| context.changed_reference_edge_slots.as_slice()),
     )
 }
 
@@ -1001,20 +1001,43 @@ fn resolved_edge_candidate_intersection<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
-    let shared_edge_sets = shared_edge_sets
-        .into_iter()
+    let ordered_edge_sets = shared_edge_sets.into_iter().collect::<Vec<_>>();
+    let shared_edge_sets = ordered_edge_sets
+        .iter()
+        .copied()
         .filter(|edges| !edges.is_empty())
         .collect::<Vec<_>>();
-    if selector_contexts.is_empty() || shared_edge_sets.is_empty() {
+    if shared_edge_sets.is_empty() {
         return None;
     }
+    let reference = ordered_edge_sets.get(..2).and_then(|sets| {
+        sets.iter()
+            .all(|set| !set.is_empty())
+            .then(|| unique_edge_set_intersection(sets))
+            .flatten()
+    });
     let incidence = corroborated_edge_intersection(selector_contexts, &shared_edge_sets, false);
     let boundary_count = corroborated_edge_intersection(selector_contexts, &shared_edge_sets, true);
-    match (incidence, boundary_count) {
-        (Some(left), Some(right)) if left != right => None,
-        (Some(edge), _) | (_, Some(edge)) => Some(edge),
-        (None, None) => None,
+    let proofs = [reference, incidence, boundary_count]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let edge = *proofs.first()?;
+    proofs.iter().all(|proof| *proof == edge).then_some(edge)
+}
+
+fn unique_edge_set_intersection(edge_sets: &[&[i64]]) -> Option<i64> {
+    let mut sets = edge_sets.iter();
+    let mut candidates = sets.next()?.to_vec();
+    candidates.sort_unstable();
+    candidates.dedup();
+    for edge_set in sets {
+        candidates.retain(|candidate| edge_set.contains(candidate));
+        if candidates.is_empty() {
+            return None;
+        }
     }
+    (candidates.len() == 1).then_some(candidates[0])
 }
 
 fn corroborated_edge_intersection(
@@ -14586,6 +14609,21 @@ mod relation_tests {
             None
         );
         assert_eq!(resolved_edge_candidate_intersection(&[], [&[17][..]]), None);
+        assert_eq!(
+            resolved_edge_candidate_intersection(&[], [&[17, 18][..], &[17, 19][..]]),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(&[], [&[17, 18][..], &[17, 18][..]]),
+            None
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                &[selector(0, &[18])],
+                [&[17, 18][..], &[17, 19][..]],
+            ),
+            Some(17)
+        );
         assert_eq!(
             resolved_edge_candidate_intersection(
                 &[

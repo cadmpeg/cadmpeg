@@ -665,14 +665,24 @@ fn face_boundary_contexts(
     faces: &[cadmpeg_ir::ids::FaceId],
     topology: &AsmHistoricalTopology,
 ) -> Vec<crate::records::DesignHistoricalFaceBoundaryContext> {
-    faces
+    let face_slots = faces
         .iter()
-        .filter_map(|face| {
-            let face_slot = stable_ref(&face.0)?;
+        .filter_map(|face| stable_ref(&face.0))
+        .collect::<Vec<_>>();
+    face_boundary_contexts_for_slots(&face_slots, topology)
+}
+
+fn face_boundary_contexts_for_slots(
+    face_slots: &[i64],
+    topology: &AsmHistoricalTopology,
+) -> Vec<crate::records::DesignHistoricalFaceBoundaryContext> {
+    face_slots
+        .iter()
+        .filter_map(|face_slot| {
             let mut face_relations = topology
                 .face_loops
                 .iter()
-                .filter(|relation| relation.owner_ref == face_slot);
+                .filter(|relation| relation.owner_ref == *face_slot);
             let face_relation = face_relations.next()?;
             if face_relations.next().is_some() {
                 return None;
@@ -745,7 +755,10 @@ fn face_boundary_contexts(
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
-            Some(crate::records::DesignHistoricalFaceBoundaryContext { face_slot, loops })
+            Some(crate::records::DesignHistoricalFaceBoundaryContext {
+                face_slot: *face_slot,
+                loops,
+            })
         })
         .collect()
 }
@@ -780,6 +793,44 @@ fn ordered_loop_vertices(edge_slots: &[i64], topology: &AsmHistoricalTopology) -
         .collect()
 }
 
+fn preceding_support_face_slots(
+    result_faces: &[cadmpeg_ir::ids::FaceId],
+    result_topology: &AsmHistoricalTopology,
+    preceding_topology: &AsmHistoricalTopology,
+) -> Vec<i64> {
+    let preceding_faces = preceding_topology
+        .faces
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+    let mut support_faces = Vec::new();
+    for result_face in result_faces {
+        let Some(result_face) = stable_ref(&result_face.0) else {
+            continue;
+        };
+        let mut result_bindings = result_topology
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == result_face);
+        let Some(carrier) = result_bindings.next().map(|binding| binding.carrier) else {
+            continue;
+        };
+        if result_bindings.next().is_some() {
+            continue;
+        }
+        let mut preceding_bindings = preceding_topology.face_surfaces.iter().filter(|binding| {
+            binding.carrier == carrier && preceding_faces.contains(&binding.entity)
+        });
+        let Some(preceding_face) = preceding_bindings.next().map(|binding| binding.entity) else {
+            continue;
+        };
+        if preceding_bindings.next().is_none() && !support_faces.contains(&preceding_face) {
+            support_faces.push(preceding_face);
+        }
+    }
+    support_faces
+}
+
 fn edge_recipe_reference_context(
     reference_ordinal: u32,
     reference: &crate::records::DesignRecipeReference,
@@ -801,6 +852,10 @@ fn edge_recipe_reference_context(
         .collect();
     let preceding_faces = faces_in_topology(&reference.candidate_faces, preceding_topology);
     let preceding_face_boundaries = face_boundary_contexts(&preceding_faces, preceding_topology);
+    let preceding_support_face_slots =
+        preceding_support_face_slots(&result_faces, result_topology, preceding_topology);
+    let preceding_support_face_boundaries =
+        face_boundary_contexts_for_slots(&preceding_support_face_slots, preceding_topology);
     let preceding_edges = face_boundary_edges(&preceding_faces, preceding_topology)
         .into_iter()
         .collect::<HashSet<_>>();
@@ -813,6 +868,19 @@ fn edge_recipe_reference_context(
         .iter()
         .copied()
         .filter(|edge| changed_edges.contains(edge))
+        .collect::<Vec<_>>();
+    let support_edges = preceding_support_face_boundaries
+        .iter()
+        .flat_map(|face| &face.loops)
+        .flat_map(|face_loop| face_loop.edge_slots.iter().copied())
+        .collect::<HashSet<_>>();
+    let changed_reference_edge_slots = preceding_boundary_edges
+        .iter()
+        .copied()
+        .filter(|edge| {
+            changed_edges.contains(edge)
+                && (preceding_edges.contains(edge) || support_edges.contains(edge))
+        })
         .collect();
     crate::records::DesignEdgeRecipeReferenceContext {
         reference_ordinal,
@@ -821,8 +889,11 @@ fn edge_recipe_reference_context(
         result_shared_edge_slots,
         preceding_faces,
         preceding_face_boundaries,
+        preceding_support_face_slots,
+        preceding_support_face_boundaries,
         shared_edge_slots,
         changed_shared_edge_slots,
+        changed_reference_edge_slots,
     }
 }
 
@@ -1852,6 +1923,54 @@ mod tests {
     }
 
     #[test]
+    fn result_face_support_maps_only_to_one_preceding_owner() {
+        use cadmpeg_ir::ids::FaceId;
+
+        let result_faces = [FaceId("f3d:brep:entity#40".into())];
+        let result = AsmHistoricalTopology {
+            faces: vec![40],
+            face_surfaces: vec![AsmHistoricalCarrierBinding {
+                entity: 40,
+                carrier: 20,
+            }],
+            ..AsmHistoricalTopology::default()
+        };
+        let preceding = AsmHistoricalTopology {
+            faces: vec![4, 5],
+            face_surfaces: vec![
+                AsmHistoricalCarrierBinding {
+                    entity: 4,
+                    carrier: 20,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 5,
+                    carrier: 21,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        assert_eq!(
+            preceding_support_face_slots(&result_faces, &result, &preceding),
+            [4]
+        );
+
+        let mut ambiguous = preceding.clone();
+        ambiguous.face_surfaces[1].carrier = 20;
+        assert!(preceding_support_face_slots(&result_faces, &result, &ambiguous).is_empty());
+
+        let mut ambiguous_result = result.clone();
+        ambiguous_result
+            .face_surfaces
+            .push(AsmHistoricalCarrierBinding {
+                entity: 40,
+                carrier: 21,
+            });
+        assert!(
+            preceding_support_face_slots(&result_faces, &ambiguous_result, &preceding).is_empty()
+        );
+    }
+
+    #[test]
     fn historical_topology_retains_ordered_ownership_and_incidence() {
         use cadmpeg_ir::ids::{
             BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId,
@@ -2115,8 +2234,11 @@ mod tests {
         assert_eq!(context.result_shared_edge_slots, [7]);
         assert_eq!(context.preceding_faces, [FaceId(id(4))]);
         assert_eq!(context.preceding_face_boundaries, [boundary]);
+        assert_eq!(context.preceding_support_face_slots, [4]);
+        assert_eq!(context.preceding_support_face_boundaries.len(), 1);
         assert_eq!(context.shared_edge_slots, [7]);
         assert_eq!(context.changed_shared_edge_slots, [7]);
+        assert_eq!(context.changed_reference_edge_slots, [7]);
         let cyclic = AsmHistoricalTopology {
             edge_vertices: vec![
                 AsmHistoricalEdge {

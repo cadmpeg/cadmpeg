@@ -1131,11 +1131,23 @@ pub struct DesignEdgeRecipeReferenceContext {
     /// Ordered loop boundaries of each referenced preceding face.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub preceding_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
+    /// Preceding faces uniquely owning the surface carriers of the referenced
+    /// result faces.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preceding_support_face_slots: Vec<i64>,
+    /// Ordered loop boundaries of the uniquely matched preceding support
+    /// faces.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preceding_support_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
     /// Stable edge slots shared by the referenced-face boundaries and the
     /// primary candidate-face boundaries.
     pub shared_edge_slots: Vec<i64>,
     /// Shared edge slots deleted or updated by the owning feature transition.
     pub changed_shared_edge_slots: Vec<i64>,
+    /// Changed primary-boundary edges belonging to either a directly
+    /// persistent referenced face or its unique preceding surface support.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_reference_edge_slots: Vec<i64>,
 }
 
 /// Ordered loop topology retained for one historical face.
