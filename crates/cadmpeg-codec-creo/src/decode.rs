@@ -1741,11 +1741,9 @@ fn saved_section_entity_geometry(
             };
             Some((
                 circle.entity_id,
-                SketchGeometry::Arc {
+                SketchGeometry::Circle {
                     center: Point2::new(center_u, center_v),
                     radius: Length(radius),
-                    start_angle: Angle(0.0),
-                    end_angle: Angle(std::f64::consts::TAU),
                 },
                 circle.offset,
             ))
@@ -1756,14 +1754,15 @@ fn saved_section_entity_geometry(
 }
 
 fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
-    matches!(
-        geometry,
-        SketchGeometry::Arc {
-            start_angle,
-            end_angle,
-            ..
-        } if (end_angle.0 - start_angle.0 - std::f64::consts::TAU).abs() <= 1e-12
-    )
+    matches!(geometry, SketchGeometry::Circle { .. })
+        || matches!(
+            geometry,
+            SketchGeometry::Arc {
+                start_angle,
+                end_angle,
+                ..
+            } if (end_angle.0 - start_angle.0 - std::f64::consts::TAU).abs() <= 1e-12
+        )
 }
 
 fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> {
@@ -3053,7 +3052,7 @@ fn extruded_geometry_surface(
                 u_axis: Vector3::new(line[0], line[1], line[2]),
             })
         }
-        SketchGeometry::Arc { center, radius, .. } => {
+        SketchGeometry::Arc { center, radius, .. } | SketchGeometry::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
             Some(SurfaceGeometry::Cylinder {
                 origin: Point3::new(center[0], center[1], center[2]),
@@ -3208,7 +3207,7 @@ fn placed_section_geometry_curve(
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
             })
         }
-        SketchGeometry::Arc { center, radius, .. } => {
+        SketchGeometry::Arc { center, radius, .. } | SketchGeometry::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
             Some(CurveGeometry::Circle {
                 center: Point3::new(center[0], center[1], center[2]),
@@ -6158,7 +6157,9 @@ fn transfer_resolved_sketches(
             }
             let generated_kind = match &geometry {
                 SketchGeometry::Line { .. } => crate::surface::SurfaceKind::Plane,
-                SketchGeometry::Arc { .. } => crate::surface::SurfaceKind::Cylinder,
+                SketchGeometry::Arc { .. } | SketchGeometry::Circle { .. } => {
+                    crate::surface::SurfaceKind::Cylinder
+                }
                 _ => continue,
             };
             let generated = saved_entity_is_generated_profile(
@@ -9480,11 +9481,9 @@ mod resolved_sketch_tests {
             saved_section_entity_geometry(&entity),
             Some((
                 7,
-                SketchGeometry::Arc {
+                SketchGeometry::Circle {
                     center: Point2::new(2.0, -3.0),
                     radius: Length(4.5),
-                    start_angle: Angle(0.0),
-                    end_angle: Angle(std::f64::consts::TAU),
                 },
                 19,
             ))
@@ -9868,6 +9867,21 @@ mod resolved_sketch_tests {
             placed_section_curve_geometry(&transform, &points, &segment),
             Some(CurveGeometry::Circle {
                 center: Point3::new(10.0, 20.0, 30.0),
+                axis: Vector3::new(1.0, 0.0, 0.0),
+                ref_direction: Vector3::new(0.0, 1.0, 0.0),
+                radius: 2.0,
+            })
+        );
+        assert_eq!(
+            placed_section_geometry_curve(
+                &transform,
+                &SketchGeometry::Circle {
+                    center: Point2::new(3.0, -4.0),
+                    radius: Length(2.0),
+                },
+            ),
+            Some(CurveGeometry::Circle {
+                center: Point3::new(10.0, 23.0, 26.0),
                 axis: Vector3::new(1.0, 0.0, 0.0),
                 ref_direction: Vector3::new(0.0, 1.0, 0.0),
                 radius: 2.0,

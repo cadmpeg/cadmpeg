@@ -1094,6 +1094,9 @@ A saved entity identifier is an `order_table.int_id`; joining through that row's
 
 A saved line, arc, or circle with complete section-space geometry and an
 `order_table` join defines a neutral sketch entity under that row's `ext_id`.
+Under a complete model-space section frame, saved line endpoints and saved arc
+or circle centers map through the section axes; saved arcs and circles define
+model-space circle carriers with the section normal and stored radius.
 It is a profile entity when a class-200 entry with the same `ext_id` binds it to
 a same-feature generated plane or cylinder of the corresponding family. Without
 that generated-carrier binding, the evaluated geometry remains a construction
