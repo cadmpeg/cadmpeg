@@ -2413,9 +2413,16 @@ fn transfer_e5_topology(
             };
             let forward =
                 point_distance(endpoints[0], *start).max(point_distance(endpoints[1], *end));
-            let reversed =
+            let reverse_error =
                 point_distance(endpoints[0], *end).max(point_distance(endpoints[1], *start));
-            if forward.min(reversed) > 2e-3 {
+            let reversed = e5_stored_pcurve_reversed(topology, edge_ref, *pcurve_ref, range)
+                .or_else(|| {
+                    ((forward - reverse_error).abs() > 1e-9).then_some(reverse_error < forward)
+                });
+            let Some(reversed) = reversed else {
+                continue;
+            };
+            if if reversed { reverse_error } else { forward } > 2e-3 {
                 continue;
             }
             let Some((mut curve, mut curve_range)) = e5_boundary_curve(
@@ -2427,7 +2434,7 @@ fn transfer_e5_topology(
             ) else {
                 continue;
             };
-            if reversed < forward {
+            if reversed {
                 let Some(reversed_curve) = reverse_e5_boundary_curve(&curve, curve_range) else {
                     continue;
                 };
