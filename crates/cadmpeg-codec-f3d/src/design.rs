@@ -931,6 +931,7 @@ fn resolved_edge_group(
         .iter()
         .map(|operand| resolved_edge_operand(operand))
         .collect::<Option<Vec<_>>>()
+        .or_else(|| unique_edge_group_assignment(&matched_operands))
         .or_else(|| {
             common_deleted_edge_group_candidates(
                 matched_operands
@@ -958,6 +959,96 @@ fn resolved_edge_group(
             native: group.id.clone(),
         }
     }
+}
+
+fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i64>> {
+    if operands.is_empty() {
+        return None;
+    }
+    let candidate_sets = operands
+        .iter()
+        .map(|operand| {
+            if let Some(edge) = resolved_edge_operand(operand) {
+                Some(vec![edge])
+            } else {
+                corroborated_edge_candidates(
+                    &operand.recipe_selectors,
+                    operand
+                        .recipe_reference_contexts
+                        .iter()
+                        .map(|context| context.changed_reference_edge_slots.as_slice()),
+                    false,
+                )
+            }
+        })
+        .collect::<Option<Vec<_>>>()?;
+    unique_bipartite_assignment(&candidate_sets)
+}
+
+fn unique_bipartite_assignment(candidate_sets: &[Vec<i64>]) -> Option<Vec<i64>> {
+    if candidate_sets.is_empty() {
+        return None;
+    }
+    let mut normalized = candidate_sets.to_vec();
+    for candidates in &mut normalized {
+        candidates.sort_unstable();
+        candidates.dedup();
+        if candidates.is_empty() {
+            return None;
+        }
+    }
+    let assignment = bipartite_assignment(&normalized, None)?;
+    for (member, edge) in assignment.iter().copied().enumerate() {
+        if bipartite_assignment(&normalized, Some((member, edge))).is_some() {
+            return None;
+        }
+    }
+    Some(assignment)
+}
+
+fn bipartite_assignment(
+    candidate_sets: &[Vec<i64>],
+    forbidden: Option<(usize, i64)>,
+) -> Option<Vec<i64>> {
+    fn augment(
+        member: usize,
+        candidate_sets: &[Vec<i64>],
+        forbidden: Option<(usize, i64)>,
+        visited: &mut HashSet<i64>,
+        edge_members: &mut HashMap<i64, usize>,
+    ) -> bool {
+        for edge in &candidate_sets[member] {
+            if forbidden == Some((member, *edge)) || !visited.insert(*edge) {
+                continue;
+            }
+            let displaced = edge_members.get(edge).copied();
+            if displaced.is_none_or(|displaced| {
+                augment(displaced, candidate_sets, forbidden, visited, edge_members)
+            }) {
+                edge_members.insert(*edge, member);
+                return true;
+            }
+        }
+        false
+    }
+
+    let mut edge_members = HashMap::new();
+    for member in 0..candidate_sets.len() {
+        if !augment(
+            member,
+            candidate_sets,
+            forbidden,
+            &mut HashSet::new(),
+            &mut edge_members,
+        ) {
+            return None;
+        }
+    }
+    let mut assignment = vec![0; candidate_sets.len()];
+    for (edge, member) in edge_members {
+        assignment[member] = edge;
+    }
+    Some(assignment)
 }
 
 fn scope_partition_edge_group_candidates(
@@ -1161,6 +1252,19 @@ fn corroborated_edge_intersection(
     shared_edge_sets: &[&[i64]],
     boundary_counts_only: bool,
 ) -> Option<i64> {
+    let candidates = corroborated_edge_candidates(
+        selector_contexts,
+        shared_edge_sets.iter().copied(),
+        boundary_counts_only,
+    )?;
+    (candidates.len() == 1).then_some(candidates[0])
+}
+
+fn corroborated_edge_candidates<'a>(
+    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
+    boundary_counts_only: bool,
+) -> Option<Vec<i64>> {
     let mut selectors = selector_contexts.iter();
     let first = selector_candidate_edges(selectors.next()?, boundary_counts_only);
     if first.is_empty() {
@@ -1185,7 +1289,7 @@ fn corroborated_edge_intersection(
             return None;
         }
     }
-    (candidates.len() == 1).then_some(candidates[0])
+    Some(candidates)
 }
 
 fn selector_candidate_edges(
@@ -14830,6 +14934,27 @@ mod relation_tests {
             super::partition_unique_incomplete_edge_group(1, &duplicate_identity),
             None
         );
+    }
+
+    #[test]
+    fn edge_group_resolves_only_one_perfect_candidate_assignment() {
+        assert_eq!(
+            super::unique_bipartite_assignment(&[vec![17, 18], vec![18, 19], vec![19],]),
+            Some(vec![17, 18, 19])
+        );
+        assert_eq!(
+            super::unique_bipartite_assignment(&[vec![17, 18], vec![17, 18]]),
+            None
+        );
+        assert_eq!(
+            super::unique_bipartite_assignment(&[vec![17], vec![17]]),
+            None
+        );
+        assert_eq!(
+            super::unique_bipartite_assignment(&[vec![17], Vec::new()]),
+            None
+        );
+        assert_eq!(super::unique_bipartite_assignment(&[]), None);
     }
 
     #[test]
