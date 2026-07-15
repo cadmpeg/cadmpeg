@@ -3491,7 +3491,8 @@ fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool) -> Vec<u8> {
     push_u8_string(&mut surface, "TERM");
     t_vec(&mut surface, [1.0, 2.0, 3.0]);
     t_long(&mut surface, 1);
-    t_ident(&mut surface, "full");
+    surface.push(0x15);
+    surface.extend_from_slice(&0i64.to_le_bytes());
     surface.extend_from_slice(&generated_surface_block());
     t_dbl(&mut surface, 0.007);
     for values in [

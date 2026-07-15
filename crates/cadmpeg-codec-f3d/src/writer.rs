@@ -7218,7 +7218,7 @@ fn encode_native_law_surface(
     for formula in &construction.additional {
         native_law_formula(bytes, target, formula)?;
     }
-    native_ident(bytes, "full")?;
+    native_enum(bytes, 0);
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, cache_fit_tolerance / 10.0);
     for values in &construction.discontinuities {

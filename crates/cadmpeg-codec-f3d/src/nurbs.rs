@@ -2225,7 +2225,7 @@ fn decode_law_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
     let additional = (0..count)
         .map(|_| decode_law_formula(span, &mut position, int_width))
         .collect::<Option<Vec<_>>>()?;
-    if take_native_ident(span, &mut position)?.as_str() != "full" {
+    if take_tagged_int(span, &mut position, 0x15, int_width)? != 0 {
         return None;
     }
     let cache = decode_surface_block(span, position, int_width)?;
@@ -7116,7 +7116,7 @@ mod width_tests {
             push_string(&mut bytes, "TERM");
             push_vector(&mut bytes, [1.0, 2.0, 3.0]);
             push_int(&mut bytes, 0x04, 1, int_width);
-            push_ident(&mut bytes, "full");
+            push_int(&mut bytes, 0x15, 0, int_width);
             bytes.extend_from_slice(&surface_block(int_width));
             push_f64(&mut bytes, 0.007);
             for values in [
