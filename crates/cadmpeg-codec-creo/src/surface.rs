@@ -777,6 +777,7 @@ const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
     "end_uv_deriv",
     "u_params",
     "v_params",
+    "params",
     "ctr_spline",
     "tan_spline",
     "par_v_0",
@@ -851,6 +852,19 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
             if values.len() == usize::try_from(count).unwrap_or(usize::MAX) && cursor == body.len()
             {
                 return SurfaceNamedValue::CompactIntArray(values);
+            }
+            if name == "params" {
+                let slots = named_spline_scalar_slots(
+                    name,
+                    &body[values_start..],
+                    usize::try_from(count).unwrap_or(usize::MAX),
+                    cache,
+                );
+                return SurfaceNamedValue::CountedScalarArray {
+                    count,
+                    values: slots.iter().map(|slot| slot.0).collect(),
+                    tokens: slots.into_iter().map(|slot| slot.1).collect(),
+                };
             }
         }
     }
@@ -945,28 +959,40 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
             }
         }
         let tokens = psb::tokens(&payload[close + 2..record_end]);
-        let named = tokens
+        let mut named = tokens
             .iter()
-            .enumerate()
-            .filter(|(_, token)| {
+            .filter_map(|token| {
                 let token_offset = close + 2 + token.offset;
-                token.kind == psb::TokenKind::NamedRecord
-                    && named_record_length(payload, token_offset) == Some(token.length)
+                (token.kind == psb::TokenKind::NamedRecord
+                    && named_record_length(payload, token_offset) == Some(token.length))
+                .then_some((token_offset, token.length))
             })
             .collect::<Vec<_>>();
-        let mut parameters = Vec::new();
-        for (position, (_, token)) in named.iter().enumerate() {
-            let token_offset = close + 2 + token.offset;
+        for token_offset in close + 2..record_end {
+            let Some(length) = named_record_length(payload, token_offset) else {
+                continue;
+            };
             let name_start = token_offset + 2;
-            let name_end = token_offset + token.length - 1;
+            let name_end = token_offset + length - 1;
+            let name = String::from_utf8_lossy(&payload[name_start..name_end]);
+            if prototype_parameter_allowed(&family, &name) {
+                named.push((token_offset, length));
+            }
+        }
+        named.sort_unstable();
+        named.dedup();
+        let mut parameters = Vec::new();
+        for (position, (token_offset, token_length)) in named.iter().copied().enumerate() {
+            let name_start = token_offset + 2;
+            let name_end = token_offset + token_length - 1;
             let name = String::from_utf8_lossy(&payload[name_start..name_end]);
             if !prototype_parameter_allowed(&family, &name) {
                 continue;
             }
-            let value_offset = token_offset + token.length;
+            let value_offset = token_offset + token_length;
             let mut value_end = named
                 .get(position + 1)
-                .map_or(record_end, |(_, next)| close + 2 + next.offset);
+                .map_or(record_end, |(next, _)| *next);
             if let Some(compound_close) = psb::tokens(&payload[value_offset..value_end])
                 .into_iter()
                 .find(|token| token.kind == psb::TokenKind::CompoundClose)
@@ -1395,6 +1421,9 @@ fn named_spline_scalar_slot(
     cache: &scalar::ScalarCache,
 ) -> Option<(Option<f64>, usize)> {
     let head = *body.get(offset)?;
+    if head == 0x18 && offset + 1 == body.len() {
+        return Some((Some(0.0), offset + 1));
+    }
     if matches!(head, 0x0d | 0x0f | 0x18 | 0xe4 | 0xe6) {
         return scalar::decode_in_lane(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
@@ -1405,6 +1434,9 @@ fn named_spline_scalar_slot(
     }
     if matches!(head, 0x28 | 0x41) || (name == "v_params" && head == 0x28) {
         return named_ieee8(body, offset, 0x3f).map(|(value, next)| (Some(value), next));
+    }
+    if name == "params" && head == 0x2d {
+        return named_ieee8(body, offset, 0x40).map(|(value, next)| (Some(value), next));
     }
     if matches!(head, 0x2d | 0x46 | 0x71) {
         return scalar::decode_in_lane(body, offset, cache)
@@ -1421,7 +1453,7 @@ fn named_spline_scalar_slot(
         return scalar::decode_in_lane(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
-    if matches!(name, "u_params" | "v_params") {
+    if matches!(name, "u_params" | "v_params" | "params") {
         return named_positive_dict(body, offset).map(|(value, next)| (Some(value), next));
     }
     if name == "end_u_tangts" && head == 0x31 {
@@ -2203,6 +2235,34 @@ mod tests {
             Some(f64::from_be_bytes([0x40, 1, 2, 3, 4, 5, 6, 7]))
         );
         assert_eq!(slots[2].1, body[15..]);
+    }
+
+    #[test]
+    fn tabulated_cylinder_parameters_end_the_tangent_field() {
+        let payload = b"srf_prim_ptr(tab_cyl)\0\
+            \xe0\x02end_tangts\0\xf9\x02\x03\x0f\xe4\x0f\xe4\x0f\x18\
+            \xe0\x02params\0\xf8\x03\x0f\
+            \x2d\x00\x00\x00\x00\x00\x00\x00\
+            \x2d\x08\x00\x00\x00\x00\x00\x00\xe3";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(records.len(), 1);
+        assert!(matches!(
+            records[0].field("end_tangts").map(|field| &field.value),
+            Some(SurfaceNamedValue::ScalarArray { values, .. }) if values.len() == 6
+        ));
+        assert_eq!(
+            records[0].field("params").map(|field| &field.value),
+            Some(&SurfaceNamedValue::CountedScalarArray {
+                count: 3,
+                values: vec![Some(0.0), Some(2.0), Some(3.0)],
+                tokens: vec![
+                    vec![0x0f],
+                    vec![0x2d, 0, 0, 0, 0, 0, 0, 0],
+                    vec![0x2d, 8, 0, 0, 0, 0, 0, 0],
+                ],
+            })
+        );
     }
 
     #[test]

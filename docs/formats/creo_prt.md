@@ -260,6 +260,13 @@ record also ends the prototype; its named fields belong to that peer entity.
 
 Positional cylinder rows store cap-plane point data rather than a `local_sys` replay. Their per-instance radius does not inherit the prototype default; derive it from bound `fc 05` cap-circle geometry or from a byte-backed analytic construction.
 
+A `tab_cyl` prototype can carry `i_pnts`, `end_tangts`, and `params` as
+separate named fields. `params` uses `f8 <count>` and contains exactly `count`
+curve parameters. Its `2d <tail7>` form reconstructs `40 <tail7>`. The `params`
+header terminates the preceding `end_tangts` body even when the preceding
+terminal `18` zero slot causes the generic token walk to span the header. A
+terminal `18` in the bounded `end_tangts` body occupies one zero slot.
+
 The direction/directrix form of a `geom_type = 2c` positional body begins with
 a three-scalar model-space sweep-direction frame followed by the bytes
 `00 0c 9a`. The directrix construction begins after this marker. Replay-bound
