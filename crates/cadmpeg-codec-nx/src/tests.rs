@@ -8225,6 +8225,37 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
 }
 
 #[test]
+fn decode_retains_strict_tiff_material_texture_assets() {
+    let texture = [b'I', b'I', 42, 0, 8, 0, 0, 0, 0, 0];
+    let malformed = [b'I', b'I', 42, 0, 40, 0, 0, 0, 0, 0];
+    let file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        ("/Root/materialsTif/AISI Steel 4340", texture.to_vec()),
+        ("/Root/materialsTif/Truncated", malformed.to_vec()),
+    ]);
+
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let assets = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::MaterialTextureAsset>("material_texture_assets")
+        .unwrap();
+
+    assert_eq!(assets.len(), 1);
+    assert_eq!(assets[0].name, "AISI Steel 4340");
+    assert_eq!(assets[0].byte_order, "little_endian");
+    assert_eq!(assets[0].version, 42);
+    assert_eq!(assets[0].first_ifd_offset, 8);
+    assert_eq!(assets[0].byte_len, texture.len() as u64);
+    assert_eq!(assets[0].sha256, cadmpeg_ir::hash::sha256_hex(&texture));
+    assert_eq!(assets[0].source_entry, "/Root/materialsTif/AISI Steel 4340");
+}
+
+#[test]
 fn decode_rejects_ambiguous_nx_arrangement_table_atomically() {
     let file = prt_with_named_payloads(&[
         ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),

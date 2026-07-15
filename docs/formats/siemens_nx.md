@@ -160,6 +160,7 @@ an unresolved input slot remains absent without reordering the other slots.
 | `/Root/FastLoad/RMFastLoad`  | fast-load object-id table → active-body membership (NX OM per-class form)      |
 | `/Root/FastLoad/JT`          | preview/JT mesh and metadata                                                   |
 | `/Root/images/preview`       | JPEG preview image                                                            |
+| `/Root/materialsTif/<name>`  | named TIFF material texture                                                    |
 | `/Root/*/ExternalReferences` | `EXTREFSTREAM`; child-part names, filesystem paths, occurrence handles         |
 | `/Root/part/attrs`           | `<UgAttributes>` UTF-8 XML key/value part metadata                             |
 | `/Root/qafmetadata`          | UTF-8 XML preview-folder metadata                                              |
@@ -176,6 +177,15 @@ width, and a non-zero component count. Its payload length is exactly
 `6 + 3 * component_count`. The bounded entry length and SHA-256 identify the
 preview asset; malformed marker lengths or a scan/EOI marker before SOF do not
 produce preview metadata.
+
+Each `/Root/materialsTif/<name>` file entry contains one TIFF stream. The first
+eight bytes are byte-order magic `II`, version `42:u16 LE`, and a little-endian
+first-IFD offset, or byte-order magic `MM`, version `42:u16 BE`, and a big-endian
+first-IFD offset. The first IFD begins at an offset of at least eight and before
+the bounded entry end. The path suffix is the material display name. Entry
+offset, entry length, byte order, version, first-IFD offset, and SHA-256 identify
+the texture asset. An invalid TIFF header or out-of-bounds first IFD does not
+produce an asset.
 
 `EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + control-free UTF-8)`. The string table contains child `.prt` names and paths.
 

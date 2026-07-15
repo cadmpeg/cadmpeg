@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+use cadmpeg_ir::hash::sha256_hex;
+
 use crate::container::Container;
 use crate::parasolid::{Stream, StreamKind};
 
@@ -6835,6 +6837,71 @@ pub struct ExternalReferenceRecord {
     pub source_entry: String,
     /// Absolute file offset of the record marker.
     pub source_offset: u64,
+}
+
+/// Embedded NX material texture stored as a TIFF stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterialTextureAsset {
+    /// Globally unique native-record identity.
+    pub id: String,
+    /// Material display name carried by the directory path.
+    pub name: String,
+    /// TIFF byte order: `little_endian` or `big_endian`.
+    pub byte_order: String,
+    /// TIFF format version. NX material textures use version 42.
+    pub version: u16,
+    /// Absolute byte offset of the first TIFF image-file directory, relative to the asset payload.
+    pub first_ifd_offset: u32,
+    /// Exact texture payload length.
+    pub byte_len: u64,
+    /// SHA-256 digest of the exact TIFF payload.
+    pub sha256: String,
+    /// Directory entry containing the texture.
+    pub source_entry: String,
+    /// Absolute file offset of the TIFF header.
+    pub source_offset: u64,
+}
+
+/// Decode every strictly framed TIFF material-texture directory entry.
+pub fn material_texture_assets(container: &Container) -> Vec<MaterialTextureAsset> {
+    let mut assets = container
+        .entries
+        .iter()
+        .filter_map(|entry| {
+            let name = entry.name.strip_prefix("/Root/materialsTif/")?;
+            (!name.is_empty()).then_some(())?;
+            let (offset, size) = entry.file_span?;
+            let (start, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+            let payload = container.data.get(start..start.checked_add(size)?)?;
+            let (byte_order, version, first_ifd_offset) = match payload.get(..8)? {
+                [b'I', b'I', 42, 0, a, b, c, d] => {
+                    ("little_endian", 42, u32::from_le_bytes([*a, *b, *c, *d]))
+                }
+                [b'M', b'M', 0, 42, a, b, c, d] => {
+                    ("big_endian", 42, u32::from_be_bytes([*a, *b, *c, *d]))
+                }
+                _ => return None,
+            };
+            let first_ifd = usize::try_from(first_ifd_offset).ok()?;
+            (first_ifd >= 8 && first_ifd < payload.len()).then_some(())?;
+            Some(MaterialTextureAsset {
+                id: String::new(),
+                name: name.to_string(),
+                byte_order: byte_order.to_string(),
+                version,
+                first_ifd_offset,
+                byte_len: size as u64,
+                sha256: sha256_hex(payload),
+                source_entry: entry.name.clone(),
+                source_offset: offset,
+            })
+        })
+        .collect::<Vec<_>>();
+    assets.sort_by(|first, second| first.source_entry.cmp(&second.source_entry));
+    for (ordinal, asset) in assets.iter_mut().enumerate() {
+        asset.id = format!("nx:container:material-texture#{ordinal}");
+    }
+    assets
 }
 
 /// Decode end-anchored external child-part string tables.
