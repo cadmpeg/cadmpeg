@@ -835,15 +835,26 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         ) {
             procedural_surface_defs.insert(surf_ref, procedural);
         }
-        // A non-analytic surface may still carry a decodable B-spline face cache.
-        if let std::collections::hash_map::Entry::Vacant(e) = surface_geo.entry(surf_ref) {
-            if let Some(ns) = nurbs::decode_surface_cache_resolving_refs(
-                record_slice(surf_rec, bytes),
-                bytes,
-                &subtype_tables,
-            ) {
-                e.insert((SurfaceGeometry::Nurbs(ns), false));
-                out.stats.nurbs_surfaces += 1;
+        let exact_cacheless_construction =
+            procedural_surface_defs
+                .get(&surf_ref)
+                .is_some_and(|procedural| {
+                    procedural.cache_fit_tolerance.is_none()
+                        && procedural_surface_definition_is_exact_carrier(&procedural.definition)
+                });
+        // A non-analytic surface may still carry a decodable B-spline face
+        // cache. Exact cacheless constructions own their nested surface blocks
+        // as supports, not as evaluated face caches.
+        if !exact_cacheless_construction {
+            if let std::collections::hash_map::Entry::Vacant(e) = surface_geo.entry(surf_ref) {
+                if let Some(ns) = nurbs::decode_surface_cache_resolving_refs(
+                    record_slice(surf_rec, bytes),
+                    bytes,
+                    &subtype_tables,
+                ) {
+                    e.insert((SurfaceGeometry::Nurbs(ns), false));
+                    out.stats.nurbs_surfaces += 1;
+                }
             }
         }
         if !surface_geo.contains_key(&surf_ref) && procedural_surface_defs.contains_key(&surf_ref) {
@@ -4672,7 +4683,8 @@ fn procedural_surface_definition_is_exact_carrier(
 ) -> bool {
     match definition {
         nurbs::DecodedProceduralSurfaceDefinition::Extrusion { .. }
-        | nurbs::DecodedProceduralSurfaceDefinition::Helix(_) => true,
+        | nurbs::DecodedProceduralSurfaceDefinition::Helix(_)
+        | nurbs::DecodedProceduralSurfaceDefinition::VertexBlend(_) => true,
         nurbs::DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(construction) => matches!(
             construction.shape,
             nurbs::EmbeddedScaledCompoundLoftShape::None { .. }

@@ -14305,7 +14305,9 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
 
 #[test]
 fn generated_vertex_blends_decode_all_boundary_variants() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VertexBlendBoundaryGeometry};
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, SurfaceGeometry, VertexBlendBoundaryGeometry,
+    };
 
     for name in ["VBL_SURF", "vertexblendsur"] {
         let result = F3dCodec
@@ -14319,6 +14321,22 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         else {
             panic!("expected vertex blend")
         };
+        let owner = result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == result.ir.model.procedural_surfaces[0].surface)
+            .expect("vertex-blend owner");
+        assert!(
+            matches!(
+                owner.geometry,
+                SurfaceGeometry::Procedural { ref construction }
+                    if *construction == result.ir.model.procedural_surfaces[0].id
+            ),
+            "unexpected vertex-blend carrier: {:?}",
+            owner.geometry
+        );
         assert_eq!(construction.boundaries.len(), 4);
         assert_eq!(construction.grid_size, 17);
         assert_eq!(construction.fit_tolerance, 0.03);

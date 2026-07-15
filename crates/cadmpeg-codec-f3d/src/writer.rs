@@ -5906,8 +5906,11 @@ fn native_procedural_surface(
         ProceduralSurfaceDefinition::VariableBlend { construction } => {
             encode_native_variable_blend(bytes, target, procedural, construction, solved_cache)?;
         }
-        ProceduralSurfaceDefinition::VertexBlend { construction } => {
-            encode_native_vertex_blend(bytes, target, construction, solved_cache)?;
+        ProceduralSurfaceDefinition::VertexBlend { .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D vertex blend {} must use its procedural carrier because VBL_SURF has no solved-cache field",
+                procedural.id
+            )));
         }
         ProceduralSurfaceDefinition::Ruled { first, second } => {
             let profiles = [first, second]
@@ -6922,6 +6925,10 @@ fn native_cacheless_procedural_surface(
             return Ok(true);
         }
     }
+    if let ProceduralSurfaceDefinition::VertexBlend { construction } = &procedural.definition {
+        encode_native_vertex_blend(bytes, target, construction)?;
+        return Ok(true);
+    }
     Ok(false)
 }
 
@@ -7836,7 +7843,6 @@ fn encode_native_vertex_blend(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     construction: &cadmpeg_ir::geometry::VertexBlendConstruction,
-    solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
@@ -7852,8 +7858,6 @@ fn encode_native_vertex_blend(
     }
     native_i64(bytes, construction.grid_size);
     native_f64(bytes, construction.fit_tolerance / 10.0);
-    native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, 0.0);
     bytes.push(0x10);
     Ok(())
 }
