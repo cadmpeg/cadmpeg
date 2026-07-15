@@ -7675,6 +7675,21 @@ fn attach_feature_operations(
         }
         let extrude_projection = (label.value == "EXTRUDE")
             .then(|| {
+                let body = body_references.get(label.id.as_str())?;
+                let output_kinds = outputs
+                    .iter()
+                    .filter_map(|output| {
+                        ir.model
+                            .bodies
+                            .iter()
+                            .find(|body| body.id == *output)
+                            .map(|body| body.kind)
+                    })
+                    .collect::<Vec<_>>();
+                let op = extrude_boolean_op(
+                    last_body_writer.contains_key(&canonical_body(*body)),
+                    &output_kinds,
+                );
                 extrude_feature_definition(
                     extrude_construction_profiles_by_operation
                         .get(label.id.as_str())
@@ -7682,6 +7697,7 @@ fn attach_feature_operations(
                     extrude_32_constructions_by_operation
                         .get(label.id.as_str())
                         .map(|construction| construction.id.as_str()),
+                    op,
                 )
             })
             .flatten();
@@ -7769,6 +7785,7 @@ fn attach_feature_operations(
 pub(crate) fn extrude_feature_definition(
     construction_profile: Option<&str>,
     structured_construction: Option<&str>,
+    op: BooleanOp,
 ) -> Option<FeatureDefinition> {
     let constructions = [construction_profile, structured_construction]
         .into_iter()
@@ -7781,9 +7798,20 @@ pub(crate) fn extrude_feature_definition(
         profile: ProfileRef::Native((*construction).to_string()),
         direction: None,
         extent: Extent::Unresolved,
-        op: BooleanOp::Unresolved,
+        op,
         draft: None,
     })
+}
+
+pub(crate) fn extrude_boolean_op(
+    has_previous_writer: bool,
+    output_kinds: &[cadmpeg_ir::topology::BodyKind],
+) -> BooleanOp {
+    if !has_previous_writer && output_kinds == [cadmpeg_ir::topology::BodyKind::Solid] {
+        BooleanOp::NewBody
+    } else {
+        BooleanOp::Unresolved
+    }
 }
 
 pub(crate) fn blend_feature_definition(

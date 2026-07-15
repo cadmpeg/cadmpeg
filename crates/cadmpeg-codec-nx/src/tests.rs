@@ -396,19 +396,48 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, ProfileRef};
 
     assert_eq!(
-        crate::decode::extrude_feature_definition(Some("nx:profile#1"), None),
+        crate::decode::extrude_feature_definition(Some("nx:profile#1"), None, BooleanOp::NewBody,),
         Some(FeatureDefinition::Extrude {
             profile: ProfileRef::Native("nx:profile#1".to_string()),
             direction: None,
             extent: Extent::Unresolved,
-            op: BooleanOp::Unresolved,
+            op: BooleanOp::NewBody,
             draft: None,
         })
     );
-    assert!(crate::decode::extrude_feature_definition(None, None).is_none());
-    assert!(
-        crate::decode::extrude_feature_definition(Some("nx:profile#1"), Some("nx:profile#2"))
-            .is_none()
+    assert!(crate::decode::extrude_feature_definition(None, None, BooleanOp::Unresolved).is_none());
+    assert!(crate::decode::extrude_feature_definition(
+        Some("nx:profile#1"),
+        Some("nx:profile#2"),
+        BooleanOp::Unresolved,
+    )
+    .is_none());
+}
+
+#[test]
+fn extrusion_is_new_body_only_for_one_first_written_solid_output() {
+    use cadmpeg_ir::features::BooleanOp;
+    use cadmpeg_ir::topology::BodyKind;
+
+    assert_eq!(
+        crate::decode::extrude_boolean_op(false, &[BodyKind::Solid]),
+        BooleanOp::NewBody
+    );
+    assert_eq!(
+        crate::decode::extrude_boolean_op(true, &[BodyKind::Solid]),
+        BooleanOp::Unresolved
+    );
+    assert_eq!(
+        crate::decode::extrude_boolean_op(false, &[BodyKind::Sheet]),
+        BooleanOp::Unresolved
+    );
+    assert_eq!(
+        crate::decode::extrude_boolean_op(false, &[BodyKind::Solid, BodyKind::Solid]),
+        BooleanOp::Unresolved
+    );
+    assert_eq!(
+        crate::decode::extrude_boolean_op(false, &[]),
+        BooleanOp::Unresolved
     );
 }
 
