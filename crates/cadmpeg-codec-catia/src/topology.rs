@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Byte-level topology for standard nested CATIA V5 B-rep streams.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet, VecDeque},
+};
 
 use cadmpeg_ir::topology::BodyKind;
 
@@ -3947,6 +3950,7 @@ impl MeshQuotient {
 type MeshFaceSelection = Option<(usize, Vec<Vec<bool>>)>;
 type MeshQuotientSignature = Vec<(Vec<usize>, Vec<usize>)>;
 type MeshOrientationSignature = (MeshQuotientSignature, Vec<Vec<bool>>);
+type MeshFaceEquationCache = RefCell<HashMap<(usize, MeshQuotientSignature), Vec<[usize; 2]>>>;
 
 fn changed_quotient_edges(left: &MeshQuotient, right: &MeshQuotient) -> HashSet<usize> {
     let mut left = left.clone();
@@ -3976,6 +3980,7 @@ struct MeshSelectionSearch<'a> {
     solution: Option<(StandardTopology, Vec<usize>)>,
     ambiguous: bool,
     exhausted: bool,
+    face_equation_cache: MeshFaceEquationCache,
 }
 
 fn possible_face_equations(faces: &[Vec<MeshFaceBoundaryAssignment>]) -> Vec<Vec<[usize; 2]>> {
@@ -4332,6 +4337,33 @@ impl MeshSelectionSearch<'_> {
         Some(before.saturating_sub(after).min(independent_capacity))
     }
 
+    fn face_projection_signature(
+        &self,
+        face: usize,
+        quotient: &mut MeshQuotient,
+    ) -> MeshQuotientSignature {
+        let mut roots = self.assignments[face]
+            .iter()
+            .flat_map(|assignment| &assignment.boundaries)
+            .flatten()
+            .flat_map(|use_| [use_.edge * 2, use_.edge * 2 + 1])
+            .map(|node| quotient.union.find(node))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        roots.sort_unstable();
+        let mut signature = roots
+            .into_iter()
+            .map(|root| {
+                let mut domain = quotient.domains[root].iter().copied().collect::<Vec<_>>();
+                domain.sort_unstable();
+                (quotient.members[root].clone(), domain)
+            })
+            .collect::<Vec<_>>();
+        signature.sort_unstable();
+        signature
+    }
+
     #[cfg(test)]
     fn propagate_forced_face_equations(&self, quotient: &mut MeshQuotient) -> bool {
         self.propagate_forced_face_equations_from(quotient, None)
@@ -4540,44 +4572,58 @@ impl MeshSelectionSearch<'_> {
                 };
                 choice.clone()
             } else {
-                let structural_option_bound =
-                    self.assignments[face]
-                        .iter()
-                        .try_fold(0usize, |total, assignment| {
-                            let unknown = assignment
-                                .boundaries
-                                .iter()
-                                .flatten()
-                                .filter(|use_| use_.reversed.is_none())
-                                .count();
-                            total.checked_add(1usize.checked_shl(unknown as u32)?)
-                        });
-                if structural_option_bound.is_none_or(|bound| bound > MAX_FACE_EQUATION_OPTIONS) {
-                    let Some(common) =
-                        unconditional_corner_equations(quotient, &self.assignments[face])
-                    else {
-                        return false;
-                    };
-                    common.into_iter().collect()
+                let cache_key = (face, self.face_projection_signature(face, quotient));
+                let cached = self.face_equation_cache.borrow().get(&cache_key).cloned();
+                if let Some(cached) = cached {
+                    cached
                 } else {
-                    let mut common = None::<HashSet<[usize; 2]>>;
-                    for assignment in &self.assignments[face] {
-                        let Some(assignment_common) =
-                            common_assignment_equations(quotient, assignment, self.edge_candidates)
+                    let structural_option_bound =
+                        self.assignments[face]
+                            .iter()
+                            .try_fold(0usize, |total, assignment| {
+                                let unknown = assignment
+                                    .boundaries
+                                    .iter()
+                                    .flatten()
+                                    .filter(|use_| use_.reversed.is_none())
+                                    .count();
+                                total.checked_add(1usize.checked_shl(unknown as u32)?)
+                            });
+                    let equations: Vec<[usize; 2]> = if structural_option_bound
+                        .is_none_or(|bound| bound > MAX_FACE_EQUATION_OPTIONS)
+                    {
+                        let Some(common) =
+                            unconditional_corner_equations(quotient, &self.assignments[face])
                         else {
-                            continue;
+                            return false;
                         };
-                        match &mut common {
-                            Some(common) => {
-                                common.retain(|equation| assignment_common.contains(equation));
+                        common.into_iter().collect()
+                    } else {
+                        let mut common = None::<HashSet<[usize; 2]>>;
+                        for assignment in &self.assignments[face] {
+                            let Some(assignment_common) = common_assignment_equations(
+                                quotient,
+                                assignment,
+                                self.edge_candidates,
+                            ) else {
+                                continue;
+                            };
+                            match &mut common {
+                                Some(common) => {
+                                    common.retain(|equation| assignment_common.contains(equation));
+                                }
+                                None => common = Some(assignment_common),
                             }
-                            None => common = Some(assignment_common),
                         }
-                    }
-                    let Some(common) = common else {
-                        return false;
+                        let Some(common) = common else {
+                            return false;
+                        };
+                        common.into_iter().collect()
                     };
-                    common.into_iter().collect()
+                    self.face_equation_cache
+                        .borrow_mut()
+                        .insert(cache_key, equations.clone());
+                    equations
                 }
             };
             for [left, right] in equations {
@@ -5091,6 +5137,7 @@ pub fn parse_standard_mesh_endpoint_candidates(
         solution: None,
         ambiguous: false,
         exhausted: false,
+        face_equation_cache: RefCell::default(),
     };
     search.search(&quotient);
     (!search.ambiguous && !search.exhausted)
@@ -5676,7 +5723,7 @@ impl UnionFind {
 
 #[cfg(test)]
 mod motif_tests {
-    use std::collections::HashSet;
+    use std::{cell::RefCell, collections::HashSet};
 
     use cadmpeg_ir::topology::BodyKind;
 
@@ -6212,6 +6259,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
 
         assert!(!search.selected_orientable());
@@ -6259,6 +6307,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
         assert!(!search.fixed_remaining_faces_are_orientable());
         search.selected[1] = Some((0, vec![vec![false, true]]));
@@ -6301,6 +6350,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
 
         assert!(!search.fixed_remaining_faces_are_orientable());
@@ -6372,6 +6422,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
@@ -6424,6 +6475,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
@@ -6464,6 +6516,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
@@ -6499,6 +6552,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
@@ -6534,6 +6588,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
@@ -6584,6 +6639,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
         let quotient = MeshQuotient {
             union: UnionFind::new(2),
@@ -6640,6 +6696,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
         let quotient = MeshQuotient {
             union: UnionFind::new(4),
@@ -6696,6 +6753,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(6),
@@ -6743,6 +6801,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(6),
@@ -6788,6 +6847,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(6),
@@ -6834,6 +6894,7 @@ mod motif_tests {
             solution: None,
             ambiguous: false,
             exhausted: false,
+            face_equation_cache: RefCell::default(),
         };
         let mut quotient = MeshQuotient {
             union: UnionFind::new(26),
@@ -6847,6 +6908,61 @@ mod motif_tests {
         assert_eq!(quotient.root_count(), 13);
         assert!(search.propagate_forced_face_equations(&mut quotient));
         assert_eq!(quotient.root_count(), 1);
+    }
+
+    #[test]
+    fn face_equation_cache_ignores_unrelated_quotient_components() {
+        let assignments = vec![vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 1,
+                    reversed: None,
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 1,
+                    end: 0,
+                    reversed: None,
+                },
+            ]],
+        }]];
+        let candidates = vec![vec![]; 3];
+        let search = MeshSelectionSearch {
+            assignments: &assignments,
+            possible_face_equations: possible_face_equations(&assignments),
+            possible_face_choices: possible_face_choices(
+                &assignments,
+                &possible_face_equations(&assignments),
+            ),
+            face_work: vec![Some(1)],
+            edge_candidates: &candidates,
+            edge_rows: &[],
+            vertex_points: &[],
+            selected: vec![None],
+            states: 0,
+            solution: None,
+            ambiguous: false,
+            exhausted: false,
+            face_equation_cache: RefCell::default(),
+        };
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(6),
+            domains: (0..6).map(|_| HashSet::from([0, 1, 2])).collect(),
+            members: (0..6).map(|node| vec![node]).collect(),
+        };
+
+        assert!(search.propagate_forced_face_equations(&mut quotient));
+        assert_eq!(search.face_equation_cache.borrow().len(), 1);
+        quotient.merge(4, 5).expect("unrelated component merge");
+        assert!(search.propagate_forced_face_equations(&mut quotient));
+        assert_eq!(search.face_equation_cache.borrow().len(), 1);
+        quotient
+            .merge(0, 4)
+            .expect("component joined to a face port");
+        assert!(search.propagate_forced_face_equations(&mut quotient));
+        assert_eq!(search.face_equation_cache.borrow().len(), 2);
     }
 
     #[test]
