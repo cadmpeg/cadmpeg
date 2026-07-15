@@ -534,10 +534,12 @@ pub fn project_parameter_design(
                 properties.insert("source_kind".into(), parameter.source_kind.clone());
             }
             let value = match parameter.unit.as_deref() {
-                Some("mm") => Some(ParameterValue::Length(Length(
+                Some(unit) if design_length_unit(unit) => Some(ParameterValue::Length(Length(
                     parameter.evaluated_value * 10.0,
                 ))),
-                Some("deg") => Some(ParameterValue::Angle(Angle(parameter.evaluated_value))),
+                Some(unit) if design_angle_unit(unit) => {
+                    Some(ParameterValue::Angle(Angle(parameter.evaluated_value)))
+                }
                 None => Some(ParameterValue::Real(parameter.evaluated_value)),
                 Some(unit) => {
                     properties.insert("unit".into(), unit.into());
@@ -775,9 +777,19 @@ fn assign_feature_ordinals(features: &mut [cadmpeg_ir::features::Feature]) {
 }
 
 fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Length> {
-    (parameter.unit.as_deref() == Some("mm") && parameter.evaluated_value.is_finite()).then_some(
-        cadmpeg_ir::features::Length(parameter.evaluated_value * 10.0),
-    )
+    (parameter.unit.as_deref().is_some_and(design_length_unit)
+        && parameter.evaluated_value.is_finite())
+    .then_some(cadmpeg_ir::features::Length(
+        parameter.evaluated_value * 10.0,
+    ))
+}
+
+fn design_length_unit(unit: &str) -> bool {
+    matches!(unit, "mm" | "cm" | "m" | "in" | "ft")
+}
+
+fn design_angle_unit(unit: &str) -> bool {
+    matches!(unit, "deg" | "rad")
 }
 
 fn project_chamfer(
@@ -1331,8 +1343,9 @@ fn point_plane_distance(point: Point3, origin: Point3, normal: Vector3) -> f64 {
 }
 
 fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Angle> {
-    (parameter.unit.as_deref() == Some("deg") && parameter.evaluated_value.is_finite())
-        .then_some(cadmpeg_ir::features::Angle(parameter.evaluated_value))
+    (parameter.unit.as_deref().is_some_and(design_angle_unit)
+        && parameter.evaluated_value.is_finite())
+    .then_some(cadmpeg_ir::features::Angle(parameter.evaluated_value))
 }
 
 fn valid_chamfer_spec(spec: &cadmpeg_ir::features::ChamferSpec) -> bool {
@@ -4567,7 +4580,9 @@ fn clamped_nurbs(degree: u32, knots: &[f64]) -> bool {
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
     expression
-        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .split(|character: char| {
+            !(character.is_alphanumeric() || matches!(character, '_' | '"' | '$' | '°' | 'µ'))
+        })
         .filter(|token| {
             !token.is_empty()
                 && token
@@ -9846,21 +9861,21 @@ mod relation_tests {
         bind_sketch_graph, body_bound_candidates, closed_sketch_profiles, companion_owned_interval,
         contiguous_i32_program, decode_fillet_radius_groups, design_parameter_prefix,
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
-        exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
-        find_dimension_locus_pair, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
-        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
-        neutral_sketch_point_id, next_indexed_record_offset, null_locus_dimension_definition,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, point_on_sketch_entity,
-        project_configurations, project_dimension_constraints, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
-        radial_dimension_definition, recipe_record_prefix, region_containing_points,
-        remove_dimension_frame_relations, repeated_linear_dimension,
+        exact_counted_offset, exact_offset_constraint, expression_identifiers,
+        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
+        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
+        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
+        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
+        null_locus_dimension_definition, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        point_on_sketch_entity, project_configurations, project_dimension_constraints,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design, radial_dimension_definition, recipe_record_prefix,
+        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
         resolved_face_group, two_locus_distance_dimension,
     };
@@ -9878,7 +9893,7 @@ mod relation_tests {
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, Length, ParameterValue, SketchProfileRegion,
+        Angle, FaceSelection, FeatureDefinition, Length, ParameterValue, SketchProfileRegion,
     };
     use cadmpeg_ir::ids::{EdgeId, FaceId, ShellId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -13523,6 +13538,96 @@ mod relation_tests {
             projected[1].native_ref.as_deref(),
             Some("f3d:native:parameter#half")
         );
+    }
+
+    #[test]
+    fn parameters_project_all_design_database_unit_tokens() {
+        let mut native = ["mm", "cm", "m", "in", "ft", "deg", "rad"]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, unit)| {
+                let mut parameter = parse_design_parameter(&parameter_record(
+                    None,
+                    "value",
+                    "User Parameter",
+                    Some(unit),
+                    &format!("Value{ordinal}"),
+                    1.25,
+                ))
+                .expect("generated database-unit parameter");
+                parameter.id = format!("f3d:native:parameter#{ordinal}");
+                parameter.record_index = u32::try_from(ordinal).unwrap();
+                parameter.source_ordinal = u32::try_from(ordinal).unwrap();
+                parameter
+            })
+            .collect::<Vec<_>>();
+        native.reverse();
+
+        let (_, projected) = project_parameter_design(&native, &[], &[], &[], &[], &[], &[], &[]);
+        for ordinal in 0..5 {
+            assert_eq!(
+                projected
+                    .iter()
+                    .find(|parameter| parameter.name == format!("Value{ordinal}"))
+                    .and_then(|parameter| parameter.value.clone()),
+                Some(ParameterValue::Length(Length(12.5)))
+            );
+        }
+        for ordinal in 5..7 {
+            assert_eq!(
+                projected
+                    .iter()
+                    .find(|parameter| parameter.name == format!("Value{ordinal}"))
+                    .and_then(|parameter| parameter.value.clone()),
+                Some(ParameterValue::Angle(Angle(1.25)))
+            );
+        }
+    }
+
+    #[test]
+    fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
+        let name = "Width$µ°\"A";
+        assert_eq!(
+            expression_identifiers(&format!("{name} / 2 + sin(30 deg)")).collect::<Vec<_>>(),
+            [name, "sin", "deg"]
+        );
+        let parameter = |record_index, source_ordinal, expression: &str, name: &str| {
+            let mut parameter = parse_design_parameter(&parameter_record(
+                None,
+                expression,
+                "User Parameter",
+                Some("mm"),
+                name,
+                1.0,
+            ))
+            .expect("generated symbolic-name parameter");
+            parameter.id = format!("f3d:native:parameter#{record_index}");
+            parameter.record_index = record_index;
+            parameter.source_ordinal = source_ordinal;
+            parameter
+        };
+        let (_, projected) = project_parameter_design(
+            &[
+                parameter(20, 0, "10 mm", name),
+                parameter(21, 1, &format!("{name} / 2"), "Half"),
+            ],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        let source = projected
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .expect("symbolic-name source parameter");
+        let half = projected
+            .iter()
+            .find(|parameter| parameter.name == "Half")
+            .expect("dependent parameter");
+        assert_eq!(half.dependencies, [source.id.clone()]);
     }
 
     #[test]
