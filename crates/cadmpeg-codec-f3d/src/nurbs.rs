@@ -1276,6 +1276,7 @@ pub struct EmbeddedLawSurface {
     pub(crate) parameter_ranges: Option<[[f64; 2]; 2]>,
     pub(crate) primary: EmbeddedLawFormula,
     pub(crate) additional: Vec<EmbeddedLawFormula>,
+    pub(crate) tail: cadmpeg_ir::geometry::LawSurfaceTail,
     pub(crate) discontinuities: [Vec<f64>; 6],
 }
 
@@ -2225,12 +2226,72 @@ fn decode_law_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
     let additional = (0..count)
         .map(|_| decode_law_formula(span, &mut position, int_width))
         .collect::<Option<Vec<_>>>()?;
-    if take_tagged_int(span, &mut position, 0x15, int_width)? != 0 {
-        return None;
-    }
-    let cache = decode_surface_block(span, position, int_width)?;
-    position = cache.end;
-    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let selector = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let (tail, cache_fit_tolerance) = match selector {
+        0 => {
+            let cache = decode_surface_block(span, position, int_width)?;
+            position = cache.end;
+            (
+                cadmpeg_ir::geometry::LawSurfaceTail::Full,
+                Some(take_f64(span, &mut position)? * LEN_TO_MM),
+            )
+        }
+        1 => {
+            let parameters = [
+                take_float_array(span, &mut position, int_width)?,
+                take_float_array(span, &mut position, int_width)?,
+            ];
+            let fit_tolerance = take_f64(span, &mut position)? * LEN_TO_MM;
+            let closures = [
+                take_tagged_int(span, &mut position, 0x15, int_width)?,
+                take_tagged_int(span, &mut position, 0x15, int_width)?,
+            ];
+            let singularities = [
+                take_tagged_int(span, &mut position, 0x15, int_width)?,
+                take_tagged_int(span, &mut position, 0x15, int_width)?,
+            ];
+            (
+                cadmpeg_ir::geometry::LawSurfaceTail::Summary {
+                    parameters,
+                    fit_tolerance,
+                    closures,
+                    singularities,
+                },
+                None,
+            )
+        }
+        2 => {
+            let parameter_ranges = [
+                [
+                    take_f64(span, &mut position)?,
+                    take_f64(span, &mut position)?,
+                ],
+                [
+                    take_f64(span, &mut position)?,
+                    take_f64(span, &mut position)?,
+                ],
+            ];
+            let closures = [
+                take_tagged_int(span, &mut position, 0x15, int_width)?,
+                take_tagged_int(span, &mut position, 0x15, int_width)?,
+            ];
+            let singularities = [
+                take_tagged_int(span, &mut position, 0x15, int_width)?,
+                take_tagged_int(span, &mut position, 0x15, int_width)?,
+            ];
+            (
+                cadmpeg_ir::geometry::LawSurfaceTail::None {
+                    parameter_ranges,
+                    closures,
+                    singularities,
+                },
+                None,
+            )
+        }
+        3 => (cadmpeg_ir::geometry::LawSurfaceTail::Historical, None),
+        4 => (cadmpeg_ir::geometry::LawSurfaceTail::Optimal, None),
+        _ => return None,
+    };
     let discontinuities = [
         take_float_array(span, &mut position, int_width)?,
         take_float_array(span, &mut position, int_width)?,
@@ -2244,6 +2305,7 @@ fn decode_law_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
             parameter_ranges,
             primary,
             additional,
+            tail,
             discontinuities,
         })),
         cache_fit_tolerance,
@@ -7147,6 +7209,62 @@ mod width_tests {
             assert_eq!(construction.additional.len(), 1);
             assert_eq!(construction.discontinuities[1], [0.2, 0.3]);
             assert_eq!(decoded.cache_fit_tolerance, Some(0.07));
+        }
+    }
+
+    #[test]
+    fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
+        for int_width in [4usize, 8] {
+            for selector in 1..=4 {
+                let mut bytes = vec![0x0f];
+                push_ident(&mut bytes, "law_spl_sur");
+                push_string(&mut bytes, "null_law");
+                push_int(&mut bytes, 0x04, 0, int_width);
+                push_int(&mut bytes, 0x15, selector, int_width);
+                match selector {
+                    1 => {
+                        for values in [&[0.0, 1.0][..], &[-1.0, 2.0][..]] {
+                            push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                            for value in values {
+                                push_f64(&mut bytes, *value);
+                            }
+                        }
+                        push_f64(&mut bytes, 0.008);
+                        for value in [0, 2, 1, 3] {
+                            push_int(&mut bytes, 0x15, value, int_width);
+                        }
+                    }
+                    2 => {
+                        for value in [-0.5, 1.5, -2.0, 2.0] {
+                            push_f64(&mut bytes, value);
+                        }
+                        for value in [1, 2, 0, 4] {
+                            push_int(&mut bytes, 0x15, value, int_width);
+                        }
+                    }
+                    3 | 4 => {}
+                    _ => unreachable!(),
+                }
+                for _ in 0..6 {
+                    push_int(&mut bytes, 0x04, 0, int_width);
+                }
+                bytes.push(0x10);
+
+                let decoded = decode_law_spl_sur(&bytes, int_width)
+                    .unwrap_or_else(|| panic!("law tail {selector} at integer width {int_width}"));
+                let DecodedProceduralSurfaceDefinition::Law(construction) = decoded.definition
+                else {
+                    panic!("expected law surface")
+                };
+                assert_eq!(decoded.cache_fit_tolerance, None);
+                assert!(matches!(
+                    (&construction.tail, selector),
+                    (cadmpeg_ir::geometry::LawSurfaceTail::Summary { .. }, 1)
+                        | (cadmpeg_ir::geometry::LawSurfaceTail::None { .. }, 2)
+                        | (cadmpeg_ir::geometry::LawSurfaceTail::Historical, 3)
+                        | (cadmpeg_ir::geometry::LawSurfaceTail::Optimal, 4)
+                ));
+            }
         }
     }
 

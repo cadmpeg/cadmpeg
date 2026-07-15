@@ -1583,8 +1583,42 @@ pub struct LawSurfaceConstruction {
     pub primary: LawFormula,
     /// Ordered counted auxiliary laws referenced by the primary law.
     pub additional: Vec<LawFormula>,
+    /// Standard surface-tail mode and its mode-specific fields.
+    pub tail: LawSurfaceTail,
     /// Six ordered discontinuity arrays from the standard surface tail.
     pub discontinuities: [Vec<f64>; 6],
+}
+
+/// Mode-specific payload of a native law surface's standard surface tail.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LawSurfaceTail {
+    /// Selector 0; the surface record carries a solved NURBS cache.
+    Full,
+    /// Selector 1; compact parameter summaries replace the solved cache.
+    Summary {
+        /// Ordered U and V parameter summaries.
+        parameters: [Vec<f64>; 2],
+        /// Native model-space fit tolerance.
+        fit_tolerance: f64,
+        /// Ordered U and V closure enums.
+        closures: [i64; 2],
+        /// Ordered U and V singularity enums.
+        singularities: [i64; 2],
+    },
+    /// Selector 2; exact parameter intervals and boundary classifications.
+    None {
+        /// Ordered U and V parameter intervals.
+        parameter_ranges: [[f64; 2]; 2],
+        /// Ordered U and V closure enums.
+        closures: [i64; 2],
+        /// Ordered U and V singularity enums.
+        singularities: [i64; 2],
+    },
+    /// Selector 3; no mode-specific payload.
+    Historical,
+    /// Selector 4; no mode-specific payload.
+    Optimal,
 }
 
 /// One native law-expression node.

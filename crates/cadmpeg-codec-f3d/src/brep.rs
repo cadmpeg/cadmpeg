@@ -2217,6 +2217,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         parameter_ranges: embedded.parameter_ranges,
                                         primary,
                                         additional,
+                                        tail: embedded.tail,
                                         discontinuities: embedded.discontinuities,
                                     },
                                 ),
@@ -4959,6 +4960,10 @@ fn procedural_surface_definition_is_exact_carrier(
         nurbs::DecodedProceduralSurfaceDefinition::Extrusion { .. }
         | nurbs::DecodedProceduralSurfaceDefinition::Helix(_)
         | nurbs::DecodedProceduralSurfaceDefinition::VertexBlend(_) => true,
+        nurbs::DecodedProceduralSurfaceDefinition::Law(construction) => !matches!(
+            construction.tail,
+            cadmpeg_ir::geometry::LawSurfaceTail::Full
+        ),
         nurbs::DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(construction) => matches!(
             construction.shape,
             nurbs::EmbeddedScaledCompoundLoftShape::None { .. }

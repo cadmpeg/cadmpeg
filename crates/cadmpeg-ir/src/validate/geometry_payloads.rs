@@ -684,6 +684,34 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     formula.variables.iter().all(|value| law_valid(value, 0))
                 }
             };
+            let tail_valid = match &construction.tail {
+                crate::geometry::LawSurfaceTail::Full => procedural
+                    .cache_fit_tolerance
+                    .is_some_and(|value| value.is_finite() && value >= 0.0),
+                crate::geometry::LawSurfaceTail::Summary {
+                    parameters,
+                    fit_tolerance,
+                    ..
+                } => {
+                    procedural.cache_fit_tolerance.is_none()
+                        && fit_tolerance.is_finite()
+                        && *fit_tolerance >= 0.0
+                        && parameters.iter().flatten().all(|value| value.is_finite())
+                }
+                crate::geometry::LawSurfaceTail::None {
+                    parameter_ranges, ..
+                } => {
+                    procedural.cache_fit_tolerance.is_none()
+                        && parameter_ranges
+                            .iter()
+                            .flatten()
+                            .all(|value| value.is_finite())
+                }
+                crate::geometry::LawSurfaceTail::Historical
+                | crate::geometry::LawSurfaceTail::Optimal => {
+                    procedural.cache_fit_tolerance.is_none()
+                }
+            };
             let valid = construction
                 .parameter_ranges
                 .iter()
@@ -691,6 +719,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 .flatten()
                 .chain(construction.discontinuities.iter().flatten())
                 .all(|value| value.is_finite())
+                && tail_valid
                 && formula_valid(&construction.primary)
                 && construction.additional.iter().all(formula_valid);
             if !valid {

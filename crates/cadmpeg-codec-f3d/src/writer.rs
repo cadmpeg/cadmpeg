@@ -6013,7 +6013,7 @@ fn native_procedural_surface(
             encode_native_skin_surface(bytes, target, procedural, construction, solved_cache)?;
         }
         ProceduralSurfaceDefinition::Law { construction } => {
-            encode_native_law_surface(bytes, target, procedural, construction, solved_cache)?;
+            encode_native_law_surface(bytes, target, procedural, construction, Some(solved_cache))?;
         }
         ProceduralSurfaceDefinition::Net { construction } => {
             encode_native_net_surface(bytes, target, procedural, construction, solved_cache)?;
@@ -7062,6 +7062,15 @@ fn native_cacheless_procedural_surface(
             return Ok(true);
         }
     }
+    if let ProceduralSurfaceDefinition::Law { construction } = &procedural.definition {
+        if !matches!(
+            construction.tail,
+            cadmpeg_ir::geometry::LawSurfaceTail::Full
+        ) {
+            encode_native_law_surface(bytes, target, procedural, construction, None)?;
+            return Ok(true);
+        }
+    }
     if let ProceduralSurfaceDefinition::VertexBlend { construction } = &procedural.definition {
         encode_native_vertex_blend(bytes, target, construction)?;
         return Ok(true);
@@ -7193,11 +7202,8 @@ fn encode_native_law_surface(
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     construction: &cadmpeg_ir::geometry::LawSurfaceConstruction,
-    solved_cache: &NurbsSurface,
+    solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
-    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
-        CodecError::Malformed("law surface requires a native cache-fit tolerance".into())
-    })?;
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "law_spl_sur")?;
@@ -7218,9 +7224,51 @@ fn encode_native_law_surface(
     for formula in &construction.additional {
         native_law_formula(bytes, target, formula)?;
     }
-    native_enum(bytes, 0);
-    native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance / 10.0);
+    match &construction.tail {
+        cadmpeg_ir::geometry::LawSurfaceTail::Full => {
+            let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+                CodecError::Malformed("full law surface requires a cache-fit tolerance".into())
+            })?;
+            native_enum(bytes, 0);
+            native_nurbs_surface(
+                bytes,
+                solved_cache.ok_or_else(|| {
+                    CodecError::Malformed("full law surface requires a solved cache".into())
+                })?,
+            )?;
+            native_f64(bytes, cache_fit_tolerance / 10.0);
+        }
+        cadmpeg_ir::geometry::LawSurfaceTail::Summary {
+            parameters,
+            fit_tolerance,
+            closures,
+            singularities,
+        } => {
+            native_enum(bytes, 1);
+            for values in parameters {
+                native_compound_loft_float_array(bytes, values)?;
+            }
+            native_f64(bytes, fit_tolerance / 10.0);
+            for value in closures.iter().chain(singularities) {
+                native_enum(bytes, *value);
+            }
+        }
+        cadmpeg_ir::geometry::LawSurfaceTail::None {
+            parameter_ranges,
+            closures,
+            singularities,
+        } => {
+            native_enum(bytes, 2);
+            for value in parameter_ranges.iter().flatten() {
+                native_f64(bytes, *value);
+            }
+            for value in closures.iter().chain(singularities) {
+                native_enum(bytes, *value);
+            }
+        }
+        cadmpeg_ir::geometry::LawSurfaceTail::Historical => native_enum(bytes, 3),
+        cadmpeg_ir::geometry::LawSurfaceTail::Optimal => native_enum(bytes, 4),
+    }
     for values in &construction.discontinuities {
         native_compound_loft_float_array(bytes, values)?;
     }

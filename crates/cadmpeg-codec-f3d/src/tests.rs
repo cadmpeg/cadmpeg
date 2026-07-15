@@ -3462,7 +3462,7 @@ fn synthetic_skin_spl_sur_smbh(law_case: u8, expanded: bool) -> Vec<u8> {
     bytes
 }
 
-fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool) -> Vec<u8> {
+fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool, tail_selector: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -3492,9 +3492,33 @@ fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool) -> Vec<u8> {
     t_vec(&mut surface, [1.0, 2.0, 3.0]);
     t_long(&mut surface, 1);
     surface.push(0x15);
-    surface.extend_from_slice(&0i64.to_le_bytes());
-    surface.extend_from_slice(&generated_surface_block());
-    t_dbl(&mut surface, 0.007);
+    surface.extend_from_slice(&tail_selector.to_le_bytes());
+    match tail_selector {
+        0 => {
+            surface.extend_from_slice(&generated_surface_block());
+            t_dbl(&mut surface, 0.007);
+        }
+        1 => {
+            append_generated_float_array(&mut surface, &[0.0, 0.5, 1.0]);
+            append_generated_float_array(&mut surface, &[-1.0, 1.0]);
+            t_dbl(&mut surface, 0.008);
+            for value in [0i64, 2, 1, 3] {
+                surface.push(0x15);
+                surface.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        2 => {
+            for value in [-0.5, 1.5, -2.0, 2.0] {
+                t_dbl(&mut surface, value);
+            }
+            for value in [1i64, 2, 0, 4] {
+                surface.push(0x15);
+                surface.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        3 | 4 => {}
+        _ => panic!("invalid law tail selector"),
+    }
     for values in [
         &[0.1][..],
         &[0.2, 0.3][..],
@@ -14002,6 +14026,7 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
                 &mut Cursor::new(f3d_with_smbh(&synthetic_law_spl_sur_smbh(
                     name,
                     legacy_ranges,
+                    0,
                 ))),
                 &DecodeOptions::default(),
             )
@@ -14053,6 +14078,80 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
             legacy_ranges.then_some([[-1.0, 2.0], [-3.0, 4.0]])
         );
         assert_eq!(construction.additional.len(), 1);
+    }
+}
+
+#[test]
+fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
+    use cadmpeg_ir::geometry::{LawSurfaceTail, ProceduralSurfaceDefinition};
+
+    for selector in 1..=4 {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_law_spl_sur_smbh(
+                    "law_spl_sur",
+                    false,
+                    selector,
+                ))),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let ProceduralSurfaceDefinition::Law { construction } =
+            &decoded.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected law surface")
+        };
+        assert!(match (&construction.tail, selector) {
+            (
+                LawSurfaceTail::Summary {
+                    parameters,
+                    fit_tolerance,
+                    closures: [0, 2],
+                    singularities: [1, 3],
+                },
+                1,
+            ) => parameters[0] == [0.0, 0.5, 1.0] && *fit_tolerance == 0.08,
+            (
+                LawSurfaceTail::None {
+                    parameter_ranges: [[-0.5, 1.5], [-2.0, 2.0]],
+                    closures: [1, 2],
+                    singularities: [0, 4],
+                },
+                2,
+            ) => true,
+            (LawSurfaceTail::Historical, 3) | (LawSurfaceTail::Optimal, 4) => true,
+            _ => false,
+        });
+        assert_eq!(
+            decoded.ir.model.procedural_surfaces[0].cache_fit_tolerance,
+            None
+        );
+        assert!(matches!(
+            decoded
+                .ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == decoded.ir.model.procedural_surfaces[0].surface)
+                .map(|surface| &surface.geometry),
+            Some(cadmpeg_ir::geometry::SurfaceGeometry::Procedural { .. })
+        ));
+        let expected_tail = construction.tail.clone();
+
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let mut encoded = Vec::new();
+        F3dCodec.encode(&source_less, &mut encoded).unwrap();
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap();
+        let ProceduralSurfaceDefinition::Law { construction } =
+            &round_trip.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected round-trip law surface")
+        };
+        assert_eq!(construction.tail, expected_tail);
     }
 }
 
