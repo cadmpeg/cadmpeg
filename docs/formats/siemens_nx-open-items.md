@@ -24,6 +24,7 @@ This document records unresolved NX `.prt` byte semantics.
 
 ## Assembly and material data
 
+- The semantic role of each nonzero `/Root/UG_PART/DisplayJT` outer-index row value is unspecified.
 - Assembly occurrence placement semantics are unspecified. `hostglobalvariables` stores expression values, including pattern angles and counts; metric radii and base frames lack defined locations.
 - The occurrence-handle to child-`.prt` binding is unspecified.
 - The field boundaries and roles of residual `EXTREFSTREAM` tail bytes are unspecified. These bytes are `0x00` padding and small markers interleaved with `e0 + handle:u32` persistent-handle tokens and `0xC0..0xCF + 28-bit-ref` tokens.

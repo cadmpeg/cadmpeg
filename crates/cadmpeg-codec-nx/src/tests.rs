@@ -54,7 +54,7 @@ fn display_jt_index_requires_every_declared_header() {
     assert_eq!(indices[0].version, 9);
     assert_eq!(indices[0].declared_count, 1);
     assert_eq!(indices[0].rows[0].header_offset, 28);
-    assert_eq!(indices[0].rows[0].logical_byte_len, 100);
+    assert_eq!(indices[0].rows[0].value, 100);
 
     let mut malformed = container;
     malformed.data[28] = b'X';

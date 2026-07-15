@@ -25,7 +25,7 @@ pub struct DisplayJtIndex {
     pub source_offset: u64,
 }
 
-/// One physical-header offset and logical byte length in a `DisplayJT` index.
+/// One physical-header offset and associated value in a `DisplayJT` index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DisplayJtIndexRow {
     /// Globally unique row identity.
@@ -34,8 +34,8 @@ pub struct DisplayJtIndexRow {
     pub ordinal: u32,
     /// Payload-relative physical JT-header offset.
     pub header_offset: u32,
-    /// Declared logical JT document length.
-    pub logical_byte_len: u64,
+    /// Nonzero serialized row value whose semantic role is unassigned.
+    pub value: u64,
     /// Absolute source offset of the row.
     pub source_offset: u64,
 }
@@ -68,10 +68,10 @@ pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
             let mut previous_header_offset = None;
             for ordinal in 0..row_count {
                 let row_offset = 8 + ordinal * 16;
-                let logical_byte_len = word_swapped_u64(payload.get(row_offset..row_offset + 8)?)?;
+                let value = word_swapped_u64(payload.get(row_offset..row_offset + 8)?)?;
                 let header_offset =
                     word_swapped_u64(payload.get(row_offset + 8..row_offset + 16)?)?;
-                if logical_byte_len == 0 || header_offset > u64::from(u32::MAX) {
+                if value == 0 || header_offset > u64::from(u32::MAX) {
                     return None;
                 }
                 let header_offset_usize = usize::try_from(header_offset).ok()?;
@@ -88,7 +88,7 @@ pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
                     id: format!("nx:display-jt:index#{index_ordinal}-row-{ordinal}"),
                     ordinal: ordinal as u32,
                     header_offset: header_offset as u32,
-                    logical_byte_len,
+                    value,
                     source_offset: source_offset + row_offset as u64,
                 });
             }
