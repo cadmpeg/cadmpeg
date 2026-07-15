@@ -4,7 +4,7 @@
 use crate::datum::DatumPlane;
 use crate::feature::{
     AffectedIdKind, BinaryFlag, FeatureAffectedIds, FeatureDefinition, FeatureEntityTable,
-    FeatureGeometryTable, FeatureGeometryTableKind, FeatureSegmentKind,
+    FeatureGeometryTable, FeatureGeometryTableKind, FeatureParameterFrameKind, FeatureSegmentKind,
 };
 use crate::surface::{
     OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceKind, SurfaceRow,
@@ -79,6 +79,24 @@ fn plane_equation(
             let plane = outline_planes.iter().find(|plane| plane.surface_id == id)?;
             Some((plane.normal, dot(plane.normal, plane.origin)))
         })
+}
+
+fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<([f64; 3], f64)> {
+    let frames = definition
+        .parameter_frames
+        .iter()
+        .filter(|frame| frame.kind == FeatureParameterFrameKind::LocalSystem)
+        .collect::<Vec<_>>();
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    let values: [f64; 12] = frame.decoded_values.clone()?.try_into().ok()?;
+    let raw_normal: [f64; 3] = values[6..9].try_into().ok()?;
+    let magnitude = dot(raw_normal, raw_normal).sqrt();
+    (magnitude > 1e-12).then_some(())?;
+    let normal = scale(raw_normal, magnitude.recip());
+    let origin: [f64; 3] = values[9..12].try_into().ok()?;
+    Some((normal, dot(normal, origin)))
 }
 
 fn generated_datum_plane_equation(
@@ -337,6 +355,7 @@ pub(crate) fn resolve(
             sources.model_planes,
             sources.outline_planes,
         )
+        .or_else(|| definition_local_plane_equation(definition))
         .or_else(|| {
             generated_section_cap_plane_equation(
                 sketch_id,
@@ -439,8 +458,8 @@ pub(crate) fn resolve(
 mod tests {
     use super::*;
     use crate::feature::{
-        FeatureSection3d, FeatureSectionOrientation, FeatureSectionPoint, FeatureSegment,
-        FeatureSegmentTable, FeatureVariableTable,
+        FeatureParameterFrame, FeatureSection3d, FeatureSectionOrientation, FeatureSectionPoint,
+        FeatureSegment, FeatureSegmentTable, FeatureVariableTable,
     };
 
     fn datum(id: u32, normal: [f64; 3], offset: f64) -> DatumPlane {
@@ -452,6 +471,52 @@ mod tests {
             corners: [[Some(0.0); 3]; 2],
             offset_in_payload: usize::try_from(id).expect("fixture id fits usize"),
         }
+    }
+
+    fn blank_definition() -> FeatureDefinition {
+        FeatureDefinition {
+            id: 42,
+            owner_feature_id: Some(42),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        }
+    }
+
+    #[test]
+    fn unique_local_system_supplies_section_plane_equation() {
+        let mut definition = blank_definition();
+        definition.parameter_frames = vec![FeatureParameterFrame {
+            kind: FeatureParameterFrameKind::LocalSystem,
+            body: Vec::new(),
+            decoded_values: Some(vec![
+                0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 4.0, 5.0,
+            ]),
+            offset: 1,
+        }];
+
+        assert_eq!(
+            definition_local_plane_equation(&definition),
+            Some(([1.0, 0.0, 0.0], 3.0))
+        );
+
+        definition.parameter_frames.push(FeatureParameterFrame {
+            kind: FeatureParameterFrameKind::LocalSystem,
+            body: Vec::new(),
+            decoded_values: Some(vec![0.0; 12]),
+            offset: 2,
+        });
+        assert_eq!(definition_local_plane_equation(&definition), None);
     }
 
     #[test]

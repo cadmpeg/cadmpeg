@@ -937,6 +937,10 @@ Feature-definition `local_sys f9 04 03` and `transf f9 04 03` bodies use the
 twelve-slot local-system language. `18 e5` expands to `[0, 1, 0]`; `18 10`,
 `18 e4`, `18 e6`, and bare `10` each occupy one zero slot. A frame is numeric
 only when this language consumes the complete bounded body as twelve slots.
+The four consecutive triples are the local x axis, local y axis, local z axis,
+and origin. When a definition contains exactly one complete `local_sys`, its
+local z axis and origin define the section-plane equation. A zero-length local
+z axis does not define a plane.
 
 A class-923 feature with exactly one resolved plane carrier defines that datum plane by the carrier's model-space origin, normal, and in-plane reference direction.
 
