@@ -7970,6 +7970,9 @@ fn transfer_resolved_sketches(
             profiles,
             native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
         });
+        if owned_section_feature_id(scan, definition.id).is_some() {
+            continue;
+        }
         let feature_id = IrFeatureId(format!("creo:model:sketch_feature#{}", definition.id));
         annotate(
             annotations,
@@ -8861,8 +8864,25 @@ fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
         914 => Some("Chamfer"),
         916 | 917 => Some("Protrusion"),
         923 => Some("Datum Plane"),
+        926 => Some("Section"),
         _ => None,
     }
+}
+
+fn owned_section_feature_id(scan: &ContainerScan, definition_id: u32) -> Option<u32> {
+    let transforms = scan
+        .feature_section_transforms
+        .iter()
+        .filter(|transform| transform.definition_id == definition_id)
+        .collect::<Vec<_>>();
+    let [transform] = transforms.as_slice() else {
+        return None;
+    };
+    let feature_id = transform.feature_id?;
+    scan.feature_rows
+        .iter()
+        .any(|row| row.feature_id == feature_id && row.root_schema_class == Some(926))
+        .then_some(feature_id)
 }
 
 fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String, String> {
@@ -9233,6 +9253,27 @@ fn schema_feature_definition(
     schema_class: u32,
     kind: &str,
 ) -> IrFeatureDefinition {
+    if schema_class == 926 {
+        let transforms = scan
+            .feature_section_transforms
+            .iter()
+            .filter(|transform| transform.feature_id == Some(feature_id))
+            .collect::<Vec<_>>();
+        let sketch = if let [transform] = transforms.as_slice() {
+            let sketch = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
+            ir.model
+                .sketches
+                .iter()
+                .any(|candidate| candidate.id == sketch)
+                .then_some(sketch)
+        } else {
+            None
+        };
+        return IrFeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
+            sketch,
+        };
+    }
     if schema_class == 911 {
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
         let solved = simple_hole_geometry(scan, feature_id);

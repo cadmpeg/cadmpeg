@@ -914,7 +914,12 @@ radius only when all nonzero gaps have the same magnitude. When every generated
 cylinder carrier is placed, their common positive radius independently defines
 the constant fillet radius; differing radii define no constant-radius result.
 
-The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, and class 923 is a datum-plane definition. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
+The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, class 923 is a datum-plane definition, and class 926 is a saved section. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
+
+A class-926 row with one owned section transform is the history node for that
+planar sketch. The transform's definition identifier selects the neutral sketch
+and the row identifier remains the feature identifier. A definition without
+this unique row-and-transform join uses a definition-scoped sketch history node.
 
 Every byte-bounded `AllFeatur` row denotes a history feature independently of
 whether the feature owns a materialized surface row. A recognized root schema
