@@ -54,6 +54,9 @@ tempfile = "3"
 
 [profile.release]
 lto = "thin"
+# Codecs parse untrusted files; a trapped overflow beats a wrapped offset
+# that silently changes which bytes a decoder reads.
+overflow-checks = true
 
 # The profile that 'dist' will build with
 [profile.dist]
@@ -102,3 +105,12 @@ unwrap_used = "warn"
 dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"
+
+# Decoder hardening: raw slice indexing and unchecked offset arithmetic on
+# untrusted payloads are the recurring panic/DoS class across codecs. The
+# workspace cannot deny these yet (existing decoders are wall-to-wall
+# indexing), so new decoder modules opt in with
+# `#![warn(clippy::indexing_slicing, clippy::arithmetic_side_effects)]`
+# and read through `cadmpeg_ir::cursor::Cursor` / `cadmpeg_ir::{le, be}`.
+# Declared element counts must pass `cadmpeg_ir::cursor::bounded_len`
+# (or `Cursor::counted`) before any allocation.
