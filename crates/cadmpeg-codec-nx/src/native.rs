@@ -10,6 +10,99 @@ use cadmpeg_ir::hash::sha256_hex;
 use crate::container::Container;
 use crate::parasolid::{Stream, StreamKind};
 
+/// Outer index of the embedded JT display-model stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtIndex {
+    /// Globally unique index identity.
+    pub id: String,
+    /// Serialized index version.
+    pub version: u32,
+    /// Declared number of indexed JT documents.
+    pub declared_count: u32,
+    /// Indexed document rows in serialized order.
+    pub rows: Vec<DisplayJtIndexRow>,
+    /// Absolute source offset of the `DisplayJT` payload.
+    pub source_offset: u64,
+}
+
+/// One physical-header offset and logical byte length in a `DisplayJT` index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtIndexRow {
+    /// Globally unique row identity.
+    pub id: String,
+    /// Zero-based row index.
+    pub ordinal: u32,
+    /// Payload-relative physical JT-header offset.
+    pub header_offset: u32,
+    /// Declared logical JT document length.
+    pub logical_byte_len: u64,
+    /// Absolute source offset of the row.
+    pub source_offset: u64,
+}
+
+/// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
+pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
+    const JT_HEADER: &[u8] = b"Version ";
+    let word_swapped_u64 = |bytes: &[u8]| -> Option<u64> {
+        let high = u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?);
+        let low = u32::from_le_bytes(bytes.get(4..8)?.try_into().ok()?);
+        Some((u64::from(high) << 32) | u64::from(low))
+    };
+    container
+        .entries
+        .iter()
+        .filter(|entry| entry.name == "/Root/UG_PART/DisplayJT")
+        .enumerate()
+        .filter_map(|(index_ordinal, entry)| {
+            let (source_offset, byte_len) = entry.file_span?;
+            let start = usize::try_from(source_offset).ok()?;
+            let byte_len = usize::try_from(byte_len).ok()?;
+            let payload = container.data.get(start..start.checked_add(byte_len)?)?;
+            let version = u32::from_le_bytes(payload.get(0..4)?.try_into().ok()?);
+            let declared_count = u32::from_le_bytes(payload.get(4..8)?.try_into().ok()?);
+            let row_count = usize::try_from(declared_count).ok()?;
+            (row_count > 0).then_some(())?;
+            let table_end = 8usize.checked_add(row_count.checked_mul(16)?)?;
+            (table_end <= payload.len()).then_some(())?;
+            let mut rows = Vec::with_capacity(row_count);
+            let mut previous_header_offset = None;
+            for ordinal in 0..row_count {
+                let row_offset = 8 + ordinal * 16;
+                let logical_byte_len = word_swapped_u64(payload.get(row_offset..row_offset + 8)?)?;
+                let header_offset =
+                    word_swapped_u64(payload.get(row_offset + 8..row_offset + 16)?)?;
+                if logical_byte_len == 0 || header_offset > u64::from(u32::MAX) {
+                    return None;
+                }
+                let header_offset_usize = usize::try_from(header_offset).ok()?;
+                if header_offset_usize < table_end
+                    || !payload
+                        .get(header_offset_usize..)
+                        .is_some_and(|tail| tail.starts_with(JT_HEADER))
+                    || previous_header_offset.is_some_and(|previous| header_offset <= previous)
+                {
+                    return None;
+                }
+                previous_header_offset = Some(header_offset);
+                rows.push(DisplayJtIndexRow {
+                    id: format!("nx:display-jt:index#{index_ordinal}-row-{ordinal}"),
+                    ordinal: ordinal as u32,
+                    header_offset: header_offset as u32,
+                    logical_byte_len,
+                    source_offset: source_offset + row_offset as u64,
+                });
+            }
+            Some(DisplayJtIndex {
+                id: format!("nx:display-jt:index#{index_ordinal}"),
+                version,
+                declared_count,
+                rows,
+                source_offset,
+            })
+        })
+        .collect()
+}
+
 /// Complete typed source record for one Parasolid offset surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParasolidOffsetSurfaceRecord {

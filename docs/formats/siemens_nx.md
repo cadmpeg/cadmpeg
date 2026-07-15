@@ -159,6 +159,7 @@ an unresolved input slot remains absent without reordering the other slots.
 | `/Root/UG_PART/UG_PART`      | canonical part payload: OM sections + Parasolid partition/deltas/plain streams |
 | `/Root/FastLoad/RMFastLoad`  | fast-load object-id table → active-body membership (NX OM per-class form)      |
 | `/Root/FastLoad/JT`          | preview/JT mesh and metadata                                                   |
+| `/Root/UG_PART/DisplayJT`    | indexed embedded JT display-model documents                                   |
 | `/Root/images/preview`       | JPEG preview image                                                            |
 | `/Root/materialsTif/<name>`  | named TIFF material texture                                                    |
 | `/Root/*/ExternalReferences` | `EXTREFSTREAM`; child-part names, filesystem paths, occurrence handles         |
@@ -170,6 +171,8 @@ an unresolved input slot remains absent without reordering the other slots.
 `pdmBased`, `title`/`utf8title`, `value`/`utf8value`, `version`, and an XML schema
 type. UTF-8 title and value fields take precedence over their compatibility
 duplicates. JT and LWPA payloads are preview meshes.
+
+`/Root/UG_PART/DisplayJT` begins with `version:u32 LE, count:u32 LE`, followed by `count` rows. Each row is `logical_byte_len:word_swapped_u64, header_offset:word_swapped_u64`. A word-swapped integer stores its high and low 32-bit words in significance order, with each word encoded little-endian: `value = u32_le(first) << 32 | u32_le(second)`. The count and every logical length are nonzero. Header offsets fit `u32`, are strictly increasing, follow the complete row table, remain within the stream, and address ASCII `Version ` JT headers. The index and rows retain their exact source offsets. A missing row, zero length, oversized or nonmonotone offset, or missing JT header rejects the index atomically.
 
 `/Root/images/preview` is a JPEG marker stream beginning with SOI `ff d8`.
 The first SOF segment supplies sample precision, non-zero big-endian height and

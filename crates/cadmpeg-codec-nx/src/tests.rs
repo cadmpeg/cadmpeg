@@ -26,6 +26,41 @@ use crate::NxCodec;
 
 const MAGIC: &[u8; 8] = b"SPLMSSTR";
 
+#[test]
+fn display_jt_index_requires_every_declared_header() {
+    use crate::container::{Container, DirEntry, Region};
+
+    let mut data = Vec::new();
+    data.extend_from_slice(&9_u32.to_le_bytes());
+    data.extend_from_slice(&1_u32.to_le_bytes());
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&100_u32.to_le_bytes());
+    data.extend_from_slice(&0_u32.to_le_bytes());
+    data.extend_from_slice(&28_u32.to_le_bytes());
+    data.extend_from_slice(&[0; 4]);
+    data.extend_from_slice(b"Version 9.4 JT");
+    let container = Container {
+        data: data.clone(),
+        version: 6,
+        file_tag: 0,
+        footer_offset: 0,
+        entries: vec![DirEntry {
+            name: "/Root/UG_PART/DisplayJT".to_string(),
+            region: Region::Footer,
+            file_span: Some((0, data.len() as u64)),
+        }],
+    };
+    let indices = crate::native::display_jt_indices(&container);
+    assert_eq!(indices[0].version, 9);
+    assert_eq!(indices[0].declared_count, 1);
+    assert_eq!(indices[0].rows[0].header_offset, 28);
+    assert_eq!(indices[0].rows[0].logical_byte_len, 100);
+
+    let mut malformed = container;
+    malformed.data[28] = b'X';
+    assert!(crate::native::display_jt_indices(&malformed).is_empty());
+}
+
 fn be_f64(v: f64) -> [u8; 8] {
     v.to_be_bytes()
 }

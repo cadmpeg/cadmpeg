@@ -6302,6 +6302,7 @@ fn attach_native_object_model(
     let feature_input_blocks = crate::native::feature_input_blocks(&scan.container);
     let feature_input_block_identity_groups =
         crate::native::feature_input_block_identity_groups(&feature_input_blocks);
+    let display_jt_indices = crate::native::display_jt_indices(&scan.container);
     let feature_datum_csys_constructions =
         crate::native::feature_datum_csys_constructions(&scan.container);
     let feature_datum_csys_payloads = crate::native::feature_datum_csys_payloads(
@@ -6647,10 +6648,23 @@ fn attach_native_object_model(
         && material_texture_assets.is_empty()
         && material_texture_catalog_entries.is_empty()
         && object_sections.is_empty()
+        && display_jt_indices.is_empty()
     {
         return Ok(());
     }
     let annotation_stream = annotations.stream("nx:container");
+    for index in &display_jt_indices {
+        annotations
+            .note(&index.id, annotation_stream, index.source_offset)
+            .tag("DISPLAY_JT_INDEX");
+        annotations.exactness(&index.id, Exactness::ByteExact);
+        for row in &index.rows {
+            annotations
+                .note(&row.id, annotation_stream, row.source_offset)
+                .tag("DISPLAY_JT_INDEX_ROW");
+            annotations.exactness(&row.id, Exactness::ByteExact);
+        }
+    }
     for row in &segment_index_rows {
         annotations
             .note(&row.id, annotation_stream, row.source_offset)
@@ -7377,6 +7391,9 @@ fn attach_native_object_model(
             "feature_input_block_identity_groups",
             &feature_input_block_identity_groups,
         )?;
+    }
+    if !display_jt_indices.is_empty() {
+        namespace.set_arena("display_jt_indices", &display_jt_indices)?;
     }
     if !feature_datum_csys_constructions.is_empty() {
         namespace.set_arena(
