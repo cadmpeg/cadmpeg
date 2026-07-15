@@ -223,6 +223,11 @@ pub enum CurveGeometry {
     },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
+    /// Exact curve defined by a procedural construction in the same model.
+    Procedural {
+        /// Construction that produces this carrier.
+        construction: ProceduralCurveId,
+    },
     /// Native curve carrier whose shape is not decoded.
     Unknown {
         /// Retained native record containing the curve carrier.

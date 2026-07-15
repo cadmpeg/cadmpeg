@@ -2380,6 +2380,11 @@ pub(super) fn curve_values(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
             ))
         }
+        CurveGeometry::Procedural { .. } => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer cannot regenerate a procedural curve".into(),
+            ))
+        }
         CurveGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer cannot regenerate an opaque curve".into(),

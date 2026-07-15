@@ -377,6 +377,9 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) {
         CurveGeometry::Degenerate { point } => {
             *point = transform_point(transform, *point);
         }
+        // The semantic writer rejects procedural curve carriers before emission;
+        // the carrier itself contains no local coordinates to transform.
+        CurveGeometry::Procedural { .. } => {}
         CurveGeometry::Unknown { .. } => {}
     }
 }

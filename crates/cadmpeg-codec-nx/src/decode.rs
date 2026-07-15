@@ -342,6 +342,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 | CurveGeometry::Hyperbola { .. }
                 | CurveGeometry::Degenerate { .. }
                 | CurveGeometry::Nurbs(_)
+                | CurveGeometry::Procedural { .. }
                 | CurveGeometry::Unknown { .. } => {}
             }
             let id = CurveId(format!("nx:s{si}:crv#{ci}"));
@@ -1164,6 +1165,7 @@ fn curve_tag(geometry: &CurveGeometry) -> &'static str {
         CurveGeometry::Hyperbola { .. } => "HYPERBOLA",
         CurveGeometry::Degenerate { .. } => "DEGENERATE_CURVE",
         CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
+        CurveGeometry::Procedural { .. } => "PROCEDURAL_CURVE",
         CurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
     }
 }

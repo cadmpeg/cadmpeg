@@ -23,6 +23,7 @@ pub(super) struct IdSets {
     surfaces: HashSet<String>,
     procedural_surfaces: HashSet<String>,
     curves: HashSet<String>,
+    procedural_curves: HashSet<String>,
     pcurves: HashSet<String>,
     appearances: HashSet<String>,
     unknowns: HashSet<String>,
@@ -48,6 +49,12 @@ impl IdSets {
                 .map(|e| e.id.0.clone())
                 .collect(),
             curves: ir.model.curves.iter().map(|e| e.id.0.clone()).collect(),
+            procedural_curves: ir
+                .model
+                .procedural_curves
+                .iter()
+                .map(|e| e.id.0.clone())
+                .collect(),
             pcurves: ir.model.pcurves.iter().map(|e| e.id.0.clone()).collect(),
             appearances: ir
                 .model
@@ -301,13 +308,47 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         }
     }
     for curve in &ir.model.curves {
-        if let CurveGeometry::Unknown {
-            record: Some(unknown),
-        } = &curve.geometry
-        {
-            if !ids.unknowns.contains(&unknown.0) {
-                ref_error(findings, &curve.id.0, "unknown record", &unknown.0);
+        match &curve.geometry {
+            CurveGeometry::Procedural { construction } => {
+                if !ids.procedural_curves.contains(&construction.0) {
+                    ref_error(
+                        findings,
+                        &curve.id.0,
+                        "procedural curve construction",
+                        &construction.0,
+                    );
+                } else if !ir.model.procedural_curves.iter().any(|procedural| {
+                    procedural.id == *construction && procedural.curve == curve.id
+                }) {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "procedural curve construction `{construction}` does not produce curve `{}`",
+                            curve.id
+                        ),
+                        entity: Some(curve.id.0.clone()),
+                    });
+                } else if ir.model.procedural_curves.iter().any(|procedural| {
+                    procedural.id == *construction && procedural.cache_fit_tolerance.is_some()
+                }) {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: "construction-backed curve cannot carry a cache-fit tolerance"
+                            .into(),
+                        entity: Some(curve.id.0.clone()),
+                    });
+                }
             }
+            CurveGeometry::Unknown {
+                record: Some(unknown),
+            } => {
+                if !ids.unknowns.contains(&unknown.0) {
+                    ref_error(findings, &curve.id.0, "unknown record", &unknown.0);
+                }
+            }
+            _ => {}
         }
     }
     for procedural in &ir.model.procedural_surfaces {

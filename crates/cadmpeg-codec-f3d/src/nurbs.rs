@@ -4509,6 +4509,53 @@ pub fn decode_procedural_curve_resolving_refs(
     })
 }
 
+/// Decode an exact procedural curve construction that has no solved cache.
+pub(crate) fn decode_cacheless_procedural_curve_resolving_refs(
+    record_bytes: &[u8],
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<(String, cadmpeg_ir::geometry::ProceduralCurveDefinition)> {
+    INT_WIDTHS.into_iter().find_map(|int_width| {
+        decode_cacheless_procedural_curve_recursive(
+            record_bytes,
+            active_bytes,
+            tables,
+            &mut Vec::new(),
+            int_width,
+        )
+    })
+}
+
+fn decode_cacheless_procedural_curve_recursive(
+    bytes: &[u8],
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+    seen: &mut Vec<usize>,
+    int_width: usize,
+) -> Option<(String, cadmpeg_ir::geometry::ProceduralCurveDefinition)> {
+    if let Some(definition) = decode_helix_definition(bytes) {
+        return Some(("helix_int_cur".into(), definition));
+    }
+    let table = tables.for_width(int_width);
+    for index in subtype_refs(bytes, int_width) {
+        if seen.contains(&index) {
+            continue;
+        }
+        seen.push(index);
+        let target = *table.get(index)?;
+        if let Some(decoded) = decode_cacheless_procedural_curve_recursive(
+            subtype_span(active_bytes, target, int_width)?,
+            active_bytes,
+            tables,
+            seen,
+            int_width,
+        ) {
+            return Some(decoded);
+        }
+    }
+    None
+}
+
 fn decode_procedural_curve_recursive(
     bytes: &[u8],
     active_bytes: &[u8],

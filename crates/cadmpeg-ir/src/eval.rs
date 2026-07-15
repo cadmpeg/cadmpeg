@@ -332,6 +332,7 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
         ),
         CurveGeometry::Parabola { .. }
         | CurveGeometry::Hyperbola { .. }
+        | CurveGeometry::Procedural { .. }
         | CurveGeometry::Unknown { .. } => None,
     }
 }

@@ -714,6 +714,24 @@ fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
     }
 }
 
+fn reverse_procedural_curve_definition(
+    definition: &mut cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) {
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+        angle_range,
+        minor,
+        pitch,
+        apex_factor,
+        ..
+    } = definition
+    {
+        *angle_range = [-angle_range[1], -angle_range[0]];
+        *minor = Vector3::new(-minor.x, -minor.y, -minor.z);
+        *pitch = Vector3::new(-pitch.x, -pitch.y, -pitch.z);
+        *apex_factor = -*apex_factor;
+    }
+}
+
 fn double_at(rec: &Record, i: usize) -> Option<f64> {
     match rec.chunk(i) {
         Some(Token::Double(d)) => Some(*d),
@@ -776,6 +794,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     let mut procedural_surface_defs = HashMap::new();
     let mut curve_geo: HashMap<i64, CurveGeometry> = HashMap::new();
     let mut procedural_curve_defs = HashMap::new();
+    let mut cacheless_procedural_curve_defs = HashMap::new();
     for r in records {
         if is_analytic_surface(&r.head) {
             if let Some(g) = decode_surface(r) {
@@ -1105,6 +1124,30 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                 );
                                                 out.stats.nurbs_curves += 1;
                                                 kept_curves.insert(cv);
+                                            } else if let Some((native_kind, mut definition)) =
+                                                nurbs::decode_cacheless_procedural_curve_resolving_refs(
+                                                    record_slice(crec, bytes),
+                                                    bytes,
+                                                    &subtype_tables,
+                                                )
+                                            {
+                                                if record_reversed(crec) {
+                                                    reverse_procedural_curve_definition(
+                                                        &mut definition,
+                                                    );
+                                                }
+                                                curve_geo.insert(
+                                                    cv,
+                                                    CurveGeometry::Procedural {
+                                                        construction: format!(
+                                                            "f3d:brep:procedural_curve#{cv}"
+                                                        )
+                                                        .into(),
+                                                    },
+                                                );
+                                                cacheless_procedural_curve_defs
+                                                    .insert(cv, (native_kind, definition));
+                                                kept_curves.insert(cv);
                                             } else {
                                                 undecoded_carriers.insert(cv);
                                                 out.stats.procedural_curve_edges += 1;
@@ -1224,6 +1267,29 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                     );
                                                     kept_curves.insert(curve_index);
                                                     out.stats.nurbs_curves += 1;
+                                                } else if let Some((native_kind, mut definition)) =
+                                                    nurbs::decode_cacheless_procedural_curve_resolving_refs(
+                                                        record_slice(curve_record, bytes),
+                                                        bytes,
+                                                        &subtype_tables,
+                                                    )
+                                                {
+                                                    if record_reversed(curve_record) {
+                                                        reverse_procedural_curve_definition(
+                                                            &mut definition,
+                                                        );
+                                                    }
+                                                    entry.insert(CurveGeometry::Procedural {
+                                                        construction: format!(
+                                                            "f3d:brep:procedural_curve#{curve_index}"
+                                                        )
+                                                        .into(),
+                                                    });
+                                                    cacheless_procedural_curve_defs.insert(
+                                                        curve_index,
+                                                        (native_kind, definition),
+                                                    );
+                                                    kept_curves.insert(curve_index);
                                                 } else {
                                                     undecoded_carriers.insert(curve_index);
                                                     out.stats.procedural_curve_edges += 1;
@@ -3960,6 +4026,15 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         curve: CurveId(id(i)),
                         definition,
                         cache_fit_tolerance: procedural.15,
+                    });
+                } else if let Some((_native_kind, definition)) =
+                    cacheless_procedural_curve_defs.remove(&i)
+                {
+                    out.procedural_curves.push(ProceduralCurve {
+                        id: format!("f3d:brep:procedural_curve#{i}").into(),
+                        curve: CurveId(id(i)),
+                        definition,
+                        cache_fit_tolerance: None,
                     });
                 }
             }

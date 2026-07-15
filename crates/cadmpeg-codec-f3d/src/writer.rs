@@ -101,11 +101,22 @@ fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecE
                     procedural.id, procedural.curve
                 ))
             })?;
-        if !matches!(curve.geometry, CurveGeometry::Nurbs(_)) {
-            return Err(CodecError::NotImplemented(format!(
-                "source-less F3D procedural curve {} cannot retain its construction on non-NURBS carrier {}",
-                procedural.id, curve.id
-            )));
+        match &curve.geometry {
+            CurveGeometry::Nurbs(_) => {}
+            CurveGeometry::Procedural { construction }
+                if *construction == procedural.id && procedural.cache_fit_tolerance.is_none() => {}
+            CurveGeometry::Procedural { construction } => {
+                return Err(CodecError::Malformed(format!(
+                    "curve {} links construction {construction} but is produced by {} or carries a cache fit",
+                    curve.id, procedural.id
+                )));
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less F3D procedural curve {} cannot retain its construction on carrier {}",
+                    procedural.id, curve.id
+                )));
+            }
         }
     }
     Ok(())
@@ -2436,6 +2447,14 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                     native_nurbs_curve(&mut records, curve)?;
                 }
             }
+            CurveGeometry::Procedural { .. } => {
+                if !native_cacheless_procedural_curve(&mut records, target, &carrier.id)? {
+                    return Err(CodecError::Malformed(format!(
+                        "procedural curve carrier {} has no construction",
+                        carrier.id
+                    )));
+                }
+            }
             CurveGeometry::Degenerate { point } => {
                 native_curve_base(&mut records, "degenerate_curve")?;
                 native_point(
@@ -3220,6 +3239,14 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                     native_nurbs_curve(records, curve)?;
                 }
             }
+            CurveGeometry::Procedural { .. } => {
+                if !native_cacheless_procedural_curve(records, target, &carrier.id)? {
+                    return Err(CodecError::Malformed(format!(
+                        "procedural curve carrier {} has no construction",
+                        carrier.id
+                    )));
+                }
+            }
             CurveGeometry::Degenerate { point } => {
                 native_curve_base(records, "degenerate_curve")?;
                 native_point(records, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
@@ -3774,6 +3801,14 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 if !native_procedural_curve(&mut records, target, &carrier.id, curve)? {
                     native_curve_base(&mut records, "intcurve")?;
                     native_nurbs_curve(&mut records, curve)?;
+                }
+            }
+            CurveGeometry::Procedural { .. } => {
+                if !native_cacheless_procedural_curve(&mut records, target, &carrier.id)? {
+                    return Err(CodecError::Malformed(format!(
+                        "procedural curve carrier {} has no construction",
+                        carrier.id
+                    )));
                 }
             }
             CurveGeometry::Degenerate { point } => {
@@ -9286,6 +9321,62 @@ fn native_procedural_curve(
     native_vector(bytes, [axis.x, axis.y, axis.z]);
     native_nurbs_curve(bytes, solved_cache)?;
     write_cache_fit_tolerance(bytes);
+    bytes.push(0x10);
+    Ok(true)
+}
+
+fn native_cacheless_procedural_curve(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    curve_id: &cadmpeg_ir::ids::CurveId,
+) -> Result<bool, CodecError> {
+    let mut definitions = target
+        .model
+        .procedural_curves
+        .iter()
+        .filter(|procedural| procedural.curve == *curve_id);
+    let Some(procedural) = definitions.next() else {
+        return Ok(false);
+    };
+    if definitions.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "curve {curve_id} has multiple procedural constructions"
+        )));
+    }
+    if procedural.cache_fit_tolerance.is_some() {
+        return Err(CodecError::Malformed(format!(
+            "cacheless procedural curve {} carries a cache-fit tolerance",
+            procedural.id
+        )));
+    }
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+        angle_range,
+        center,
+        major,
+        minor,
+        pitch,
+        apex_factor,
+        axis,
+    } = &procedural.definition
+    else {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize cacheless procedural curve {}",
+            procedural.id
+        )));
+    };
+    native_curve_base(bytes, "intcurve")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "helix_int_cur")?;
+    for value in *angle_range {
+        bytes.push(0x0a);
+        native_f64(bytes, value);
+    }
+    native_point(bytes, [center.x / 10.0, center.y / 10.0, center.z / 10.0]);
+    for vector in [major, minor, pitch] {
+        native_point(bytes, [vector.x / 10.0, vector.y / 10.0, vector.z / 10.0]);
+    }
+    native_f64(bytes, *apex_factor);
+    native_vector(bytes, [axis.x, axis.y, axis.z]);
     bytes.push(0x10);
     Ok(true)
 }

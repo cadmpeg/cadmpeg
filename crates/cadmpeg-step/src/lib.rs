@@ -754,11 +754,12 @@ impl<'a> Builder<'a> {
             self.curveless_edges.insert(edge_id.to_string());
             return None;
         };
-        if self
-            .curves
-            .get(curve_id.as_str())
-            .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
-        {
+        if self.curves.get(curve_id.as_str()).is_some_and(|curve| {
+            matches!(
+                curve.geometry,
+                CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. }
+            )
+        }) {
             self.curveless_edges.insert(edge_id.to_string());
             return None;
         }

@@ -1103,6 +1103,22 @@ fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_helix_curve_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let helix = records.iter().find(|record| record.index == 19).unwrap();
+    let block = generated_curve_block();
+    let relative = bytes[helix.offset..helix.offset + helix.len]
+        .windows(block.len())
+        .position(|window| window == block)
+        .unwrap();
+    let cache = helix.offset + relative;
+    bytes.drain(cache..cache + block.len() + 9);
+    bytes
+}
+
 fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -12264,7 +12280,7 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         .expect_err("analytic carrier must not discard its procedural curve");
     assert!(error
         .to_string()
-        .contains("cannot retain its construction on non-NURBS carrier"));
+        .contains("cannot retain its construction on carrier"));
 }
 
 #[test]
@@ -15240,6 +15256,76 @@ fn decode_retains_generated_helix_construction() {
     assert_eq!(
         round_trip.ir.model.procedural_curves[0].cache_fit_tolerance,
         Some(0.005)
+    );
+}
+
+#[test]
+fn cacheless_helix_construction_is_the_exact_edge_carrier() {
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition};
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_cacheless_helix_curve_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("cacheless helix decode");
+    let procedural = result
+        .ir
+        .model
+        .procedural_curves
+        .first()
+        .expect("helix construction");
+    assert!(matches!(
+        procedural.definition,
+        ProceduralCurveDefinition::Helix { .. }
+    ));
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    assert!(matches!(
+        result
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == procedural.curve)
+            .map(|curve| &curve.geometry),
+        Some(CurveGeometry::Procedural { construction }) if *construction == procedural.id
+    ));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "validation findings: {:?}",
+        validation.findings
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("procedural intcurve")));
+
+    let expected = procedural.definition.clone();
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("cacheless helix source-less encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("cacheless helix source-less round trip");
+    assert!(matches!(
+        round_trip.ir.model.curves[0].geometry,
+        CurveGeometry::Procedural { .. }
+    ));
+    assert_eq!(
+        round_trip.ir.model.procedural_curves[0].definition,
+        expected
+    );
+    assert_eq!(
+        round_trip.ir.model.procedural_curves[0].cache_fit_tolerance,
+        None
     );
 }
 

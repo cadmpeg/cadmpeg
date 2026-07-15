@@ -176,8 +176,8 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
             e.emit("POLYLINE", &format!("'',({point},{point})"))
         }
         CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
-        CurveGeometry::Unknown { .. } => {
-            unreachable!("unknown curves are filtered before emission")
+        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {
+            unreachable!("non-emittable curves are filtered before emission")
         }
     }
 }
