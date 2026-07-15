@@ -2863,6 +2863,8 @@ fn reconstruct_incidence(
     edge_points: &[[usize; 2]],
     face_count: usize,
 ) -> Option<StandardTopology> {
+    let completed_edge_faces = complete_duplicate_face_slots(edge_faces, edge_points, face_count)?;
+    let edge_faces = completed_edge_faces.as_slice();
     let mut faces = Vec::with_capacity(face_count);
     for face in 0..face_count {
         let incident: Vec<usize> = edge_faces
@@ -2903,6 +2905,145 @@ fn reconstruct_incidence(
         logical_vertex_count: vertex_points.len(),
         vertex_points,
     })
+}
+
+fn complete_duplicate_face_slots(
+    edge_faces: &[[usize; 2]],
+    edge_points: &[[usize; 2]],
+    face_count: usize,
+) -> Option<Vec<[usize; 2]>> {
+    fn search(
+        unresolved: &[usize],
+        edge_points: &[[usize; 2]],
+        degrees: &mut [Vec<u8>],
+        assignment: &mut [usize],
+        used: &mut [bool],
+        solutions: &mut Vec<Vec<usize>>,
+    ) {
+        if solutions.len() > 1 {
+            return;
+        }
+        if used.iter().all(|value| *value) {
+            if degrees
+                .iter()
+                .all(|face| face.iter().all(|degree| matches!(degree, 0 | 2)))
+            {
+                solutions.push(assignment.to_vec());
+            }
+            return;
+        }
+        let deficit = degrees.iter().enumerate().find_map(|(face, values)| {
+            values
+                .iter()
+                .position(|degree| *degree == 1)
+                .map(|point| (face, point))
+        });
+        let choices = unresolved
+            .iter()
+            .enumerate()
+            .filter(|(index, edge)| {
+                if used[*index] {
+                    return false;
+                }
+                let [start, end] = edge_points[**edge];
+                deficit.is_none_or(|(_, point)| start == point || end == point)
+            })
+            .flat_map(|(index, &edge)| {
+                let faces: Box<dyn Iterator<Item = usize>> = match deficit {
+                    Some((face, _)) => Box::new(std::iter::once(face)),
+                    None => Box::new(0..degrees.len()),
+                };
+                faces.map(move |face| (index, edge, face))
+            })
+            .filter(|(_, edge, face)| {
+                let [start, end] = edge_points[*edge];
+                degrees[*face][start] + 1 + u8::from(start == end) <= 2
+                    && (start == end || degrees[*face][end] < 2)
+            })
+            .collect::<Vec<_>>();
+        for (index, edge, face) in choices {
+            let [start, end] = edge_points[edge];
+            let start_add = 1 + u8::from(start == end);
+            degrees[face][start] += start_add;
+            if start != end {
+                degrees[face][end] += 1;
+            }
+            assignment[index] = face;
+            used[index] = true;
+            search(
+                unresolved,
+                edge_points,
+                degrees,
+                assignment,
+                used,
+                solutions,
+            );
+            used[index] = false;
+            degrees[face][start] -= start_add;
+            if start != end {
+                degrees[face][end] -= 1;
+            }
+        }
+    }
+
+    let mut completed = edge_faces.to_vec();
+    let mut unresolved = edge_faces
+        .iter()
+        .enumerate()
+        .filter_map(|(edge, faces)| (faces[0] == faces[1]).then_some(edge))
+        .collect::<Vec<_>>();
+    if unresolved.is_empty() {
+        return Some(completed);
+    }
+    let point_count = edge_points
+        .iter()
+        .flatten()
+        .max()
+        .copied()
+        .map(|point| point + 1)?;
+    let mut degrees = vec![vec![0u8; point_count]; face_count];
+    for (edge, faces) in edge_faces.iter().enumerate() {
+        let mut incident = *faces;
+        incident.sort_unstable();
+        for &face in if incident[0] == incident[1] {
+            &incident[..1]
+        } else {
+            &incident[..]
+        } {
+            for &point in &edge_points[edge] {
+                degrees[face][point] = degrees[face][point].checked_add(1)?;
+            }
+        }
+    }
+    if degrees.iter().flatten().any(|degree| *degree > 2) {
+        return None;
+    }
+    unresolved.sort_by_key(|&edge| {
+        let [start, end] = edge_points[edge];
+        degrees
+            .iter()
+            .filter(|face| {
+                face[start] + 1 + u8::from(start == end) <= 2 && (start == end || face[end] < 2)
+            })
+            .count()
+    });
+
+    let mut solutions = Vec::new();
+    search(
+        &unresolved,
+        edge_points,
+        &mut degrees,
+        &mut vec![0; unresolved.len()],
+        &mut vec![false; unresolved.len()],
+        &mut solutions,
+    );
+    let [assignment] = solutions.as_slice() else {
+        return None;
+    };
+    for (&edge, &face) in unresolved.iter().zip(assignment) {
+        completed[edge][1] = face;
+    }
+    Some(completed)
 }
 
 fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
@@ -5984,7 +6125,7 @@ mod motif_tests {
     use cadmpeg_ir::topology::BodyKind;
 
     use super::{
-        bind_edge_port_candidates, canonicalize_mesh_vertex_labels,
+        bind_edge_port_candidates, canonicalize_mesh_vertex_labels, complete_duplicate_face_slots,
         deduplicate_mesh_quotient_assignments, mesh_assignment_can_merge,
         mesh_candidates_equivalent, mesh_edge_points_compatible, motif_port_points,
         parse_trim_chain, possible_face_choices, possible_face_equations,
@@ -7422,6 +7563,15 @@ mod motif_tests {
             topology.faces()[0].boundaries[0].coedges[0].reversed,
             topology.faces()[1].boundaries[0].coedges[0].reversed
         );
+    }
+
+    #[test]
+    fn duplicate_face_reference_slot_is_completed_by_face_closure() {
+        let faces =
+            complete_duplicate_face_slots(&[[0, 1], [0, 1], [0, 0]], &[[0, 1], [1, 2], [2, 0]], 2)
+                .expect("unique face-closing slot assignment");
+
+        assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
     }
 
     #[test]

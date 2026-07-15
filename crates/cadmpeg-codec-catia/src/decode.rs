@@ -4559,6 +4559,7 @@ fn attach_standard_topology(
             if matches!(support.geometry, geometry::StandardCurveGeometry::Bspline) {
                 continue;
             }
+            let unfiltered = pairs.clone();
             pairs.retain(|pair| {
                 let Some(start) = ir.model.points.get(pair[0]).map(|point| point.position) else {
                     return false;
@@ -4580,6 +4581,9 @@ fn attach_standard_topology(
                     .is_some()
                 })
             });
+            if pairs.is_empty() {
+                *pairs = unfiltered;
+            }
         }
     }
     if let Some(options) = &mut endpoint_options {
