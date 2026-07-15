@@ -4190,6 +4190,42 @@ impl MeshSelectionSearch<'_> {
             false
         }
 
+        fn choice_component_reductions(
+            choice: &[[usize; 2]],
+            quotient: &mut MeshQuotient,
+            possible: &mut UnionFind,
+        ) -> HashMap<usize, usize> {
+            let mut equations = HashMap::<usize, Vec<[usize; 2]>>::new();
+            for [left, right] in choice {
+                let left = quotient.union.find(*left);
+                let right = quotient.union.find(*right);
+                let component = possible.find(left);
+                if component == possible.find(right) {
+                    equations.entry(component).or_default().push([left, right]);
+                }
+            }
+            equations
+                .into_iter()
+                .map(|(component, equations)| {
+                    let mut roots = HashMap::new();
+                    for [left, right] in &equations {
+                        for root in [left, right] {
+                            let next = roots.len();
+                            roots.entry(*root).or_insert(next);
+                        }
+                    }
+                    let mut local = UnionFind::new(roots.len());
+                    for [left, right] in equations {
+                        local.union(roots[&left], roots[&right]);
+                    }
+                    let remaining = (0..local.len())
+                        .filter(|&node| local.find(node) == node)
+                        .count();
+                    (component, roots.len().saturating_sub(remaining))
+                })
+                .collect()
+        }
+
         let node_count = quotient.union.len();
         let mut possible = UnionFind::new(node_count);
         for node in 0..node_count {
@@ -4211,14 +4247,17 @@ impl MeshSelectionSearch<'_> {
             .filter(|&node| possible.find(node) == node)
             .count();
         let mut possible_domains = HashMap::<usize, HashSet<usize>>::new();
+        let mut possible_root_counts = HashMap::<usize, usize>::new();
         for node in 0..node_count {
             if quotient.union.find(node) != node {
                 continue;
             }
+            let component = possible.find(node);
             possible_domains
-                .entry(possible.find(node))
+                .entry(component)
                 .or_default()
                 .extend(&quotient.domains[node]);
+            *possible_root_counts.entry(component).or_default() += 1;
         }
         let point_count = if self.vertex_points.is_empty() {
             quotient
@@ -4230,10 +4269,56 @@ impl MeshSelectionSearch<'_> {
         } else {
             self.vertex_points.len()
         };
-        if possible_domains.len() > point_count {
+        let mut component_merge_capacity = HashMap::<usize, usize>::new();
+        for (face, selected) in self.selected.iter().enumerate() {
+            if selected.is_some() {
+                continue;
+            }
+            let mut face_capacity = HashMap::<usize, usize>::new();
+            for choice in &self.possible_face_choices[face] {
+                for (component, reduction) in
+                    choice_component_reductions(choice, quotient, &mut possible)
+                {
+                    face_capacity
+                        .entry(component)
+                        .and_modify(|capacity| *capacity = (*capacity).max(reduction))
+                        .or_insert(reduction);
+                }
+            }
+            for (component, capacity) in face_capacity {
+                *component_merge_capacity.entry(component).or_default() += capacity;
+            }
+        }
+        let required_root_count = possible_root_counts
+            .iter()
+            .map(|(component, roots)| {
+                roots
+                    .saturating_sub(
+                        component_merge_capacity
+                            .get(component)
+                            .copied()
+                            .unwrap_or(0),
+                    )
+                    .max(1)
+            })
+            .sum::<usize>();
+        if required_root_count > point_count {
             return None;
         }
-        let mut domains = possible_domains.into_values().collect::<Vec<_>>();
+        let mut domains = possible_domains
+            .into_iter()
+            .flat_map(|(component, domain)| {
+                let required = possible_root_counts[&component]
+                    .saturating_sub(
+                        component_merge_capacity
+                            .get(&component)
+                            .copied()
+                            .unwrap_or(0),
+                    )
+                    .max(1);
+                std::iter::repeat_n(domain, required)
+            })
+            .collect::<Vec<_>>();
         domains.sort_unstable_by_key(HashSet::len);
         let mut point_owner = vec![None; point_count];
         for component in 0..domains.len() {
@@ -6332,6 +6417,41 @@ mod motif_tests {
                 HashSet::from([0, 1]),
                 HashSet::from([0, 1]),
                 HashSet::from([2, 3]),
+            ],
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+
+        assert_eq!(
+            search.remaining_equation_merge_capacity(&mut quotient),
+            None
+        );
+    }
+
+    #[test]
+    fn coordinate_matching_reserves_unavoidable_roots_per_component() {
+        let assignments = vec![Vec::new()];
+        let edge_candidates = vec![Vec::new(); 2];
+        let search = MeshSelectionSearch {
+            assignments: &assignments,
+            possible_face_equations: vec![vec![[0, 1], [1, 2]]],
+            possible_face_choices: vec![vec![vec![[0, 1]], vec![[1, 2]]]],
+            face_work: vec![Some(1)],
+            edge_candidates: &edge_candidates,
+            edge_rows: &[],
+            vertex_points: &[[0.0, 0.0, 0.0]; 3],
+            selected: vec![None],
+            states: 0,
+            solution: None,
+            ambiguous: false,
+            exhausted: false,
+        };
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: vec![
+                HashSet::from([0]),
+                HashSet::from([0]),
+                HashSet::from([0]),
+                HashSet::from([1, 2]),
             ],
             members: (0..4).map(|node| vec![node]).collect(),
         };
