@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::annotations::Annotations;
 use crate::byte_ledger::ByteLedger;
+use crate::document::CadIr;
+use crate::native::NativeConvertError;
 use crate::unknown::UnknownRecord;
 
 /// Source bytes retained to support exact recovery of opaque ledger spans.
@@ -75,6 +77,37 @@ impl SourceFidelity {
                 sha256: record.sha256.clone(),
                 data: record.data.clone(),
             }));
+    }
+
+    /// Move a native unknown arena's source fields into this sidecar.
+    pub fn separate_native_unknown_records(
+        &mut self,
+        ir: &mut CadIr,
+        format: &str,
+    ) -> Result<(), NativeConvertError> {
+        let records = ir.native_unknowns(format)?;
+        self.retained_records.extend(records.iter().map(|record| {
+            let stream = self
+                .annotations
+                .provenance
+                .get(&record.id.0)
+                .and_then(|provenance| self.annotations.streams.get(provenance.stream as usize))
+                .cloned()
+                .unwrap_or_else(|| "source".into());
+            RetainedSourceRecord {
+                id: record.id.to_string(),
+                stream,
+                offset: record.offset,
+                byte_len: record.byte_len,
+                sha256: record.sha256.clone(),
+                data: record.data.clone(),
+            }
+        }));
+        let product_records = records
+            .iter()
+            .map(crate::NativeUnknownRecord::from)
+            .collect::<Vec<_>>();
+        ir.set_native_unknown_refs(format, &product_records)
     }
 
     /// Canonicalize sidecar collections independently from the product model.

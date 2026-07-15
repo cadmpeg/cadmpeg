@@ -153,6 +153,20 @@ impl CadIr {
             })
     }
 
+    /// Deserialize every source-independent native `unknowns` arena.
+    pub fn all_native_unknown_refs(
+        &self,
+    ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
+        self.native
+            .0
+            .values()
+            .filter(|namespace| namespace.arenas.contains_key("unknowns"))
+            .try_fold(Vec::new(), |mut records, namespace| {
+                records.extend(namespace.arena_as::<NativeUnknownRecord>("unknowns")?);
+                Ok(records)
+            })
+    }
+
     /// Replace the reserved `unknowns` arena for `format`.
     pub fn set_native_unknowns(
         &mut self,

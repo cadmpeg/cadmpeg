@@ -52,7 +52,7 @@ pub fn decode(
     if options.container_only {
         let (ir, annotations) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return Ok(decode_result(ir, report, annotations));
+        return decode_result(ir, report, annotations);
     }
 
     if matches!(scan.variant, Variant::StandardNested | Variant::FbbOnly) {
@@ -94,22 +94,24 @@ fn finish_decode(
     annotations: cadmpeg_ir::Annotations,
 ) -> Result<DecodeResult, CodecError> {
     CatiaNative::decode(&scan.data).store(ir.native.namespace_mut("catia"))?;
-    Ok(decode_result(ir, report, annotations))
+    decode_result(ir, report, annotations)
 }
 
 fn decode_result(
-    ir: CadIr,
+    mut ir: CadIr,
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
-) -> DecodeResult {
-    DecodeResult::with_source_fidelity(
+) -> Result<DecodeResult, CodecError> {
+    let mut source_fidelity = SourceFidelity {
+        annotations,
+        ..SourceFidelity::default()
+    };
+    source_fidelity.separate_native_unknown_records(&mut ir, "catia")?;
+    Ok(DecodeResult::with_source_fidelity(
         ir,
         report,
-        SourceFidelity {
-            annotations,
-            ..SourceFidelity::default()
-        },
-    )
+        source_fidelity,
+    ))
 }
 
 fn annotate(
