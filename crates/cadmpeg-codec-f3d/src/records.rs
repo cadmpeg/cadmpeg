@@ -1139,7 +1139,7 @@ pub struct DesignEdgeRecipeReferenceContext {
 }
 
 /// Ordered loop topology retained for one historical face.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignHistoricalFaceBoundaryContext {
     /// Stable ASM face slot.
     pub face_slot: i64,
@@ -1148,7 +1148,7 @@ pub struct DesignHistoricalFaceBoundaryContext {
 }
 
 /// Ordered coedge and edge membership of one historical face loop.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignHistoricalFaceLoopContext {
     /// Stable ASM loop slot.
     pub loop_slot: i64,
@@ -1156,6 +1156,15 @@ pub struct DesignHistoricalFaceLoopContext {
     pub coedge_slots: Vec<i64>,
     /// Stable edge slots aligned one-to-one with `coedge_slots`.
     pub edge_slots: Vec<i64>,
+    /// Stable boundary-vertex slots preceding the aligned coedges.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vertex_slots: Vec<i64>,
+    /// Stable point-carrier slots aligned one-to-one with `vertex_slots`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub point_slots: Vec<i64>,
+    /// Model-space positions aligned one-to-one with `point_slots`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub positions: Vec<cadmpeg_ir::math::Point3>,
 }
 
 /// Historical topology surrounding one candidate edge.

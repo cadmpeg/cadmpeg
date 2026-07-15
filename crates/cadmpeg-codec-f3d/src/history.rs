@@ -701,14 +701,81 @@ fn face_boundary_contexts(
                             (coedges.next().is_none()).then_some(edge)
                         })
                         .collect::<Option<Vec<_>>>()?;
+                    let vertex_slots =
+                        ordered_loop_vertices(&edge_slots, topology).unwrap_or_default();
+                    let point_slots = (!vertex_slots.is_empty())
+                        .then(|| {
+                            vertex_slots
+                                .iter()
+                                .map(|vertex| {
+                                    let mut bindings = topology
+                                        .vertex_points
+                                        .iter()
+                                        .filter(|binding| binding.entity == *vertex);
+                                    let point = bindings.next()?.carrier;
+                                    (bindings.next().is_none()).then_some(point)
+                                })
+                                .collect::<Option<Vec<_>>>()
+                        })
+                        .flatten()
+                        .unwrap_or_default();
+                    let positions = (point_slots.len() == vertex_slots.len())
+                        .then(|| {
+                            point_slots
+                                .iter()
+                                .map(|point| {
+                                    let mut values = topology
+                                        .point_positions
+                                        .iter()
+                                        .filter(|value| value.point == *point);
+                                    let position = values.next()?.position;
+                                    (values.next().is_none()).then_some(position)
+                                })
+                                .collect::<Option<Vec<_>>>()
+                        })
+                        .flatten()
+                        .unwrap_or_default();
                     Some(crate::records::DesignHistoricalFaceLoopContext {
                         loop_slot: *loop_slot,
                         coedge_slots: loop_relation.member_refs.clone(),
                         edge_slots,
+                        vertex_slots,
+                        point_slots,
+                        positions,
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(crate::records::DesignHistoricalFaceBoundaryContext { face_slot, loops })
+        })
+        .collect()
+}
+
+fn ordered_loop_vertices(edge_slots: &[i64], topology: &AsmHistoricalTopology) -> Option<Vec<i64>> {
+    if edge_slots.is_empty() {
+        return Some(Vec::new());
+    }
+    edge_slots
+        .iter()
+        .enumerate()
+        .map(|(ordinal, edge)| {
+            let previous = edge_slots[(ordinal + edge_slots.len() - 1) % edge_slots.len()];
+            let endpoints = |slot| {
+                let mut edges = topology
+                    .edge_vertices
+                    .iter()
+                    .filter(|candidate| candidate.edge == slot);
+                let edge = edges.next()?;
+                (edges.next().is_none()).then_some([edge.start_vertex, edge.end_vertex])
+            };
+            let previous = endpoints(previous)?;
+            let current = endpoints(*edge)?;
+            let mut shared = previous
+                .into_iter()
+                .filter(|vertex| current.contains(vertex))
+                .collect::<Vec<_>>();
+            shared.sort_unstable();
+            shared.dedup();
+            (shared.len() == 1).then_some(shared[0])
         })
         .collect()
 }
@@ -2039,6 +2106,9 @@ mod tests {
                 loop_slot: 5,
                 coedge_slots: vec![6],
                 edge_slots: vec![7],
+                vertex_slots: Vec::new(),
+                point_slots: Vec::new(),
+                positions: Vec::new(),
             }],
         };
         assert_eq!(context.result_face_boundaries, [boundary.clone()]);
@@ -2047,6 +2117,30 @@ mod tests {
         assert_eq!(context.preceding_face_boundaries, [boundary]);
         assert_eq!(context.shared_edge_slots, [7]);
         assert_eq!(context.changed_shared_edge_slots, [7]);
+        let cyclic = AsmHistoricalTopology {
+            edge_vertices: vec![
+                AsmHistoricalEdge {
+                    edge: 7,
+                    start_vertex: 1,
+                    end_vertex: 2,
+                },
+                AsmHistoricalEdge {
+                    edge: 8,
+                    start_vertex: 3,
+                    end_vertex: 2,
+                },
+                AsmHistoricalEdge {
+                    edge: 9,
+                    start_vertex: 1,
+                    end_vertex: 3,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        assert_eq!(
+            ordered_loop_vertices(&[7, 8, 9], &cyclic),
+            Some(vec![1, 2, 3])
+        );
     }
 
     #[test]
