@@ -372,8 +372,9 @@ mod marker_tests {
         marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
         named_scalars, native_scalar_matches_discrete_parameter, object_names,
         ordered_compact_line_profile, ordered_rectangle_corners, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers, unique_locus,
-        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
+        COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -520,6 +521,64 @@ mod marker_tests {
             Point2::new(24.0, -14.15),
         ];
         assert_eq!(ordered_rectangle_corners(&non_rectangular), None);
+    }
+
+    #[test]
+    fn dimensioned_rectangle_selects_one_complete_marker_product() {
+        let marker = |id: &str, u, v| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: 0,
+            object_index: None,
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: None,
+            coordinates_m: Some([u, v]),
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let markers = [
+            marker("center", -0.023, 0.0),
+            marker("lower-left", -0.02575, -0.00425),
+            marker("upper-right", -0.02025, 0.00425),
+            marker("lower-right", -0.02025, -0.00425),
+            marker("upper-left", -0.02575, 0.00425),
+            marker("axis-top", -0.02575, 0.01415),
+            marker("axis-bottom", -0.02575, -0.01415),
+            marker("origin", 0.0, 0.0),
+        ];
+        let marker_refs = markers.iter().collect::<Vec<_>>();
+        assert_eq!(
+            unique_dimensioned_rectangle_markers(&marker_refs, &[8.5, 5.5])
+                .map(|markers| markers.map(|marker| marker.id.as_str())),
+            Some(["lower-left", "lower-right", "upper-right", "upper-left"])
+        );
+        assert_eq!(
+            unique_dimensioned_rectangle_markers(&marker_refs, &[8.5]),
+            None
+        );
+        assert_eq!(
+            unique_dimensioned_rectangle_markers(&marker_refs, &[28.3, 5.5]),
+            None
+        );
+
+        let second_rectangle = [
+            marker("second-lower-left", 0.010, 0.020),
+            marker("second-lower-right", 0.0155, 0.020),
+            marker("second-upper-right", 0.0155, 0.0285),
+            marker("second-upper-left", 0.010, 0.0285),
+        ];
+        let ambiguous = marker_refs
+            .iter()
+            .copied()
+            .chain(second_rectangle.iter())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            unique_dimensioned_rectangle_markers(&ambiguous, &[8.5, 5.5]),
+            None
+        );
     }
 
     #[test]
@@ -5081,15 +5140,34 @@ pub(crate) fn project_compact_sketch_profiles(
             };
             let region_addresses = compact_line_region_addresses(interval);
             let chain_addresses = compact_line_chain_addresses(interval);
-            let Some(addresses) = region_addresses.as_ref().or(chain_addresses.as_ref()) else {
-                continue;
-            };
+            let addresses = region_addresses.as_ref().or(chain_addresses.as_ref());
             let owned_markers = lane
                 .sketch_entities
                 .iter()
                 .filter(|marker| marker.feature_ref.as_deref() == Some(native_feature.id.as_str()))
                 .collect::<Vec<_>>();
-            let markers = if region_addresses.is_some() {
+            let dimensions = lane
+                .relation_instances
+                .iter()
+                .filter(|relation| relation.feature_ref == native_feature.id)
+                .filter(|relation| {
+                    !matches!(
+                        relation.family,
+                        FeatureInputRelationFamily::Angle
+                            | FeatureInputRelationFamily::CircleDiameter
+                    )
+                })
+                .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+                .filter_map(|scalar| lane.scalars.iter().find(|record| record.id == scalar))
+                .map(|scalar| scalar.value * NATIVE_TO_IR)
+                .collect::<Vec<_>>();
+            let dimensioned_rectangle = addresses
+                .is_none()
+                .then(|| unique_dimensioned_rectangle_markers(&owned_markers, &dimensions))
+                .flatten();
+            let markers = if let Some(rectangle) = dimensioned_rectangle {
+                rectangle.to_vec()
+            } else if region_addresses.is_some() {
                 let line_classes = lane
                     .classes
                     .iter()
@@ -5132,14 +5210,16 @@ pub(crate) fn project_compact_sketch_profiles(
                                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                             )
                     })
-                    .filter(|run| run.len() == addresses.len())
+                    .filter(|run| addresses.is_some_and(|addresses| run.len() == addresses.len()))
                     .collect::<Vec<_>>();
                 let [run] = runs.as_slice() else {
                     continue;
                 };
                 run.to_vec()
             };
-            if markers.len() != addresses.len() || markers.len() < 3 {
+            if addresses.is_some_and(|addresses| markers.len() != addresses.len())
+                || markers.len() < 3
+            {
                 continue;
             }
             let context_start = object_index
@@ -5178,6 +5258,68 @@ pub(crate) fn project_compact_sketch_profiles(
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
                 continue;
             };
+            if dimensioned_rectangle.is_some() {
+                let points = markers
+                    .iter()
+                    .filter_map(|marker| {
+                        let [u, v] = marker.coordinates_m?;
+                        let native =
+                            quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                        let point = transform.apply(native)?;
+                        Some(Point2::new(
+                            point.0 as f64 * QUANTUM,
+                            point.1 as f64 * QUANTUM,
+                        ))
+                    })
+                    .collect::<Vec<_>>();
+                let Some(corners) = ordered_rectangle_corners(&points) else {
+                    continue;
+                };
+                let Some(corner_markers) = corners
+                    .iter()
+                    .map(|corner| {
+                        points
+                            .iter()
+                            .position(|point| point == corner)
+                            .and_then(|index| markers.get(index).copied())
+                    })
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    continue;
+                };
+                let mut profile = Vec::with_capacity(corners.len());
+                for (index, start) in corners.iter().enumerate() {
+                    let end = corners[(index + 1) % corners.len()];
+                    let start_marker = corner_markers[index];
+                    let end_marker = corner_markers[(index + 1) % corner_markers.len()];
+                    let entity_id = SketchEntityId(format!(
+                        "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
+                        native_feature.ordinal
+                    ));
+                    profile.push(SketchEntityUse {
+                        entity: entity_id.clone(),
+                        reversed: false,
+                    });
+                    sketch_entities.push(SketchEntity {
+                        id: entity_id,
+                        sketch: sketch_id.clone(),
+                        construction: false,
+                        native_ref: Some(start_marker.id.clone()),
+                        geometry_ref: None,
+                        endpoint_refs: vec![start_marker.id.clone(), end_marker.id.clone()],
+                        geometry: SketchGeometry::Line { start: *start, end },
+                    });
+                }
+                let mut sketch = sketch;
+                sketch.profiles.push(profile);
+                sketches.push(sketch);
+                features[feature_index].definition =
+                    cadmpeg_ir::features::FeatureDefinition::Sketch {
+                        space: cadmpeg_ir::features::SketchSpace::Planar,
+                        sketch: Some(sketch_id),
+                    };
+                continue;
+            }
             if let (Some(curves), Some(vertices)) =
                 (region_addresses.as_deref(), chain_addresses.as_deref())
             {
@@ -5286,6 +5428,9 @@ pub(crate) fn project_compact_sketch_profiles(
                     };
                 continue;
             }
+            let Some(addresses) = addresses else {
+                continue;
+            };
             let points = addresses
                 .iter()
                 .filter_map(|address| {
@@ -5362,6 +5507,81 @@ fn ordered_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> {
         .iter()
         .all(|corner| points.iter().filter(|point| *point == corner).count() == 1)
         .then_some(corners)
+}
+
+fn unique_dimensioned_rectangle_markers<'a>(
+    markers: &[&'a SketchInputEntity],
+    dimensions_mm: &[f64],
+) -> Option<[&'a SketchInputEntity; 4]> {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    const QUANTUM: f64 = 1.0e-8;
+    if dimensions_mm.len() < 2 {
+        return None;
+    }
+    let points = markers
+        .iter()
+        .filter_map(|marker| {
+            let [u, v] = marker.coordinates_m?;
+            Some((
+                *marker,
+                quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let mut u = points.iter().map(|(_, point)| point.0).collect::<Vec<_>>();
+    u.sort_unstable();
+    u.dedup();
+    let mut v = points.iter().map(|(_, point)| point.1).collect::<Vec<_>>();
+    v.sort_unstable();
+    v.dedup();
+    let dimensions_match = |u0: i64, u1: i64, v0: i64, v1: i64| {
+        let u_span = (u1 - u0) as f64 * QUANTUM;
+        let v_span = (v1 - v0) as f64 * QUANTUM;
+        dimensions_mm
+            .iter()
+            .enumerate()
+            .any(|(first_index, first)| {
+                dimensions_mm
+                    .iter()
+                    .enumerate()
+                    .any(|(second_index, second)| {
+                        first_index != second_index
+                            && ((same_dimension_length(*first, u_span)
+                                && same_dimension_length(*second, v_span))
+                                || (same_dimension_length(*first, v_span)
+                                    && same_dimension_length(*second, u_span)))
+                    })
+            })
+    };
+    let mut candidates = Vec::new();
+    for (first_u_index, &u0) in u.iter().enumerate() {
+        for &u1 in &u[first_u_index + 1..] {
+            for (first_v_index, &v0) in v.iter().enumerate() {
+                for &v1 in &v[first_v_index + 1..] {
+                    if !dimensions_match(u0, u1, v0, v1) {
+                        continue;
+                    }
+                    let corners = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)];
+                    let matched = corners.map(|corner| {
+                        let mut matches = points
+                            .iter()
+                            .filter(|(_, point)| *point == corner)
+                            .map(|(marker, _)| *marker);
+                        let marker = matches.next()?;
+                        matches.next().is_none().then_some(marker)
+                    });
+                    let [Some(first), Some(second), Some(third), Some(fourth)] = matched else {
+                        continue;
+                    };
+                    candidates.push([first, second, third, fourth]);
+                }
+            }
+        }
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
 }
 
 fn ordered_compact_line_profile(

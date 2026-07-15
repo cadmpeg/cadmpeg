@@ -26,6 +26,7 @@
 - Sketch marker type codes above `27` are unresolved.
 - Marker-to-profile correspondence is unresolved when the feature's coordinate sets admit no unique signed-axis transform or a reference marker's linked loci do not identify one profile entity.
 - The construction-state discriminator for dimensioned circular geometry absent from a selected profile stream is unresolved.
+- Model-space placement of marker-only profile objects without a uniquely owned compact reference-plane record is unresolved.
 - Keywords operation families outside the typed neutral feature set are unresolved.
 - Compact extrusion end-spec termination codes other than blind `0`, through-all `1`, and to-face `4` are unresolved. Reconciliation between generated feature-local faces selected by `moSingleFaceRef_w` paths and faces that survive in the final B-rep is unresolved.
 - Compact extrusion Boolean operation values other than inline `00` join and `02` cut are unresolved. Sparse objects without the inline operation remain unresolved outside the `moExtrusion_c` join form `1`, `moICE_c` join form `3`, and `moICE_c` cut forms `1`, `2`, `10`, and `11`.
