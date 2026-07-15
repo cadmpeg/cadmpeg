@@ -170,6 +170,7 @@ impl ExpansionBudget {
 pub(crate) struct DecodeContext<'a> {
     scan: &'a Scan,
     ir: CadIr,
+    annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     statuses: Vec<GeometryStatus>,
     outcomes: BTreeMap<String, ClassOutcome>,
@@ -203,6 +204,7 @@ impl<'a> DecodeContext<'a> {
         let mut context = Self {
             scan,
             ir: build_ir(scan),
+            annotations: cadmpeg_ir::Annotations::default(),
             unknowns: Vec::with_capacity(scan.objects.len()),
             statuses: Vec::with_capacity(scan.objects.len()),
             outcomes: BTreeMap::new(),
@@ -305,10 +307,14 @@ impl<'a> DecodeContext<'a> {
         true
     }
 
-    fn validate_candidate(&mut self, apply: impl FnOnce(&mut CadIr)) -> Result<(), String> {
+    fn validate_candidate(
+        &mut self,
+        apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations),
+    ) -> Result<(), String> {
         let mut candidate = self.lightweight_candidate();
-        apply(&mut candidate);
-        self.commit_valid_candidate(candidate)
+        let mut annotations = self.annotations.clone();
+        apply(&mut candidate, &mut annotations);
+        self.commit_valid_candidate(candidate, annotations)
     }
 
     fn lightweight_candidate(&mut self) -> CadIr {
@@ -321,9 +327,18 @@ impl<'a> DecodeContext<'a> {
         candidate
     }
 
-    fn commit_valid_candidate(&mut self, mut candidate: CadIr) -> Result<(), String> {
+    fn commit_valid_candidate(
+        &mut self,
+        mut candidate: CadIr,
+        annotations: cadmpeg_ir::Annotations,
+    ) -> Result<(), String> {
         candidate.model.finalize();
-        let validation = cadmpeg_ir::validate::validate(&candidate, Vec::new());
+        let source_fidelity = cadmpeg_ir::SourceFidelity {
+            annotations: annotations.clone(),
+            ..cadmpeg_ir::SourceFidelity::default()
+        };
+        let validation =
+            cadmpeg_ir::validate_with_source_fidelity(&candidate, &source_fidelity, Vec::new());
         if validation.is_ok() {
             let added = ArenaLengths::capture(&candidate)
                 .added_since(ArenaLengths::capture(&self.ir))
@@ -339,6 +354,7 @@ impl<'a> DecodeContext<'a> {
                 .map_err(|error| error.to_string())?;
             self.unknowns = unknowns;
             self.ir = candidate;
+            self.annotations = annotations;
             Ok(())
         } else {
             Err(validation_findings(&validation))
@@ -366,7 +382,7 @@ impl<'a> DecodeContext<'a> {
     #[cfg(test)]
     pub(crate) fn reject_duplicate_unknown_candidate(&mut self) -> (bool, String) {
         let mut payloads_detached = false;
-        let result = self.validate_candidate(|candidate| {
+        let result = self.validate_candidate(|candidate, _annotations| {
             let mut unknowns = candidate.native_unknowns("rhino").unwrap();
             payloads_detached = unknowns.iter().all(|record| record.data.is_none());
             if let Some(record) = unknowns.first().cloned() {
@@ -624,7 +640,7 @@ impl<'a> DecodeContext<'a> {
                         native_ref,
                     );
                     let links = [feature.id.to_string(), parameter.id.0.clone()];
-                    let result = self.validate_candidate(|candidate| {
+                    let result = self.validate_candidate(|candidate, _annotations| {
                         candidate.model.features.push(feature);
                         candidate.model.parameters.push(parameter);
                     });
@@ -758,10 +774,11 @@ impl<'a> DecodeContext<'a> {
             native_ref: Some(self.unknowns[source_order].id.to_string()),
         };
         let hatch_loops = hatch.loops;
-        let result = self.validate_candidate(|candidate| {
+        let result = self.validate_candidate(|candidate, candidate_annotations| {
             for (index, hatch_loop) in hatch_loops.into_iter().enumerate() {
                 commit_curve_tree(
                     candidate,
+                    candidate_annotations,
                     hatch_loop.curve,
                     &key,
                     &association,
@@ -836,7 +853,9 @@ impl<'a> DecodeContext<'a> {
             },
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
         };
-        match self.validate_candidate(|candidate| candidate.model.features.push(feature)) {
+        match self
+            .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
+        {
             Ok(()) => {
                 self.append_link(source_order, id.to_string());
                 self.mark_decoded(source_order);
@@ -923,9 +942,10 @@ impl<'a> DecodeContext<'a> {
             },
             native_ref: Some(self.unknowns[source_order].id.to_string()),
         };
-        let result = self.validate_candidate(|candidate| {
+        let result = self.validate_candidate(|candidate, candidate_annotations| {
             commit_curve_tree(
                 candidate,
+                candidate_annotations,
                 detail.boundary,
                 &key,
                 &association,
@@ -1059,7 +1079,9 @@ impl<'a> DecodeContext<'a> {
             },
             native_ref: Some(self.unknowns[source_order].id.to_string()),
         };
-        match self.validate_candidate(|candidate| candidate.model.features.push(feature)) {
+        match self
+            .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
+        {
             Ok(()) => {
                 self.append_link(source_order, feature_id.to_string());
                 self.geometry_transferred = true;
@@ -1123,7 +1145,9 @@ impl<'a> DecodeContext<'a> {
             self.unknowns[source_order].id.to_string(),
         );
         let feature_id = feature.id.to_string();
-        match self.validate_candidate(|candidate| candidate.model.features.push(feature)) {
+        match self
+            .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
+        {
             Ok(()) => {
                 self.append_link(source_order, feature_id);
                 self.geometry_transferred = true;
@@ -1223,9 +1247,10 @@ impl<'a> DecodeContext<'a> {
                 (SurfaceGeometry::Nurbs(geometry), true)
             }
         };
-        let result = self.validate_candidate(|candidate| {
+        let result = self.validate_candidate(|candidate, candidate_annotations| {
             commit_curve_tree(
                 candidate,
+                candidate_annotations,
                 parameter_curve,
                 &key,
                 &association,
@@ -1235,6 +1260,7 @@ impl<'a> DecodeContext<'a> {
             if let Some(model_curve) = model_curve {
                 commit_curve_tree(
                     candidate,
+                    candidate_annotations,
                     model_curve,
                     &key,
                     &association,
@@ -1247,7 +1273,7 @@ impl<'a> DecodeContext<'a> {
                 geometry: surface_geometry,
                 source_object: Some(association),
             });
-            candidate.annotations.exactness.insert(
+            candidate_annotations.exactness.insert(
                 surface_id.to_string(),
                 ExactnessNote {
                     entity: if surface_derived {
@@ -1569,8 +1595,8 @@ impl<'a> DecodeContext<'a> {
                 .procedural_surfaces
                 .truncate(before.procedural_surfaces);
             for id in omitted_ids {
-                self.ir.annotations.exactness.remove(&id);
-                self.ir.annotations.provenance.remove(&id);
+                self.annotations.exactness.remove(&id);
+                self.annotations.provenance.remove(&id);
             }
             self.phase_warnings.push(
                 "instance: transformed procedural definition omitted; exact solved carrier retained"
@@ -1578,7 +1604,7 @@ impl<'a> DecodeContext<'a> {
             );
         }
         for id in derived_ids {
-            annotate_derived(&mut self.ir, &id);
+            annotate_derived(&mut self.annotations, &id);
         }
         Ok(links)
     }
@@ -1664,9 +1690,9 @@ impl<'a> DecodeContext<'a> {
         };
         surface.source_object = Some(self.source_association(identity));
         let id = surface.id.to_string();
-        let result = self.validate_candidate(|candidate| {
+        let result = self.validate_candidate(|candidate, candidate_annotations| {
             candidate.model.subds.push(surface);
-            candidate.annotations.exactness.insert(
+            candidate_annotations.exactness.insert(
                 id.clone(),
                 ExactnessNote {
                     entity: if scaled {
@@ -1861,7 +1887,6 @@ impl<'a> DecodeContext<'a> {
             RETAINED_DOCUMENT_CAP,
             RETAINED_RECORD_CAP
         )];
-        let annotations = std::mem::take(&mut self.ir.annotations);
         DecodeResult::with_source_fidelity(
             self.ir,
             DecodeReport {
@@ -1872,7 +1897,7 @@ impl<'a> DecodeContext<'a> {
                 notes,
             },
             cadmpeg_ir::SourceFidelity {
-                annotations,
+                annotations: self.annotations,
                 ..cadmpeg_ir::SourceFidelity::default()
             },
         )
@@ -2085,7 +2110,7 @@ impl<'a> DecodeContext<'a> {
                     .map(|point| point.id.to_string())
                     .collect();
                 for point_id in point_ids {
-                    self.ir.annotations.exactness.insert(
+                    self.annotations.exactness.insert(
                         point_id,
                         ExactnessNote {
                             entity: if cloud.scaled {
@@ -2111,6 +2136,7 @@ impl<'a> DecodeContext<'a> {
                 );
                 let parent_id = commit_curve_tree(
                     &mut self.ir,
+                    &mut self.annotations,
                     curve,
                     &key,
                     &association,
@@ -2131,7 +2157,7 @@ impl<'a> DecodeContext<'a> {
                         geometry,
                         source_object: Some(association.clone()),
                     });
-                    self.ir.annotations.exactness.insert(
+                    self.annotations.exactness.insert(
                         surface_id.to_string(),
                         ExactnessNote {
                             entity: if derived {
@@ -2181,6 +2207,7 @@ impl<'a> DecodeContext<'a> {
             return false;
         }
         let mut candidate = self.lightweight_candidate();
+        let mut candidate_annotations = self.annotations.clone();
         let Some(unknown) = candidate
             .native_unknowns("rhino")
             .ok()
@@ -2199,6 +2226,7 @@ impl<'a> DecodeContext<'a> {
             };
             child_ids.push(commit_curve_tree(
                 &mut candidate,
+                &mut candidate_annotations,
                 child,
                 key,
                 &association,
@@ -2244,7 +2272,7 @@ impl<'a> DecodeContext<'a> {
             cache_fit_tolerance: None,
         });
         for id in [surface_id.to_string(), procedural_id.to_string()] {
-            candidate.annotations.exactness.insert(
+            candidate_annotations.exactness.insert(
                 id,
                 ExactnessNote {
                     entity: Exactness::Derived,
@@ -2253,7 +2281,7 @@ impl<'a> DecodeContext<'a> {
             );
         }
         append_record_links_at(&mut candidate, source_order, &[surface_id.to_string()]);
-        if let Err(findings) = self.commit_valid_candidate(candidate) {
+        if let Err(findings) = self.commit_valid_candidate(candidate, candidate_annotations) {
             self.phase_warnings.push(format!(
                 "procedural-surface: candidate rejected by IR validation: {findings}"
             ));
@@ -2288,11 +2316,13 @@ impl<'a> DecodeContext<'a> {
         }
         let association = self.source_association(identity);
         let mut candidate = self.lightweight_candidate();
+        let mut candidate_annotations = self.annotations.clone();
         let mut links = Vec::new();
         let mut directrices = Vec::with_capacity(extrusion.boundaries.len());
         for (index, boundary) in extrusion.boundaries.iter().enumerate() {
             let id = commit_curve_tree(
                 &mut candidate,
+                &mut candidate_annotations,
                 boundary.start_curve.clone(),
                 &key,
                 &association,
@@ -2322,13 +2352,14 @@ impl<'a> DecodeContext<'a> {
                 },
                 cache_fit_tolerance: None,
             });
-            annotate_derived(&mut candidate, &surface_id.to_string());
-            annotate_derived(&mut candidate, &procedure_id.to_string());
+            annotate_derived(&mut candidate_annotations, &surface_id.to_string());
+            annotate_derived(&mut candidate_annotations, &procedure_id.to_string());
             links.push(surface_id.to_string());
         }
         if (extrusion.caps[0] || extrusion.caps[1])
             && !stage_extrusion_caps(
                 &mut candidate,
+                &mut candidate_annotations,
                 &key,
                 &association,
                 &extrusion,
@@ -2341,12 +2372,12 @@ impl<'a> DecodeContext<'a> {
         for (index, mut mesh) in extrusion.meshes.into_iter().enumerate() {
             mesh.tessellation.id = format!("rhino:object:tessellation#{key}.cache-{index}");
             mesh.tessellation.source_object = Some(association.clone());
-            annotate_derived(&mut candidate, &mesh.tessellation.id);
+            annotate_derived(&mut candidate_annotations, &mesh.tessellation.id);
             links.push(mesh.tessellation.id.clone());
             candidate.model.tessellations.push(mesh.tessellation);
         }
         append_record_links_at(&mut candidate, source_order, &links);
-        if let Err(findings) = self.commit_valid_candidate(candidate) {
+        if let Err(findings) = self.commit_valid_candidate(candidate, candidate_annotations) {
             self.scan_warning(
                 source_order,
                 &format!("extrusion candidate rejected by IR validation: {findings}"),
@@ -2374,7 +2405,7 @@ impl<'a> DecodeContext<'a> {
         let key = self.object_key(identity, source_order);
         let id: cadmpeg_ir::ids::SurfaceId = format!("rhino:object:surface#{key}").into();
         let association = self.source_association(identity);
-        if let Err(findings) = self.validate_candidate(|candidate| {
+        if let Err(findings) = self.validate_candidate(|candidate, candidate_annotations| {
             candidate.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: SurfaceGeometry::Unknown {
@@ -2382,7 +2413,7 @@ impl<'a> DecodeContext<'a> {
                 },
                 source_object: Some(association),
             });
-            candidate.annotations.exactness.insert(
+            candidate_annotations.exactness.insert(
                 id.to_string(),
                 ExactnessNote {
                     entity: Exactness::Unknown,
@@ -2412,7 +2443,7 @@ impl<'a> DecodeContext<'a> {
         } else {
             Exactness::ByteExact
         };
-        self.ir.annotations.exactness.insert(
+        self.annotations.exactness.insert(
             point.to_string(),
             ExactnessNote {
                 entity: point_exactness,
@@ -2425,7 +2456,7 @@ impl<'a> DecodeContext<'a> {
             region.to_string(),
             body.to_string(),
         ] {
-            self.ir.annotations.exactness.insert(
+            self.annotations.exactness.insert(
                 id,
                 ExactnessNote {
                     entity: Exactness::Derived,
@@ -2461,7 +2492,7 @@ impl<'a> DecodeContext<'a> {
             normals: mesh.tessellation.normals,
             channels: mesh.tessellation.channels,
         });
-        self.ir.annotations.exactness.insert(
+        self.annotations.exactness.insert(
             id.clone(),
             ExactnessNote {
                 entity: if mesh.scaled {
@@ -2553,8 +2584,8 @@ impl<'a> DecodeContext<'a> {
                 let cache_only =
                     !full_topology && !emitted_geometry && !staged.tessellations.is_empty();
                 let fallback = staged.clone().free_carrier_fallback("IR validation");
-                let validation = self.validate_candidate(|candidate| {
-                    staged.apply(candidate);
+                let validation = self.validate_candidate(|candidate, candidate_annotations| {
+                    staged.apply(candidate, candidate_annotations);
                     append_record_links_at(candidate, source_order, &links);
                 });
                 if validation.is_ok() {
@@ -2585,10 +2616,11 @@ impl<'a> DecodeContext<'a> {
                         ),
                     );
                     let fallback_links = fallback.links.clone();
-                    let fallback_validation = self.validate_candidate(|candidate| {
-                        fallback.apply(candidate);
-                        append_record_links_at(candidate, source_order, &fallback_links);
-                    });
+                    let fallback_validation =
+                        self.validate_candidate(|candidate, candidate_annotations| {
+                            fallback.apply(candidate, candidate_annotations);
+                            append_record_links_at(candidate, source_order, &fallback_links);
+                        });
                     if fallback_validation.is_ok() {
                         self.geometry_transferred |= emitted_geometry;
                     } else {
@@ -2721,8 +2753,8 @@ fn validation_findings(report: &cadmpeg_ir::report::ValidationReport) -> String 
         .join("; ")
 }
 
-fn annotate_derived(ir: &mut CadIr, id: &str) {
-    ir.annotations.exactness.insert(
+fn annotate_derived(annotations: &mut cadmpeg_ir::Annotations, id: &str) {
+    annotations.exactness.insert(
         id.to_string(),
         ExactnessNote {
             entity: Exactness::Derived,
@@ -2733,6 +2765,7 @@ fn annotate_derived(ir: &mut CadIr, id: &str) {
 
 fn stage_extrusion_caps(
     ir: &mut CadIr,
+    annotations: &mut cadmpeg_ir::Annotations,
     key: &str,
     association: &SourceObjectAssociation,
     extrusion: &crate::extrusion::DecodedExtrusion,
@@ -2775,7 +2808,7 @@ fn stage_extrusion_caps(
                     geometry: CurveGeometry::Nurbs(boundary.end_nurbs.clone()),
                     source_object: Some(association.clone()),
                 });
-                annotate_derived(ir, &id.to_string());
+                annotate_derived(annotations, &id.to_string());
                 id
             };
             let endpoint = if cap == 0 {
@@ -2878,7 +2911,7 @@ fn stage_extrusion_caps(
                 coedge_id.to_string(),
                 loop_id.to_string(),
             ] {
-                annotate_derived(ir, &id);
+                annotate_derived(annotations, &id);
             }
         }
         ir.model.faces.push(Face {
@@ -2895,8 +2928,8 @@ fn stage_extrusion_caps(
             color: association.color,
             tolerance: None,
         });
-        annotate_derived(ir, &surface_id.to_string());
-        annotate_derived(ir, &face_id.to_string());
+        annotate_derived(annotations, &surface_id.to_string());
+        annotate_derived(annotations, &face_id.to_string());
         face_ids.push(face_id);
     }
     if face_ids.is_empty() {
@@ -2928,7 +2961,7 @@ fn stage_extrusion_caps(
         region_id.to_string(),
         shell_id.to_string(),
     ] {
-        annotate_derived(ir, &id);
+        annotate_derived(annotations, &id);
     }
     links.push(body_id.to_string());
     true
@@ -2984,7 +3017,7 @@ struct BrepStageContext<'a> {
 }
 
 impl StagedBrep {
-    fn apply(self, ir: &mut CadIr) {
+    fn apply(self, ir: &mut CadIr, annotations: &mut cadmpeg_ir::Annotations) {
         ir.model.bodies.extend(self.bodies);
         ir.model.regions.extend(self.regions);
         ir.model.shells.extend(self.shells);
@@ -3003,7 +3036,7 @@ impl StagedBrep {
         ir.model.pcurves.extend(self.pcurves);
         ir.model.tessellations.extend(self.tessellations);
         for (id, exactness) in self.exactness {
-            ir.annotations.exactness.insert(
+            annotations.exactness.insert(
                 id,
                 ExactnessNote {
                     entity: exactness,
@@ -4163,6 +4196,7 @@ fn curve_warnings(curve: &crate::curves::DecodedCurve) -> Vec<String> {
 
 fn commit_curve_tree(
     ir: &mut CadIr,
+    annotations: &mut cadmpeg_ir::Annotations,
     curve: crate::curves::DecodedCurve,
     key: &str,
     association: &SourceObjectAssociation,
@@ -4175,6 +4209,7 @@ fn commit_curve_tree(
             let child_path = format!("{path}.component-{index}");
             component_ids.push(commit_curve_tree(
                 ir,
+                annotations,
                 child,
                 key,
                 association,
@@ -4198,7 +4233,7 @@ fn commit_curve_tree(
         geometry,
         source_object: Some(association.clone()),
     });
-    ir.annotations.exactness.insert(
+    annotations.exactness.insert(
         id.to_string(),
         ExactnessNote {
             entity: Exactness::Derived,
@@ -5048,7 +5083,7 @@ mod tests {
             ..StagedBrep::default()
         };
         let links = staged.links.clone();
-        staged.apply(&mut candidate);
+        staged.apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
         append_record_links(&mut candidate, &unknown, &links);
         assert_eq!(
             candidate.native_unknowns("rhino").unwrap()[0].links,
@@ -5073,7 +5108,7 @@ mod tests {
             curves: vec![curve],
             ..StagedBrep::default()
         }
-        .apply(&mut candidate);
+        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
         assert!(!cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok());
         assert_eq!(live.model.curves.len(), 1);
     }
@@ -5147,7 +5182,7 @@ mod tests {
                 }],
             )
             .unwrap();
-        staged.apply(&mut candidate);
+        staged.apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
         append_record_links(&mut candidate, &unknown, &links);
         let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
         assert!(report.is_ok(), "{report:?}");
@@ -5457,6 +5492,7 @@ mod tests {
             let mut links = Vec::new();
             assert!(stage_extrusion_caps(
                 &mut ir,
+                &mut cadmpeg_ir::Annotations::default(),
                 "caps",
                 &association,
                 &extrusion,
@@ -5481,6 +5517,7 @@ mod tests {
         let mut links = Vec::new();
         assert!(!stage_extrusion_caps(
             &mut candidate,
+            &mut cadmpeg_ir::Annotations::default(),
             "failure",
             &test_association(),
             &cap_extrusion([true, true]),

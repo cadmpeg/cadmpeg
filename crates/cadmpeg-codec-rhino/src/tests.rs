@@ -3130,7 +3130,6 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
             .map(|note| note.entity),
         Some(cadmpeg_ir::Exactness::Derived)
     );
-    assert_eq!(result.ir.annotations, cadmpeg_ir::Annotations::default());
     assert_eq!(
         result.ir.native_unknowns("rhino").unwrap()[0].links,
         vec![subd.id.to_string()]
