@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
@@ -792,7 +793,9 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
         break version;
     };
     let location_count = cursor.section_count("Locations")?;
-    let mut locations: Vec<TextLocation> = Vec::with_capacity(location_count);
+    // Each location consumes at least its 1-byte kind discriminant.
+    let mut locations: Vec<TextLocation> =
+        Vec::with_capacity(cursor.bounded(location_count, 1, "binary Locations")?);
     for index in 0..location_count {
         let kind = cursor.u8("binary location kind")?;
         let location = match kind {
@@ -851,17 +854,21 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
         locations.push(location);
     }
     let curve_count = cursor.section_count("Curve2ds")?;
-    let mut curve2ds = Vec::with_capacity(curve_count);
+    // Each parameter curve consumes at least its 1-byte kind discriminant.
+    let mut curve2ds = Vec::with_capacity(cursor.bounded(curve_count, 1, "binary Curve2ds")?);
     for _ in 0..curve_count {
         curve2ds.push(parse_binary_curve2d(&mut cursor, 0)?);
     }
     let curve_count = cursor.section_count("Curves")?;
-    let mut curves = Vec::with_capacity(curve_count);
+    // Each 3D curve consumes at least its 1-byte kind discriminant.
+    let mut curves = Vec::with_capacity(cursor.bounded(curve_count, 1, "binary Curves")?);
     for _ in 0..curve_count {
         curves.push(parse_binary_curve(&mut cursor, 0)?);
     }
     let polygon_count = cursor.section_count("Polygon3D")?;
-    let mut polygons3d = Vec::with_capacity(polygon_count);
+    // Each 3D polygon consumes at least a 4-byte node count, a 1-byte flag, and an 8-byte deflection.
+    let mut polygons3d =
+        Vec::with_capacity(cursor.bounded(polygon_count, 13, "binary Polygon3D")?);
     for _ in 0..polygon_count {
         let node_count = cursor.count("binary 3D polygon node count")?;
         let has_parameters = cursor.bool("binary 3D polygon parameter flag")?;
@@ -883,7 +890,12 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
         });
     }
     let indexed_polygon_count = cursor.section_count("PolygonOnTriangulations")?;
-    let mut polygons_on_triangulations = Vec::with_capacity(indexed_polygon_count);
+    // Each indexed polygon consumes at least a 4-byte node count, an 8-byte deflection, and a 1-byte flag.
+    let mut polygons_on_triangulations = Vec::with_capacity(cursor.bounded(
+        indexed_polygon_count,
+        13,
+        "binary PolygonOnTriangulations",
+    )?);
     for _ in 0..indexed_polygon_count {
         let node_count = cursor.count("binary indexed polygon node count")?;
         let nodes = (0..node_count)
@@ -915,12 +927,15 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
         });
     }
     let surface_count = cursor.section_count("Surfaces")?;
-    let mut surfaces = Vec::with_capacity(surface_count);
+    // Each surface consumes at least its 1-byte kind discriminant.
+    let mut surfaces = Vec::with_capacity(cursor.bounded(surface_count, 1, "binary Surfaces")?);
     for _ in 0..surface_count {
         surfaces.push(parse_binary_surface(&mut cursor, 0)?);
     }
     let triangulation_count = cursor.section_count("Triangulations")?;
-    let mut triangulations = Vec::with_capacity(triangulation_count);
+    // Each triangulation consumes at least two 4-byte counts, a 1-byte flag, and an 8-byte deflection.
+    let mut triangulations =
+        Vec::with_capacity(cursor.bounded(triangulation_count, 17, "binary Triangulations")?);
     for _ in 0..triangulation_count {
         let node_count = cursor.count("binary triangulation node count")?;
         let triangle_count = cursor.count("binary triangulation triangle count")?;
@@ -970,7 +985,8 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
         });
     }
     let tshape_count = cursor.section_count("TShapes")?;
-    let mut tshapes = Vec::with_capacity(tshape_count);
+    // Each TShape consumes at least its 1-byte kind discriminant.
+    let mut tshapes = Vec::with_capacity(cursor.bounded(tshape_count, 1, "binary TShapes")?);
     for index in 0..tshape_count {
         tshapes.push(parse_binary_tshape(
             &mut cursor,
@@ -1537,8 +1553,10 @@ fn parse_binary_surface(
             })?;
             let pole_count = checked_grid_count(u_count, v_count, "binary Bezier")?;
             let rational = u_rational || v_rational;
-            let mut control_points = Vec::with_capacity(pole_count);
-            let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+            // Each pole consumes at least a 24-byte point3.
+            let capacity = cursor.bounded(pole_count, 24, "binary Bezier surface pole")?;
+            let mut control_points = Vec::with_capacity(capacity);
+            let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
                 control_points.push(cursor.point3("binary Bezier surface pole")?);
                 if let Some(weights) = &mut weights {
@@ -1579,8 +1597,10 @@ fn parse_binary_surface(
             let v_knot_count = cursor.count("binary B-spline v knot count")?;
             let pole_count = checked_grid_count(u_count, v_count, "binary B-spline")?;
             let rational = u_rational || v_rational;
-            let mut control_points = Vec::with_capacity(pole_count);
-            let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+            // Each pole consumes at least a 24-byte point3.
+            let capacity = cursor.bounded(pole_count, 24, "binary B-spline surface pole")?;
+            let mut control_points = Vec::with_capacity(capacity);
+            let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
                 control_points.push(cursor.point3("binary B-spline surface pole")?);
                 if let Some(weights) = &mut weights {
@@ -1706,8 +1726,10 @@ fn parse_binary_curve(
             let pole_count = degree
                 .checked_add(1)
                 .ok_or_else(|| CodecError::Malformed("binary Bezier pole count overflow".into()))?;
-            let mut control_points = Vec::with_capacity(pole_count);
-            let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+            // Each pole consumes at least a 24-byte point3.
+            let capacity = cursor.bounded(pole_count, 24, "binary Bezier pole")?;
+            let mut control_points = Vec::with_capacity(capacity);
+            let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
                 control_points.push(cursor.point3("binary Bezier pole")?);
                 if let Some(weights) = &mut weights {
@@ -1730,8 +1752,10 @@ fn parse_binary_curve(
             let degree = u32::from(cursor.u16("binary B-spline degree")?);
             let pole_count = cursor.count("binary B-spline pole count")?;
             let knot_count = cursor.count("binary B-spline knot count")?;
-            let mut control_points = Vec::with_capacity(pole_count);
-            let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+            // Each pole consumes at least a 24-byte point3.
+            let capacity = cursor.bounded(pole_count, 24, "binary B-spline pole")?;
+            let mut control_points = Vec::with_capacity(capacity);
+            let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
                 control_points.push(cursor.point3("binary B-spline pole")?);
                 if let Some(weights) = &mut weights {
@@ -1816,8 +1840,10 @@ fn parse_binary_curve2d(
             let pole_count = degree
                 .checked_add(1)
                 .ok_or_else(|| CodecError::Malformed("binary Bezier pole count overflow".into()))?;
-            let mut control_points = Vec::with_capacity(pole_count);
-            let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+            // Each pole consumes at least a 16-byte point2.
+            let capacity = cursor.bounded(pole_count, 16, "binary Bezier parameter pole")?;
+            let mut control_points = Vec::with_capacity(capacity);
+            let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
                 control_points.push(point(cursor, "binary Bezier pole")?);
                 if let Some(weights) = &mut weights {
@@ -1840,8 +1866,10 @@ fn parse_binary_curve2d(
             let degree = u32::from(cursor.u16("binary B-spline degree")?);
             let pole_count = cursor.count("binary B-spline pole count")?;
             let knot_count = cursor.count("binary B-spline knot count")?;
-            let mut control_points = Vec::with_capacity(pole_count);
-            let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+            // Each pole consumes at least a 16-byte point2.
+            let capacity = cursor.bounded(pole_count, 16, "binary B-spline parameter pole")?;
+            let mut control_points = Vec::with_capacity(capacity);
+            let mut weights = rational.then(|| Vec::with_capacity(capacity));
             for _ in 0..pole_count {
                 control_points.push(point(cursor, "binary B-spline pole")?);
                 if let Some(weights) = &mut weights {
@@ -1902,6 +1930,15 @@ impl<'a> BinaryCursor<'a> {
 
     fn remaining(&self) -> usize {
         self.bytes.len() - self.offset
+    }
+
+    /// Clamps a declared element count to what the unread bytes can hold.
+    ///
+    /// `element_size` is the minimum encoded bytes of one element; a count that
+    /// could not physically fit in the remaining input is rejected.
+    fn bounded(&self, count: usize, element_size: usize, label: &str) -> Result<usize, CodecError> {
+        bounded_len(count as u64, element_size, self.remaining())
+            .ok_or_else(|| CodecError::Malformed(format!("{label} count exceeds remaining input")))
     }
 
     fn take(&mut self, count: usize, label: &str) -> Result<&'a [u8], CodecError> {
@@ -2064,7 +2101,9 @@ fn parse_locations(
         .ok_or_else(|| CodecError::Malformed("text B-rep has no Curve2ds table".into()))?;
     let count = section_counts.get("Locations").copied().unwrap_or(0);
     let mut cursor = TokenCursor::new(&tokens[start..end]);
-    let mut locations: Vec<TextLocation> = Vec::with_capacity(count);
+    // Each location consumes at least its one type token.
+    let mut locations: Vec<TextLocation> =
+        Vec::with_capacity(cursor.bounded(count, 1, "text Locations")?);
     for index in 0..count {
         let kind = cursor.integer("location type")?;
         let location = match kind {
@@ -2145,7 +2184,8 @@ fn parse_curve2ds(
         .ok_or_else(|| CodecError::Malformed("text B-rep has no Curves table".into()))?;
     let count = section_counts.get("Curve2ds").copied().unwrap_or(0);
     let mut cursor = TokenCursor::new(&tokens[start..end]);
-    let mut curves = Vec::with_capacity(count);
+    // Each parameter curve consumes at least its one type token.
+    let mut curves = Vec::with_capacity(cursor.bounded(count, 1, "text Curve2ds")?);
     for index in 0..count {
         curves.push(parse_curve2d(&mut cursor, 0, index + 1)?);
     }
@@ -2253,8 +2293,10 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Cod
     let degree = cursor.count("2D B-spline degree", 64)?;
     let pole_count = cursor.count("2D B-spline pole count", 1_000_000)?;
     let knot_count = cursor.count("2D B-spline knot count", 1_000_000)?;
-    let mut control_points = Vec::with_capacity(pole_count);
-    let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+    // Each pole consumes at least its two point2 tokens.
+    let capacity = cursor.bounded(pole_count, 2, "2D B-spline pole")?;
+    let mut control_points = Vec::with_capacity(capacity);
+    let mut weights = rational.then(|| Vec::with_capacity(capacity));
     for _ in 0..pole_count {
         control_points.push(cursor.point2("2D B-spline pole")?);
         if let Some(weights) = &mut weights {
@@ -2353,17 +2395,21 @@ fn parse_polygons3d(
 ) -> Result<Vec<TextPolygon3d>, CodecError> {
     let mut cursor = section_cursor(tokens, "Polygon3D", "PolygonOnTriangulations")?;
     let count = section_counts.get("Polygon3D").copied().unwrap_or(0);
-    let mut polygons = Vec::with_capacity(count);
+    // Each polygon consumes at least a node-count, flag, and deflection token.
+    let mut polygons = Vec::with_capacity(cursor.bounded(count, 3, "text Polygon3D")?);
     for _ in 0..count {
         let node_count = cursor.count("3D polygon node count", 1_000_000)?;
         let has_parameters = cursor.boolean("3D polygon parameter flag")?;
         let deflection = cursor.real("3D polygon deflection")?;
-        let mut nodes = Vec::with_capacity(node_count);
+        // Each node consumes its three point tokens.
+        let mut nodes = Vec::with_capacity(cursor.bounded(node_count, 3, "3D polygon node")?);
         for _ in 0..node_count {
             nodes.push(cursor.point("3D polygon node")?);
         }
         let parameters = if has_parameters {
-            let mut parameters = Vec::with_capacity(node_count);
+            // Each parameter consumes its one token.
+            let mut parameters =
+                Vec::with_capacity(cursor.bounded(node_count, 1, "3D polygon parameter")?);
             for _ in 0..node_count {
                 parameters.push(cursor.real("3D polygon parameter")?);
             }
@@ -2390,10 +2436,14 @@ fn parse_polygons_on_triangulations(
         .get("PolygonOnTriangulations")
         .copied()
         .unwrap_or(0);
-    let mut polygons = Vec::with_capacity(count);
+    // Each polygon consumes at least a node-count, marker, deflection, and flag token.
+    let mut polygons =
+        Vec::with_capacity(cursor.bounded(count, 4, "text PolygonOnTriangulations")?);
     for _ in 0..count {
         let node_count = cursor.count("polygon-on-triangulation node count", 1_000_000)?;
-        let mut nodes = Vec::with_capacity(node_count);
+        // Each node index consumes its one token.
+        let mut nodes =
+            Vec::with_capacity(cursor.bounded(node_count, 1, "polygon-on-triangulation node")?);
         for _ in 0..node_count {
             let node = cursor.count("polygon-on-triangulation node index", u32::MAX as usize)?;
             if node == 0 {
@@ -2411,7 +2461,12 @@ fn parse_polygons_on_triangulations(
         let deflection = cursor.real("polygon-on-triangulation deflection")?;
         let has_parameters = cursor.boolean("polygon-on-triangulation parameter flag")?;
         let parameters = if has_parameters {
-            let mut parameters = Vec::with_capacity(node_count);
+            // Each parameter consumes its one token.
+            let mut parameters = Vec::with_capacity(cursor.bounded(
+                node_count,
+                1,
+                "polygon-on-triangulation parameter",
+            )?);
             for _ in 0..node_count {
                 parameters.push(cursor.real("polygon-on-triangulation parameter")?);
             }
@@ -2436,19 +2491,23 @@ fn parse_triangulations(
 ) -> Result<Vec<TextTriangulation>, CodecError> {
     let mut cursor = section_cursor(tokens, "Triangulations", "TShapes")?;
     let count = section_counts.get("Triangulations").copied().unwrap_or(0);
-    let mut triangulations = Vec::with_capacity(count);
+    // Each triangulation consumes at least two counts, a flag, and a deflection token.
+    let mut triangulations = Vec::with_capacity(cursor.bounded(count, 4, "text Triangulations")?);
     for _ in 0..count {
         let node_count = cursor.count("triangulation node count", 1_000_000)?;
         let triangle_count = cursor.count("triangulation triangle count", 1_000_000)?;
         let has_uv = cursor.boolean("triangulation UV flag")?;
         let has_normals = topology_version >= 3 && cursor.boolean("triangulation normal flag")?;
         let deflection = cursor.real("triangulation deflection")?;
-        let mut nodes = Vec::with_capacity(node_count);
+        // Each node consumes its three point tokens.
+        let mut nodes = Vec::with_capacity(cursor.bounded(node_count, 3, "triangulation node")?);
         for _ in 0..node_count {
             nodes.push(cursor.point("triangulation node")?);
         }
         let uv_nodes = if has_uv {
-            let mut uv_nodes = Vec::with_capacity(node_count);
+            // Each UV node consumes its two point2 tokens.
+            let mut uv_nodes =
+                Vec::with_capacity(cursor.bounded(node_count, 2, "triangulation UV node")?);
             for _ in 0..node_count {
                 uv_nodes.push(cursor.point2("triangulation UV node")?);
             }
@@ -2456,7 +2515,9 @@ fn parse_triangulations(
         } else {
             None
         };
-        let mut triangles = Vec::with_capacity(triangle_count);
+        // Each triangle consumes its three index tokens.
+        let mut triangles =
+            Vec::with_capacity(cursor.bounded(triangle_count, 3, "triangulation triangle")?);
         for _ in 0..triangle_count {
             let mut triangle = [0_u32; 3];
             for node in &mut triangle {
@@ -2471,7 +2532,9 @@ fn parse_triangulations(
             triangles.push(triangle);
         }
         let normals = if has_normals {
-            let mut normals = Vec::with_capacity(node_count);
+            // Each normal consumes its three vector tokens.
+            let mut normals =
+                Vec::with_capacity(cursor.bounded(node_count, 3, "triangulation normal")?);
             for _ in 0..node_count {
                 normals.push(cursor.vector("triangulation normal")?);
             }
@@ -2530,7 +2593,8 @@ fn parse_tshapes(
         + 2;
     let count = section_counts.get("TShapes").copied().unwrap_or(0);
     let mut cursor = TokenCursor::new(&tokens[start..]);
-    let mut shapes = Vec::with_capacity(count);
+    // Each TShape consumes at least its one kind token.
+    let mut shapes = Vec::with_capacity(cursor.bounded(count, 1, "text TShapes")?);
     for index in 1..=count {
         let kind = parse_shape_kind(cursor.next("TShape kind")?)?;
         let geometry = parse_tshape_geometry(kind, &mut cursor, section_counts, topology_version)?;
@@ -2986,7 +3050,8 @@ fn parse_surfaces(
         .ok_or_else(|| CodecError::Malformed("text B-rep has no Triangulations table".into()))?;
     let count = section_counts.get("Surfaces").copied().unwrap_or(0);
     let mut cursor = TokenCursor::new(&tokens[start..end]);
-    let mut surfaces = Vec::with_capacity(count);
+    // Each surface consumes at least its one type token.
+    let mut surfaces = Vec::with_capacity(cursor.bounded(count, 1, "text Surfaces")?);
     for index in 0..count {
         surfaces.push(parse_surface(&mut cursor, 0, index + 1)?);
     }
@@ -3128,8 +3193,10 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Cod
         .checked_mul(v_count)
         .filter(|count| *count <= 1_000_000)
         .ok_or_else(|| CodecError::Malformed("B-spline surface pole limit exceeded".into()))?;
-    let mut control_points = Vec::with_capacity(pole_count);
-    let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+    // Each pole consumes its three point tokens.
+    let capacity = cursor.bounded(pole_count, 3, "B-spline surface pole")?;
+    let mut control_points = Vec::with_capacity(capacity);
+    let mut weights = rational.then(|| Vec::with_capacity(capacity));
     for _ in 0..pole_count {
         control_points.push(cursor.point("B-spline surface pole")?);
         if let Some(weights) = &mut weights {
@@ -3222,7 +3289,8 @@ fn parse_curves(
         .ok_or_else(|| CodecError::Malformed("text B-rep has no Polygon3D table".into()))?;
     let count = section_counts.get("Curves").copied().unwrap_or(0);
     let mut cursor = TokenCursor::new(&tokens[start..end]);
-    let mut curves = Vec::with_capacity(count);
+    // Each 3D curve consumes at least its one type token.
+    let mut curves = Vec::with_capacity(cursor.bounded(count, 1, "text Curves")?);
     for index in 0..count {
         curves.push(parse_curve(&mut cursor, 0, index + 1)?);
     }
@@ -3343,8 +3411,10 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecEr
     let degree = cursor.count("B-spline degree", 64)?;
     let pole_count = cursor.count("B-spline pole count", 1_000_000)?;
     let knot_count = cursor.count("B-spline knot count", 1_000_000)?;
-    let mut control_points = Vec::with_capacity(pole_count);
-    let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+    // Each pole consumes its three point tokens.
+    let capacity = cursor.bounded(pole_count, 3, "B-spline pole")?;
+    let mut control_points = Vec::with_capacity(capacity);
+    let mut weights = rational.then(|| Vec::with_capacity(capacity));
     for _ in 0..pole_count {
         control_points.push(cursor.point("B-spline pole")?);
         if let Some(weights) = &mut weights {
@@ -3400,6 +3470,19 @@ impl<'a> TokenCursor<'a> {
 
     fn is_empty(&self) -> bool {
         self.index == self.tokens.len()
+    }
+
+    fn remaining(&self) -> usize {
+        self.tokens.len().saturating_sub(self.index)
+    }
+
+    /// Clamps a declared element count to the unread token count.
+    ///
+    /// `element_size` is the minimum tokens one element consumes; a count that
+    /// could not fit in the remaining tokens is rejected.
+    fn bounded(&self, count: usize, element_size: usize, label: &str) -> Result<usize, CodecError> {
+        bounded_len(count as u64, element_size, self.remaining())
+            .ok_or_else(|| CodecError::Malformed(format!("{label} count exceeds available tokens")))
     }
 
     fn peek(&self) -> Option<&'a str> {

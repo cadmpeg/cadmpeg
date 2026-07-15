@@ -2,6 +2,7 @@
 //! Transfer of application-owned mesh and point payloads.
 
 use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
@@ -83,7 +84,13 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
     let vertices = (0..point_count)
         .map(|_| reader.point3(byte_order, "mesh point"))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut triangles = Vec::with_capacity(facet_count);
+    // Each facet consumes three point indices and three neighbour indices (24 bytes),
+    // so the declared count cannot exceed the unread payload.
+    let facet_capacity =
+        bounded_len(facet_count as u64, 24, reader.remaining()).ok_or_else(|| {
+            CodecError::Malformed("mesh facet count exceeds remaining payload".into())
+        })?;
+    let mut triangles = Vec::with_capacity(facet_capacity);
     for _ in 0..facet_count {
         let triangle = [
             reader.index(byte_order, point_count, "mesh facet point")?,
@@ -205,6 +212,10 @@ struct Reader<'a> {
 impl<'a> Reader<'a> {
     fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, offset: 0 }
+    }
+
+    fn remaining(&self) -> usize {
+        self.bytes.len().saturating_sub(self.offset)
     }
 
     fn array<const N: usize>(&mut self, label: &str) -> Result<[u8; N], CodecError> {

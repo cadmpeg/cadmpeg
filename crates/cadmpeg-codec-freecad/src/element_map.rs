@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::document::CadIr;
 
 use crate::native::{
@@ -367,7 +368,11 @@ fn parse_string_table(
             ));
         }
     }
-    let mut output = Vec::with_capacity(declared_count.min(4096));
+    // Each record consumes at least one non-whitespace byte, so the declared count
+    // cannot exceed the table's byte length.
+    let capacity = bounded_len(declared_count as u64, 1, text.len())
+        .ok_or_else(|| CodecError::Malformed("string-table record count exceeds input".into()))?;
+    let mut output = Vec::with_capacity(capacity);
     let mut previous_id = 0_i64;
     let mut previous_components = Vec::<i64>::new();
     for _ in 0..declared_count {
@@ -544,7 +549,11 @@ fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecE
             "element map has zero map nodes".into(),
         ));
     }
-    let mut maps = Vec::with_capacity(map_count.min(4096));
+    // Each map node consumes at least one whitespace-separated token, so its count
+    // cannot exceed the element map's byte length.
+    let map_capacity = bounded_len(map_count as u64, 1, text.len())
+        .ok_or_else(|| CodecError::Malformed("element-map node count exceeds input".into()))?;
+    let mut maps = Vec::with_capacity(map_capacity);
     for expected_index in 1..=map_count {
         expect(&mut tokens, "ElementMap")?;
         let index = next_count(&mut tokens, "map index", MAX_MAP_NODES)?;
@@ -555,12 +564,20 @@ fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecE
         }
         let node_id = next_u64(&mut tokens, "map node id")?;
         let group_count = next_count(&mut tokens, "group count", MAX_GROUPS)?;
-        let mut groups = Vec::with_capacity(group_count.min(1024));
+        // Each group consumes at least one token, so its count cannot exceed the byte length.
+        let group_capacity = bounded_len(group_count as u64, 1, text.len())
+            .ok_or_else(|| CodecError::Malformed("element-map group count exceeds input".into()))?;
+        let mut groups = Vec::with_capacity(group_capacity);
         for _ in 0..group_count {
             let indexed_name = next_token(&mut tokens, "indexed name")?.to_owned();
             expect(&mut tokens, "ChildCount")?;
             let child_count = next_count(&mut tokens, "child count", MAX_NAMES)?;
-            let mut children = Vec::with_capacity(child_count.min(1024));
+            // Each child consumes at least one token, so its count cannot exceed the byte length.
+            let child_capacity =
+                bounded_len(child_count as u64, 1, text.len()).ok_or_else(|| {
+                    CodecError::Malformed("element-map child count exceeds input".into())
+                })?;
+            let mut children = Vec::with_capacity(child_capacity);
             for _ in 0..child_count {
                 let fields = (0..7)
                     .map(|_| next_token(&mut tokens, "child descriptor"))
@@ -569,7 +586,11 @@ fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecE
             }
             expect(&mut tokens, "NameCount")?;
             let name_count = next_count(&mut tokens, "name count", MAX_NAMES)?;
-            let mut names = Vec::with_capacity(name_count.min(4096));
+            // Each name consumes at least one token, so its count cannot exceed the byte length.
+            let name_capacity = bounded_len(name_count as u64, 1, text.len()).ok_or_else(|| {
+                CodecError::Malformed("element-map name count exceeds input".into())
+            })?;
+            let mut names = Vec::with_capacity(name_capacity);
             for _ in 0..name_count {
                 let mut chain = Vec::new();
                 loop {
