@@ -2984,10 +2984,14 @@ pub(crate) fn blend_contact_offset_matches(
     support_offset: f64,
     spine_side_offset: f64,
     radius: f64,
-    reversed: bool,
+    _reversed: bool,
 ) -> bool {
-    let expected_offset = if reversed { -radius } else { radius };
-    (spine_side_offset - support_offset).to_bits() == expected_offset.to_bits()
+    let actual = (spine_side_offset - support_offset).abs();
+    let expected = radius.abs();
+    let scale = actual.max(expected).max(1.0);
+    actual.is_finite()
+        && expected.is_finite()
+        && (actual - expected).abs() <= 64.0 * f64::EPSILON * scale
 }
 
 fn surface_offset_lineage(

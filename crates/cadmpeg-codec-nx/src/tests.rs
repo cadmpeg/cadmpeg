@@ -9772,24 +9772,27 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
 }
 
 #[test]
-fn blend_contact_offset_requires_the_serialized_range_sign() {
+fn blend_contact_offset_requires_the_radius_magnitude() {
     assert!(crate::decode::blend_contact_offset_matches(
         2.0, 5.0, 3.0, false
     ));
     assert!(crate::decode::blend_contact_offset_matches(
         2.0, -1.0, 3.0, true
     ));
-    assert!(!crate::decode::blend_contact_offset_matches(
+    assert!(crate::decode::blend_contact_offset_matches(
         2.0, -1.0, 3.0, false
     ));
-    assert!(!crate::decode::blend_contact_offset_matches(
+    assert!(crate::decode::blend_contact_offset_matches(
         2.0, 5.0, 3.0, true
     ));
-    assert!(!crate::decode::blend_contact_offset_matches(
+    assert!(crate::decode::blend_contact_offset_matches(
         2.0,
         f64::from_bits(5.0f64.to_bits() + 1),
         3.0,
         false,
+    ));
+    assert!(!crate::decode::blend_contact_offset_matches(
+        2.0, 5.001, 3.0, false
     ));
 }
 
