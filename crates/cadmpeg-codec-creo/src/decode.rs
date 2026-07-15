@@ -516,6 +516,16 @@ struct CreoCurvePrototypeTopologyRecord {
     source_section: String,
 }
 
+#[derive(Serialize)]
+struct CreoCurvePrototypeRecord {
+    id: String,
+    curve_id: u32,
+    type_byte: u8,
+    generating_feature_id: Option<u32>,
+    offset: usize,
+    source_section: String,
+}
+
 fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
     scan.feature_entities
         .iter()
@@ -934,6 +944,20 @@ fn curve_prototype_topology_records(scan: &ContainerScan) -> Vec<CreoCurveProtot
             curve_id: record.curve_id,
             faces: record.faces,
             next_edges: record.next_edges,
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn curve_prototype_records(scan: &ContainerScan) -> Vec<CreoCurvePrototypeRecord> {
+    scan.curve_prototypes
+        .iter()
+        .map(|record| CreoCurvePrototypeRecord {
+            id: format!("creo:curve:prototype#{}:{}", record.offset, record.id),
+            curve_id: record.id,
+            type_byte: record.type_byte,
+            generating_feature_id: record.feature_id,
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })
@@ -15838,6 +15862,22 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("curve_prototype_topology", &curve_prototype_topology)?;
+    }
+    let curve_prototypes = curve_prototype_records(scan);
+    if !curve_prototypes.is_empty() {
+        for record in &curve_prototypes {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "curve_prototype",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("curve_prototypes", &curve_prototypes)?;
     }
     let curve_topology_rows = curve_topology_row_records(scan);
     if !curve_topology_rows.is_empty() {

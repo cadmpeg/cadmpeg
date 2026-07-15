@@ -2829,12 +2829,18 @@ fn scan_reads_geomlists_first_quilt_discriminator() {
 fn scan_discovers_labeled_curve_prototypes() {
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"crv_array\0crv_id\0\x07type\0\x08feat_id\0\x04");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.curve_prototypes.len(), 1);
     assert_eq!(scan.curve_prototypes[0].id, 7);
     assert_eq!(scan.curve_prototypes[0].type_byte, 8);
     assert_eq!(scan.curve_prototypes[0].feature_id, Some(4));
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let records = &result.ir.native.namespace("creo").unwrap().arenas["curve_prototypes"];
+    assert_eq!(records[0].fields["curve_id"], 7);
+    assert_eq!(records[0].fields["type_byte"], 8);
+    assert_eq!(records[0].fields["generating_feature_id"], 4);
 }
 
 #[test]
