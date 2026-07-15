@@ -13092,6 +13092,37 @@ mod resolved_sketch_tests {
     }
 
     #[test]
+    fn carrier_solver_accepts_two_carrier_tangent_vertices() {
+        let plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 2.0],
+            normal: [0.0, 0.0, 1.0],
+        });
+        let sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [0.0, 0.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 2.0,
+        });
+        assert_eq!(solve_carriers(&[plane, sphere]), Some([0.0, 0.0, 2.0]));
+
+        let second_sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [5.0, 0.0, 0.0],
+            ref_direction: [0.0, 1.0, 0.0],
+            radius: 3.0,
+        });
+        assert_eq!(
+            solve_carriers(&[sphere, second_sphere]),
+            Some([2.0, 0.0, 0.0])
+        );
+
+        let secant = CarrierEquation::Sphere(SphereEquation {
+            center: [3.0, 0.0, 0.0],
+            ref_direction: [0.0, 1.0, 0.0],
+            radius: 2.0,
+        });
+        assert_eq!(solve_carriers(&[sphere, secant]), None);
+    }
+
+    #[test]
     fn carrier_solver_accepts_unique_plane_plane_cylinder_vertex() {
         let cylinder = CarrierEquation::Cylinder(CylinderEquation {
             origin: [0.0, 0.0, 0.0],
@@ -13984,6 +14015,24 @@ fn tangent_plane_sphere_point(plane: PlaneEquation, sphere: SphereEquation) -> O
 
 fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
     let mut candidates = Vec::new();
+    for first in 0..carriers.len() {
+        for second in first + 1..carriers.len() {
+            match (carriers[first], carriers[second]) {
+                (CarrierEquation::Plane(plane), CarrierEquation::Sphere(sphere))
+                | (CarrierEquation::Sphere(sphere), CarrierEquation::Plane(plane)) => {
+                    if let Some(point) = tangent_plane_sphere_point(plane, sphere) {
+                        candidates.push(point);
+                    }
+                }
+                (CarrierEquation::Sphere(first), CarrierEquation::Sphere(second)) => {
+                    if let Some(point) = tangent_sphere_point(first, second) {
+                        candidates.push(point);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
     for first in 0..carriers.len() {
         for second in first + 1..carriers.len() {
             for third in second + 1..carriers.len() {

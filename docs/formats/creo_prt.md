@@ -490,6 +490,11 @@ the minimum-norm point satisfying both plane equations.
 A topological vertex orbit with three linearly independent placed incident
 planes is their unique intersection point. Additional incident placed planes
 must contain the same point; otherwise the orbit has no placed vertex.
+A tangent plane and sphere determine their single contact point. Two externally
+or non-concentrically internally tangent spheres likewise determine their
+single contact point. These two-carrier contacts define a topological vertex
+without requiring a third carrier. Every additional incident carrier must
+contain the same point.
 
 ## 4. Curve namespace: `crv_array`
 
