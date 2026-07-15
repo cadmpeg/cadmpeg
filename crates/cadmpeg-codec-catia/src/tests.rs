@@ -423,6 +423,27 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
 }
 
 #[test]
+fn unmatched_standard_row_arity_does_not_fix_trim_span() {
+    let mut bytes = standard_quad_topology_stream();
+    let header = bytes
+        .windows(3)
+        .position(|window| window == [0x01, 0x01, 0x04])
+        .expect("edge table header");
+    let first_row = header + 3;
+    bytes[first_row + 1] = 4;
+    bytes.splice(first_row + 6..first_row + 6, 0x7ffe_u16.to_be_bytes());
+
+    let coverage = crate::topology::standard_mesh_face_coverage(&bytes, &[[0, 0]; 4])
+        .expect("unmatched row coverage");
+    assert_eq!(coverage[0].missing_edges, [0]);
+    assert_eq!(coverage[0].gaps[0].length, 2);
+    let assignments = crate::topology::standard_mesh_missing_edge_assignments(&bytes, &[[0, 0]; 4])
+        .expect("unmatched curve samples do not determine trim span");
+    assert_eq!(assignments[0].len(), 1);
+    assert_eq!(assignments[0][0][0].segment_count, 2);
+}
+
+#[test]
 fn standard_mesh_runs_include_flanking_segments() {
     let runs = crate::topology::standard_mesh_edge_runs(&standard_quad_topology_stream())
         .expect("mesh edge runs");

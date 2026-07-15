@@ -1986,7 +1986,7 @@ fn standard_mesh_missing_edge_assignments_impl(
         gaps: &[MeshBoundaryGap],
         cycle_lengths: &[usize],
         missing: &[usize],
-        rows: &[EdgeRow],
+        _rows: &[EdgeRow],
         constraints: PlacementConstraints<'_>,
         canonicalize_spans: bool,
     ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
@@ -1995,7 +1995,6 @@ fn standard_mesh_missing_edge_assignments_impl(
             gaps: &'a [MeshBoundaryGap],
             cycle_lengths: &'a [usize],
             missing: &'a [usize],
-            rows: &'a [EdgeRow],
             edge_ports: Option<&'a [[u32; 2]]>,
             corner_ports: &'a HashMap<MeshCorner, u32>,
             edge_points: Option<&'a [Arc<HashSet<usize>>]>,
@@ -2024,9 +2023,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                     .map(|points| points.iter().copied().collect::<Vec<_>>())
                     .unwrap_or_default();
                 points.sort_unstable();
-                let has_flexible = placed[gap_placed_start..]
-                    .iter()
-                    .any(|placement| self.rows[placement.edge].handles.len() == 2);
+                let has_flexible = placed.len() > gap_placed_start;
                 let state = (gap, offset, used, current_port, points, has_flexible);
                 if self.dead_states.contains(&state) {
                     return Some(());
@@ -2071,9 +2068,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                 let target = self.gaps[gap].length;
                 let can_expand_gap = self.canonical_gap_partitions
                     && offset < target
-                    && placed[gap_placed_start..]
-                        .iter()
-                        .any(|placement| self.rows[placement.edge].handles.len() == 2);
+                    && placed.len() > gap_placed_start;
                 if offset == target || can_expand_gap {
                     let value = &self.gaps[gap];
                     let end = (value.start + value.length) % self.cycle_lengths[value.cycle];
@@ -2109,10 +2104,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                     let saved = placed[gap_placed_start..].to_vec();
                     if offset < target {
                         let slack = target - offset;
-                        let Some(flexible) = placed[gap_placed_start..]
-                            .iter_mut()
-                            .find(|placement| self.rows[placement.edge].handles.len() == 2)
-                        else {
+                        let Some(flexible) = placed.get_mut(gap_placed_start) else {
                             return Some(());
                         };
                         flexible.segment_count = flexible.segment_count.checked_add(slack)?;
@@ -2143,9 +2135,9 @@ fn standard_mesh_missing_edge_assignments_impl(
                         continue;
                     }
                     let edge = self.missing[rank];
-                    let stored_span = self.rows[edge].handles.len().checked_sub(1)?;
                     let remaining = target - offset;
-                    let canonical_span = (self.canonical_spans && stored_span == 1)
+                    let canonical_span = self
+                        .canonical_spans
                         .then(|| {
                             if self.canonical_gap_partitions {
                                 return Some(1);
@@ -2154,19 +2146,14 @@ fn standard_mesh_missing_edge_assignments_impl(
                                 .iter()
                                 .enumerate()
                                 .filter(|(other, _)| *other != rank && used & (1 << other) == 0)
-                                .try_fold(remaining, |available, (_, edge)| {
-                                    available
-                                        .checked_sub(self.rows[*edge].handles.len().checked_sub(1)?)
-                                })
+                                .try_fold(remaining, |available, _| available.checked_sub(1))
                         })
                         .flatten();
                     let spans: Box<dyn Iterator<Item = usize>> = if let Some(span) = canonical_span
                     {
                         Box::new(std::iter::once(span))
-                    } else if stored_span == 1 {
-                        Box::new(1..=remaining)
                     } else {
-                        Box::new(std::iter::once(stored_span))
+                        Box::new(1..=remaining)
                     };
                     for segment_count in spans.filter(|span| *span > 0 && *span <= remaining) {
                         let mut next_ports = match (self.edge_ports, current_port) {
@@ -2249,7 +2236,6 @@ fn standard_mesh_missing_edge_assignments_impl(
             gaps,
             cycle_lengths,
             missing,
-            rows,
             edge_ports,
             corner_ports,
             edge_points,
@@ -2416,16 +2402,8 @@ fn standard_mesh_missing_edge_assignments_impl(
                         {
                             return None;
                         }
-                        let span = trail.edges.iter().try_fold(0usize, |sum, &edge| {
-                            sum.checked_add(rows[edge].handles.len().checked_sub(1)?)
-                        })?;
-                        (span <= gap.length
-                            && (span == gap.length
-                                || trail
-                                    .edges
-                                    .iter()
-                                    .any(|&edge| rows[edge].handles.len() == 2)))
-                        .then_some((index, span, reversed))
+                        let span = trail.edges.len();
+                        (span <= gap.length).then_some((index, span, reversed))
                     })
                     .collect::<Vec<_>>();
                 let [(trail_index, minimum_span, reversed)] = candidates.as_slice() else {
@@ -2441,11 +2419,10 @@ fn standard_mesh_missing_edge_assignments_impl(
                 };
                 let edges = edges.collect::<Vec<_>>();
                 let slack = gap.length - minimum_span;
-                let flexible = edges.iter().position(|&edge| rows[edge].handles.len() == 2);
                 let mut offset = 0usize;
                 for (index, edge) in edges.into_iter().enumerate() {
-                    let mut segment_count = rows[edge].handles.len().checked_sub(1)?;
-                    if Some(index) == flexible {
+                    let mut segment_count = 1usize;
+                    if index == 0 {
                         segment_count = segment_count.checked_add(slack)?;
                     }
                     placements.push(MeshEdgePlacementCandidate {
@@ -2650,8 +2627,8 @@ fn standard_mesh_missing_edge_assignments_impl(
 }
 
 /// Project complete unmatched-edge assignments to the placement domain for
-/// each face. Rows with stored interiors cover exactly `arity - 1` segments;
-/// arity-two rows may cover any positive remaining span.
+/// each face. Every unmatched row may cover any positive remaining span;
+/// row arity fixes a span only after its interior handles match the boundary.
 #[must_use]
 pub fn standard_mesh_missing_edge_placements(
     bytes: &[u8],
