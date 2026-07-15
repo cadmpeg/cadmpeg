@@ -10051,6 +10051,16 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
+    let continued = crate::decode::blend_surface_parameters_for_fit(
+        &ir,
+        &surface,
+        point,
+        Some(Point2::new(expected.u + 0.1, expected.v - 0.05)),
+        1.0e-8,
+    )
+    .unwrap();
+    assert!((continued.u - expected.u).abs() < 1.0e-8);
+    assert!((continued.v - expected.v).abs() < 1.0e-8);
 
     ir.model
         .curves

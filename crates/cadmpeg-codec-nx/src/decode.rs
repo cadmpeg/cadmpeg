@@ -2279,6 +2279,18 @@ fn blend_surface_parameters_inner(
 ) -> Option<Point2> {
     (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    if let (Some(seed), Some(fit_tolerance)) = (seed, fit_tolerance) {
+        if let Some(parameters) =
+            refine_blend_surface_parameters(ir, surface, point, seed, depth + 1).filter(
+                |parameters| {
+                    blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)
+                        .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+                },
+            )
+        {
+            return Some(parameters);
+        }
+    }
     if let Some(fit_tolerance) = fit_tolerance {
         let boundary_parameters = [0usize, 1usize].map(|boundary| {
             blend_boundary_parameter(ir, surface, point, boundary, depth + 1).filter(|parameter| {
