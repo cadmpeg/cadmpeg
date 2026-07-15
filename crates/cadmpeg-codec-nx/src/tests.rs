@@ -5533,6 +5533,136 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
 }
 
 #[test]
+fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluable() {
+    use cadmpeg_ir::geometry::{
+        BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+        ProceduralSurface, Surface,
+    };
+    use cadmpeg_ir::ids::{
+        CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, VertexId,
+    };
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::Edge;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let source = SurfaceId("synthetic:unevaluable-source-blend".into());
+    let other_support = SurfaceId("synthetic:other-support".into());
+    let target = SurfaceId("synthetic:target-blend".into());
+    let target_construction = ProceduralSurfaceId("synthetic:target-blend-construction".into());
+    ir.model.surfaces.extend([
+        Surface {
+            id: source.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        },
+        Surface {
+            id: other_support.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: target.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: target_construction.clone(),
+            },
+            source_object: None,
+        },
+    ]);
+    let spine = CurveId("synthetic:target-spine".into());
+    ir.model.curves.push(Curve {
+        id: spine.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: target_construction,
+        surface: target.clone(),
+        definition: ProceduralSurfaceDefinition::Blend {
+            supports: [
+                Some(BlendSupport {
+                    surface: source.clone(),
+                    reversed: false,
+                }),
+                Some(BlendSupport {
+                    surface: other_support,
+                    reversed: false,
+                }),
+            ],
+            spine: Some(spine),
+            radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
+            cross_section: BlendCrossSection::Circular,
+            native: None,
+        },
+        cache_fit_tolerance: None,
+    });
+
+    let curve = CurveId("synthetic:solved-boundary".into());
+    let construction = ProceduralCurveId("synthetic:boundary-intersection".into());
+    ir.model.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(2.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: construction,
+        curve: curve.clone(),
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(source),
+                        pcurve: Some(PcurveGeometry::Line {
+                            origin: Point2::new(0.0, 0.0),
+                            direction: Point2::new(1.0, 0.0),
+                        }),
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(target),
+                        pcurve: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: None,
+    });
+    ir.model.edges.push(Edge {
+        id: EdgeId("synthetic:boundary-edge".into()),
+        curve: Some(curve),
+        start: VertexId("synthetic:boundary-start".into()),
+        end: VertexId("synthetic:boundary-end".into()),
+        param_range: Some([0.0, 1.0]),
+        tolerance: Some(1.0e-8),
+    });
+
+    crate::decode::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &ir.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    let PcurveGeometry::Nurbs { control_points, .. } = context.sides[1].pcurve.as_ref().unwrap()
+    else {
+        unreachable!()
+    };
+    assert_eq!(control_points.first(), Some(&Point2::new(0.0, 0.0)));
+    assert_eq!(control_points.last(), Some(&Point2::new(1.0, 0.0)));
+}
+
+#[test]
 fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     use cadmpeg_ir::geometry::{
         Curve, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface, ProceduralCurve, Surface,
@@ -10569,6 +10699,23 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     };
     assert_eq!(control_points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(control_points.last(), Some(&Point2::new(1.0, 0.0)));
+    assert_eq!(
+        crate::decode::blend_boundary_parameter_from_support_spine(
+            &ir,
+            &surface,
+            &first,
+            cadmpeg_ir::math::Point3::new(0.0, 2.0, 0.0),
+            None,
+            1.0e-8,
+        ),
+        Some(Point2::new(0.0, 0.0))
+    );
+    ir.model
+        .procedural_curves
+        .iter_mut()
+        .find(|procedural| procedural.curve == spine)
+        .unwrap()
+        .definition = ProceduralCurveDefinition::Unknown { record: None };
     assert_eq!(
         crate::decode::blend_boundary_parameter_from_support_spine(
             &ir,

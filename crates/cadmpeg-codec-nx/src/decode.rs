@@ -4976,8 +4976,10 @@ pub(crate) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr)
             let tolerance = procedural
                 .cache_fit_tolerance
                 .or_else(|| edge_tolerances.get(&procedural.curve).copied())?;
+            let tolerance = blend_spine_cache_fit_tolerance(ir, target_surface, tolerance);
             let pcurve = transfer_intersection_pcurve(
                 ir,
+                &procedural.curve,
                 source_surface,
                 source_pcurve,
                 target_surface,
@@ -5081,6 +5083,7 @@ pub(crate) fn complete_isoparametric_intersection_pcurves(ir: &mut CadIr) {
                     first.clone(),
                     transfer_intersection_pcurve(
                         ir,
+                        &procedural.curve,
                         first_surface,
                         &first,
                         second_surface,
@@ -5091,6 +5094,7 @@ pub(crate) fn complete_isoparametric_intersection_pcurves(ir: &mut CadIr) {
                 [None, Some(second)] => [
                     transfer_intersection_pcurve(
                         ir,
+                        &procedural.curve,
                         second_surface,
                         &second,
                         first_surface,
@@ -5221,6 +5225,7 @@ fn coincident_pcurve_pair(
 
 fn transfer_intersection_pcurve(
     ir: &CadIr,
+    curve: &CurveId,
     source_surface: &SurfaceId,
     source_pcurve: &PcurveGeometry,
     target_surface: &SurfaceId,
@@ -5235,6 +5240,7 @@ fn transfer_intersection_pcurve(
         .then_some(())?;
     let first = transferred_pcurve_sample(
         ir,
+        curve,
         source_surface,
         source_pcurve,
         target_surface,
@@ -5244,6 +5250,7 @@ fn transfer_intersection_pcurve(
     )?;
     let last = transferred_pcurve_sample(
         ir,
+        curve,
         source_surface,
         source_pcurve,
         target_surface,
@@ -5254,6 +5261,7 @@ fn transfer_intersection_pcurve(
     let mut samples = vec![first];
     append_transferred_pcurve_segment(
         ir,
+        curve,
         source_surface,
         source_pcurve,
         target_surface,
@@ -5274,8 +5282,10 @@ fn transfer_intersection_pcurve(
 
 type TransferredPcurveSample = (f64, Point2, Point3);
 
+#[allow(clippy::too_many_arguments)]
 fn transferred_pcurve_sample(
     ir: &CadIr,
+    curve: &CurveId,
     source_surface: &SurfaceId,
     source_pcurve: &PcurveGeometry,
     target_surface: &SurfaceId,
@@ -5284,7 +5294,8 @@ fn transferred_pcurve_sample(
     tolerance: f64,
 ) -> Option<TransferredPcurveSample> {
     let source_uv = pcurve_uv(source_pcurve, parameter)?;
-    let point = decoded_surface_point(ir, source_surface, source_uv.u, source_uv.v)?;
+    let point = decoded_surface_point(ir, source_surface, source_uv.u, source_uv.v)
+        .or_else(|| model_curve_point(ir, curve, parameter))?;
     let target_uv = blend_boundary_parameter_from_support_pcurve(
         ir,
         target_surface,
@@ -5305,9 +5316,10 @@ fn transferred_pcurve_sample(
         )
     })
     .or_else(|| surface_parameters_for_fit(ir, target_surface, point, seed, tolerance))?;
-    decoded_surface_point(ir, target_surface, target_uv.u, target_uv.v)
-        .filter(|candidate| point_distance(*candidate, point) <= tolerance)
-        .map(|_| (parameter, target_uv, point))
+    (decoded_surface_point(ir, target_surface, target_uv.u, target_uv.v)
+        .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
+        || blend_boundary_spine_geometry_matches(ir, target_surface, target_uv, point, tolerance))
+    .then_some((parameter, target_uv, point))
 }
 
 pub(crate) fn blend_boundary_parameter_from_support_spine(
@@ -5329,14 +5341,48 @@ pub(crate) fn blend_boundary_parameter_from_support_spine(
         return None;
     };
     let parameter = closest_spine_parameter(ir, &spine, point, seed.map(|seed| seed.u))?;
-    blend_surface_point_inner(ir, blend, parameter, *boundary as f64, 0)
-        .filter(|candidate| point_distance(*candidate, point) <= tolerance)
-        .map(|_| Point2::new(parameter, *boundary as f64))
+    let parameters = Point2::new(parameter, *boundary as f64);
+    (blend_surface_point_inner(ir, blend, parameters.u, parameters.v, 0)
+        .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
+        || blend_boundary_spine_geometry_matches(ir, blend, parameters, point, tolerance))
+    .then_some(parameters)
+}
+
+fn blend_boundary_spine_geometry_matches(
+    ir: &CadIr,
+    blend: &SurfaceId,
+    parameters: Point2,
+    point: Point3,
+    tolerance: f64,
+) -> bool {
+    if parameters.v.to_bits() != 0.0f64.to_bits() && parameters.v.to_bits() != 1.0f64.to_bits() {
+        return false;
+    }
+    let Some((_, spine, radius, _)) = blend_surface_definition(ir, blend) else {
+        return false;
+    };
+    let Some(center) = model_curve_point(ir, &spine, parameters.u) else {
+        return false;
+    };
+    let radial = Vector3::new(point.x - center.x, point.y - center.y, point.z - center.z);
+    let distance = (radial.x * radial.x + radial.y * radial.y + radial.z * radial.z).sqrt();
+    if !distance.is_finite() || (distance - radius).abs() > tolerance {
+        return false;
+    }
+    let Some(radial) = unit_vector(radial) else {
+        return false;
+    };
+    let Some(tangent) = model_curve_tangent(ir, &spine, parameters.u) else {
+        return false;
+    };
+    let angular_tolerance = (tolerance / radius).max(1.0e-8);
+    (radial.x * tangent.x + radial.y * tangent.y + radial.z * tangent.z).abs() <= angular_tolerance
 }
 
 #[allow(clippy::too_many_arguments)]
 fn append_transferred_pcurve_segment(
     ir: &CadIr,
+    curve: &CurveId,
     source_surface: &SurfaceId,
     source_pcurve: &PcurveGeometry,
     target_surface: &SurfaceId,
@@ -5353,6 +5399,7 @@ fn append_transferred_pcurve_segment(
     );
     let midpoint = transferred_pcurve_sample(
         ir,
+        curve,
         source_surface,
         source_pcurve,
         target_surface,
@@ -5371,11 +5418,19 @@ fn append_transferred_pcurve_segment(
         };
         let Some(source_point) =
             decoded_surface_point(ir, source_surface, source_uv.u, source_uv.v)
+                .or_else(|| model_curve_point(ir, curve, parameter))
         else {
             return false;
         };
         decoded_surface_point(ir, target_surface, uv.u, uv.v)
             .is_some_and(|target_point| point_distance(source_point, target_point) <= tolerance)
+            || blend_boundary_spine_geometry_matches(
+                ir,
+                target_surface,
+                uv,
+                source_point,
+                tolerance,
+            )
     });
     if fits {
         samples.push(last);
@@ -5384,6 +5439,7 @@ fn append_transferred_pcurve_segment(
     (depth < 16).then_some(())?;
     append_transferred_pcurve_segment(
         ir,
+        curve,
         source_surface,
         source_pcurve,
         target_surface,
@@ -5395,6 +5451,7 @@ fn append_transferred_pcurve_segment(
     )?;
     append_transferred_pcurve_segment(
         ir,
+        curve,
         source_surface,
         source_pcurve,
         target_surface,
