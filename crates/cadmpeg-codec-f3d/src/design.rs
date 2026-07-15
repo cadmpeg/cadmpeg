@@ -1327,18 +1327,33 @@ fn radius_edge_group_candidates(operands: &[&DesignEdgeOperand], radius: f64) ->
     if let Some(assignment) = unique_edge_assignment_with_context(&candidate_sets) {
         return Some(assignment);
     }
-    let edge_sets = candidate_sets.into_iter().flatten().collect::<Vec<_>>();
-    let mut common = edge_sets.first()?.clone();
-    common.sort_unstable();
-    common.dedup();
-    (common.len() == edge_sets.len()
-        && edge_sets.iter().all(|set| {
-            let mut set = set.clone();
-            set.sort_unstable();
-            set.dedup();
-            set == common
-        }))
-    .then_some(common)
+    let mut chain = Vec::new();
+    for operand in operands {
+        let resolved = resolved_edge_operand(operand);
+        if let Some(edge) = resolved {
+            chain.push(edge);
+        }
+        let before = chain.len();
+        chain.extend(
+            operand
+                .treatment_radius_candidates
+                .iter()
+                .filter(|candidate| (candidate.radius - radius).abs() <= tolerance)
+                .map(|candidate| candidate.edge_slot),
+        );
+        if chain.len() == before
+            && resolved.is_none()
+            && !operand.changed_boundary_edge_slots.is_empty()
+        {
+            return None;
+        }
+    }
+    chain.sort_unstable();
+    chain.dedup();
+    if !chain.is_empty() {
+        return Some(chain);
+    }
+    None
 }
 
 fn unique_edge_assignment_with_context(candidate_sets: &[Option<Vec<i64>>]) -> Option<Vec<i64>> {
@@ -13162,6 +13177,29 @@ mod relation_tests {
         assert_eq!(
             super::radius_edge_group_candidates(&[&edge_operand, &second_operand], 4.0),
             None
+        );
+        let mut chain_left = edge_operand.clone();
+        chain_left.treatment_radius_candidates.push(
+            crate::records::DesignEdgeTreatmentRadiusCandidate {
+                edge_slot: 19,
+                radius: 3.0,
+            },
+        );
+        let mut chain_right = edge_operand.clone();
+        chain_right.treatment_radius_candidates = vec![
+            crate::records::DesignEdgeTreatmentRadiusCandidate {
+                edge_slot: 19,
+                radius: 3.0,
+            },
+            crate::records::DesignEdgeTreatmentRadiusCandidate {
+                edge_slot: 20,
+                radius: 3.0,
+            },
+        ];
+        chain_right.deleted_boundary_edge_slots = vec![19, 20];
+        assert_eq!(
+            super::radius_edge_group_candidates(&[&chain_left, &chain_right], 3.0),
+            Some(vec![17, 18, 19, 20])
         );
         let mut resolved_operand = edge_operand.clone();
         resolved_operand.id = "resolved".into();
