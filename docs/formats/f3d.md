@@ -702,7 +702,7 @@ On a body, `generic_tag_attrib_def` supplies a design/construction ID distinct f
 
 #### Edge-recipe exact incidence
 
-An edge satisfies one selector exactly when, for every present clause entry, its incident loops contain both encoded boundary-count and coedge-ordinal incidences. The operand resolves to a stable historical edge slot only when every selector independently has the same single satisfying edge. Empty, non-singleton, or disagreeing selector results do not resolve the operand.
+An edge satisfies one selector exactly when, for every present clause entry, its incident loops contain both encoded boundary-count and coedge-ordinal incidences. Each selector retains all satisfying changed historical edge slots in stable slot order. The operand resolves to a stable historical edge slot only when every selector independently has the same single satisfying edge. Empty, non-singleton, or disagreeing selector results do not resolve the operand.
 
 ### 8.2 Materials
 

@@ -1164,6 +1164,9 @@ pub struct DesignEdgeRecipeSelectorContext {
     /// Changed historical edge slots at the loop position named by each of the
     /// two triplets in each present clause entry.
     pub clause_triplet_edge_slots: [Option<[Vec<i64>; 2]>; 2],
+    /// Changed historical edges satisfying both triplets of every present
+    /// clause entry.
+    pub incidence_matching_edge_slots: Vec<i64>,
     /// Changed historical edges whose incident loop counts satisfy every
     /// present clause entry. This is a topology-context match, not a resolved
     /// selection.

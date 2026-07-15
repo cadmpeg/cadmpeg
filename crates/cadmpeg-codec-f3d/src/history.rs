@@ -805,34 +805,17 @@ pub(crate) fn bind_edge_operand_history_candidates(
             operand.recipe_structure.as_ref(),
             &operand.changed_boundary_edge_contexts,
         );
-        operand.resolved_historical_edge_slot = resolved_recipe_edge_slot(
-            &operand.recipe_selectors,
-            &operand.changed_boundary_edge_contexts,
-        );
+        operand.resolved_historical_edge_slot =
+            resolved_recipe_edge_slot(&operand.recipe_selectors);
     }
 }
 
 fn resolved_recipe_edge_slot(
     selectors: &[crate::records::DesignEdgeRecipeSelectorContext],
-    contexts: &[crate::records::DesignHistoricalEdgeContext],
 ) -> Option<i64> {
     let mut resolved = None;
     for selector in selectors {
-        let matches = contexts
-            .iter()
-            .filter(|context| {
-                selector.clause_entries.iter().flatten().all(|entry| {
-                    entry.topology_triplets.iter().all(|triplet| {
-                        context.incident_loops.iter().any(|incident| {
-                            incident.boundary_edge_count == entry.boundary_edge_count.get()
-                                && incident.coedge_ordinal == triplet.incident_edge_ordinal
-                        })
-                    })
-                })
-            })
-            .map(|context| context.edge_slot)
-            .collect::<BTreeSet<_>>();
-        let mut matches = matches.into_iter();
+        let mut matches = selector.incidence_matching_edge_slots.iter().copied();
         let edge = matches.next()?;
         if matches.next().is_some() || resolved.is_some_and(|previous| previous != edge) {
             return None;
@@ -899,10 +882,25 @@ fn recipe_selector_candidates(
                     })
                 })
             });
+            let incidence_matching_edge_slots = contexts
+                .iter()
+                .filter(|context| {
+                    clause_entries.iter().flatten().all(|entry| {
+                        entry.topology_triplets.iter().all(|triplet| {
+                            context.incident_loops.iter().any(|incident| {
+                                incident.boundary_edge_count == entry.boundary_edge_count.get()
+                                    && incident.coedge_ordinal == triplet.incident_edge_ordinal
+                            })
+                        })
+                    })
+                })
+                .map(|context| context.edge_slot)
+                .collect();
             crate::records::DesignEdgeRecipeSelectorContext {
                 selector: *selector,
                 clause_entries,
                 clause_triplet_edge_slots,
+                incidence_matching_edge_slots,
                 boundary_count_matching_edge_slots,
             }
         })
@@ -1887,13 +1885,12 @@ mod tests {
             selectors[0].clause_triplet_edge_slots,
             [Some([vec![7, 8], vec![7, 8]]), Some([vec![8], vec![8]])]
         );
-        assert_eq!(
-            resolved_recipe_edge_slot(&selectors[..1], &contexts),
-            Some(8)
-        );
-        assert_eq!(resolved_recipe_edge_slot(&selectors, &contexts), None);
+        assert_eq!(resolved_recipe_edge_slot(&selectors[..1]), Some(8));
+        assert_eq!(selectors[0].incidence_matching_edge_slots, [8]);
+        assert_eq!(resolved_recipe_edge_slot(&selectors), None);
         assert_eq!(selectors[1].selector, 2);
         assert_eq!(selectors[1].boundary_count_matching_edge_slots, [7, 8]);
+        assert_eq!(selectors[1].incidence_matching_edge_slots, [7, 8]);
         assert_eq!(
             selectors[1].clause_triplet_edge_slots,
             [Some([vec![7, 8], vec![7, 8]]), None]
