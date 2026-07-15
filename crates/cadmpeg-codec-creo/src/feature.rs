@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural `AllFeatur` feature-to-generated-entity bindings.
 //!
-//! A mixed generated-entity table is `f8 <count> f7 1d fb e3`, followed by
+//! A mixed generated-entity table is `f8 <count> f7 <table-class> fb e3`, followed by
 //! exactly `<count>` compact entity identifiers, each terminated by `e3`.
-//! `f7 1e` may prefix an entry. The table belongs to an `AllFeatur` row only
+//! `f7 <entry-class>` may prefix the first entry. The table belongs to an `AllFeatur` row only
 //! when its byte offset is bounded by that row's known feature-id header.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -1062,7 +1062,6 @@ pub struct FeatureEntityReference {
     pub offset: usize,
 }
 
-const TABLE_TAG: &[u8] = &[0xf7, 0x1d, 0xfb, 0xe3];
 const ROW_HEADERS: &[&[u8]] = &[&[0xeb, 0x04], &[0x90, 0x01], &[0xc8, 0x10]];
 const CHOICE_LABELS: &[&[u8]] = &[
     b"blend_choice",
@@ -5068,9 +5067,10 @@ fn read_entries(
     let mut entries = Vec::with_capacity(count);
     let mut cursor = body_start;
     for _ in 0..count {
-        let prefixed = payload.get(cursor..cursor + 2) == Some(&[0xf7, 0x1e]);
+        let prefixed = payload.get(cursor) == Some(&psb::token::ENTITY_REF);
         if prefixed {
-            cursor += 2;
+            let (_, after_class) = psb::reference_id(payload, cursor + 1).ok()?;
+            cursor = after_class;
         }
         let offset = cursor;
         let (id, after) = psb::reference_id(payload, cursor).ok()?;
@@ -5117,8 +5117,13 @@ pub fn entity_tables(
             continue;
         }
         let (count, after_count) = psb::compact_int(payload, offset + 1);
-        if count == 0 || payload.get(after_count..after_count + TABLE_TAG.len()) != Some(TABLE_TAG)
-        {
+        if count == 0 || payload.get(after_count) != Some(&psb::token::ENTITY_REF) {
+            continue;
+        }
+        let Ok((_, after_table_class)) = psb::reference_id(payload, after_count + 1) else {
+            continue;
+        };
+        if payload.get(after_table_class..after_table_class + 2) != Some(&[0xfb, 0xe3]) {
             continue;
         }
         let Some(&(_, row_end, feature_id)) = spans
@@ -5127,8 +5132,7 @@ pub fn entity_tables(
         else {
             continue;
         };
-        let Some(entries) = read_entries(&payload[..row_end], after_count + TABLE_TAG.len(), count)
-        else {
+        let Some(entries) = read_entries(&payload[..row_end], after_table_class + 2, count) else {
             continue;
         };
         let entry_ids = entries
@@ -5163,6 +5167,23 @@ pub fn entity_tables(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_entity_entries_accept_variable_schema_classes() {
+        let payload = [
+            0xf7, 0x50, 0x0d, 0x80, 0xcc, 0x00, 0xe4, 0xf1, 0xf7, 0x4f, 0xe3, 0x12, 0x80, 0xcb,
+            0x00, 0xe4, 0xe3,
+        ];
+
+        let entries = read_entries(&payload, 0, 2).expect("generated entity entries");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].entity_id, 13);
+        assert_eq!(entries[0].class_id, 204);
+        assert!(entries[0].prefixed);
+        assert_eq!(entries[1].entity_id, 18);
+        assert_eq!(entries[1].class_id, 203);
+        assert!(!entries[1].prefixed);
+    }
 
     fn replay_row(feature_id: u32, operands: &[u8]) -> FeatureRow {
         let mut body = vec![0xf1, 0xf7, 0x42, 0xd8, 0x80, 0x01, 0xe3];
