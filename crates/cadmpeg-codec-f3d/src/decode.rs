@@ -103,6 +103,7 @@ fn report_unresolved_dimension_companions(report: &mut DecodeReport, native: &F3
 
 #[derive(Debug, Default, PartialEq, Eq)]
 struct DesignProjectionGaps {
+    native_features: usize,
     native_constraints: usize,
     profile_selections: usize,
     face_selections: usize,
@@ -141,6 +142,7 @@ fn design_projection_gaps(ir: &CadIr) -> DesignProjectionGaps {
             continue;
         }
         match &feature.definition {
+            FeatureDefinition::Native { .. } => gaps.native_features += 1,
             FeatureDefinition::Extrude {
                 profile,
                 start,
@@ -200,6 +202,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr) {
             });
         }
     };
+    push(
+        gaps.native_features,
+        format!(
+            "{} active feature scope(s) retain native operation semantics because no complete neutral feature definition was resolved.",
+            gaps.native_features
+        ),
+    );
     push(
         gaps.native_constraints,
         format!(
@@ -1860,10 +1869,24 @@ mod tests {
             }))
             .expect("suppressed Fillet feature"),
         );
+        ir.model.features.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "native-feature",
+                "ordinal": 3,
+                "definition": {
+                    "definition": "native",
+                    "kind": "unsupported",
+                    "parameters": {},
+                    "properties": {}
+                }
+            }))
+            .expect("native feature"),
+        );
 
         assert_eq!(
             design_projection_gaps(&ir),
             DesignProjectionGaps {
+                native_features: 1,
                 native_constraints: 1,
                 profile_selections: 1,
                 face_selections: 1,
