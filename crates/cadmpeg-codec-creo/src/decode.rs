@@ -286,8 +286,8 @@ struct CreoCurveExpressionRecord {
 
 #[derive(Serialize)]
 struct CreoCurveExpressionLocalSystem {
-    dimensions: u8,
-    count: u8,
+    dimensions: u32,
+    count: u32,
     body: Vec<u8>,
     explicit_slots: Option<[f64; 12]>,
     offset: usize,

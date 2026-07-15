@@ -64,9 +64,9 @@ pub struct CurveExpressionRecord {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveExpressionLocalSystem {
     /// Tuple dimensionality from the `f9` wrapper.
-    pub dimensions: u8,
+    pub dimensions: u32,
     /// Stored tuple count from the `f9` wrapper.
-    pub count: u8,
+    pub count: u32,
     /// Exact stateful scalar body through the next named field.
     pub body: Vec<u8>,
     /// Twelve explicit scalar slots, absent when the body uses inheritance or
@@ -436,9 +436,10 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
             continue;
         }
         let local_system = find_in(payload, LOCAL_SYSTEM, after_id, end).and_then(|offset| {
-            let dimensions = *payload.get(offset + LOCAL_SYSTEM.len())?;
-            let count = *payload.get(offset + LOCAL_SYSTEM.len() + 1)?;
-            let body_start = offset + LOCAL_SYSTEM.len() + 2;
+            let extents_start = offset + LOCAL_SYSTEM.len();
+            let (dimensions, dimensions_end) = compact_int(payload, extents_start);
+            let (count, body_start) = compact_int(payload, dimensions_end);
+            (dimensions_end > extents_start && body_start > dimensions_end).then_some(())?;
             let body_end = payload[body_start..end]
                 .windows(1)
                 .position(|window| window[0] == psb::token::NAMED_RECORD)
@@ -1726,6 +1727,19 @@ mod tests {
                 .and_then(|frame| frame.explicit_slots),
             Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         );
+    }
+
+    #[test]
+    fn decodes_compact_curve_expression_frame_extents() {
+        let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x02local_sys\0\xf9\x80\x88\x03\x0f\
+            \xe0\x0aexpression\0\xf8\x01r=5\0";
+        let records = expression_records(payload);
+        let frame = records[0].local_system.as_ref().expect("local system");
+        assert_eq!(frame.dimensions, 136);
+        assert_eq!(frame.count, 3);
+        assert_eq!(frame.body, [0x0f]);
+        assert_eq!(frame.explicit_slots, None);
     }
 
     #[test]
