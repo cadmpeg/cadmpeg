@@ -700,6 +700,10 @@ The ACT root-component link follows its class tag and record index with ten zero
 
 On a body, `generic_tag_attrib_def` supplies a design/construction ID distinct from the material-assignment suffix. This ID keys the design BulkStream body construction-recipe records. A body can have no body-keyed recipe.
 
+#### Edge-recipe exact incidence
+
+An edge satisfies one selector exactly when, for every present clause entry, its incident loops contain both encoded boundary-count and coedge-ordinal incidences. The operand resolves to a stable historical edge slot only when every selector independently has the same single satisfying edge. Empty, non-singleton, or disagreeing selector results do not resolve the operand.
+
 ### 8.2 Materials
 
 Visual and physical materials are distinct serialized channels.
