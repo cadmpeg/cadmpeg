@@ -1120,16 +1120,42 @@ pub struct DesignEdgeRecipeReferenceContext {
     pub reference_ordinal: u32,
     /// Referenced faces present in the owning feature's result topology.
     pub result_faces: Vec<FaceId>,
+    /// Ordered loop boundaries of each referenced result face.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub result_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
     /// Stable result edge slots shared by the referenced-face boundaries and
     /// the primary candidate-face boundaries.
     pub result_shared_edge_slots: Vec<i64>,
     /// Referenced faces present in the immediately preceding ASM topology.
     pub preceding_faces: Vec<FaceId>,
+    /// Ordered loop boundaries of each referenced preceding face.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preceding_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
     /// Stable edge slots shared by the referenced-face boundaries and the
     /// primary candidate-face boundaries.
     pub shared_edge_slots: Vec<i64>,
     /// Shared edge slots deleted or updated by the owning feature transition.
     pub changed_shared_edge_slots: Vec<i64>,
+}
+
+/// Ordered loop topology retained for one historical face.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignHistoricalFaceBoundaryContext {
+    /// Stable ASM face slot.
+    pub face_slot: i64,
+    /// Face loops in their serialized membership order.
+    pub loops: Vec<DesignHistoricalFaceLoopContext>,
+}
+
+/// Ordered coedge and edge membership of one historical face loop.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignHistoricalFaceLoopContext {
+    /// Stable ASM loop slot.
+    pub loop_slot: i64,
+    /// Stable coedge slots in cyclic loop order.
+    pub coedge_slots: Vec<i64>,
+    /// Stable edge slots aligned one-to-one with `coedge_slots`.
+    pub edge_slots: Vec<i64>,
 }
 
 /// Historical topology surrounding one candidate edge.

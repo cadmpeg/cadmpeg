@@ -661,6 +661,58 @@ fn face_boundary_edges(
     edges
 }
 
+fn face_boundary_contexts(
+    faces: &[cadmpeg_ir::ids::FaceId],
+    topology: &AsmHistoricalTopology,
+) -> Vec<crate::records::DesignHistoricalFaceBoundaryContext> {
+    faces
+        .iter()
+        .filter_map(|face| {
+            let face_slot = stable_ref(&face.0)?;
+            let mut face_relations = topology
+                .face_loops
+                .iter()
+                .filter(|relation| relation.owner_ref == face_slot);
+            let face_relation = face_relations.next()?;
+            if face_relations.next().is_some() {
+                return None;
+            }
+            let loops = face_relation
+                .member_refs
+                .iter()
+                .map(|loop_slot| {
+                    let mut loop_relations = topology
+                        .loop_coedges
+                        .iter()
+                        .filter(|relation| relation.owner_ref == *loop_slot);
+                    let loop_relation = loop_relations.next()?;
+                    if loop_relations.next().is_some() {
+                        return None;
+                    }
+                    let edge_slots = loop_relation
+                        .member_refs
+                        .iter()
+                        .map(|coedge_slot| {
+                            let mut coedges = topology
+                                .coedge_topology
+                                .iter()
+                                .filter(|coedge| coedge.coedge == *coedge_slot);
+                            let edge = coedges.next()?.edge;
+                            (coedges.next().is_none()).then_some(edge)
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Some(crate::records::DesignHistoricalFaceLoopContext {
+                        loop_slot: *loop_slot,
+                        coedge_slots: loop_relation.member_refs.clone(),
+                        edge_slots,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(crate::records::DesignHistoricalFaceBoundaryContext { face_slot, loops })
+        })
+        .collect()
+}
+
 fn edge_recipe_reference_context(
     reference_ordinal: u32,
     reference: &crate::records::DesignRecipeReference,
@@ -671,6 +723,7 @@ fn edge_recipe_reference_context(
     changed_edges: &HashSet<i64>,
 ) -> crate::records::DesignEdgeRecipeReferenceContext {
     let result_faces = faces_in_topology(&reference.candidate_faces, result_topology);
+    let result_face_boundaries = face_boundary_contexts(&result_faces, result_topology);
     let result_edges = face_boundary_edges(&result_faces, result_topology)
         .into_iter()
         .collect::<HashSet<_>>();
@@ -680,6 +733,7 @@ fn edge_recipe_reference_context(
         .filter(|edge| result_edges.contains(edge))
         .collect();
     let preceding_faces = faces_in_topology(&reference.candidate_faces, preceding_topology);
+    let preceding_face_boundaries = face_boundary_contexts(&preceding_faces, preceding_topology);
     let preceding_edges = face_boundary_edges(&preceding_faces, preceding_topology)
         .into_iter()
         .collect::<HashSet<_>>();
@@ -696,8 +750,10 @@ fn edge_recipe_reference_context(
     crate::records::DesignEdgeRecipeReferenceContext {
         reference_ordinal,
         result_faces,
+        result_face_boundaries,
         result_shared_edge_slots,
         preceding_faces,
+        preceding_face_boundaries,
         shared_edge_slots,
         changed_shared_edge_slots,
     }
@@ -1977,8 +2033,18 @@ mod tests {
         );
         assert_eq!(context.reference_ordinal, 2);
         assert_eq!(context.result_faces, [FaceId(id(4))]);
+        let boundary = crate::records::DesignHistoricalFaceBoundaryContext {
+            face_slot: 4,
+            loops: vec![crate::records::DesignHistoricalFaceLoopContext {
+                loop_slot: 5,
+                coedge_slots: vec![6],
+                edge_slots: vec![7],
+            }],
+        };
+        assert_eq!(context.result_face_boundaries, [boundary.clone()]);
         assert_eq!(context.result_shared_edge_slots, [7]);
         assert_eq!(context.preceding_faces, [FaceId(id(4))]);
+        assert_eq!(context.preceding_face_boundaries, [boundary]);
         assert_eq!(context.shared_edge_slots, [7]);
         assert_eq!(context.changed_shared_edge_slots, [7]);
     }
