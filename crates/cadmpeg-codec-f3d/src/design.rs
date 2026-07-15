@@ -177,7 +177,7 @@ pub(crate) fn validate_configuration_payload(
 pub fn project_configurations(
     native: &[DesignConfiguration],
 ) -> Vec<cadmpeg_ir::features::DesignConfiguration> {
-    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration as NeutralConfiguration};
+    use cadmpeg_ir::features::DesignConfiguration as NeutralConfiguration;
     use std::collections::BTreeMap;
 
     let mut projected = Vec::new();
@@ -221,7 +221,7 @@ pub fn project_configurations(
                 .map(str::to_owned);
             let ordinal = u32::try_from(projected.len()).unwrap_or(u32::MAX);
             projected.push(NeutralConfiguration {
-                id: ConfigurationId(format!("f3d:configuration:variant#{ordinal}")),
+                id: neutral_configuration_id(&table.entry_name, name),
                 ordinal,
                 active: active == Some(name.as_str()),
                 source_index: None,
@@ -234,6 +234,21 @@ pub fn project_configurations(
         }
     }
     projected
+}
+
+fn neutral_configuration_id(
+    entry_name: &str,
+    variant_name: &str,
+) -> cadmpeg_ir::features::ConfigurationId {
+    use cadmpeg_ir::features::ConfigurationId;
+
+    ConfigurationId(format!(
+        "f3d:configuration:variant#{}:{}{}:{}",
+        entry_name.len(),
+        entry_name,
+        variant_name.len(),
+        variant_name,
+    ))
 }
 
 /// Project parameter scopes and their document- or scope-owned parameters into
@@ -9710,22 +9725,24 @@ mod relation_tests {
         parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
         parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
         parse_sketch_placement_candidates, parse_sketch_relation, point_on_sketch_entity,
-        project_dimension_constraints, project_extrude, project_parameter_design,
-        project_sketch_constraints, project_sketch_design, radial_dimension_definition,
-        recipe_record_prefix, region_containing_points, remove_dimension_frame_relations,
-        repeated_linear_dimension, resolved_edge_candidate_intersection,
-        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
+        project_configurations, project_dimension_constraints, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        radial_dimension_definition, recipe_record_prefix, region_containing_points,
+        remove_dimension_frame_relations, repeated_linear_dimension,
+        resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
+        resolved_face_group, two_locus_distance_dimension,
     };
     use crate::records::{
-        ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
-        DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
-        DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignEntityHeader,
-        DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole,
-        DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart, DesignObjectKind,
-        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-        DesignParameterScope, DesignRecipeReference, DesignRecordHeader, DesignSketchPlacement,
-        LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+        ConstructionRecipe, ConstructionRecipeKind, DesignConfiguration, DesignConfigurationKind,
+        DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
+        DesignConstructionPersistentIdentity, DesignDimensionLocusPair,
+        DesignDimensionRecipeRecord, DesignEntityHeader, DesignExtrudeExtent,
+        DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+        DesignExtrudeProfileOperand, DesignExtrudeStart, DesignObjectKind, DesignParameter,
+        DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+        DesignRecipeReference, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
+        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+        SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
@@ -9738,6 +9755,35 @@ mod relation_tests {
         SketchEntityUse, SketchGeometry, SketchId,
     };
     use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn configuration_identity_is_stable_across_table_order_and_delimiter_names() {
+        let table = |entry_name: &str, variant_name: &str| DesignConfiguration {
+            id: format!("f3d:configuration:entry#{entry_name}"),
+            entry_name: entry_name.into(),
+            kind: DesignConfigurationKind::Table,
+            payload: serde_json::json!({"configurations": {variant_name: {}}}),
+        };
+        let first = table("asset/a#b.dsgcfg", "c");
+        let second = table("asset/a.dsgcfg", "b#c");
+        let first_id = first.id.clone();
+
+        let forward = project_configurations(&[first.clone(), second.clone()]);
+        let reversed = project_configurations(&[second, first]);
+        let forward_ids = forward
+            .iter()
+            .map(|configuration| configuration.id.clone())
+            .collect::<HashSet<_>>();
+        let reversed_ids = reversed
+            .iter()
+            .map(|configuration| configuration.id.clone())
+            .collect::<HashSet<_>>();
+
+        assert_eq!(forward_ids, reversed_ids);
+        assert_eq!(forward_ids.len(), 2);
+        assert_ne!(forward[0].id, forward[1].id);
+        assert_eq!(forward[0].native_ref.as_deref(), Some(first_id.as_str()));
+    }
 
     #[test]
     fn historical_points_on_profile_boundaries_are_ambiguous() {

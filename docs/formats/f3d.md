@@ -36,6 +36,8 @@ The following small entries are STORED:
 
 Configuration tables and rules are complete JSON objects. A table's `configurations` member is an object keyed by variant name. Each variant value is an object; its `parameters` member is an object, `suppressed` is an array of strings, and `material` is a string. The table's `active` string equals one key in `configurations`. Rule objects carry activation conditions and targets. Unknown object members remain part of the configuration document. ZIP entry name and extension select table versus rule; duplicate entry names are invalid.
 
+Each table variant has a stable neutral identity formed from the complete table-entry name and the variant name as two byte-length-prefixed UTF-8 strings. Table order and variants in other tables do not affect that identity. The table's `active` member selects the active neutral variant. Parameter overrides, suppressed-feature names, and material names transfer as variant properties; the native table remains the full-fidelity source for unrecognized members.
+
 ### 1.3 `Manifest.dat` grammar
 
 Both manifests are flat sequences of `u32`-length-prefixed strings. An ASCII field stores a byte count followed by that many bytes. A UTF-16LE field stores a code-unit count followed by twice that many bytes.
