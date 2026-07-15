@@ -2515,14 +2515,19 @@ fn synthesize_sphere_seams(
         .iter()
         .map(|curve| (&curve.id, &curve.geometry))
         .collect::<HashMap<_, _>>();
+    let vertex_points = out
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            out.points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .map(|point| (&vertex.id, point.position))
+        })
+        .collect::<HashMap<_, _>>();
     let mut existing = Vec::new();
     for face in &out.faces {
-        let Some(SurfaceGeometry::Sphere {
-            center,
-            radius,
-            axis,
-            ..
-        }) = surface_geometry.get(&face.surface).copied()
+        let Some(SurfaceGeometry::Sphere { .. }) = surface_geometry.get(&face.surface).copied()
         else {
             continue;
         };
@@ -2553,24 +2558,25 @@ fn synthesize_sphere_seams(
                     .is_some_and(|geometry| matches!(geometry, CurveGeometry::Circle { .. }))
             })
             .count();
-        if let [(edge_id, edge_index)] = seam_edges.as_slice() {
+        if let [(_, edge_index)] = seam_edges.as_slice() {
             if circle_count != 3 {
                 continue;
             }
+            let edge = &out.edges[*edge_index];
+            if edge.start != edge.end {
+                continue;
+            }
+            let Some(point) = vertex_points.get(&edge.start).copied() else {
+                continue;
+            };
             existing.push((
-                edge_id.clone(),
                 *edge_index,
-                cadmpeg_ir::math::Point3::new(
-                    center.x + radius * axis.x,
-                    center.y + radius * axis.y,
-                    center.z + radius * axis.z,
-                ),
+                point,
             ));
         }
     }
-    for (edge_id, edge_index, point) in existing {
-        let suffix = edge_id.0.rsplit('#').next().unwrap_or("0");
-        let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam:{suffix}"));
+    for (edge_index, point) in existing {
+        let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam-edge:{edge_index}"));
         annotations
             .note(&curve_id.0, source_stream, 0)
             .tag("derived_sphere_seam");
@@ -2596,18 +2602,8 @@ fn synthesize_sphere_seams(
         .collect();
     let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
     let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
-    let vertex_points = out
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            out.points
-                .iter()
-                .find(|point| point.id == vertex.point)
-                .map(|point| (&vertex.id, point.position))
-        })
-        .collect::<HashMap<_, _>>();
     let mut candidates = Vec::new();
-    for face in &out.faces {
+    for (face_index, face) in out.faces.iter().enumerate() {
         let Some(surface) = surfaces.get(&face.surface) else {
             continue;
         };
@@ -2661,15 +2657,13 @@ fn synthesize_sphere_seams(
                 .collect::<Vec<_>>();
             pole_vertices.sort_by(|left, right| left.0.cmp(&right.0));
             pole_vertices.dedup();
-            let [pole_vertex] = pole_vertices.as_slice() else {
-                continue;
-            };
             candidates.push((
+                face_index,
                 face.id.clone(),
                 lp.id.clone(),
                 lp.coedges.clone(),
                 seam_point,
-                pole_vertex.clone(),
+                pole_vertices.first().cloned(),
             ));
         }
     }
@@ -2679,12 +2673,22 @@ fn synthesize_sphere_seams(
         .enumerate()
         .map(|(index, coedge)| (coedge.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    for (face, loop_id, mut ring, seam_point, pole_vertex) in candidates {
-        let suffix = face.0.rsplit('#').next().unwrap_or("0");
-        let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam:{suffix}"));
-        let edge_id = EdgeId(format!("sldprt:brep:edge#sphere-seam:{suffix}"));
-        let coedge_id = CoedgeId(format!("sldprt:brep:coedge#sphere-seam:{suffix}"));
-        let pcurve_id = PcurveId(format!("sldprt:brep:pcurve#sphere-seam:{suffix}"));
+    for (face_index, _face, loop_id, mut ring, seam_point, pole_vertex) in candidates {
+        let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam-face:{face_index}"));
+        let edge_id = EdgeId(format!("sldprt:brep:edge#sphere-seam-face:{face_index}"));
+        let coedge_id = CoedgeId(format!("sldprt:brep:coedge#sphere-seam-face:{face_index}"));
+        let pcurve_id = PcurveId(format!("sldprt:brep:pcurve#sphere-seam-face:{face_index}"));
+        let pole_vertex = pole_vertex.unwrap_or_else(|| {
+            let point_id = PointId(format!("sldprt:brep:point#sphere-seam-face:{face_index}"));
+            let vertex_id = VertexId(format!("sldprt:brep:vertex#sphere-seam-face:{face_index}"));
+            for id in [&point_id.0, &vertex_id.0] {
+                annotations.note(id, source_stream, 0).tag("derived_sphere_seam");
+                annotations.exactness(id, Exactness::Derived);
+            }
+            out.points.push(Point { id: point_id.clone(), position: seam_point });
+            out.vertices.push(Vertex { id: vertex_id.clone(), point: point_id, tolerance: None });
+            vertex_id
+        });
         for id in [&curve_id.0, &edge_id.0, &coedge_id.0, &pcurve_id.0] {
             annotations
                 .note(id, source_stream, 0)
