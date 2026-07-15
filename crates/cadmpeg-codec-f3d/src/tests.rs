@@ -827,6 +827,24 @@ fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
     synthetic_geometry_with_pcurve_block_smbh(generated_pcurve_block())
 }
 
+fn synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_pcurve_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[6];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.extend_from_slice(&generated_surface_block());
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn synthetic_geometry_with_short_pcurve_tail_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_pcurve_smbh();
     let marker = [0x10, 0x0a, 0x0b, 0x0a, 0x0b, 0x06];
@@ -17285,6 +17303,35 @@ fn decode_attaches_generated_pcurve_to_its_coedge() {
     );
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
+}
+
+#[test]
+fn inline_pcurve_scope_is_its_exact_carrier_identity() {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("structurally unique inline pcurve decode");
+
+    assert_eq!(result.ir.model.pcurves.len(), 1);
+    assert_eq!(
+        result
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.pcurve.is_some())
+            .count(),
+        1
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("explicit UV pcurve reference")));
 }
 
 #[test]

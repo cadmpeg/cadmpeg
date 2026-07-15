@@ -943,9 +943,14 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             // An inline pcurve carries its own 2D block; a
                             // ref-form pcurve delegates to an intcurve entity
                             // whose record holds several 2D blocks. Decode
-                            // every candidate and keep the one whose endpoints
-                            // land on the edge's vertices through the face
-                            // surface.
+                            // every ref-form candidate and keep the one whose
+                            // endpoints land on the edge's vertices through
+                            // the face surface. An inline scope owns exactly
+                            // one BS2 carrier and needs no disambiguation.
+                            let inline = matches!(
+                                (prec.chunk(3), prec.chunk(4)),
+                                (Some(Token::Long(0)), Some(Token::True | Token::False))
+                            );
                             let candidates = match (prec.chunk(3), prec.chunk(4)) {
                                 (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                                     crate::sab::payload_subtype_span(
@@ -979,17 +984,26 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 }
                                 _ => Vec::new(),
                             };
-                            let decoded = select_face_pcurve(
-                                candidates,
-                                face.ref_at(7)
-                                    .and_then(|surface| surface_geo.get(&surface))
-                                    .map(|(geometry, _)| geometry),
-                                face.ref_at(7).is_some_and(|surface| {
-                                    procedural_surface_defs.contains_key(&surface)
-                                }),
-                                ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied(),
-                                &by_index,
-                            );
+                            let edge = ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
+                            let decoded = if inline && candidates.len() == 1 {
+                                let candidate =
+                                    candidates.into_iter().next().expect("one candidate");
+                                let range = pcurve_ranges_on_domain(&candidate, edge)
+                                    .and_then(|ranges| ranges.into_iter().next());
+                                range.map(|range| (candidate, range))
+                            } else {
+                                select_face_pcurve(
+                                    candidates,
+                                    face.ref_at(7)
+                                        .and_then(|surface| surface_geo.get(&surface))
+                                        .map(|(geometry, _)| geometry),
+                                    face.ref_at(7).is_some_and(|surface| {
+                                        procedural_surface_defs.contains_key(&surface)
+                                    }),
+                                    edge,
+                                    &by_index,
+                                )
+                            };
                             if let Some((decoded, parameter_range)) = decoded {
                                 pcurve_geo.insert(
                                     pc,
