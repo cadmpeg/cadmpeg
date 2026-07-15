@@ -1346,13 +1346,15 @@ pub(crate) fn neutral_sketch_constraint_id(
 }
 
 pub(crate) fn neutral_dimension_constraint_id(
-    native_ref: &str,
+    parameter: &cadmpeg_ir::features::ParameterId,
     form: &str,
-    record_index: u32,
 ) -> cadmpeg_ir::sketches::SketchConstraintId {
     cadmpeg_ir::sketches::SketchConstraintId(format!(
-        "f3d:model:sketch-constraint#{}@dimension-{form}-{record_index}",
-        native_stream(native_ref).unwrap_or("f3d:design")
+        "f3d:model:sketch-constraint#dimension#{}:{}{}:{}",
+        parameter.0.len(),
+        parameter.0,
+        form.len(),
+        form,
     ))
 }
 
@@ -3032,6 +3034,7 @@ pub fn project_dimension_constraints(
                 pair.second_geometry_record_index,
             ];
             let sketch = sketch_for_geometry(scope, &indices)?;
+            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair");
             let definition = exact_definition(
                 scope,
                 &parameter.source_kind,
@@ -3043,7 +3046,7 @@ pub fn project_dimension_constraints(
                 native_definition(scope, &parameter.source_kind, &indices, parameter_id)
             });
             Some(SketchConstraint {
-                id: neutral_dimension_constraint_id(&pair.id, "pair", pair.record_index),
+                id: constraint_id,
                 sketch,
                 definition,
                 native_ref: Some(pair.id.clone()),
@@ -3066,7 +3069,7 @@ pub fn project_dimension_constraints(
                     native_definition(scope, &parameter.source_kind, &indices, parameter_id)
                 });
             Some(SketchConstraint {
-                id: neutral_dimension_constraint_id(&group.id, "group", group.record_index),
+                id: neutral_sketch_constraint_id(&group.id, group.record_index),
                 sketch,
                 definition,
                 native_ref: Some(group.id.clone()),
@@ -3077,6 +3080,7 @@ pub fn project_dimension_constraints(
             let (parameter, parameter_id) = parameter_for(scope, pair.companion_record_index)?;
             let indices = [pair.geometry_record_index];
             let sketch = sketch_for_geometry(scope, &indices)?;
+            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "null-pair");
             if let Some(entity) = projected.get(&(scope, pair.geometry_record_index)) {
                 if let Some(definition) = null_locus_dimension_definition(
                     pair,
@@ -3086,11 +3090,7 @@ pub fn project_dimension_constraints(
                     parameter_id.clone(),
                 ) {
                     return Some(SketchConstraint {
-                        id: neutral_dimension_constraint_id(
-                            &pair.id,
-                            "null-pair",
-                            pair.record_index,
-                        ),
+                        id: constraint_id,
                         sketch,
                         definition,
                         native_ref: Some(pair.id.clone()),
@@ -3104,7 +3104,7 @@ pub fn project_dimension_constraints(
             }];
             operands.extend(native_operands(scope, &indices));
             Some(SketchConstraint {
-                id: neutral_dimension_constraint_id(&pair.id, "null-pair", pair.record_index),
+                id: constraint_id,
                 sketch,
                 definition: Definition::Native {
                     native_kind: parameter.source_kind.clone(),
@@ -3165,6 +3165,7 @@ pub fn project_dimension_constraints(
             let companion = companions_by_key.get(&(scope.clone(), companion_record_index))?;
             let owner = owners_by_companion.get(&(scope.clone(), companion_record_index))?;
             let (parameter, parameter_id) = parameter_for(&scope, companion_record_index)?;
+            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "recipe-group");
             let sketch = sketches_by_scope
                 .get(&(scope.as_str(), owner.scope_record_index))?
                 .clone();
@@ -3199,11 +3200,7 @@ pub fn project_dimension_constraints(
                 },
             };
             Some(SketchConstraint {
-                id: neutral_dimension_constraint_id(
-                    &companion.id,
-                    "recipe-group",
-                    companion.record_index,
-                ),
+                id: constraint_id,
                 sketch,
                 definition,
                 native_ref: Some(companion.id.clone()),
@@ -9761,9 +9758,9 @@ mod relation_tests {
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
         exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
         find_dimension_locus_pair, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_feature_id_parts, neutral_parameter_id_parts,
-        neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id,
-        next_indexed_record_offset, null_locus_dimension_definition,
+        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
+        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
+        neutral_sketch_point_id, next_indexed_record_offset, null_locus_dimension_definition,
         parse_construction_operand_group, parse_construction_operand_identity,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -9869,6 +9866,22 @@ mod relation_tests {
             neutral_sketch_curve_id("f3d:Design/A:curve#10", 42, 1)
         );
         assert_ne!(point, neutral_sketch_point_id("f3d:Design", 42));
+    }
+
+    #[test]
+    fn governing_dimension_identity_uses_parameter_identity() {
+        let parameter = cadmpeg_ir::features::ParameterId("parameter:Design/A:12".into());
+        let relocated = neutral_dimension_constraint_id(&parameter, "pair");
+        let same = neutral_dimension_constraint_id(&parameter, "pair");
+        let other_form = neutral_dimension_constraint_id(&parameter, "null-pair");
+        let other_parameter = neutral_dimension_constraint_id(
+            &cadmpeg_ir::features::ParameterId("parameter:Design/A".into()),
+            "12:pair",
+        );
+
+        assert_eq!(relocated, same);
+        assert_ne!(relocated, other_form);
+        assert_ne!(relocated, other_parameter);
     }
 
     #[test]
