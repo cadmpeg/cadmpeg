@@ -1259,10 +1259,25 @@ fn valid_chamfer_spec(spec: &cadmpeg_ir::features::ChamferSpec) -> bool {
 }
 
 fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::FeatureId {
-    cadmpeg_ir::features::FeatureId(format!(
-        "f3d:model:feature#{}@scope-{}",
+    neutral_feature_id_parts(
         native_stream(&scope.id).unwrap_or("f3d:design"),
-        scope.record_index
+        &scope.kind,
+        scope.feature_ordinal,
+    )
+}
+
+fn neutral_feature_id_parts(
+    stream: &str,
+    kind: &str,
+    feature_ordinal: u32,
+) -> cadmpeg_ir::features::FeatureId {
+    cadmpeg_ir::features::FeatureId(format!(
+        "f3d:model:feature#{}:{}{}:{}{}",
+        stream.len(),
+        stream,
+        kind.len(),
+        kind,
+        feature_ordinal,
     ))
 }
 
@@ -9717,8 +9732,8 @@ mod relation_tests {
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
         exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
         find_dimension_locus_pair, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_sketch_entity_id, neutral_sketch_id,
-        next_indexed_record_offset, null_locus_dimension_definition,
+        indirect_angular_lines, neutral_feature_id_parts, neutral_sketch_entity_id,
+        neutral_sketch_id, next_indexed_record_offset, null_locus_dimension_definition,
         parse_construction_operand_group, parse_construction_operand_identity,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -9783,6 +9798,18 @@ mod relation_tests {
         assert_eq!(forward_ids.len(), 2);
         assert_ne!(forward[0].id, forward[1].id);
         assert_eq!(forward[0].native_ref.as_deref(), Some(first_id.as_str()));
+    }
+
+    #[test]
+    fn feature_identity_uses_stream_family_and_native_ordinal() {
+        let first = neutral_feature_id_parts("Design/A:B", "Kind:12", 3);
+        let same = neutral_feature_id_parts("Design/A:B", "Kind:12", 3);
+        let different_stream = neutral_feature_id_parts("Design/A", "B:Kind:12", 3);
+        let different_family = neutral_feature_id_parts("Design/A:B", "Kind", 123);
+
+        assert_eq!(first, same);
+        assert_ne!(first, different_stream);
+        assert_ne!(first, different_family);
     }
 
     #[test]
