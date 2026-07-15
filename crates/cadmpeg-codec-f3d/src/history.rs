@@ -2381,6 +2381,8 @@ mod tests {
             design_reference_offset: 1,
             candidate_faces: vec![FaceId(id(4))],
             candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
         };
         let context = edge_recipe_reference_context(
             2,

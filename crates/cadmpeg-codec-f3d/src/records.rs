@@ -486,6 +486,14 @@ pub struct DesignRecipeReference {
     /// Active solved edges carrying the exact selector/reference pair.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_edges: Vec<EdgeId>,
+    /// Active solved faces carrying the same token and Design reference under
+    /// a different native selector.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternate_selector_faces: Vec<FaceId>,
+    /// Active solved edges carrying the same token and Design reference under
+    /// a different native selector.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternate_selector_edges: Vec<EdgeId>,
 }
 
 /// Paired-locus frame nested under a dimensional parameter companion.
@@ -1371,6 +1379,10 @@ pub struct DesignFaceOperand {
     /// selector carrying the recipe's own Design reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unreferenced_candidate_faces: Vec<FaceId>,
+    /// Faces named by a prefix operand carrying the recipe's own token and
+    /// Design reference under a different native selector.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternate_selector_candidate_faces: Vec<FaceId>,
     /// Candidate faces present in the ASM topology immediately preceding the
     /// owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

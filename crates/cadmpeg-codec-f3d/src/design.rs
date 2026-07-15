@@ -1498,11 +1498,13 @@ fn resolved_face_group(
         if matches.next().is_some() {
             return None;
         }
-        let Some(face) = resolved_face_operand(operand) else {
+        let Some(operand_faces) = resolved_face_operand(operand) else {
             return None;
         };
-        if !faces.contains(&face) {
-            faces.push(face);
+        for face in operand_faces {
+            if !faces.contains(&face) {
+                faces.push(face);
+            }
         }
     }
     (!faces.is_empty()).then(|| cadmpeg_ir::features::FaceSelection::Resolved {
@@ -1511,14 +1513,18 @@ fn resolved_face_group(
     })
 }
 
-fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<cadmpeg_ir::ids::FaceId> {
+fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
     if let Some(slot) = operand.resolved_face_slot {
-        return Some(cadmpeg_ir::ids::FaceId(format!("f3d:brep:entity#{slot}")));
+        return Some(vec![cadmpeg_ir::ids::FaceId(format!(
+            "f3d:brep:entity#{slot}"
+        ))]);
     }
-    let [face] = face_operand_candidates(operand) else {
-        return None;
-    };
-    Some(face.clone())
+    let candidates = face_operand_candidates(operand);
+    if !operand.alternate_selector_candidate_faces.is_empty() {
+        return Some(candidates.to_vec());
+    }
+    let [face] = candidates else { return None };
+    Some(vec![face.clone()])
 }
 
 pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperand) -> Option<i64> {
@@ -1538,7 +1544,9 @@ pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperan
 }
 
 pub(crate) fn face_operand_candidates(operand: &DesignFaceOperand) -> &[cadmpeg_ir::ids::FaceId] {
-    if operand.unreferenced_candidate_faces.is_empty() {
+    if !operand.alternate_selector_candidate_faces.is_empty() {
+        &operand.alternate_selector_candidate_faces
+    } else if operand.unreferenced_candidate_faces.is_empty() {
         &operand.candidate_faces
     } else {
         &operand.unreferenced_candidate_faces
@@ -5541,6 +5549,8 @@ pub(crate) fn decode_recipe_references(
             design_reference_offset: prefix_offset.saturating_add((marker_at + 4) as u64),
             candidate_faces: Vec::new(),
             candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
         });
         at = marker_at + 12;
     }
@@ -5561,12 +5571,14 @@ pub fn bind_dimension_recipe_reference_candidates(
     }
 }
 
-fn bind_recipe_reference_candidates(
+pub(crate) fn bind_recipe_reference_candidates(
     reference: &mut crate::records::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
 ) {
     reference.candidate_faces = recipe_reference_candidate_faces(reference, tags);
     reference.candidate_edges = recipe_reference_candidate_edges(reference, tags);
+    reference.alternate_selector_faces = recipe_reference_alternate_selector_faces(reference, tags);
+    reference.alternate_selector_edges = recipe_reference_alternate_selector_edges(reference, tags);
 }
 
 /// Join dimension programs to byte-identical edge-recipe program tails.
@@ -5639,6 +5651,52 @@ pub(crate) fn recipe_reference_candidate_faces(
         .iter()
         .filter(|tag| {
             tag.selector == reference.selector
+                && tag.token == reference.token
+                && tag.design_references.contains(&reference.design_reference)
+        })
+        .filter_map(|tag| match &tag.target {
+            AttributeTarget::Face(face) => Some(face.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    faces.sort_by(|left, right| left.0.cmp(&right.0));
+    faces.dedup();
+    faces
+}
+
+pub(crate) fn recipe_reference_alternate_selector_edges(
+    reference: &crate::records::DesignRecipeReference,
+    tags: &[PersistentSubentityTag],
+) -> Vec<cadmpeg_ir::ids::EdgeId> {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let mut edges = tags
+        .iter()
+        .filter(|tag| {
+            tag.selector != reference.selector
+                && tag.token == reference.token
+                && tag.design_references.contains(&reference.design_reference)
+        })
+        .filter_map(|tag| match &tag.target {
+            AttributeTarget::Edge(edge) => Some(edge.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    edges.sort_by(|left, right| left.0.cmp(&right.0));
+    edges.dedup();
+    edges
+}
+
+pub(crate) fn recipe_reference_alternate_selector_faces(
+    reference: &crate::records::DesignRecipeReference,
+    tags: &[PersistentSubentityTag],
+) -> Vec<cadmpeg_ir::ids::FaceId> {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let mut faces = tags
+        .iter()
+        .filter(|tag| {
+            tag.selector != reference.selector
                 && tag.token == reference.token
                 && tag.design_references.contains(&reference.design_reference)
         })
@@ -6622,6 +6680,7 @@ pub fn bind_face_operand_candidates(
         .map(|recipe| (recipe.id.as_str(), recipe))
         .collect::<HashMap<_, _>>();
     for operand in operands {
+        operand.alternate_selector_candidate_faces.clear();
         for reference in &mut operand.recipe_references {
             bind_recipe_reference_candidates(reference, tags);
         }
@@ -6656,6 +6715,17 @@ pub fn bind_face_operand_candidates(
             .filter(|face| !referenced.contains(face))
             .cloned()
             .collect();
+        operand.alternate_selector_candidate_faces = operand
+            .recipe_references
+            .iter()
+            .filter(|reference| reference.design_reference == design_reference)
+            .flat_map(|reference| &reference.alternate_selector_faces)
+            .cloned()
+            .collect();
+        operand
+            .alternate_selector_candidate_faces
+            .sort_by(|left, right| left.0.cmp(&right.0));
+        operand.alternate_selector_candidate_faces.dedup();
     }
 }
 
@@ -8019,6 +8089,7 @@ fn parse_face_operand(
         recipe_nodes,
         candidate_faces: Vec::new(),
         unreferenced_candidate_faces: Vec::new(),
+        alternate_selector_candidate_faces: Vec::new(),
         preceding_candidate_faces: Vec::new(),
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
@@ -11230,6 +11301,34 @@ mod relation_tests {
             ),
             [EdgeId("edge-b".into())]
         );
+        assert_eq!(
+            super::recipe_reference_alternate_selector_faces(
+                &references[0],
+                &[PersistentSubentityTag {
+                    id: "alternate-face".into(),
+                    target: AttributeTarget::Face(FaceId("face-c".into())),
+                    selector: 2,
+                    token: "13".into(),
+                    design_references: vec![331],
+                    ordinal: 0,
+                }],
+            ),
+            [FaceId("face-c".into())]
+        );
+        assert_eq!(
+            super::recipe_reference_alternate_selector_edges(
+                &references[0],
+                &[PersistentSubentityTag {
+                    id: "alternate-edge".into(),
+                    target: AttributeTarget::Edge(EdgeId("edge-c".into())),
+                    selector: 2,
+                    token: "13".into(),
+                    design_references: vec![331],
+                    ordinal: 0,
+                }],
+            ),
+            [EdgeId("edge-c".into())]
+        );
     }
 
     #[test]
@@ -12539,6 +12638,8 @@ mod relation_tests {
             design_reference_offset: 2,
             candidate_faces: Vec::new(),
             candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
         });
         bind_face_operand_candidates(
             std::slice::from_mut(&mut operand),
@@ -12625,6 +12726,18 @@ mod relation_tests {
             &FaceId("f3d:brep:entity#50".into()),
         ));
         assert_eq!(operand.resolved_face_slot, Some(50));
+        operand.resolved_face_slot = None;
+        operand.alternate_selector_candidate_faces = vec![
+            FaceId("f3d:brep:entity#50".into()),
+            FaceId("f3d:brep:entity#51".into()),
+        ];
+        assert!(matches!(
+            resolved_face_group(&group, std::slice::from_ref(&operand)),
+            Some(FaceSelection::Resolved { faces, native })
+                if faces == operand.alternate_selector_candidate_faces && native == group.id
+        ));
+        operand.alternate_selector_candidate_faces.clear();
+        operand.resolved_face_slot = Some(50);
         let mut ambiguous = [operand.clone(), operand];
         assert!(!super::retain_face_operand_resolution(
             &group,
