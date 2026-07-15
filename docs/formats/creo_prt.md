@@ -434,7 +434,9 @@ form opaque spans, so the three span sets partition the complete body.
 
 ### 4.1 Pcurve endpoints
 
-An eight-scalar curve body has this layout. Its values are parameter coordinates in the corresponding face spaces.
+A curve body consisting of exactly eight scalar tokens and no reference or
+opaque spans has this layout. Its values are parameter coordinates in the
+corresponding face spaces.
 
 | Slots  | Meaning                            |
 | ------ | ---------------------------------- |

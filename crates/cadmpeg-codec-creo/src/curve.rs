@@ -1080,7 +1080,11 @@ pub fn pcurve_endpoints(
     let mut result = parameters
         .iter()
         .filter(|record| matches!(record.type_byte, 0x00 | 0x01 | 0x06 | 0x08))
-        .filter(|record| record.scalar_values.len() == 8)
+        .filter(|record| {
+            record.scalar_tokens.len() == 8
+                && record.references.is_empty()
+                && record.opaque_spans.is_empty()
+        })
         .filter_map(|record| {
             let topology = topology.iter().find(|row| row.id == record.curve_id)?;
             let values = &record.scalar_values;
