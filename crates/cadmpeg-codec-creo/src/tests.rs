@@ -3991,6 +3991,8 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes(data.clone());
     assert_eq!(scan.feature_operations.len(), 2);
+    assert_eq!(scan.depdb_recipe_rows.len(), 1);
+    assert_eq!(scan.depdb_recipe_rows[0].feature_id, 8053);
     let operation = scan
         .feature_operations
         .iter()
@@ -4005,6 +4007,14 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#8053")
         .expect("recipe feature");
+    let rows = &result.ir.native.namespace("creo").unwrap().arenas["depdb_recipe_rows"];
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].fields["owner_feature_id"], 8053);
+    assert_eq!(rows[0].fields["header"][0], 0);
+    assert_eq!(
+        rows[0].fields["body"].as_array().map(Vec::len),
+        Some(scan.depdb_recipe_rows[0].body.len())
+    );
     assert_eq!(feature.name, None);
     assert_eq!(
         feature

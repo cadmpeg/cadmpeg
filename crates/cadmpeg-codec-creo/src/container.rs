@@ -224,6 +224,8 @@ pub struct ContainerScan {
     pub feature_ids: Vec<u32>,
     /// Byte-bounded `AllFeatur` rows for known geometry-owning features.
     pub feature_rows: Vec<FeatureRow>,
+    /// Section-bounded procedural recipe rows synthesized from `DEPDB_DATA`.
+    pub depdb_recipe_rows: Vec<FeatureRow>,
     /// Labeled procedural-choice spans inside decoded feature rows.
     pub feature_choices: Vec<FeatureChoice>,
     /// Named fields and typed wrappers inside procedural-choice spans.
@@ -1265,6 +1267,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         datum_planes,
         feature_ids,
         feature_rows,
+        depdb_recipe_rows,
         feature_choices,
         feature_choice_fields,
         feature_geometry_tables,
