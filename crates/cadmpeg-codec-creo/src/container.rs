@@ -693,10 +693,14 @@ fn cross_section_surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceR
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
-        rows.extend(surface::rows(payload).into_iter().map(|mut row| {
-            row.offset += section.offset;
-            row
-        }));
+        rows.extend(
+            surface::cross_section_rows(payload)
+                .into_iter()
+                .map(|mut row| {
+                    row.offset += section.offset;
+                    row
+                }),
+        );
     }
     rows.sort_by_key(|row| row.offset);
     rows

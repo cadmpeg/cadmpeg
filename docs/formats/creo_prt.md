@@ -1105,8 +1105,10 @@ DEPDB section boundary supplies the namespace bound.
 
 The DEPDB `Xsections` section contains an independent
 `Sld_Xsections > xsec_geom > srf_array` namespace. Its rows use the same fixed
-prefix, including boundary type `06`, but its identifiers belong to
-cross-section geometry and do not join the material model-face namespace.
+prefix. Each named prototype row has boundary type `00`; every positional
+replay has boundary type `06`. Other boundary types inside the counted frame
+belong to row bodies. Cross-section identifiers do not join the material
+model-face namespace.
 
 ## 8. Additional record semantics
 

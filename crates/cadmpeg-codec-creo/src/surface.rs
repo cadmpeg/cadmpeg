@@ -661,6 +661,17 @@ fn surface_array_frames(payload: &[u8]) -> Vec<SurfaceArrayFrame> {
 /// compact-integer fields and the orientation/boundary discriminators. This
 /// retains only byte-backed rows; a link target never inherits a kind.
 pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
+    rows_with_boundaries(payload, BOUNDARY_TYPES)
+}
+
+/// Discover rows from a DEPDB `Sld_Xsections` surface namespace.
+/// Named prototype rows use boundary type `00`; positional replays use `06`.
+#[must_use]
+pub fn cross_section_rows(payload: &[u8]) -> Vec<SurfaceRow> {
+    rows_with_boundaries(payload, &[0x00, 0x06])
+}
+
+fn rows_with_boundaries(payload: &[u8], boundary_types: &[u8]) -> Vec<SurfaceRow> {
     let mut result = Vec::new();
     let mut namespace_start = 0;
     while let Some(array) = find(payload, b"srf_array\0", namespace_start) {
@@ -774,6 +785,7 @@ pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
             .iter()
             .any(|(start, end)| row.offset >= *start && row.offset < *end)
     });
+    result.retain(|row| boundary_types.contains(&row.boundary_type));
     let frames = surface_array_frames(payload);
     if !frames.is_empty() {
         let unframed = result.clone();
@@ -2013,6 +2025,18 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn cross_section_count_rejects_boundary_one_body_candidate() {
+        let payload =
+            b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x24\x04\x01\x06\0\x2d\x25\x32\xf6\x01\x01\xe2";
+
+        assert!(rows(payload).is_empty());
+        let rows = cross_section_rows(payload);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, 7);
+        assert_eq!(rows[0].boundary_type, 0x06);
     }
 
     #[test]
