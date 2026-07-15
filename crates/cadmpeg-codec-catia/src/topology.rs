@@ -412,6 +412,9 @@ struct TrimRecord {
     triangles: Vec<[u32; 3]>,
     frame_vector: Option<[f64; 3]>,
     handles: Vec<u32>,
+    independent_count: usize,
+    strip_lengths: Vec<usize>,
+    fan_lengths: Vec<usize>,
     kind: u8,
     end: usize,
 }
@@ -3502,6 +3505,14 @@ pub(crate) fn same_unordered_pair(left: [usize; 2], right: [usize; 2]) -> bool {
 
 fn motif_port_points(trims: &[TrimRecord], vertex_count: usize) -> Option<HashMap<u32, usize>> {
     fn columns(record: &TrimRecord) -> Option<([u32; 2], [u32; 2])> {
+        let expected = record
+            .independent_count
+            .checked_mul(3)?
+            .checked_add(record.strip_lengths.iter().sum())?
+            .checked_add(record.fan_lengths.iter().sum())?;
+        if expected != record.handles.len() {
+            return None;
+        }
         Some((
             [*record.handles.first()?, *record.handles.get(1)?],
             [
@@ -6918,6 +6929,9 @@ fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRec
         triangles,
         frame_vector,
         handles,
+        independent_count: a,
+        strip_lengths: lengths[..b].to_vec(),
+        fan_lengths: lengths[b..].to_vec(),
         kind,
         end: position,
     })
@@ -7175,7 +7189,27 @@ mod motif_tests {
         let records = parse_trim_chain(&bytes, bytes.len(), 2, 2).expect("exact chain");
         assert_eq!(records[0].handles, [0, 1, 2]);
         assert_eq!(records[1].handles, [3, 4, 5]);
+        assert_eq!(records[0].independent_count, 1);
+        assert!(records[0].strip_lengths.is_empty());
+        assert!(records[0].fan_lengths.is_empty());
         assert!(parse_trim_chain(&bytes, bytes.len(), 2, 3).is_none());
+    }
+
+    #[test]
+    fn trim_packet_retains_primitive_partition_lengths() {
+        let mut bytes = vec![
+            0x01, 0x47, 0x01, 0x01, 0x01, 0xff, 0x0a, 0x00, 0x00, 0x00, 0x03, 0x04,
+        ];
+        for handle in 0u16..10 {
+            bytes.extend_from_slice(&handle.to_be_bytes());
+        }
+        let [record] = parse_trim_chain(&bytes, bytes.len(), 1, 2)
+            .expect("mixed primitive packet")
+            .try_into()
+            .expect("one packet");
+        assert_eq!(record.independent_count, 1);
+        assert_eq!(record.strip_lengths, [3]);
+        assert_eq!(record.fan_lengths, [4]);
     }
 
     #[test]
@@ -7301,6 +7335,9 @@ mod motif_tests {
             triangles: Vec::new(),
             frame_vector: None,
             handles: handles.to_vec(),
+            independent_count: 0,
+            strip_lengths: vec![handles.len()],
+            fan_lengths: Vec::new(),
             kind,
             end: 0,
         }
