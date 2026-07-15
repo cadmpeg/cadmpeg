@@ -870,6 +870,15 @@ preceding body and creates a new body when no preceding modeled body exists. A
 `cut` recipe removes material. A sweep whose generated topology already forms
 an independent body has new-body semantics.
 
+In a class-916 or class-917 positional feature row, feature form `2` selects a
+rotational section sweep. Its `param_choice_ptr` body begins after
+`83 df f6 e3` and stores the choices in the labelled prototype order. The
+choice sequence
+`00 00 ea 44 00 00 f6 f6 f6 00 00 00 00` places
+`ea 44 00 00` in `angle_choice` and defines a complete 360-degree revolution.
+The preceding zero is the inactive `depth_choice`; it is not a zero angular
+extent.
+
 When a class-911 hole owns exactly two complete outline-backed plane rows, their
 stored order is the entry and termination order. The planes are parallel.
 Projecting the second origin minus the first origin onto the first unit normal

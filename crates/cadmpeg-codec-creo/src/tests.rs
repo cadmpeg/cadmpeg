@@ -1908,6 +1908,52 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
 }
 
 #[test]
+fn decode_types_full_turn_revolution_from_positional_angle_choice() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 40, 0x01, 0, 0]);
+    let allfeatur = vec![
+        40, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0x02, 0x83, 0xdf, 0xf6, 0xe3, 0x00, 0x00,
+        0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00, 0x00, 0x00,
+    ];
+    let mdlstatus = b"\xe3icon\0protrevolve\0Revolve id 40\0".to_vec();
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", geometry),
+            ("AllFeatur", allfeatur),
+            ("MdlStatus", mdlstatus),
+        ],
+    );
+    let scan = container::scan_bytes(data.clone());
+
+    assert_eq!(scan.feature_revolution_extents.len(), 1);
+    assert_eq!(scan.feature_revolution_extents[0].feature_id, 40);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.0 == "creo:model:feature#40")
+        .expect("revolution feature");
+    assert!(matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                profile: None,
+                axis: None,
+                extent: Some(cadmpeg_ir::features::Extent::Angle {
+                    angle: cadmpeg_ir::features::Angle(angle)
+                }),
+            },
+            op: cadmpeg_ir::features::BooleanOp::NewBody,
+        } if (*angle - std::f64::consts::TAU).abs() < 1e-12
+    ));
+    let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_revolution_extents"];
+    assert_eq!(records[0].fields["kind"], "full_turn");
+}
+
+#[test]
 fn scan_decodes_featdefs_records_and_parameter_frames() {
     let mut payload = b"feat_defs_40\0local_sys\0\xf9\x04\x03".to_vec();
     for _ in 0..3 {

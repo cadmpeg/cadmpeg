@@ -529,6 +529,24 @@ pub struct FeatureLoopRestoreDirection {
     pub offset: usize,
 }
 
+/// Angular termination selected by a rotational feature row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureRevolutionExtentKind {
+    /// Complete 360-degree travel.
+    FullTurn,
+}
+
+/// One resolved rotational extent from an `AllFeatur` feature row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureRevolutionExtent {
+    /// Owning feature identifier.
+    pub feature_id: u32,
+    /// Resolved angular termination.
+    pub kind: FeatureRevolutionExtentKind,
+    /// Byte offset of the stored `angle_choice` value.
+    pub offset: usize,
+}
+
 /// Definition-space parameter-frame field in a `FeatDefs` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureParameterFrameKind {
@@ -4543,6 +4561,55 @@ pub fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRestoreDir
                 });
             }
         }
+    }
+    result.sort_by_key(|record| record.offset);
+    result
+}
+
+/// Decode full-turn rotational termination from the positional
+/// `param_choice_ptr` body of section-sweep feature rows.
+pub fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
+    const PARAMETER_CHOICE_PREFIX: &[u8] = &[0x83, 0xdf, 0xf6, 0xe3];
+    const FULL_TURN_CHOICES: &[u8] = &[
+        0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00, 0x00, 0x00,
+    ];
+    let mut result = Vec::new();
+    for row in rows {
+        if !matches!(row.root_schema_class, Some(916 | 917)) {
+            continue;
+        }
+        let Some(schema_end) = (0..row.body.len().min(20)).find_map(|offset| {
+            if row.body.get(offset..offset + 2) != Some(&[0xe3, 0xf6]) {
+                return None;
+            }
+            let (schema_class, after) = psb::compact_int(&row.body, offset + 2);
+            (Some(schema_class) == row.root_schema_class && row.body.get(after) == Some(&0xe1))
+                .then_some(after + 1)
+        }) else {
+            continue;
+        };
+        if row.body.get(schema_end) != Some(&2) {
+            continue;
+        }
+        let Some(choice_start) = row.body[schema_end + 1..row.body.len().min(64)]
+            .windows(PARAMETER_CHOICE_PREFIX.len())
+            .position(|window| window == PARAMETER_CHOICE_PREFIX)
+            .map(|relative| schema_end + 1 + relative + PARAMETER_CHOICE_PREFIX.len())
+        else {
+            continue;
+        };
+        if row
+            .body
+            .get(choice_start..choice_start + FULL_TURN_CHOICES.len())
+            != Some(FULL_TURN_CHOICES)
+        {
+            continue;
+        }
+        result.push(FeatureRevolutionExtent {
+            feature_id: row.feature_id,
+            kind: FeatureRevolutionExtentKind::FullTurn,
+            offset: row.body_offset + choice_start + 2,
+        });
     }
     result.sort_by_key(|record| record.offset);
     result

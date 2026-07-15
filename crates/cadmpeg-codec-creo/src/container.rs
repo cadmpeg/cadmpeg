@@ -25,7 +25,7 @@ use crate::datum::{self, DatumPlane};
 use crate::feature::{
     self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
     FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopRestoreDirection,
-    FeatureOperation, FeatureReplayAffectedIds, FeatureRow,
+    FeatureOperation, FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
 use crate::placement::{self, FeatureSectionTransform};
 use crate::psb;
@@ -238,6 +238,8 @@ pub struct ContainerScan {
     pub feature_replay_affected_ids: Vec<FeatureReplayAffectedIds>,
     /// Named compact direction values from loop-restoration records.
     pub feature_loop_restore_directions: Vec<FeatureLoopRestoreDirection>,
+    /// Resolved angular termination from rotational feature rows.
+    pub feature_revolution_extents: Vec<FeatureRevolutionExtent>,
     /// Byte-bounded `FeatDefs` records and definition-space parameter frames.
     pub feature_definitions: Vec<FeatureDefinition>,
     /// Section-to-model frames resolved from perpendicular active datums.
@@ -1201,6 +1203,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     feature_affected_ids.sort_by_key(|record| record.offset);
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
     let feature_loop_restore_directions = feature::loop_restore_directions(&feature_rows);
+    let feature_revolution_extents = feature::revolution_extents(&feature_rows);
     let feature_entity_tables =
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
     let mut feature_definitions = feature_definitions(&data, &sections);
@@ -1283,6 +1286,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         feature_affected_ids,
         feature_replay_affected_ids,
         feature_loop_restore_directions,
+        feature_revolution_extents,
         feature_definitions,
         feature_section_transforms,
         feature_operation_states,

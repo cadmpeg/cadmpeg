@@ -418,6 +418,16 @@ struct CreoFeatureLoopRestoreDirectionRecord {
 }
 
 #[derive(Serialize)]
+struct CreoFeatureRevolutionExtentRecord {
+    id: String,
+    owner_feature_id: u32,
+    kind: &'static str,
+    angle_radians: f64,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
 struct CreoFeatureChoiceRecord {
     id: String,
     owner_feature_id: u32,
@@ -830,6 +840,24 @@ fn feature_loop_restore_direction_records(
                 crate::feature::LoopRestoreDirectionLane::Secondary => "secondary",
             },
             value: record.value,
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn feature_revolution_extent_records(
+    scan: &ContainerScan,
+) -> Vec<CreoFeatureRevolutionExtentRecord> {
+    scan.feature_revolution_extents
+        .iter()
+        .map(|record| CreoFeatureRevolutionExtentRecord {
+            id: format!("creo:feature:revolution_extent#{}", record.offset),
+            owner_feature_id: record.feature_id,
+            kind: match record.kind {
+                crate::feature::FeatureRevolutionExtentKind::FullTurn => "full_turn",
+            },
+            angle_radians: std::f64::consts::TAU,
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })
@@ -6435,6 +6463,17 @@ fn feature_recipe_effect(
         .map(crate::feature::FeatureRecipe::effect)
 }
 
+fn feature_revolution_extent(scan: &ContainerScan, feature_id: u32) -> Option<Extent> {
+    scan.feature_revolution_extents
+        .iter()
+        .find(|record| record.feature_id == feature_id)
+        .map(|record| match record.kind {
+            crate::feature::FeatureRevolutionExtentKind::FullTurn => Extent::Angle {
+                angle: Angle(std::f64::consts::TAU),
+            },
+        })
+}
+
 fn line_orientation_definition(
     segment: &crate::feature::FeatureSegment,
     entity: SketchEntityId,
@@ -8559,6 +8598,19 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         };
         parameters.insert(format!("loop_restore.{name}"), direction.value.to_string());
     }
+    if let Some(extent) = scan
+        .feature_revolution_extents
+        .iter()
+        .find(|record| record.feature_id == feature_id)
+    {
+        parameters.insert(
+            "revolution_extent".to_string(),
+            match extent.kind {
+                crate::feature::FeatureRevolutionExtentKind::FullTurn => "full_turn",
+            }
+            .to_string(),
+        );
+    }
     for table in scan
         .feature_entity_tables
         .iter()
@@ -9109,12 +9161,13 @@ fn schema_feature_definition(
         }
     }
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
+        let extent = feature_revolution_extent(scan, feature_id);
         let transforms = scan
             .feature_section_transforms
             .iter()
             .filter(|transform| transform.feature_id == Some(feature_id))
             .collect::<Vec<_>>();
-        if let [transform] = transforms.as_slice() {
+        let (profile, axis) = if let [transform] = transforms.as_slice() {
             let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
             let profile = ir
                 .model
@@ -9136,21 +9189,24 @@ fn schema_feature_definition(
                 .iter()
                 .find(|definition| definition.id == transform.definition_id)
                 .and_then(|definition| resolved_revolution_axis(definition, transform));
-            if profile.is_some() || axis.is_some() {
-                return IrFeatureDefinition::Revolve {
-                    construction: RevolutionConstruction {
-                        profile,
-                        axis,
-                        extent: None,
-                    },
-                    op: section_sweep_boolean_operation(
-                        feature_recipe_effect(scan, feature_id),
-                        kind,
-                        false,
-                        preceding_features_establish_body(ir),
-                    ),
-                };
-            }
+            (profile, axis)
+        } else {
+            (None, None)
+        };
+        if profile.is_some() || axis.is_some() || extent.is_some() {
+            return IrFeatureDefinition::Revolve {
+                construction: RevolutionConstruction {
+                    profile,
+                    axis,
+                    extent,
+                },
+                op: section_sweep_boolean_operation(
+                    feature_recipe_effect(scan, feature_id),
+                    kind,
+                    false,
+                    preceding_features_establish_body(ir),
+                ),
+            };
         }
     }
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude) {
@@ -9237,6 +9293,9 @@ fn schema_feature_definition(
 fn preceding_features_establish_body(ir: &CadIr) -> bool {
     ir.model.features.iter().any(|feature| {
         matches!(
+            feature.source_tag.as_deref(),
+            Some("protextrude" | "protrevolve")
+        ) || matches!(
             feature.definition,
             IrFeatureDefinition::Extrude { .. }
                 | IrFeatureDefinition::Revolve { .. }
@@ -17087,6 +17146,22 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             &feature_loop_restore_directions,
         )?;
     }
+    let feature_revolution_extents = feature_revolution_extent_records(scan);
+    if !feature_revolution_extents.is_empty() {
+        for record in &feature_revolution_extents {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "feature_revolution_extent",
+                Exactness::Derived,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_revolution_extents", &feature_revolution_extents)?;
+    }
     let feature_rows = feature_row_records(scan);
     if !feature_rows.is_empty() {
         for record in &feature_rows {
@@ -17437,6 +17512,10 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_feature_loop_restore_direction_count".to_string(),
         scan.feature_loop_restore_directions.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_revolution_extent_count".to_string(),
+        scan.feature_revolution_extents.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_definition_count".to_string(),
