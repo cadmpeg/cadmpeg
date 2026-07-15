@@ -14900,6 +14900,16 @@ mod resolved_sketch_tests {
             normal: [1.0, 0.0, 0.0],
         });
         assert!(carrier_intersection_curve(cone_degenerate_plane, cone).is_none());
+        let cone_generators = apex_plane_cone_generator_candidates(cone_degenerate_plane, cone);
+        assert_eq!(cone_generators.len(), 2);
+        assert!(matches!(
+            select_unique_line_candidate(
+                cone_generators,
+                [[0.0, 1.0, -1.0], [0.0, 2.0, 0.0]],
+            ),
+            Some((CurveGeometry::Line { origin, .. }, "plane_cone_secant_generator"))
+                if (origin.z + 2.0).abs() < 1e-12
+        ));
         assert_eq!(solve_carriers(&[cone, cap, tangent]), None);
         let cone_tangent = CarrierEquation::Plane(PlaneEquation {
             origin: [5.0, 0.0, 0.0],
@@ -17797,6 +17807,68 @@ fn parallel_plane_cylinder_generator_candidates(
         .collect()
 }
 
+fn apex_plane_cone_generator_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let ((CarrierEquation::Plane(plane), CarrierEquation::Cone(cone))
+    | (CarrierEquation::Cone(cone), CarrierEquation::Plane(plane))) = (first, second)
+    else {
+        return Vec::new();
+    };
+    let Some(normal) = normalized(plane.normal) else {
+        return Vec::new();
+    };
+    let Some(axis) = normalized(cone.axis) else {
+        return Vec::new();
+    };
+    let slope = cone.half_angle.tan();
+    if slope <= 1e-12 || cone.radius < 0.0 {
+        return Vec::new();
+    }
+    let apex: [f64; 3] =
+        std::array::from_fn(|index| cone.origin[index] - cone.radius / slope * axis[index]);
+    let plane_distance = dot(
+        normal,
+        std::array::from_fn(|index| apex[index] - plane.origin[index]),
+    );
+    let scale = cone.radius.max(1.0);
+    if plane_distance.abs() > 1e-9 * scale {
+        return Vec::new();
+    }
+    let axial_normal = dot(axis, normal);
+    let projected_length_squared = 1.0 - axial_normal * axial_normal;
+    let cosine = cone.half_angle.cos();
+    if projected_length_squared <= cosine * cosine + 1e-12 {
+        return Vec::new();
+    }
+    let Some(projected_axis) = normalized(std::array::from_fn(|index| {
+        axis[index] - axial_normal * normal[index]
+    })) else {
+        return Vec::new();
+    };
+    let Some(transverse) = normalized(cross(normal, projected_axis)) else {
+        return Vec::new();
+    };
+    let along = cosine / projected_length_squared.sqrt();
+    let across = (1.0 - along * along).sqrt();
+    [-1.0, 1.0]
+        .into_iter()
+        .map(|sense| {
+            let direction: [f64; 3] = std::array::from_fn(|index| {
+                along * projected_axis[index] + sense * across * transverse[index]
+            });
+            (
+                CurveGeometry::Line {
+                    origin: Point3::new(apex[0], apex[1], apex[2]),
+                    direction: Vector3::new(direction[0], direction[1], direction[2]),
+                },
+                "plane_cone_secant_generator",
+            )
+        })
+        .collect()
+}
+
 fn line_contains_points(geometry: &CurveGeometry, points: [[f64; 3]; 2]) -> bool {
     let CurveGeometry::Line { origin, direction } = geometry else {
         return false;
@@ -17818,7 +17890,17 @@ fn select_parallel_plane_cylinder_generator(
     second: CarrierEquation,
     points: [[f64; 3]; 2],
 ) -> Option<(CurveGeometry, &'static str)> {
-    let candidates = parallel_plane_cylinder_generator_candidates(first, second)
+    select_unique_line_candidate(
+        parallel_plane_cylinder_generator_candidates(first, second),
+        points,
+    )
+}
+
+fn select_unique_line_candidate(
+    candidates: Vec<(CurveGeometry, &'static str)>,
+    points: [[f64; 3]; 2],
+) -> Option<(CurveGeometry, &'static str)> {
+    let candidates = candidates
         .into_iter()
         .filter(|(geometry, _)| line_contains_points(geometry, points))
         .collect::<Vec<_>>();
@@ -17866,7 +17948,12 @@ fn transfer_carrier_intersection_curves(
                 *solved_vertices.get(&forward.start_vertex_id)?,
                 *solved_vertices.get(&end)?,
             ];
-            select_parallel_plane_cylinder_generator(first, second, points)
+            select_parallel_plane_cylinder_generator(first, second, points).or_else(|| {
+                select_unique_line_candidate(
+                    apex_plane_cone_generator_candidates(first, second),
+                    points,
+                )
+            })
         });
         let Some((geometry, tag)) = resolved else {
             continue;
