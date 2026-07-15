@@ -2134,6 +2134,43 @@ mod chart_tests {
     }
 
     #[test]
+    fn standard_cone_apex_uses_the_other_endpoint_angular_gauge() {
+        let half_angle = 0.25f64;
+        let surface = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 0.0,
+            ratio: 1.0,
+            half_angle,
+        };
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Line,
+        };
+        let height = 4.0;
+        let radius = height * half_angle.tan();
+        let (geometry, range) = standard_pcurve_geometry(
+            &surface,
+            &support,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, radius, height),
+            None,
+        )
+        .expect("cone generator through the apex");
+        assert_eq!(range, [0.0, 1.0]);
+        assert_eq!(
+            geometry,
+            PcurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
+                direction: cadmpeg_ir::math::Point2::new(0.0, height),
+            }
+        );
+    }
+
+    #[test]
     fn standard_cone_latitude_inverts_to_isoparametric_line() {
         let half_angle = 0.25f64;
         let radius = 3.0 + 2.0 * half_angle.tan();
@@ -2202,6 +2239,40 @@ mod chart_tests {
             PcurveGeometry::Line {
                 origin: cadmpeg_ir::math::Point2::new(0.0, 3.0),
                 direction: cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0,),
+            }
+        );
+    }
+
+    #[test]
+    fn standard_cylinder_endpoint_witness_preserves_geometric_arc() {
+        let surface = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 3.0),
+                radius: 2.0,
+            },
+        };
+        let (geometry, _) = standard_pcurve_geometry(
+            &surface,
+            &support,
+            Point3::new(-2.0, 0.0, 3.0),
+            Point3::new(0.0, -2.0, 3.0),
+            Some(Point3::new(-1.0, 0.0, 4.0)),
+        )
+        .expect("endpoint-aligned witness does not reject the arc");
+        assert_eq!(
+            geometry,
+            PcurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point2::new(std::f64::consts::PI, 3.0),
+                direction: cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
             }
         );
     }
@@ -5395,13 +5466,39 @@ fn standard_pcurve_geometry(
         analytic_surface_uv(surface, start)?,
         analytic_surface_uv(surface, end)?,
     ];
+    if let SurfaceGeometry::Cone {
+        origin,
+        axis,
+        radius,
+        half_angle,
+        ..
+    } = surface
+    {
+        let tangent = half_angle.tan();
+        if tangent.abs() > f64::EPSILON {
+            let apex_offset = -*radius / tangent;
+            let apex = Point3::new(
+                origin.x + apex_offset * axis.x,
+                origin.y + apex_offset * axis.y,
+                origin.z + apex_offset * axis.z,
+            );
+            if point_distance_squared(start, apex) <= 1e-6 {
+                uv[0].u = uv[1].u;
+            }
+            if point_distance_squared(end, apex) <= 1e-6 {
+                uv[1].u = uv[0].u;
+            }
+        }
+    }
     let reference_uv = uv[0];
     unwrap_standard_uv(surface, &mut uv[1], reference_uv);
 
     if let (geometry::StandardCurveGeometry::Circle { center, radius }, Some(witness)) =
         (&support.geometry, witness)
     {
-        uv[1] = witnessed_surface_circle_end(surface, *center, *radius, uv, witness)?;
+        if let Some(end) = witnessed_surface_circle_end(surface, *center, *radius, uv, witness) {
+            uv[1] = end;
+        }
     }
 
     if let (
