@@ -4883,6 +4883,12 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
 }
 
 impl MeshSelectionSearch<'_> {
+    fn should_stop(&self) -> bool {
+        self.ambiguous
+            || self.exhausted
+            || (self.stop_after_first_solution && self.solution.is_some())
+    }
+
     fn remaining_equation_merge_capacity(&self, quotient: &mut MeshQuotient) -> Option<usize> {
         fn augment(
             component: usize,
@@ -5552,10 +5558,7 @@ impl MeshSelectionSearch<'_> {
     ) {
         const MAX_SELECTION_STATES: usize = 512;
 
-        if self.ambiguous
-            || self.exhausted
-            || (self.stop_after_first_solution && self.solution.is_some())
-        {
+        if self.should_stop() {
             return;
         }
         let mut measured = quotient.clone();
@@ -5802,7 +5805,7 @@ impl MeshSelectionSearch<'_> {
                 }
             }
             self.selected[face] = None;
-            if self.ambiguous || self.exhausted {
+            if self.should_stop() {
                 return;
             }
         }
@@ -7709,6 +7712,40 @@ mod motif_tests {
             search.remaining_equation_merge_capacity(&mut quotient),
             None
         );
+    }
+
+    #[test]
+    fn singleton_mesh_search_stops_after_its_first_complete_solution() {
+        let assignments = Vec::new();
+        let edge_candidates = Vec::new();
+        let edge_rows = Vec::new();
+        let vertex_points = Vec::new();
+        let search = MeshSelectionSearch {
+            assignments: &assignments,
+            possible_face_equations: Vec::new(),
+            possible_face_choices: Vec::new(),
+            face_work: Vec::new(),
+            edge_candidates: &edge_candidates,
+            edge_rows: &edge_rows,
+            vertex_points: &vertex_points,
+            selected: Vec::new(),
+            states: 512,
+            solution: Some((
+                StandardTopology {
+                    faces: Vec::new(),
+                    edge_rows: Vec::new(),
+                    vertex_points: Vec::new(),
+                    logical_vertex_count: 0,
+                },
+                Vec::new(),
+            )),
+            stop_after_first_solution: true,
+            ambiguous: false,
+            exhausted: false,
+            face_equation_cache: RefCell::default(),
+        };
+
+        assert!(search.should_stop());
     }
 
     #[test]
