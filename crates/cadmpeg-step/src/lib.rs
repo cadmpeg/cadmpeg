@@ -312,7 +312,7 @@ struct Builder<'a> {
     surfaces: HashMap<&'a str, &'a Surface>,
     curves: HashMap<&'a str, &'a Curve>,
     pcurves: HashMap<&'a str, &'a Pcurve>,
-    coedge_surfaces: HashMap<&'a str, &'a str>,
+    edge_coedges: HashMap<&'a str, Vec<(&'a str, &'a str)>>,
 
     // Emitted-instance caches keyed by IR id, so shared carriers emit once.
     surface_refs: HashMap<String, Ref>,
@@ -369,7 +369,7 @@ impl<'a> Builder<'a> {
                     .map(move |loop_id| (loop_id.as_str(), face.surface.as_str()))
             })
             .collect::<HashMap<_, _>>();
-        let coedge_surfaces = ir
+        let coedge_surfaces: HashMap<&str, &str> = ir
             .model
             .loops
             .iter()
@@ -385,6 +385,19 @@ impl<'a> Builder<'a> {
                     .map(move |coedge| (coedge.as_str(), surface))
             })
             .collect();
+        let mut edge_coedges = HashMap::<&str, Vec<(&str, &str)>>::new();
+        for coedge in &ir.model.coedges {
+            let Some(pcurve) = coedge.pcurve.as_ref() else {
+                continue;
+            };
+            let Some(surface) = coedge_surfaces.get(coedge.id.as_str()) else {
+                continue;
+            };
+            edge_coedges
+                .entry(coedge.edge.as_str())
+                .or_default()
+                .push((pcurve.as_str(), *surface));
+        }
         Builder {
             ir,
             schema,
@@ -418,7 +431,7 @@ impl<'a> Builder<'a> {
                 .iter()
                 .map(|p| (p.id.as_str(), p))
                 .collect(),
-            coedge_surfaces,
+            edge_coedges,
             surface_refs: HashMap::new(),
             curve_refs: HashMap::new(),
             edge_refs: HashMap::new(),
@@ -1786,22 +1799,10 @@ impl<'a> Builder<'a> {
             return None;
         }
         let basis_curve = self.emit_curve(curve_id.as_str())?;
-        let associated = self
-            .ir
-            .model
-            .coedges
-            .iter()
-            .filter(|coedge| coedge.edge.as_str() == edge_id)
-            .filter_map(|coedge| {
-                Some((
-                    coedge.pcurve.as_ref()?.0.clone(),
-                    self.coedge_surfaces.get(coedge.id.as_str())?.to_string(),
-                ))
-            })
-            .collect::<Vec<_>>();
+        let associated = self.edge_coedges.get(edge_id).cloned().unwrap_or_default();
         let mut pcurve_refs = Vec::new();
         for (pcurve_id, surface_id) in associated {
-            if let Some(pcurve) = self.emit_pcurve(&pcurve_id, &surface_id) {
+            if let Some(pcurve) = self.emit_pcurve(pcurve_id, surface_id) {
                 pcurve_refs.push(pcurve);
             }
         }
@@ -2178,6 +2179,9 @@ impl<'a> Builder<'a> {
                             .iter()
                             .map(|reference| annotation_refs.get(&reference.datum).copied())
                             .collect::<Option<Vec<_>>>()?;
+                        if group[0].common_group.is_none() && group.len() != 1 {
+                            return None;
+                        }
                         let (datum, modifiers) = if group[0].common_group.is_some() {
                             let elements = group
                                 .iter()

@@ -36,6 +36,57 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
         .enumerate()
         .map(|(index, body)| (body.id.0.clone(), index))
         .collect::<BTreeMap<_, _>>();
+    let entity_ids = EntityIds {
+        edges: ir
+            .model
+            .edges
+            .iter()
+            .map(|item| item.id.0.clone())
+            .collect(),
+        vertices: ir
+            .model
+            .vertices
+            .iter()
+            .map(|item| item.id.0.clone())
+            .collect(),
+        points: ir
+            .model
+            .points
+            .iter()
+            .map(|item| item.id.0.clone())
+            .collect(),
+        curves: ir
+            .model
+            .curves
+            .iter()
+            .map(|item| item.id.0.clone())
+            .collect(),
+        surfaces: ir
+            .model
+            .surfaces
+            .iter()
+            .map(|item| item.id.0.clone())
+            .collect(),
+        products: ir
+            .model
+            .products
+            .iter()
+            .map(|item| item.id.0.clone())
+            .collect(),
+        occurrences: ir
+            .model
+            .occurrences
+            .iter()
+            .map(|item| item.id.0.clone())
+            .collect(),
+        pmi: ir.model.pmi.iter().map(|item| item.id.0.clone()).collect(),
+        tessellations: ir
+            .model
+            .tessellations
+            .iter()
+            .map(|item| item.id.clone())
+            .collect(),
+    };
     let mut appearance_ids = BTreeMap::<u64, AppearanceId>::new();
     for (&id, record) in &exchange.records {
         if record.simple_name() != Some("INVISIBILITY") {
@@ -83,7 +134,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             .into_iter()
             .flatten()
             .filter_map(ValueExt::reference)
-            .map(|id| presentation_item(id, exchange, ir))
+            .map(|id| presentation_item(id, exchange, &entity_ids, &face_indices, &body_indices))
             .collect();
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId(format!("step:presentation:layer#{layer_id}")),
@@ -193,40 +244,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             } else if let Some(&index) = body_indices.get(&body_id) {
                 ir.model.bodies[index].color = Some(color);
                 AppearanceTarget::Body(BodyId(body_id))
-            } else if ir
-                .model
-                .edges
-                .iter()
-                .any(|edge| edge.id.as_str() == edge_id)
-            {
+            } else if entity_ids.edges.contains(&edge_id) {
                 AppearanceTarget::Edge(EdgeId(edge_id))
-            } else if ir
-                .model
-                .surfaces
-                .iter()
-                .any(|surface| surface.id.as_str() == surface_id)
-            {
+            } else if entity_ids.surfaces.contains(&surface_id) {
                 AppearanceTarget::Surface(SurfaceId(surface_id))
-            } else if ir
-                .model
-                .curves
-                .iter()
-                .any(|curve| curve.id.as_str() == curve_id)
-            {
+            } else if entity_ids.curves.contains(&curve_id) {
                 AppearanceTarget::Curve(CurveId(curve_id))
-            } else if ir
-                .model
-                .points
-                .iter()
-                .any(|point| point.id.as_str() == point_id)
-            {
+            } else if entity_ids.points.contains(&point_id) {
                 AppearanceTarget::Point(PointId(point_id))
-            } else if ir
-                .model
-                .tessellations
-                .iter()
-                .any(|mesh| mesh.id == tessellation_id)
-            {
+            } else if entity_ids.tessellations.contains(&tessellation_id) {
                 AppearanceTarget::Tessellation(tessellation_id)
             } else if exchange.records.contains_key(&target_step) {
                 AppearanceTarget::Source {
@@ -293,70 +319,64 @@ fn expand_style_targets(
     targets
 }
 
-fn presentation_item(id: u64, exchange: &Exchange, ir: &CadIr) -> PresentationItem {
+fn presentation_item(
+    id: u64,
+    exchange: &Exchange,
+    entity_ids: &EntityIds,
+    face_indices: &BTreeMap<String, usize>,
+    body_indices: &BTreeMap<String, usize>,
+) -> PresentationItem {
     let candidate = |kind: &str| format!("step:data:{kind}#{id}");
     let body = candidate("body");
-    if ir.model.bodies.iter().any(|item| item.id.as_str() == body) {
+    if body_indices.contains_key(&body) {
         return PresentationItem::Body { body: BodyId(body) };
     }
     let face = candidate("face");
-    if ir.model.faces.iter().any(|item| item.id.as_str() == face) {
+    if face_indices.contains_key(&face) {
         return PresentationItem::Face { face: FaceId(face) };
     }
     let edge = candidate("edge");
-    if ir.model.edges.iter().any(|item| item.id.as_str() == edge) {
+    if entity_ids.edges.contains(&edge) {
         return PresentationItem::Edge { edge: EdgeId(edge) };
     }
     let vertex = candidate("vertex");
-    if ir
-        .model
-        .vertices
-        .iter()
-        .any(|item| item.id.as_str() == vertex)
-    {
+    if entity_ids.vertices.contains(&vertex) {
         return PresentationItem::Vertex {
             vertex: VertexId(vertex),
         };
     }
     let point = candidate("point");
-    if ir.model.points.iter().any(|item| item.id.as_str() == point) {
+    if entity_ids.points.contains(&point) {
         return PresentationItem::Point {
             point: PointId(point),
         };
     }
     let curve = candidate("curve");
-    if ir.model.curves.iter().any(|item| item.id.as_str() == curve) {
+    if entity_ids.curves.contains(&curve) {
         return PresentationItem::Curve {
             curve: CurveId(curve),
         };
     }
     let surface = candidate("surface");
-    if ir
-        .model
-        .surfaces
-        .iter()
-        .any(|item| item.id.as_str() == surface)
-    {
+    if entity_ids.surfaces.contains(&surface) {
         return PresentationItem::Surface {
             surface: SurfaceId(surface),
         };
     }
     match exchange.records.get(&id).and_then(RecordExt::simple_name) {
         Some("PRODUCT")
-            if ir
-                .model
+            if entity_ids
                 .products
-                .iter()
-                .any(|product| product.id.as_str() == format!("step:product:product#{id}")) =>
+                .contains(&format!("step:product:product#{id}")) =>
         {
             PresentationItem::Product {
                 product: ProductId(format!("step:product:product#{id}")),
             }
         }
         Some("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
-            if ir.model.occurrences.iter().any(|occurrence| {
-                occurrence.id.as_str() == format!("step:product:occurrence#{id}")
-            }) =>
+            if entity_ids
+                .occurrences
+                .contains(&format!("step:product:occurrence#{id}")) =>
         {
             PresentationItem::Occurrence {
                 occurrence: OccurrenceId(format!("step:product:occurrence#{id}")),
@@ -367,20 +387,18 @@ fn presentation_item(id: u64, exchange: &Exchange, ir: &CadIr) -> PresentationIt
                 || name == "DATUM_SYSTEM"
                 || name.starts_with("DIMENSIONAL_")
                 || name.ends_with("_TOLERANCE"))
-                && ir.model.pmi.iter().any(|annotation| {
-                    annotation.id.as_str() == format!("step:presentation:pmi#{id}")
-                }) =>
+                && entity_ids
+                    .pmi
+                    .contains(&format!("step:presentation:pmi#{id}")) =>
         {
             PresentationItem::Pmi {
                 annotation: PmiId(format!("step:presentation:pmi#{id}")),
             }
         }
         Some("TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE" | "TRIANGULATED_SURFACE_SET")
-            if ir
-                .model
+            if entity_ids
                 .tessellations
-                .iter()
-                .any(|mesh| mesh.id == format!("step:tessellation:mesh#{id}")) =>
+                .contains(&format!("step:tessellation:mesh#{id}")) =>
         {
             PresentationItem::Tessellation {
                 tessellation: format!("step:tessellation:mesh#{id}"),
@@ -390,6 +408,18 @@ fn presentation_item(id: u64, exchange: &Exchange, ir: &CadIr) -> PresentationIt
             source_id: format!("#{id}"),
         },
     }
+}
+
+struct EntityIds {
+    edges: BTreeSet<String>,
+    vertices: BTreeSet<String>,
+    points: BTreeSet<String>,
+    curves: BTreeSet<String>,
+    surfaces: BTreeSet<String>,
+    products: BTreeSet<String>,
+    occurrences: BTreeSet<String>,
+    pmi: BTreeSet<String>,
+    tessellations: BTreeSet<String>,
 }
 
 fn overridden_style(style: &RawRecord) -> Option<u64> {
