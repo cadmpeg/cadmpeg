@@ -465,7 +465,9 @@ pub fn project_parameter_design(
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: scope.byte_offset,
                 name: None,
-                suppressed: false,
+                suppressed: matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer")
+                    && scope.history_state_id.is_none()
+                    && scope.previous_history_state_id.is_none(),
                 parent: None,
                 dependencies: Vec::new(),
                 source_properties: BTreeMap::new(),
@@ -14277,6 +14279,7 @@ mod relation_tests {
         let (features, parameters) =
             project_parameter_design(&[parameter], &[owner], &[scope], &[], &[], &[], &[], &[]);
         assert_eq!(features.len(), 1);
+        assert!(features[0].suppressed);
         assert!(matches!(
             &features[0].definition,
             FeatureDefinition::Native { kind, parameters, .. }

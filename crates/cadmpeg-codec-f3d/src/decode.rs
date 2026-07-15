@@ -137,6 +137,9 @@ fn design_projection_gaps(ir: &CadIr) -> DesignProjectionGaps {
         | EdgeSelection::Historical { .. } => {}
     };
     for feature in &ir.model.features {
+        if feature.suppressed {
+            continue;
+        }
         match &feature.definition {
             FeatureDefinition::Extrude {
                 profile,
@@ -1841,6 +1844,21 @@ mod tests {
                 }
             }))
             .expect("Fillet feature"),
+        );
+        ir.model.features.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "suppressed-fillet",
+                "ordinal": 2,
+                "suppressed": true,
+                "definition": {
+                    "definition": "fillet",
+                    "groups": [{
+                        "edges": {"kind": "native", "value": "native:suppressed-edges"},
+                        "radius": {"kind": "constant", "radius": 3.0}
+                    }]
+                }
+            }))
+            .expect("suppressed Fillet feature"),
         );
 
         assert_eq!(
