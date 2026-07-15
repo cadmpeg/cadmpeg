@@ -51,6 +51,10 @@ pub struct DisplayJtDocument {
     pub index_row: String,
     /// Exact 80-byte UTF-8 version field.
     pub version_field: String,
+    /// JT format major version parsed from the version field.
+    pub format_major: u16,
+    /// JT format minor version parsed from the version field.
+    pub format_minor: u16,
     /// Serialized JT byte-order flag.
     pub byte_order: u8,
     /// Payload-relative table-of-contents offset.
@@ -222,7 +226,7 @@ pub struct DisplayJtBaseNodeData {
     /// Serialized node object identifier.
     pub object_id: u32,
     /// Common node-data version.
-    pub version: u8,
+    pub version: u16,
     /// Serialized node flags.
     pub flags: u32,
     /// Ordered attribute object identifiers.
@@ -297,13 +301,27 @@ pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<(Vec<u16
     Some((code_units, value))
 }
 
-pub(crate) fn parse_jt_base_node_body(body: &[u8]) -> Option<(u8, u32, Vec<u32>, &[u8])> {
-    let &version = body.first()?;
-    let flags = u32::from_le_bytes(body.get(1..5)?.try_into().ok()?);
-    let attribute_count = u32::from_le_bytes(body.get(5..9)?.try_into().ok()?);
+pub(crate) fn parse_jt_base_node_body(
+    body: &[u8],
+    format_major: u16,
+) -> Option<(u16, u32, Vec<u32>, &[u8])> {
+    let (version, flags_offset, count_offset, attributes_offset): (u16, usize, usize, usize) =
+        if format_major < 10 {
+            (
+                u16::from_le_bytes(body.get(..2)?.try_into().ok()?),
+                2,
+                6,
+                10,
+            )
+        } else {
+            (u16::from(*body.first()?), 1, 5, 9)
+        };
+    let flags = u32::from_le_bytes(body.get(flags_offset..flags_offset + 4)?.try_into().ok()?);
+    let attribute_count =
+        u32::from_le_bytes(body.get(count_offset..count_offset + 4)?.try_into().ok()?);
     let attribute_count = usize::try_from(attribute_count).ok()?;
-    let header_end = 9usize.checked_add(attribute_count.checked_mul(4)?)?;
-    let attributes = body.get(9..header_end)?;
+    let header_end = attributes_offset.checked_add(attribute_count.checked_mul(4)?)?;
+    let attributes = body.get(attributes_offset..header_end)?;
     let attribute_object_ids = attributes
         .chunks_exact(4)
         .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
@@ -431,6 +449,20 @@ pub fn display_jt_documents(
         let Some(version_field) = std::str::from_utf8(version_bytes).ok() else {
             return Vec::new();
         };
+        let Some(version_token) = version_field
+            .strip_prefix("Version ")
+            .and_then(|value| value.split_ascii_whitespace().next())
+        else {
+            return Vec::new();
+        };
+        let Some((format_major, format_minor)) = version_token.split_once('.') else {
+            return Vec::new();
+        };
+        let (Ok(format_major), Ok(format_minor)) =
+            (format_major.parse::<u16>(), format_minor.parse::<u16>())
+        else {
+            return Vec::new();
+        };
         let Some(&byte_order) = document.get(80) else {
             return Vec::new();
         };
@@ -508,6 +540,8 @@ pub fn display_jt_documents(
             id: format!("nx:display-jt:document#{document_key}"),
             index_row: row.id.clone(),
             version_field: version_field.to_string(),
+            format_major,
+            format_minor,
             byte_order,
             toc_offset,
             lsg_segment_id: lsg_segment_id.to_vec(),
@@ -804,9 +838,16 @@ pub fn display_jt_string_property_atoms(
 pub fn display_jt_base_node_data(
     container: &Container,
     segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
 ) -> Vec<DisplayJtBaseNodeData> {
     let mut nodes = Vec::new();
     for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
         if segment.compression.is_none() {
             return Vec::new();
         }
@@ -837,7 +878,7 @@ pub fn display_jt_base_node_data(
                 return Vec::new();
             }
             let Some((version, flags, attribute_object_ids, family_data)) =
-                parse_jt_base_node_body(element.body)
+                parse_jt_base_node_body(element.body, document.format_major)
             else {
                 return Vec::new();
             };

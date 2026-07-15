@@ -87,6 +87,10 @@ fn display_jt_index_requires_every_declared_header() {
     assert_eq!(indices[0].rows[0].header_offset, 28);
     assert_eq!(indices[0].rows[0].value, 100);
     let documents = crate::native::display_jt_documents(&container, &indices);
+    assert_eq!(
+        (documents[0].format_major, documents[0].format_minor),
+        (9, 4)
+    );
     assert_eq!(documents[0].toc_offset, 105);
     assert_eq!(
         documents[0].physical_byte_len,
@@ -200,21 +204,32 @@ fn display_jt_string_property_body_requires_exact_utf16_frame() {
 #[test]
 fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
     let mut body = Vec::new();
-    body.push(1);
+    body.extend_from_slice(&1_u16.to_le_bytes());
     body.extend_from_slice(&0x20_u32.to_le_bytes());
     body.extend_from_slice(&2_u32.to_le_bytes());
     body.extend_from_slice(&7_u32.to_le_bytes());
     body.extend_from_slice(&9_u32.to_le_bytes());
     body.extend_from_slice(&[4, 3, 2, 1]);
     let (version, flags, attributes, family) =
-        crate::native::parse_jt_base_node_body(&body).unwrap();
+        crate::native::parse_jt_base_node_body(&body, 9).unwrap();
     assert_eq!(version, 1);
     assert_eq!(flags, 0x20);
     assert_eq!(attributes, [7, 9]);
     assert_eq!(family, [4, 3, 2, 1]);
 
-    body.truncate(16);
-    assert!(crate::native::parse_jt_base_node_body(&body).is_none());
+    body.truncate(17);
+    assert!(crate::native::parse_jt_base_node_body(&body, 9).is_none());
+
+    let mut modern = vec![2];
+    modern.extend_from_slice(&0x40_u32.to_le_bytes());
+    modern.extend_from_slice(&1_u32.to_le_bytes());
+    modern.extend_from_slice(&11_u32.to_le_bytes());
+    modern.push(0xaa);
+    let (version, flags, attributes, family) =
+        crate::native::parse_jt_base_node_body(&modern, 10).unwrap();
+    assert_eq!((version, flags), (2, 0x40));
+    assert_eq!(attributes, [11]);
+    assert_eq!(family, [0xaa]);
 }
 
 fn be_f64(v: f64) -> [u8; 8] {

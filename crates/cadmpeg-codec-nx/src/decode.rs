@@ -6316,8 +6316,11 @@ fn attach_native_object_model(
         );
     let display_jt_string_property_atoms =
         crate::native::display_jt_string_property_atoms(&scan.container, &display_jt_segments);
-    let display_jt_base_node_data =
-        crate::native::display_jt_base_node_data(&scan.container, &display_jt_segments);
+    let display_jt_base_node_data = crate::native::display_jt_base_node_data(
+        &scan.container,
+        &display_jt_segments,
+        &display_jt_documents,
+    );
     let feature_datum_csys_constructions =
         crate::native::feature_datum_csys_constructions(&scan.container);
     let feature_datum_csys_payloads = crate::native::feature_datum_csys_payloads(
