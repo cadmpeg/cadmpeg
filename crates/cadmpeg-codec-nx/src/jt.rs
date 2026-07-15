@@ -162,34 +162,6 @@ impl CodeBits<'_> {
     }
 }
 
-fn decode_raw_code_text(
-    code_words: &[u8],
-    code_bit_len: usize,
-    value_count: usize,
-) -> Option<Vec<i32>> {
-    if value_count == 0 || !code_bit_len.is_multiple_of(value_count) {
-        return None;
-    }
-    let width = code_bit_len / value_count;
-    if width > 32 {
-        return None;
-    }
-    let mut bits = CodeBits {
-        words: code_words,
-        bit_len: code_bit_len,
-        bit: 0,
-    };
-    let mut values = Vec::with_capacity(value_count);
-    for _ in 0..value_count {
-        let mut value = 0u32;
-        for _ in 0..width {
-            value = (value << 1) | u32::from(bits.next());
-        }
-        values.push(value as i32);
-    }
-    Some(values)
-}
-
 fn decode_arithmetic(
     code_words: &[u8],
     code_bit_len: usize,
@@ -307,11 +279,8 @@ pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, us
     if codec == 4 {
         let &chop_bits = bytes.get(5)?;
         if chop_bits == 0 {
-            let code_bit_len = usize::try_from(read_u32(bytes, 6)?).ok()?;
-            let code_byte_len = code_bit_len.div_ceil(32).checked_mul(4)?;
-            let code_words = bytes.get(10..10 + code_byte_len)?;
-            let values = decode_raw_code_text(code_words, code_bit_len, value_count)?;
-            return Some((values, 10 + code_byte_len));
+            let (values, nested_len) = decode_int32_cdp2(bytes.get(6..)?, depth + 1)?;
+            return (values.len() == value_count).then_some((values, 6 + nested_len));
         }
         let bias = read_u32(bytes, 6)? as i32;
         let &span_bits = bytes.get(10)?;
@@ -324,13 +293,21 @@ pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, us
             return None;
         }
         let shift = span_bits - chop_bits;
+        let low_mask = if shift == 32 {
+            u32::MAX
+        } else {
+            (1_u32 << shift) - 1
+        };
+        if lsb
+            .iter()
+            .any(|value| *value < 0 || (*value as u32) > low_mask)
+        {
+            return None;
+        }
         let values = msb
             .into_iter()
             .zip(lsb)
-            .map(|(high, low)| {
-                low.wrapping_add(high.wrapping_shl(u32::from(shift)))
-                    .wrapping_add(bias)
-            })
+            .map(|(high, low)| (low | high.wrapping_shl(u32::from(shift))).wrapping_add(bias))
             .collect();
         return Some((values, 11 + msb_len + lsb_len));
     }
