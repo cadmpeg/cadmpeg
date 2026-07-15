@@ -8906,6 +8906,26 @@ fn equal_geometry_size(first: &SketchEntity, second: &SketchEntity) -> bool {
 
 fn tangent_geometry(first: &SketchEntity, second: &SketchEntity) -> bool {
     let line_circle = |line: &SketchEntity, circle: &SketchEntity| {
+        if let SketchGeometry::Ellipse {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            ..
+        } = &circle.geometry
+        {
+            let Some((du, dv, length)) = line_direction(line) else {
+                return false;
+            };
+            let normal = [-dv / length, du / length];
+            let major = [major_angle.0.cos(), major_angle.0.sin()];
+            let minor = [-major[1], major[0]];
+            let support = ((major_radius.0 * (normal[0] * major[0] + normal[1] * major[1])).powi(2)
+                + (minor_radius.0 * (normal[0] * minor[0] + normal[1] * minor[1])).powi(2))
+            .sqrt();
+            return point_line_distance_value(*center, line)
+                .is_some_and(|distance| same_dimension_length(distance, support));
+        }
         centered_geometry(circle)
             .zip(circular_radius(circle))
             .and_then(|(center, radius)| {
@@ -16015,15 +16035,20 @@ fn project_edge(
                     radius: cadmpeg_ir::features::Length(*radius),
                 })
             } else {
+                let parameters = edge.param_range.filter(|[start, end]| {
+                    start.is_finite() && end.is_finite() && start != end
+                });
                 Some(SketchGeometry::Arc {
                     center,
                     radius: cadmpeg_ir::features::Length(*radius),
-                    start_angle: cadmpeg_ir::features::Angle(
-                        (start.v - center.v).atan2(start.u - center.u),
-                    ),
-                    end_angle: cadmpeg_ir::features::Angle(
-                        (end.v - center.v).atan2(end.u - center.u),
-                    ),
+                    start_angle: cadmpeg_ir::features::Angle(parameters.map_or_else(
+                        || (start.v - center.v).atan2(start.u - center.u),
+                        |range| range[0],
+                    )),
+                    end_angle: cadmpeg_ir::features::Angle(parameters.map_or_else(
+                        || (end.v - center.v).atan2(end.u - center.u),
+                        |range| range[1],
+                    )),
                 })
             }
         }
@@ -16046,13 +16071,26 @@ fn project_edge(
                 let minor_component = -du * major_angle.sin() + dv * major_angle.cos();
                 (minor_component / *minor_radius).atan2(major_component / *major_radius)
             };
+            let parameters = edge.param_range.filter(|[start, end]| {
+                start.is_finite() && end.is_finite() && start != end
+            });
             Some(SketchGeometry::Ellipse {
                 center,
                 major_angle: cadmpeg_ir::features::Angle(major_angle),
                 major_radius: cadmpeg_ir::features::Length(*major_radius),
                 minor_radius: cadmpeg_ir::features::Length(*minor_radius),
-                start_angle: (!full).then(|| cadmpeg_ir::features::Angle(parameter(start))),
-                end_angle: (!full).then(|| cadmpeg_ir::features::Angle(parameter(end))),
+                start_angle: (!full).then(|| {
+                    cadmpeg_ir::features::Angle(parameters.map_or_else(
+                        || parameter(start),
+                        |range| range[0],
+                    ))
+                }),
+                end_angle: (!full).then(|| {
+                    cadmpeg_ir::features::Angle(parameters.map_or_else(
+                        || parameter(end),
+                        |range| range[1],
+                    ))
+                }),
             })
         }
         Some(CurveGeometry::Nurbs(nurbs)) => Some(SketchGeometry::Nurbs {

@@ -172,11 +172,16 @@ pub(crate) fn mesh_polyline(payload: &[u8]) -> Option<Vec<Point3>> {
             points.push(point);
         }
         if points.len() >= 2 {
-            candidates.push(points);
+            candidates.push((scalar_count, points));
         }
     }
-    let [points] = candidates.as_slice() else {
+    candidates.sort_by_key(|(scalar_count, _)| std::cmp::Reverse(*scalar_count));
+    let (largest_count, points) = candidates.first()?;
+    if candidates
+        .get(1)
+        .is_some_and(|(count, _)| count == largest_count)
+    {
         return None;
-    };
+    }
     Some(points.clone())
 }
