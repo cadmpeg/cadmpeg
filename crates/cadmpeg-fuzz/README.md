@@ -65,7 +65,9 @@ Use a parser target for focused binary-format coverage:
 - NX: `nx_parasolid`, `nx_geometry_points`, `nx_geometry_surfaces`,
   `nx_geometry_curves`, `nx_nurbs_surfaces`, `nx_nurbs_curves`
 - IGES uses `iges_container` for bounded representation detection, physical-card parsing,
-  inspection, graph construction, semantic projection, and byte-ledger accounting.
+  Global and Directory fields, Parameter tokens, reference graphs, semantic geometry and
+  topology projection, and byte-ledger accounting. Generate its valid 5.3 point and trimmed-sheet
+  seeds with `cargo run --bin generate_iges_seeds` from `crates/cadmpeg-fuzz`.
 
 Use an IR or STEP target when the input is JSON or the behavior under test is
 format-independent:

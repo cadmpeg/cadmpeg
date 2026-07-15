@@ -353,6 +353,10 @@ path = "src/bin/generate_synthetic_fixtures.rs"
 name = "generate_rhino_seeds"
 path = "src/bin/generate_rhino_seeds.rs"
 
+[[bin]]
+name = "generate_iges_seeds"
+path = "src/bin/generate_iges_seeds.rs"
+
 # Rhino parser targets
 [[bin]]
 name = "rhino_container"
