@@ -137,7 +137,7 @@ pub struct CurveTopologyRow {
 }
 
 /// One DEPDB cross-section curve row with its one-sided topology suffix.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DepdbCurveRow {
     /// Curve identifier in the cross-section `crv_array` namespace.
     pub id: u32,
@@ -151,6 +151,12 @@ pub struct DepdbCurveRow {
     pub suffix: [u32; 4],
     /// Exact bytes between the fixed prefix and one-sided suffix.
     pub body: Vec<u8>,
+    /// Decoded scalar tokens with exact body-relative spans.
+    pub scalar_tokens: Vec<CurveParameterScalar>,
+    /// Canonical entity references with exact body-relative spans.
+    pub references: Vec<CurveParameterReference>,
+    /// Maximal body spans not claimed by a scalar or reference token.
+    pub opaque_spans: Vec<CurveParameterOpaqueSpan>,
     /// Byte offset of the row identifier.
     pub offset: usize,
 }
@@ -898,6 +904,7 @@ pub fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
         return Vec::new();
     };
     let mut cursor = topology + b"topol_ref_data\0".len();
+    let cache = scalar::ScalarCache::from_section(payload);
     let positional_count = count - 1;
     let mut rows = Vec::with_capacity(positional_count);
     while rows.len() < positional_count {
@@ -916,7 +923,7 @@ pub fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
         boundaries.sort_unstable();
         boundaries.dedup();
         let Some((row, terminator, length)) = boundaries.into_iter().find_map(|(end, length)| {
-            let row = parse_depdb_curve_segment(&payload[cursor..end], cursor)?;
+            let row = parse_depdb_curve_segment(&payload[cursor..end], cursor, &cache)?;
             Some((row, end, length))
         }) else {
             return Vec::new();
@@ -931,7 +938,11 @@ pub fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
     }
 }
 
-fn parse_depdb_curve_segment(segment: &[u8], absolute_offset: usize) -> Option<DepdbCurveRow> {
+fn parse_depdb_curve_segment(
+    segment: &[u8],
+    absolute_offset: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<DepdbCurveRow> {
     let suffixes = (4..=11)
         .filter_map(|suffix_length| {
             let start = segment.len().checked_sub(suffix_length)?;
@@ -969,13 +980,19 @@ fn parse_depdb_curve_segment(segment: &[u8], absolute_offset: usize) -> Option<D
     let [(row_start, prefix)] = prefixes.as_slice() else {
         return None;
     };
+    let body = segment[prefix.end..*suffix_start].to_vec();
+    let (scalar_tokens, references, opaque_spans) =
+        curve_scalar_lane(&body, prefix.type_byte, cache);
     Some(DepdbCurveRow {
         id: prefix.id,
         type_byte: prefix.type_byte,
         feature_id: prefix.feature_id,
         directions: prefix.directions,
         suffix: *suffix,
-        body: segment[prefix.end..*suffix_start].to_vec(),
+        body,
+        scalar_tokens,
+        references,
+        opaque_spans,
         offset: absolute_offset + row_start,
     })
 }
@@ -1917,7 +1934,7 @@ mod tests {
 
     #[test]
     fn decodes_complete_depdb_one_sided_curve_array() {
-        let payload = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xff\0\x09\x0a\0\xe1\xe0next_record\0";
+        let payload = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xe4\xff\0\x09\x0a\0\xe1\xe0next_record\0";
 
         let rows = depdb_cross_section_rows(payload);
         assert_eq!(rows.len(), 1);
@@ -1926,7 +1943,11 @@ mod tests {
         assert_eq!(rows[0].feature_id, 4);
         assert_eq!(rows[0].directions, [1, 0xf6]);
         assert_eq!(rows[0].suffix, [0, 9, 10, 0]);
-        assert_eq!(rows[0].body, [0xff]);
+        assert_eq!(rows[0].body, [0xe4, 0xff]);
+        assert_eq!(rows[0].scalar_tokens.len(), 1);
+        assert_eq!(rows[0].scalar_tokens[0].value, 1.0);
+        assert_eq!(rows[0].opaque_spans.len(), 1);
+        assert_eq!(rows[0].opaque_spans[0].raw, [0xff]);
     }
 
     #[test]

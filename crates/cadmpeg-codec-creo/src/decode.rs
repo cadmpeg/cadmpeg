@@ -1490,6 +1490,10 @@ struct CreoCrossSectionCurveRowRecord {
     directions: [u8; 2],
     suffix: [u32; 4],
     body: Vec<u8>,
+    scalar_values: Vec<f64>,
+    scalar_tokens: Vec<CreoCurveParameterScalar>,
+    references: Vec<CreoCurveParameterReference>,
+    opaque_spans: Vec<CreoCurveParameterOpaqueSpan>,
     offset: usize,
     source_section: String,
 }
@@ -1783,6 +1787,35 @@ fn cross_section_curve_row_records(scan: &ContainerScan) -> Vec<CreoCrossSection
             directions: row.directions,
             suffix: row.suffix,
             body: row.body.clone(),
+            scalar_values: row.scalar_tokens.iter().map(|token| token.value).collect(),
+            scalar_tokens: row
+                .scalar_tokens
+                .iter()
+                .map(|token| CreoCurveParameterScalar {
+                    value: token.value,
+                    raw: token.raw.clone(),
+                    offset: token.offset,
+                    length: token.length,
+                })
+                .collect(),
+            references: row
+                .references
+                .iter()
+                .map(|reference| CreoCurveParameterReference {
+                    entity_id: reference.entity_id,
+                    offset: reference.offset,
+                    length: reference.length,
+                })
+                .collect(),
+            opaque_spans: row
+                .opaque_spans
+                .iter()
+                .map(|span| CreoCurveParameterOpaqueSpan {
+                    raw: span.raw.clone(),
+                    offset: span.offset,
+                    length: span.length,
+                })
+                .collect(),
             offset: row.offset,
             source_section: source_section(scan, row.offset),
         })

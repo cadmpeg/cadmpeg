@@ -515,7 +515,9 @@ A DEPDB cross-section curve count includes one labeled prototype followed by
 uniquely bounded `[0, X1, F1, 0]` suffix. The bytes between them are the row's
 parameter body. The final positional row can end at the `e1` immediately
 before the next `e0` named-record header. These one-sided rows remain in the
-cross-section namespace and do not define model half-edge topology.
+cross-section namespace and do not define model half-edge topology. Parameter
+bodies use the positional curve scalar and canonical-reference token lanes;
+unclaimed spans remain exact opaque bytes.
 
 `F0` and `F1` reference faces in the `srf_array` namespace. `E0` and `E1`
 reference the next edge for the two half-edge sides. When `previous(h)` is
