@@ -1568,7 +1568,6 @@ fn retained_source_image_round_trips_byte_exactly() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(!result.source_fidelity.annotations.provenance.is_empty());
-    assert_eq!(result.ir.annotations, cadmpeg_ir::Annotations::default());
     for coedge in &result.ir.model.coedges {
         assert!(result
             .ir

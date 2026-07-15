@@ -57,9 +57,7 @@ pub fn decode(
     reader: &mut dyn ReadSeek,
     options: &DecodeOptions,
 ) -> Result<DecodeResult, CodecError> {
-    let mut result = decode_inner(reader, options)?;
-    result.source_fidelity.annotations = std::mem::take(&mut result.ir.annotations);
-    Ok(result)
+    decode_inner(reader, options)
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -70,28 +68,39 @@ fn decode_inner(
     let scan = container::scan(reader)?;
 
     if options.container_only {
-        let ir = build_metadata_ir(&scan)?;
+        let (ir, annotations) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return Ok(DecodeResult::new(ir, report));
+        return Ok(decode_result(ir, report, annotations));
     }
 
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
         if let Some((decoded, report)) = try_decode_brep(&scan, &streams) {
-            let ir = build_geometry_ir(
+            let (ir, annotations) = build_geometry_ir(
                 &scan,
                 streams[decoded.selected].block,
                 &streams[decoded.selected].header,
                 decoded.brep,
                 &decoded.configuration_bodies,
             )?;
-            return Ok(DecodeResult::new(ir, report));
+            return Ok(decode_result(ir, report, annotations));
         }
     }
 
-    let ir = build_metadata_ir(&scan)?;
+    let (ir, annotations) = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
-    Ok(DecodeResult::new(ir, report))
+    Ok(decode_result(ir, report, annotations))
+}
+
+fn decode_result(ir: CadIr, report: DecodeReport, annotations: Annotations) -> DecodeResult {
+    DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        cadmpeg_ir::SourceFidelity {
+            annotations,
+            ..cadmpeg_ir::SourceFidelity::default()
+        },
+    )
 }
 
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream
@@ -277,7 +286,7 @@ fn build_geometry_ir(
     header: &StreamHeader,
     mut brep: Brep,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
-) -> Result<CadIr, CodecError> {
+) -> Result<(CadIr, Annotations), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let materials = crate::appearance::materials(scan);
     let unique_material = materials.len() == 1;
@@ -290,12 +299,12 @@ fn build_geometry_ir(
         }
     }
     ir.source = Some(source_meta(scan, block, header));
-    ir.annotations = std::mem::take(&mut brep.annotations);
-    let mut histories = crate::history::histories(scan, &mut ir.annotations);
-    let mut lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
+    let mut annotations = std::mem::take(&mut brep.annotations);
+    let mut histories = crate::history::histories(scan, &mut annotations);
+    let mut lanes = crate::resolved_features::lanes(scan, &mut annotations);
     crate::resolved_features::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
-    let pmi_dimensions = crate::pmi::dimensions(scan, &mut ir.annotations);
+    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
     project_design_history(&mut ir, &histories, &lanes);
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
@@ -304,13 +313,13 @@ fn build_geometry_ir(
     );
     stamp_parameter_baseline(&mut ir);
     let (mut sketches, sketch_entities, mut sketch_constraints) =
-        crate::resolved_features::sketches(scan, &mut ir.annotations);
+        crate::resolved_features::sketches(scan, &mut annotations);
     crate::resolved_features::bind_sketch_profiles(
         &mut ir.model.features,
         &mut sketches,
         &histories,
         &lanes,
-        &ir.annotations,
+        &annotations,
     );
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches);
     crate::resolved_features::project_relation_bindings(
@@ -320,7 +329,7 @@ fn build_geometry_ir(
         &lanes,
     );
     stamp_feature_baseline(&mut ir);
-    let attributes = crate::metadata::attributes(scan, &mut ir.annotations);
+    let attributes = crate::metadata::attributes(scan, &mut annotations);
     let mut native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
@@ -376,7 +385,7 @@ fn build_geometry_ir(
             face_color.color_attr
         ));
         crate::annotations::note(
-            &mut ir.annotations,
+            &mut annotations,
             id.0.clone(),
             header.description.clone(),
             face_color.offset as u64,
@@ -431,7 +440,7 @@ fn build_geometry_ir(
         let id = AppearanceId(format!("sldprt:appearance:material#{index}"));
         let material_stream = format!("block@{}", material.block_offset);
         crate::annotations::note(
-            &mut ir.annotations,
+            &mut annotations,
             id.0.clone(),
             material_stream.clone(),
             material.record_offset as u64,
@@ -477,7 +486,7 @@ fn build_geometry_ir(
                 .clone()
                 .unwrap_or_else(|| format!("block@{}", display.offset));
             crate::annotations::note(
-                &mut ir.annotations,
+                &mut annotations,
                 id.clone(),
                 display_stream,
                 0,
@@ -499,7 +508,7 @@ fn build_geometry_ir(
         }
         let display_id = format!("sldprt:displaylist:record#{}", display.offset);
         crate::annotations::note(
-            &mut ir.annotations,
+            &mut annotations,
             display_id.clone(),
             display
                 .section
@@ -527,7 +536,7 @@ fn build_geometry_ir(
         }
         let id = format!("sldprt:file:block#{}", source_block.offset);
         crate::annotations::note(
-            &mut ir.annotations,
+            &mut annotations,
             id.clone(),
             source_block
                 .section
@@ -579,10 +588,10 @@ fn build_geometry_ir(
         partition.links.extend(opaque_surfaces);
         partition.links.extend(opaque_curves);
     }
-    preserve_source_image(scan, &mut ir, &mut unknowns);
+    preserve_source_image(scan, &mut annotations, &mut unknowns);
     ir.set_native_unknowns("sldprt", &unknowns)?;
     set_semantic_hash(&mut ir);
-    Ok(ir)
+    Ok((ir, annotations))
 }
 
 fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::SldprtNative) {
@@ -783,16 +792,17 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
 }
 
-fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
+fn build_metadata_ir(scan: &ContainerScan) -> Result<(CadIr, Annotations), CodecError> {
     let mut ir = CadIr::empty(Units::default());
-    let mut histories = crate::history::histories(scan, &mut ir.annotations);
-    let mut lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
+    let mut annotations = Annotations::default();
+    let mut histories = crate::history::histories(scan, &mut annotations);
+    let mut lanes = crate::resolved_features::lanes(scan, &mut annotations);
     crate::resolved_features::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
-    let pmi_dimensions = crate::pmi::dimensions(scan, &mut ir.annotations);
+    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
     let (sketches, sketch_entities, sketch_constraints) =
-        crate::resolved_features::sketches(scan, &mut ir.annotations);
-    let model_attributes = crate::metadata::attributes(scan, &mut ir.annotations);
+        crate::resolved_features::sketches(scan, &mut annotations);
+    let model_attributes = crate::metadata::attributes(scan, &mut annotations);
     ir.model.attributes = model_attributes;
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
@@ -816,7 +826,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         attributes.insert("parasolid_schema".to_string(), header.schema.clone());
         let id = format!("sldprt:file:block#{}", block.offset);
         crate::annotations::note(
-            &mut ir.annotations,
+            &mut annotations,
             id.clone(),
             block
                 .section
@@ -855,7 +865,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &mut ir.model.sketches,
         &histories,
         &lanes,
-        &ir.annotations,
+        &annotations,
     );
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &ir.model.sketches);
     crate::resolved_features::project_relation_bindings(
@@ -875,10 +885,10 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     stamp_sketch_baseline(&mut ir, &native);
     mark_active_configuration(&mut ir);
     let mut unknowns = ir.native_unknowns("sldprt")?;
-    preserve_source_image(scan, &mut ir, &mut unknowns);
+    preserve_source_image(scan, &mut annotations, &mut unknowns);
     ir.set_native_unknowns("sldprt", &unknowns)?;
     set_semantic_hash(&mut ir);
-    Ok(ir)
+    Ok((ir, annotations))
 }
 
 fn project_design_history(
@@ -1141,9 +1151,13 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
     )
 }
 
-fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr, unknowns: &mut Vec<UnknownRecord>) {
+fn preserve_source_image(
+    scan: &ContainerScan,
+    annotations: &mut Annotations,
+    unknowns: &mut Vec<UnknownRecord>,
+) {
     crate::annotations::note(
-        &mut ir.annotations,
+        annotations,
         "sldprt:file:source-image#0",
         "source",
         0,
