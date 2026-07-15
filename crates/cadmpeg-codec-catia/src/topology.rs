@@ -4349,7 +4349,25 @@ impl MeshSelectionSearch<'_> {
             assignment: &MeshFaceBoundaryAssignment,
             edge_candidates: &[Vec<[usize; 2]>],
         ) -> Option<HashSet<[usize; 2]>> {
+            fn port(use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool) -> Option<usize> {
+                use_.edge.checked_mul(2)?.checked_add(usize::from(if end {
+                    !reversed
+                } else {
+                    reversed
+                }))
+            }
+
             if assignment.boundaries.iter().any(Vec::is_empty) {
+                return None;
+            }
+            let unknown = assignment
+                .boundaries
+                .iter()
+                .flatten()
+                .filter(|use_| use_.reversed.is_none())
+                .count();
+            let combinations = 1usize.checked_shl(unknown as u32)?;
+            if combinations > MAX_FACE_EQUATION_OPTIONS {
                 return None;
             }
             let mut before = quotient.clone();
@@ -4362,11 +4380,50 @@ impl MeshSelectionSearch<'_> {
             nodes.sort_unstable();
             nodes.dedup();
             let mut common = None::<HashSet<[usize; 2]>>;
-            for (_, mut option) in quotient.assignment_options_limited(
-                assignment,
-                edge_candidates,
-                MAX_FACE_EQUATION_OPTIONS,
-            ) {
+            for mask in 0..combinations {
+                let mut variable = 0usize;
+                let directions = assignment
+                    .boundaries
+                    .iter()
+                    .map(|boundary| {
+                        boundary
+                            .iter()
+                            .map(|use_| {
+                                use_.reversed.unwrap_or_else(|| {
+                                    let shift = unknown - variable - 1;
+                                    variable += 1;
+                                    mask & (1usize << shift) != 0
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                let mut option = quotient.clone();
+                let viable =
+                    assignment
+                        .boundaries
+                        .iter()
+                        .zip(&directions)
+                        .all(|(boundary, directions)| {
+                            (0..boundary.len()).all(|index| {
+                                let next = (index + 1) % boundary.len();
+                                let Some(left) = port(boundary[index], directions[index], true)
+                                else {
+                                    return false;
+                                };
+                                let Some(right) = port(boundary[next], directions[next], false)
+                                else {
+                                    return false;
+                                };
+                                let Some(root) = option.merge(left, right) else {
+                                    return false;
+                                };
+                                option.propagate_component_edge_domains(root, edge_candidates)
+                            })
+                        });
+                if !viable {
+                    continue;
+                }
                 let mut option_equations = HashSet::new();
                 for (at, left) in nodes.iter().enumerate() {
                     for right in &nodes[at + 1..] {
