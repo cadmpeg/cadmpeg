@@ -4325,46 +4325,49 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         solution_limit: usize,
     ) -> Vec<HashMap<usize, usize>> {
+        #[allow(clippy::too_many_arguments)]
         fn value_viable(
             root: usize,
             point: usize,
             domains: &[Arc<HashSet<usize>>],
             edge_roots: &[[usize; 2]],
+            root_edges: &[Vec<usize>],
             edge_candidates: &[Vec<[usize; 2]>],
             assigned: &[Option<usize>],
             used: &HashSet<usize>,
         ) -> bool {
-            edge_roots
-                .iter()
-                .zip(edge_candidates)
-                .all(|(&edge, candidates)| {
-                    let other = if edge[0] == root {
-                        edge[1]
-                    } else if edge[1] == root {
-                        edge[0]
-                    } else {
-                        return true;
-                    };
-                    if let Some(other_point) = assigned[other] {
-                        return candidates.is_empty()
+            root_edges[root].iter().all(|&edge_index| {
+                let edge = edge_roots[edge_index];
+                let candidates = &edge_candidates[edge_index];
+                let other = if edge[0] == root {
+                    edge[1]
+                } else if edge[1] == root {
+                    edge[0]
+                } else {
+                    return true;
+                };
+                if let Some(other_point) = assigned[other] {
+                    return candidates.is_empty()
+                        || candidates.iter().any(|candidate| {
+                            same_unordered_pair(*candidate, [point, other_point])
+                        });
+                }
+                domains[other].iter().any(|other_point| {
+                    *other_point != point
+                        && !used.contains(other_point)
+                        && (candidates.is_empty()
                             || candidates.iter().any(|candidate| {
-                                same_unordered_pair(*candidate, [point, other_point])
-                            });
-                    }
-                    domains[other].iter().any(|other_point| {
-                        *other_point != point
-                            && !used.contains(other_point)
-                            && (candidates.is_empty()
-                                || candidates.iter().any(|candidate| {
-                                    same_unordered_pair(*candidate, [point, *other_point])
-                                }))
-                    })
+                                same_unordered_pair(*candidate, [point, *other_point])
+                            }))
                 })
+            })
         }
 
+        #[allow(clippy::too_many_arguments)]
         fn walk(
             domains: &[Arc<HashSet<usize>>],
             edge_roots: &[[usize; 2]],
+            root_edges: &[Vec<usize>],
             edge_candidates: &[Vec<[usize; 2]>],
             assigned: &mut [Option<usize>],
             used: &mut HashSet<usize>,
@@ -4389,6 +4392,7 @@ impl MeshQuotient {
                                 *point,
                                 domains,
                                 edge_roots,
+                                root_edges,
                                 edge_candidates,
                                 assigned,
                                 used,
@@ -4410,6 +4414,7 @@ impl MeshQuotient {
                 walk(
                     domains,
                     edge_roots,
+                    root_edges,
                     edge_candidates,
                     assigned,
                     used,
@@ -4456,11 +4461,19 @@ impl MeshQuotient {
         else {
             return Vec::new();
         };
+        let mut root_edges = vec![Vec::new(); roots.len()];
+        for (edge_index, edge) in edge_roots.iter().enumerate() {
+            root_edges[edge[0]].push(edge_index);
+            if edge[1] != edge[0] {
+                root_edges[edge[1]].push(edge_index);
+            }
+        }
 
         let mut solutions = Vec::new();
         walk(
             &domains,
             &edge_roots,
+            &root_edges,
             edge_candidates,
             &mut vec![None; domains.len()],
             &mut HashSet::new(),
