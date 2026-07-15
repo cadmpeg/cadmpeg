@@ -6,6 +6,17 @@ use crate::presentation::PresentationItem;
 use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_presentation(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let bodies = ids(&ir.model.bodies, |item| item.id.as_str());
+    let faces = ids(&ir.model.faces, |item| item.id.as_str());
+    let edges = ids(&ir.model.edges, |item| item.id.as_str());
+    let vertices = ids(&ir.model.vertices, |item| item.id.as_str());
+    let points = ids(&ir.model.points, |item| item.id.as_str());
+    let curves = ids(&ir.model.curves, |item| item.id.as_str());
+    let surfaces = ids(&ir.model.surfaces, |item| item.id.as_str());
+    let products = ids(&ir.model.products, |item| item.id.as_str());
+    let occurrences = ids(&ir.model.occurrences, |item| item.id.as_str());
+    let pmi = ids(&ir.model.pmi, |item| item.id.as_str());
+    let tessellations = ids(&ir.model.tessellations, |item| item.id.as_str());
     for layer in &ir.model.presentation_layers {
         if layer.name.is_empty() {
             invalid(
@@ -16,57 +27,21 @@ pub(super) fn check_presentation(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         for item in &layer.items {
             let resolved = match item {
-                PresentationItem::Body { body } => ir
-                    .model
-                    .bodies
-                    .iter()
-                    .any(|candidate| candidate.id == *body),
-                PresentationItem::Face { face } => {
-                    ir.model.faces.iter().any(|candidate| candidate.id == *face)
+                PresentationItem::Body { body } => bodies.contains(body.as_str()),
+                PresentationItem::Face { face } => faces.contains(face.as_str()),
+                PresentationItem::Edge { edge } => edges.contains(edge.as_str()),
+                PresentationItem::Vertex { vertex } => vertices.contains(vertex.as_str()),
+                PresentationItem::Point { point } => points.contains(point.as_str()),
+                PresentationItem::Curve { curve } => curves.contains(curve.as_str()),
+                PresentationItem::Surface { surface } => surfaces.contains(surface.as_str()),
+                PresentationItem::Product { product } => products.contains(product.as_str()),
+                PresentationItem::Occurrence { occurrence } => {
+                    occurrences.contains(occurrence.as_str())
                 }
-                PresentationItem::Edge { edge } => {
-                    ir.model.edges.iter().any(|candidate| candidate.id == *edge)
+                PresentationItem::Pmi { annotation } => pmi.contains(annotation.as_str()),
+                PresentationItem::Tessellation { tessellation } => {
+                    tessellations.contains(tessellation.as_str())
                 }
-                PresentationItem::Vertex { vertex } => ir
-                    .model
-                    .vertices
-                    .iter()
-                    .any(|candidate| candidate.id == *vertex),
-                PresentationItem::Point { point } => ir
-                    .model
-                    .points
-                    .iter()
-                    .any(|candidate| candidate.id == *point),
-                PresentationItem::Curve { curve } => ir
-                    .model
-                    .curves
-                    .iter()
-                    .any(|candidate| candidate.id == *curve),
-                PresentationItem::Surface { surface } => ir
-                    .model
-                    .surfaces
-                    .iter()
-                    .any(|candidate| candidate.id == *surface),
-                PresentationItem::Product { product } => ir
-                    .model
-                    .products
-                    .iter()
-                    .any(|candidate| candidate.id == *product),
-                PresentationItem::Occurrence { occurrence } => ir
-                    .model
-                    .occurrences
-                    .iter()
-                    .any(|candidate| candidate.id == *occurrence),
-                PresentationItem::Pmi { annotation } => ir
-                    .model
-                    .pmi
-                    .iter()
-                    .any(|candidate| candidate.id == *annotation),
-                PresentationItem::Tessellation { tessellation } => ir
-                    .model
-                    .tessellations
-                    .iter()
-                    .any(|candidate| candidate.id == *tessellation),
                 PresentationItem::Source { source_id } => !source_id.is_empty(),
             };
             if !resolved {
@@ -78,6 +53,10 @@ pub(super) fn check_presentation(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
     }
+}
+
+fn ids<'a, T>(items: &'a [T], id: impl Fn(&'a T) -> &'a str) -> std::collections::HashSet<&'a str> {
+    items.iter().map(id).collect()
 }
 
 fn invalid(findings: &mut Vec<Finding>, entity: &str, message: &str) {

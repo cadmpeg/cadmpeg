@@ -3,6 +3,7 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
+use std::collections::VecDeque;
 
 pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut surfaces = ir
@@ -558,23 +559,33 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralCurveDefinition::Unknown { .. } => {}
         }
     }
-    loop {
-        let before = curves.len();
-        for curve in &ir.model.curves {
-            if curves.contains(curve.id.0.as_str()) {
-                if let CurveGeometry::Composite { segments, .. } = &curve.geometry {
-                    curves.extend(segments.iter().map(|segment| segment.curve.0.as_str()));
-                }
-            }
-        }
-        if curves.len() == before {
-            break;
-        }
-    }
     let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
     for link in native_unknowns.iter().flat_map(|record| &record.links) {
         surfaces.insert(link);
         curves.insert(link);
+    }
+    let composite_segments = ir
+        .model
+        .curves
+        .iter()
+        .filter_map(|curve| match &curve.geometry {
+            CurveGeometry::Composite { segments, .. } => Some((
+                curve.id.0.as_str(),
+                segments
+                    .iter()
+                    .map(|segment| segment.curve.0.as_str())
+                    .collect::<Vec<_>>(),
+            )),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+    let mut reachable_curves = curves.iter().copied().collect::<VecDeque<_>>();
+    while let Some(curve) = reachable_curves.pop_front() {
+        for segment in composite_segments.get(curve).into_iter().flatten() {
+            if curves.insert(segment) {
+                reachable_curves.push_back(segment);
+            }
+        }
     }
 
     for (kind, id) in ir

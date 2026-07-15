@@ -76,7 +76,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                         check: Check::ProductStructure,
                         severity: Severity::Error,
                         message: "occurrence parent graph contains a cycle".into(),
-                        entity: Some(occurrence.id.0.clone()),
+                        entity: Some(cursor.id.0.clone()),
                     });
                     break;
                 }

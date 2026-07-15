@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-manufacturing information reference validation.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::document::CadIr;
 use crate::pmi::{PmiDefinition, PmiTarget};
@@ -73,8 +73,8 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         match &annotation.definition {
             PmiDefinition::DatumSystem { references } => {
-                let mut compartments = HashMap::<u32, Vec<_>>::new();
-                let mut common_groups = HashMap::new();
+                let mut compartments = BTreeMap::<u32, Vec<_>>::new();
+                let mut common_groups = BTreeMap::new();
                 for reference in references {
                     if !matches!(
                         definitions.get(reference.datum.as_str()),
