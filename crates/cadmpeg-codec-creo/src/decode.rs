@@ -3467,6 +3467,11 @@ fn signed_unit_chart(local: [f64; 2], frame: [f64; 2], offset: f64) -> Option<(f
     Some(*mapping)
 }
 
+fn is_zero_offset_signed_planar_frame(heads: &[u8]) -> bool {
+    matches!(heads, [_, 0x42, z0, _, 0x18, z1]
+        if matches!(z0, 0x7f..=0x86) && matches!(z1, 0x7f..=0x86))
+}
+
 fn placed_tabulated_cylinder_directrix(
     replay: &crate::surface::TabulatedCylinderCurveReplay,
     parameters: &crate::surface::SurfaceParameterRecord,
@@ -3498,23 +3503,27 @@ fn placed_tabulated_cylinder_directrix(
         let mut cursor = marker + 3;
         let mut values = Vec::with_capacity(6);
         let mut heads = Vec::with_capacity(6);
-        for _ in 0..6 {
+        for slot in 0..6 {
             heads.push(*parameters.body.get(cursor)?);
-            let (value, end) = crate::scalar::decode_tabulated_cylinder_frame_coordinate(
-                &parameters.body,
-                cursor,
-                &cache,
-            )?;
+            let (value, end) = if matches!(slot, 0 | 3) {
+                crate::scalar::decode_tabulated_cylinder_first_frame_coordinate(
+                    &parameters.body,
+                    cursor,
+                    &cache,
+                )?
+            } else {
+                crate::scalar::decode_tabulated_cylinder_frame_coordinate(
+                    &parameters.body,
+                    cursor,
+                    &cache,
+                )?
+            };
             value.is_finite().then_some(())?;
             values.push(value);
             cursor = end;
         }
         let resistor_layout = matches!(heads.as_slice(), [_, 0x46, 0x2f, _, 0x46, 0x2e]);
-        let thyrister_layout = matches!(heads.as_slice(), [first, 0x42, z0, second, 0x18, z1]
-            if matches!(first, 0x46 | 0x4a | 0xd1 | 0xd3 | 0xde | 0xdf)
-                && matches!(second, 0x46 | 0x4a | 0xd1 | 0xd3 | 0xde | 0xdf)
-                && matches!(z0, 0x7f..=0x86)
-                && matches!(z1, 0x7f..=0x86));
+        let zero_offset_layout = is_zero_offset_signed_planar_frame(&heads);
         if resistor_layout {
             Some((
                 values,
@@ -3523,7 +3532,7 @@ fn placed_tabulated_cylinder_directrix(
                     reflect_sweep: false,
                 },
             ))
-        } else if thyrister_layout {
+        } else if zero_offset_layout {
             Some((
                 values,
                 FrameLayout::SignedPlanar {
@@ -8383,6 +8392,12 @@ mod resolved_sketch_tests {
             Some((-1.0, 0.0))
         );
         assert_eq!(signed_unit_chart([1.0, 2.0], [4.0, 5.0], 30.0), None);
+        assert!(is_zero_offset_signed_planar_frame(&[
+            0x68, 0x42, 0x84, 0x71, 0x18, 0x86,
+        ]));
+        assert!(!is_zero_offset_signed_planar_frame(&[
+            0x68, 0x42, 0x84, 0x71, 0x19, 0x86,
+        ]));
     }
 
     #[test]

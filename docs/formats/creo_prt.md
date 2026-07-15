@@ -311,8 +311,10 @@ Negative prefixes `a4..a6`, `a7..b1`, and `b2..c7` add to `BF2B`, `BF2C`, and
 reconstruct `3F <tail7>`.
 
 A replay-bound six-scalar frame stores two opposite corners of the directrix
-and extrusion bounds. Its scalar slots use the second directrix-coordinate
-lane, with `4a <tail6>` reconstructed as `40 <tail6> 00`. When exactly two
+and extrusion bounds. Slots zero and three use the first directrix-coordinate
+lane, slots two and five use the second directrix-coordinate lane, and slots one
+and four store the sweep bounds. In a first-coordinate frame slot,
+`4a <tail6>` reconstructs as the positive `40 <tail6> 00` exception. When exactly two
 frame-axis spans equal the ranges of the first and second control-point
 coordinates, those axes define the directrix chart. Each directrix axis is a
 signed unit-slope affine map selected by the frame bounds and the layout's
@@ -324,8 +326,8 @@ points form a non-rational clamped cubic B-spline with knot vector
 The `_ 46 2f _ 46 2e` layout requires a first-axis intercept magnitude of 30,
 a zero second-axis intercept, and retains the stored sweep-axis sign. The
 `_ 42 7f..86 _ 18 7f..86` layout requires zero intercepts and retains the
-stored sweep-axis sign; its first and fourth prefixes are one of `46`, `4a`,
-`d1`, `d3`, `de`, or `df`. The `_ 2d _ _ 2d _` layout requires a first-axis
+stored sweep-axis sign. Its first and fourth slots accept the complete
+first-coordinate scalar lane. The `_ 2d _ _ 2d _` layout requires a first-axis
 intercept magnitude of 30, a zero second-axis intercept, and reflects the
 sweep-axis sign. Other six-scalar sequences after the marker are not directrix
 envelopes.

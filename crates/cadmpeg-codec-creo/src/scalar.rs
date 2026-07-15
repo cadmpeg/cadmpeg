@@ -292,6 +292,21 @@ pub fn decode_tabulated_cylinder_frame_coordinate(
     decode_tabulated_cylinder_second_coordinate(data, offset, cache)
 }
 
+/// Decode a first-directrix-coordinate slot in a replay-bound envelope frame.
+///
+/// These slots use the first-coordinate lane, except that frame-specific
+/// `0x4a` retains its positive seven-byte form.
+pub fn decode_tabulated_cylinder_first_frame_coordinate(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x4a) {
+        return ieee7(data, offset, 0x40);
+    }
+    decode_tabulated_cylinder_first_coordinate(data, offset, cache)
+}
+
 /// Decode one scalar in the positive seven-byte DICT lane.
 ///
 /// The enclosing record grammar must establish this lane. Several prefix
@@ -584,6 +599,24 @@ mod tests {
                 f64::from_be_bytes([0x40, 0x13, 0x1f, 0x1c, 0x0b, 0, 0, 0]),
                 7
             ))
+        );
+    }
+
+    #[test]
+    fn tabulated_cylinder_first_frame_uses_the_first_coordinate_sign() {
+        let cache = ScalarCache::default();
+        let fixed = [0x46, 0x12, 0, 0, 0, 0, 0, 0];
+        assert_eq!(
+            decode_tabulated_cylinder_first_frame_coordinate(&fixed, 0, &cache),
+            Some((f64::from_be_bytes([0xc0, 0x12, 0, 0, 0, 0, 0, 0]), 8))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_first_frame_coordinate(
+                &[0x4a, 0x13, 0, 0, 0, 0, 0],
+                0,
+                &cache,
+            ),
+            Some((f64::from_be_bytes([0x40, 0x13, 0, 0, 0, 0, 0, 0]), 7))
         );
     }
 
