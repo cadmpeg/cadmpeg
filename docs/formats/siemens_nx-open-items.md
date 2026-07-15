@@ -5,7 +5,7 @@ This document records unresolved NX `.prt` byte semantics.
 ## Parasolid streams
 
 - Compact tombstones whose explicit `(type, xmt)` key does not match a partition entity have no specified target relation. Exact-key tombstones delete that entity; unmatched range or revision semantics remain unspecified.
-- Finite parameter domains and branch selection for type-38/`0x5a` procedural intersections and BLEND_SURF carriers are unspecified. This includes offset-surface intersections with multiple branches, blend-section rail domains, and terminal cases where distinct endpoints map to one procedural-curve parameter.
+- Finite parameter domains and branch selection for rank-deficient or terminal type-38/`0x5a` procedural intersections and BLEND_SURF carriers are unspecified. This includes tangential support pairs, offset-surface intersections with multiple branches, blend-section rail domains, and terminal cases where distinct endpoints map to one procedural-curve parameter.
 - Surface-surface continuation remains unspecified for procedural curves with degenerate support-0 arrays, sentinel-truncated marker-4 plane-support arrays, and NURBS-offset blend spines.
 - Full-record layouts for deltas-stream node types outside the topology and procedural families defined in the specification are unspecified.
 - Delta tag `0x5a` uses the `intersection_data` layout shared with type 38; its canonical later-schema node-type name is unspecified.

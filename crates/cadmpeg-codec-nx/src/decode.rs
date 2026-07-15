@@ -1735,6 +1735,39 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
         let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
             continue;
         };
+        let missing = context
+            .sides
+            .each_ref()
+            .map(|side| pcurve_requires_completion(side.pcurve.as_ref()));
+        if missing.into_iter().any(|value| value) {
+            if let [Some(first_surface), Some(second_surface)] =
+                context.sides.each_ref().map(|side| side.surface.as_ref())
+            {
+                if let Some(lanes) = continue_surface_intersection_parameters(
+                    ir,
+                    [first_surface, second_surface],
+                    points,
+                    *fit_tolerance,
+                ) {
+                    for side in 0..2 {
+                        if missing[side] {
+                            replacements.push((
+                                procedural_id.clone(),
+                                side,
+                                PcurveGeometry::Nurbs {
+                                    degree: 1,
+                                    knots: linear_knots(parameters),
+                                    control_points: lanes[side].clone(),
+                                    weights: None,
+                                    periodic: false,
+                                },
+                            ));
+                        }
+                    }
+                    continue;
+                }
+            }
+        }
         for side in 0..2 {
             if !pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
                 continue;
@@ -3016,6 +3049,264 @@ fn model_surface_derivative(
         (second.y - first.y) / width,
         (second.z - first.z) / width,
     ))
+}
+
+/// Continue one chart-selected surface-intersection branch in both support
+/// parameter spaces. The chart seeds and orders the branch; corrected points
+/// satisfy the two support surfaces rather than interpolating chart samples.
+pub(crate) fn continue_surface_intersection_parameters(
+    ir: &CadIr,
+    surfaces: [&SurfaceId; 2],
+    chart: &[Point3],
+    fit_tolerance: f64,
+) -> Option<[Vec<Point2>; 2]> {
+    if chart.len() < 2 || !fit_tolerance.is_finite() || fit_tolerance <= 0.0 {
+        return None;
+    }
+    let fit_parameters = |surface: &SurfaceId, point: Point3, seed: Option<Point2>| {
+        let geometry = &ir
+            .model
+            .surfaces
+            .iter()
+            .find(|candidate| &candidate.id == surface)?
+            .geometry;
+        match geometry {
+            SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, point, seed),
+            SurfaceGeometry::Procedural { .. } => {
+                offset_surface_parameters(ir, surface, point, seed).or_else(|| {
+                    blend_surface_parameters_for_fit(ir, surface, point, seed, fit_tolerance)
+                })
+            }
+            geometry => analytic_surface_parameters(geometry, point),
+        }
+    };
+    let first = [
+        fit_parameters(surfaces[0], chart[0], None)?,
+        fit_parameters(surfaces[1], chart[0], None)?,
+    ];
+    let domains = surfaces.map(|surface| surface_parameter_domain(ir, surface));
+    let seed = [first[0].u, first[0].v, first[1].u, first[1].v];
+    let seed_tangent = null_vector_3x4(intersection_parameter_jacobian(
+        ir, surfaces, seed, domains,
+    )?)?;
+    let mut current = correct_intersection_parameters(
+        ir,
+        surfaces,
+        seed,
+        seed_tangent,
+        domains,
+        fit_tolerance,
+        1.0,
+    )?;
+    let first_point = model_surface_point(ir, surfaces[0], current[0], current[1])?;
+    if point_distance(first_point, chart[0]) > fit_tolerance {
+        return None;
+    }
+    let mut lanes = [
+        vec![Point2::new(current[0], current[1])],
+        vec![Point2::new(current[2], current[3])],
+    ];
+
+    for chart_pair in chart.windows(2) {
+        let jacobian = intersection_parameter_jacobian(ir, surfaces, current, domains)?;
+        let tangent = null_vector_3x4(jacobian)?;
+        let spatial_tangent = Vector3::new(
+            jacobian[0][0] * tangent[0] + jacobian[0][1] * tangent[1],
+            jacobian[1][0] * tangent[0] + jacobian[1][1] * tangent[1],
+            jacobian[2][0] * tangent[0] + jacobian[2][1] * tangent[1],
+        );
+        let chord = Vector3::new(
+            chart_pair[1].x - chart_pair[0].x,
+            chart_pair[1].y - chart_pair[0].y,
+            chart_pair[1].z - chart_pair[0].z,
+        );
+        let target = [
+            fit_parameters(
+                surfaces[0],
+                chart_pair[1],
+                Some(Point2::new(current[0], current[1])),
+            )?,
+            fit_parameters(
+                surfaces[1],
+                chart_pair[1],
+                Some(Point2::new(current[2], current[3])),
+            )?,
+        ];
+        let predictor = [target[0].u, target[0].v, target[1].u, target[1].v];
+        let scale = (0..4)
+            .map(|index| (predictor[index] - current[index]) * tangent[index])
+            .sum::<f64>();
+        if !scale.is_finite() || scale == 0.0 || dot_vector(spatial_tangent, chord) * scale <= 0.0 {
+            return None;
+        }
+        let corrected = correct_intersection_parameters(
+            ir,
+            surfaces,
+            predictor,
+            tangent,
+            domains,
+            fit_tolerance,
+            scale,
+        )?;
+        let point = model_surface_point(ir, surfaces[0], corrected[0], corrected[1])?;
+        if point_distance(point, chart_pair[1]) > fit_tolerance {
+            return None;
+        }
+        current = corrected;
+        lanes[0].push(Point2::new(current[0], current[1]));
+        lanes[1].push(Point2::new(current[2], current[3]));
+    }
+    Some(lanes)
+}
+
+fn correct_intersection_parameters(
+    ir: &CadIr,
+    surfaces: [&SurfaceId; 2],
+    predictor: [f64; 4],
+    tangent: [f64; 4],
+    domains: [Option<([f64; 2], [f64; 2])>; 2],
+    fit_tolerance: f64,
+    scale: f64,
+) -> Option<[f64; 4]> {
+    let mut corrected = predictor;
+    clamp_intersection_parameters(&mut corrected, domains);
+    for _ in 0..32 {
+        let first = model_surface_point(ir, surfaces[0], corrected[0], corrected[1])?;
+        let second = model_surface_point(ir, surfaces[1], corrected[2], corrected[3])?;
+        let residual = [
+            first.x - second.x,
+            first.y - second.y,
+            first.z - second.z,
+            (0..4)
+                .map(|index| (corrected[index] - predictor[index]) * tangent[index])
+                .sum(),
+        ];
+        let equality_error = residual[..3]
+            .iter()
+            .map(|value| value * value)
+            .sum::<f64>()
+            .sqrt();
+        if equality_error <= fit_tolerance * 1.0e-6
+            && residual[3].abs() <= 1.0e-11 * (1.0 + scale.abs())
+        {
+            return Some(corrected);
+        }
+        let jacobian = intersection_parameter_jacobian(ir, surfaces, corrected, domains)?;
+        let matrix = [jacobian[0], jacobian[1], jacobian[2], tangent];
+        let step = solve_4x4(matrix, residual.map(|value| -value))?;
+        for index in 0..4 {
+            corrected[index] += step[index];
+        }
+        clamp_intersection_parameters(&mut corrected, domains);
+    }
+    None
+}
+
+fn intersection_parameter_jacobian(
+    ir: &CadIr,
+    surfaces: [&SurfaceId; 2],
+    parameters: [f64; 4],
+    domains: [Option<([f64; 2], [f64; 2])>; 2],
+) -> Option<[[f64; 4]; 3]> {
+    let pairs = [
+        Point2::new(parameters[0], parameters[1]),
+        Point2::new(parameters[2], parameters[3]),
+    ];
+    let derivatives = std::array::from_fn(|side| {
+        let u_step = parameter_derivative_step(pairs[side].u, domains[side].map(|value| value.0));
+        let v_step = parameter_derivative_step(pairs[side].v, domains[side].map(|value| value.1));
+        Some([
+            model_surface_derivative(ir, surfaces[side], pairs[side], u_step, true, domains[side])?,
+            model_surface_derivative(
+                ir,
+                surfaces[side],
+                pairs[side],
+                v_step,
+                false,
+                domains[side],
+            )?,
+        ])
+    });
+    let [Some(first), Some(second)] = derivatives else {
+        return None;
+    };
+    Some([
+        [first[0].x, first[1].x, -second[0].x, -second[1].x],
+        [first[0].y, first[1].y, -second[0].y, -second[1].y],
+        [first[0].z, first[1].z, -second[0].z, -second[1].z],
+    ])
+}
+
+fn clamp_intersection_parameters(
+    parameters: &mut [f64; 4],
+    domains: [Option<([f64; 2], [f64; 2])>; 2],
+) {
+    for side in 0..2 {
+        let mut pair = Point2::new(parameters[side * 2], parameters[side * 2 + 1]);
+        clamp_surface_parameters(&mut pair, domains[side]);
+        parameters[side * 2] = pair.u;
+        parameters[side * 2 + 1] = pair.v;
+    }
+}
+
+fn determinant_3x3(matrix: [[f64; 3]; 3]) -> f64 {
+    matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
+        - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
+        + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0])
+}
+
+fn null_vector_3x4(matrix: [[f64; 4]; 3]) -> Option<[f64; 4]> {
+    let mut vector = [0.0; 4];
+    for (omitted, component) in vector.iter_mut().enumerate() {
+        let minor = std::array::from_fn(|row| {
+            let mut column = 0;
+            std::array::from_fn(|_| {
+                while column == omitted {
+                    column += 1;
+                }
+                let value = matrix[row][column];
+                column += 1;
+                value
+            })
+        });
+        *component = if omitted % 2 == 0 { 1.0 } else { -1.0 } * determinant_3x3(minor);
+    }
+    let norm = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
+    (norm.is_finite() && norm > 1.0e-14).then(|| vector.map(|value| value / norm))
+}
+
+fn solve_4x4(mut matrix: [[f64; 4]; 4], mut rhs: [f64; 4]) -> Option<[f64; 4]> {
+    for pivot in 0..4 {
+        let row = (pivot..4).max_by(|first, second| {
+            matrix[*first][pivot]
+                .abs()
+                .total_cmp(&matrix[*second][pivot].abs())
+        })?;
+        if !matrix[row][pivot].is_finite() || matrix[row][pivot].abs() <= 1.0e-14 {
+            return None;
+        }
+        matrix.swap(pivot, row);
+        rhs.swap(pivot, row);
+        let pivot_row = matrix[pivot];
+        for row in pivot + 1..4 {
+            let factor = matrix[row][pivot] / matrix[pivot][pivot];
+            for (value, pivot_value) in matrix[row][pivot..].iter_mut().zip(&pivot_row[pivot..]) {
+                *value -= factor * pivot_value;
+            }
+            rhs[row] -= factor * rhs[pivot];
+        }
+    }
+    let mut solution = [0.0; 4];
+    for row in (0..4).rev() {
+        let known = (row + 1..4)
+            .map(|column| matrix[row][column] * solution[column])
+            .sum::<f64>();
+        solution[row] = (rhs[row] - known) / matrix[row][row];
+    }
+    solution
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(solution)
 }
 
 fn least_squares_step(du: Vector3, dv: Vector3, residual: Vector3) -> Option<(f64, f64)> {

@@ -9270,6 +9270,130 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
 }
 
 #[test]
+fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
+    use cadmpeg_ir::geometry::Surface;
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::Point3;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let first = SurfaceId("synthetic:first-intersection-plane".into());
+    let second = SurfaceId("synthetic:second-intersection-plane".into());
+    ir.model.surfaces.extend([
+        Surface {
+            id: first.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: second.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let chart = vec![
+        Point3::new(1.0e-4, -2.0e-4, 0.0),
+        Point3::new(-1.0e-4, 2.0e-4, 2.0),
+        Point3::new(2.0e-4, 1.0e-4, 5.0),
+    ];
+    let lanes = crate::decode::continue_surface_intersection_parameters(
+        &ir,
+        [&first, &second],
+        &chart,
+        1.0e-3,
+    )
+    .unwrap();
+    assert_eq!(lanes[0].len(), chart.len());
+    for (ordinal, expected_z) in [0.0, 2.0, 5.0].into_iter().enumerate() {
+        let first_point = cadmpeg_ir::eval::model_surface_point(
+            &ir,
+            &first,
+            lanes[0][ordinal].u,
+            lanes[0][ordinal].v,
+        )
+        .unwrap();
+        let second_point = cadmpeg_ir::eval::model_surface_point(
+            &ir,
+            &second,
+            lanes[1][ordinal].u,
+            lanes[1][ordinal].v,
+        )
+        .unwrap();
+        assert!((first_point.x - second_point.x).abs() < 1.0e-10);
+        assert!((first_point.y - second_point.y).abs() < 1.0e-10);
+        assert!((first_point.z - second_point.z).abs() < 1.0e-10);
+        assert!((first_point.z - expected_z).abs() < 1.0e-10);
+    }
+
+    let off_branch = [chart[0], Point3::new(1.0, 1.0, 2.0)];
+    assert!(crate::decode::continue_surface_intersection_parameters(
+        &ir,
+        [&first, &second],
+        &off_branch,
+        1.0e-3,
+    )
+    .is_none());
+    assert!(crate::decode::continue_surface_intersection_parameters(
+        &ir,
+        [&first, &first],
+        &chart,
+        1.0e-3,
+    )
+    .is_none());
+
+    let cylinder = SurfaceId("synthetic:intersection-cylinder".into());
+    let section_plane = SurfaceId("synthetic:intersection-section-plane".into());
+    ir.model.surfaces.extend([
+        Surface {
+            id: cylinder.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: section_plane.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let circular_chart =
+        [0.0_f64, 0.3, 0.8].map(|angle| Point3::new(2.0 * angle.cos(), 2.0 * angle.sin(), 1.0e-5));
+    let circular_lanes = crate::decode::continue_surface_intersection_parameters(
+        &ir,
+        [&cylinder, &section_plane],
+        &circular_chart,
+        1.0e-3,
+    )
+    .unwrap();
+    for (cylinder_uv, plane_uv) in circular_lanes[0].iter().zip(&circular_lanes[1]) {
+        let cylinder_point =
+            cadmpeg_ir::eval::model_surface_point(&ir, &cylinder, cylinder_uv.u, cylinder_uv.v)
+                .unwrap();
+        let plane_point =
+            cadmpeg_ir::eval::model_surface_point(&ir, &section_plane, plane_uv.u, plane_uv.v)
+                .unwrap();
+        assert!((cylinder_point.x - plane_point.x).abs() < 1.0e-8);
+        assert!((cylinder_point.y - plane_point.y).abs() < 1.0e-8);
+        assert!((cylinder_point.z - plane_point.z).abs() < 1.0e-8);
+    }
+}
+
+#[test]
 fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
     let mut control_points = Vec::new();
     for (x, z) in [
