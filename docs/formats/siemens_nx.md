@@ -238,7 +238,9 @@ object identity. A block may split a string, fixed array, or field lane across
 adjacent boundaries, so marker-shaped bytes inside one block do not define an
 entity string or reference. Concatenating the column-storage blocks in boundary
 order reconstructs the exact logical storage region; block boundaries add no
-separator or padding.
+separator or padding. Block ordinals include the root/control block when it is
+present: that block is ordinal zero and column blocks begin at one. A store
+without a distinct root/control block numbers its first column block zero.
 
 Each indexed store contains one self-framed product/version header:
 `04 01 text_length:u8 "NX " version_text 00`. `text_length` equals the

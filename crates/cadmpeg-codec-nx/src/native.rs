@@ -3792,6 +3792,32 @@ pub fn feature_sketch_payload_fixed_pairs(
         .collect()
 }
 
+pub(crate) fn offset_data_block_bytes_for_section<'a>(
+    section_ordinal: usize,
+    entry_offset: u64,
+    control: Option<&crate::om::EntityRecord<'a>>,
+    records: &[crate::om::EntityRecord<'a>],
+) -> BTreeMap<String, (&'a [u8], u64)> {
+    let mut blocks = BTreeMap::new();
+    let first_record_ordinal = usize::from(control.is_some());
+    if let Some(control) = control {
+        blocks.insert(
+            format!("nx:om-data-blocks-{section_ordinal}:block#0"),
+            (control.bytes, entry_offset + control.offset as u64),
+        );
+    }
+    for (record_ordinal, block) in records.iter().enumerate() {
+        blocks.insert(
+            format!(
+                "nx:om-data-blocks-{section_ordinal}:block#{}",
+                record_ordinal + first_record_ordinal
+            ),
+            (block.bytes, entry_offset + block.offset as u64),
+        );
+    }
+    blocks
+}
+
 fn offset_data_block_bytes(container: &Container) -> BTreeMap<String, (&[u8], u64)> {
     let mut blocks = BTreeMap::new();
     for (section_ordinal, (entry, section)) in
@@ -3805,15 +3831,12 @@ fn offset_data_block_bytes(container: &Container) -> BTreeMap<String, (&[u8], u6
             continue;
         }
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (record_ordinal, block) in section.records.into_iter().enumerate() {
-            blocks.insert(
-                format!(
-                    "nx:om-data-blocks-{section_ordinal}:block#{}",
-                    record_ordinal + 1
-                ),
-                (block.bytes, entry_offset + block.offset as u64),
-            );
-        }
+        blocks.extend(offset_data_block_bytes_for_section(
+            section_ordinal,
+            entry_offset,
+            section.control.as_ref(),
+            &section.records,
+        ));
     }
     blocks
 }

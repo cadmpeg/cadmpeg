@@ -1477,6 +1477,54 @@ fn nx_sketch_payload_join_preserves_order_and_cross_block_values() {
 }
 
 #[test]
+fn nx_offset_store_block_bytes_follow_catalog_identity() {
+    let control = crate::om::EntityRecord {
+        object_id: None,
+        offset: 5,
+        bytes: &[0xaa],
+    };
+    let first = crate::om::EntityRecord {
+        object_id: None,
+        offset: 6,
+        bytes: &[0xbb],
+    };
+    let second = crate::om::EntityRecord {
+        object_id: None,
+        offset: 7,
+        bytes: &[0xcc],
+    };
+    let controlled = crate::native::offset_data_block_bytes_for_section(
+        3,
+        100,
+        Some(&control),
+        &[first.clone(), second.clone()],
+    );
+    assert_eq!(
+        controlled["nx:om-data-blocks-3:block#0"],
+        (&[0xaa][..], 105)
+    );
+    assert_eq!(
+        controlled["nx:om-data-blocks-3:block#1"],
+        (&[0xbb][..], 106)
+    );
+    assert_eq!(
+        controlled["nx:om-data-blocks-3:block#2"],
+        (&[0xcc][..], 107)
+    );
+
+    let control_free =
+        crate::native::offset_data_block_bytes_for_section(4, 200, None, &[first, second]);
+    assert_eq!(
+        control_free["nx:om-data-blocks-4:block#0"],
+        (&[0xbb][..], 206)
+    );
+    assert_eq!(
+        control_free["nx:om-data-blocks-4:block#1"],
+        (&[0xcc][..], 207)
+    );
+}
+
+#[test]
 fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
     use crate::native::{DataBlockReference, FeatureInputBlock};
 
