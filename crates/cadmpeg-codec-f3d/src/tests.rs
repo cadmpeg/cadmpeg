@@ -8068,6 +8068,7 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         &round_trip.ir.model.appearance_bindings[0].target,
         AppearanceTarget::Body(body) if body == &round_trip.ir.model.bodies[0].id
     ));
+    assert_eq!(round_trip.ir.model.bodies[0].color, appearance.base_color);
     assert_eq!(
         f3d_native(&round_trip.ir).design_material_assignments[0].asm_body_key,
         42

@@ -738,6 +738,8 @@ A design BulkStream material assignment targets the nearest preceding component-
 
 A per-face appearance assignment ends with the visual-appearance marker GUID `BA5EE55E-9982-449B-9D66-9F036540E140`. The two length-prefixed UTF-16LE strings before the marker are the 36-character face GUID and the visual GUID. The face GUID also appears as the string payload of the owning face's `NEUTRON_Material_attrib_def` `ATTRIB_CUSTOM` attribute in the B-rep stream. **Face appearance join:** face `NEUTRON_Material_attrib_def` GUID → design BulkStream face assignment → visual GUID → appearance asset. A face assignment overrides the owning body's appearance for that face.
 
+An explicit `rgb_color-st-attrib` or `truecolor-adesk-attrib` on a body or face supplies that target's neutral color. Otherwise, exactly one appearance binding whose asset has a base color supplies the target's neutral color. Multiple appearance bindings on the same target do not select a neutral color.
+
 A `PhysMatSchema` value block contains a count followed by 36-character GUID references to its constituent aspect assets. The physical-material join is `BulkStream` `PrismMaterial` token → `PhysMatSchema` asset → referenced Structural, Thermal, and Prism aspect assets.
 
 **Design-entity join backbone:** body identity resolves across five tables via the numeric design-entity namespace:

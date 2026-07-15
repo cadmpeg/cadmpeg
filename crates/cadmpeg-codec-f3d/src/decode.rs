@@ -567,6 +567,7 @@ pub fn decode(
             ir.model.appearances = decoded_materials.appearances;
             ir.model.appearance_bindings = decoded_materials.bindings;
             resolve_face_appearance_bindings(&mut ir, &decoded_materials.face_assignments);
+            apply_appearance_base_colors(&mut ir);
             ir.model.appearance_bindings.sort_by(|a, b| a.id.cmp(&b.id));
             if !ir.model.appearances.is_empty() {
                 if ir.model.appearance_bindings.is_empty() {
@@ -1881,10 +1882,46 @@ fn resolve_face_appearance_bindings(
     }
 }
 
+/// Fill absent explicit topology colors from uniquely bound appearance assets.
+/// Native RGB/truecolor attributes remain authoritative on the same target.
+fn apply_appearance_base_colors(ir: &mut CadIr) {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+
+    let colors = ir
+        .model
+        .appearances
+        .iter()
+        .filter_map(|appearance| Some((appearance.id.clone(), appearance.base_color?)))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut targets = std::collections::HashMap::new();
+    let mut ambiguous = std::collections::HashSet::new();
+    for binding in &ir.model.appearance_bindings {
+        let Some(color) = colors.get(&binding.appearance).copied() else {
+            continue;
+        };
+        if targets.insert(binding.target.clone(), color).is_some() {
+            ambiguous.insert(binding.target.clone());
+        }
+    }
+    for body in &mut ir.model.bodies {
+        let target = AppearanceTarget::Body(body.id.clone());
+        if body.color.is_none() && !ambiguous.contains(&target) {
+            body.color = targets.get(&target).copied();
+        }
+    }
+    for face in &mut ir.model.faces {
+        let target = AppearanceTarget::Face(face.id.clone());
+        if face.color.is_none() && !ambiguous.contains(&target) {
+            face.color = targets.get(&target).copied();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        design_projection_gaps, unresolved_dimension_companion_count, DesignProjectionGaps,
+        apply_appearance_base_colors, design_projection_gaps, unresolved_dimension_companion_count,
+        DesignProjectionGaps,
     };
     use crate::native::F3dNative;
     use crate::records::{
@@ -2092,5 +2129,60 @@ mod tests {
                 paired_byte_offset: 378,
             });
         assert_eq!(unresolved_dimension_companion_count(&native), 0);
+    }
+
+    #[test]
+    fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
+        use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+        use cadmpeg_ir::ids::AppearanceId;
+        use cadmpeg_ir::topology::Color;
+
+        let mut ir = cadmpeg_ir::examples::unit_cube();
+        let body = ir.model.bodies[0].id.clone();
+        let first_face = ir.model.faces[0].id.clone();
+        let second_face = ir.model.faces[1].id.clone();
+        let direct = Color {
+            r: 0.9,
+            g: 0.8,
+            b: 0.7,
+            a: 1.0,
+        };
+        let material = Color {
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 1.0,
+        };
+        ir.model.bodies[0].color = Some(direct);
+        ir.model.appearances.push(Appearance {
+            id: AppearanceId("f3d:appearance#material".into()),
+            name: None,
+            asset_guid: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: Some(material),
+            properties: Default::default(),
+        });
+        let binding = |id: &str, target| AppearanceBinding {
+            id: id.into(),
+            target,
+            appearance: AppearanceId("f3d:appearance#material".into()),
+            source_entity_id: None,
+            object_type: None,
+            channels: Default::default(),
+        };
+        ir.model.appearance_bindings = vec![
+            binding("body", AppearanceTarget::Body(body)),
+            binding("face", AppearanceTarget::Face(first_face)),
+            binding("ambiguous-a", AppearanceTarget::Face(second_face.clone())),
+            binding("ambiguous-b", AppearanceTarget::Face(second_face)),
+        ];
+
+        apply_appearance_base_colors(&mut ir);
+        assert_eq!(ir.model.bodies[0].color, Some(direct));
+        assert_eq!(ir.model.faces[0].color, Some(material));
+        assert_eq!(ir.model.faces[1].color, None);
     }
 }

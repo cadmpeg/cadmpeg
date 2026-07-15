@@ -38,4 +38,4 @@ This document records F3D semantics that the format specification does not yet d
 
 - `GenericSchema` InstanceProperties values form a schema-ordered vector. The serialization order does not follow raw XML declaration order, and the set of serialized fields is unspecified.
 - The semantic identity of stored material presets, GUIDs, and protein phrases beyond their serialized values is unresolved.
-- Precedence among face attributes, body attributes, design assignments, and `rh_material` records is unresolved.
+- The precedence of `color-adesk-attrib`, `material-adesk-attrib`, and `rh_material` library records relative to direct colors and appearance assignments is unresolved.
