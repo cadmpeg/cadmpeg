@@ -2775,6 +2775,58 @@ fn feature_body_lineage_treats_segment_tuple_indices_as_one_identity() {
 }
 
 #[test]
+fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
+    use crate::native::{
+        segment_body_lineage_statuses, FeatureBodyReference, FeatureBooleanKind,
+        FeatureBooleanOperation, FeatureOperationLabel, SegmentBodyBinding,
+    };
+
+    let label = |ordinal: u32, value: &str| FeatureOperationLabel {
+        id: format!("operation#{ordinal}"),
+        section_link: "history#0".to_string(),
+        ordinal,
+        value: value.to_string(),
+        object_indices: [None; 4],
+        source_offset: u64::from(ordinal),
+    };
+    let labels = [label(0, "EXTRUDE"), label(1, "UNITE")];
+    let references = [FeatureBodyReference {
+        id: "reference#30".to_string(),
+        operation_label: "operation#0".to_string(),
+        body_object_index: 30,
+        source_offset: 0,
+    }];
+    let booleans = [FeatureBooleanOperation {
+        id: "boolean#0".to_string(),
+        operation_label: "operation#1".to_string(),
+        kind: FeatureBooleanKind::Unite,
+        target_object_index: 99,
+        tool_object_indices: vec![10],
+        source_offset: 1,
+    }];
+    let binding = |id: &str, stream_ordinal, body, alias| SegmentBodyBinding {
+        id: id.to_string(),
+        stream_link: format!("stream#{stream_ordinal}"),
+        stream_ordinal,
+        stream_kind: "partition".to_string(),
+        body_object_index: body,
+        body_alias_object_index: alias,
+        stream_role: 19,
+        source_offset: u64::from(stream_ordinal),
+    };
+    let bindings = [
+        binding("binding#0", 0, 10, 20),
+        binding("binding#1", 1, 30, 20),
+        binding("binding#2", 2, 40, 20),
+    ];
+
+    let statuses =
+        segment_body_lineage_statuses(&labels, &references, &booleans, &[], &bindings).unwrap();
+    assert_eq!(statuses.len(), 3);
+    assert!(statuses.iter().all(|status| !status.terminal));
+}
+
+#[test]
 fn feature_body_lineage_consumes_segment_bound_sew_operands() {
     use crate::native::{FeatureOperationBodyOperand, FeatureOperationLabel, SegmentBodyBinding};
     let labels = [FeatureOperationLabel {

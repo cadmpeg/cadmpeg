@@ -2772,21 +2772,41 @@ pub fn segment_body_lineage_statuses(
         .collect()
 }
 
-/// Map each segment body identity to the smaller identity in its alias pair.
-/// Conflicting pairs make body-image identity ambiguous and invalidate the map.
+/// Map each segment body identity to the smallest identity in its transitive alias component.
 pub(crate) fn body_alias_roots(bindings: &[SegmentBodyBinding]) -> Option<BTreeMap<u32, u32>> {
-    let mut roots = BTreeMap::new();
+    let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     for binding in bindings {
-        let pair = [binding.body_object_index, binding.body_alias_object_index];
-        let root = *pair.iter().min().expect("two aliases");
-        for identity in pair {
-            if roots
-                .insert(identity, root)
-                .is_some_and(|existing| existing != root)
-            {
-                return None;
-            }
+        adjacency
+            .entry(binding.body_object_index)
+            .or_default()
+            .insert(binding.body_alias_object_index);
+        adjacency
+            .entry(binding.body_alias_object_index)
+            .or_default()
+            .insert(binding.body_object_index);
+    }
+    let mut roots = BTreeMap::new();
+    for identity in adjacency.keys().copied() {
+        if roots.contains_key(&identity) {
+            continue;
         }
+        let mut component = BTreeSet::new();
+        let mut pending = vec![identity];
+        while let Some(member) = pending.pop() {
+            if !component.insert(member) {
+                continue;
+            }
+            pending.extend(
+                adjacency
+                    .get(&member)
+                    .into_iter()
+                    .flatten()
+                    .filter(|neighbor| !component.contains(neighbor))
+                    .copied(),
+            );
+        }
+        let root = *component.first()?;
+        roots.extend(component.into_iter().map(|member| (member, root)));
     }
     Some(roots)
 }
