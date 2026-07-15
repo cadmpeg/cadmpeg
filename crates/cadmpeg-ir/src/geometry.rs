@@ -1125,8 +1125,8 @@ pub struct RollingBallConstruction {
 /// One native support side in a variable-radius blend construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VariableBlendSide {
-    /// Native side label.
-    pub label: String,
+    /// Native support geometry family.
+    pub support_kind: VariableBlendSupportKind,
     /// Primary support surface.
     pub surface: SurfaceId,
     /// Side curve.
@@ -1146,6 +1146,22 @@ pub struct VariableBlendSide {
     /// ASM tertiary BS2 pcurve, absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tertiary_pcurve: Option<PcurveGeometry>,
+}
+
+/// Geometry role selected by a variable-blend support-side discriminator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableBlendSupportKind {
+    /// Support defined by a cosine curve.
+    CosineCurve,
+    /// Support defined by a general curve.
+    Curve,
+    /// Support defined by a point curve.
+    PointCurve,
+    /// Support defined by a surface.
+    Surface,
+    /// Support defined by a zero curve.
+    ZeroCurve,
 }
 
 /// One interpolation control point in a variable blend-value law.

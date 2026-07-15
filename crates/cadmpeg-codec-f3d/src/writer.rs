@@ -8121,7 +8121,18 @@ fn native_variable_blend_side(
     target: &CadIr,
     side: &cadmpeg_ir::geometry::VariableBlendSide,
 ) -> Result<(), CodecError> {
-    native_string(bytes, &side.label)?;
+    use cadmpeg_ir::geometry::VariableBlendSupportKind;
+
+    native_string(
+        bytes,
+        match side.support_kind {
+            VariableBlendSupportKind::CosineCurve => "blend_support_cos_curve",
+            VariableBlendSupportKind::Curve => "blend_support_curve",
+            VariableBlendSupportKind::PointCurve => "blend_support_point_curve",
+            VariableBlendSupportKind::Surface => "blend_support_surface",
+            VariableBlendSupportKind::ZeroCurve => "blend_support_zero_curve",
+        },
+    )?;
     let surface = target
         .model
         .surfaces

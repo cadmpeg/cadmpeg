@@ -830,7 +830,7 @@ pub(crate) struct EmbeddedRollingBallThirdSide {
 }
 
 pub(crate) struct EmbeddedVariableBlendSide {
-    pub(crate) label: String,
+    pub(crate) support_kind: cadmpeg_ir::geometry::VariableBlendSupportKind,
     pub(crate) surface: SurfaceGeometry,
     pub(crate) curve: NurbsCurve,
     pub(crate) pcurve: Option<NurbsPcurve>,
@@ -3634,7 +3634,16 @@ fn decode_variable_blend_side(
     position: &mut usize,
     int_width: usize,
 ) -> Option<EmbeddedVariableBlendSide> {
-    let label = take_native_string(bytes, position)?;
+    use cadmpeg_ir::geometry::VariableBlendSupportKind;
+
+    let support_kind = match take_native_string(bytes, position)?.as_str() {
+        "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
+        "blend_support_curve" | "blendsupcur" => VariableBlendSupportKind::Curve,
+        "blend_support_point_curve" | "blendsuppnt" => VariableBlendSupportKind::PointCurve,
+        "blend_support_surface" | "blendsupsur" => VariableBlendSupportKind::Surface,
+        "blend_support_zero_curve" | "blendsupzro" => VariableBlendSupportKind::ZeroCurve,
+        _ => return None,
+    };
     let surface = decode_embedded_surface(bytes, position, int_width)?;
     let curve = decode_curve_block(bytes, *position, int_width)?;
     *position = curve.end;
@@ -3655,7 +3664,7 @@ fn decode_variable_blend_side(
         }
     };
     Some(EmbeddedVariableBlendSide {
-        label,
+        support_kind,
         surface,
         curve: curve.curve,
         pcurve,
@@ -7176,9 +7185,9 @@ mod width_tests {
         bytes
     }
 
-    fn variable_blend_side(int_width: usize, extension_flag: Option<bool>) -> Vec<u8> {
+    fn variable_blend_side(int_width: usize, name: &str, extension_flag: Option<bool>) -> Vec<u8> {
         let mut bytes = Vec::new();
-        push_string(&mut bytes, "support");
+        push_string(&mut bytes, name);
         push_ident(&mut bytes, "null_surface");
         bytes.extend_from_slice(&curve_block(int_width));
         bytes.extend_from_slice(&pcurve_block(int_width));
@@ -7193,17 +7202,42 @@ mod width_tests {
 
     #[test]
     fn variable_blend_side_boolean_extension_decodes_at_both_integer_widths() {
+        use cadmpeg_ir::geometry::VariableBlendSupportKind;
+
         for int_width in [4usize, 8] {
-            for expected in [None, Some(false), Some(true)] {
-                let bytes = variable_blend_side(int_width, expected);
-                let mut position = 0;
-                let side = decode_variable_blend_side(&bytes, &mut position, int_width)
-                    .expect("variable-blend support side");
-                assert_eq!(position, bytes.len());
-                assert_eq!(side.extension_flag, expected);
-                assert_eq!(side.location, Point3::new(10.0, 20.0, 30.0));
-                assert!(side.secondary_pcurve.is_none());
-                assert!(side.tertiary_pcurve.is_none());
+            for (name, kind) in [
+                (
+                    "blend_support_cos_curve",
+                    VariableBlendSupportKind::CosineCurve,
+                ),
+                ("blendsupcos", VariableBlendSupportKind::CosineCurve),
+                ("blend_support_curve", VariableBlendSupportKind::Curve),
+                ("blendsupcur", VariableBlendSupportKind::Curve),
+                (
+                    "blend_support_point_curve",
+                    VariableBlendSupportKind::PointCurve,
+                ),
+                ("blendsuppnt", VariableBlendSupportKind::PointCurve),
+                ("blend_support_surface", VariableBlendSupportKind::Surface),
+                ("blendsupsur", VariableBlendSupportKind::Surface),
+                (
+                    "blend_support_zero_curve",
+                    VariableBlendSupportKind::ZeroCurve,
+                ),
+                ("blendsupzro", VariableBlendSupportKind::ZeroCurve),
+            ] {
+                for expected in [None, Some(false), Some(true)] {
+                    let bytes = variable_blend_side(int_width, name, expected);
+                    let mut position = 0;
+                    let side = decode_variable_blend_side(&bytes, &mut position, int_width)
+                        .expect("variable-blend support side");
+                    assert_eq!(position, bytes.len());
+                    assert_eq!(side.support_kind, kind);
+                    assert_eq!(side.extension_flag, expected);
+                    assert_eq!(side.location, Point3::new(10.0, 20.0, 30.0));
+                    assert!(side.secondary_pcurve.is_none());
+                    assert!(side.tertiary_pcurve.is_none());
+                }
             }
         }
     }

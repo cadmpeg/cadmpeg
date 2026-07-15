@@ -3772,7 +3772,14 @@ fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
 }
 
 fn append_generated_variable_blend_side(bytes: &mut Vec<u8>, label: &str, x: f64) {
-    push_u8_string(bytes, label);
+    push_u8_string(
+        bytes,
+        if label == "left" {
+            "blend_support_surface"
+        } else {
+            "blendsupcur"
+        },
+    );
     t_ident(bytes, "plane");
     t_pos(bytes, [x, 0.0, 0.0]);
     t_vec(bytes, [0.0, 0.0, 1.0]);
@@ -14853,8 +14860,14 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         else {
             panic!("expected variable blend")
         };
-        assert_eq!(construction.sides[0].label, "left");
-        assert_eq!(construction.sides[1].label, "right");
+        assert_eq!(
+            construction.sides[0].support_kind,
+            cadmpeg_ir::geometry::VariableBlendSupportKind::Surface
+        );
+        assert_eq!(
+            construction.sides[1].support_kind,
+            cadmpeg_ir::geometry::VariableBlendSupportKind::Curve
+        );
         assert_eq!(construction.sides[0].extension_flag, Some(false));
         assert_eq!(construction.sides[1].extension_flag, Some(true));
         assert_eq!(

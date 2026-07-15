@@ -3254,7 +3254,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     source_object: None,
                                 });
                                 sides.push(VariableBlendSide {
-                                    label: side.label,
+                                    support_kind: side.support_kind,
                                     surface,
                                     curve,
                                     pcurve: side.pcurve.map(embedded_pcurve_geometry),
