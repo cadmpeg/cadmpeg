@@ -193,6 +193,49 @@ pub struct DisplayJtInitialFaceDegreeSymbols {
     pub source_offset: u64,
 }
 
+/// Complete JT 9 tri-strip shape node controlling one late-loaded mesh.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtTriStripShapeNode {
+    /// Globally unique shape-node identity.
+    pub id: String,
+    /// Owning common node-data record.
+    pub base_node: String,
+    /// Serialized node object identifier.
+    pub object_id: u32,
+    /// Reserved model-coordinate bounds.
+    pub reserved_bounds: [[f32; 3]; 2],
+    /// Untransformed model-coordinate bounds.
+    pub untransformed_bounds: [[f32; 3]; 2],
+    /// Surface area in normalized coordinate space.
+    pub area: f32,
+    /// Minimum and maximum vertex counts.
+    pub vertex_count_range: [i32; 2],
+    /// Minimum and maximum scene-node counts.
+    pub node_count_range: [i32; 2],
+    /// Minimum and maximum polygon counts.
+    pub polygon_count_range: [i32; 2],
+    /// Expected in-memory byte size of the late-loaded LOD.
+    pub memory_byte_len: u32,
+    /// Qualitative compression level in the inclusive range zero through one.
+    pub compression_level: f32,
+    /// Vertex-shape data version.
+    pub vertex_version: u16,
+    /// Packed vertex-channel binding mask.
+    pub vertex_bindings: u64,
+    /// Quantization bits per vertex coordinate component.
+    pub vertex_quantization_bits: u8,
+    /// Normal quantization factor.
+    pub normal_quantization_factor: u8,
+    /// Quantization bits per texture-coordinate component.
+    pub texture_quantization_bits: u8,
+    /// Quantization bits per color component.
+    pub color_quantization_bits: u8,
+    /// Version-2 repeated vertex-channel binding mask.
+    pub version_2_vertex_bindings: Option<u64>,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
 /// One object element decoded from a compressed JT segment payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DisplayJtCompressedElement {
@@ -493,6 +536,108 @@ pub(crate) fn parse_jt_base_node_body(
         .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
         .collect();
     Some((version, flags, attribute_object_ids, &body[header_end..]))
+}
+
+pub(crate) struct ParsedJtTriStripShapeNode {
+    pub(crate) reserved_bounds: [[f32; 3]; 2],
+    pub(crate) untransformed_bounds: [[f32; 3]; 2],
+    pub(crate) area: f32,
+    pub(crate) vertex_count_range: [i32; 2],
+    pub(crate) node_count_range: [i32; 2],
+    pub(crate) polygon_count_range: [i32; 2],
+    pub(crate) memory_byte_len: u32,
+    pub(crate) compression_level: f32,
+    pub(crate) vertex_version: u16,
+    pub(crate) vertex_bindings: u64,
+    pub(crate) vertex_quantization_bits: u8,
+    pub(crate) normal_quantization_factor: u8,
+    pub(crate) texture_quantization_bits: u8,
+    pub(crate) color_quantization_bits: u8,
+    pub(crate) version_2_vertex_bindings: Option<u64>,
+}
+
+pub(crate) fn parse_jt9_tri_strip_shape_node_body(
+    body: &[u8],
+) -> Option<ParsedJtTriStripShapeNode> {
+    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+    if family.len() < 100 || u16::from_le_bytes(family[..2].try_into().ok()?) != 1 {
+        return None;
+    }
+    let f32_at = |offset: usize| {
+        family
+            .get(offset..offset + 4)
+            .and_then(|value| value.try_into().ok())
+            .map(f32::from_le_bytes)
+            .filter(|value| value.is_finite())
+    };
+    let bounds_at = |offset: usize| {
+        let bounds = [
+            [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
+            [
+                f32_at(offset + 12)?,
+                f32_at(offset + 16)?,
+                f32_at(offset + 20)?,
+            ],
+        ];
+        bounds[0]
+            .iter()
+            .zip(bounds[1])
+            .all(|(minimum, maximum)| minimum <= &maximum)
+            .then_some(bounds)
+    };
+    let range_at = |offset: usize| {
+        let range = [
+            i32::from_le_bytes(family.get(offset..offset + 4)?.try_into().ok()?),
+            i32::from_le_bytes(family.get(offset + 4..offset + 8)?.try_into().ok()?),
+        ];
+        (range[0] >= 0 && range[0] <= range[1]).then_some(range)
+    };
+    let compression_level = f32_at(82).filter(|value| (0.0..=1.0).contains(value))?;
+    let area = f32_at(50).filter(|value| *value >= 0.0)?;
+    let vertex_version = u16::from_le_bytes(family[86..88].try_into().ok()?);
+    if !matches!(vertex_version, 1 | 2) {
+        return None;
+    }
+    let expected_len = if vertex_version == 1 { 100 } else { 108 };
+    if family.len() != expected_len {
+        return None;
+    }
+    let vertex_bindings = u64::from_le_bytes(family[88..96].try_into().ok()?);
+    let vertex_quantization_bits = family[96];
+    let normal_quantization_factor = family[97];
+    let texture_quantization_bits = family[98];
+    let color_quantization_bits = family[99];
+    let version_2_vertex_bindings = (vertex_version == 2).then(|| {
+        u64::from_le_bytes(
+            family[100..108]
+                .try_into()
+                .expect("version-2 binding lane is fixed-width"),
+        )
+    });
+    if vertex_quantization_bits > 24
+        || normal_quantization_factor > 13
+        || texture_quantization_bits > 24
+        || color_quantization_bits > 24
+    {
+        return None;
+    }
+    Some(ParsedJtTriStripShapeNode {
+        reserved_bounds: bounds_at(2)?,
+        untransformed_bounds: bounds_at(26)?,
+        area,
+        vertex_count_range: range_at(54)?,
+        node_count_range: range_at(62)?,
+        polygon_count_range: range_at(70)?,
+        memory_byte_len: u32::from_le_bytes(family[78..82].try_into().ok()?),
+        compression_level,
+        vertex_version,
+        vertex_bindings,
+        vertex_quantization_bits,
+        normal_quantization_factor,
+        texture_quantization_bits,
+        color_quantization_bits,
+        version_2_vertex_bindings,
+    })
 }
 
 pub(crate) struct ParsedJtPartitionNode {
@@ -1668,6 +1813,85 @@ pub fn display_jt_range_lod_nodes(
                 range_version: node.range_version,
                 range_limits: node.range_limits,
                 center: node.center,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    nodes
+}
+
+/// Decode complete JT 9 tri-strip shape nodes from logical scene-graph segments.
+pub fn display_jt_tri_strip_shape_nodes(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtTriStripShapeNode> {
+    const TRI_STRIP_SHAPE_NODE_TYPE: [u8; 16] = [
+        0x77, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut nodes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major != 9 || segment.compression.is_none() {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != TRI_STRIP_SHAPE_NODE_TYPE {
+                continue;
+            }
+            if element.object_base_type != 2 {
+                return Vec::new();
+            }
+            let Some(node) = parse_jt9_tri_strip_shape_node_body(element.body) else {
+                return Vec::new();
+            };
+            nodes.push(DisplayJtTriStripShapeNode {
+                id: format!("{}-tri-strip-shape-node-{ordinal}", segment.id),
+                base_node: format!("{}-base-node-{ordinal}", segment.id),
+                object_id: element.object_id,
+                reserved_bounds: node.reserved_bounds,
+                untransformed_bounds: node.untransformed_bounds,
+                area: node.area,
+                vertex_count_range: node.vertex_count_range,
+                node_count_range: node.node_count_range,
+                polygon_count_range: node.polygon_count_range,
+                memory_byte_len: node.memory_byte_len,
+                compression_level: node.compression_level,
+                vertex_version: node.vertex_version,
+                vertex_bindings: node.vertex_bindings,
+                vertex_quantization_bits: node.vertex_quantization_bits,
+                normal_quantization_factor: node.normal_quantization_factor,
+                texture_quantization_bits: node.texture_quantization_bits,
+                color_quantization_bits: node.color_quantization_bits,
+                version_2_vertex_bindings: node.version_2_vertex_bindings,
                 source_offset: segment.source_offset + 24,
             });
         }

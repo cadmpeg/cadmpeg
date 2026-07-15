@@ -418,6 +418,60 @@ fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
 }
 
 #[test]
+fn display_jt9_tri_strip_shape_node_requires_exact_shape_data() {
+    let mut body = Vec::new();
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&0x20_u32.to_le_bytes());
+    body.extend_from_slice(&0_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    for value in [0.0_f32, 1.0, 2.0, 3.0, 4.0, 5.0] {
+        body.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [-3.0_f32, -2.0, -1.0, 0.0, 1.0, 2.0] {
+        body.extend_from_slice(&value.to_le_bytes());
+    }
+    body.extend_from_slice(&6.0_f32.to_le_bytes());
+    for value in [7_i32, 8, 9, 10, 11, 12] {
+        body.extend_from_slice(&value.to_le_bytes());
+    }
+    body.extend_from_slice(&4096_u32.to_le_bytes());
+    body.extend_from_slice(&0.75_f32.to_le_bytes());
+    body.extend_from_slice(&2_u16.to_le_bytes());
+    body.extend_from_slice(&0x102_u64.to_le_bytes());
+    body.extend_from_slice(&[24, 13, 16, 8]);
+    body.extend_from_slice(&0x304_u64.to_le_bytes());
+
+    let node = crate::native::parse_jt9_tri_strip_shape_node_body(&body).unwrap();
+    assert_eq!(node.reserved_bounds, [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]]);
+    assert_eq!(
+        node.untransformed_bounds,
+        [[-3.0, -2.0, -1.0], [0.0, 1.0, 2.0]]
+    );
+    assert_eq!(node.area, 6.0);
+    assert_eq!(node.vertex_count_range, [7, 8]);
+    assert_eq!(node.node_count_range, [9, 10]);
+    assert_eq!(node.polygon_count_range, [11, 12]);
+    assert_eq!(node.memory_byte_len, 4096);
+    assert_eq!(node.compression_level, 0.75);
+    assert_eq!(node.vertex_version, 2);
+    assert_eq!(node.vertex_bindings, 0x102);
+    assert_eq!(node.vertex_quantization_bits, 24);
+    assert_eq!(node.normal_quantization_factor, 13);
+    assert_eq!(node.texture_quantization_bits, 16);
+    assert_eq!(node.color_quantization_bits, 8);
+    assert_eq!(node.version_2_vertex_bindings, Some(0x304));
+
+    let mut malformed = body.clone();
+    malformed[60..64].copy_from_slice(&(-1.0_f32).to_le_bytes());
+    assert!(crate::native::parse_jt9_tri_strip_shape_node_body(&malformed).is_none());
+    let mut malformed = body.clone();
+    malformed[109] = 25;
+    assert!(crate::native::parse_jt9_tri_strip_shape_node_body(&malformed).is_none());
+    body.truncate(body.len() - 8);
+    assert!(crate::native::parse_jt9_tri_strip_shape_node_body(&body).is_none());
+}
+
+#[test]
 fn display_jt9_partition_node_requires_complete_bounds_and_ranges() {
     let mut body = Vec::new();
     body.extend_from_slice(&1_u16.to_le_bytes());
