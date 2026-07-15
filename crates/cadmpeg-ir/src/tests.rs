@@ -1009,7 +1009,9 @@ fn tessellation_counts_must_be_consistent() {
 
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
-    use crate::features::{ConfigurationId, DesignConfiguration, DesignParameter, ParameterId};
+    use crate::features::{
+        ConfigurationId, DesignConfiguration, DesignParameter, FeatureId, ParameterId,
+    };
     use crate::ids::BodyId;
     use std::collections::BTreeMap;
 
@@ -1039,6 +1041,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::from([(parameter_id.clone(), "25 mm".into())]),
+        suppressed_features: Vec::new(),
         bodies: vec![body.clone()],
         native_ref: None,
     });
@@ -1061,6 +1064,15 @@ fn configuration_body_membership_round_trips_and_validates() {
             && finding.message.contains("configuration parameter override")
     }));
     ir.model.configurations[0].parameter_overrides.clear();
+
+    ir.model.configurations[0].suppressed_features =
+        vec![FeatureId("synthetic:test:feature#missing".into())];
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message.contains("configuration suppressed feature")
+    }));
+    ir.model.configurations[0].suppressed_features.clear();
 
     ir.model.configurations[0].bodies = vec![
         BodyId("synthetic:test:body#missing".into()),
@@ -1085,6 +1097,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
+        suppressed_features: Vec::new(),
         bodies: Vec::new(),
         native_ref: None,
     });

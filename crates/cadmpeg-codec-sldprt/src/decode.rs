@@ -1006,6 +1006,7 @@ fn assign_configuration_bodies(
                 material: None,
                 properties: std::collections::BTreeMap::new(),
                 parameter_overrides: std::collections::BTreeMap::new(),
+                suppressed_features: Vec::new(),
                 bodies,
                 native_ref: None,
             });

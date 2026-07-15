@@ -69,6 +69,9 @@ pub struct DesignConfiguration {
     /// Configuration-specific source expressions keyed by the overridden parameter.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parameter_overrides: BTreeMap<ParameterId, String>,
+    /// Features suppressed when this configuration is active.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suppressed_features: Vec<FeatureId>,
     /// Bodies present when this configuration is active.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bodies: Vec<BodyId>,

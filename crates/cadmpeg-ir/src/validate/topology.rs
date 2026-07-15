@@ -1339,6 +1339,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|parameter| parameter.id.0.as_str())
         .collect::<HashSet<_>>();
+    let feature_ids = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.0.as_str())
+        .collect::<HashSet<_>>();
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {
@@ -1383,6 +1389,16 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     &configuration.id.0,
                     "configuration parameter override",
                     &parameter.0,
+                );
+            }
+        }
+        for feature in &configuration.suppressed_features {
+            if !feature_ids.contains(feature.0.as_str()) {
+                ref_error(
+                    findings,
+                    &configuration.id.0,
+                    "configuration suppressed feature",
+                    &feature.0,
                 );
             }
         }

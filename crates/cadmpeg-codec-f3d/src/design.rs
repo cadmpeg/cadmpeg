@@ -240,6 +240,7 @@ pub fn project_configurations(
                 material,
                 properties,
                 parameter_overrides: BTreeMap::new(),
+                suppressed_features: Vec::new(),
                 bodies: Vec::new(),
                 native_ref: Some(table.id.clone()),
             });
@@ -309,6 +310,37 @@ pub fn bind_configuration_parameter_overrides(
     }
 }
 
+/// Replace name-keyed suppression properties with stable feature references
+/// when exactly one neutral feature has the named source identity.
+pub fn bind_configuration_suppressed_features(
+    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    features: &[cadmpeg_ir::features::Feature],
+) {
+    for configuration in configurations {
+        let names = configuration
+            .properties
+            .keys()
+            .filter_map(|key| key.strip_prefix("suppressed:"))
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        for name in names {
+            let mut matches = features
+                .iter()
+                .filter(|feature| feature.name.as_deref() == Some(name.as_str()));
+            let Some(feature) = matches.next() else {
+                continue;
+            };
+            if matches.next().is_some() {
+                continue;
+            }
+            configuration
+                .properties
+                .remove(&format!("suppressed:{name}"));
+            configuration.suppressed_features.push(feature.id.clone());
+        }
+    }
+}
+
 pub(crate) fn unresolved_configuration_parameter_override_count(
     projected: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> usize {
@@ -316,6 +348,16 @@ pub(crate) fn unresolved_configuration_parameter_override_count(
         .iter()
         .flat_map(|configuration| configuration.properties.keys())
         .filter(|key| key.starts_with("parameter:"))
+        .count()
+}
+
+pub(crate) fn unresolved_configuration_suppressed_feature_count(
+    projected: &[cadmpeg_ir::features::DesignConfiguration],
+) -> usize {
+    projected
+        .iter()
+        .flat_map(|configuration| configuration.properties.keys())
+        .filter(|key| key.starts_with("suppressed:"))
         .count()
 }
 
@@ -10557,31 +10599,32 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod relation_tests {
     use super::{
-        assign_extrude_face_roles, bind_configuration_parameter_overrides, bind_dimension_loci,
-        bind_edge_operand_candidates, bind_extrude_selection_geometry,
-        bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
-        bind_parameter_companion_payloads, bind_sketch_graph, body_bound_candidates,
-        closed_sketch_profiles, companion_owned_interval, contiguous_i32_program,
-        decode_fillet_radius_groups, design_parameter_prefix, directional_point_dimension,
-        exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
-        exact_offset_constraint, expression_identifiers, find_dimension_locus_groups,
-        find_dimension_locus_pair, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
-        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
-        neutral_sketch_point_id, next_indexed_record_offset, null_locus_dimension_definition,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, point_on_sketch_entity,
-        project_configurations, project_dimension_constraints, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
-        radial_dimension_definition, recipe_record_prefix, region_containing_points,
-        remove_dimension_frame_relations, repeated_linear_dimension,
+        assign_extrude_face_roles, bind_configuration_parameter_overrides,
+        bind_configuration_suppressed_features, bind_dimension_loci, bind_edge_operand_candidates,
+        bind_extrude_selection_geometry, bind_extrude_selection_identities,
+        bind_face_operand_candidates, bind_lost_edge_groups, bind_parameter_companion_payloads,
+        bind_sketch_graph, body_bound_candidates, closed_sketch_profiles, companion_owned_interval,
+        contiguous_i32_program, decode_fillet_radius_groups, design_parameter_prefix,
+        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
+        exact_counted_offset, exact_offset_constraint, expression_identifiers,
+        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
+        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
+        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
+        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
+        null_locus_dimension_definition, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        point_on_sketch_entity, project_configurations, project_dimension_constraints,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design, radial_dimension_definition, recipe_record_prefix,
+        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
         resolved_face_group, two_locus_distance_dimension,
         unresolved_configuration_parameter_override_count, unresolved_configuration_rule_count,
+        unresolved_configuration_suppressed_feature_count,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConfiguration, DesignConfigurationKind,
@@ -10597,8 +10640,8 @@ mod relation_tests {
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
-        Angle, DesignParameter as NeutralParameter, FaceSelection, FeatureDefinition, Length,
-        ParameterId, ParameterValue, SketchProfileRegion,
+        Angle, DesignParameter as NeutralParameter, FaceSelection, Feature, FeatureDefinition,
+        FeatureId, Length, ParameterId, ParameterValue, SketchProfileRegion,
     };
     use cadmpeg_ir::ids::{EdgeId, FaceId, ShellId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -10722,6 +10765,64 @@ mod relation_tests {
         assert!(ambiguous[0].parameter_overrides.is_empty());
         assert_eq!(
             unresolved_configuration_parameter_override_count(&ambiguous),
+            1
+        );
+    }
+
+    #[test]
+    fn configuration_suppression_binds_only_unique_feature_names() {
+        let table = DesignConfiguration {
+            id: "f3d:configuration:entry#table.dsgcfg".into(),
+            entry_name: "table.dsgcfg".into(),
+            kind: DesignConfigurationKind::Table,
+            payload: serde_json::json!({
+                "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
+            }),
+        };
+        let feature = Feature {
+            id: FeatureId("f3d:model:feature#fillet-1".into()),
+            ordinal: 0,
+            name: Some("Fillet 1".into()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "Fillet".into(),
+                parameters: BTreeMap::new(),
+                properties: BTreeMap::new(),
+            },
+            native_ref: None,
+        };
+        let mut projected = project_configurations(&[table]);
+        bind_configuration_suppressed_features(&mut projected, std::slice::from_ref(&feature));
+        assert_eq!(projected[0].suppressed_features, [feature.id.clone()]);
+        assert!(projected[0].properties.is_empty());
+        assert_eq!(
+            unresolved_configuration_suppressed_feature_count(&projected),
+            0
+        );
+
+        let duplicate = Feature {
+            id: FeatureId("f3d:model:feature#other-fillet-1".into()),
+            ..feature.clone()
+        };
+        let mut ambiguous = project_configurations(&[DesignConfiguration {
+            id: "f3d:configuration:entry#other.dsgcfg".into(),
+            entry_name: "other.dsgcfg".into(),
+            kind: DesignConfigurationKind::Table,
+            payload: serde_json::json!({
+                "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
+            }),
+        }]);
+        bind_configuration_suppressed_features(&mut ambiguous, &[feature, duplicate]);
+        assert!(ambiguous[0].suppressed_features.is_empty());
+        assert_eq!(
+            unresolved_configuration_suppressed_feature_count(&ambiguous),
             1
         );
     }

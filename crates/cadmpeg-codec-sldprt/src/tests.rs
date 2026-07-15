@@ -3132,6 +3132,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
         parameter_overrides: BTreeMap::new(),
+        suppressed_features: Vec::new(),
         bodies: vec![ir.model.bodies[0].id.clone()],
         native_ref: None,
     });
@@ -3144,6 +3145,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
+        suppressed_features: Vec::new(),
         bodies: Vec::new(),
         native_ref: None,
     });
@@ -3319,6 +3321,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
+            suppressed_features: Vec::new(),
             bodies: vec![body.clone()],
             native_ref: None,
         })

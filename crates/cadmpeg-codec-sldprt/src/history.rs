@@ -435,6 +435,7 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
             material: configuration.material.clone(),
             properties: configuration.properties.clone(),
             parameter_overrides: Default::default(),
+            suppressed_features: Vec::new(),
             bodies: Vec::new(),
             native_ref: Some(configuration.id.clone()),
         })

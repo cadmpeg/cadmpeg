@@ -132,6 +132,18 @@ fn report_unresolved_configuration_rules(
             provenance: None,
         });
     }
+    let count =
+        crate::design::unresolved_configuration_suppressed_feature_count(&ir.model.configurations);
+    if count != 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{count} Design configuration feature suppression(s) were retained without an unambiguous neutral feature identity."
+            ),
+            provenance: None,
+        });
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -446,6 +458,10 @@ pub fn decode(
                 &mut ir.model.configurations,
                 &ir.model.parameters,
             );
+            crate::design::bind_configuration_suppressed_features(
+                &mut ir.model.configurations,
+                &ir.model.features,
+            );
             ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
                 &ir.model.features,
                 &native.design_parameter_scopes,
@@ -687,6 +703,10 @@ pub fn decode(
     crate::design::bind_configuration_parameter_overrides(
         &mut ir.model.configurations,
         &ir.model.parameters,
+    );
+    crate::design::bind_configuration_suppressed_features(
+        &mut ir.model.configurations,
+        &ir.model.features,
     );
     ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
         &ir.model.features,
