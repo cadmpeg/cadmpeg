@@ -3948,6 +3948,21 @@ type MeshFaceSelection = Option<(usize, Vec<Vec<bool>>)>;
 type MeshQuotientSignature = Vec<(Vec<usize>, Vec<usize>)>;
 type MeshOrientationSignature = (MeshQuotientSignature, Vec<Vec<bool>>);
 
+fn changed_quotient_edges(left: &MeshQuotient, right: &MeshQuotient) -> HashSet<usize> {
+    let mut left = left.clone();
+    let mut right = right.clone();
+    (0..left.union.len())
+        .filter_map(|node| {
+            let left_root = left.union.find(node);
+            let right_root = right.union.find(node);
+            (left_root != right_root
+                || left.members[left_root] != right.members[right_root]
+                || left.domains[left_root] != right.domains[right_root])
+                .then_some(node / 2)
+        })
+        .collect()
+}
+
 struct MeshSelectionSearch<'a> {
     assignments: &'a [Vec<MeshFaceBoundaryAssignment>],
     possible_face_equations: Vec<Vec<[usize; 2]>>,
@@ -4347,7 +4362,16 @@ impl MeshSelectionSearch<'_> {
         )
     }
 
+    #[cfg(test)]
     fn propagate_forced_face_equations(&self, quotient: &mut MeshQuotient) -> bool {
+        self.propagate_forced_face_equations_from(quotient, None)
+    }
+
+    fn propagate_forced_face_equations_from(
+        &self,
+        quotient: &mut MeshQuotient,
+        changed_edges: Option<&HashSet<usize>>,
+    ) -> bool {
         const MAX_FACE_EQUATION_OPTIONS: usize = 4_096;
 
         fn common_assignment_equations(
@@ -4453,24 +4477,21 @@ impl MeshSelectionSearch<'_> {
             common
         }
 
-        fn changed_edges(left: &mut MeshQuotient, right: &mut MeshQuotient) -> HashSet<usize> {
-            (0..left.union.len())
-                .filter_map(|node| {
-                    let left_root = left.union.find(node);
-                    let right_root = right.union.find(node);
-                    (left_root != right_root
-                        || left.members[left_root] != right.members[right_root]
-                        || left.domains[left_root] != right.domains[right_root])
-                        .then_some(node / 2)
-                })
-                .collect()
-        }
-
         let mut queue = self
             .selected
             .iter()
             .enumerate()
-            .filter_map(|(face, selected)| selected.is_none().then_some(face))
+            .filter_map(|(face, selected)| {
+                (selected.is_none()
+                    && changed_edges.is_none_or(|changed_edges| {
+                        self.assignments[face]
+                            .iter()
+                            .flat_map(|assignment| &assignment.boundaries)
+                            .flatten()
+                            .any(|use_| changed_edges.contains(&use_.edge))
+                    }))
+                .then_some(face)
+            })
             .collect::<VecDeque<_>>();
         let mut queued = queue.iter().copied().collect::<HashSet<_>>();
         while let Some(face) = queue.pop_front() {
@@ -4478,7 +4499,7 @@ impl MeshSelectionSearch<'_> {
             if self.selected[face].is_some() {
                 continue;
             }
-            let mut before = quotient.clone();
+            let before = quotient.clone();
             let mut changed = false;
             let deterministic = self.assignments[face].len() == 1
                 && self.assignments[face][0]
@@ -4547,7 +4568,7 @@ impl MeshSelectionSearch<'_> {
             if !changed {
                 continue;
             }
-            let changed_edges = changed_edges(&mut before, quotient);
+            let changed_edges = changed_quotient_edges(&before, quotient);
             for (dependent, assignments) in self.assignments.iter().enumerate() {
                 if self.selected[dependent].is_none()
                     && !queued.contains(&dependent)
@@ -4670,13 +4691,17 @@ impl MeshSelectionSearch<'_> {
     }
 
     fn search(&mut self, quotient: &MeshQuotient) {
+        self.search_from(quotient, None);
+    }
+
+    fn search_from(&mut self, quotient: &MeshQuotient, changed_edges: Option<&HashSet<usize>>) {
         const MAX_SELECTION_STATES: usize = 512;
 
         if self.ambiguous || self.exhausted {
             return;
         }
         let mut measured = quotient.clone();
-        if !self.propagate_forced_face_equations(&mut measured) {
+        if !self.propagate_forced_face_equations_from(&mut measured, changed_edges) {
             return;
         }
         let root_count = measured.root_count();
@@ -4889,9 +4914,10 @@ impl MeshSelectionSearch<'_> {
                 }
                 self.states += 1;
             }
+            let changed_edges = changed_quotient_edges(&measured, &next_quotient);
             self.selected[face] = Some((assignment_index, directions));
             if self.selected_orientable() {
-                self.search(&next_quotient);
+                self.search_from(&next_quotient, Some(&changed_edges));
             }
             self.selected[face] = None;
             if self.ambiguous || self.exhausted {
