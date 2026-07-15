@@ -4885,14 +4885,6 @@ fn attach_standard_topology(
         let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
         include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
     }
-    let max_incidence_search_work = 10_000_000usize;
-    let incidence_search_within_budget = constrained_endpoint_options
-        .as_ref()
-        .and_then(|options| {
-            let choice_count = options.iter().map(Vec::len).sum::<usize>();
-            options.len().checked_mul(choice_count)
-        })
-        .is_some_and(|work| work <= max_incidence_search_work);
     let mesh_bound = topology::parse_standard(brep)
         .or_else(|| topology::parse_fbb_with_native_vertices(brep, native_ports.as_ref()?))
         .and_then(|topology| {
@@ -4945,34 +4937,22 @@ fn attach_standard_topology(
     }) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(bound) = incidence_search_within_budget
-        .then_some(constrained_endpoint_options.as_ref())
-        .flatten()
-        .and_then(|options| {
-            topology::parse_standard_mesh_incidence_candidates(
+    } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
+        topology::parse_standard_mesh_incidence_candidates(brep, &edge_faces, options, |pairs| {
+            standard_circle_pair_solution_is_simple(
+                ir,
+                bindings,
+                &surface_indices,
                 brep,
-                &edge_faces,
+                &supports,
                 options,
-                |pairs| {
-                    standard_circle_pair_solution_is_simple(
-                        ir,
-                        bindings,
-                        &surface_indices,
-                        brep,
-                        &supports,
-                        options,
-                        pairs,
-                    )
-                },
+                pairs,
             )
-            .or_else(|| {
-                topology::parse_standard_mesh_endpoint_candidates(brep, &edge_faces, options)
-            })
         })
-    {
+        .or_else(|| topology::parse_standard_mesh_endpoint_candidates(brep, &edge_faces, options))
+    }) {
         bound
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
-        incidence_search_within_budget.then_some(())?;
         topology::standard_mesh_edge_ports(brep)
             .and_then(|ports| {
                 topology::parse_standard_port_endpoint_candidates(
