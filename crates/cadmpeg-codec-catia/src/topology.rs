@@ -5355,15 +5355,15 @@ impl MeshSelectionSearch<'_> {
                     .count();
                 Some((
                     if can_merge { 1 } else { 2 },
-                    usize::MAX - selected_incidence,
-                    usize::MAX - constrained,
                     assignments.len(),
                     direction_work,
+                    usize::MAX - selected_incidence,
+                    usize::MAX - constrained,
                     face,
                 ))
             })
             .min();
-        let Some((_, _, _, supported, _, face)) = next else {
+        let Some((_, supported, _, _, _, face)) = next else {
             let mut quotient = measured.clone();
             let Some(root_points) =
                 quotient.point_assignment(self.vertex_points.len(), self.edge_candidates)
