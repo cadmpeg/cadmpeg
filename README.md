@@ -70,7 +70,7 @@ The repository contains six native-format codecs:
 - **Autodesk Fusion `.f3d` — [L4](docs/format-support.md#support-ladder):** readable design records; partial B-rep and appearance decode; native replay, patching, and generation.
 - **SolidWorks `.sldprt` — [L4](docs/format-support.md#support-ladder):** connected model read; typed design records; native write and round-trip paths.
 - **Rhino `.3dm` — [L3](docs/format-support.md#support-ladder) for archive 50/60/70/80:** curves, surfaces, meshes, connected B-rep, SubD, extrusions, and expanded instances; older bands have inspection and metadata support.
-- **Siemens NX `.prt` — [L3](docs/format-support.md#support-ladder) for single-body, `RMFastLoad`-selected, and terminal-feature-lineage-resolved body images; L2 for unresolved multi-partition history:** exact carriers and connected B-rep, with conservative retention when final-body membership remains inconclusive.
+- **Siemens NX `.prt` — [L4](docs/format-support.md#support-ladder) for single-body, `RMFastLoad`-selected, and terminal-feature-lineage-resolved body images; L2 for unresolved multi-partition history:** exact carriers, connected B-rep, ordered feature history, expressions, and typed sketch-point dependencies, with conservative retention when final-body membership remains inconclusive.
 - **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.
 - **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** container mastered; no placed model geometry.
 
