@@ -1159,7 +1159,16 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replays(&data, &sections);
     let plane_local_systems = plane_local_systems(&data, &sections);
     let plane_envelopes = plane_envelopes(&data, &sections);
-    let outline_planes = surface::outline_planes(&plane_envelopes);
+    let mut outline_planes = surface::outline_planes(&plane_envelopes);
+    for plane in surface::frame_bound_outline_planes(&plane_envelopes, &plane_local_systems) {
+        if !outline_planes
+            .iter()
+            .any(|known| known.surface_id == plane.surface_id)
+        {
+            outline_planes.push(plane);
+        }
+    }
+    outline_planes.sort_by_key(|plane| plane.offset);
     let surface_prototypes = surface_prototypes(&data, &sections);
     let surface_prototype_records = surface_prototype_records(&data, &sections);
     let curve_prototypes = curve_prototypes(&data, &sections);

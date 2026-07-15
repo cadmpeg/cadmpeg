@@ -453,6 +453,10 @@ unique perpendicular held axis defines the section plane.
 For an axis-aligned plane, the held-coordinate outline defines the placed plane
 equation. An axis-aligned `local_sys` support frame without that outline does not
 establish the model-space offset outside its generating feature.
+When an axis-aligned `local_sys` normal selects an outline coordinate whose two
+stored tokens are equal, that coordinate supplies the plane offset. Equality of
+the other outline coordinates need not be resolved because the support frame
+already fixes the plane orientation.
 
 A `crv_array` edge whose two face references resolve to nonparallel placed
 planes has the exact model-space carrier given by their intersection line. Its

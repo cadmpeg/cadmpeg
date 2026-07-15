@@ -7,6 +7,7 @@
 
 use crate::psb::{self, compact_int};
 use crate::scalar;
+use std::collections::BTreeMap;
 
 /// Surface family encoded by an `srf_array` row's `geom_type` byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -562,6 +563,57 @@ pub fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
         } else {
             [1.0, 0.0, 0.0]
         };
+        result.push(OutlinePlane {
+            surface_id: record.surface_id,
+            origin,
+            normal,
+            u_axis,
+            offset: record.offset,
+        });
+    }
+    result.sort_by_key(|plane| plane.offset);
+    result
+}
+
+/// Place axis-aligned plane outlines whose support frame selects one proven
+/// held coordinate even when other outline-coordinate relations are unresolved.
+#[must_use]
+pub fn frame_bound_outline_planes(
+    envelopes: &[PlaneEnvelopeRecord],
+    frames: &[PlaneLocalSystem],
+) -> Vec<OutlinePlane> {
+    let frames = frames
+        .iter()
+        .map(|frame| (frame.surface_id, frame))
+        .collect::<BTreeMap<_, _>>();
+    let mut result = Vec::new();
+    for record in envelopes {
+        let Some(frame) = frames.get(&record.surface_id) else {
+            continue;
+        };
+        let (Some(normal), Some(u_axis)) = (frame.normal, frame.u_axis) else {
+            continue;
+        };
+        let axes = normal
+            .iter()
+            .enumerate()
+            .filter_map(|(axis, value)| (value.abs() > 1e-9).then_some(axis))
+            .collect::<Vec<_>>();
+        let [axis] = axes.as_slice() else {
+            continue;
+        };
+        if record.corner_coordinate_equal[*axis] != Some(true) {
+            continue;
+        }
+        let corners = match &record.envelope {
+            PlaneEnvelope::Standard { corners_3d, .. }
+            | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
+        };
+        let Some(coordinate) = corners[0][*axis] else {
+            continue;
+        };
+        let mut origin = [0.0; 3];
+        origin[*axis] = coordinate;
         result.push(OutlinePlane {
             surface_id: record.surface_id,
             origin,
@@ -2361,6 +2413,46 @@ mod tests {
         }];
         assert_eq!(outline_planes(&records)[0].origin, [0.0, -4.0, 0.0]);
         assert_eq!(outline_planes(&records)[0].normal, [0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn support_frame_selects_held_axis_with_unresolved_other_coordinate() {
+        let records = [PlaneEnvelopeRecord {
+            surface_id: 42,
+            body: Vec::new(),
+            envelope: PlaneEnvelope::Standard {
+                bounds_2d: [[None; 2]; 2],
+                corners_3d: [
+                    [Some(-3.0), Some(-4.0), Some(7.0)],
+                    [Some(5.0), Some(-4.0), None],
+                ],
+            },
+            corner_coordinate_equal: [Some(false), Some(true), None],
+            row_offset: 10,
+            offset: 20,
+        }];
+        let frames = [PlaneLocalSystem {
+            surface_id: 42,
+            body: Vec::new(),
+            slots: Vec::new(),
+            origin: Some([100.0, 200.0, 300.0]),
+            u_axis: Some([0.0, 0.0, 1.0]),
+            normal: Some([0.0, 1.0, 0.0]),
+            classification: LocalSystemClassification::Unclassified,
+            row_offset: 10,
+            offset: 30,
+        }];
+
+        assert_eq!(
+            frame_bound_outline_planes(&records, &frames),
+            [OutlinePlane {
+                surface_id: 42,
+                origin: [0.0, -4.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                u_axis: [0.0, 0.0, 1.0],
+                offset: 20,
+            }]
+        );
     }
 
     #[test]
