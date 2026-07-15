@@ -10569,6 +10569,17 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     };
     assert_eq!(control_points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(control_points.last(), Some(&Point2::new(1.0, 0.0)));
+    assert_eq!(
+        crate::decode::blend_boundary_parameter_from_support_spine(
+            &ir,
+            &surface,
+            &first,
+            cadmpeg_ir::math::Point3::new(0.0, 2.0, 0.0),
+            None,
+            1.0e-8,
+        ),
+        Some(Point2::new(0.0, 0.0))
+    );
 
     ir.model
         .curves

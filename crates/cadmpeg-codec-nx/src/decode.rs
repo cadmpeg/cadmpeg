@@ -5294,10 +5294,44 @@ fn transferred_pcurve_sample(
         point,
         tolerance,
     )
+    .or_else(|| {
+        blend_boundary_parameter_from_support_spine(
+            ir,
+            target_surface,
+            source_surface,
+            point,
+            seed,
+            tolerance,
+        )
+    })
     .or_else(|| surface_parameters_for_fit(ir, target_surface, point, seed, tolerance))?;
     decoded_surface_point(ir, target_surface, target_uv.u, target_uv.v)
         .filter(|candidate| point_distance(*candidate, point) <= tolerance)
         .map(|_| (parameter, target_uv, point))
+}
+
+pub(crate) fn blend_boundary_parameter_from_support_spine(
+    ir: &CadIr,
+    blend: &SurfaceId,
+    support: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+    tolerance: f64,
+) -> Option<Point2> {
+    let (supports, spine, _, _) = blend_surface_definition(ir, blend)?;
+    let matches = supports
+        .iter()
+        .enumerate()
+        .filter(|(_, candidate)| parameterization_equivalent_surfaces(ir, candidate, support))
+        .map(|(boundary, _)| boundary)
+        .collect::<Vec<_>>();
+    let [boundary] = matches.as_slice() else {
+        return None;
+    };
+    let parameter = closest_spine_parameter(ir, &spine, point, seed.map(|seed| seed.u))?;
+    blend_surface_point_inner(ir, blend, parameter, *boundary as f64, 0)
+        .filter(|candidate| point_distance(*candidate, point) <= tolerance)
+        .map(|_| Point2::new(parameter, *boundary as f64))
 }
 
 #[allow(clippy::too_many_arguments)]
