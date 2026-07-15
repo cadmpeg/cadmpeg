@@ -15022,6 +15022,27 @@ mod resolved_sketch_tests {
             Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_sphere_torus_tangent_circle"))
                 if center == Point3::new(0.0, 0.0, 0.0) && (radius - 3.0).abs() < 1e-12
         ));
+        let torus_secant_sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [0.0, 0.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 5.0,
+        });
+        let sphere_torus_candidates =
+            coaxial_sphere_torus_circle_candidates(torus_secant_sphere, torus);
+        assert_eq!(sphere_torus_candidates.len(), 2);
+        let sphere_torus_height = 3.84_f64.sqrt();
+        assert!(matches!(
+            select_unique_curve_candidate(
+                sphere_torus_candidates,
+                [
+                    [4.6, 0.0, sphere_torus_height],
+                    [0.0, 4.6, sphere_torus_height],
+                ],
+            ),
+            Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_sphere_torus_secant_circle"))
+                if (center.z - sphere_torus_height).abs() < 1e-12
+                    && (radius - 4.6).abs() < 1e-12
+        ));
         let torus_sphere_plane = CarrierEquation::Plane(PlaneEquation {
             origin: [3.0, 0.0, 0.0],
             normal: [1.0, 0.0, 0.0],
@@ -15042,6 +15063,25 @@ mod resolved_sketch_tests {
             carrier_intersection_curve(torus, second_torus),
             Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_tori_tangent_circle"))
                 if center == Point3::new(0.0, 0.0, 0.0) && (radius - 7.0).abs() < 1e-12
+        ));
+        let secant_torus = CarrierEquation::Torus(TorusEquation {
+            center: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            major_radius: 6.0,
+            minor_radius: 2.0,
+        });
+        let tori_candidates = coaxial_tori_circle_candidates(torus, secant_torus);
+        assert_eq!(tori_candidates.len(), 2);
+        let tori_height = 3.75_f64.sqrt();
+        assert!(matches!(
+            select_unique_curve_candidate(
+                tori_candidates,
+                [[5.5, 0.0, tori_height], [0.0, 5.5, tori_height]],
+            ),
+            Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_tori_secant_circle"))
+                if (center.z - tori_height).abs() < 1e-12
+                    && (radius - 5.5).abs() < 1e-12
         ));
         let tori_plane = CarrierEquation::Plane(PlaneEquation {
             origin: [7.0, 0.0, 0.0],
@@ -18028,6 +18068,155 @@ fn coaxial_cylinder_torus_circle_candidates(
         .collect()
 }
 
+fn meridian_circle_intersections(
+    first_center: [f64; 2],
+    first_radius: f64,
+    second_center: [f64; 2],
+    second_radius: f64,
+    scale: f64,
+) -> Vec<[f64; 2]> {
+    let delta = [
+        second_center[0] - first_center[0],
+        second_center[1] - first_center[1],
+    ];
+    let distance = delta[0].hypot(delta[1]);
+    if distance <= 1e-12 * scale
+        || distance >= first_radius + second_radius - 1e-9 * scale
+        || distance <= (first_radius - second_radius).abs() + 1e-9 * scale
+    {
+        return Vec::new();
+    }
+    let along = (distance * distance + first_radius * first_radius - second_radius * second_radius)
+        / (2.0 * distance);
+    let height_squared = first_radius.mul_add(first_radius, -(along * along));
+    if height_squared <= 1e-12 * scale * scale {
+        return Vec::new();
+    }
+    let unit = [delta[0] / distance, delta[1] / distance];
+    let height = height_squared.sqrt();
+    [-height, height]
+        .into_iter()
+        .map(|sense| {
+            [
+                first_center[0] + along * unit[0] - sense * unit[1],
+                first_center[1] + along * unit[1] + sense * unit[0],
+            ]
+        })
+        .collect()
+}
+
+fn coaxial_sphere_torus_circle_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let ((CarrierEquation::Sphere(sphere), CarrierEquation::Torus(torus))
+    | (CarrierEquation::Torus(torus), CarrierEquation::Sphere(sphere))) = (first, second)
+    else {
+        return Vec::new();
+    };
+    let (Some(axis), Some(reference)) = (normalized(torus.axis), normalized(torus.ref_direction))
+    else {
+        return Vec::new();
+    };
+    let relative: [f64; 3] =
+        std::array::from_fn(|index| torus.center[index] - sphere.center[index]);
+    let axial = dot(relative, axis);
+    let transverse: [f64; 3] = std::array::from_fn(|index| relative[index] - axial * axis[index]);
+    let scale = torus
+        .major_radius
+        .max(torus.minor_radius)
+        .max(sphere.radius)
+        .max(1.0);
+    if dot(transverse, transverse).sqrt() > 1e-9 * scale {
+        return Vec::new();
+    }
+    meridian_circle_intersections(
+        [0.0, 0.0],
+        sphere.radius,
+        [torus.major_radius, axial],
+        torus.minor_radius,
+        scale,
+    )
+    .into_iter()
+    .filter_map(|[radius, center_axial]| {
+        let radius = radius.abs();
+        if radius <= 1e-12 * scale {
+            return None;
+        }
+        let center: [f64; 3] =
+            std::array::from_fn(|index| sphere.center[index] + center_axial * axis[index]);
+        Some((
+            CurveGeometry::Circle {
+                center: Point3::new(center[0], center[1], center[2]),
+                axis: Vector3::new(axis[0], axis[1], axis[2]),
+                ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                radius,
+            },
+            "coaxial_sphere_torus_secant_circle",
+        ))
+    })
+    .collect()
+}
+
+fn coaxial_tori_circle_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let (CarrierEquation::Torus(first), CarrierEquation::Torus(second)) = (first, second) else {
+        return Vec::new();
+    };
+    let (Some(first_axis), Some(second_axis), Some(reference)) = (
+        normalized(first.axis),
+        normalized(second.axis),
+        normalized(first.ref_direction),
+    ) else {
+        return Vec::new();
+    };
+    if (dot(first_axis, second_axis).abs() - 1.0).abs() > 1e-10 {
+        return Vec::new();
+    }
+    let relative: [f64; 3] =
+        std::array::from_fn(|index| second.center[index] - first.center[index]);
+    let axial = dot(relative, first_axis);
+    let transverse: [f64; 3] =
+        std::array::from_fn(|index| relative[index] - axial * first_axis[index]);
+    let scale = first
+        .major_radius
+        .max(first.minor_radius)
+        .max(second.major_radius)
+        .max(second.minor_radius)
+        .max(1.0);
+    if dot(transverse, transverse).sqrt() > 1e-9 * scale {
+        return Vec::new();
+    }
+    meridian_circle_intersections(
+        [first.major_radius, 0.0],
+        first.minor_radius,
+        [second.major_radius, axial],
+        second.minor_radius,
+        scale,
+    )
+    .into_iter()
+    .filter_map(|[radius, center_axial]| {
+        let radius = radius.abs();
+        if radius <= 1e-12 * scale {
+            return None;
+        }
+        let center: [f64; 3] =
+            std::array::from_fn(|index| first.center[index] + center_axial * first_axis[index]);
+        Some((
+            CurveGeometry::Circle {
+                center: Point3::new(center[0], center[1], center[2]),
+                axis: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                radius,
+            },
+            "coaxial_tori_secant_circle",
+        ))
+    })
+    .collect()
+}
+
 fn curve_contains_points(geometry: &CurveGeometry, points: [[f64; 3]; 2]) -> bool {
     match geometry {
         CurveGeometry::Line { origin, direction } => {
@@ -18140,6 +18329,18 @@ fn transfer_carrier_intersection_curves(
                 .or_else(|| {
                     select_unique_curve_candidate(
                         coaxial_cylinder_torus_circle_candidates(first, second),
+                        points,
+                    )
+                })
+                .or_else(|| {
+                    select_unique_curve_candidate(
+                        coaxial_sphere_torus_circle_candidates(first, second),
+                        points,
+                    )
+                })
+                .or_else(|| {
+                    select_unique_curve_candidate(
+                        coaxial_tori_circle_candidates(first, second),
                         points,
                     )
                 })
