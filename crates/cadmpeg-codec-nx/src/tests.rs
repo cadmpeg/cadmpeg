@@ -981,6 +981,46 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
 }
 
 #[test]
+fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
+    use cadmpeg_ir::features::{
+        BooleanOp, ChamferSpec, EdgeSelection, FaceSelection, FeatureDefinition, HoleKind, RibDraft,
+    };
+
+    assert!(matches!(
+        crate::decode::non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None),
+        FeatureDefinition::Hole {
+            kind: HoleKind::Unresolved { form: None, .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        crate::decode::non_boolean_feature_definition("RIB", &[], None, None, None),
+        FeatureDefinition::Rib {
+            construction: cadmpeg_ir::features::RibConstruction {
+                draft: RibDraft::Unresolved,
+                ..
+            },
+            op: BooleanOp::Unresolved,
+        }
+    ));
+    assert!(matches!(
+        crate::decode::non_boolean_feature_definition("CHAMFER", &[], None, None, None),
+        FeatureDefinition::Chamfer {
+            edges: EdgeSelection::Unresolved,
+            spec: ChamferSpec::Unresolved { form: None },
+        }
+    ));
+    assert!(matches!(
+        crate::decode::non_boolean_feature_definition("THICKEN_SHEET", &[], None, None, None),
+        FeatureDefinition::Thicken {
+            faces: FaceSelection::Unresolved,
+            thickness: None,
+            side: None,
+        }
+    ));
+}
+
+#[test]
 fn nx_block_placement_requires_one_ordered_planar_extent_bijection() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let dimensions = [10.0, 20.0, 30.0];

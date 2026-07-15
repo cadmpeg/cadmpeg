@@ -20,10 +20,11 @@ use cadmpeg_ir::eval::{
     pcurve_uv, surface_point,
 };
 use cadmpeg_ir::features::{
-    Angle, BodySelection, BodyTrimSide, BooleanOp, ConfigurationId, DesignConfiguration,
-    DesignParameter, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind, Length, ParameterId,
-    ParameterValue, ProfileRef, RadiusForm, RadiusSpec, SketchSpace,
+    Angle, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec, ConfigurationId,
+    DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceSelection, Feature,
+    FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
+    Length, ParameterId, ParameterValue, ProfileRef, RadiusForm, RadiusSpec, RibConstruction,
+    RibDraft, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -9380,6 +9381,40 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             exit_kind: simple_hole_exit_kind(payload_strings),
             diameter: hole_diameter,
             extent: simple_hole_extent(payload_strings),
+        },
+        "HOLE PACKAGE" => FeatureDefinition::Hole {
+            face: None,
+            position: None,
+            direction: None,
+            kind: HoleKind::Unresolved {
+                form: None,
+                counterbore_diameter: None,
+                counterbore_depth: None,
+                countersink_diameter: None,
+                countersink_angle: None,
+            },
+            exit_kind: None,
+            diameter: None,
+            extent: None,
+        },
+        "RIB" => FeatureDefinition::Rib {
+            construction: RibConstruction {
+                profile: None,
+                direction: None,
+                thickness: None,
+                side: None,
+                draft: RibDraft::Unresolved,
+            },
+            op: BooleanOp::Unresolved,
+        },
+        "CHAMFER" => FeatureDefinition::Chamfer {
+            edges: EdgeSelection::Unresolved,
+            spec: ChamferSpec::Unresolved { form: None },
+        },
+        "THICKEN_SHEET" => FeatureDefinition::Thicken {
+            faces: FaceSelection::Unresolved,
+            thickness: None,
+            side: None,
         },
         _ => FeatureDefinition::Native {
             kind: kind.to_string(),
