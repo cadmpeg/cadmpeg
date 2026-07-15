@@ -14321,14 +14321,20 @@ fn transfer_first_instance_prototype_surfaces(
                 u_axis: reference,
             },
             crate::surface::SurfacePrototypeFamily::Torus => {
-                let Some(radius1) = prototype_scalar(record, "radius1")
-                    .filter(|radius| radius.is_finite() && *radius >= 0.0)
-                else {
-                    continue;
-                };
-                let Some(radius2) = prototype_scalar(record, "radius2")
-                    .filter(|radius| radius.is_finite() && *radius > 0.0)
-                else {
+                let row_radii = scan
+                    .surface_parameters
+                    .iter()
+                    .find(|parameters| parameters.surface_id == row.id)
+                    .and_then(|parameters| parameters.torus_radii(row.type_byte));
+                let radii = row_radii.or_else(|| {
+                    Some([
+                        prototype_scalar(record, "radius1")
+                            .filter(|radius| radius.is_finite() && *radius >= 0.0)?,
+                        prototype_scalar(record, "radius2")
+                            .filter(|radius| radius.is_finite() && *radius > 0.0)?,
+                    ])
+                });
+                let Some([radius1, radius2]) = radii else {
                     continue;
                 };
                 if radius1 == 0.0 {
