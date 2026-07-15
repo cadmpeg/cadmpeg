@@ -2378,14 +2378,16 @@ fn blend_surface_parameter_grid(
     }
     let mut grid = Vec::with_capacity(9 * 5);
     for u_index in 0..=8 {
+        let u = domain[0] + (domain[1] - domain[0]) * f64::from(u_index) / 8.0;
+        let frame = blend_surface_frame(ir, surface, u, depth + 1);
         for v_index in 0..=4 {
-            let parameters = Point2::new(
-                domain[0] + (domain[1] - domain[0]) * f64::from(u_index) / 8.0,
-                f64::from(v_index) / 4.0,
-            );
-            let Some(point) =
-                blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)
-            else {
+            let parameters = Point2::new(u, f64::from(v_index) / 4.0);
+            let point = match v_index {
+                0 => blend_boundary_point(ir, surface, u, 0, depth + 1),
+                4 => blend_boundary_point(ir, surface, u, 1, depth + 1),
+                _ => frame.map(|frame| blend_surface_point_from_frame(frame, parameters.v)),
+            };
+            let Some(point) = point else {
                 continue;
             };
             grid.push((parameters, point));
@@ -2536,14 +2538,23 @@ fn blend_surface_point_inner(
     if v.to_bits() == 1.0f64.to_bits() {
         return blend_boundary_point(ir, surface, u, 1, depth + 1);
     }
-    let (center, tangent, first, second, radius) = blend_surface_frame(ir, surface, u, depth + 1)?;
+    let frame = blend_surface_frame(ir, surface, u, depth + 1)?;
+    Some(blend_surface_point_from_frame(frame, v))
+}
+
+type BlendSurfaceFrame = (Point3, Vector3, Vector3, Vector3, f64);
+
+fn blend_surface_point_from_frame(
+    (center, tangent, first, second, radius): BlendSurfaceFrame,
+    v: f64,
+) -> Point3 {
     let alpha = signed_angle(first, second, tangent);
     let radial = rodrigues_rotate(first, tangent, v * alpha);
-    Some(Point3::new(
+    Point3::new(
         center.x + radius * radial.x,
         center.y + radius * radial.y,
         center.z + radius * radial.z,
-    ))
+    )
 }
 
 fn blend_surface_frame(
@@ -2551,7 +2562,7 @@ fn blend_surface_frame(
     surface: &SurfaceId,
     u: f64,
     depth: usize,
-) -> Option<(Point3, Vector3, Vector3, Vector3, f64)> {
+) -> Option<BlendSurfaceFrame> {
     (depth < 32).then_some(())?;
     let (supports, spine, radius, reversed) = blend_surface_definition(ir, surface)?;
     let center = model_curve_point(ir, &spine, u)?;
