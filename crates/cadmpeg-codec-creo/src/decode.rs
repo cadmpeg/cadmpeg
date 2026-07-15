@@ -6501,7 +6501,7 @@ fn saved_entity_is_generated_profile(
         })
 }
 
-fn ordered_line_surface_id(
+fn ordered_analytic_surface_id(
     surface_rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
     table: &crate::feature::FeatureEntityTable,
@@ -6651,7 +6651,7 @@ fn transfer_resolved_revolution_surfaces(
                     .as_ref()
                     .zip(native_table)
                     .and_then(|(order, table)| {
-                        ordered_line_surface_id(
+                        ordered_analytic_surface_id(
                             &scan.surface_rows,
                             feature_id,
                             table,
@@ -6707,6 +6707,58 @@ fn transfer_resolved_revolution_surfaces(
                 }),
             });
             transferred += 1;
+        }
+        if let (Some(order), Some(table)) = (definition.order_table.as_ref(), native_table) {
+            for (internal_id, section_geometry, offset) in definition
+                .saved_section
+                .iter()
+                .flat_map(|saved| &saved.entities)
+                .filter_map(saved_section_entity_geometry)
+            {
+                let Some(external_id) = order.external_id(internal_id) else {
+                    continue;
+                };
+                let Some(surface) = revolved_section_surface(transform, &section_geometry, axis)
+                else {
+                    continue;
+                };
+                let Some(native_surface) = ordered_analytic_surface_id(
+                    &scan.surface_rows,
+                    feature_id,
+                    table,
+                    order,
+                    external_id,
+                    &surface,
+                ) else {
+                    continue;
+                };
+                let surface_id = SurfaceId(format!("creo:visibgeom:surface#{native_surface}"));
+                if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
+                    continue;
+                }
+                annotate(
+                    annotations,
+                    &surface_id,
+                    "FeatDefs",
+                    offset as u64,
+                    "evaluated_saved_analytic_revolution_surface",
+                    Exactness::Derived,
+                );
+                ir.model.surfaces.push(Surface {
+                    id: surface_id,
+                    geometry: surface,
+                    source_object: Some(SourceObjectAssociation {
+                        format: "creo".to_string(),
+                        object_id: format!("VisibGeom:{native_surface}"),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                });
+                transferred += 1;
+            }
         }
         for spline in definition
             .saved_section
@@ -8529,12 +8581,23 @@ mod resolved_sketch_tests {
             radius: 2.0,
         };
         assert_eq!(
-            ordered_line_surface_id(&rows, 17, &table, &order, 8, &cylinder),
+            ordered_analytic_surface_id(&rows, 17, &table, &order, 8, &cylinder),
             Some(41)
         );
         assert_eq!(
-            ordered_line_surface_id(&rows, 17, &table, &order, 9, &cylinder),
+            ordered_analytic_surface_id(&rows, 17, &table, &order, 9, &cylinder),
             None
+        );
+        let torus = SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 1.0, 0.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 4.0,
+            minor_radius: 1.0,
+        };
+        assert_eq!(
+            ordered_analytic_surface_id(&rows, 17, &table, &order, 9, &torus),
+            Some(43)
         );
         assert_eq!(
             ordered_family_surface_bindings(
