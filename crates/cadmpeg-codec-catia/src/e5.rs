@@ -198,6 +198,9 @@ pub struct E5Loop {
     /// `FACE_OUTER_BOUND`, `Some(false)` = `FACE_BOUND`, `None` for a
     /// two-edge digon loop (no trailing role tape).
     pub outer: Option<bool>,
+    /// Complete trailing signed relation tape in serialized order. Empty when
+    /// the loop carries no tape.
+    pub orientation_signs: Vec<i16>,
 }
 
 impl E5Loop {
@@ -252,6 +255,7 @@ struct RawLoop {
     pcurves: Vec<u32>,
     edges: Vec<u32>,
     outer: Option<bool>,
+    orientation_signs: Vec<i16>,
 }
 
 /// Resolve E5 face→loop→edge-use references and determine each serialized
@@ -346,6 +350,7 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
                 reversed,
                 absolute_reversed: None,
                 outer: raw.outer,
+                orientation_signs: raw.orientation_signs.clone(),
             });
         }
         faces.push(E5Face {
@@ -797,51 +802,36 @@ fn parse_loop(record: &Record<'_>) -> Option<RawLoop> {
         edges.push(reference(record.payload, &mut position)?);
     }
     let surface = reference(record.payload, &mut position)?;
-    let outer = match parse_loop_role(record.payload.get(position..)?, member_count / 2) {
-        LoopRole::Malformed => return None,
-        LoopRole::Absent => None,
-        LoopRole::Present(role) => Some(role),
-    };
+    let (outer, orientation_signs) =
+        parse_loop_signs(record.payload.get(position..)?, member_count / 2)?;
     Some(RawLoop {
         id: record.id,
         surface,
         pcurves,
         edges,
         outer,
+        orientation_signs,
     })
 }
 
-/// Result of decoding a loop record's trailing role tape.
-enum LoopRole {
-    /// The trailing bytes do not match the expected role-tape layout.
-    Malformed,
-    /// No trailing role tape is present (a two-edge digon loop).
-    Absent,
-    /// A role tape is present and decodes to a loop-outer bit.
-    Present(bool),
-}
-
-fn parse_loop_role(trailing: &[u8], edge_count: usize) -> LoopRole {
+fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Option<(Option<bool>, Vec<i16>)> {
     if trailing.is_empty() {
-        return LoopRole::Absent;
+        return Some((None, Vec::new()));
     }
-    let Some(expected_head) = u8::try_from(edge_count)
+    let expected_head = u8::try_from(edge_count)
         .ok()
-        .and_then(|n| 0x80u8.checked_add(n))
-    else {
-        return LoopRole::Malformed;
-    };
+        .and_then(|n| 0x80u8.checked_add(n))?;
     if trailing.first() != Some(&expected_head) || trailing.len() != 1 + 2 * (3 * edge_count + 4) {
-        return LoopRole::Malformed;
+        return None;
     }
     let signs: Vec<i16> = trailing[1..]
         .chunks_exact(2)
         .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
         .collect();
     if signs.iter().any(|sign| !matches!(sign, -1..=1)) || !matches!(signs[1], -1 | 1) {
-        return LoopRole::Malformed;
+        return None;
     }
-    LoopRole::Present(signs[1] == 1)
+    Some((Some(signs[1] == 1), signs))
 }
 
 fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
@@ -992,6 +982,7 @@ mod tests {
             reversed: vec![false, false],
             absolute_reversed: None,
             outer: Some(true),
+            orientation_signs: Vec::new(),
         };
         let mut faces = vec![
             E5Face {

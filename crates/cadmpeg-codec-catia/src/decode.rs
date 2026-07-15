@@ -1259,6 +1259,7 @@ mod chart_tests {
                 reversed: vec![false],
                 absolute_reversed: Some(vec![false]),
                 outer: Some(true),
+                orientation_signs: Vec::new(),
             }],
         };
         let edge = |record_id| E5Edge {

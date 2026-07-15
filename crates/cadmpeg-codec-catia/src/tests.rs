@@ -2847,6 +2847,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         vec![false, false, false]
     );
     assert_eq!(topology.faces[0].loops[0].outer, Some(true));
+    assert_eq!(topology.faces[0].loops[0].orientation_signs, vec![1; 13]);
     assert_eq!(
         topology.faces[0].loops[0].absolute_reversed,
         Some(vec![false, false, false])
@@ -2854,6 +2855,10 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     assert_eq!(
         topology.faces[1].loops[0].absolute_reversed,
         Some(vec![true, true, true])
+    );
+    assert_eq!(
+        topology.faces[1].loops[0].orientation_signs,
+        [vec![1; 12], vec![0]].concat()
     );
     assert_eq!(
         topology.faces[1].loops[0].resolved_reversed(),
