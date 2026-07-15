@@ -36,7 +36,7 @@ pub fn decode(
         let annotations = populate_annotations(&ir, &scan, &F3dNative::default(), None);
         preserve_source_image(&scan, &mut ir)?;
         let report = build_container_report(&scan, true);
-        return Ok(decode_result(ir, report, annotations));
+        return decode_result(ir, report, annotations);
     }
 
     // `try_decode_brep` returns `Some` after producing carriers or points.
@@ -145,7 +145,7 @@ pub fn decode(
                 Some((&active.name, &annotation_records)),
             );
             preserve_source_image(&scan, &mut ir)?;
-            return Ok(decode_result(ir, report, annotations));
+            return decode_result(ir, report, annotations);
         }
     }
 
@@ -191,22 +191,30 @@ pub fn decode(
     let annotations = populate_annotations(&ir, &scan, &native, None);
     preserve_source_image(&scan, &mut ir)?;
     let report = build_container_report(&scan, false);
-    Ok(decode_result(ir, report, annotations))
+    decode_result(ir, report, annotations)
 }
 
 fn decode_result(
-    ir: CadIr,
+    mut ir: CadIr,
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
-) -> DecodeResult {
-    DecodeResult::with_source_fidelity(
+) -> Result<DecodeResult, CodecError> {
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..cadmpeg_ir::SourceFidelity::default()
+    };
+    source_fidelity.separate_native_unknown_records(&mut ir, "f3d")?;
+    let product_records = ir
+        .native_unknown_refs("f3d")?
+        .into_iter()
+        .filter(|record| record.id.0 != "f3d:file:source-image#0")
+        .collect::<Vec<_>>();
+    ir.set_native_unknown_refs("f3d", &product_records)?;
+    Ok(DecodeResult::with_source_fidelity(
         ir,
         report,
-        cadmpeg_ir::SourceFidelity {
-            annotations,
-            ..cadmpeg_ir::SourceFidelity::default()
-        },
-    )
+        source_fidelity,
+    ))
 }
 
 fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) -> Result<(), CodecError> {
@@ -241,13 +249,13 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
         source
     });
     let unknowns = ir
-        .native_unknowns("f3d")
+        .native_unknown_refs("f3d")
         .unwrap_or_default()
         .into_iter()
         .filter(|record| record.id.0 != "f3d:file:source-image#0")
         .collect::<Vec<_>>();
     normalized
-        .set_native_unknowns("f3d", &unknowns)
+        .set_native_unknown_refs("f3d", &unknowns)
         .expect("F3D unknown records serialize");
     sha256_hex(
         normalized

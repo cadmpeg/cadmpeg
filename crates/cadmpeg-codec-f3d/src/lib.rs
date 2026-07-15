@@ -199,26 +199,6 @@ impl F3dCodec {
         Self::write_preserved_bytes(ir, data, record.byte_len, &record.sha256, writer)
     }
 
-    /// Write a decoded F3D document, replaying its source bytes when its
-    /// semantic content is unchanged.
-    ///
-    /// Supported edits regenerate affected records within the retained archive.
-    /// The method returns [`CodecError::NotImplemented`] when `ir` has no F3D
-    /// semantic baseline or retained source image.
-    pub fn write_preserved(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-        let unknowns = ir.native_unknowns("f3d")?;
-        let record = unknowns
-            .iter()
-            .find(|record| record.id.0 == "f3d:file:source-image#0")
-            .ok_or_else(|| {
-                CodecError::NotImplemented("IR has no retained F3D source image".into())
-            })?;
-        let data = record.data.as_ref().ok_or_else(|| {
-            CodecError::Malformed("retained F3D source image has no bytes".into())
-        })?;
-        Self::write_preserved_bytes(ir, data, record.byte_len, &record.sha256, writer)
-    }
-
     fn write_preserved_bytes(
         ir: &CadIr,
         data: &[u8],
