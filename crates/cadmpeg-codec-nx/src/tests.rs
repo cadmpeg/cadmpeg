@@ -9504,6 +9504,28 @@ fn linear_spine_contact_pcurve_inverts_support_parameters_across_spans() {
 }
 
 #[test]
+fn blend_contact_offset_requires_the_serialized_range_sign() {
+    assert!(crate::decode::blend_contact_offset_matches(
+        2.0, 5.0, 3.0, false
+    ));
+    assert!(crate::decode::blend_contact_offset_matches(
+        2.0, -1.0, 3.0, true
+    ));
+    assert!(!crate::decode::blend_contact_offset_matches(
+        2.0, -1.0, 3.0, false
+    ));
+    assert!(!crate::decode::blend_contact_offset_matches(
+        2.0, 5.0, 3.0, true
+    ));
+    assert!(!crate::decode::blend_contact_offset_matches(
+        2.0,
+        f64::from_bits(5.0f64.to_bits() + 1),
+        3.0,
+        false,
+    ));
+}
+
+#[test]
 fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     use cadmpeg_ir::geometry::{BlendSupport, Curve, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
