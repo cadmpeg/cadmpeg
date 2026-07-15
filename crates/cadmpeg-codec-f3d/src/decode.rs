@@ -132,7 +132,9 @@ fn design_projection_gaps(ir: &CadIr) -> DesignProjectionGaps {
     let mut edge_selection = |selection: &EdgeSelection| match selection {
         EdgeSelection::Native(_) => gaps.native_edge_selections += 1,
         EdgeSelection::Unresolved => gaps.unresolved_edge_selections += 1,
-        EdgeSelection::Edges(_) | EdgeSelection::Resolved { .. } => {}
+        EdgeSelection::Edges(_)
+        | EdgeSelection::Resolved { .. }
+        | EdgeSelection::Historical { .. } => {}
     };
     for feature in &ir.model.features {
         match &feature.definition {
@@ -395,6 +397,11 @@ pub fn decode(
                 &native.design_face_operands,
                 &native.design_sketch_placements,
             );
+            ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
+                &ir.model.features,
+                &native.design_parameter_scopes,
+                &native.asm_histories,
+            );
             crate::history::bind_feature_outputs(
                 &mut ir.model.features,
                 &native.design_parameter_scopes,
@@ -626,6 +633,11 @@ pub fn decode(
         &native.design_edge_operands,
         &native.design_face_operands,
         &native.design_sketch_placements,
+    );
+    ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
+        &ir.model.features,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
     );
     crate::history::bind_feature_outputs(
         &mut ir.model.features,

@@ -9,7 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::annotations::Annotations;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
-use crate::features::{DesignConfiguration, DesignParameter, Feature};
+use crate::features::{DesignConfiguration, DesignParameter, Feature, FeatureInputTopology};
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
 use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
@@ -38,6 +38,7 @@ macro_rules! arena_registry {
             procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [] => |e| e.id.0.clone();
             procedural_curves: ProceduralCurve, "Procedural curve arena.", [] => |e| e.id.0.clone();
             features: Feature, "Feature arena.", [] => |e| e.id.0.clone();
+            feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default)] => |e| e.id.0.clone();
             configurations: DesignConfiguration, "Design configuration arena.", [serde(default)] => |e| e.id.0.clone();
             parameters: DesignParameter, "Design parameter arena.", [serde(default)] => |e| e.id.0.clone();
             sketches: Sketch, "Planar sketch arena.", [serde(default)] => |e| e.id.0.clone();
@@ -79,7 +80,7 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "4";
+pub const IR_VERSION: &str = "5";
 
 arena_registry!(declare_model);
 

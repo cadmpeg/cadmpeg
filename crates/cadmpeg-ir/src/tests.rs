@@ -2852,7 +2852,7 @@ fn flex_modes_round_trip_and_validate() {
 #[test]
 fn edge_selections_round_trip_through_json() {
     use crate::features::EdgeSelection;
-    use crate::ids::EdgeId;
+    use crate::ids::{EdgeId, FeatureInputTopologyId, HistoricalEdgeId};
 
     let selections = vec![
         EdgeSelection::Unresolved,
@@ -2860,6 +2860,11 @@ fn edge_selections_round_trip_through_json() {
         EdgeSelection::Resolved {
             edges: vec![EdgeId("synthetic:test:edge#0".into())],
             native: "edge:10".into(),
+        },
+        EdgeSelection::Historical {
+            state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+            edges: vec![HistoricalEdgeId("synthetic:history-input:edge#0".into())],
+            native: "edge:9".into(),
         },
         EdgeSelection::Native("sldprt:history:feature#10:0".into()),
     ];
@@ -2873,7 +2878,7 @@ fn edge_selections_round_trip_through_json() {
 #[test]
 fn face_selections_round_trip_through_json() {
     use crate::features::FaceSelection;
-    use crate::ids::FaceId;
+    use crate::ids::{FaceId, FeatureInputTopologyId, HistoricalFaceId};
 
     let selections = vec![
         FaceSelection::Unresolved,
@@ -2881,6 +2886,11 @@ fn face_selections_round_trip_through_json() {
         FaceSelection::Resolved {
             faces: vec![FaceId("synthetic:test:face#0".into())],
             native: "face:14".into(),
+        },
+        FaceSelection::Historical {
+            state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+            faces: vec![HistoricalFaceId("synthetic:history-input:face#0".into())],
+            native: "face:13".into(),
         },
         FaceSelection::Native("sldprt:history:feature#14:0".into()),
     ];
@@ -2894,7 +2904,7 @@ fn face_selections_round_trip_through_json() {
 #[test]
 fn body_selections_round_trip_through_json() {
     use crate::features::BodySelection;
-    use crate::ids::BodyId;
+    use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalBodyId};
 
     let selections = vec![
         BodySelection::Unresolved,
@@ -2902,6 +2912,11 @@ fn body_selections_round_trip_through_json() {
         BodySelection::Resolved {
             bodies: vec![BodyId("synthetic:test:body#0".into())],
             native: "body:17".into(),
+        },
+        BodySelection::Historical {
+            state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+            bodies: vec![HistoricalBodyId("synthetic:history-input:body#0".into())],
+            native: "body:16".into(),
         },
         BodySelection::Native("body:17,body:18".into()),
     ];

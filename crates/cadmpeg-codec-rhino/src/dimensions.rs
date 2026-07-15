@@ -1255,7 +1255,7 @@ pub(crate) fn project(
     };
     let parameter = DesignParameter {
         id: parameter_id,
-        owner: feature_id,
+        owner: Some(feature_id),
         ordinal: 0,
         name: "measurement".to_string(),
         expression: if dimension.user_text.is_empty() {

@@ -397,7 +397,13 @@ pub fn project_parameter_design(
                             .map_or_else(
                                 || EdgeSelection::Native(assignment.id.clone()),
                                 |group| {
-                                    resolved_edge_group(group, construction_groups, edge_operands)
+                                    resolved_edge_group(
+                                        group,
+                                        construction_groups,
+                                        edge_operands,
+                                        scope.previous_history_state_id,
+                                        &neutral_feature_id(scope),
+                                    )
                                 },
                             );
                         FilletGroup {
@@ -884,7 +890,13 @@ fn project_chamfer(
             let edge_group = edge_groups.get(index).copied();
             ChamferGroup {
                 edges: match edge_group {
-                    Some(group) => resolved_edge_group(group, construction_groups, edge_operands),
+                    Some(group) => resolved_edge_group(
+                        group,
+                        construction_groups,
+                        edge_operands,
+                        scope.previous_history_state_id,
+                        &neutral_feature_id(scope),
+                    ),
                     None => EdgeSelection::Native(scope.id.clone()),
                 },
                 spec: spec
@@ -900,9 +912,11 @@ fn resolved_edge_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
+    previous_state_id: Option<i64>,
+    feature_id: &cadmpeg_ir::features::FeatureId,
 ) -> cadmpeg_ir::features::EdgeSelection {
     use cadmpeg_ir::features::EdgeSelection;
-    use cadmpeg_ir::ids::EdgeId;
+    use cadmpeg_ir::ids::HistoricalEdgeId;
 
     if !group.lost_edge_references.is_empty() {
         return EdgeSelection::Unresolved;
@@ -944,9 +958,21 @@ fn resolved_edge_group(
     let Some(resolved_slots) = resolved_slots else {
         return EdgeSelection::Native(group.id.clone());
     };
+    let Some(previous_state_id) = previous_state_id else {
+        return EdgeSelection::Native(group.id.clone());
+    };
+    let state = feature_input_topology_id(feature_id, previous_state_id);
+    let feature_key = feature_id
+        .0
+        .split_once('#')
+        .map_or(feature_id.0.as_str(), |(_, key)| key);
     let mut edges = Vec::new();
     for edge_slot in resolved_slots {
-        let edge = EdgeId(format!("f3d:brep:entity#{edge_slot}"));
+        let edge = HistoricalEdgeId(format!(
+            "f3d:history-input:edge#{}:{}:{previous_state_id}:{edge_slot}",
+            feature_key.len(),
+            feature_key
+        ));
         if !edges.contains(&edge) {
             edges.push(edge);
         }
@@ -954,11 +980,27 @@ fn resolved_edge_group(
     if edges.is_empty() {
         EdgeSelection::Native(group.id.clone())
     } else {
-        EdgeSelection::Resolved {
+        EdgeSelection::Historical {
+            state,
             edges,
             native: group.id.clone(),
         }
     }
+}
+
+pub(crate) fn feature_input_topology_id(
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+) -> cadmpeg_ir::ids::FeatureInputTopologyId {
+    let feature_key = feature_id
+        .0
+        .split_once('#')
+        .map_or(feature_id.0.as_str(), |(_, key)| key);
+    cadmpeg_ir::ids::FeatureInputTopologyId(format!(
+        "f3d:history-input:state#{}:{}:{previous_state_id}",
+        feature_key.len(),
+        feature_key
+    ))
 }
 
 fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i64>> {

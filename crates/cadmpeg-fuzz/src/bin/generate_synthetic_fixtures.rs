@@ -25,11 +25,11 @@ fn main() {
         .to_canonical_json()
         .expect("serialize directed SubD and Sum CadIr");
     let documents = [
-        ("minimal_v4.json", minimal.as_bytes()),
-        ("unit_cube_v4.json", unit_cube.as_bytes()),
-        ("directed_subd_sum_v4.json", directed_subd_sum.as_bytes()),
+        ("minimal_v5.json", minimal.as_bytes()),
+        ("unit_cube_v5.json", unit_cube.as_bytes()),
+        ("directed_subd_sum_v5.json", directed_subd_sum.as_bytes()),
     ];
-    let valid_v0 = minimal.replacen(r#""ir_version": "4""#, r#""ir_version": "0""#, 1);
+    let valid_v0 = minimal.replacen(r#""ir_version": "5""#, r#""ir_version": "0""#, 1);
     for (_, document) in documents {
         CadIr::from_json(std::str::from_utf8(document).expect("fixture is UTF-8"))
             .expect("fixture is valid current-version CadIr");

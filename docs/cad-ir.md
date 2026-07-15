@@ -170,6 +170,8 @@ Absence from `annotations.exactness` means `byte_exact`. A field override takes 
 
 Each feature has an ID, source-history `ordinal`, optional name, suppression state, optional parent, output bodies, a neutral definition, and optional `native_ref`.
 
+The feature-input topology arena identifies the bodies, faces, and edges present immediately before a feature evaluates. Historical body, face, and edge IDs are state-local typed identities and never identify entities in the solved topology arenas. A historical selection names one input topology owned by its containing feature, contains a nonempty ordered list of unique members present in the corresponding typed roster, and retains a nonempty native selection reference. Each feature owns at most one input topology. Every represented roster is complete for its entity kind.
+
 Neutral definitions are extrude, revolve, fillet, chamfer, shell, hole, and pattern. `native` is the sole escape hatch for a feature with no neutral definition and carries its source kind, parameter map, and non-parameter property map. Length wrappers are millimeters and angle wrappers are radians.
 
 Extents are blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles reference native identity, a whole solved sketch, specific sketch loops, exact bounded sketch regions, or solved faces. One bounded sketch region is the interior of its `outer` loop minus the interiors of its immediate `holes`; multiple regions denote their union in source selection order. All loop indices address the referenced sketch's `profiles` table. A region list is nonempty; every loop index is in range; holes are unique and exclude the outer loop; repeated regions are invalid. Loop references do not acquire region semantics implicitly. Fillets contain ordered independently dimensioned edge groups; each group uses a constant or sampled variable radius and may carry a dimensionless tangency weight. Chamfers use distance, two distances, or distance-angle. Holes are simple, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
@@ -214,7 +216,7 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "4"`. The `model.subds` arena is required in version 4 JSON, including when it is empty. Version 4 requires the fields and invariants defined by this specification; removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version. Version 4 adds explicit sketch-region profile references; version 3 loop references retain no implicit region semantics.
+Readers accept exactly `ir_version: "5"`. The `model.subds` arena is required in version 5 JSON, including when it is empty. Version 5 requires the fields and invariants defined by this specification; removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version. Version 5 adds typed feature-input topology states and historical selections. Version 4 adds explicit sketch-region profile references; version 3 loop references retain no implicit region semantics.
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 
@@ -236,7 +238,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "4",
+  "ir_version": "5",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {

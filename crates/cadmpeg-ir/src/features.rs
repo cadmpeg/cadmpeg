@@ -3,7 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use crate::ids::{BodyId, CurveId, EdgeId, FaceId};
+use crate::ids::{
+    BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, HistoricalBodyId, HistoricalEdgeId,
+    HistoricalFaceId,
+};
 use crate::math::{Point3, Vector3};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -220,6 +223,27 @@ pub struct Feature {
     /// Neutral construction semantics.
     pub definition: FeatureDefinition,
     /// Identifier of the full-fidelity record in a native namespace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+}
+
+/// Typed topology membership at one feature's evaluation input.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureInputTopology {
+    /// Globally unique state id.
+    pub id: FeatureInputTopologyId,
+    /// Feature evaluated from this state.
+    pub input_of: FeatureId,
+    /// Bodies present in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bodies: Vec<HistoricalBodyId>,
+    /// Faces present in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub faces: Vec<HistoricalFaceId>,
+    /// Edges present in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edges: Vec<HistoricalEdgeId>,
+    /// Full-fidelity source state reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
 }
@@ -952,6 +976,15 @@ pub enum EdgeSelection {
         /// Format-native selection reference.
         native: String,
     },
+    /// Edges resolved in the containing feature's input topology.
+    Historical {
+        /// Input topology containing every selected edge.
+        state: FeatureInputTopologyId,
+        /// State-local edge identities in operand order.
+        edges: Vec<HistoricalEdgeId>,
+        /// Format-native selection reference.
+        native: String,
+    },
     /// Format-native selection reference.
     Native(String),
 }
@@ -971,6 +1004,15 @@ pub enum FaceSelection {
         /// Format-native selection reference.
         native: String,
     },
+    /// Faces resolved in the containing feature's input topology.
+    Historical {
+        /// Input topology containing every selected face.
+        state: FeatureInputTopologyId,
+        /// State-local face identities in operand order.
+        faces: Vec<HistoricalFaceId>,
+        /// Format-native selection reference.
+        native: String,
+    },
     /// Format-native selection reference.
     Native(String),
 }
@@ -987,6 +1029,15 @@ pub enum BodySelection {
     Resolved {
         /// Resolved topological bodies.
         bodies: Vec<BodyId>,
+        /// Format-native selection expression.
+        native: String,
+    },
+    /// Bodies resolved in the containing feature's input topology.
+    Historical {
+        /// Input topology containing every selected body.
+        state: FeatureInputTopologyId,
+        /// State-local body identities in operand order.
+        bodies: Vec<HistoricalBodyId>,
         /// Format-native selection expression.
         native: String,
     },

@@ -343,10 +343,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             CurveGeometry::Unknown {
                 record: Some(unknown),
-            } => {
-                if !ids.unknowns.contains(&unknown.0) {
-                    ref_error(findings, &curve.id.0, "unknown record", &unknown.0);
-                }
+            } if !ids.unknowns.contains(&unknown.0) => {
+                ref_error(findings, &curve.id.0, "unknown record", &unknown.0);
             }
             _ => {}
         }
@@ -1393,6 +1391,69 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|parameter| (&parameter.id, parameter.owner.as_ref()))
         .collect::<HashMap<_, _>>();
+    let input_topologies = ir
+        .model
+        .feature_input_topologies
+        .iter()
+        .map(|state| (state.id.as_str(), state))
+        .collect::<HashMap<_, _>>();
+    let mut topology_owners = HashSet::new();
+    for state in &ir.model.feature_input_topologies {
+        if !features.contains_key(state.input_of.as_str()) {
+            ref_error(
+                findings,
+                state.id.as_str(),
+                "input feature",
+                state.input_of.as_str(),
+            );
+        }
+        if !topology_owners.insert(state.input_of.as_str()) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: "feature has multiple input topology states".into(),
+                entity: Some(state.input_of.0.clone()),
+            });
+        }
+        for (kind, members) in [
+            (
+                "historical body",
+                state
+                    .bodies
+                    .iter()
+                    .map(crate::ids::HistoricalBodyId::as_str)
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "historical face",
+                state
+                    .faces
+                    .iter()
+                    .map(crate::ids::HistoricalFaceId::as_str)
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "historical edge",
+                state
+                    .edges
+                    .iter()
+                    .map(crate::ids::HistoricalEdgeId::as_str)
+                    .collect::<Vec<_>>(),
+            ),
+        ] {
+            let mut seen = HashSet::new();
+            for member in members {
+                if member.is_empty() || !seen.insert(member) {
+                    findings.push(Finding {
+                        check: Check::Counts,
+                        severity: Severity::Error,
+                        message: format!("input topology has empty or repeated {kind} `{member}`"),
+                        entity: Some(state.id.0.clone()),
+                    });
+                }
+            }
+        }
+    }
     let mut feature_ordinals = HashSet::new();
     for feature in &ir.model.features {
         if !feature_ordinals.insert(feature.ordinal) {
@@ -2204,39 +2265,182 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for selection in edge_selections {
-            if let EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } = selection {
-                check_ids(
+            match selection {
+                EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => check_ids(
                     findings,
                     &feature.id.0,
                     "selected edge",
                     edges.iter().map(|id| id.0.as_str()),
                     &ids.edges,
-                );
+                ),
+                EdgeSelection::Historical {
+                    state,
+                    edges,
+                    native,
+                } => {
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            edges.iter().map(crate::ids::HistoricalEdgeId::as_str),
+                            native,
+                        ),
+                        "edge",
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .edges
+                                .iter()
+                                .map(crate::ids::HistoricalEdgeId::as_str)
+                                .collect()
+                        },
+                    );
+                }
+                EdgeSelection::Unresolved | EdgeSelection::Native(_) => {}
             }
         }
         for selection in face_selections {
-            if let FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } = selection {
-                check_ids(
+            match selection {
+                FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => check_ids(
                     findings,
                     &feature.id.0,
                     "selected face",
                     faces.iter().map(|id| id.0.as_str()),
                     &ids.faces,
-                );
+                ),
+                FaceSelection::Historical {
+                    state,
+                    faces,
+                    native,
+                } => {
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            faces.iter().map(crate::ids::HistoricalFaceId::as_str),
+                            native,
+                        ),
+                        "face",
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .faces
+                                .iter()
+                                .map(crate::ids::HistoricalFaceId::as_str)
+                                .collect()
+                        },
+                    );
+                }
+                FaceSelection::Unresolved | FaceSelection::Native(_) => {}
             }
         }
         for selection in body_selections {
-            if let BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } =
-                selection
-            {
-                check_ids(
-                    findings,
-                    &feature.id.0,
-                    "selected body",
-                    bodies.iter().map(|id| id.0.as_str()),
-                    &ids.bodies,
-                );
+            match selection {
+                BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                    check_ids(
+                        findings,
+                        &feature.id.0,
+                        "selected body",
+                        bodies.iter().map(|id| id.0.as_str()),
+                        &ids.bodies,
+                    );
+                }
+                BodySelection::Historical {
+                    state,
+                    bodies,
+                    native,
+                } => {
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            bodies.iter().map(crate::ids::HistoricalBodyId::as_str),
+                            native,
+                        ),
+                        "body",
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .bodies
+                                .iter()
+                                .map(crate::ids::HistoricalBodyId::as_str)
+                                .collect()
+                        },
+                    );
+                }
+                BodySelection::Unresolved | BodySelection::Native(_) => {}
             }
+        }
+    }
+}
+
+fn check_historical_selection<'a, I, F>(
+    findings: &mut Vec<Finding>,
+    feature: &crate::features::FeatureId,
+    selection: (&crate::ids::FeatureInputTopologyId, I, &str),
+    kind: &str,
+    states: &HashMap<&str, &crate::features::FeatureInputTopology>,
+    members: F,
+) where
+    I: IntoIterator<Item = &'a str>,
+    F: FnOnce(&crate::features::FeatureInputTopology) -> Vec<&str>,
+{
+    let (state_id, selected, native) = selection;
+    let Some(state) = states.get(state_id.as_str()) else {
+        ref_error(
+            findings,
+            feature.as_str(),
+            "feature input topology",
+            state_id.as_str(),
+        );
+        return;
+    };
+    if state.input_of != *feature {
+        findings.push(Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: format!("historical {kind} selection uses another feature's input topology"),
+            entity: Some(feature.0.clone()),
+        });
+    }
+    if native.is_empty() {
+        findings.push(Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: format!("historical {kind} selection has an empty native reference"),
+            entity: Some(feature.0.clone()),
+        });
+    }
+    let available = members(state).into_iter().collect::<HashSet<_>>();
+    let selected = selected.into_iter().collect::<Vec<_>>();
+    if selected.is_empty() {
+        findings.push(Finding {
+            check: Check::Counts,
+            severity: Severity::Error,
+            message: format!("historical {kind} selection is empty"),
+            entity: Some(feature.0.clone()),
+        });
+    }
+    let mut seen = HashSet::new();
+    for id in selected {
+        if !seen.insert(id) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: format!("historical {kind} selection repeats `{id}`"),
+                entity: Some(feature.0.clone()),
+            });
+        }
+        if !available.contains(id) {
+            ref_error(
+                findings,
+                feature.as_str(),
+                &format!("historical {kind}"),
+                id,
+            );
         }
     }
 }

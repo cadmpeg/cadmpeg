@@ -509,7 +509,7 @@ fn rhino_forced_input_format_and_3dm_alias_bypass_detection() {
             .unwrap();
         assert!(output.status.success());
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["ir_version"], "4");
+        assert_eq!(value["ir_version"], "5");
         assert_eq!(value["source"]["format"], "rhino");
     }
 }
@@ -532,7 +532,7 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir_v4() {
                 String::from_utf8_lossy(&output.stderr)
             );
             let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(value["ir_version"], "4");
+            assert_eq!(value["ir_version"], "5");
             assert_eq!(value["source"]["format"], "rhino");
             assert_eq!(value["source"]["attributes"]["archive_version"], version);
             assert_eq!(
@@ -598,7 +598,7 @@ fn rhino_v3_v4_decode_metadata_but_legacy_bands_are_header_only() {
             .unwrap();
         assert!(output.status.success());
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(value["ir_version"], "4");
+        assert_eq!(value["ir_version"], "5");
         assert_eq!(value["source"]["attributes"]["archive_version"], version);
         assert_eq!(value["model"]["subds"], serde_json::json!([]));
     }
