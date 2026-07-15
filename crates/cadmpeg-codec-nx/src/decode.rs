@@ -5285,7 +5285,16 @@ fn transferred_pcurve_sample(
 ) -> Option<TransferredPcurveSample> {
     let source_uv = pcurve_uv(source_pcurve, parameter)?;
     let point = decoded_surface_point(ir, source_surface, source_uv.u, source_uv.v)?;
-    let target_uv = surface_parameters_for_fit(ir, target_surface, point, seed, tolerance)?;
+    let target_uv = blend_boundary_parameter_from_support_pcurve(
+        ir,
+        target_surface,
+        source_surface,
+        source_pcurve,
+        parameter,
+        point,
+        tolerance,
+    )
+    .or_else(|| surface_parameters_for_fit(ir, target_surface, point, seed, tolerance))?;
     decoded_surface_point(ir, target_surface, target_uv.u, target_uv.v)
         .filter(|candidate| point_distance(*candidate, point) <= tolerance)
         .map(|_| (parameter, target_uv, point))

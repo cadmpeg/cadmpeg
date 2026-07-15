@@ -10376,9 +10376,13 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
 #[test]
 fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     use cadmpeg_ir::geometry::{
-        BlendSupport, Curve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, Surface,
+        BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+        ProceduralCurveDefinition, ProceduralSurface, Surface,
     };
-    use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+    use cadmpeg_ir::ids::{
+        CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, VertexId,
+    };
+    use cadmpeg_ir::topology::Edge;
 
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
     let first = SurfaceId("synthetic:first-plane".into());
@@ -10397,6 +10401,28 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             id: second.clone(),
             geometry: SurfaceGeometry::Plane {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let first_spine_side = SurfaceId("synthetic:first-spine-side".into());
+    let second_spine_side = SurfaceId("synthetic:second-spine-side".into());
+    ir.model.surfaces.extend([
+        Surface {
+            id: first_spine_side.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: second_spine_side.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: cadmpeg_ir::math::Point3::new(0.0, 2.0, 0.0),
                 normal: Vector3::new(0.0, 1.0, 0.0),
                 u_axis: Vector3::new(0.0, 0.0, 1.0),
             },
@@ -10427,11 +10453,11 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         definition: ProceduralSurfaceDefinition::Blend {
             supports: [
                 Some(BlendSupport {
-                    surface: first,
+                    surface: first.clone(),
                     reversed: false,
                 }),
                 Some(BlendSupport {
-                    surface: second,
+                    surface: second.clone(),
                     reversed: false,
                 }),
             ],
@@ -10452,7 +10478,29 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     ir.model.procedural_curves.push(ProceduralCurve {
         id: ProceduralCurveId("synthetic:spine-construction".into()),
         curve: spine.clone(),
-        definition: ProceduralCurveDefinition::Unknown { record: None },
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(first_spine_side),
+                        pcurve: Some(PcurveGeometry::Line {
+                            origin: Point2::new(0.0, -2.0),
+                            direction: Point2::new(1.0, 0.0),
+                        }),
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(second_spine_side),
+                        pcurve: Some(PcurveGeometry::Line {
+                            origin: Point2::new(0.0, 2.0),
+                            direction: Point2::new(1.0, 0.0),
+                        }),
+                    },
+                ],
+                parameter_range: [0.0, 10.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
         cache_fit_tolerance: Some(0.75),
     });
     assert_eq!(
@@ -10474,6 +10522,53 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     .unwrap();
     assert!((continued.u - expected.u).abs() < 1.0e-8);
     assert!((continued.v - expected.v).abs() < 1.0e-8);
+
+    let boundary_curve = CurveId("synthetic:blend-boundary-curve".into());
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: ProceduralCurveId("synthetic:blend-boundary".into()),
+        curve: boundary_curve.clone(),
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(first.clone()),
+                        pcurve: Some(PcurveGeometry::Line {
+                            origin: Point2::new(0.0, -2.0),
+                            direction: Point2::new(1.0, 0.0),
+                        }),
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(surface.clone()),
+                        pcurve: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: None,
+    });
+    ir.model.edges.push(Edge {
+        id: EdgeId("synthetic:blend-boundary-edge".into()),
+        curve: Some(boundary_curve),
+        start: VertexId("synthetic:blend-boundary-start".into()),
+        end: VertexId("synthetic:blend-boundary-end".into()),
+        param_range: Some([0.0, 1.0]),
+        tolerance: Some(1.0e-8),
+    });
+    crate::decode::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &ir.model.procedural_curves.last().unwrap().definition
+    else {
+        unreachable!()
+    };
+    let PcurveGeometry::Nurbs { control_points, .. } = context.sides[1].pcurve.as_ref().unwrap()
+    else {
+        unreachable!()
+    };
+    assert_eq!(control_points.first(), Some(&Point2::new(0.0, 0.0)));
+    assert_eq!(control_points.last(), Some(&Point2::new(1.0, 0.0)));
 
     ir.model
         .curves
