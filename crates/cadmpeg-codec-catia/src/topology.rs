@@ -4975,7 +4975,12 @@ impl MeshSelectionSearch<'_> {
             });
             if let Some(candidate) = candidate {
                 match &self.solution {
-                    Some(solution) if *solution != candidate => self.ambiguous = true,
+                    Some(solution)
+                        if *solution != candidate
+                            && !mesh_candidates_equivalent(solution, &candidate) =>
+                    {
+                        self.ambiguous = true;
+                    }
                     None => self.solution = Some(candidate),
                     Some(_) => {}
                 }
@@ -5042,6 +5047,99 @@ impl MeshSelectionSearch<'_> {
             }
         }
     }
+}
+
+fn canonicalize_mesh_vertex_labels(
+    mut topology: StandardTopology,
+    point_assignment: &[usize],
+) -> Option<(StandardTopology, Vec<usize>)> {
+    if point_assignment.len() != topology.logical_vertex_count
+        || point_assignment.len() != topology.vertex_points.len()
+    {
+        return None;
+    }
+    let mut seen = vec![false; point_assignment.len()];
+    for &point in point_assignment {
+        let entry = seen.get_mut(point)?;
+        if std::mem::replace(entry, true) {
+            return None;
+        }
+    }
+    for coedge in topology
+        .faces
+        .iter_mut()
+        .flat_map(|face| &mut face.boundaries)
+        .flat_map(|boundary| &mut boundary.coedges)
+    {
+        coedge.start_vertex = *point_assignment.get(coedge.start_vertex)?;
+        coedge.end_vertex = *point_assignment.get(coedge.end_vertex)?;
+    }
+    let mut edge_vertices = vec![None; topology.edge_rows.len()];
+    for coedge in topology
+        .faces
+        .iter()
+        .flat_map(|face| &face.boundaries)
+        .flat_map(|boundary| &boundary.coedges)
+    {
+        let vertices = if coedge.reversed {
+            [coedge.end_vertex, coedge.start_vertex]
+        } else {
+            [coedge.start_vertex, coedge.end_vertex]
+        };
+        let stored = edge_vertices.get_mut(coedge.edge_row)?;
+        match stored {
+            Some(existing) if *existing != vertices => return None,
+            Some(_) => {}
+            None => *stored = Some(vertices),
+        }
+    }
+    let reverse_edges = edge_vertices
+        .into_iter()
+        .map(|vertices| vertices.is_some_and(|vertices| vertices[0] > vertices[1]))
+        .collect::<Vec<_>>();
+    for coedge in topology
+        .faces
+        .iter_mut()
+        .flat_map(|face| &mut face.boundaries)
+        .flat_map(|boundary| &mut boundary.coedges)
+    {
+        if *reverse_edges.get(coedge.edge_row)? {
+            coedge.reversed = !coedge.reversed;
+        }
+    }
+    for boundary in topology
+        .faces
+        .iter_mut()
+        .flat_map(|face| &mut face.boundaries)
+    {
+        let len = boundary.coedges.len();
+        if len == 0 {
+            return None;
+        }
+        let best = (0..len).min_by_key(|&start| {
+            (0..len)
+                .map(|offset| {
+                    let coedge = boundary.coedges[(start + offset) % len];
+                    (
+                        coedge.edge_row,
+                        coedge.reversed,
+                        coedge.start_vertex,
+                        coedge.end_vertex,
+                    )
+                })
+                .collect::<Vec<_>>()
+        })?;
+        boundary.coedges.rotate_left(best);
+    }
+    Some((topology, (0..point_assignment.len()).collect::<Vec<_>>()))
+}
+
+fn mesh_candidates_equivalent(
+    left: &(StandardTopology, Vec<usize>),
+    right: &(StandardTopology, Vec<usize>),
+) -> bool {
+    canonicalize_mesh_vertex_labels(left.0.clone(), &left.1)
+        == canonicalize_mesh_vertex_labels(right.0.clone(), &right.1)
 }
 
 fn mesh_assignment_can_merge(
@@ -5771,8 +5869,9 @@ mod motif_tests {
     use cadmpeg_ir::topology::BodyKind;
 
     use super::{
-        bind_edge_port_candidates, deduplicate_mesh_quotient_assignments,
-        mesh_assignment_can_merge, mesh_edge_points_compatible, motif_port_points,
+        bind_edge_port_candidates, canonicalize_mesh_vertex_labels,
+        deduplicate_mesh_quotient_assignments, mesh_assignment_can_merge,
+        mesh_candidates_equivalent, mesh_edge_points_compatible, motif_port_points,
         parse_trim_chain, possible_face_choices, possible_face_equations,
         propagate_edge_port_points, prune_edge_candidates_by_port_domains, reconstruct_incidence,
         reconstruct_incidence_candidates, standard_face_count, unique_coordinate_bijection,
@@ -5803,6 +5902,92 @@ mod motif_tests {
         assert_eq!(records[0].handles, [0, 1, 2]);
         assert_eq!(records[1].handles, [3, 4, 5]);
         assert!(parse_trim_chain(&bytes, bytes.len(), 2, 3).is_none());
+    }
+
+    #[test]
+    fn coordinate_rows_canonicalize_logical_vertex_labels() {
+        let topology = |start_vertex, end_vertex| StandardTopology {
+            faces: vec![FaceTopology {
+                boundaries: vec![Boundary {
+                    coedges: vec![CoedgeUse {
+                        edge_row: 0,
+                        reversed: false,
+                        start_vertex,
+                        end_vertex,
+                    }],
+                }],
+            }],
+            edge_rows: vec![EdgeRow {
+                kind: 1,
+                handles: vec![0, 1],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            }],
+            vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            logical_vertex_count: 2,
+        };
+
+        let left_candidate = (topology(0, 1), vec![1, 0]);
+        let right_candidate = (topology(1, 0), vec![0, 1]);
+        assert_ne!(left_candidate, right_candidate);
+        assert!(mesh_candidates_equivalent(
+            &left_candidate,
+            &right_candidate
+        ));
+        let left = canonicalize_mesh_vertex_labels(left_candidate.0, &left_candidate.1);
+        let right = canonicalize_mesh_vertex_labels(right_candidate.0, &right_candidate.1);
+
+        assert_eq!(left, right);
+        assert_eq!(left.expect("canonical topology").1, vec![0, 1]);
+
+        let forward = canonicalize_mesh_vertex_labels(topology(0, 1), &[0, 1]);
+        let mut reversed = topology(0, 1);
+        reversed.faces[0].boundaries[0].coedges[0].reversed = true;
+        let reversed = canonicalize_mesh_vertex_labels(reversed, &[0, 1]);
+        assert_eq!(forward, reversed);
+    }
+
+    #[test]
+    fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
+        let mut topology = StandardTopology {
+            faces: vec![FaceTopology {
+                boundaries: vec![Boundary {
+                    coedges: vec![
+                        CoedgeUse {
+                            edge_row: 0,
+                            reversed: false,
+                            start_vertex: 0,
+                            end_vertex: 1,
+                        },
+                        CoedgeUse {
+                            edge_row: 1,
+                            reversed: false,
+                            start_vertex: 1,
+                            end_vertex: 0,
+                        },
+                    ],
+                }],
+            }],
+            edge_rows: vec![
+                EdgeRow {
+                    kind: 1,
+                    handles: vec![0, 1],
+                    boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+                },
+                EdgeRow {
+                    kind: 1,
+                    handles: vec![1, 0],
+                    boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+                },
+            ],
+            vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            logical_vertex_count: 2,
+        };
+        let left = (topology.clone(), vec![0, 1]);
+        topology.faces[0].boundaries[0].coedges.rotate_left(1);
+        let right = (topology, vec![0, 1]);
+
+        assert_ne!(left, right);
+        assert!(mesh_candidates_equivalent(&left, &right));
     }
 
     #[test]
