@@ -7,7 +7,9 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - The inherited-slot state transitions in curve-equation `local_sys f9 04 03` bodies are unspecified.
 - DICT sign lattices outside the defined scalar lanes are unspecified.
 - Per-instance overrides for cone half-angle and `geom_type = 26` torus/sphere radii are unspecified.
-- Packed B-spline surface bodies and surface-intersection curves are unspecified.
+- The joins from decoded spline-prototype point, tangent, derivative, and
+  parameter arrays to a placed NURBS control net and surface-intersection curves
+  are unspecified.
 - The prototype-adjacent `tab_cyl` instance rows use a construction distinct
   from the repeated cubic replay; its point and parameter fields are unspecified.
 - Replay-bound `tab_cyl` frames whose axis spans do not uniquely match the two

@@ -378,6 +378,16 @@ spans covering every byte outside those slots. Scalar frames are the maximal
 contiguous scalar-token sequences in byte order. The terminal scalar frame is
 the final frame only when it ends at the body boundary.
 
+Spline and fillet prototypes can carry `i_points`, `tangts`, `end_tangts`,
+`end_u_tangts`, `end_v_tangts`, `end_uv_deriv`, `u_params`, `v_params`,
+`ctr_spline`, `tan_spline`, `par_v_0`, `par_v_1`, and `offset_type` named
+fields. An `f9 <dimensions> <count>` field declares exactly
+`dimensions * count` scalar slots and retains unresolved slots in position.
+The field name and wrapper dimensions do not by themselves assign a NURBS
+control-net, knot, or derivative role to individual slots.
+`u_params` and `v_params` can instead use `f8 <count>` followed by exactly
+`count` scalar slots; unresolved slots retain their declared positions.
+
 ### 3.4 Planes
 
 Plane row bodies contain envelope/domain data, `local_sys f9 04 03`, and a row/topology tail. `local_sys` has twelve scalar slots:

@@ -161,6 +161,13 @@ pub enum SurfaceNamedValue {
         /// Decoded slots with unresolved values retained.
         values: Vec<Option<f64>>,
     },
+    /// Counted `f8` scalar body.
+    CountedScalarArray {
+        /// Stored element count.
+        count: u32,
+        /// Decoded slots with unresolved values retained.
+        values: Vec<Option<f64>>,
+    },
     /// One or more consecutive scalar tokens.
     ScalarSequence(Vec<f64>),
     /// Exact bytes of a wrapper that is not structurally defined.
@@ -757,7 +764,20 @@ const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
     "radius2",
     "half_angle",
     "i_pnts",
+    "i_points",
     "c_pnts",
+    "tangts",
+    "end_tangts",
+    "end_u_tangts",
+    "end_v_tangts",
+    "end_uv_deriv",
+    "u_params",
+    "v_params",
+    "ctr_spline",
+    "tan_spline",
+    "par_v_0",
+    "par_v_1",
+    "offset_type",
     "parent_feats",
     "frst_cntr_crv_hdr_ptr",
     "id",
@@ -773,7 +793,8 @@ const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
 
 fn prototype_parameter_allowed(family: &SurfacePrototypeFamily, name: &str) -> bool {
     PROTOTYPE_PARAMETER_NAMES.contains(&name)
-        && !(matches!(family, SurfacePrototypeFamily::Torus) && matches!(name, "i_pnts" | "c_pnts"))
+        && !(matches!(family, SurfacePrototypeFamily::Torus)
+            && matches!(name, "i_pnts" | "i_points" | "c_pnts"))
 }
 
 fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamedValue {
@@ -788,6 +809,7 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
     if body.first() == Some(&psb::token::ARRAY_OPEN) {
         let (count, mut cursor) = compact_int(body, 1);
         if cursor > 1 {
+            let values_start = cursor;
             if body.get(cursor) == Some(&psb::token::ENTITY_REF) {
                 if let Ok((start_id, next)) = psb::reference_id(body, cursor + 1) {
                     if body.get(next) == Some(&psb::token::ARRAY_CLOSE) {
@@ -799,6 +821,16 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                         }
                     }
                 }
+            }
+            if matches!(name, "u_params" | "v_params") {
+                return SurfaceNamedValue::CountedScalarArray {
+                    count,
+                    values: scalar_slots(
+                        &body[values_start..],
+                        usize::try_from(count).unwrap_or(usize::MAX),
+                        cache,
+                    ),
+                };
             }
             let mut values = Vec::new();
             for _ in 0..count {
@@ -1982,6 +2014,41 @@ mod tests {
                 .map(|prototype| prototype.kind)
                 .collect::<Vec<_>>(),
             [SurfaceKind::Spline, SurfaceKind::Fillet]
+        );
+    }
+
+    #[test]
+    fn retains_named_spline_point_and_tangent_arrays() {
+        let payload = b"srf_prim_ptr(splsrf)\0\
+            \xe0\x02i_points\0\xf9\x02\x02\xe4\x0f\xe4\x0f\
+            \xe0\x02end_u_tangts\0\xf9\x01\x02\x0f\xe4\
+            \xe0\x02u_params\0\xf8\x02\x0f\xe4\xe3";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].family, SurfacePrototypeFamily::Spline);
+        assert_eq!(
+            records[0].field("i_points").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarArray {
+                dimensions: 2,
+                count: 2,
+                values: vec![Some(1.0), Some(0.0), Some(1.0), Some(0.0)],
+            })
+        );
+        assert_eq!(
+            records[0].field("end_u_tangts").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarArray {
+                dimensions: 1,
+                count: 2,
+                values: vec![Some(0.0), Some(1.0)],
+            })
+        );
+        assert_eq!(
+            records[0].field("u_params").map(|field| &field.value),
+            Some(&SurfaceNamedValue::CountedScalarArray {
+                count: 2,
+                values: vec![Some(0.0), Some(1.0)],
+            })
         );
     }
 
