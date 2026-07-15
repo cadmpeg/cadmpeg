@@ -685,7 +685,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn object_indexed_qualified_point_operand_precedes_point_ordinal_fallback() {
+    fn object_indexed_bc_operands_precede_local_and_ordinal_fallbacks() {
         let marker = |id: &str, offset, object_index, kind, coordinates_m| SketchInputEntity {
             id: id.into(),
             parent: "lane".into(),
@@ -722,10 +722,25 @@ mod marker_tests {
                 SketchInputKind::Relation(SketchRelationKind::Distance),
                 None,
             ),
+            SketchInputEntity {
+                local_id: Some(0),
+                ..marker(
+                    "local-id-curve",
+                    3,
+                    Some(2),
+                    SketchInputKind::LineOrCircle,
+                    Some([2.0, 0.0]),
+                )
+            },
         ];
 
         assert_eq!(
             resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0xbc7c), 0)
+                .map(|marker| marker.id.as_str()),
+            Some("indexed-curve-locus")
+        );
+        assert_eq!(
+            resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0xbc87), 0)
                 .map(|marker| marker.id.as_str()),
             Some("indexed-curve-locus")
         );
@@ -2677,6 +2692,24 @@ fn resolve_operand_marker_excluding<'a>(
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
                         | SketchInputKind::Arc
+                )
+            })
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        if let [entity] = indexed.as_slice() {
+            return Some(*entity);
+        }
+    }
+    if kind == FeatureInputOperandKind::Native(0xbc87) {
+        let indexed = entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| entity.coordinates_m.is_some())
+            .filter(|entity| {
+                matches!(
+                    entity.kind,
+                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
                 )
             })
             .filter(|entity| !excluded.contains(&entity.id))
