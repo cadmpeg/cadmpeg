@@ -6313,6 +6313,11 @@ fn attach_native_object_model(
         &scan.container,
         &display_jt_shape_lod_elements,
     );
+    let display_jt_initial_face_degree_symbols =
+        crate::native::display_jt_initial_face_degree_symbols(
+            &scan.container,
+            &display_jt_shape_lod_elements,
+        );
     let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
         crate::native::display_jt_compressed_element_sequences(
             &scan.container,
@@ -6728,6 +6733,12 @@ fn attach_native_object_model(
             .note(&header.id, annotation_stream, header.source_offset)
             .tag("DISPLAY_JT_TRI_STRIP_LOD_HEADER");
         annotations.exactness(&header.id, Exactness::ByteExact);
+    }
+    for symbols in &display_jt_initial_face_degree_symbols {
+        annotations
+            .note(&symbols.id, annotation_stream, symbols.source_offset)
+            .tag("DISPLAY_JT_INITIAL_FACE_DEGREE_SYMBOLS");
+        annotations.exactness(&symbols.id, Exactness::ByteExact);
     }
     for sequence in &display_jt_compressed_element_sequences {
         annotations
@@ -7517,6 +7528,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "display_jt_tri_strip_lod_headers",
             &display_jt_tri_strip_lod_headers,
+        )?;
+    }
+    if !display_jt_initial_face_degree_symbols.is_empty() {
+        namespace.set_arena(
+            "display_jt_initial_face_degree_symbols",
+            &display_jt_initial_face_degree_symbols,
         )?;
     }
     if !display_jt_compressed_element_sequences.is_empty() {

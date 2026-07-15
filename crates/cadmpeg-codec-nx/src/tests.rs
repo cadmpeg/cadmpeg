@@ -315,6 +315,57 @@ fn display_jt9_tri_strip_header_requires_supported_versions() {
 }
 
 #[test]
+fn jt_int32_cdp2_decodes_empty_and_bitlength_packets() {
+    assert_eq!(
+        crate::jt::decode_int32_cdp2(&[0, 0, 0, 0], 0),
+        Some((vec![], 4))
+    );
+
+    // Width two, then two signed two-bit values: 1 and -1.
+    let packet = [2, 0, 0, 0, 1, 8, 0, 0, 0, 0, 0, 0, 0xcb];
+    assert_eq!(
+        crate::jt::decode_int32_cdp2(&packet, 0),
+        Some((vec![1, -1], packet.len()))
+    );
+}
+
+#[test]
+fn jt_int32_cdp2_decodes_arithmetic_single_value_context() {
+    let mut context_bits = Vec::<bool>::new();
+    let mut push = |value: u32, width: u8| {
+        for shift in (0..width).rev() {
+            context_bits.push((value >> shift) & 1 != 0);
+        }
+    };
+    push(2, 6);
+    push(1, 6);
+    push(1, 6);
+    push(7, 32);
+    push(1, 2);
+    push(1, 1);
+    push(0, 1);
+    let mut context = vec![0, 1];
+    for chunk in context_bits.chunks(8) {
+        let mut byte = 0u8;
+        for bit in chunk {
+            byte = (byte << 1) | u8::from(*bit);
+        }
+        byte <<= 8 - chunk.len();
+        context.push(byte);
+    }
+    let mut packet = Vec::new();
+    packet.extend_from_slice(&3_u32.to_le_bytes());
+    packet.push(3);
+    packet.extend_from_slice(&16_u32.to_le_bytes());
+    packet.extend_from_slice(&0_u32.to_le_bytes());
+    packet.extend_from_slice(&context);
+    assert_eq!(
+        crate::jt::decode_int32_cdp2(&packet, 0),
+        Some((vec![7, 7, 7], packet.len()))
+    );
+}
+
+#[test]
 fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
     let mut body = Vec::new();
     body.extend_from_slice(&1_u16.to_le_bytes());

@@ -67,6 +67,7 @@ pub mod decode;
 pub mod deltas;
 pub mod geometry;
 pub mod intersection;
+mod jt;
 pub mod native;
 pub mod nurbs;
 pub mod om;

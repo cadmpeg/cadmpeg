@@ -176,6 +176,23 @@ pub struct DisplayJtTriStripLodHeader {
     pub source_offset: u64,
 }
 
+/// Decoded context-zero face-degree symbols from a JT topological mesh.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtInitialFaceDegreeSymbols {
+    /// Globally unique symbol-vector identity.
+    pub id: String,
+    /// Owning tri-strip shape-LOD element.
+    pub element: String,
+    /// Decoded symbols in topology-coder visit order.
+    pub degrees: Vec<i32>,
+    /// Complete compressed-packet byte length.
+    pub packet_byte_len: u32,
+    /// SHA-256 of the complete compressed packet.
+    pub packet_sha256: String,
+    /// Absolute source offset of the compressed packet.
+    pub source_offset: u64,
+}
+
 /// One object element decoded from a compressed JT segment payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DisplayJtCompressedElement {
@@ -1101,6 +1118,51 @@ pub fn display_jt_tri_strip_lod_headers(
         });
     }
     headers
+}
+
+/// Decode the initial face-degree packet from each JT 9 topological mesh.
+pub fn display_jt_initial_face_degree_symbols(
+    container: &Container,
+    elements: &[DisplayJtShapeLodElement],
+) -> Vec<DisplayJtInitialFaceDegreeSymbols> {
+    const TRI_STRIP_LOD_TYPE: [u8; 16] = [
+        0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut vectors = Vec::new();
+    for element in elements
+        .iter()
+        .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
+    {
+        let Ok(body_start) = usize::try_from(element.source_offset + 25) else {
+            return Vec::new();
+        };
+        let Some(body) = container
+            .data
+            .get(body_start..body_start.saturating_add(element.body_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some((_, _, _, _, representation)) = parse_jt9_tri_strip_lod_header(body) else {
+            return Vec::new();
+        };
+        let Some((degrees, packet_byte_len)) = crate::jt::decode_int32_cdp2(representation, 0)
+        else {
+            return Vec::new();
+        };
+        let Some(packet) = representation.get(..packet_byte_len) else {
+            return Vec::new();
+        };
+        vectors.push(DisplayJtInitialFaceDegreeSymbols {
+            id: format!("{}-initial-face-degrees", element.id),
+            element: element.id.clone(),
+            degrees,
+            packet_byte_len: packet_byte_len as u32,
+            packet_sha256: sha256_hex(packet),
+            source_offset: element.source_offset + 45,
+        });
+    }
+    vectors
 }
 
 /// Decode element framing and exact post-marker tails from compressed segments.
