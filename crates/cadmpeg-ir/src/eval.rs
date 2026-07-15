@@ -6,8 +6,8 @@
 //! angles from the reference/major direction, line parameters are signed
 //! distances along the unit direction, and B-splines evaluate by Cox–de Boor
 //! over their stored knot vectors. Carriers without a typed parameterization
-//! ([`CurveGeometry::Unknown`], [`SurfaceGeometry::Unknown`], parabolas, and
-//! hyperbolas) evaluate to `None`.
+//! ([`CurveGeometry::Unknown`], [`CurveGeometry::Composite`],
+//! [`SurfaceGeometry::Unknown`], parabolas, and hyperbolas) evaluate to `None`.
 
 use crate::geometry::{CurveGeometry, NurbsSurface, PcurveGeometry, SurfaceGeometry};
 use crate::math::{Point2, Point3, Vector3};

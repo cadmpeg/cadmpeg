@@ -271,11 +271,15 @@ fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Point3>> {
                     if values.len() != 3 {
                         return None;
                     }
-                    Some(Point3::new(
+                    let point = Point3::new(
                         values[0].number()? * scale,
                         values[1].number()? * scale,
                         values[2].number()? * scale,
-                    ))
+                    );
+                    [point.x, point.y, point.z]
+                        .iter()
+                        .all(|coordinate| coordinate.is_finite())
+                        .then_some(point)
                 })
                 .collect::<Option<Vec<_>>>()
                 .filter(|vertices| !vertices.is_empty())

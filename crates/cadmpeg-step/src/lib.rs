@@ -1242,8 +1242,8 @@ impl<'a> Builder<'a> {
         unit
     }
 
-    /// Emit one solid per region across all displayed bodies; returns the
-    /// solid references. Bodies the source document hides are omitted.
+    /// Emit one shape item per region; visibility is represented separately
+    /// when the target application protocol supports `INVISIBILITY`.
     fn emit_shape_items(&mut self, context: Ref) -> Vec<Ref> {
         let mut items = Vec::new();
         // `ir` is a shared `&CadIr`; binding it locally lets us read the arenas

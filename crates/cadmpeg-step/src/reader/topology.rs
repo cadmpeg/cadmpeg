@@ -47,11 +47,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         .collect::<Vec<_>>();
     let mut built_wire_models = BTreeSet::new();
     for (representation, model) in wire_models {
-        if !built_wire_models.insert(model) {
-            result.typed_records.insert(representation);
+        if built_wire_models.contains(&model) {
             continue;
         }
         if let Some(mut built) = build_wire(model, exchange, &vertices, &edges) {
+            built_wire_models.insert(model);
             built.typed.insert(representation);
             result.typed_records.append(&mut built.typed);
             ir.model.vertices.append(&mut built.vertices);
@@ -153,16 +153,30 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             &mut result.typed_records,
         );
     }
-    if !ir.model.bodies.is_empty() {
-        for (&id, record) in &exchange.records {
-            if matches!(
-                record.simple_name(),
-                Some("MANIFOLD_SURFACE_SHAPE_REPRESENTATION")
-                    | Some("ADVANCED_BREP_SHAPE_REPRESENTATION")
-                    | Some("SHAPE_REPRESENTATION")
-            ) {
-                result.typed_records.insert(id);
-            }
+    let decoded_body_items = ir
+        .model
+        .bodies
+        .iter()
+        .filter_map(|body| {
+            body.id
+                .as_str()
+                .strip_prefix("step:data:body#")?
+                .parse()
+                .ok()
+        })
+        .collect::<BTreeSet<u64>>();
+    for (&id, record) in &exchange.records {
+        if matches!(
+            record.simple_name(),
+            Some("MANIFOLD_SURFACE_SHAPE_REPRESENTATION")
+                | Some("ADVANCED_BREP_SHAPE_REPRESENTATION")
+                | Some("SHAPE_REPRESENTATION")
+        ) && record
+            .parameter(1)
+            .and_then(refs)
+            .is_some_and(|items| items.iter().any(|item| decoded_body_items.contains(item)))
+        {
+            result.typed_records.insert(id);
         }
     }
     result
