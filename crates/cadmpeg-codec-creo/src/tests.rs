@@ -3707,6 +3707,11 @@ fn decode_transfers_exact_datum_plane_carrier() {
     let mut reader = Cursor::new(build_prt("c", &[("ActDatums", datum)]));
     let result = decode::decode(&mut reader, &DecodeOptions::default()).unwrap();
     assert!(result.report.geometry_transferred);
+    let records = &result.ir.native.namespace("creo").unwrap().arenas["datum_planes"];
+    assert_eq!(records[0].fields["datum_id"], 4);
+    assert_eq!(records[0].fields["owner_feature_id"], 1);
+    assert_eq!(records[0].fields["normal"][1], 1.0);
+    assert_eq!(records[0].fields["plane_offset"], 0.0);
     assert_eq!(result.ir.model.surfaces.len(), 1);
     assert_eq!(result.ir.model.features.len(), 1);
     let feature = &result.ir.model.features[0];

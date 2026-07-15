@@ -577,6 +577,31 @@ struct CreoOutlinePlaneRecord {
     source_section: String,
 }
 
+#[derive(Serialize)]
+struct CreoDatumPlaneRecord {
+    id: String,
+    datum_id: u32,
+    owner_feature_id: u32,
+    normal: [f64; 3],
+    plane_offset: f64,
+    corners: [[Option<f64>; 3]; 2],
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoFeatureSectionTransformRecord {
+    id: String,
+    definition_id: u32,
+    owner_feature_id: Option<u32>,
+    origin: [f64; 3],
+    u_axis: [f64; 3],
+    v_axis: [f64; 3],
+    normal: [f64; 3],
+    offset: usize,
+    source_section: String,
+}
+
 fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
     scan.feature_entities
         .iter()
@@ -1085,6 +1110,44 @@ fn outline_plane_records(scan: &ContainerScan) -> Vec<CreoOutlinePlaneRecord> {
             origin: record.origin,
             normal: record.normal,
             u_axis: record.u_axis,
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn datum_plane_records(scan: &ContainerScan) -> Vec<CreoDatumPlaneRecord> {
+    scan.datum_planes
+        .iter()
+        .map(|record| CreoDatumPlaneRecord {
+            id: format!(
+                "creo:datum:plane#{}:{}",
+                record.offset_in_payload, record.id
+            ),
+            datum_id: record.id,
+            owner_feature_id: record.feature_id,
+            normal: record.normal,
+            plane_offset: record.offset,
+            corners: record.corners,
+            offset: record.offset_in_payload,
+            source_section: source_section(scan, record.offset_in_payload),
+        })
+        .collect()
+}
+
+fn feature_section_transform_records(
+    scan: &ContainerScan,
+) -> Vec<CreoFeatureSectionTransformRecord> {
+    scan.feature_section_transforms
+        .iter()
+        .map(|record| CreoFeatureSectionTransformRecord {
+            id: format!("creo:feature:section_transform#{}", record.definition_id),
+            definition_id: record.definition_id,
+            owner_feature_id: record.feature_id,
+            origin: record.origin,
+            u_axis: record.u_axis,
+            v_axis: record.v_axis,
+            normal: record.normal,
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })
@@ -16095,6 +16158,18 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("outline_planes", &outline_planes)?;
+    }
+    let datum_planes = datum_plane_records(scan);
+    if !datum_planes.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("datum_planes", &datum_planes)?;
+    }
+    let feature_section_transforms = feature_section_transform_records(scan);
+    if !feature_section_transforms.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_section_transforms", &feature_section_transforms)?;
     }
     let pcurve_endpoints = pcurve_endpoint_records(scan);
     if !pcurve_endpoints.is_empty() {
