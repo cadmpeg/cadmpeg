@@ -164,6 +164,10 @@ pub struct DisplayJtTriStripLodHeader {
     pub vertex_bindings: u64,
     /// Topological mesh LOD data version.
     pub topological_mesh_version: u16,
+    /// Serialized object identifier shared by the vertex records.
+    pub vertex_records_object_id: u32,
+    /// Compressed topological-mesh representation version.
+    pub compressed_lod_version: u16,
     /// Bytes following the fixed header.
     pub compressed_representation_byte_len: u32,
     /// SHA-256 of the bytes following the fixed header.
@@ -421,18 +425,29 @@ pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<(Vec<u16
     Some((code_units, value))
 }
 
-pub(crate) fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, &[u8])> {
-    if body.len() < 14 {
+pub(crate) fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[u8])> {
+    if body.len() < 20 {
         return None;
     }
     let base_version = u16::from_le_bytes(body[0..2].try_into().ok()?);
     let vertex_version = u16::from_le_bytes(body[2..4].try_into().ok()?);
     let vertex_bindings = u64::from_le_bytes(body[4..12].try_into().ok()?);
     let topological_mesh_version = u16::from_le_bytes(body[12..14].try_into().ok()?);
+    let vertex_records_object_id = u32::from_le_bytes(body[14..18].try_into().ok()?);
+    let compressed_lod_version = u16::from_le_bytes(body[18..20].try_into().ok()?);
     if base_version != 1 || vertex_version != 1 || !matches!(topological_mesh_version, 1 | 2) {
         return None;
     }
-    Some((vertex_bindings, topological_mesh_version, &body[14..]))
+    if !matches!(compressed_lod_version, 1 | 2) {
+        return None;
+    }
+    Some((
+        vertex_bindings,
+        topological_mesh_version,
+        vertex_records_object_id,
+        compressed_lod_version,
+        &body[20..],
+    ))
 }
 
 pub(crate) fn parse_jt_base_node_body(
@@ -1061,8 +1076,13 @@ pub fn display_jt_tri_strip_lod_headers(
         else {
             return Vec::new();
         };
-        let Some((vertex_bindings, topological_mesh_version, compressed_representation)) =
-            parse_jt9_tri_strip_lod_header(body)
+        let Some((
+            vertex_bindings,
+            topological_mesh_version,
+            vertex_records_object_id,
+            compressed_lod_version,
+            compressed_representation,
+        )) = parse_jt9_tri_strip_lod_header(body)
         else {
             return Vec::new();
         };
@@ -1073,6 +1093,8 @@ pub fn display_jt_tri_strip_lod_headers(
             vertex_version: 1,
             vertex_bindings,
             topological_mesh_version,
+            vertex_records_object_id,
+            compressed_lod_version,
             compressed_representation_byte_len: compressed_representation.len() as u32,
             compressed_representation_sha256: sha256_hex(compressed_representation),
             source_offset: element.source_offset + 25,
