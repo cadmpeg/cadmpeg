@@ -61,8 +61,12 @@ pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
                 0x0b => (Some(0.0), cursor + 1, "stock_zero"),
                 0x10 => (Some(1.0), cursor + 1, "stock_one"),
                 0xe0 => (None, cursor + 1, "terminal_null"),
-                0xe5 => (None, cursor.saturating_add(5), "dictionary_reference_5"),
-                0xe8 => (None, cursor.saturating_add(4), "dictionary_reference_4"),
+                0xe5 if data.get(cursor..cursor + 5) == Some(&[0xe5, 0x07, 0x23, 0x11, 0x2e]) => {
+                    (None, cursor + 5, "recursive_placeholder_1")
+                }
+                0xe8 if data.get(cursor..cursor + 4) == Some(&[0xe8, 0x26, 0xd6, 0x95]) => {
+                    (None, cursor + 4, "recursive_placeholder_3")
+                }
                 _ => match decode(data, cursor) {
                     Some((value, end)) => (Some(value), end, "literal"),
                     None => {
@@ -597,9 +601,9 @@ mod tests {
         };
         assert_eq!(table.count, 7);
         assert_eq!(table.entries[0].value, Some(1.0));
-        assert_eq!(table.entries[1].kind, "dictionary_reference_5");
+        assert_eq!(table.entries[1].kind, "recursive_placeholder_1");
         assert_eq!(table.entries[2].value, Some(0.0));
-        assert_eq!(table.entries[3].kind, "dictionary_reference_4");
+        assert_eq!(table.entries[3].kind, "recursive_placeholder_3");
         assert_eq!(table.entries[4].value, Some(3.0));
         assert_eq!(table.entries[5].value, Some(0.0));
         assert_eq!(table.entries[6].kind, "terminal_null");

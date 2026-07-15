@@ -7,8 +7,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - Curve-equation `local_sys f9 04 03` inherited-slot transitions other than
   the defined rank-two body are unspecified.
 - DICT sign lattices outside the defined scalar lanes are unspecified.
-- The selector-to-entry mappings of five-byte `e5` and four-byte `e8`
-  references into `double_xar` are unspecified.
+- `double_xar` slot bodies other than the defined literal and recursive
+  placeholder images are unspecified, including variable-length `e5` forms.
 - Per-instance overrides for cone half-angle and `geom_type = 26` torus/sphere radii are unspecified.
 - The joins from later positional spline rows to their prototype data and from
   spline surfaces to surface-intersection curves are unspecified.
