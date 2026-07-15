@@ -4778,7 +4778,7 @@ fn parasolid_entity_53_doubles_require_complete_finite_values() {
 }
 
 #[test]
-fn topology_attribute_class_uses_resolve_one_based_stream_catalog_indices() {
+fn topology_attribute_class_uses_resolve_instance_discriminators_by_xmt() {
     use crate::native::{
         ParasolidAttributeDefinition, ParasolidEntity51Record,
         ParasolidTopologyAttributeListReference,
@@ -4787,7 +4787,7 @@ fn topology_attribute_class_uses_resolve_one_based_stream_catalog_indices() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: 18,
+        xmt: 34,
         name: "UG2/PMARK_ATTRIBUTE".into(),
         field_count: 1,
         field_record_xmt: 19,
@@ -4824,11 +4824,12 @@ fn topology_attribute_class_uses_resolve_one_based_stream_catalog_indices() {
         std::slice::from_ref(&definition),
     );
     assert_eq!(uses.len(), 1);
-    assert_eq!(uses[0].definition_ordinal, 1);
+    assert_eq!(uses[0].class_discriminator, 0x21);
+    assert_eq!(uses[0].definition_xmt, 34);
     assert_eq!(uses[0].attribute_definition, definition.id);
 
     let mut invalid = entity;
-    invalid.references[2] = 0;
+    invalid.discriminator = 0x20;
     assert!(crate::native::parasolid_topology_attribute_class_uses(
         &[reference],
         &[invalid],

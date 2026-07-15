@@ -774,19 +774,20 @@ pub struct ParasolidEntity51StringUse {
     pub inflated_offset: u64,
 }
 
-/// Candidate class relation retained for compatibility with schema 140.
-#[cfg(test)]
+/// Resolved class of one topology-owned Parasolid attribute instance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidTopologyAttributeClassUse {
-    /// Globally unique candidate identity.
+    /// Globally unique relation identity.
     pub id: String,
-    /// Owning topology attribute-list reference.
+    /// Owning topology-to-attribute relation.
     pub topology_attribute_reference: String,
-    /// Candidate type-81 record.
+    /// Topology-owned type-81 attribute-instance record.
     pub entity_51_record: String,
-    /// Candidate catalog ordinal.
-    pub definition_ordinal: u32,
-    /// Candidate attribute definition.
+    /// Class discriminator serialized by the type-81 instance.
+    pub class_discriminator: u16,
+    /// Stream-local XMT of the matched type-79 definition.
+    pub definition_xmt: u16,
+    /// Uniquely matched attribute definition.
     pub attribute_definition: String,
 }
 
@@ -6224,8 +6225,7 @@ pub fn parasolid_entity_51_string_uses(
     uses
 }
 
-/// Build the schema-140 candidate class relation.
-#[cfg(test)]
+/// Resolve topology-owned attribute instances through their class discriminator.
 pub fn parasolid_topology_attribute_class_uses(
     topology_references: &[ParasolidTopologyAttributeListReference],
     entities: &[ParasolidEntity51Record],
@@ -6235,15 +6235,13 @@ pub fn parasolid_topology_attribute_class_uses(
         .iter()
         .map(|entity| (entity.id.as_str(), entity))
         .collect::<BTreeMap<_, _>>();
-    let mut definitions_by_stream = BTreeMap::<u32, Vec<&ParasolidAttributeDefinition>>::new();
+    let mut definitions_by_identity =
+        BTreeMap::<(u32, u16), Vec<&ParasolidAttributeDefinition>>::new();
     for definition in definitions {
-        definitions_by_stream
-            .entry(definition.stream_ordinal)
+        definitions_by_identity
+            .entry((definition.stream_ordinal, definition.xmt))
             .or_default()
             .push(definition);
-    }
-    for stream_definitions in definitions_by_stream.values_mut() {
-        stream_definitions.sort_by_key(|definition| definition.inflated_offset);
     }
     let mut uses = Vec::new();
     for reference in topology_references {
@@ -6253,16 +6251,12 @@ pub fn parasolid_topology_attribute_class_uses(
         let Some(entity) = entities.get(entity_id) else {
             continue;
         };
-        if entity.discriminator != 0x21 || entity.references.len() < 3 {
-            continue;
-        }
-        let definition_ordinal = entity.references[2];
-        let Some(definition_index) = definition_ordinal.checked_sub(1) else {
+        let Some(definition_xmt) = entity.discriminator.checked_add(1) else {
             continue;
         };
-        let Some(definition) = definitions_by_stream
-            .get(&entity.stream_ordinal)
-            .and_then(|definitions| definitions.get(definition_index as usize))
+        let Some([definition]) = definitions_by_identity
+            .get(&(entity.stream_ordinal, definition_xmt))
+            .map(Vec::as_slice)
         else {
             continue;
         };
@@ -6273,7 +6267,8 @@ pub fn parasolid_topology_attribute_class_uses(
             ),
             topology_attribute_reference: reference.id.clone(),
             entity_51_record: entity.id.clone(),
-            definition_ordinal,
+            class_discriminator: entity.discriminator,
+            definition_xmt,
             attribute_definition: definition.id.clone(),
         });
     }

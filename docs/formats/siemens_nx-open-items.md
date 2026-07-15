@@ -27,5 +27,5 @@ This document records unresolved NX `.prt` byte semantics.
 - Assembly occurrence placement semantics are unspecified. `hostglobalvariables` stores expression values, including pattern angles and counts; metric radii and base frames lack defined locations.
 - The occurrence-handle to child-`.prt` binding is unspecified.
 - The field boundaries and roles of residual `EXTREFSTREAM` tail bytes are unspecified. These bytes are `0x00` padding and small markers interleaved with `e0 + handle:u32` persistent-handle tokens and `0xC0..0xCF + 28-bit-ref` tokens.
-- Parasolid SDL/TYSA attribute instance serialization is unspecified. The attribute-definition catalog includes class names, class IDs, and field type codes such as `SDL/TYSA_DENSITY` and `SDL/TYSA_BLEND_ID`.
+- Parasolid SDL/TYSA attribute field-value serialization is unspecified after the type-81 discriminator selects its type-79 class definition. The attribute-definition catalog includes field type codes such as `SDL/TYSA_DENSITY` and `SDL/TYSA_BLEND_ID`, but the class-specific assignment of referenced value records to declared fields remains unspecified.
 - Material and appearance bindings to face identity are unspecified.

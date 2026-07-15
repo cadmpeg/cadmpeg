@@ -189,6 +189,10 @@ stored-path-to-logical-material-path catalog relations. These relations identify
 texture assets and logical names; they do not assign appearances to bodies or
 faces.
 
+Topology-owned Parasolid type-81 attribute instances retain exact class
+relations to same-stream type-79 definitions selected by their serialized
+discriminators. Class-specific field-value roles remain native-only.
+
 Native records retain typed references into the neutral model but are otherwise opaque to format-neutral consumers. A consumer must not reinterpret, normalize, discard, or synthesize native records it does not own. An exporter either preserves a supported namespace unchanged or reports its omission as loss. Native IDs participate in global uniqueness. Namespace versions change independently of `ir_version`; a consumer that does not support a namespace version may still process the neutral model while treating that namespace as opaque.
 
 ## Presentation, attributes, and opaque bytes

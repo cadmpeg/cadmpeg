@@ -899,6 +899,14 @@ individually `01`-prefixed XMT values followed by `00`; the two forms are
 atomic. A topology attribute-list identity resolves only when exactly one
 type-81 record in the same stream has that xmt.
 
+The type-81 discriminator selects an attribute class when its value plus one
+equals the XMT of exactly one type-79 attribute definition in the same stream.
+The relation retains the serialized discriminator, matched definition XMT,
+type-81 instance, topology ownership relation, and type-79 definition. A
+missing, overflowing, or multiply declared definition XMT leaves the class
+unresolved. Definition declaration order and type-81 reference values do not
+participate in class selection.
+
 A printable type-84 value record is `00 54 [ff], length:u32 BE, xmt,
 text[length], 00`. The length is nonzero, xmt is non-null, and every text byte
 is printable ASCII. The terminator is outside the declared text length. A
@@ -918,8 +926,9 @@ attribute-list identity owns every uniquely resolved type-82, type-83, and
 type-84 value referenced by that type-81 record. Each value record transfers as
 one topology-targeted source attribute. Its name contains the value-record
 family and zero-based type-81 reference ordinal; its values retain serialized
-lane order. Attribute class names do not transfer through this relation until
-the type-81 instance-to-definition field is defined.
+lane order. The independently resolved class relation identifies the owning
+attribute definition, but a value receives a semantic field name only through
+the class-specific field-value serialization.
 
 `hostglobalvariables` stores numeric expressions as independently length-framed ASCII records:
 

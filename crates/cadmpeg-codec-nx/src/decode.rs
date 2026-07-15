@@ -6271,6 +6271,12 @@ fn attach_native_object_model(
             &scan.streams,
             &parasolid_entity_51_records,
         );
+    let parasolid_topology_attribute_class_uses =
+        crate::native::parasolid_topology_attribute_class_uses(
+            &parasolid_topology_attribute_list_references,
+            &parasolid_entity_51_records,
+            &parasolid_attribute_definitions,
+        );
     let om_record_areas = crate::native::om_record_areas(&scan.container);
     let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
     let feature_operation_records = crate::native::feature_operation_records(&scan.container);
@@ -6782,6 +6788,21 @@ fn attach_native_object_model(
             .tag("TOPOLOGY_ATTRIBUTE_LIST_REFERENCE");
         annotations.exactness(&reference.id, Exactness::ByteExact);
     }
+    for class_use in &parasolid_topology_attribute_class_uses {
+        let reference = parasolid_topology_attribute_list_references
+            .iter()
+            .find(|reference| reference.id == class_use.topology_attribute_reference)
+            .expect("class use owns a topology attribute reference");
+        let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
+        let entity = parasolid_entity_51_records
+            .iter()
+            .find(|entity| entity.id == class_use.entity_51_record)
+            .expect("class use owns a type-81 entity");
+        annotations
+            .note(&class_use.id, source_stream, entity.inflated_offset)
+            .tag("TOPOLOGY_ATTRIBUTE_CLASS_USE");
+        annotations.exactness(&class_use.id, Exactness::Derived);
+    }
     for frame in &data_block_object_frames {
         annotations
             .note(&frame.id, annotation_stream, frame.source_offset)
@@ -7278,6 +7299,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "parasolid_topology_attribute_list_references",
             &parasolid_topology_attribute_list_references,
+        )?;
+    }
+    if !parasolid_topology_attribute_class_uses.is_empty() {
+        namespace.set_arena(
+            "parasolid_topology_attribute_class_uses",
+            &parasolid_topology_attribute_class_uses,
         )?;
     }
     if !segment_om_links.is_empty() {
