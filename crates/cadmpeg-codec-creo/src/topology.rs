@@ -88,13 +88,31 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdg
             predecessors.entry(next).or_default().push(edge.id);
         }
     }
-    let vertex_step = |half_edge: HalfEdgeId| {
-        let previous = predecessors.get(&half_edge)?;
-        (previous.len() == 1).then_some(HalfEdgeId {
+    let mut vertex_adjacency = BTreeMap::<HalfEdgeId, BTreeSet<HalfEdgeId>>::new();
+    for half_edge in by_id.keys().copied() {
+        vertex_adjacency.entry(half_edge).or_default();
+        let Some(previous) = predecessors.get(&half_edge) else {
+            continue;
+        };
+        if previous.len() != 1 {
+            continue;
+        }
+        let twin_previous = HalfEdgeId {
             curve_id: previous[0].curve_id,
             side: 1 - previous[0].side,
-        })
-    };
+        };
+        if !by_id.contains_key(&twin_previous) {
+            continue;
+        }
+        vertex_adjacency
+            .entry(half_edge)
+            .or_default()
+            .insert(twin_previous);
+        vertex_adjacency
+            .entry(twin_previous)
+            .or_default()
+            .insert(half_edge);
+    }
     let mut visited = BTreeSet::new();
     let mut vertices = Vec::new();
     for start in by_id.keys().copied() {
@@ -102,14 +120,20 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdg
             continue;
         }
         let mut orbit = BTreeSet::new();
-        let mut current = Some(start);
-        while let Some(half_edge) = current {
-            if orbit.contains(&half_edge) || visited.contains(&half_edge) {
-                break;
+        let mut pending = vec![start];
+        while let Some(half_edge) = pending.pop() {
+            if !visited.insert(half_edge) {
+                continue;
             }
             orbit.insert(half_edge);
-            visited.insert(half_edge);
-            current = vertex_step(half_edge).filter(|next| by_id.contains_key(next));
+            pending.extend(
+                vertex_adjacency
+                    .get(&half_edge)
+                    .into_iter()
+                    .flatten()
+                    .filter(|next| !visited.contains(next))
+                    .copied(),
+            );
         }
         vertices.push(TopologicalVertex {
             id: u32::try_from(vertices.len() + 1).unwrap_or(u32::MAX),
@@ -317,5 +341,59 @@ mod tests {
             }
             && edge.next.is_none()));
         assert!(loops.is_empty());
+    }
+
+    #[test]
+    fn vertex_orbits_close_predecessor_relations_in_both_directions() {
+        let edges = vec![
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 1,
+                    side: 0,
+                },
+                face_id: 10,
+                next: None,
+            },
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 1,
+                    side: 1,
+                },
+                face_id: 20,
+                next: Some(HalfEdgeId {
+                    curve_id: 2,
+                    side: 0,
+                }),
+            },
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 2,
+                    side: 0,
+                },
+                face_id: 20,
+                next: None,
+            },
+            HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: 2,
+                    side: 1,
+                },
+                face_id: 10,
+                next: None,
+            },
+        ];
+
+        let (vertices, _) = vertex_orbits(&edges);
+        assert!(vertices.iter().any(|vertex| vertex.half_edges
+            == vec![
+                HalfEdgeId {
+                    curve_id: 1,
+                    side: 0,
+                },
+                HalfEdgeId {
+                    curve_id: 2,
+                    side: 0,
+                },
+            ]));
     }
 }

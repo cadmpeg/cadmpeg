@@ -504,7 +504,13 @@ must contain the same point; otherwise the orbit has no placed vertex.
 | DEPDB one-sided suffix | `[0, X1, F1, 0]`; `127` terminates `X1`                        |
 | Row terminators        | `e1 e3` or `e1 f5 05 f6 e3`                                    |
 
-`F0` and `F1` reference faces in the `srf_array` namespace. `E0` and `E1` reference the next edge for the two half-edge sides. The suffix graph defines half-edges, loops, coedges, shells, and vertex orbits when both sides are present. `crv_pnt_dir` is a per-side orientation-flag array, not a tangent vector.
+`F0` and `F1` reference faces in the `srf_array` namespace. `E0` and `E1`
+reference the next edge for the two half-edge sides. When `previous(h)` is
+unique, the equivalence relation `h ~ twin(previous(h))` defines topological
+vertex orbits. The relation is symmetric and transitive; source identifier
+order does not partition an orbit. The suffix graph defines half-edges, loops,
+coedges, shells, and vertex orbits when both sides are present. `crv_pnt_dir` is
+a per-side orientation-flag array, not a tangent vector.
 
 The raw `type_byte` does not by itself identify a curve family.
 
