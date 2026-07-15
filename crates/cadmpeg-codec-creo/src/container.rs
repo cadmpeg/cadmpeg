@@ -28,6 +28,7 @@ use crate::feature::{
     FeatureOperation, FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
 use crate::placement::{self, FeatureSectionTransform};
+use crate::primdata::{self, PrimitiveScalarArray};
 use crate::psb;
 use crate::surface::{
     self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceParameterRecord,
@@ -173,6 +174,8 @@ pub struct ContainerScan {
     pub sections: Vec<Section>,
     /// Successfully expanded Unix-compress section payloads.
     pub expanded_sections: Vec<ExpandedSection>,
+    /// Complete named model-space scalar arrays from expanded primitive data.
+    pub primitive_scalar_arrays: Vec<PrimitiveScalarArray>,
     /// Identified layout family.
     pub layout: Layout,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
@@ -1317,6 +1320,11 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         sections
     };
     let expanded_sections = expanded_sections(&data, &sections);
+    let primitive_scalar_arrays = expanded_sections
+        .iter()
+        .filter(|section| section.name == "SolidPrimdata")
+        .flat_map(|section| primdata::scalar_arrays(&section.data))
+        .collect();
     let layout = identify_layout(&sections);
     let census = geom_census(&data, &sections);
     let principal_unit = principal_unit(&data);
@@ -1430,6 +1438,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         model_name,
         sections,
         expanded_sections,
+        primitive_scalar_arrays,
         layout,
         census,
         principal_unit,

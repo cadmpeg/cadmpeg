@@ -1369,3 +1369,20 @@ A null pointer establishes that the part has no family-table configurations.
 It is a complete configuration state, not an undecoded table.
 
 Unix-compress streams with header `1f 9d 10` grow code width from 9 to 16 bits. Code 256 is a literal dictionary entry rather than a clear code.
+
+### 8.4 Expanded primitive scalar arrays
+
+`SolidPrimdata` is a PSB compound stream. The named fields `p1`, `p2`, `pts`,
+and `mv_p_NxNyNzxyz` use `f8 <count>` arrays whose count is the number of
+scalar values, not the number of points. `p1` and `p2` contain XYZ endpoints.
+`pts` contains consecutive XYZ points. `mv_p_NxNyNzxyz` contains consecutive
+six-scalar tuples in normal-X, normal-Y, normal-Z, position-X, position-Y,
+position-Z order.
+
+These fields use a primitive float32 lane. `00` encodes zero. The three-byte
+vector macro `00 28 00` expands to `[0, 1, 0]`. A four-byte positive value beginning `46..4d` maps to
+an IEEE-754 binary32 value by subtracting seven from the leading byte. A
+four-byte negative value beginning `36..3d` maps by adding `89` hexadecimal
+to the leading byte. The remaining three bytes are the unchanged IEEE-754
+fraction/exponent tail. A scalar array is complete only when exactly its
+declared count can be decoded.

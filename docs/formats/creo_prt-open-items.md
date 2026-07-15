@@ -49,7 +49,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 
 ## Packed persistence data
 
-- Geometry record semantics in packed `VisibGeom`, expanded `SolidPrimdata`,
+- Geometry record semantics in packed `VisibGeom`, the `SolidPrimdata`
+  triangle-strip continuation and its persistent-segment bindings,
   expanded `SolidPersistTable`, and `DEPDB_DATA` bodies are unspecified.
 - The `DispDataTable` compressed-stream variant is unspecified, including its initial dictionary state and geometry bindings.
 - Traversal and row semantics of the configuration driver table referenced by a non-null `FamilyInf.drv_tbl_ptr` are unspecified.

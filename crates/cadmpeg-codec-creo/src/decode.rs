@@ -546,6 +546,15 @@ struct CreoExpandedSectionRecord {
     sha256: String,
 }
 
+#[derive(Serialize)]
+struct CreoPrimitiveScalarArrayRecord {
+    id: String,
+    field: String,
+    expanded_offset: usize,
+    count: u32,
+    values: Vec<f64>,
+}
+
 fn expanded_section_records(scan: &ContainerScan) -> Vec<CreoExpandedSectionRecord> {
     scan.expanded_sections
         .iter()
@@ -585,6 +594,23 @@ fn attach_expanded_sections(
     let namespace = ir.native.namespace_mut("creo");
     namespace.version = 1;
     namespace.set_arena("expanded_sections", &records)?;
+    let primitive_arrays = scan
+        .primitive_scalar_arrays
+        .iter()
+        .map(|array| CreoPrimitiveScalarArrayRecord {
+            id: format!(
+                "creo:solid_primdata:scalar_array#{}:{}",
+                array.field, array.offset
+            ),
+            field: array.field.clone(),
+            expanded_offset: array.offset,
+            count: array.count,
+            values: array.values.clone(),
+        })
+        .collect::<Vec<_>>();
+    if !primitive_arrays.is_empty() {
+        namespace.set_arena("primitive_scalar_arrays", &primitive_arrays)?;
+    }
     Ok(())
 }
 
