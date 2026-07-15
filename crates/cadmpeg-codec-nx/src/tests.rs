@@ -190,6 +190,96 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
 }
 
 #[test]
+fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
+    use crate::container::Container;
+    use crate::native::DisplayJtSegment;
+
+    let mut inflated = Vec::new();
+    inflated.extend_from_slice(&16_u32.to_le_bytes());
+    inflated.extend_from_slice(&[0xff; 16]);
+
+    let mut late_body = vec![1, 0];
+    late_body.extend_from_slice(&0x4000_0000_u32.to_le_bytes());
+    late_body.extend_from_slice(&1_u16.to_le_bytes());
+    late_body.extend_from_slice(&[9; 16]);
+    late_body.extend_from_slice(&7_u32.to_le_bytes());
+    late_body.extend_from_slice(&12_u32.to_le_bytes());
+    late_body.extend_from_slice(&1_u32.to_le_bytes());
+    inflated.extend_from_slice(&57_u32.to_le_bytes());
+    inflated.extend_from_slice(&[
+        0xe5, 0x5b, 0xb0, 0xe0, 0xbd, 0xfb, 0xd1, 0x11, 0xa3, 0xa7, 0x00, 0xaa, 0x00, 0xd1, 0x09,
+        0x54,
+    ]);
+    inflated.push(8);
+    inflated.extend_from_slice(&3_u32.to_le_bytes());
+    inflated.extend_from_slice(&late_body);
+
+    let key = "JT_LLPROP_SHAPEIMPL";
+    let mut string_body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
+    string_body.extend_from_slice(&(key.len() as u32).to_le_bytes());
+    for unit in key.encode_utf16() {
+        string_body.extend_from_slice(&unit.to_le_bytes());
+    }
+    inflated.extend_from_slice(&(21_u32 + string_body.len() as u32).to_le_bytes());
+    inflated.extend_from_slice(&[
+        0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ]);
+    inflated.push(5);
+    inflated.extend_from_slice(&4_u32.to_le_bytes());
+    inflated.extend_from_slice(&string_body);
+    inflated.extend_from_slice(&16_u32.to_le_bytes());
+    inflated.extend_from_slice(&[0xff; 16]);
+    inflated.extend_from_slice(&1_u16.to_le_bytes());
+    inflated.extend_from_slice(&1_u32.to_le_bytes());
+    inflated.extend_from_slice(&2_u32.to_le_bytes());
+    inflated.extend_from_slice(&4_u32.to_le_bytes());
+    inflated.extend_from_slice(&3_u32.to_le_bytes());
+    inflated.extend_from_slice(&0_u32.to_le_bytes());
+
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(&inflated).unwrap();
+    let compressed = encoder.finish().unwrap();
+    let mut data = vec![0; 33];
+    data.extend_from_slice(&compressed);
+    let container = Container {
+        data,
+        version: 6,
+        file_tag: 0,
+        footer_offset: 0,
+        entries: Vec::new(),
+    };
+    let scene = DisplayJtSegment {
+        id: "scene".into(),
+        document: "document".into(),
+        toc_entry: "scene-entry".into(),
+        segment_id: vec![1; 16],
+        segment_type: 1,
+        segment_byte_len: (33 + compressed.len()) as u32,
+        payload_sha256: String::new(),
+        compression: None,
+        source_offset: 0,
+    };
+    let shape = DisplayJtSegment {
+        id: "shape".into(),
+        document: "document".into(),
+        toc_entry: "shape-entry".into(),
+        segment_id: vec![9; 16],
+        segment_type: 7,
+        segment_byte_len: 0,
+        payload_sha256: String::new(),
+        compression: None,
+        source_offset: 0,
+    };
+    let bindings = crate::native::display_jt_shape_lod_bindings(&container, &[scene, shape]);
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(bindings[0].shape_node_object_id, 2);
+    assert_eq!(bindings[0].shape_segment, "shape");
+    assert_eq!(bindings[0].payload_object_id, 12);
+    assert_eq!(bindings[0].key, key);
+}
+
+#[test]
 fn display_jt_string_property_body_requires_exact_utf16_frame() {
     let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
     body.extend_from_slice(&3_u32.to_le_bytes());

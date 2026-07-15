@@ -6316,6 +6316,8 @@ fn attach_native_object_model(
         );
     let display_jt_string_property_atoms =
         crate::native::display_jt_string_property_atoms(&scan.container, &display_jt_segments);
+    let display_jt_shape_lod_bindings =
+        crate::native::display_jt_shape_lod_bindings(&scan.container, &display_jt_segments);
     let display_jt_base_node_data = crate::native::display_jt_base_node_data(
         &scan.container,
         &display_jt_segments,
@@ -6734,6 +6736,12 @@ fn attach_native_object_model(
             .note(&atom.id, annotation_stream, atom.source_offset)
             .tag("DISPLAY_JT_STRING_PROPERTY_ATOM");
         annotations.exactness(&atom.id, Exactness::ByteExact);
+    }
+    for binding in &display_jt_shape_lod_bindings {
+        annotations
+            .note(&binding.id, annotation_stream, binding.source_offset)
+            .tag("DISPLAY_JT_SHAPE_LOD_BINDING");
+        annotations.exactness(&binding.id, Exactness::ByteExact);
     }
     for node in &display_jt_base_node_data {
         annotations
@@ -7511,6 +7519,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "display_jt_string_property_atoms",
             &display_jt_string_property_atoms,
+        )?;
+    }
+    if !display_jt_shape_lod_bindings.is_empty() {
+        namespace.set_arena(
+            "display_jt_shape_lod_bindings",
+            &display_jt_shape_lod_bindings,
         )?;
     }
     if !display_jt_base_node_data.is_empty() {

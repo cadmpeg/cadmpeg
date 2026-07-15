@@ -214,6 +214,37 @@ pub struct DisplayJtStringPropertyAtom {
     pub source_offset: u64,
 }
 
+/// Property-table link from a logical shape node to a late-loaded LOD segment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtShapeLodBinding {
+    /// Globally unique binding identity.
+    pub id: String,
+    /// Owning type-1 logical scene-graph segment.
+    pub scene_segment: String,
+    /// Serialized property-table version.
+    pub table_version: u16,
+    /// Shape-node object identifier owning the property pair.
+    pub shape_node_object_id: u32,
+    /// String-property object identifier used as the key.
+    pub key_object_id: u32,
+    /// Exact decoded property key.
+    pub key: String,
+    /// Late-loaded-property object identifier used as the value.
+    pub value_object_id: u32,
+    /// Base-property state flags.
+    pub state_flags: u32,
+    /// Late-loaded-property version.
+    pub property_version: u16,
+    /// Resolved type-7 shape-LOD segment.
+    pub shape_segment: String,
+    /// Serialized payload object identifier within the shape-LOD segment.
+    pub payload_object_id: u32,
+    /// Serialized positive late-loaded-property reserved value.
+    pub reserved_value: u32,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
 /// Common node-data header carried by one type-1 JT element.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DisplayJtBaseNodeData {
@@ -1094,6 +1125,183 @@ pub fn display_jt_string_property_atoms(
         }
     }
     atoms
+}
+
+/// Resolve JT 9 logical shape nodes to their late-loaded type-7 LOD segments.
+pub fn display_jt_shape_lod_bindings(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+) -> Vec<DisplayJtShapeLodBinding> {
+    const STRING_PROPERTY_ATOM_TYPE: [u8; 16] = [
+        0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    const LATE_LOADED_PROPERTY_ATOM_TYPE: [u8; 16] = [
+        0xe5, 0x5b, 0xb0, 0xe0, 0xbd, 0xfb, 0xd1, 0x11, 0xa3, 0xa7, 0x00, 0xaa, 0x00, 0xd1, 0x09,
+        0x54,
+    ];
+    const SHAPE_IMPLEMENTATION_KEY: &str = "JT_LLPROP_SHAPEIMPL";
+    let read_u16 = |bytes: &[u8], offset: usize| {
+        bytes
+            .get(offset..offset + 2)
+            .and_then(|value| value.try_into().ok())
+            .map(u16::from_le_bytes)
+    };
+    let read_u32 = |bytes: &[u8], offset: usize| {
+        bytes
+            .get(offset..offset + 4)
+            .and_then(|value| value.try_into().ok())
+            .map(u32::from_le_bytes)
+    };
+    let mut bindings = Vec::new();
+    for scene_segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Ok(start) = usize::try_from(scene_segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(scene_segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((_, scene_end)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        let tail = &inflated[scene_end..];
+        let Some((property_atoms, property_table_offset)) = parse_jt_element_sequence(tail) else {
+            return Vec::new();
+        };
+        let mut strings = BTreeMap::new();
+        let mut late_loaded = BTreeMap::new();
+        for atom in property_atoms {
+            if atom.object_type_id == STRING_PROPERTY_ATOM_TYPE && atom.object_base_type == 5 {
+                let Some((_, value)) = parse_jt_string_property_atom_body(atom.body) else {
+                    return Vec::new();
+                };
+                strings.insert(atom.object_id, value);
+            } else if atom.object_type_id == LATE_LOADED_PROPERTY_ATOM_TYPE
+                && atom.object_base_type == 8
+            {
+                if atom.body.len() != 36 || read_u16(atom.body, 0) != Some(1) {
+                    return Vec::new();
+                }
+                let Some(state_flags) = read_u32(atom.body, 2) else {
+                    return Vec::new();
+                };
+                let Some(property_version) = read_u16(atom.body, 6) else {
+                    return Vec::new();
+                };
+                let segment_id = atom.body[8..24].to_vec();
+                let Some(segment_type) = read_u32(atom.body, 24) else {
+                    return Vec::new();
+                };
+                let Some(payload_object_id) = read_u32(atom.body, 28) else {
+                    return Vec::new();
+                };
+                let Some(reserved_value) = read_u32(atom.body, 32).filter(|value| *value != 0)
+                else {
+                    return Vec::new();
+                };
+                late_loaded.insert(
+                    atom.object_id,
+                    (
+                        state_flags,
+                        property_version,
+                        segment_id,
+                        segment_type,
+                        payload_object_id,
+                        reserved_value,
+                    ),
+                );
+            }
+        }
+        let table = &tail[property_table_offset..];
+        let Some(table_version) = read_u16(table, 0) else {
+            return Vec::new();
+        };
+        let Some(table_count) = read_u32(table, 2) else {
+            return Vec::new();
+        };
+        let mut cursor = 6usize;
+        for table_ordinal in 0..table_count {
+            let Some(shape_node_object_id) = read_u32(table, cursor) else {
+                return Vec::new();
+            };
+            cursor += 4;
+            let mut pair_ordinal = 0u32;
+            loop {
+                let Some(key_object_id) = read_u32(table, cursor) else {
+                    return Vec::new();
+                };
+                cursor += 4;
+                if key_object_id == 0 {
+                    break;
+                }
+                let Some(value_object_id) = read_u32(table, cursor) else {
+                    return Vec::new();
+                };
+                cursor += 4;
+                if strings.get(&key_object_id).map(String::as_str) == Some(SHAPE_IMPLEMENTATION_KEY)
+                {
+                    let Some((
+                        state_flags,
+                        property_version,
+                        segment_id,
+                        segment_type,
+                        payload_object_id,
+                        reserved_value,
+                    )) = late_loaded.get(&value_object_id)
+                    else {
+                        return Vec::new();
+                    };
+                    let mut targets = segments.iter().filter(|segment| {
+                        segment.document == scene_segment.document
+                            && segment.segment_id == *segment_id
+                            && segment.segment_type == *segment_type
+                    });
+                    let Some(target) = targets.next() else {
+                        return Vec::new();
+                    };
+                    if targets.next().is_some() || target.segment_type != 7 {
+                        return Vec::new();
+                    }
+                    bindings.push(DisplayJtShapeLodBinding {
+                        id: format!(
+                            "{}-shape-lod-binding-{table_ordinal}-{pair_ordinal}",
+                            scene_segment.id
+                        ),
+                        scene_segment: scene_segment.id.clone(),
+                        table_version,
+                        shape_node_object_id,
+                        key_object_id,
+                        key: SHAPE_IMPLEMENTATION_KEY.to_string(),
+                        value_object_id,
+                        state_flags: *state_flags,
+                        property_version: *property_version,
+                        shape_segment: target.id.clone(),
+                        payload_object_id: *payload_object_id,
+                        reserved_value: *reserved_value,
+                        source_offset: scene_segment.source_offset + 24,
+                    });
+                }
+                pair_ordinal += 1;
+            }
+        }
+        if cursor != table.len() {
+            return Vec::new();
+        }
+    }
+    bindings
 }
 
 /// Decode the common node-data header from every type-1 segment element.
