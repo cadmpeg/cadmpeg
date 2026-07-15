@@ -160,6 +160,8 @@ pub enum SurfaceNamedValue {
         count: u8,
         /// Decoded slots with unresolved values retained.
         values: Vec<Option<f64>>,
+        /// Exact token bytes for each declared slot.
+        tokens: Vec<Vec<u8>>,
     },
     /// Counted `f8` scalar body.
     CountedScalarArray {
@@ -167,6 +169,8 @@ pub enum SurfaceNamedValue {
         count: u32,
         /// Decoded slots with unresolved values retained.
         values: Vec<Option<f64>>,
+        /// Exact token bytes for each declared slot.
+        tokens: Vec<Vec<u8>>,
     },
     /// One or more consecutive scalar tokens.
     ScalarSequence(Vec<f64>),
@@ -823,13 +827,16 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                 }
             }
             if matches!(name, "u_params" | "v_params") {
+                let slots = named_spline_scalar_slots(
+                    name,
+                    &body[values_start..],
+                    usize::try_from(count).unwrap_or(usize::MAX),
+                    cache,
+                );
                 return SurfaceNamedValue::CountedScalarArray {
                     count,
-                    values: scalar_slots(
-                        &body[values_start..],
-                        usize::try_from(count).unwrap_or(usize::MAX),
-                        cache,
-                    ),
+                    values: slots.iter().map(|slot| slot.0).collect(),
+                    tokens: slots.into_iter().map(|slot| slot.1).collect(),
                 };
             }
             let mut values = Vec::new();
@@ -851,13 +858,25 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
         let dimensions = body[1];
         let count = body[2];
         let slot_count = usize::from(dimensions) * usize::from(count);
+        let spline_slots = matches!(
+            name,
+            "i_points" | "end_u_tangts" | "end_v_tangts" | "end_uv_deriv" | "tangts" | "end_tangts"
+        )
+        .then(|| named_spline_scalar_slots(name, &body[3..], slot_count, cache));
         return SurfaceNamedValue::ScalarArray {
             dimensions,
             count,
-            values: if name == "local_sys" {
+            values: if let Some(slots) = &spline_slots {
+                slots.iter().map(|slot| slot.0).collect()
+            } else if name == "local_sys" {
                 row_scalar_slots(&body[3..], slot_count, cache)
             } else {
                 scalar_slots(&body[3..], slot_count, cache)
+            },
+            tokens: if let Some(slots) = spline_slots {
+                slots.into_iter().map(|slot| slot.1).collect()
+            } else {
+                Vec::new()
             },
         };
     }
@@ -1348,6 +1367,97 @@ fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usiz
         }
     }
     None
+}
+
+fn named_spline_scalar_slots(
+    name: &str,
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+) -> Vec<ScalarTokenSlot> {
+    let mut slots = Vec::with_capacity(count);
+    let mut cursor = 0;
+    while slots.len() < count {
+        let Some((value, next)) = named_spline_scalar_slot(name, body, cursor, cache) else {
+            break;
+        };
+        slots.push((value, body[cursor..next].to_vec()));
+        cursor = next;
+    }
+    slots.resize_with(count, || (None, Vec::new()));
+    slots
+}
+
+fn named_spline_scalar_slot(
+    name: &str,
+    body: &[u8],
+    offset: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<(Option<f64>, usize)> {
+    let head = *body.get(offset)?;
+    if matches!(head, 0x0d | 0x0f | 0x18 | 0xe4 | 0xe6) {
+        return scalar::decode_in_lane(body, offset, cache)
+            .map(|(value, next)| (Some(value), next));
+    }
+    if matches!(head, 0x28 | 0x41) || (name == "v_params" && head == 0x28) {
+        return named_ieee8(body, offset, 0x3f).map(|(value, next)| (Some(value), next));
+    }
+    if matches!(head, 0x2d | 0x46 | 0x71) {
+        return scalar::decode_in_lane(body, offset, cache)
+            .map(|(value, next)| (Some(value), next));
+    }
+    if name == "end_v_tangts" {
+        return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
+            .map(|(value, next)| (Some(value), next));
+    }
+    if name == "i_points" && matches!(head, 0x63 | 0x68 | 0x6e | 0x70) {
+        return named_positive_dict(body, offset).map(|(value, next)| (Some(value), next));
+    }
+    if name == "i_points" && matches!(head, 0xb3 | 0xb9) {
+        return scalar::decode_in_lane(body, offset, cache)
+            .map(|(value, next)| (Some(value), next));
+    }
+    if matches!(name, "u_params" | "v_params") {
+        if head == 0x77 {
+            return named_ieee7(body, offset, 0x3f).map(|(value, next)| (Some(value), next));
+        }
+        return named_positive_dict(body, offset).map(|(value, next)| (Some(value), next));
+    }
+    if name == "end_u_tangts" && head == 0x31 {
+        return named_ieee7(body, offset, 0x40).map(|(value, next)| (Some(value), next));
+    }
+    if name == "end_uv_deriv" && matches!(head, 0x7d | 0x8f) {
+        return named_positive_dict(body, offset).map(|(value, next)| (Some(value), next));
+    }
+    let next = offset.checked_add(7)?;
+    (next <= body.len()).then_some((None, next))
+}
+
+fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
+    let second = body.get(offset)?.wrapping_sub(0x8b);
+    let first = if second >= 0x80 { 0x3f } else { 0x40 };
+    let tail = body.get(offset + 1..offset + 7)?;
+    let mut raw = [0; 8];
+    raw[0] = first;
+    raw[1] = second;
+    raw[2..].copy_from_slice(tail);
+    Some((f64::from_be_bytes(raw), offset + 7))
+}
+
+fn named_ieee8(body: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
+    let tail = body.get(offset + 1..offset + 8)?;
+    let mut raw = [0; 8];
+    raw[0] = first;
+    raw[1..].copy_from_slice(tail);
+    Some((f64::from_be_bytes(raw), offset + 8))
+}
+
+fn named_ieee7(body: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
+    let tail = body.get(offset + 1..offset + 7)?;
+    let mut raw = [0; 8];
+    raw[0] = first;
+    raw[1..7].copy_from_slice(tail);
+    Some((f64::from_be_bytes(raw), offset + 7))
 }
 
 fn scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<Option<f64>> {
@@ -2033,6 +2143,7 @@ mod tests {
                 dimensions: 2,
                 count: 2,
                 values: vec![Some(1.0), Some(0.0), Some(1.0), Some(0.0)],
+                tokens: vec![vec![0xe4], vec![0x0f], vec![0xe4], vec![0x0f]],
             })
         );
         assert_eq!(
@@ -2041,6 +2152,7 @@ mod tests {
                 dimensions: 1,
                 count: 2,
                 values: vec![Some(0.0), Some(1.0)],
+                tokens: vec![vec![0x0f], vec![0xe4]],
             })
         );
         assert_eq!(
@@ -2048,8 +2160,48 @@ mod tests {
             Some(&SurfaceNamedValue::CountedScalarArray {
                 count: 2,
                 values: vec![Some(0.0), Some(1.0)],
+                tokens: vec![vec![0x0f], vec![0xe4]],
             })
         );
+    }
+
+    #[test]
+    fn spline_slots_consume_unresolved_tokens_without_scanning_their_payloads() {
+        let body = [0xaa, 0xe4, 1, 2, 3, 4, 5, 0xe4];
+        let slots = named_spline_scalar_slots("tangts", &body, 2, &scalar::ScalarCache::default());
+
+        assert_eq!(
+            slots,
+            [
+                (None, vec![0xaa, 0xe4, 1, 2, 3, 4, 5]),
+                (Some(1.0), vec![0xe4]),
+            ]
+        );
+    }
+
+    #[test]
+    fn end_v_tangents_use_the_signed_coordinate_dict_lattice() {
+        let body = [
+            0xce, 1, 2, 3, 4, 5, 6, 0x2d, 1, 2, 3, 4, 5, 6, 7, 0x46, 1, 2, 3, 4, 5, 6, 7,
+        ];
+        let slots =
+            named_spline_scalar_slots("end_v_tangts", &body, 3, &scalar::ScalarCache::default());
+
+        assert_eq!(
+            slots[0].0,
+            Some(f64::from_be_bytes([0xbf, 0xfb, 1, 2, 3, 4, 5, 6]))
+        );
+        assert_eq!(slots[0].1, body[..7]);
+        assert_eq!(
+            slots[1].0,
+            Some(f64::from_be_bytes([0xc0, 1, 2, 3, 4, 5, 6, 7]))
+        );
+        assert_eq!(slots[1].1, body[7..15]);
+        assert_eq!(
+            slots[2].0,
+            Some(f64::from_be_bytes([0x40, 1, 2, 3, 4, 5, 6, 7]))
+        );
+        assert_eq!(slots[2].1, body[15..]);
     }
 
     #[test]
@@ -2198,6 +2350,7 @@ mod tests {
                     Some(0.0),
                     Some(1.0),
                 ],
+                tokens: Vec::new(),
             }
         );
     }
@@ -2226,6 +2379,7 @@ mod tests {
                     Some(15.0),
                     Some(0.0),
                 ],
+                tokens: Vec::new(),
             })
         );
     }

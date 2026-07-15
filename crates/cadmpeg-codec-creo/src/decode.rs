@@ -1316,6 +1316,7 @@ struct CreoSurfaceNamedParameterRecord {
     scalar_dimensions: Option<u8>,
     scalar_count: Option<u32>,
     scalar_values: Vec<Option<f64>>,
+    scalar_tokens: Vec<Vec<u8>>,
     opaque: Vec<u8>,
     body: Vec<u8>,
     offset: usize,
@@ -1480,66 +1481,88 @@ fn surface_prototype_family_name(family: &crate::surface::SurfacePrototypeFamily
 fn surface_named_parameter_record(
     parameter: &crate::surface::SurfaceNamedParameter,
 ) -> CreoSurfaceNamedParameterRecord {
-    let (value_kind, compact_values, scalar_dimensions, scalar_count, scalar_values, opaque) =
-        match &parameter.value {
-            crate::surface::SurfaceNamedValue::CompactInt(value) => (
-                "compact_int",
-                vec![*value],
-                None,
-                None,
-                Vec::new(),
-                Vec::new(),
-            ),
-            crate::surface::SurfaceNamedValue::CompactIntArray(values) => (
-                "compact_int_array",
-                values.clone(),
-                None,
-                None,
-                Vec::new(),
-                Vec::new(),
-            ),
-            crate::surface::SurfaceNamedValue::ContiguousEntityReferences {
-                entity_ids, ..
-            } => (
-                "contiguous_entity_references",
-                entity_ids.clone(),
-                None,
-                None,
-                Vec::new(),
-                Vec::new(),
-            ),
-            crate::surface::SurfaceNamedValue::ScalarArray {
-                dimensions,
-                count,
-                values,
-            } => (
-                "scalar_array",
-                Vec::new(),
-                Some(*dimensions),
-                Some(u32::from(*count)),
-                values.clone(),
-                Vec::new(),
-            ),
-            crate::surface::SurfaceNamedValue::CountedScalarArray { count, values } => (
-                "counted_scalar_array",
-                Vec::new(),
-                None,
-                Some(*count),
-                values.clone(),
-                Vec::new(),
-            ),
-            crate::surface::SurfaceNamedValue::ScalarSequence(values) => (
-                "scalar_sequence",
-                Vec::new(),
-                None,
-                None,
-                values.iter().copied().map(Some).collect(),
-                Vec::new(),
-            ),
-            crate::surface::SurfaceNamedValue::Opaque(value) => {
-                ("opaque", Vec::new(), None, None, Vec::new(), value.clone())
-            }
-        };
+    let (
+        value_kind,
+        compact_values,
+        scalar_dimensions,
+        scalar_count,
+        scalar_values,
+        scalar_tokens,
+        opaque,
+    ) = match &parameter.value {
+        crate::surface::SurfaceNamedValue::CompactInt(value) => (
+            "compact_int",
+            vec![*value],
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::CompactIntArray(values) => (
+            "compact_int_array",
+            values.clone(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::ContiguousEntityReferences { entity_ids, .. } => (
+            "contiguous_entity_references",
+            entity_ids.clone(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::ScalarArray {
+            dimensions,
+            count,
+            values,
+            tokens,
+        } => (
+            "scalar_array",
+            Vec::new(),
+            Some(*dimensions),
+            Some(u32::from(*count)),
+            values.clone(),
+            tokens.clone(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::CountedScalarArray {
+            count,
+            values,
+            tokens,
+        } => (
+            "counted_scalar_array",
+            Vec::new(),
+            None,
+            Some(*count),
+            values.clone(),
+            tokens.clone(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::ScalarSequence(values) => (
+            "scalar_sequence",
+            Vec::new(),
+            None,
+            None,
+            values.iter().copied().map(Some).collect(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::Opaque(value) => (
+            "opaque",
+            Vec::new(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            value.clone(),
+        ),
+    };
     CreoSurfaceNamedParameterRecord {
         name: parameter.name.clone(),
         value_kind,
@@ -1547,6 +1570,7 @@ fn surface_named_parameter_record(
         scalar_dimensions,
         scalar_count,
         scalar_values,
+        scalar_tokens,
         opaque,
         body: parameter.body.clone(),
         offset: parameter.offset,
@@ -14531,6 +14555,7 @@ fn prototype_local_frame(
         dimensions: 4,
         count: 3,
         values,
+        ..
     } = &record.field("local_sys")?.value
     else {
         return None;

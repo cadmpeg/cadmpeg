@@ -388,6 +388,18 @@ control-net, knot, or derivative role to individual slots.
 `u_params` and `v_params` can instead use `f8 <count>` followed by exactly
 `count` scalar slots; unresolved slots retain their declared positions.
 
+In the spline point and derivative fields, `dimensions` is the number of
+three-coordinate vectors and `count` is three. Vectors are serialized
+consecutively. Each declared slot consumes one complete scalar token; an
+unresolved seven-byte DICT token remains one opaque slot and its payload is not
+searched for nested scalar openers. `i_points` uses eight-byte `28` and `41`
+positive sub-unit forms in addition to eight-byte `2d`/`46` world coordinates,
+the positive DICT lattice, and the `b3`/`b9` negative forms. `end_v_tangts`
+uses the signed coordinate DICT lattice defined for the second directrix
+coordinate lane. `u_params` uses the positive DICT lattice. In `v_params`,
+`28` is an eight-byte positive sub-unit token and `77` is a seven-byte positive
+sub-unit token with an implicit zero low byte.
+
 ### 3.4 Planes
 
 Plane row bodies contain envelope/domain data, `local_sys f9 04 03`, and a row/topology tail. `local_sys` has twelve scalar slots:
