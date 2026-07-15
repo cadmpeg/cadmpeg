@@ -454,6 +454,48 @@ struct CreoFaceComponentRecord {
     curve_ids: Vec<u32>,
 }
 
+#[derive(Serialize)]
+struct CreoFcCurveControlPointRecord {
+    id: String,
+    curve_id: u32,
+    subtype: u8,
+    values_mm: Vec<f64>,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoFc05CircleRecord {
+    id: String,
+    curve_id: u32,
+    center_row_frame: [f64; 2],
+    radius_mm: f64,
+    reference_direction_row_frame: Option<[f64; 2]>,
+    parameter_sign: Option<i8>,
+    cap_ordinate_row_frame: Option<f64>,
+    point_count: usize,
+    max_residual: f64,
+    angle_parameter_consistent: bool,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoFc05CylinderCapPairRecord {
+    id: String,
+    surface_id: u32,
+    curve_ids: Vec<u32>,
+    cap_plane_ids: Vec<u32>,
+    curve_cap_ordinates_row_frame: Vec<f64>,
+    center_row_frame: [f64; 2],
+    radius_mm: f64,
+    reference_direction_row_frame: [f64; 2],
+    parameter_sign: i8,
+    cap_ordinates_row_frame: Vec<f64>,
+    offset: usize,
+    source_section: String,
+}
+
 fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
     scan.feature_entities
         .iter()
@@ -792,6 +834,60 @@ fn face_component_records(scan: &ContainerScan) -> Vec<CreoFaceComponentRecord> 
             id: format!("creo:topology:face_component#{}", index + 1),
             face_ids: record.face_ids.clone(),
             curve_ids: record.curve_ids.clone(),
+        })
+        .collect()
+}
+
+fn fc_curve_control_point_records(scan: &ContainerScan) -> Vec<CreoFcCurveControlPointRecord> {
+    scan.fc_curve_control_points
+        .iter()
+        .map(|record| CreoFcCurveControlPointRecord {
+            id: format!("creo:curve:fc_control_points#{}", record.curve_id),
+            curve_id: record.curve_id,
+            subtype: record.subtype,
+            values_mm: record.values_mm.clone(),
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn fc05_circle_records(scan: &ContainerScan) -> Vec<CreoFc05CircleRecord> {
+    scan.fc05_circles
+        .iter()
+        .map(|record| CreoFc05CircleRecord {
+            id: format!("creo:curve:fc05_circle#{}", record.curve_id),
+            curve_id: record.curve_id,
+            center_row_frame: record.center_row_frame,
+            radius_mm: record.radius_mm,
+            reference_direction_row_frame: record.reference_direction_row_frame,
+            parameter_sign: record.parameter_sign,
+            cap_ordinate_row_frame: record.cap_ordinate_row_frame,
+            point_count: record.point_count,
+            max_residual: record.max_residual,
+            angle_parameter_consistent: record.angle_parameter_consistent,
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn fc05_cylinder_cap_pair_records(scan: &ContainerScan) -> Vec<CreoFc05CylinderCapPairRecord> {
+    scan.fc05_cylinder_cap_pairs
+        .iter()
+        .map(|record| CreoFc05CylinderCapPairRecord {
+            id: format!("creo:surface:fc05_cylinder_cap_pair#{}", record.surface_id),
+            surface_id: record.surface_id,
+            curve_ids: record.curve_ids.clone(),
+            cap_plane_ids: record.cap_plane_ids.clone(),
+            curve_cap_ordinates_row_frame: record.curve_cap_ordinates_row_frame.clone(),
+            center_row_frame: record.center_row_frame,
+            radius_mm: record.radius_mm,
+            reference_direction_row_frame: record.reference_direction_row_frame,
+            parameter_sign: record.parameter_sign,
+            cap_ordinates_row_frame: record.cap_ordinates_row_frame.clone(),
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
         })
         .collect()
 }
@@ -15654,6 +15750,34 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("curve_parameters", &curve_parameters)?;
+    }
+    let fc_curve_control_points = fc_curve_control_point_records(scan);
+    if !fc_curve_control_points.is_empty() {
+        for record in &fc_curve_control_points {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "fc_curve_control_points",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("fc_curve_control_points", &fc_curve_control_points)?;
+    }
+    let fc05_circles = fc05_circle_records(scan);
+    if !fc05_circles.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("fc05_circles", &fc05_circles)?;
+    }
+    let fc05_cylinder_cap_pairs = fc05_cylinder_cap_pair_records(scan);
+    if !fc05_cylinder_cap_pairs.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("fc05_cylinder_cap_pairs", &fc05_cylinder_cap_pairs)?;
     }
     let curve_topology_rows = curve_topology_row_records(scan);
     if !curve_topology_rows.is_empty() {

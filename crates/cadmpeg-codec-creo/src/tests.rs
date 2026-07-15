@@ -3089,13 +3089,18 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     payload.extend_from_slice(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0x2d, 0, 0, 0, 0, 0, 0, 0, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.fc_curve_control_points.len(), 1);
     let control_points = &scan.fc_curve_control_points[0];
     assert_eq!(control_points.curve_id, 7);
     assert_eq!(control_points.subtype, 8);
     assert_eq!(control_points.values_mm, vec![3.0, -3.0, 2.0, -2.0]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let records = &result.ir.native.namespace("creo").unwrap().arenas["fc_curve_control_points"];
+    assert_eq!(records[0].fields["curve_id"], 7);
+    assert_eq!(records[0].fields["values_mm"][1], -3.0);
 }
 
 #[test]
@@ -3265,7 +3270,8 @@ fn scan_validates_fc05_circle_from_record_points() {
     }
     payload.push(0xff);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.fc05_circles.len(), 1);
     let circle = &scan.fc05_circles[0];
@@ -3282,6 +3288,11 @@ fn scan_validates_fc05_circle_from_record_points() {
         .expect("unique parameter-zero direction");
     assert!((direction[0] - (-2.0_f64).cos()).abs() < 1e-12);
     assert!((direction[1] - (-2.0_f64).sin()).abs() < 1e-12);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let records = &result.ir.native.namespace("creo").unwrap().arenas["fc05_circles"];
+    assert_eq!(records[0].fields["curve_id"], 7);
+    assert_eq!(records[0].fields["radius_mm"], 1.0);
+    assert_eq!(records[0].fields["parameter_sign"], 1);
 }
 
 #[test]
@@ -3382,6 +3393,12 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         &DecodeOptions::default(),
     )
     .expect("decode");
+    let cap_pairs = &result.ir.native.namespace("creo").unwrap().arenas["fc05_cylinder_cap_pairs"];
+    assert_eq!(cap_pairs.len(), 1);
+    assert_eq!(cap_pairs[0].fields["surface_id"], 10);
+    assert_eq!(cap_pairs[0].fields["curve_ids"][0], 20);
+    assert_eq!(cap_pairs[0].fields["curve_ids"][1], 21);
+    assert_eq!(cap_pairs[0].fields["radius_mm"], 1.0);
     let cylinder = result
         .ir
         .model
