@@ -1262,6 +1262,44 @@ pub fn standard_mesh_edge_runs(bytes: &[u8]) -> Option<Vec<MeshEdgeRun>> {
         .map(|[runs]| runs)
 }
 
+/// Complete repeated standard edge-face slots from exact trim-boundary
+/// occurrences. Rows without two distinct matched face occurrences retain
+/// their serialized slots for incidence closure.
+#[must_use]
+pub(crate) fn resolve_standard_edge_faces(
+    bytes: &[u8],
+    serialized: &[[usize; 2]],
+) -> Option<Vec<[usize; 2]>> {
+    let Some(runs) = standard_mesh_edge_runs(bytes) else {
+        return Some(serialized.to_vec());
+    };
+    resolve_edge_faces_from_runs(serialized, &runs)
+}
+
+fn resolve_edge_faces_from_runs(
+    serialized: &[[usize; 2]],
+    runs: &[MeshEdgeRun],
+) -> Option<Vec<[usize; 2]>> {
+    let mut occurrence_faces = vec![Vec::new(); serialized.len()];
+    for run in runs {
+        let faces = occurrence_faces.get_mut(run.edge)?;
+        if !faces.contains(&run.face) {
+            faces.push(run.face);
+        }
+    }
+    let mut resolved = serialized.to_vec();
+    for (faces, occurrences) in resolved.iter_mut().zip(occurrence_faces) {
+        if faces[0] != faces[1] || occurrences.len() < 2 {
+            continue;
+        }
+        if occurrences.len() != 2 || !occurrences.contains(&faces[0]) {
+            return None;
+        }
+        faces[1] = *occurrences.iter().find(|face| **face != faces[0])?;
+    }
+    Some(resolved)
+}
+
 /// One uncovered run in a trim-mesh boundary cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MeshBoundaryGap {
@@ -6236,10 +6274,11 @@ mod motif_tests {
         mesh_candidates_equivalent, mesh_edge_points_compatible, motif_port_points,
         parse_trim_chain, possible_face_choices, possible_face_equations,
         propagate_edge_port_points, prune_edge_candidates_by_port_domains, reconstruct_incidence,
-        reconstruct_incidence_candidates, standard_face_count, unique_coordinate_bijection,
-        Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate,
-        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
-        TrimRecord, UnionFind, MAX_FACE_EQUATION_CACHE_ENTRIES,
+        reconstruct_incidence_candidates, resolve_edge_faces_from_runs, standard_face_count,
+        unique_coordinate_bijection, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
+        FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun, MeshFaceBoundaryAssignment,
+        MeshQuotient, MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind,
+        MAX_FACE_EQUATION_CACHE_ENTRIES,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -7690,6 +7729,25 @@ mod motif_tests {
         .expect("unique face-closing slot assignment");
 
         assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
+    }
+
+    #[test]
+    fn exact_mesh_occurrences_complete_duplicate_face_slot() {
+        let run = |edge, face| MeshEdgeRun {
+            edge,
+            face,
+            cycle: 0,
+            start: 0,
+            segment_count: 1,
+            reversed: false,
+        };
+        let faces = resolve_edge_faces_from_runs(
+            &[[1, 1], [2, 2], [3, 4]],
+            &[run(0, 1), run(0, 5), run(1, 2), run(2, 3), run(2, 4)],
+        )
+        .expect("consistent exact face occurrences");
+
+        assert_eq!(faces, vec![[1, 5], [2, 2], [3, 4]]);
     }
 
     #[test]

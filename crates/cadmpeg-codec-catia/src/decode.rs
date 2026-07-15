@@ -4363,9 +4363,20 @@ fn attach_standard_topology(
     source: &[u8],
 ) -> bool {
     let face_count = ir.model.faces.len();
-    let supports = geometry::standard_curve_supports(brep, face_count);
+    let mut supports = geometry::standard_curve_supports(brep, face_count);
     if supports.is_empty() {
         return false;
+    }
+    let serialized_edge_faces = supports
+        .iter()
+        .map(|support| support.faces)
+        .collect::<Vec<_>>();
+    let Some(edge_faces) = topology::resolve_standard_edge_faces(brep, &serialized_edge_faces)
+    else {
+        return false;
+    };
+    for (support, faces) in supports.iter_mut().zip(&edge_faces) {
+        support.faces = *faces;
     }
     let surface_indices = ir
         .model
@@ -4418,7 +4429,6 @@ fn attach_standard_topology(
         };
         endpoint_candidates.push(candidates);
     }
-    let edge_faces: Vec<[usize; 2]> = supports.iter().map(|support| support.faces).collect();
     let mut edge_classes = Vec::with_capacity(supports.len());
     for (edge, support) in supports.iter().enumerate() {
         let class = supports[..edge]
