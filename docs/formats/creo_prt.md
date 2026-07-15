@@ -1000,6 +1000,10 @@ declared compact count and the entity-class identifier following its `f7`
 marker. The label selects the edge, loop, boundary, body, geometry-list, or
 datum identifier namespace independently of that class identifier.
 
+The implicit `AllFeatur` entity table begins at section-body offset zero with
+`e0 00 Sld_Features 00`. A section body without this root does not carry the
+walker-order table.
+
 Named records in `AllFeatur` form one implicit entity table in walker order.
 The zero-based walker ordinal is the entity identifier used by `f7` references.
 Each reference retains its containing source entity, target entity, and target

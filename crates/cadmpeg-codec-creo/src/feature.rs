@@ -5298,6 +5298,17 @@ pub fn bind_depdb_section_owners(
 /// reference, preserving both source context and unresolved target IDs.
 pub fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEntityReference>) {
     let tokens = psb::tokens(payload);
+    let Some(root) = tokens.first() else {
+        return (Vec::new(), Vec::new());
+    };
+    let root_name = payload.get(2..root.length.saturating_sub(1));
+    if root.offset != 0
+        || root.kind != psb::TokenKind::NamedRecord
+        || payload.get(1) != Some(&0)
+        || root_name != Some(b"Sld_Features".as_slice())
+    {
+        return (Vec::new(), Vec::new());
+    }
     let mut entities = Vec::new();
     for token in &tokens {
         if token.kind != psb::TokenKind::NamedRecord || token.length < 3 {
@@ -5447,6 +5458,20 @@ pub fn entity_tables(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn entity_graph_requires_the_solid_features_root() {
+        let packed_lookalike = b"\xe0\x00SlV\xff\0\xf7\x01";
+        assert_eq!(entity_graph(packed_lookalike), (Vec::new(), Vec::new()));
+
+        let payload = b"\xe0\x00Sld_Features\0\xe0\x00first_feat_ptr\0\xf7\x00";
+        let (entities, references) = entity_graph(payload);
+        assert_eq!(entities.len(), 2);
+        assert_eq!(entities[0].name, "Sld_Features");
+        assert_eq!(references.len(), 1);
+        assert_eq!(references[0].source_entity_id, Some(1));
+        assert!(references[0].target_resolved);
+    }
 
     #[test]
     fn generated_entity_entries_accept_variable_schema_classes() {

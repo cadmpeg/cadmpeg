@@ -1503,35 +1503,37 @@ fn decode_types_schema_datum_from_its_unique_plane_carrier() {
 
 #[test]
 fn scan_resolves_allfeatur_walker_order_entity_references() {
-    let allfeatur = b"\xe0\x22first\0\xf7\x01\xe3\xe0\x24second\0\xf7\x00\xe3".to_vec();
+    let allfeatur =
+        b"\xe0\x00Sld_Features\0\xe0\x22first\0\xf7\x02\xe3\xe0\x24second\0\xf7\x01\xe3".to_vec();
     let data = build_prt("c", &[("AllFeatur", allfeatur)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_entities.len(), 2);
+    assert_eq!(scan.feature_entities.len(), 3);
     assert_eq!(scan.feature_entities[0].entity_id, 0);
-    assert_eq!(scan.feature_entities[0].name, "first");
+    assert_eq!(scan.feature_entities[0].name, "Sld_Features");
     assert_eq!(scan.feature_entities[1].entity_id, 1);
+    assert_eq!(scan.feature_entities[1].name, "first");
     assert_eq!(scan.feature_entity_references.len(), 2);
-    assert_eq!(scan.feature_entity_references[0].source_entity_id, Some(0));
-    assert_eq!(scan.feature_entity_references[0].target_entity_id, 1);
+    assert_eq!(scan.feature_entity_references[0].source_entity_id, Some(1));
+    assert_eq!(scan.feature_entity_references[0].target_entity_id, 2);
     assert!(scan.feature_entity_references[0].target_resolved);
-    assert_eq!(scan.feature_entity_references[1].source_entity_id, Some(1));
-    assert_eq!(scan.feature_entity_references[1].target_entity_id, 0);
+    assert_eq!(scan.feature_entity_references[1].source_entity_id, Some(2));
+    assert_eq!(scan.feature_entity_references[1].target_entity_id, 1);
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
     let entities = &namespace.arenas["feature_entities"];
-    assert_eq!(entities.len(), 2);
+    assert_eq!(entities.len(), 3);
     assert_eq!(entities[0].id, "creo:allfeatur:entity#0");
-    assert_eq!(entities[0].fields["type_byte"], 0x22);
-    assert_eq!(entities[0].fields["name"], "first");
+    assert_eq!(entities[0].fields["type_byte"], 0);
+    assert_eq!(entities[0].fields["name"], "Sld_Features");
     let references = &namespace.arenas["feature_entity_references"];
     assert_eq!(references.len(), 2);
     let forward = references
         .iter()
-        .find(|reference| reference.fields["target_entity_id"] == 1)
+        .find(|reference| reference.fields["target_entity_id"] == 2)
         .expect("forward reference");
-    assert_eq!(forward.fields["source_entity_id"], 0);
+    assert_eq!(forward.fields["source_entity_id"], 1);
     assert_eq!(forward.fields["target_resolved"], true);
     assert_annotation(
         &result.ir,
