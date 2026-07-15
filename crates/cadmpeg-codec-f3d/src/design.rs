@@ -1274,20 +1274,39 @@ fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i
         .map(|operand| {
             if let Some(edge) = resolved_edge_operand(operand) {
                 Some(Some(vec![edge]))
-            } else if operand.changed_boundary_edge_slots.is_empty() {
-                Some(None)
             } else {
-                Some(Some(edge_assignment_candidates(
+                edge_group_assignment_candidates(
                     &operand.recipe_selectors,
                     operand
                         .recipe_reference_contexts
                         .iter()
                         .map(|context| context.changed_reference_edge_slots.as_slice()),
-                )?))
+                )
             }
         })
         .collect::<Option<Vec<_>>>()?;
     unique_edge_assignment_with_context(&candidate_sets)
+}
+
+fn edge_group_assignment_candidates<'a>(
+    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
+) -> Option<Option<Vec<i64>>> {
+    let reference_edge_sets = reference_edge_sets.into_iter().collect::<Vec<_>>();
+    if !selector_contexts.is_empty() {
+        return edge_assignment_candidates(selector_contexts, reference_edge_sets).map(Some);
+    }
+    let [first, second, ..] = reference_edge_sets.as_slice() else {
+        return Some(None);
+    };
+    if first.is_empty() || second.is_empty() {
+        return Some(None);
+    }
+    let mut candidates = first.to_vec();
+    candidates.retain(|candidate| second.contains(candidate));
+    candidates.sort_unstable();
+    candidates.dedup();
+    Some((!candidates.is_empty()).then_some(candidates))
 }
 
 fn radius_edge_group_candidates(operands: &[&DesignEdgeOperand], radius: f64) -> Option<Vec<i64>> {
@@ -16036,6 +16055,22 @@ mod relation_tests {
 
     #[test]
     fn edge_group_resolves_only_one_perfect_candidate_assignment() {
+        assert_eq!(
+            super::edge_group_assignment_candidates(&[], [&[17, 18][..], &[18, 19][..], &[20][..]],),
+            Some(Some(vec![18]))
+        );
+        assert_eq!(
+            super::edge_group_assignment_candidates(&[], [&[][..], &[18][..]]),
+            Some(None)
+        );
+        assert_eq!(
+            super::edge_group_assignment_candidates(&[], [&[17][..], &[18][..]]),
+            Some(None)
+        );
+        assert_eq!(
+            super::edge_group_assignment_candidates(&[], [&[17][..]]),
+            Some(None)
+        );
         assert_eq!(
             super::unique_bipartite_assignment(&[vec![17, 18], vec![18, 19], vec![19],]),
             Some(vec![17, 18, 19])
