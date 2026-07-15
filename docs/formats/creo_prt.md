@@ -942,6 +942,13 @@ parallel support planes. Multiple parallel support pairs define one constant
 radius only when all nonzero gaps have the same magnitude. When every generated
 cylinder carrier is placed, their common positive radius independently defines
 the constant fillet radius; differing radii define no constant-radius result.
+Two linearly independent parallel support pairs with the same gap locate the
+cylinder axis at the intersection of their midplanes. Intersecting those
+midplanes with either axial cap plane fixes the carrier origin. Every support
+plane must be parallel to the axis and tangent at the common radius. The
+construction transfers a carrier only when the feature has exactly one
+unplaced materialized cylinder row and every support plane satisfies these
+constraints.
 
 The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, class 923 is a datum-plane definition, and class 926 is a saved section. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
 

@@ -10319,6 +10319,107 @@ fn parallel_support_radius(planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])
         .then_some(radius)
 }
 
+fn slot_fillet_cylinder(
+    cap_planes: [PlaneEquation; 2],
+    support_planes: &[PlaneEquation],
+) -> Option<CylinderEquation> {
+    let axis = normalized(cap_planes[0].normal)?;
+    let second_cap_normal = normalized(cap_planes[1].normal)?;
+    if (dot(axis, second_cap_normal).abs() - 1.0).abs() > 1e-10 {
+        return None;
+    }
+    let cap_gap = dot(
+        axis,
+        std::array::from_fn(|index| cap_planes[1].origin[index] - cap_planes[0].origin[index]),
+    )
+    .abs();
+    if cap_gap <= 1e-9 {
+        return None;
+    }
+    let mut midplanes = Vec::<(PlaneEquation, f64)>::new();
+    for first in 0..support_planes.len() {
+        let first_normal = normalized(support_planes[first].normal)?;
+        if dot(first_normal, axis).abs() > 1e-9 {
+            return None;
+        }
+        for second in first + 1..support_planes.len() {
+            let second_normal = normalized(support_planes[second].normal)?;
+            if (dot(first_normal, second_normal).abs() - 1.0).abs() > 1e-10 {
+                continue;
+            }
+            let gap = dot(
+                first_normal,
+                std::array::from_fn(|index| {
+                    support_planes[second].origin[index] - support_planes[first].origin[index]
+                }),
+            )
+            .abs();
+            if gap <= 1e-9 {
+                continue;
+            }
+            midplanes.push((
+                PlaneEquation {
+                    origin: std::array::from_fn(|index| {
+                        0.5 * (support_planes[first].origin[index]
+                            + support_planes[second].origin[index])
+                    }),
+                    normal: first_normal,
+                },
+                0.5 * gap,
+            ));
+        }
+    }
+    let mut candidates = Vec::<CylinderEquation>::new();
+    for first in 0..midplanes.len() {
+        for second in first + 1..midplanes.len() {
+            let radius = midplanes[first].1;
+            let scale = radius.max(midplanes[second].1).max(1.0);
+            if (midplanes[second].1 - radius).abs() > 1e-9 * scale
+                || dot(midplanes[first].0.normal, midplanes[second].0.normal).abs() > 1.0 - 1e-9
+            {
+                continue;
+            }
+            let origin = solve_planes(&[cap_planes[0], midplanes[first].0, midplanes[second].0])?;
+            let tangent_to_all = support_planes.iter().all(|plane| {
+                let Some(normal) = normalized(plane.normal) else {
+                    return false;
+                };
+                let distance = dot(
+                    normal,
+                    std::array::from_fn(|index| origin[index] - plane.origin[index]),
+                )
+                .abs();
+                (distance - radius).abs() <= 1e-8 * scale
+            });
+            if tangent_to_all {
+                candidates.push(CylinderEquation {
+                    origin,
+                    axis,
+                    ref_direction: midplanes[first].0.normal,
+                    radius,
+                });
+            }
+        }
+    }
+    let first = *candidates.first()?;
+    let scale = first.radius.max(1.0);
+    candidates
+        .iter()
+        .all(|candidate| {
+            let origin_delta: [f64; 3] =
+                std::array::from_fn(|index| candidate.origin[index] - first.origin[index]);
+            (candidate.radius - first.radius).abs() <= 1e-9 * scale
+                && (dot(candidate.axis, first.axis).abs() - 1.0).abs() <= 1e-10
+                && dot(
+                    cross(origin_delta, first.axis),
+                    cross(origin_delta, first.axis),
+                )
+                .sqrt()
+                    <= 1e-8 * scale
+        })
+        .then_some(first)
+}
+
 fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
     let cylinder_rows = scan
         .surface_rows
@@ -12277,6 +12378,63 @@ mod resolved_sketch_tests {
             ]),
             Some(0.5)
         );
+        let cylinder = slot_fillet_cylinder(
+            [
+                PlaneEquation {
+                    origin: [0.0, -2.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [0.0, 3.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+            ],
+            &[
+                PlaneEquation {
+                    origin: [-9.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [-8.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [0.0, 0.0, -7.0],
+                    normal: [0.0, 0.0, 1.0],
+                },
+                PlaneEquation {
+                    origin: [0.0, 0.0, -6.0],
+                    normal: [0.0, 0.0, 1.0],
+                },
+            ],
+        )
+        .expect("fully constrained slot fillet");
+        assert_eq!(cylinder.origin, [-8.5, -2.0, -6.5]);
+        assert_eq!(cylinder.axis, [0.0, 1.0, 0.0]);
+        assert_eq!(cylinder.radius, 0.5);
+        assert!(slot_fillet_cylinder(
+            [
+                PlaneEquation {
+                    origin: [0.0, -2.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [0.0, 3.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+            ],
+            &[
+                PlaneEquation {
+                    origin: [-9.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [-8.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+            ],
+        )
+        .is_none());
     }
 
     #[test]
@@ -18526,6 +18684,120 @@ fn rowless_round_cylinder_pairs(
         .collect()
 }
 
+fn transfer_constrained_slot_fillet_cylinders(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let round_feature_ids = scan
+        .feature_rows
+        .iter()
+        .filter(|row| row.root_schema_class == Some(913))
+        .map(|row| row.feature_id)
+        .collect::<BTreeSet<_>>();
+    let mut transferred = 0;
+    for feature_id in round_feature_ids {
+        let named = scan
+            .feature_affected_ids
+            .iter()
+            .filter(|record| {
+                record.feature_id == feature_id
+                    && record.kind == crate::feature::AffectedIdKind::Geometry
+            })
+            .map(|record| record.ids.as_slice())
+            .collect::<Vec<_>>();
+        let replay = scan
+            .feature_replay_affected_ids
+            .iter()
+            .filter(|record| record.feature_id == feature_id)
+            .map(|record| record.geometry_ids.as_slice())
+            .collect::<Vec<_>>();
+        let affected = match (named.as_slice(), replay.as_slice()) {
+            ([ids], _) => *ids,
+            ([], [ids]) => *ids,
+            _ => continue,
+        };
+        let Some((cap_ids, support_ids)) = affected.split_at_checked(2) else {
+            continue;
+        };
+        if support_ids.len() < 4 {
+            continue;
+        }
+        let planes = affected
+            .iter()
+            .filter_map(|id| {
+                let surface_id = SurfaceId(format!("creo:visibgeom:surface#{id}"));
+                let surface = ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == surface_id)?;
+                match surface.geometry {
+                    SurfaceGeometry::Plane { origin, normal, .. } => Some(PlaneEquation {
+                        origin: [origin.x, origin.y, origin.z],
+                        normal: [normal.x, normal.y, normal.z],
+                    }),
+                    _ => None,
+                }
+            })
+            .collect::<Vec<_>>();
+        if planes.len() != affected.len() {
+            continue;
+        }
+        let cap_planes: [PlaneEquation; 2] = planes[..cap_ids.len()].try_into().expect("two caps");
+        let Some(cylinder) = slot_fillet_cylinder(cap_planes, &planes[cap_ids.len()..]) else {
+            continue;
+        };
+        let unresolved_rows = scan
+            .surface_rows
+            .iter()
+            .filter(|row| {
+                row.feature_id == feature_id
+                    && row.kind == crate::surface::SurfaceKind::Cylinder
+                    && !ir.model.surfaces.iter().any(|surface| {
+                        surface.id == SurfaceId(format!("creo:visibgeom:surface#{}", row.id))
+                    })
+            })
+            .collect::<Vec<_>>();
+        let [row] = unresolved_rows.as_slice() else {
+            continue;
+        };
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        annotate(
+            annotations,
+            &id,
+            "AllFeatur",
+            row.offset as u64,
+            "constrained_slot_fillet_cylinder",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(cylinder.origin[0], cylinder.origin[1], cylinder.origin[2]),
+                axis: Vector3::new(cylinder.axis[0], cylinder.axis[1], cylinder.axis[2]),
+                ref_direction: Vector3::new(
+                    cylinder.ref_direction[0],
+                    cylinder.ref_direction[1],
+                    cylinder.ref_direction[2],
+                ),
+                radius: cylinder.radius,
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("AllFeatur:{}:{}", feature_id, row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 fn transfer_rowless_round_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -19097,6 +19369,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let single_cap_circular_sweep_cylinder_count =
         transfer_single_cap_circular_sweep_cylinders(scan, &mut ir, &mut annotations);
     let hole_cylinder_count = transfer_hole_cylinders(scan, &mut ir, &mut annotations);
+    let constrained_slot_fillet_cylinder_count =
+        transfer_constrained_slot_fillet_cylinders(scan, &mut ir, &mut annotations);
     let rowless_round_cylinder_count =
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
     transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
@@ -19155,6 +19429,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         source.attributes.insert(
             "transferred_hole_cylinder_count".to_string(),
             hole_cylinder_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_constrained_slot_fillet_cylinder_count".to_string(),
+            constrained_slot_fillet_cylinder_count.to_string(),
         );
         source.attributes.insert(
             "transferred_rowless_round_cylinder_count".to_string(),
