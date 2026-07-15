@@ -2860,6 +2860,8 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         [true, true, true]
     );
     assert_eq!(topology.bodies[0].faces, vec![600, 601]);
+    assert_eq!(topology.bodies[0].face_orientation_signs, vec![1, 1]);
+    assert_eq!(topology.bodies[0].extra_orientation_signs, [1, 1]);
     assert_eq!(topology.pcurves.len(), 7);
     assert!(matches!(
         topology.pcurves[&400],

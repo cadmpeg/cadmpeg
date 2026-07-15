@@ -148,6 +148,10 @@ pub struct E5Body {
     /// `record_id`s of every class-`0x00` face in the body, in root-record
     /// order.
     pub faces: Vec<u32>,
+    /// Root sign-tape entries aligned with [`Self::faces`].
+    pub face_orientation_signs: Vec<i16>,
+    /// Final two root sign-tape entries after the face-aligned population.
+    pub extra_orientation_signs: [i16; 2],
 }
 
 /// A resolved class-`0x00` advanced-face record: its surface, loops, and
@@ -703,6 +707,8 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
             Some(E5Body {
                 record_id: record.id,
                 faces,
+                face_orientation_signs: signs[..signs.len() - 2].to_vec(),
+                extra_orientation_signs: signs[signs.len() - 2..].try_into().ok()?,
             })
         })
         .collect()
