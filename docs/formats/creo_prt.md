@@ -936,8 +936,12 @@ record identity is `creo:featdefs:feature_definition#offset:<offset>`.
 
 Feature-definition `local_sys f9 04 03` and `transf f9 04 03` bodies use the
 twelve-slot local-system language. `18 e5` expands to `[0, 1, 0]`; `18 10`,
-`18 e4`, `18 e6`, and bare `10` each occupy one zero slot. A frame is numeric
-only when this language consumes the complete bounded body as twelve slots.
+`18 e4`, `18 e6`, bare `10`, and terminal bare `18` each occupy one zero slot.
+A frame is numeric only when this language consumes the complete bounded body
+as twelve slots.
+When four slots precede `18 e5`, the token expands to `[0, 0, 1, 0, 0]`. This
+rank-two form completes the zero local-y triple and supplies the local-z unit
+direction.
 The four consecutive triples are the local x axis, local y axis, local z axis,
 and origin. When a definition contains exactly one complete `local_sys`, its
 local z axis and origin define the section-plane equation. A zero-length local

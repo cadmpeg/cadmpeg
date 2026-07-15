@@ -4704,7 +4704,7 @@ fn definitions_in_ranges(
                 let body = payload[body_start..body_end].to_vec();
                 parameter_frames.push(FeatureParameterFrame {
                     kind,
-                    decoded_values: scalar::decode_explicit_local_system_slots(&body, &cache)
+                    decoded_values: scalar::decode_feature_local_system_slots(&body, &cache)
                         .map(|slots| slots.to_vec()),
                     body,
                     offset: field_offset,

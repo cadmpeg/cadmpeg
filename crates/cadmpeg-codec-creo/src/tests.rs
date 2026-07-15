@@ -2004,6 +2004,23 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
 }
 
 #[test]
+fn scan_decodes_rank_two_featdefs_local_system() {
+    let mut payload = b"feat_defs_40\0local_sys\0\xf9\x04\x03\x0f\x18\xe5\x18\xe5".to_vec();
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x2d, 0x10, 0, 0, 0, 0, 0, 0]);
+    payload.push(0x18);
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data);
+
+    assert_eq!(
+        scan.feature_definitions[0].parameter_frames[0].decoded_values,
+        Some(vec![
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0
+        ])
+    );
+}
+
+#[test]
 fn scan_decodes_featdefs_feature_local_outlines() {
     let mut payload = b"feat_defs_40\0\xe0\x00feat_outl_info\0outline\0\xf9\x02\x03".to_vec();
     payload.extend([0x0f; 6]);
