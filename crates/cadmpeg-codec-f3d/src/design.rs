@@ -950,8 +950,29 @@ fn resolved_edge_candidate_intersection<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
+    let shared_edge_sets = shared_edge_sets
+        .into_iter()
+        .filter(|edges| !edges.is_empty())
+        .collect::<Vec<_>>();
+    if selector_contexts.is_empty() || shared_edge_sets.is_empty() {
+        return None;
+    }
+    let incidence = corroborated_edge_intersection(selector_contexts, &shared_edge_sets, false);
+    let boundary_count = corroborated_edge_intersection(selector_contexts, &shared_edge_sets, true);
+    match (incidence, boundary_count) {
+        (Some(left), Some(right)) if left != right => None,
+        (Some(edge), _) | (_, Some(edge)) => Some(edge),
+        (None, None) => None,
+    }
+}
+
+fn corroborated_edge_intersection(
+    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    shared_edge_sets: &[&[i64]],
+    boundary_counts_only: bool,
+) -> Option<i64> {
     let mut selectors = selector_contexts.iter();
-    let first = selectors.next()?.incidence_matching_edge_slots.as_slice();
+    let first = selector_candidate_edges(selectors.next()?, boundary_counts_only);
     if first.is_empty() {
         return None;
     }
@@ -959,26 +980,33 @@ fn resolved_edge_candidate_intersection<'a>(
     candidates.sort_unstable();
     candidates.dedup();
     for selector in selectors {
-        if selector.incidence_matching_edge_slots.is_empty() {
+        let selector_edges = selector_candidate_edges(selector, boundary_counts_only);
+        if selector_edges.is_empty() {
             return None;
         }
-        candidates.retain(|candidate| selector.incidence_matching_edge_slots.contains(candidate));
+        candidates.retain(|candidate| selector_edges.contains(candidate));
         if candidates.is_empty() {
             return None;
         }
     }
-    let mut corroborated = false;
     for shared_edges in shared_edge_sets {
-        if shared_edges.is_empty() {
-            continue;
-        }
-        corroborated = true;
         candidates.retain(|candidate| shared_edges.contains(candidate));
         if candidates.is_empty() {
             return None;
         }
     }
-    (corroborated && candidates.len() == 1).then_some(candidates[0])
+    (candidates.len() == 1).then_some(candidates[0])
+}
+
+fn selector_candidate_edges(
+    selector: &crate::records::DesignEdgeRecipeSelectorContext,
+    boundary_counts_only: bool,
+) -> &[i64] {
+    if boundary_counts_only {
+        &selector.boundary_count_matching_edge_slots
+    } else {
+        &selector.incidence_matching_edge_slots
+    }
 }
 
 fn project_extrude(
@@ -14374,6 +14402,11 @@ mod relation_tests {
             unique_incidence_edge_slot: (edges.len() == 1).then(|| edges[0]),
             boundary_count_matching_edge_slots: Vec::new(),
         };
+        let selector_with_counts = |ordinal: i32, incidence: &[i64], counts: &[i64]| {
+            let mut context = selector(ordinal, incidence);
+            context.boundary_count_matching_edge_slots = counts.to_vec();
+            context
+        };
         assert_eq!(
             resolved_edge_candidate_intersection(
                 &[selector(0, &[17, 18]), selector(1, &[17, 19])],
@@ -14407,6 +14440,23 @@ mod relation_tests {
             None
         );
         assert_eq!(resolved_edge_candidate_intersection(&[], [&[17][..]]), None);
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                &[
+                    selector_with_counts(0, &[], &[17, 18]),
+                    selector_with_counts(1, &[], &[17, 19]),
+                ],
+                [&[17, 20][..]],
+            ),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                &[selector_with_counts(0, &[17], &[18])],
+                [&[17, 18][..]],
+            ),
+            None
+        );
     }
 
     #[test]
