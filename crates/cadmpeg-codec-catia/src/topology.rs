@@ -4150,40 +4150,6 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
 }
 
 impl MeshSelectionSearch<'_> {
-    fn independent_face_merge_capacity(&self, quotient: &mut MeshQuotient) -> usize {
-        self.possible_face_choices
-            .iter()
-            .zip(&self.selected)
-            .filter(|(_, selected)| selected.is_none())
-            .map(|(choices, _)| {
-                choices
-                    .iter()
-                    .map(|choice| {
-                        let mut roots = HashMap::new();
-                        for [left, right] in choice {
-                            for node in [left, right] {
-                                let root = quotient.union.find(*node);
-                                let next = roots.len();
-                                roots.entry(root).or_insert(next);
-                            }
-                        }
-                        let mut local = UnionFind::new(roots.len());
-                        for [left, right] in choice {
-                            let left = roots[&quotient.union.find(*left)];
-                            let right = roots[&quotient.union.find(*right)];
-                            local.union(left, right);
-                        }
-                        let after = (0..local.len())
-                            .filter(|&node| local.find(node) == node)
-                            .count();
-                        roots.len().saturating_sub(after)
-                    })
-                    .max()
-                    .unwrap_or(0)
-            })
-            .fold(0usize, usize::saturating_add)
-    }
-
     fn remaining_equation_merge_capacity(&self, quotient: &mut MeshQuotient) -> Option<usize> {
         fn augment(
             component: usize,
@@ -4285,21 +4251,29 @@ impl MeshSelectionSearch<'_> {
             self.vertex_points.len()
         };
         let mut component_merge_capacity = HashMap::<usize, usize>::new();
+        let mut independent_capacity = 0usize;
         for (face, selected) in self.selected.iter().enumerate() {
             if selected.is_some() {
                 continue;
             }
             let mut face_capacity = HashMap::<usize, usize>::new();
+            let mut independent_face_capacity = 0usize;
             for choice in &self.possible_face_choices[face] {
-                for (component, reduction) in
-                    choice_component_reductions(choice, quotient, &mut possible)
-                {
+                let reductions = choice_component_reductions(choice, quotient, &mut possible);
+                independent_face_capacity = independent_face_capacity.max(
+                    reductions
+                        .values()
+                        .copied()
+                        .fold(0usize, usize::saturating_add),
+                );
+                for (component, reduction) in reductions {
                     face_capacity
                         .entry(component)
                         .and_modify(|capacity| *capacity = (*capacity).max(reduction))
                         .or_insert(reduction);
                 }
             }
+            independent_capacity = independent_capacity.saturating_add(independent_face_capacity);
             for (component, capacity) in face_capacity {
                 *component_merge_capacity.entry(component).or_default() += capacity;
             }
@@ -4355,11 +4329,7 @@ impl MeshSelectionSearch<'_> {
                 return None;
             }
         }
-        Some(
-            before
-                .saturating_sub(after)
-                .min(self.independent_face_merge_capacity(quotient)),
-        )
+        Some(before.saturating_sub(after).min(independent_capacity))
     }
 
     #[cfg(test)]
