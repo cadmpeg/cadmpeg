@@ -4170,6 +4170,26 @@ impl MeshSelectionSearch<'_> {
     }
 
     fn remaining_equation_merge_capacity(&self, quotient: &mut MeshQuotient) -> Option<usize> {
+        fn augment(
+            component: usize,
+            domains: &[HashSet<usize>],
+            point_owner: &mut [Option<usize>],
+            seen: &mut HashSet<usize>,
+        ) -> bool {
+            for point in &domains[component] {
+                if *point >= point_owner.len() || !seen.insert(*point) {
+                    continue;
+                }
+                if point_owner[*point]
+                    .is_none_or(|owner| augment(owner, domains, point_owner, seen))
+                {
+                    point_owner[*point] = Some(component);
+                    return true;
+                }
+            }
+            false
+        }
+
         let node_count = quotient.union.len();
         let mut possible = UnionFind::new(node_count);
         for node in 0..node_count {
@@ -4190,6 +4210,37 @@ impl MeshSelectionSearch<'_> {
         let after = (0..node_count)
             .filter(|&node| possible.find(node) == node)
             .count();
+        let mut possible_domains = HashMap::<usize, HashSet<usize>>::new();
+        for node in 0..node_count {
+            if quotient.union.find(node) != node {
+                continue;
+            }
+            possible_domains
+                .entry(possible.find(node))
+                .or_default()
+                .extend(&quotient.domains[node]);
+        }
+        let point_count = if self.vertex_points.is_empty() {
+            quotient
+                .domains
+                .iter()
+                .flatten()
+                .max()
+                .map_or(0, |point| point + 1)
+        } else {
+            self.vertex_points.len()
+        };
+        if possible_domains.len() > point_count {
+            return None;
+        }
+        let mut domains = possible_domains.into_values().collect::<Vec<_>>();
+        domains.sort_unstable_by_key(HashSet::len);
+        let mut point_owner = vec![None; point_count];
+        for component in 0..domains.len() {
+            if !augment(component, &domains, &mut point_owner, &mut HashSet::new()) {
+                return None;
+            }
+        }
         let mut singleton_component = HashMap::new();
         for node in 0..node_count {
             if quotient.union.find(node) != node || quotient.domains[node].len() != 1 {
@@ -6246,6 +6297,41 @@ mod motif_tests {
                 HashSet::from([1]),
                 HashSet::from([0]),
                 HashSet::from([2]),
+            ],
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+
+        assert_eq!(
+            search.remaining_equation_merge_capacity(&mut quotient),
+            None
+        );
+    }
+
+    #[test]
+    fn remaining_equation_components_require_a_coordinate_matching() {
+        let assignments = Vec::new();
+        let edge_candidates = vec![Vec::new(); 2];
+        let search = MeshSelectionSearch {
+            assignments: &assignments,
+            possible_face_equations: Vec::new(),
+            possible_face_choices: Vec::new(),
+            face_work: Vec::new(),
+            edge_candidates: &edge_candidates,
+            edge_rows: &[],
+            vertex_points: &[],
+            selected: Vec::new(),
+            states: 0,
+            solution: None,
+            ambiguous: false,
+            exhausted: false,
+        };
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: vec![
+                HashSet::from([0, 1]),
+                HashSet::from([0, 1]),
+                HashSet::from([0, 1]),
+                HashSet::from([2, 3]),
             ],
             members: (0..4).map(|node| vec![node]).collect(),
         };
