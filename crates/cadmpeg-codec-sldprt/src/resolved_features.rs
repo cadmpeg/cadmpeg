@@ -365,7 +365,8 @@ mod marker_tests {
         compact_body_state_ids, compact_combine_operation_at, compact_edge_component_path_at,
         compact_edge_selection_at, compact_extrusion_through_all_at, compact_extrusion_to_face_at,
         compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
-        compact_reference_plane_source, compact_single_face_reference_path_at,
+        compact_profile_reference_plane_source, compact_reference_plane_source,
+        compact_single_face_reference_path_at,
         compact_surface_selection_at, complete_ordered_compact_line_profile,
         component_path_features, component_path_terminal_feature, component_profile_source_at,
         component_reference_curve_path_at, coordinate_marker_local_links, marker_coordinates,
@@ -664,6 +665,34 @@ mod marker_tests {
         assert_eq!(compact_reference_plane_source(&payload), Some(2));
         payload[start + 59] ^= 1;
         assert_eq!(compact_reference_plane_source(&payload), None);
+    }
+
+    #[test]
+    fn compact_profile_uses_a_unique_lane_scoped_reference_plane() {
+        let mut payload = b"moCompRefPlane_c".to_vec();
+        payload.extend([0; 11]);
+        payload.extend(2u32.to_le_bytes());
+        payload.extend(19u32.to_le_bytes());
+        payload.extend([0, 0, 3, 0]);
+        payload.extend([0; 27]);
+        payload.extend(1.0f64.to_le_bytes());
+        payload.extend([
+            0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00, 0x00,
+            0x00, 0x00, 0x65,
+        ]);
+        payload.extend([0; 80]);
+        let profile_start = payload.len();
+        payload.extend([0xaa; 64]);
+
+        assert_eq!(
+            compact_profile_reference_plane_source(
+                &payload,
+                profile_start,
+                profile_start,
+                payload.len(),
+            ),
+            Some(2)
+        );
     }
 
     #[test]
@@ -5287,11 +5316,12 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|index| objects.get(index))
                 .and_then(|(offset, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
-            let Some(source_id) = compact_reference_plane_source(interval).or_else(|| {
-                lane.native_payload
-                    .get(context_start..end)
-                    .and_then(compact_reference_plane_source)
-            }) else {
+            let Some(source_id) = compact_profile_reference_plane_source(
+                &lane.native_payload,
+                context_start,
+                start,
+                end,
+            ) else {
                 continue;
             };
             let Some(&(origin, normal, u_axis)) = plane_frames.get(&source_id) else {
@@ -5853,6 +5883,22 @@ fn compact_reference_plane_source(payload: &[u8]) -> Option<u32> {
     matches.next().is_none().then_some(source)
 }
 
+fn compact_profile_reference_plane_source(
+    payload: &[u8],
+    context_start: usize,
+    profile_start: usize,
+    profile_end: usize,
+) -> Option<u32> {
+    let profile = payload.get(profile_start..profile_end)?;
+    compact_reference_plane_source(profile)
+        .or_else(|| {
+            payload
+                .get(context_start..profile_end)
+                .and_then(compact_reference_plane_source)
+        })
+        .or_else(|| compact_reference_plane_source(payload))
+}
+
 fn principal_sketch_frame(
     plane: cadmpeg_ir::features::PrincipalPlane,
 ) -> Option<(Point3, Vector3, Vector3)> {
@@ -6150,6 +6196,7 @@ pub(crate) fn type_display_relation_parameters(
                         .find(|parameter| parameter.native_ref.as_deref() == Some(scalar))
                 })
                 .or_else(|| {
+                    relation.parameter_scalar_ref.is_none().then_some(())?;
                     relation_parameter_by_display_name(relation, lane, features, parameters)
                 });
             let Some(parameter) = parameter else { continue };
@@ -8163,7 +8210,11 @@ fn relation_parameter_by_display_name<'a>(
         .flat_map(|name| {
             parameters
                 .iter()
-                .filter(move |parameter| &parameter.owner == owner && parameter.name == name)
+                .filter(move |parameter| {
+                    &parameter.owner == owner
+                        && parameter.name == name
+                        && parameter.native_ref.is_none()
+                })
         });
     let first = matches.next()?;
     matches
@@ -14098,11 +14149,18 @@ mod profile_join_tests {
             std::slice::from_mut(&mut parameter),
             std::slice::from_ref(&feature),
             std::slice::from_ref(&FeatureInputLane {
-                relation_instances: vec![FeatureInputRelationInstance {
-                    family: FeatureInputRelationFamily::PointPointDistance,
-                    parameter_scalar_ref: Some("driver".into()),
-                    ..relation
-                }],
+                relation_instances: vec![
+                    FeatureInputRelationInstance {
+                        family: FeatureInputRelationFamily::PointPointDistance,
+                        parameter_scalar_ref: Some("driver".into()),
+                        ..relation.clone()
+                    },
+                    FeatureInputRelationInstance {
+                        family: FeatureInputRelationFamily::Angle,
+                        parameter_scalar_ref: Some("other-driver".into()),
+                        ..relation
+                    },
+                ],
                 ..lane
             }),
         );
