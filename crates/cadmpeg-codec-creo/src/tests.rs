@@ -3449,6 +3449,9 @@ fn scan_validates_fc05_circle_from_record_points() {
         .expect("unique parameter-zero direction");
     assert!((direction[0] - (-2.0_f64).cos()).abs() < 1e-12);
     assert!((direction[1] - (-2.0_f64).sin()).abs() < 1e-12);
+    let mut trailing = scan.curve_parameters[0].clone();
+    trailing.body.push(0xfe);
+    assert!(crate::curve::fc05_circles(&[trailing]).is_empty());
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["fc05_circles"];
     assert_eq!(records[0].fields["curve_id"], 7);

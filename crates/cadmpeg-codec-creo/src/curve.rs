@@ -1190,6 +1190,9 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
             points.push((x, z, parameter, ordinate));
             cursor = next;
         }
+        if cursor != record.body.len() && record.body.get(cursor..) != Some(&[0xff]) {
+            continue;
+        }
         if points.len() < 4 {
             continue;
         }
