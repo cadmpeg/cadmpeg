@@ -499,8 +499,11 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<Section> {
                 continue;
             };
             let marker = [b"#".as_slice(), raw_name.as_bytes(), b"\n"].concat();
+            let Some(marker_end) = offset.checked_add(marker.len()) else {
+                continue;
+            };
             if length < marker.len()
-                || data.get(offset..offset + marker.len()) != Some(marker.as_slice())
+                || data.get(offset..marker_end) != Some(marker.as_slice())
                 || offset
                     .checked_add(length)
                     .is_none_or(|end| end > data.len())

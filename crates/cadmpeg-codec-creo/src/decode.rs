@@ -4992,6 +4992,13 @@ fn translated_nurbs_curve(curve: &NurbsCurve, translation: [f64; 3]) -> NurbsCur
 }
 
 fn extruded_nurbs_surface(directrix: &NurbsCurve, sweep: [f64; 3]) -> Option<NurbsSurface> {
+    if directrix
+        .weights
+        .as_ref()
+        .is_some_and(|weights| weights.len() != directrix.control_points.len())
+    {
+        return None;
+    }
     let mut control_points = Vec::with_capacity(directrix.control_points.len() * 2);
     let mut weights = directrix
         .weights
@@ -5366,6 +5373,13 @@ fn transfer_saved_spline_curves(
 }
 
 fn revolved_nurbs_surface(directrix: &NurbsCurve, axis: RevolutionAxis) -> Option<NurbsSurface> {
+    if directrix
+        .weights
+        .as_ref()
+        .is_some_and(|weights| weights.len() != directrix.control_points.len())
+    {
+        return None;
+    }
     let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
     let angular_poles = [
@@ -7081,21 +7095,19 @@ fn transfer_resolved_extrusion_breps(
         let Some(profiles) = resolved_sketch_profiles(ir, &sketch_id, 2) else {
             continue;
         };
-        let mut supported = true;
-        let (profiles, outer_area) = if profiles.len() == 1 {
-            let Some(area) = extrusion_profile_signed_area(&profiles[0]) else {
-                continue;
-            };
-            (profiles, area)
-        } else {
-            let Some(result) = ordered_extrusion_profiles(profiles) else {
-                continue;
-            };
-            result
+        let Some((profiles, outer_area)) = ordered_extrusion_profiles(profiles) else {
+            continue;
         };
         if profiles.iter().flatten().any(|(geometry, _, start, end)| {
             matches!(geometry, SketchGeometry::Line { .. }) && start == end
         }) {
+            continue;
+        }
+        if profiles
+            .iter()
+            .flatten()
+            .any(|(geometry, _, _, _)| extruded_geometry_surface(transform, geometry).is_none())
+        {
             continue;
         }
         let forward_caps = outer_area > 0.0;
@@ -7385,7 +7397,6 @@ fn transfer_resolved_extrusion_breps(
                 let Some(surface_geometry) =
                     extruded_geometry_surface(transform, &section_geometry)
                 else {
-                    supported = false;
                     break;
                 };
                 ir.model.surfaces.push(Surface {
@@ -7468,9 +7479,6 @@ fn transfer_resolved_extrusion_breps(
                 });
                 shell_faces.push(face_id);
             }
-        }
-        if !supported {
-            continue;
         }
         ir.model.faces.push(Face {
             id: bottom_face,
@@ -8252,9 +8260,6 @@ fn resolved_profile_chains(
             incident.entry(vertex).or_default().push(index);
         }
     }
-    if incident.values().any(|rows| rows.len() > 2) {
-        return Vec::new();
-    }
     let mut remaining = (0..rows.len()).collect::<BTreeSet<_>>();
     let mut profiles = Vec::new();
     while let Some(seed) = remaining.first().copied() {
@@ -8270,6 +8275,12 @@ fn resolved_profile_chains(
             }
         }
         remaining.retain(|index| !component.contains(index));
+        if incident
+            .values()
+            .any(|rows| rows.iter().filter(|row| component.contains(row)).count() > 2)
+        {
+            continue;
+        }
         if component
             .iter()
             .any(|index| !emitted.contains(&rows[*index].1))
@@ -9161,6 +9172,13 @@ fn transfer_resolved_revolution_surfaces(
             continue;
         };
         if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve) {
+            continue;
+        }
+        if !scan
+            .feature_revolution_extents
+            .iter()
+            .any(|extent| extent.feature_id == feature_id)
+        {
             continue;
         }
         let Some(definition) = scan
@@ -11100,6 +11118,9 @@ fn circular_sweep_cylinder_from_cap_outlines(
         .iter()
         .filter_map(|(_, _, _, corners)| cap_square_center_radius((*corners)?, axis_index))
         .collect::<Vec<_>>();
+    let [_, _] = circles.as_slice() else {
+        return None;
+    };
     let (center, radius) = *circles.first()?;
     let scale = center
         .iter()
@@ -12322,26 +12343,16 @@ mod resolved_sketch_tests {
             ),
         ])
         .is_none());
-        assert!(matches!(
-            circular_sweep_cylinder_from_cap_outlines([
-                (
-                    828,
-                    [0.0, 4.0, 0.0],
-                    [0.0, 1.0, 0.0],
-                    Some([[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]]),
-                ),
-                (
-                    831,
-                    [0.0, -4.0, 0.0],
-                    [0.0, 1.0, 0.0],
-                    None,
-                ),
-            ]),
-            Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
-                if origin == Point3::new(-12.5, 4.0, 0.0)
-                    && axis == Vector3::new(0.0, -1.0, 0.0)
-                    && radius == 0.75
-        ));
+        assert!(circular_sweep_cylinder_from_cap_outlines([
+            (
+                828,
+                [0.0, 4.0, 0.0],
+                [0.0, 1.0, 0.0],
+                Some([[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]]),
+            ),
+            (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0], None,),
+        ])
+        .is_none());
         assert!(matches!(
             cylinder_from_single_cap_outline((
                 46,
@@ -16831,7 +16842,8 @@ fn transfer_cap_pair_cylinders(
         let Some((first_cap, first_ordinate)) = placed_caps.first().copied() else {
             continue;
         };
-        let Some(axis_index) = (0..3).find(|axis| first_cap.normal[*axis].abs() == 1.0) else {
+        let Some(axis_index) = (0..3).find(|axis| first_cap.normal[*axis].abs() > 1.0 - 1e-9)
+        else {
             continue;
         };
         if placed_caps
@@ -17482,7 +17494,7 @@ fn transfer_fc05_cap_circles(
         ) else {
             continue;
         };
-        let Some(axis_index) = (0..3).find(|axis| cap.normal[*axis].abs() == 1.0) else {
+        let Some(axis_index) = (0..3).find(|axis| cap.normal[*axis].abs() > 1.0 - 1e-9) else {
             continue;
         };
         let [first, second] = circle.center_row_frame;
@@ -17984,7 +17996,7 @@ fn carrier_intersection_curve(
                 + sphere.radius * sphere.radius
                 - torus.minor_radius * torus.minor_radius)
                 / (2.0 * meridian_distance);
-            let radius = sphere_parameter * torus.major_radius / meridian_distance;
+            let radius = (sphere_parameter * torus.major_radius / meridian_distance).abs();
             if radius <= 1e-12 * scale {
                 return None;
             }
@@ -18038,7 +18050,8 @@ fn carrier_intersection_curve(
                 + first.minor_radius * first.minor_radius
                 - second.minor_radius * second.minor_radius)
                 / (2.0 * meridian_distance);
-            let radius = first.major_radius + first_parameter * radial_delta / meridian_distance;
+            let radius =
+                (first.major_radius + first_parameter * radial_delta / meridian_distance).abs();
             if radius <= 1e-12 * scale {
                 return None;
             }
