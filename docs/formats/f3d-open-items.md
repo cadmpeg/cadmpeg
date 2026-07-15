@@ -22,6 +22,7 @@ This document records F3D semantics that the format specification does not yet d
 - The entity-count word's counting rule (which records it counts) is unresolved in both widths.
 - The semantic meaning of `design_record_header_flag` is unspecified. Its relationship to UI visibility and explicit appearance assignment is unresolved.
 - The semantic role of the second `0x01`-marker u32 in an ACT counter/registry record is unresolved.
+- Nonempty configuration-rule objects without paired string `when` and `activate` members have no defined activation grammar.
 - The Design `MetaStream` Dimension object is a registry with no owned entity IDs. Paired-, repeated counted-, null-locus, and recipe-backed dimension frames retain their operands, but payload-bearing dimension companion variants containing neither locus nor recipe frames are unresolved.
 - The indexed parameter companion has a fixed prefix, an owner backlink, a Unix-epoch microsecond timestamp, an exact owned interval, and an ordered set of contained construction recipes. Dimension-owned recipes resolve to their immediate indexed-record containers. The application event denoted by the timestamp and the operation grammar relating recipe records in non-locus companion variants are unresolved.
 - Text-frame (`0x10000000000`) and text-path (`0x20000000000`) constraint bits exceed the settled u32 mask in the 101-byte sketch-relation record. The side-stream record carrying those 64-bit text-constraint masks is unresolved.

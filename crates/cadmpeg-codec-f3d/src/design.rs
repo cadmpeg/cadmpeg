@@ -113,6 +113,17 @@ pub(crate) fn validate_configuration_payload(
         ))
     })?;
     if kind == DesignConfigurationKind::Rule {
+        let condition = object.get("when");
+        let target = object.get("activate");
+        if condition.is_some() || target.is_some() {
+            if !condition.is_some_and(serde_json::Value::is_string)
+                || !target.is_some_and(serde_json::Value::is_string)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D configuration rule `when` and `activate` must be paired strings: {entry_name}"
+                )));
+            }
+        }
         return Ok(());
     }
     let configurations = match object.get("configurations") {
@@ -233,7 +244,58 @@ pub fn project_configurations(
             });
         }
     }
+    for rule in native
+        .iter()
+        .filter(|configuration| configuration.kind == DesignConfigurationKind::Rule)
+    {
+        let Some(condition) = rule.payload.get("when").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let Some(target) = rule
+            .payload
+            .get("activate")
+            .and_then(serde_json::Value::as_str)
+        else {
+            continue;
+        };
+        let mut matches = projected
+            .iter_mut()
+            .filter(|configuration| configuration.name == target);
+        let Some(configuration) = matches.next() else {
+            continue;
+        };
+        if matches.next().is_some() {
+            continue;
+        }
+        configuration.properties.insert(
+            format!("activation_rule:{}", rule.entry_name),
+            condition.to_owned(),
+        );
+    }
     projected
+}
+
+pub(crate) fn unresolved_configuration_rule_count(
+    native: &[DesignConfiguration],
+    projected: &[cadmpeg_ir::features::DesignConfiguration],
+) -> usize {
+    native
+        .iter()
+        .filter(|rule| {
+            rule.kind == DesignConfigurationKind::Rule
+                && rule
+                    .payload
+                    .as_object()
+                    .is_some_and(|object| !object.is_empty())
+        })
+        .filter(|rule| {
+            !projected.iter().any(|configuration| {
+                configuration
+                    .properties
+                    .contains_key(&format!("activation_rule:{}", rule.entry_name))
+            })
+        })
+        .count()
 }
 
 fn neutral_configuration_id(
@@ -10473,7 +10535,7 @@ mod relation_tests {
         project_sketch_design, radial_dimension_definition, recipe_record_prefix,
         region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
-        resolved_face_group, two_locus_distance_dimension,
+        resolved_face_group, two_locus_distance_dimension, unresolved_configuration_rule_count,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConfiguration, DesignConfigurationKind,
@@ -10526,6 +10588,43 @@ mod relation_tests {
         assert_eq!(forward_ids.len(), 2);
         assert_ne!(forward[0].id, forward[1].id);
         assert_eq!(forward[0].native_ref.as_deref(), Some(first_id.as_str()));
+    }
+
+    #[test]
+    fn configuration_rules_bind_only_one_named_variant() {
+        let table = |entry_name: &str, variant_name: &str| DesignConfiguration {
+            id: format!("f3d:configuration:entry#{entry_name}"),
+            entry_name: entry_name.into(),
+            kind: DesignConfigurationKind::Table,
+            payload: serde_json::json!({"configurations": {variant_name: {}}}),
+        };
+        let rule = DesignConfiguration {
+            id: "f3d:configuration:entry#rule.dsgcfgrule".into(),
+            entry_name: "rule.dsgcfgrule".into(),
+            kind: DesignConfigurationKind::Rule,
+            payload: serde_json::json!({"when": "width > 20 mm", "activate": "wide"}),
+        };
+        let native = [table("table.dsgcfg", "wide"), rule.clone()];
+        let projected = project_configurations(&native);
+        assert_eq!(
+            projected[0].properties["activation_rule:rule.dsgcfgrule"],
+            "width > 20 mm"
+        );
+        assert_eq!(unresolved_configuration_rule_count(&native, &projected), 0);
+
+        let ambiguous = [
+            table("first.dsgcfg", "wide"),
+            table("second.dsgcfg", "wide"),
+            rule,
+        ];
+        let projected = project_configurations(&ambiguous);
+        assert!(projected
+            .iter()
+            .all(|configuration| configuration.properties.is_empty()));
+        assert_eq!(
+            unresolved_configuration_rule_count(&ambiguous, &projected),
+            1
+        );
     }
 
     #[test]

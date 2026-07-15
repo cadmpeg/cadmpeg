@@ -101,6 +101,27 @@ fn report_unresolved_dimension_companions(report: &mut DecodeReport, native: &F3
     }
 }
 
+fn report_unresolved_configuration_rules(
+    report: &mut DecodeReport,
+    native: &F3dNative,
+    ir: &CadIr,
+) {
+    let count = crate::design::unresolved_configuration_rule_count(
+        &native.design_configurations,
+        &ir.model.configurations,
+    );
+    if count != 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{count} nonempty Design configuration rule(s) were retained without an unambiguous neutral activation target."
+            ),
+            provenance: None,
+        });
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct DesignProjectionGaps {
     native_features: usize,
@@ -487,6 +508,7 @@ pub fn decode(
             native.act_guids = act.guids;
             native.act_root_components = act.root_components;
             report_unresolved_dimension_companions(&mut report, &native);
+            report_unresolved_configuration_rules(&mut report, &native, &ir);
             report_design_projection_gaps(&mut report, &ir);
             if !native.lost_edge_references.is_empty() {
                 report.losses.push(LossNote {

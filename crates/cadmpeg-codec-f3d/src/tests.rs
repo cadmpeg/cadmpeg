@@ -4157,7 +4157,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     assert_eq!(round_trip.ir.model.configurations, expected_projected);
 
     let rule_name = "FusionAssetName[Active]/DesignConfigurationRule.456.dsgcfgrule";
-    let rule = F3dCodec
+    let rule_result = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_configuration(
                 &synthetic_geometry_smbh(),
@@ -4167,7 +4167,14 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("generated configuration-rule decode");
-    let rule = f3d_native(&rule.ir).design_configurations.remove(0);
+    assert!(rule_result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(
+            "configuration rule(s) were retained without an unambiguous neutral activation target"
+        )));
+    let rule = f3d_native(&rule_result.ir).design_configurations.remove(0);
     assert_eq!(rule.kind, crate::records::DesignConfigurationKind::Rule);
     assert_eq!(rule.payload["activate"], "wide");
 
@@ -4217,6 +4224,20 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
                 if message.contains(expected)
         ));
     }
+
+    let invalid_rule = F3dCodec.decode(
+        &mut Cursor::new(f3d_with_configuration(
+            &synthetic_geometry_smbh(),
+            rule_name,
+            br#"{"when":"width > 20 mm"}"#,
+        )),
+        &DecodeOptions::default(),
+    );
+    assert!(matches!(
+        invalid_rule,
+        Err(cadmpeg_ir::codec::CodecError::Malformed(message))
+            if message.contains("`when` and `activate` must be paired strings")
+    ));
 }
 
 #[test]
