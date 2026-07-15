@@ -11,6 +11,7 @@ use crate::records::{
     SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, Length, PathRef, PatternKind};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -366,17 +367,16 @@ mod marker_tests {
         compact_edge_selection_at, compact_extrusion_through_all_at, compact_extrusion_to_face_at,
         compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
         compact_profile_reference_plane_source, compact_reference_plane_source,
-        compact_single_face_reference_path_at,
-        compact_surface_selection_at, complete_ordered_compact_line_profile,
-        component_path_features, component_path_terminal_feature, component_profile_source_at,
+        compact_single_face_reference_path_at, compact_surface_selection_at,
+        complete_ordered_compact_line_profile, component_path_features,
+        component_path_terminal_feature, component_profile_source_at,
         component_reference_curve_path_at, coordinate_marker_local_links, marker_coordinates,
         marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
         named_scalars, native_scalar_matches_discrete_parameter, object_names,
-        ordered_compact_line_profile, ordered_rectangle_corners, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        principal_sketch_frame, solved_tangent, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate,
-        COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
+        ordered_compact_line_profile, ordered_rectangle_corners, principal_sketch_frame,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        solved_tangent, unique_dimensioned_rectangle_markers, unique_locus,
+        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -677,8 +677,8 @@ mod marker_tests {
         payload.extend([0; 27]);
         payload.extend(1.0f64.to_le_bytes());
         payload.extend([
-            0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00, 0x00,
-            0x00, 0x00, 0x65,
+            0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
+            0x00, 0x65,
         ]);
         payload.extend([0; 80]);
         let profile_start = payload.len();
@@ -1530,7 +1530,7 @@ mod marker_tests {
             PrincipalPlane::Top,
             PrincipalPlane::Right,
         ] {
-            let (_, normal, u_axis) = principal_sketch_frame(plane).unwrap();
+            let (_, normal, u_axis) = principal_sketch_frame(plane);
             assert!((super::dot(normal, normal) - 1.0).abs() <= 1.0e-12);
             assert!((super::dot(u_axis, u_axis) - 1.0).abs() <= 1.0e-12);
             assert!(super::dot(normal, u_axis).abs() <= 1.0e-12);
@@ -2532,11 +2532,14 @@ pub(crate) fn project_helix_axes(
         if fitted_rise * axial_rise.0 < 0.0 {
             axis_direction = Vector3::new(-axis_direction.x, -axis_direction.y, -axis_direction.z);
         }
+        let Some(last_point) = points.last() else {
+            continue;
+        };
         let signed_rise = dot(
             Vector3::new(
-                points.last().unwrap().x - points[0].x,
-                points.last().unwrap().y - points[0].y,
-                points.last().unwrap().z - points[0].z,
+                last_point.x - points[0].x,
+                last_point.y - points[0].y,
+                last_point.z - points[0].z,
             ),
             axis_direction,
         );
@@ -2725,8 +2728,9 @@ fn solve_three(mut matrix: [[f64; 3]; 3], mut rhs: [f64; 3]) -> Option<[f64; 3]>
                 continue;
             }
             let factor = matrix[row][column];
-            for index in column..3 {
-                matrix[row][index] -= factor * matrix[column][index];
+            let pivot_row = matrix[column];
+            for (target, pivot) in matrix[row].iter_mut().zip(pivot_row).skip(column) {
+                *target -= factor * pivot;
             }
             rhs[row] -= factor * rhs[column];
         }
@@ -2767,11 +2771,13 @@ fn solve_four(mut matrix: [[f64; 4]; 4], mut rhs: [[f64; 3]; 4]) -> Option<[[f64
                 continue;
             }
             let factor = matrix[row][column];
-            for index in column..4 {
-                matrix[row][index] -= factor * matrix[column][index];
+            let pivot_row = matrix[column];
+            for (target, pivot) in matrix[row].iter_mut().zip(pivot_row).skip(column) {
+                *target -= factor * pivot;
             }
-            for index in 0..3 {
-                rhs[row][index] -= factor * rhs[column][index];
+            let rhs_pivot = rhs[column];
+            for (target, pivot) in rhs[row].iter_mut().zip(rhs_pivot) {
+                *target -= factor * pivot;
             }
         }
     }
@@ -2909,16 +2915,16 @@ fn resolve_operand_marker_excluding<'a>(
         }
         ordinal_link_graph = true;
     }
-    let exact = (!ordinal_link_graph)
-        .then(|| {
-            compatible
-                .iter()
-                .copied()
-                .filter(|entity| entity.local_id == Some(u32::from(address)))
-                .filter(|entity| !excluded.contains(&entity.id))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let exact = if ordinal_link_graph {
+        Vec::new()
+    } else {
+        compatible
+            .iter()
+            .copied()
+            .filter(|entity| entity.local_id == Some(u32::from(address)))
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>()
+    };
     match exact.as_slice() {
         [entity] => Some(*entity),
         [] => {
@@ -3407,8 +3413,8 @@ fn compact_surface_selections(
             offset: *offset as u64,
             object_name_ref: name.id.clone(),
             feature_ref: feature.id.clone(),
-            producer_feature_refs: component_path_features(&components, &history_features),
-            terminal_feature_ref: component_path_terminal_feature(&components, &history_features),
+            producer_feature_refs: component_path_features(components, &history_features),
+            terminal_feature_ref: component_path_terminal_feature(components, &history_features),
             components: components.clone(),
         });
     }
@@ -3630,6 +3636,8 @@ fn compact_homogeneous_edge_ids(
     count: usize,
 ) -> Option<Vec<u32>> {
     let signature = payload.get(cursor + 4..cursor + 16)?.to_vec();
+    // Each edge id consumes at least a 20-byte record from `cursor` onward.
+    bounded_len(count as u64, 20, payload.len().saturating_sub(cursor))?;
     let mut ids = Vec::with_capacity(count);
     for index in 0..count {
         if payload.get(cursor + 4..cursor + 16)? != signature {
@@ -3671,6 +3679,8 @@ fn compact_heterogeneous_component_path(
             && payload.get(offset + 4..offset + 20).is_some())
         .then_some(())
     };
+    // Each path entry consumes at least a 20-byte record from `cursor` onward.
+    bounded_len(count as u64, 20, payload.len().saturating_sub(cursor))?;
     let mut entries = Vec::with_capacity(count);
     for index in 0..count {
         entry_at(cursor)?;
@@ -3974,7 +3984,7 @@ pub(crate) fn operand_accepts_marker(
         | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87) => {
             matches!(marker, SketchInputKind::LineOrCircle | SketchInputKind::Arc)
         }
-        _ => true,
+        FeatureInputOperandKind::Native(_) => true,
     }
 }
 
@@ -5186,7 +5196,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))?;
             let frame = match neutral.definition {
                 cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } => {
-                    principal_sketch_frame(plane)?
+                    principal_sketch_frame(plane)
                 }
                 cadmpeg_ir::features::FeatureDefinition::DatumPlane {
                     origin,
@@ -5758,6 +5768,8 @@ fn compact_line_region_addresses(payload: &[u8]) -> Option<Vec<u16>> {
     if count < 3 {
         return None;
     }
+    // Each region entry consumes a 12-byte record from `header + 4` onward.
+    bounded_len(count as u64, 12, payload.len().saturating_sub(header + 4))?;
     let mut addresses = Vec::with_capacity(count);
     let mut entry_token = None;
     for index in 0..count {
@@ -5783,7 +5795,7 @@ fn compact_line_chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
     let matches = (0..payload.len()).filter_map(|offset| {
         let bytes = payload.get(offset..)?;
         let count = usize::from(u16::from_le_bytes(bytes.get(..2)?.try_into().ok()?));
-        if count < 3 || count > 64 {
+        if !(3..=64).contains(&count) {
             return None;
         }
         let addresses_end = 2usize.checked_add(count.checked_mul(4)?)?;
@@ -5901,24 +5913,24 @@ fn compact_profile_reference_plane_source(
 
 fn principal_sketch_frame(
     plane: cadmpeg_ir::features::PrincipalPlane,
-) -> Option<(Point3, Vector3, Vector3)> {
+) -> (Point3, Vector3, Vector3) {
     use cadmpeg_ir::features::PrincipalPlane;
     match plane {
-        PrincipalPlane::Front => Some((
+        PrincipalPlane::Front => (
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, -1.0, 0.0),
             Vector3::new(0.0, 0.0, -1.0),
-        )),
-        PrincipalPlane::Top => Some((
+        ),
+        PrincipalPlane::Top => (
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
-        )),
-        PrincipalPlane::Right => Some((
+        ),
+        PrincipalPlane::Right => (
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, -1.0),
-        )),
+        ),
     }
 }
 
@@ -6106,9 +6118,9 @@ pub(crate) fn bind_parameter_scalars(
                     .into_iter()
                     .filter(|scalar| match parameter.value.as_ref() {
                         Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
-                            if length_scalars.contains(scalar.id.as_str()) {
-                                same_dimension_length(scalar.value * 1000.0, *expected as f64)
-                            } else if angle_scalars.contains(scalar.id.as_str()) {
+                            if length_scalars.contains(scalar.id.as_str())
+                                || angle_scalars.contains(scalar.id.as_str())
+                            {
                                 same_dimension_length(scalar.value * 1000.0, *expected as f64)
                             } else {
                                 scalar.value.is_finite() && scalar.value == *expected as f64
@@ -6337,11 +6349,10 @@ pub(crate) fn project_compact_edge_selections(
         else {
             continue;
         };
-        let edges = match &mut feature.definition {
-            FeatureDefinition::Fillet { edges, .. } | FeatureDefinition::Chamfer { edges, .. } => {
-                edges
-            }
-            _ => continue,
+        let (FeatureDefinition::Fillet { edges, .. } | FeatureDefinition::Chamfer { edges, .. }) =
+            &mut feature.definition
+        else {
+            continue;
         };
         if matches!(edges, cadmpeg_ir::features::EdgeSelection::Unresolved) {
             let native = compact_edge_selection_set_value(edge_selections);
@@ -6843,7 +6854,7 @@ pub(crate) fn project_surface_sweep_profiles(
                     let [(_, components)] = candidates.as_slice() else {
                         return None;
                     };
-                    let owner = component_path_terminal_feature(&components, &history_features)?;
+                    let owner = component_path_terminal_feature(components, &history_features)?;
                     let feature_id = feature_ids_by_native.get(owner.as_str())?.clone();
                     let local_id = components
                         .iter()
@@ -7397,9 +7408,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                         && relation.family == FeatureInputRelationFamily::CircleDiameter
                 })
                 .filter_map(|relation| {
-                    let operand = match relation.operands.as_slice() {
-                        [operand] | [_, operand] => operand,
-                        _ => return None,
+                    let ([operand] | [_, operand]) = relation.operands.as_slice() else {
+                        return None;
                     };
                     let explicit = operand
                         .entity_ref
@@ -7496,9 +7506,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             ) else {
                 continue;
             };
-            let operand = match relation.operands.as_slice() {
-                [operand] | [_, operand] => operand,
-                _ => continue,
+            let ([operand] | [_, operand]) = relation.operands.as_slice() else {
+                continue;
             };
             let explicit_marker = operand
                 .entity_ref
@@ -8212,13 +8221,11 @@ fn relation_parameter_by_display_name<'a>(
         .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
         .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
         .flat_map(|name| {
-            parameters
-                .iter()
-                .filter(move |parameter| {
-                    &parameter.owner == owner
-                        && parameter.name == name
-                        && parameter.native_ref.is_none()
-                })
+            parameters.iter().filter(move |parameter| {
+                &parameter.owner == owner
+                    && parameter.name == name
+                    && parameter.native_ref.is_none()
+            })
         });
     let first = matches.next()?;
     matches
@@ -8975,7 +8982,8 @@ fn tangent_geometry(first: &SketchEntity, second: &SketchEntity) -> bool {
             let normal = [-dv / length, du / length];
             let major = [major_angle.0.cos(), major_angle.0.sin()];
             let minor = [-major[1], major[0]];
-            let support = ((major_radius.0 * (normal[0] * major[0] + normal[1] * major[1])).powi(2)
+            let support = ((major_radius.0 * (normal[0] * major[0] + normal[1] * major[1]))
+                .powi(2)
                 + (minor_radius.0 * (normal[0] * minor[0] + normal[1] * minor[1])).powi(2))
             .sqrt();
             return point_line_distance_value(*center, line)
@@ -9172,10 +9180,10 @@ fn linked_midpoint_operands(
         let locus = unique_locus(loci_by_marker.get(&link.entity_ref)?)?;
         match linked_marker.kind {
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint if point.is_none() => {
-                point = Some(locus)
+                point = Some(locus);
             }
             SketchInputKind::LineOrCircle | SketchInputKind::Arc if entity.is_none() => {
-                entity = Some(locus_entity(&locus))
+                entity = Some(locus_entity(&locus));
             }
             _ => return None,
         }
@@ -11118,13 +11126,14 @@ fn affine_sketch_frame_marker_transform(
         sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
     ];
     let origin = [sketch.origin.x, sketch.origin.y, sketch.origin.z];
-    if !normal
+    if !(normal
         .into_iter()
         .chain(u_axis)
         .chain(v_axis)
         .chain(origin)
         .all(f64::is_finite)
-        || !(quantum.is_finite() && quantum > 0.0)
+        && quantum.is_finite()
+        && quantum > 0.0)
     {
         return None;
     }
@@ -11204,9 +11213,11 @@ fn select_marker_transforms_by_frame(
                 && candidate.v_sign == frame.v_sign
         })
         .collect::<Vec<_>>();
-    (!oriented.is_empty())
-        .then_some(oriented)
-        .unwrap_or_else(|| candidates.to_vec())
+    if oriented.is_empty() {
+        candidates.to_vec()
+    } else {
+        oriented
+    }
 }
 
 fn dimensioned_circle_surface_transforms(
@@ -16096,9 +16107,9 @@ fn project_edge(
                     radius: cadmpeg_ir::features::Length(*radius),
                 })
             } else {
-                let parameters = edge.param_range.filter(|[start, end]| {
-                    start.is_finite() && end.is_finite() && start != end
-                });
+                let parameters = edge
+                    .param_range
+                    .filter(|[start, end]| start.is_finite() && end.is_finite() && start != end);
                 Some(SketchGeometry::Arc {
                     center,
                     radius: cadmpeg_ir::features::Length(*radius),
@@ -16132,25 +16143,23 @@ fn project_edge(
                 let minor_component = -du * major_angle.sin() + dv * major_angle.cos();
                 (minor_component / *minor_radius).atan2(major_component / *major_radius)
             };
-            let parameters = edge.param_range.filter(|[start, end]| {
-                start.is_finite() && end.is_finite() && start != end
-            });
+            let parameters = edge
+                .param_range
+                .filter(|[start, end]| start.is_finite() && end.is_finite() && start != end);
             Some(SketchGeometry::Ellipse {
                 center,
                 major_angle: cadmpeg_ir::features::Angle(major_angle),
                 major_radius: cadmpeg_ir::features::Length(*major_radius),
                 minor_radius: cadmpeg_ir::features::Length(*minor_radius),
                 start_angle: (!full).then(|| {
-                    cadmpeg_ir::features::Angle(parameters.map_or_else(
-                        || parameter(start),
-                        |range| range[0],
-                    ))
+                    cadmpeg_ir::features::Angle(
+                        parameters.map_or_else(|| parameter(start), |range| range[0]),
+                    )
                 }),
                 end_angle: (!full).then(|| {
-                    cadmpeg_ir::features::Angle(parameters.map_or_else(
-                        || parameter(end),
-                        |range| range[1],
-                    ))
+                    cadmpeg_ir::features::Angle(
+                        parameters.map_or_else(|| parameter(end), |range| range[1]),
+                    )
                 }),
             })
         }
@@ -16691,7 +16700,10 @@ fn validate_solved_dimension(
         }
         _ => unreachable!("only dimension definitions are passed"),
     };
-    if matches!(&constraint.definition, SketchConstraintDefinition::Angle { .. }) {
+    if matches!(
+        &constraint.definition,
+        SketchConstraintDefinition::Angle { .. }
+    ) {
         let supplement = std::f64::consts::PI - measured;
         if (supplement - expected).abs() < (measured - expected).abs() {
             measured = supplement;
@@ -17748,8 +17760,7 @@ fn unique_generated_locus_marker(
         }
     }
     Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
-        "source-less SLDPRT locus relation cannot identify {:?} with one unambiguous marker",
-        locus
+        "source-less SLDPRT locus relation cannot identify {locus:?} with one unambiguous marker"
     )))
 }
 

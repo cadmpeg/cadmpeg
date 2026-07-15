@@ -479,7 +479,11 @@ fn parse_map(bytes: &[u8], cursor: &mut usize, len: usize, depth: usize) -> Opti
 }
 
 fn parse_array(bytes: &[u8], cursor: &mut usize, len: usize, depth: usize) -> Option<Value> {
-    let mut values = Vec::with_capacity(len.min(1024));
+    // Every element encodes as at least one marker byte, so a length exceeding
+    // the unread input cannot be satisfied and is rejected before allocating.
+    let remaining = bytes.len().saturating_sub(*cursor);
+    let len = cadmpeg_ir::cursor::bounded_len(len as u64, 1, remaining)?;
+    let mut values = Vec::with_capacity(len);
     for _ in 0..len {
         values.push(parse_value(bytes, cursor, depth + 1)?);
     }

@@ -421,7 +421,10 @@ fn surface_shape(
                 let Some(v_count) = v_sum.checked_sub(v_degree + 1) else {
                     continue;
                 };
-                if u_count > 0 && v_count > 0 && u_count * v_count == poles {
+                // `checked_mul` bounds the pole count: `u_count`/`v_count` derive from
+                // multiplicity sums and their product can exceed `usize`, so an overflowing
+                // shape never matches `poles` (and never reaches the `with_capacity` below).
+                if u_count > 0 && v_count > 0 && u_count.checked_mul(v_count) == Some(poles) {
                     return Some((
                         u_count,
                         v_count,
