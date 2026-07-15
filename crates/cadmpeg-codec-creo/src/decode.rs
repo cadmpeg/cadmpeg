@@ -2033,7 +2033,17 @@ fn transfer_curve_expression_features(
             "creo:depdb:curve_expression_feature#{}-{}",
             record.entity_id, record.offset
         ));
-        let mut parameters_by_name = BTreeMap::<String, ParameterId>::new();
+        let mut parameters_by_name = BTreeMap::<String, Option<ParameterId>>::new();
+        for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
+            let parameter_id = ParameterId(format!(
+                "creo:depdb:curve_expression_parameter#{}-{}-{}",
+                record.entity_id, record.offset, assignment_ordinal
+            ));
+            parameters_by_name
+                .entry(assignment.name.clone())
+                .and_modify(|id| *id = None)
+                .or_insert(Some(parameter_id));
+        }
         let mut source_content = Vec::with_capacity(record.assignments.len());
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
             let parameter_id = ParameterId(format!(
@@ -2043,12 +2053,14 @@ fn transfer_curve_expression_features(
             let dependencies = assignment
                 .dependencies
                 .iter()
-                .filter_map(|name| parameters_by_name.get(name).cloned())
+                .filter_map(|name| parameters_by_name.get(name).cloned().flatten())
                 .collect::<Vec<_>>();
             let external_dependencies = assignment
                 .dependencies
                 .iter()
-                .filter(|name| name.as_str() != "t" && !parameters_by_name.contains_key(*name))
+                .filter(|name| {
+                    name.as_str() != "t" && !matches!(parameters_by_name.get(*name), Some(Some(_)))
+                })
                 .cloned()
                 .collect::<Vec<_>>();
             let intrinsic_dependencies = assignment
@@ -2092,7 +2104,6 @@ fn transfer_curve_expression_features(
                 native_ref: Some(curve_expression_record_id(record)),
             });
             source_content.push(FeatureSourceContent::Parameter(parameter_id.clone()));
-            parameters_by_name.insert(assignment.name.clone(), parameter_id);
         }
         annotate(
             annotations,

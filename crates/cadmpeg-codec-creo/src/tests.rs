@@ -3015,6 +3015,25 @@ fn decode_preserves_counted_curve_expression_programs() {
 }
 
 #[test]
+fn decode_binds_unique_forward_curve_expression_dependencies() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x04r=a\0a=5\0theta=t*360\0z=1\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let [r, a, theta, _] = result.ir.model.parameters.as_slice() else {
+        panic!("four curve-expression parameters");
+    };
+
+    assert_eq!(r.name, "r");
+    assert_eq!(r.value, None);
+    assert_eq!(r.dependencies, std::slice::from_ref(&a.id));
+    assert!(!r.properties.contains_key("external_dependencies"));
+    assert_eq!(theta.properties["independent_variables"], "t");
+}
+
+#[test]
 fn decode_places_helix_from_complete_curve_expression_frame() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x02local_sys\0\xf9\x04\x03\xe4\x0f\x0f\x0f\x0f\x0f\x18\xe5\x0f\x0f\x0f\
