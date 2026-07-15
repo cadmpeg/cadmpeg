@@ -15404,6 +15404,52 @@ fn truecolor_attribute_chain_decodes_argb() {
 }
 
 #[test]
+fn bt_text_color_attribute_chain_decodes_rgb() {
+    use std::collections::HashMap;
+
+    let mut bytes = Vec::new();
+    t_ident(&mut bytes, "face");
+    t_ref(&mut bytes, 1);
+    t_end(&mut bytes);
+    t_subident(&mut bytes, "entatt_color");
+    t_subident(&mut bytes, "bt");
+    t_ident(&mut bytes, "attrib");
+    t_ref(&mut bytes, -1);
+    push_u8_string(&mut bytes, "4227264"); // 0x4080c0
+    t_end(&mut bytes);
+
+    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
+    let color = crate::brep::attribute_chain_color(&records[0], &by_index).unwrap();
+    assert_eq!(
+        (color.r, color.g, color.b, color.a),
+        (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
+    );
+}
+
+#[test]
+fn bt_text_color_rejects_non_decimal_and_overwide_values() {
+    use std::collections::HashMap;
+
+    for value in ["0x4080c0", "16777216"] {
+        let mut bytes = Vec::new();
+        t_ident(&mut bytes, "face");
+        t_ref(&mut bytes, 1);
+        t_end(&mut bytes);
+        t_subident(&mut bytes, "entatt_color");
+        t_subident(&mut bytes, "bt");
+        t_ident(&mut bytes, "attrib");
+        t_ref(&mut bytes, -1);
+        push_u8_string(&mut bytes, value);
+        t_end(&mut bytes);
+
+        let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+        let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
+        assert!(crate::brep::attribute_chain_color(&records[0], &by_index).is_none());
+    }
+}
+
+#[test]
 fn transform_decodes_column_major_basis_and_scaled_translation() {
     use crate::sab::{Record, Token};
 

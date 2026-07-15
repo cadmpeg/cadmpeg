@@ -730,7 +730,7 @@ For each selector, an edge is an incidence match when, for every present clause 
 
 Visual and physical materials are distinct serialized channels.
 
-Color attribute records include `rgb_color-st-attrib` (float r,g,b in 0..1), `truecolor-adesk-attrib` (packed ARGB integer), `color-adesk-attrib` (palette index), and `material-adesk-attrib` (library lookup pair). `Timestamp_attrib_def` carries an f64 Unix-epoch timestamp in microseconds for the original feature or body creation time. The ASM header `save_date` stores the file save-time string.
+Color attribute records include `rgb_color-st-attrib` (float r,g,b in 0..1), `truecolor-adesk-attrib` (packed ARGB integer), `entatt_color-bt-attrib` (a decimal text representation of a 24-bit packed RGB integer), `color-adesk-attrib` (palette index), and `material-adesk-attrib` (library lookup pair). In the BT packed value, bits 16..23 are red, bits 8..15 are green, and bits 0..7 are blue; each channel is divided by 255 and alpha is one. Values outside `0..0xffffff` and non-decimal strings do not define a color. `Timestamp_attrib_def` carries an f64 Unix-epoch timestamp in microseconds for the original feature or body creation time. The ASM header `save_date` stores the file save-time string.
 
 `.protein` assets are **nested ZIP archives** carrying per-asset `AssetData/*.bin` value streams plus XML schemas (`CommonSchema`, `GenericSchema`, `PhysMatSchema`, `PrismOpaqueSchema`, …). `InstanceProperties.bin` and `DefinitionIteratorProperties.bin` have a 16-byte prefix followed by 136-byte pages. Each page is a record-start page, continuation page, or `0xffffffff` terminal page with a u16 used length. A logical record is the concatenation of its start-page and continuation-page payloads.
 

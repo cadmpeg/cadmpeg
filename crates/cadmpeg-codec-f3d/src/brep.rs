@@ -5739,6 +5739,20 @@ pub(crate) fn attribute_chain_color(
                 b: (packed & 0xff) as f32 / 255.0,
                 a: ((packed >> 24) & 0xff) as f32 / 255.0,
             });
+        } else if record.name == "entatt_color-bt-attrib" {
+            let packed = record.tokens.iter().find_map(|token| match token {
+                Token::Str(value) => value
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|value| *value <= 0xff_ffff),
+                _ => None,
+            })?;
+            return Some(Color {
+                r: ((packed >> 16) & 0xff) as f32 / 255.0,
+                g: ((packed >> 8) & 0xff) as f32 / 255.0,
+                b: (packed & 0xff) as f32 / 255.0,
+                a: 1.0,
+            });
         }
         current = record.ref_at(0)?;
     }
