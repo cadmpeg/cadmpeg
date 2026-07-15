@@ -5344,6 +5344,37 @@ fn revolved_nurbs_surface(directrix: &NurbsCurve, axis: RevolutionAxis) -> Optio
     })
 }
 
+fn revolved_section_circle(
+    transform: &crate::placement::FeatureSectionTransform,
+    point: [f64; 2],
+    axis: RevolutionAxis,
+) -> Option<CurveGeometry> {
+    let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
+    let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
+    let point = section_point_in_model(transform, point);
+    let relative: [f64; 3] =
+        std::array::from_fn(|component| point[component] - axis_origin[component]);
+    let axial_distance = dot(relative, axis_direction);
+    let center: [f64; 3] = std::array::from_fn(|component| {
+        axis_origin[component] + axial_distance * axis_direction[component]
+    });
+    let radial: [f64; 3] = std::array::from_fn(|component| point[component] - center[component]);
+    let radius = dot(radial, radial).sqrt();
+    let scale = point
+        .iter()
+        .chain(&axis_origin)
+        .map(|coordinate| coordinate.abs())
+        .fold(1.0, f64::max);
+    (radius > 1e-10 * scale).then_some(())?;
+    let reference = radial.map(|component| component / radius);
+    Some(CurveGeometry::Circle {
+        center: Point3::new(center[0], center[1], center[2]),
+        axis: Vector3::new(axis_direction[0], axis_direction[1], axis_direction[2]),
+        ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+        radius,
+    })
+}
+
 fn transfer_feature_extrusion_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -8549,6 +8580,119 @@ fn transfer_resolved_revolution_surfaces(
     transferred
 }
 
+fn transfer_resolved_revolution_vertex_orbit_curves(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut pending = Vec::new();
+    for transform in &scan.feature_section_transforms {
+        let Some(feature_id) = transform.feature_id else {
+            continue;
+        };
+        let Some(definition) = scan
+            .feature_definitions
+            .iter()
+            .find(|definition| definition.id == transform.definition_id)
+        else {
+            continue;
+        };
+        let Some(axis) = resolved_revolution_axis(definition, transform) else {
+            continue;
+        };
+        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
+        let Some(sketch) = ir
+            .model
+            .sketches
+            .iter()
+            .find(|sketch| sketch.id == sketch_id)
+        else {
+            continue;
+        };
+        let entities = ir
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| entity.sketch == sketch_id)
+            .map(|entity| (entity.id.clone(), &entity.geometry))
+            .collect::<BTreeMap<_, _>>();
+        for (profile_index, profile) in sketch.profiles.iter().enumerate() {
+            if profile.len() < 2 {
+                continue;
+            }
+            let uses = profile
+                .iter()
+                .map(|entity_use| {
+                    let geometry = entities.get(&entity_use.entity)?;
+                    let (mut start, mut end) = sketch_geometry_endpoints(geometry)?;
+                    if entity_use.reversed {
+                        std::mem::swap(&mut start, &mut end);
+                    }
+                    Some((start, end))
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(uses) = uses else {
+                continue;
+            };
+            let scale = uses
+                .iter()
+                .flat_map(|(start, end)| start.iter().chain(end))
+                .map(|coordinate| coordinate.abs())
+                .fold(1.0, f64::max);
+            if uses.iter().enumerate().any(|(index, (_, end))| {
+                let next = uses[(index + 1) % uses.len()].0;
+                (end[0] - next[0]).hypot(end[1] - next[1]) > 1e-9 * scale
+            }) {
+                continue;
+            }
+            for (vertex_index, (point, _)) in uses.iter().enumerate() {
+                let Some(geometry) = revolved_section_circle(transform, *point, axis) else {
+                    continue;
+                };
+                pending.push((
+                    CurveId(format!(
+                        "creo:feature:revolution_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
+                    )),
+                    geometry,
+                    transform.offset,
+                    format!(
+                        "FeatDefs:revolution#{feature_id}:profile{profile_index}:vertex{vertex_index}"
+                    ),
+                ));
+            }
+        }
+    }
+    let mut transferred = 0;
+    for (id, geometry, offset, object_id) in pending {
+        if ir.model.curves.iter().any(|curve| curve.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "FeatDefs",
+            offset as u64,
+            "evaluated_revolution_profile_vertex_orbit",
+            Exactness::Derived,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry,
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id,
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 fn feature_dimension_parameter_id(
     definition_id: u32,
     owner_feature_id: u32,
@@ -10488,6 +10632,20 @@ mod resolved_sketch_tests {
             start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
             end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
         };
+
+        assert!(matches!(
+            revolved_section_circle(&transform, [2.0, 3.0], axis),
+            Some(CurveGeometry::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            }) if center == Point3::new(0.0, 3.0, 0.0)
+                && axis == Vector3::new(0.0, 1.0, 0.0)
+                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && radius == 2.0
+        ));
+        assert!(revolved_section_circle(&transform, [0.0, 3.0], axis).is_none());
 
         assert!(matches!(
             revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), axis),
@@ -17201,6 +17359,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     transfer_resolved_sketches(scan, &mut ir, &mut annotations);
     let feature_revolution_surface_count =
         transfer_resolved_revolution_surfaces(scan, &mut ir, &mut annotations);
+    let feature_revolution_vertex_orbit_curve_count =
+        transfer_resolved_revolution_vertex_orbit_curves(scan, &mut ir, &mut annotations);
     let feature_extrusion_surface_count =
         transfer_feature_extrusion_surfaces(scan, &mut ir, &mut annotations);
     let circular_sweep_cylinder_count =
@@ -17238,6 +17398,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         source.attributes.insert(
             "transferred_feature_revolution_surface_count".to_string(),
             feature_revolution_surface_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_feature_revolution_vertex_orbit_curve_count".to_string(),
+            feature_revolution_vertex_orbit_curve_count.to_string(),
         );
         source.attributes.insert(
             "transferred_feature_extrusion_surface_count".to_string(),

@@ -1443,6 +1443,13 @@ direction `[1, 0, 0]`, and origin `[0, 0, 0]`.
 
 A `protextrude` or `protrevolve` operation references its sweep axis through `gsec3d_ptr` placement fields rather than an inline axis vector. The `srf_array` row `feat_id` binds each materialized carrier to the generating feature. Extruding a section line yields a plane, extruding an arc yields a cylinder, and extruding an interpolation spline yields a degree-one ruled NURBS surface that retains the spline's degree, knot vector, control points, and weights along the directrix parameter. The feature's cap-plane offsets bound the translation parameter, including symmetric and two-sided spans. A closed profile yields cap planes. Each solved carrier in an `ent_tab` profile or a closed point-incidence fallback profile defines an unbounded surface of revolution independently of the operation's angular trim. A line parallel, angled, or perpendicular to the axis yields a cylinder, circular cone, or plane. A circular arc or complete circle with center on or off the axis yields a sphere or torus. An interpolation spline yields a full-turn tensor-product NURBS carrier. Saved analytic entities use their `order_table` source identity and same-feature generated-surface entry exactly as saved splines do. The projected carrier-to-axis vector defines the zero-azimuth direction; construction segments outside the resolved profile do not generate surfaces.
 
+Each closed-profile vertex outside the axis defines a circular orbit carrier.
+Its center is the orthogonal projection of the placed vertex onto the
+revolution axis, its radius is the projection distance, and the placed radial
+vector defines zero azimuth. The operation's angular extent trims the carrier.
+A profile vertex on the axis is a rotational singularity and does not define a
+circle.
+
 A section with a resolved `gsec3d_ptr` placement is an ordered planar sketch
 history node owning the placed sketch geometry. When the section transform has
 a generating feature identifier, that feature depends on the sketch history
