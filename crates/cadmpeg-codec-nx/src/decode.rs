@@ -6313,6 +6313,11 @@ fn attach_native_object_model(
             &scan.container,
             &feature_datum_csys_payloads,
         );
+    let feature_datum_csys_payload_fixed_pairs =
+        crate::native::feature_datum_csys_payload_fixed_pairs(
+            &scan.container,
+            &feature_datum_csys_payloads,
+        );
     let feature_datum_csys_payload_scalars = crate::native::feature_datum_csys_payload_scalars(
         &scan.container,
         &feature_datum_csys_payloads,
@@ -7386,6 +7391,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_datum_csys_payload_scalar_pairs",
             &feature_datum_csys_payload_scalar_pairs,
+        )?;
+    }
+    if !feature_datum_csys_payload_fixed_pairs.is_empty() {
+        namespace.set_arena(
+            "feature_datum_csys_payload_fixed_pairs",
+            &feature_datum_csys_payload_fixed_pairs,
         )?;
     }
     if !feature_datum_csys_payload_scalars.is_empty() {

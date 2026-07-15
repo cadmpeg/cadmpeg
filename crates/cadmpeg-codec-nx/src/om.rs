@@ -633,6 +633,21 @@ pub struct SketchPayloadFixedPair {
     pub raw_values: [[u8; 7]; 2],
 }
 
+/// Exact pair of signed Q1.55 atoms following a datum-CSYS branch discriminator.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DatumCsysPayloadFixedPair {
+    /// Payload-relative offset of the discriminator.
+    pub offset: usize,
+    /// Ordered dimensionless Q1.55 values.
+    pub values: [f64; 2],
+    /// Payload-relative offsets of the two `30` atom markers.
+    pub value_offsets: [usize; 2],
+    /// Exact seven-byte two's-complement payloads.
+    pub raw_values: [[u8; 7]; 2],
+    /// Exact discriminator selecting the pair branch.
+    pub discriminator: Vec<u8>,
+}
+
 /// One bounded datum-CSYS descriptor block with a unique hexadecimal identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatumCsysDescriptorBlock {
@@ -2175,6 +2190,58 @@ pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
             values: [decode(first_raw), decode(second_raw)],
             value_offsets: [first, second],
             raw_values: [first_raw, second_raw],
+        });
+    }
+    pairs
+}
+
+/// Decode every exactly framed signed Q1.55 pair in a datum-CSYS payload.
+pub fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixedPair> {
+    const DISCRIMINATOR: [u8; 15] = [
+        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    ];
+    let decode = |raw: [u8; 7]| {
+        let unsigned = raw
+            .into_iter()
+            .fold(0_u64, |value, byte| (value << 8) | u64::from(byte));
+        let signed = if unsigned & (1_u64 << 55) == 0 {
+            unsigned as i64
+        } else {
+            (unsigned as i64) - (1_i64 << 56)
+        };
+        signed as f64 / (1_u64 << 55) as f64
+    };
+    let mut pairs = Vec::new();
+    for (offset, window) in bytes.windows(DISCRIMINATOR.len()).enumerate() {
+        if window != DISCRIMINATOR {
+            continue;
+        }
+        let first = offset + DISCRIMINATOR.len();
+        let second = first + 9;
+        if bytes.get(first) != Some(&0x30)
+            || bytes.get(first + 8) != Some(&0x00)
+            || bytes.get(second) != Some(&0x30)
+        {
+            continue;
+        }
+        let Some(first_raw) = bytes
+            .get(first + 1..first + 8)
+            .and_then(|raw| raw.try_into().ok())
+        else {
+            continue;
+        };
+        let Some(second_raw) = bytes
+            .get(second + 1..second + 8)
+            .and_then(|raw| raw.try_into().ok())
+        else {
+            continue;
+        };
+        pairs.push(DatumCsysPayloadFixedPair {
+            offset,
+            values: [decode(first_raw), decode(second_raw)],
+            value_offsets: [first, second],
+            raw_values: [first_raw, second_raw],
+            discriminator: DISCRIMINATOR.to_vec(),
         });
     }
     pairs

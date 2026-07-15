@@ -2187,6 +2187,25 @@ fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
 }
 
 #[test]
+fn datum_csys_fixed_pair_requires_its_exact_branch_discriminator() {
+    let mut bytes = vec![
+        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+        0x30,
+    ];
+    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0x00, 0x30]);
+    bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
+    let pairs = crate::om::datum_csys_payload_fixed_pairs(&bytes);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].values, [0.5, -0.5]);
+    assert_eq!(pairs[0].value_offsets, [15, 24]);
+    assert_eq!(pairs[0].raw_values[0], [0x40, 0, 0, 0, 0, 0, 0]);
+
+    bytes[0] = 0x08;
+    assert!(crate::om::datum_csys_payload_fixed_pairs(&bytes).is_empty());
+}
+
+#[test]
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     use crate::native::{
         feature_sketch_fixed_points, feature_sketch_payload_named_records,
