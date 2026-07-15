@@ -8689,7 +8689,7 @@ fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
         else {
             continue;
         };
-        feature.dependencies = scan
+        let native_dependencies = scan
             .feature_affected_ids
             .iter()
             .filter(|record| {
@@ -8716,6 +8716,12 @@ fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
                 }
                 dependencies
             });
+        feature.dependencies = reconciled_dependencies(
+            &feature.id,
+            &feature.dependencies,
+            native_dependencies,
+            &emitted,
+        );
         if feature.parent.is_none() {
             feature.parent = scan
                 .feature_operations
@@ -8748,6 +8754,26 @@ fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
     for (ordinal, index) in ordered.into_iter().enumerate() {
         ir.model.features[index].ordinal = ordinal as u64;
     }
+}
+
+fn reconciled_dependencies(
+    feature_id: &IrFeatureId,
+    established: &[IrFeatureId],
+    native: impl IntoIterator<Item = IrFeatureId>,
+    emitted: &BTreeSet<IrFeatureId>,
+) -> Vec<IrFeatureId> {
+    established
+        .iter()
+        .cloned()
+        .chain(native)
+        .filter(|dependency| emitted.contains(dependency))
+        .filter(|dependency| dependency != feature_id)
+        .fold(Vec::new(), |mut dependencies, dependency| {
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+            dependencies
+        })
 }
 
 fn resolved_revolution_axis(
@@ -9671,6 +9697,27 @@ fn extrusion_extent_and_direction(
 #[cfg(test)]
 mod resolved_sketch_tests {
     use super::*;
+
+    #[test]
+    fn dependency_reconciliation_preserves_typed_history_edges() {
+        let owner = IrFeatureId("creo:model:feature#40".to_string());
+        let sketch = IrFeatureId("creo:model:sketch_feature#917".to_string());
+        let parent = IrFeatureId("creo:model:feature#3".to_string());
+        let missing = IrFeatureId("creo:model:feature#999".to_string());
+        let emitted = [owner.clone(), sketch.clone(), parent.clone()]
+            .into_iter()
+            .collect();
+
+        assert_eq!(
+            reconciled_dependencies(
+                &owner,
+                &[sketch.clone(), missing],
+                [parent.clone(), sketch.clone(), owner.clone()],
+                &emitted,
+            ),
+            vec![sketch, parent]
+        );
+    }
 
     fn parameter_slot(value: f64) -> crate::surface::SurfaceParameterScalar {
         crate::surface::SurfaceParameterScalar {
