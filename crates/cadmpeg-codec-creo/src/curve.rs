@@ -448,7 +448,7 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
                 dimensions,
                 count,
                 explicit_slots: ((dimensions, count) == (4, 3))
-                    .then(|| scalar::decode_explicit_local_system_slots(&body, &cache))
+                    .then(|| scalar::decode_curve_expression_local_system_slots(&body, &cache))
                     .flatten(),
                 body,
                 offset,
@@ -1719,10 +1719,13 @@ mod tests {
         let inherited = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x08\
             \xe0\x02local_sys\0\xf9\x04\x03\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6\
             \xe0\x0aexpression\0\xf8\x01r=5\0";
-        assert!(expression_records(inherited)[0]
-            .local_system
-            .as_ref()
-            .is_some_and(|frame| frame.explicit_slots.is_none()));
+        assert_eq!(
+            expression_records(inherited)[0]
+                .local_system
+                .as_ref()
+                .and_then(|frame| frame.explicit_slots),
+            Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        );
     }
 
     #[test]

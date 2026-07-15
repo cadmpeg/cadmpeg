@@ -3123,6 +3123,33 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
 }
 
 #[test]
+fn decode_places_helix_from_rank_two_curve_expression_frame() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x02local_sys\0\xf9\x04\x03\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6\
+        \xe0\x0aexpression\0\xf8\x03r=5\0theta=t*360\0z=10*t\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+        center,
+        major,
+        minor,
+        pitch,
+        axis,
+        ..
+    } = &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("placed helix");
+    };
+    assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(*major, cadmpeg_ir::math::Vector3::new(0.0, 5.0, 0.0));
+    assert_eq!(*minor, cadmpeg_ir::math::Vector3::new(5.0, 0.0, 0.0));
+    assert_eq!(*pitch, cadmpeg_ir::math::Vector3::new(0.0, 0.0, -10.0));
+    assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0));
+}
+
+#[test]
 fn scan_discovers_curve_halfedge_topology() {
     let mut payload = visibgeom_payload(0, 1);
     payload

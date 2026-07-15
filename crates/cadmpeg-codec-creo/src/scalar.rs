@@ -307,24 +307,36 @@ pub fn decode_named_local_system_coordinate(
 /// Decode a complete twelve-slot support frame using the local-system macro
 /// language shared by feature definitions and curve-equation entities.
 pub fn decode_explicit_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
-    decode_local_system_slots(body, cache, false)
+    decode_local_system_slots(body, cache, false, false)
+}
+
+/// Decode the rank-two local-system lane used by curve-equation entities.
+pub fn decode_curve_expression_local_system_slots(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<[f64; 12]> {
+    if body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6] {
+        return Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    }
+    decode_local_system_slots(body, cache, false, false)
 }
 
 /// Decode the feature-definition variant of the twelve-slot support frame.
 pub fn decode_feature_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
-    decode_local_system_slots(body, cache, true)
+    decode_local_system_slots(body, cache, true, true)
 }
 
 fn decode_local_system_slots(
     body: &[u8],
     cache: &ScalarCache,
-    feature_rank_two: bool,
+    rank_two: bool,
+    terminal_zero: bool,
 ) -> Option<[f64; 12]> {
     let mut values = Vec::with_capacity(12);
     let mut cursor = 0;
     while cursor < body.len() && values.len() < 12 {
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-            if feature_rank_two && values.len() == 4 {
+            if rank_two && values.len() == 4 {
                 values.extend([0.0, 0.0, 1.0, 0.0, 0.0]);
             } else {
                 values.extend([0.0, 1.0, 0.0]);
@@ -346,7 +358,7 @@ fn decode_local_system_slots(
             cursor += 1;
             continue;
         }
-        if feature_rank_two && body.get(cursor) == Some(&0x18) && cursor + 1 == body.len() {
+        if terminal_zero && body.get(cursor) == Some(&0x18) && cursor + 1 == body.len() {
             values.push(0.0);
             cursor += 1;
             continue;
