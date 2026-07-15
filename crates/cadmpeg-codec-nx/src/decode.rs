@@ -4747,6 +4747,7 @@ fn emit_topology(
     attach_tolerant_edge_intersections(ir, graph, &edges, &prefix, source_stream, annotations);
     complete_intersection_supports_from_edge_incidence(ir);
     complete_intersection_pcurves_from_coedge_incidence(ir);
+    complete_isoparametric_intersection_pcurves(ir);
     complete_intersection_pcurves_from_opposite_charts(ir);
 
     let owned_edges: BTreeSet<_> = ir
@@ -5005,6 +5006,217 @@ pub(crate) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr)
                 Some(procedural.cache_fit_tolerance.unwrap_or(0.0).max(tolerance));
         }
     }
+}
+
+pub(crate) fn complete_isoparametric_intersection_pcurves(ir: &mut CadIr) {
+    let vertex_points = ir
+        .model
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            let point = ir
+                .model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)?;
+            Some((vertex.id.clone(), point.position))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let replacements = ir
+        .model
+        .procedural_curves
+        .iter()
+        .filter_map(|procedural| {
+            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            else {
+                return None;
+            };
+            if !context
+                .sides
+                .iter()
+                .all(|side| pcurve_requires_completion(side.pcurve.as_ref()))
+            {
+                return None;
+            }
+            let [Some(first_surface), Some(second_surface)] =
+                context.sides.each_ref().map(|side| side.surface.as_ref())
+            else {
+                return None;
+            };
+            let edges = ir
+                .model
+                .edges
+                .iter()
+                .filter(|edge| edge.curve.as_ref() == Some(&procedural.curve))
+                .collect::<Vec<_>>();
+            let [edge] = edges.as_slice() else {
+                return None;
+            };
+            let tolerance = edge
+                .tolerance
+                .filter(|value| value.is_finite() && *value >= 0.0)?;
+            let endpoints = [
+                *vertex_points.get(&edge.start)?,
+                *vertex_points.get(&edge.end)?,
+            ];
+            let candidates = [first_surface, second_surface].map(|surface| {
+                isoparametric_boundary_pcurve(
+                    ir,
+                    surface,
+                    endpoints,
+                    context.parameter_range,
+                    tolerance,
+                )
+            });
+            let pcurves = match candidates {
+                [Some(first), Some(second)] => coincident_pcurve_pair(
+                    ir,
+                    [first_surface, second_surface],
+                    [&first, &second],
+                    context.parameter_range,
+                    tolerance,
+                )
+                .then_some([first, second])?,
+                [Some(first), None] => [
+                    first.clone(),
+                    transfer_intersection_pcurve(
+                        ir,
+                        first_surface,
+                        &first,
+                        second_surface,
+                        context.parameter_range,
+                        tolerance,
+                    )?,
+                ],
+                [None, Some(second)] => [
+                    transfer_intersection_pcurve(
+                        ir,
+                        second_surface,
+                        &second,
+                        first_surface,
+                        context.parameter_range,
+                        tolerance,
+                    )?,
+                    second,
+                ],
+                [None, None] => return None,
+            };
+            Some((procedural.id.clone(), pcurves, tolerance))
+        })
+        .collect::<Vec<_>>();
+    for (procedural_id, pcurves, tolerance) in replacements {
+        let Some(procedural) = ir
+            .model
+            .procedural_curves
+            .iter_mut()
+            .find(|procedural| procedural.id == procedural_id)
+        else {
+            continue;
+        };
+        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
+        else {
+            continue;
+        };
+        if context
+            .sides
+            .iter()
+            .all(|side| pcurve_requires_completion(side.pcurve.as_ref()))
+        {
+            for (side, pcurve) in context.sides.iter_mut().zip(pcurves) {
+                side.pcurve = Some(pcurve);
+            }
+            procedural.cache_fit_tolerance = Some(tolerance);
+        }
+    }
+}
+
+fn isoparametric_boundary_pcurve(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    endpoints: [Point3; 2],
+    range: [f64; 2],
+    tolerance: f64,
+) -> Option<PcurveGeometry> {
+    (range[0].is_finite() && range[1].is_finite() && range[0] < range[1]).then_some(())?;
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    let SurfaceGeometry::Nurbs(nurbs) = &carrier.geometry else {
+        return None;
+    };
+    let domain = surface_parameter_domain(ir, surface)?;
+    let parameters = [
+        nurbs_parameters(nurbs, endpoints[0], None)?,
+        nurbs_parameters(nurbs, endpoints[1], None)?,
+    ];
+    for index in 0..2 {
+        let point =
+            cadmpeg_ir::eval::nurbs_surface_point(nurbs, parameters[index].u, parameters[index].v)?;
+        if point_distance(point, endpoints[index]) > tolerance {
+            return None;
+        }
+    }
+    let axes = [
+        ([parameters[0].u, parameters[1].u], domain.0),
+        ([parameters[0].v, parameters[1].v], domain.1),
+    ];
+    let candidates = axes
+        .into_iter()
+        .enumerate()
+        .filter_map(|(constant_axis, (values, axis_domain))| {
+            let scale = (axis_domain[1] - axis_domain[0]).abs().max(1.0);
+            let parameter_tolerance = 1.0e-8 * scale;
+            let boundary = axis_domain.into_iter().find(|boundary| {
+                values
+                    .iter()
+                    .all(|value| (*value - *boundary).abs() <= parameter_tolerance)
+            })?;
+            let varying = if constant_axis == 0 {
+                [parameters[0].v, parameters[1].v]
+            } else {
+                [parameters[0].u, parameters[1].u]
+            };
+            ((varying[1] - varying[0]).abs() > parameter_tolerance).then(|| {
+                let delta = (varying[1] - varying[0]) / (range[1] - range[0]);
+                let (origin, direction) = if constant_axis == 0 {
+                    (
+                        Point2::new(boundary, varying[0] - delta * range[0]),
+                        Point2::new(0.0, delta),
+                    )
+                } else {
+                    (
+                        Point2::new(varying[0] - delta * range[0], boundary),
+                        Point2::new(delta, 0.0),
+                    )
+                };
+                PcurveGeometry::Line { origin, direction }
+            })
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+fn coincident_pcurve_pair(
+    ir: &CadIr,
+    surfaces: [&SurfaceId; 2],
+    pcurves: [&PcurveGeometry; 2],
+    range: [f64; 2],
+    tolerance: f64,
+) -> bool {
+    (0..=32).all(|index| {
+        let fraction = f64::from(index) / 32.0;
+        let parameter = range[0] + fraction * (range[1] - range[0]);
+        let points = [0usize, 1usize].map(|side| {
+            let uv = pcurve_uv(pcurves[side], parameter)?;
+            decoded_surface_point(ir, surfaces[side], uv.u, uv.v)
+        });
+        matches!(points, [Some(first), Some(second)] if point_distance(first, second) <= tolerance)
+    })
 }
 
 fn transfer_intersection_pcurve(

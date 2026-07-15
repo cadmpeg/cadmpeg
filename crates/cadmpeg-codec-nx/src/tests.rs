@@ -5533,6 +5533,149 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
 }
 
 #[test]
+fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
+    use cadmpeg_ir::geometry::{
+        Curve, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface, ProceduralCurve, Surface,
+    };
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, SurfaceId, VertexId};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::{Edge, Point, Vertex};
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let nurbs = SurfaceId("synthetic:nurbs-boundary".into());
+    let plane = SurfaceId("synthetic:boundary-plane".into());
+    ir.model.surfaces.extend([
+        Surface {
+            id: nurbs.clone(),
+            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+                u_degree: 1,
+                v_degree: 1,
+                u_knots: vec![0.0, 0.0, 1.0, 1.0],
+                v_knots: vec![0.0, 0.0, 1.0, 1.0],
+                u_count: 2,
+                v_count: 2,
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(0.0, 5.0, 0.0),
+                    Point3::new(10.0, 0.0, 0.0),
+                    Point3::new(10.0, 5.0, 0.0),
+                ],
+                weights: None,
+                u_periodic: false,
+                v_periodic: false,
+            }),
+            source_object: None,
+        },
+        Surface {
+            id: plane.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let curve = CurveId("synthetic:boundary-curve".into());
+    let construction = ProceduralCurveId("synthetic:boundary-intersection".into());
+    ir.model.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Procedural {
+            construction: construction.clone(),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: construction,
+        curve: curve.clone(),
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(nurbs),
+                        pcurve: None,
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(plane),
+                        pcurve: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: None,
+    });
+    let point_ids = [
+        PointId("synthetic:p0".into()),
+        PointId("synthetic:p1".into()),
+    ];
+    let vertex_ids = [
+        VertexId("synthetic:v0".into()),
+        VertexId("synthetic:v1".into()),
+    ];
+    ir.model.points.extend([
+        Point {
+            id: point_ids[0].clone(),
+            position: Point3::new(0.0, 0.0, 0.0),
+        },
+        Point {
+            id: point_ids[1].clone(),
+            position: Point3::new(10.0, 0.0, 0.0),
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: vertex_ids[0].clone(),
+            point: point_ids[0].clone(),
+            tolerance: Some(1.0e-8),
+        },
+        Vertex {
+            id: vertex_ids[1].clone(),
+            point: point_ids[1].clone(),
+            tolerance: Some(1.0e-8),
+        },
+    ]);
+    ir.model.edges.push(Edge {
+        id: EdgeId("synthetic:boundary-edge".into()),
+        curve: Some(curve),
+        start: vertex_ids[0].clone(),
+        end: vertex_ids[1].clone(),
+        param_range: Some([0.0, 1.0]),
+        tolerance: Some(1.0e-8),
+    });
+
+    crate::decode::complete_isoparametric_intersection_pcurves(&mut ir);
+
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &ir.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
+    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let points = context.sides.each_ref().map(|side| {
+            let uv = cadmpeg_ir::eval::pcurve_uv(side.pcurve.as_ref().unwrap(), parameter).unwrap();
+            let surface = ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| Some(&surface.id) == side.surface.as_ref())
+                .unwrap();
+            cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v).unwrap()
+        });
+        assert!((points[0].x - 10.0 * parameter).abs() < 1.0e-8);
+        assert!(
+            (points[0].x - points[1].x)
+                .hypot(points[0].y - points[1].y)
+                .hypot(points[0].z - points[1].z)
+                < 1.0e-8
+        );
+    }
+}
+
+#[test]
 fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     let stream = pcurve_topology_partition_stream();
     let mut input = Cursor::new(prt_with_partition(&stream));
