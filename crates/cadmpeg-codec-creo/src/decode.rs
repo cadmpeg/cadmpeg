@@ -4097,20 +4097,25 @@ fn intersect_section_line_arc(first: &SketchGeometry, second: &SketchGeometry) -
         ],
     ];
     if travel <= 1e-10 * radius.0.max(1.0) {
-        return Some(candidates[0]);
+        let parameter = projection / length;
+        return (-1e-10..=1.0 + 1e-10)
+            .contains(&parameter)
+            .then_some(candidates[0]);
     }
-    let endpoint_distance = |candidate: [f64; 2]| {
-        [start, end]
-            .iter()
-            .map(|endpoint| (candidate[0] - endpoint.u).hypot(candidate[1] - endpoint.v))
-            .fold(f64::INFINITY, f64::min)
-    };
-    let distances = candidates.map(endpoint_distance);
-    let distance_scale = distances[0].max(distances[1]).max(1.0);
-    if (distances[0] - distances[1]).abs() <= 1e-9 * distance_scale {
+    let parameters = [
+        (projection + travel) / length,
+        (projection - travel) / length,
+    ];
+    let inside = parameters
+        .into_iter()
+        .enumerate()
+        .filter(|(_, parameter)| (-1e-10..=1.0 + 1e-10).contains(parameter))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let [index] = inside.as_slice() else {
         return None;
-    }
-    Some(candidates[usize::from(distances[1] < distances[0])])
+    };
+    Some(candidates[*index])
 }
 
 fn intersect_tangent_section_arcs(
@@ -12452,6 +12457,27 @@ mod resolved_sketch_tests {
             .expect("line has one endpoint on the arc");
         assert!((intersection[0] - 2.0).abs() <= 1e-12);
         assert!(intersection[1].abs() <= 1e-12);
+        let one_crossing = SketchGeometry::Line {
+            start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            end: cadmpeg_ir::math::Point2::new(3.0, 0.0),
+        };
+        assert_eq!(
+            intersect_section_line_arc(&one_crossing, &circle_half),
+            Some([2.0, 0.0])
+        );
+        let two_crossings = SketchGeometry::Line {
+            start: cadmpeg_ir::math::Point2::new(-3.0, 0.0),
+            end: cadmpeg_ir::math::Point2::new(3.0, 0.0),
+        };
+        assert_eq!(
+            intersect_section_line_arc(&two_crossings, &circle_half),
+            None
+        );
+        let no_crossing = SketchGeometry::Line {
+            start: cadmpeg_ir::math::Point2::new(3.0, 0.0),
+            end: cadmpeg_ir::math::Point2::new(4.0, 0.0),
+        };
+        assert_eq!(intersect_section_line_arc(&no_crossing, &circle_half), None);
 
         let circle = |center, radius| SketchGeometry::Arc {
             center: cadmpeg_ir::math::Point2::new(center, 0.0),

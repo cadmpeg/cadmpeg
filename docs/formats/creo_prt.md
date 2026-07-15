@@ -1358,7 +1358,10 @@ Without a unique common point, independently evaluated carriers must have one
 unique intersection before a coordinate is assigned. Two circular carriers
 define a trim coordinate at internal or external tangency. Secant circular
 carriers have two roots and remain unresolved without an independent root
-selector.
+selector. A bounded line and circle define a trim coordinate only when exactly
+one algebraic line-circle root has line parameter in the closed segment
+interval. Two in-segment roots remain unresolved; roots on the infinite line
+outside the segment do not participate.
 
 The positional `vert_tab.chains` opener uses the same bucket-count framing.
 Each populated entry begins with `f7 <entry_class>` and stores two incident
