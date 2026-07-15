@@ -7044,6 +7044,9 @@ fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> 
                 .then_some(DesignTopologyRecipeEntry {
                     selector,
                     boundary_edge_count,
+                    common_incident_edge_ordinal: (topology_triplets[0].incident_edge_ordinal
+                        == topology_triplets[1].incident_edge_ordinal)
+                        .then_some(topology_triplets[0].incident_edge_ordinal),
                     topology_triplets,
                 })
         })
@@ -11429,10 +11432,13 @@ mod relation_tests {
         let wrap = super::edge_recipe_entries(&[1, 5, 1, 0, 1, 1, 1, 1]).unwrap();
         assert_eq!(wrap[0].topology_triplets[0].vertex_ordinal, 0);
         assert_eq!(wrap[0].topology_triplets[0].incident_edge_ordinal, 4);
+        assert_eq!(wrap[0].common_incident_edge_ordinal, None);
         assert_eq!(
             wrap[0].topology_triplets[0].incident_side,
             crate::records::DesignTopologyIncidentSide::Preceding
         );
+        let common = super::edge_recipe_entries(&[1, 5, 1, 1, 1, 1, 1, 1]).unwrap();
+        assert_eq!(common[0].common_incident_edge_ordinal, Some(0));
         assert!(super::edge_recipe_entries(&[3, 5, 1, 1, 1, 2, 1, 2]).is_none());
         assert!(super::edge_recipe_entries(&[1, 5, 6, 5, 6, 2, 1, 2]).is_none());
         assert!(

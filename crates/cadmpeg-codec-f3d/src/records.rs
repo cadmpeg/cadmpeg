@@ -1208,6 +1208,9 @@ pub struct DesignTopologyRecipeEntry {
     pub boundary_edge_count: NonZeroU32,
     /// Two ordered topology triplets.
     pub topology_triplets: [DesignTopologyRecipeTriplet; 2],
+    /// Zero-based boundary-edge ordinal named by both triplets when equal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub common_incident_edge_ordinal: Option<u32>,
 }
 
 /// One three-word invariant in an edge-recipe entry.

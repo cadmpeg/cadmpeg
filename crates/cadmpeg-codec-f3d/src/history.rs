@@ -1797,6 +1797,7 @@ mod tests {
         let entry = |selector, boundary_edge_count| crate::records::DesignTopologyRecipeEntry {
             selector,
             boundary_edge_count: std::num::NonZeroU32::new(boundary_edge_count).unwrap(),
+            common_incident_edge_ordinal: (boundary_edge_count == 1).then_some(0),
             topology_triplets: [
                 crate::records::DesignTopologyRecipeTriplet {
                     outer: std::num::NonZeroU32::new(1).unwrap(),
