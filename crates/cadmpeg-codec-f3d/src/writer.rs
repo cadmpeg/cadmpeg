@@ -8249,8 +8249,14 @@ fn encode_native_variable_blend(
         bytes,
         &native_loft_curve(target, &construction.secondary_curve)?,
     )?;
-    bytes.push(native_bool(construction.convexity != 0));
-    bytes.push(native_bool(construction.render_blend != 0));
+    bytes.push(native_bool(matches!(
+        construction.convexity,
+        cadmpeg_ir::geometry::VariableBlendConvexity::Convex
+    )));
+    bytes.push(native_bool(matches!(
+        construction.render_mode,
+        cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallEnvelope
+    )));
     for value in construction.post_range {
         native_f64(bytes, value);
     }

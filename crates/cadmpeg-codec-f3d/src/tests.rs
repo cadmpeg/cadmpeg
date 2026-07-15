@@ -14868,8 +14868,8 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             construction.sides[1].support_kind,
             cadmpeg_ir::geometry::VariableBlendSupportKind::Curve
         );
-        assert_eq!(construction.sides[0].extension_flag, Some(false));
-        assert_eq!(construction.sides[1].extension_flag, Some(true));
+        assert_eq!(construction.sides[0].extension_flag, Some(true));
+        assert_eq!(construction.sides[1].extension_flag, Some(false));
         assert_eq!(
             construction.sides[0].location,
             cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
@@ -14888,8 +14888,14 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert_eq!(construction.shape_prefix, 11);
         assert_eq!(construction.shape_length, 6.0);
         assert_eq!(construction.shape_extensions, [21, 22, 23]);
-        assert_eq!(construction.convexity, 1);
-        assert_eq!(construction.render_blend, 0);
+        assert_eq!(
+            construction.convexity,
+            cadmpeg_ir::geometry::VariableBlendConvexity::Convex
+        );
+        assert_eq!(
+            construction.render_mode,
+            cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallSnapshot
+        );
         assert_eq!(construction.post_range, [0.0, 1.0]);
         assert!(construction.post_pcurve.is_none());
         assert!(construction.sides.iter().all(|side| side.pcurve.is_some()));

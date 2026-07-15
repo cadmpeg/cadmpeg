@@ -1164,6 +1164,26 @@ pub enum VariableBlendSupportKind {
     ZeroCurve,
 }
 
+/// Convexity selected for a variable-radius blend surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableBlendConvexity {
+    /// The blend bends toward the support intersection.
+    Convex,
+    /// The blend bends away from the support intersection.
+    Concave,
+}
+
+/// Solved-surface representation selected for a variable-radius blend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableBlendRenderMode {
+    /// The solved surface is the rolling-ball envelope.
+    RollingBallEnvelope,
+    /// The solved surface is a rolling-ball snapshot.
+    RollingBallSnapshot,
+}
+
 /// One interpolation control point in a variable blend-value law.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VariableBlendInterpolationPoint {
@@ -1312,10 +1332,10 @@ pub struct VariableBlendConstruction {
     pub shape_extensions: [i64; 3],
     /// Secondary curve following the solved shape.
     pub secondary_curve: CurveId,
-    /// Native convexity enum.
-    pub convexity: i64,
-    /// Native render-blend enum.
-    pub render_blend: i64,
+    /// Blend convexity.
+    pub convexity: VariableBlendConvexity,
+    /// Solved-surface representation.
+    pub render_mode: VariableBlendRenderMode,
     /// Native post-shape interval.
     pub post_range: [f64; 2],
     /// Native post-shape BS3 curve.

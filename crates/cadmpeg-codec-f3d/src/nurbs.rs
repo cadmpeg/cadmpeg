@@ -858,8 +858,8 @@ pub struct EmbeddedVariableBlend {
     pub(crate) shape_tail: i64,
     pub(crate) shape_extensions: [i64; 3],
     pub(crate) secondary_curve: NurbsCurve,
-    pub(crate) convexity: i64,
-    pub(crate) render_blend: i64,
+    pub(crate) convexity: cadmpeg_ir::geometry::VariableBlendConvexity,
+    pub(crate) render_mode: cadmpeg_ir::geometry::VariableBlendRenderMode,
     pub(crate) post_range: [f64; 2],
     pub(crate) post_curve: NurbsCurve,
     pub(crate) post_pcurve: Option<NurbsPcurve>,
@@ -4006,8 +4006,16 @@ fn decode_var_blend_spl_sur(
     ];
     let secondary = decode_curve_block(span, position, int_width)?;
     position = secondary.end;
-    let convexity = i64::from(take_bool(span, &mut position)?);
-    let render_blend = i64::from(take_bool(span, &mut position)?);
+    let convexity = if take_bool(span, &mut position)? {
+        cadmpeg_ir::geometry::VariableBlendConvexity::Convex
+    } else {
+        cadmpeg_ir::geometry::VariableBlendConvexity::Concave
+    };
+    let render_mode = if take_bool(span, &mut position)? {
+        cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallEnvelope
+    } else {
+        cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallSnapshot
+    };
     let post_range = [
         take_range_value(span, &mut position)?,
         take_range_value(span, &mut position)?,
@@ -4035,7 +4043,7 @@ fn decode_var_blend_spl_sur(
                 shape_extensions,
                 secondary_curve: secondary.curve,
                 convexity,
-                render_blend,
+                render_mode,
                 post_range,
                 post_curve: post.curve,
                 post_pcurve,
@@ -7188,15 +7196,20 @@ mod width_tests {
     fn variable_blend_side(int_width: usize, name: &str, extension_flag: Option<bool>) -> Vec<u8> {
         let mut bytes = Vec::new();
         push_string(&mut bytes, name);
-        push_ident(&mut bytes, "null_surface");
+        push_ident(&mut bytes, "plane");
+        push_position(&mut bytes, [0.0, 0.0, 0.0]);
+        push_vector(&mut bytes, [0.0, 0.0, 1.0]);
+        push_vector(&mut bytes, [1.0, 0.0, 0.0]);
+        bytes.push(0x0b);
         bytes.extend_from_slice(&curve_block(int_width));
         bytes.extend_from_slice(&pcurve_block(int_width));
         push_position(&mut bytes, [1.0, 2.0, 3.0]);
         if let Some(flag) = extension_flag {
             push_ident(&mut bytes, "nullbs");
-            bytes.push(if flag { 0x0b } else { 0x0a });
+            bytes.push(if flag { 0x0a } else { 0x0b });
             push_ident(&mut bytes, "nullbs");
         }
+        bytes.push(0x10);
         bytes
     }
 
@@ -7230,8 +7243,12 @@ mod width_tests {
                     let bytes = variable_blend_side(int_width, name, expected);
                     let mut position = 0;
                     let side = decode_variable_blend_side(&bytes, &mut position, int_width)
-                        .expect("variable-blend support side");
-                    assert_eq!(position, bytes.len());
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "variable-blend support side {name} width {int_width} flag {expected:?}"
+                            )
+                        });
+                    assert_eq!(position, bytes.len() - 1);
                     assert_eq!(side.support_kind, kind);
                     assert_eq!(side.extension_flag, expected);
                     assert_eq!(side.location, Point3::new(10.0, 20.0, 30.0));

@@ -3305,7 +3305,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     shape_extensions: construction.shape_extensions,
                                     secondary_curve,
                                     convexity: construction.convexity,
-                                    render_blend: construction.render_blend,
+                                    render_mode: construction.render_mode,
                                     post_range: construction.post_range,
                                     post_curve,
                                     post_pcurve: construction
