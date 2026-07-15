@@ -8,6 +8,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::cursor::bounded_len;
+
 use crate::psb;
 use crate::scalar;
 
@@ -1263,6 +1265,9 @@ fn decode_exact_scalars(
     cache: &scalar::ScalarCache,
 ) -> Option<Vec<f64>> {
     let mut cursor = 0;
+    // Each slot decodes at least one payload byte and the whole payload must be
+    // consumed, so a valid slot count cannot exceed the payload length.
+    bounded_len(slot_count as u64, 1, payload.len())?;
     let mut values = Vec::with_capacity(slot_count);
     for _ in 0..slot_count {
         let (value, next) = scalar::decode_in_lane(payload, cursor, cache)?;
@@ -1573,7 +1578,11 @@ fn positional_variable_table(
     cursor = after_row_class;
 
     let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
-    let mut rows = Vec::with_capacity(row_limit.min(1024));
+    // Each row consumes at least one byte before its 0xe2 separator, so the row
+    // count cannot exceed the unread bytes in the table window.
+    let capacity =
+        bounded_len(u64::from(declared_count), 1, end.saturating_sub(cursor)).unwrap_or(0);
+    let mut rows = Vec::with_capacity(capacity);
     let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
     prototype_separator.extend_from_slice(&reference_bytes);
     prototype_separator.push(0xe2);
@@ -2471,7 +2480,15 @@ fn positional_order_table(
     (class == table_class && payload.get(after_reference) == Some(&0xe2)).then_some(())?;
     cursor = after_reference + 1;
     let row_limit = usize::try_from(declared_count.saturating_sub(1)).unwrap_or(usize::MAX);
-    let mut rows = Vec::with_capacity(row_limit.min(1024));
+    // Each row consumes at least one byte before its 0xe2 separator, so the row
+    // count cannot exceed the unread bytes in the table window.
+    let capacity = bounded_len(
+        u64::from(declared_count.saturating_sub(1)),
+        1,
+        end.saturating_sub(cursor),
+    )
+    .unwrap_or(0);
+    let mut rows = Vec::with_capacity(capacity);
     let mut external_ids = BTreeSet::new();
     let mut internal_ids = BTreeSet::new();
     while cursor < end && rows.len() < row_limit {
@@ -4529,7 +4546,14 @@ pub fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
                 if cursor == from + 1 {
                     continue;
                 }
-                let mut ids = Vec::with_capacity(count as usize);
+                // Each id is a compact int of at least one byte, so the count
+                // cannot exceed the unread bytes of the row body.
+                let Some(capacity) =
+                    bounded_len(u64::from(count), 1, row.body.len().saturating_sub(cursor))
+                else {
+                    continue;
+                };
+                let mut ids = Vec::with_capacity(capacity);
                 for _ in 0..count {
                     let (id, next) = psb::compact_int(&row.body, cursor);
                     if next == cursor {
@@ -4582,6 +4606,9 @@ fn replay_extent(
 }
 
 fn replay_ids(run: &[u8], count: u32, mut cursor: usize) -> Option<(Vec<u32>, usize)> {
+    // Each id is a compact int of at least one byte, so the count cannot exceed
+    // the unread bytes of the run.
+    bounded_len(u64::from(count), 1, run.len().saturating_sub(cursor))?;
     let mut ids = Vec::with_capacity(count as usize);
     for _ in 0..count {
         let (id, after) = psb::compact_int(run, cursor);

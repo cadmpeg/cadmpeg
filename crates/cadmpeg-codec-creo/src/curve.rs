@@ -7,6 +7,8 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::cursor::bounded_len;
+
 use crate::psb::{self, compact_int, reference_id};
 use crate::scalar;
 
@@ -913,7 +915,15 @@ pub fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
     let mut cursor = topology + b"topol_ref_data\0".len();
     let cache = scalar::ScalarCache::from_section(payload);
     let positional_count = count - 1;
-    let mut rows = Vec::with_capacity(positional_count);
+    // Each row consumes at least one payload byte past the topology cursor
+    // before its terminator, so the row count cannot exceed the unread bytes.
+    let capacity = bounded_len(
+        positional_count as u64,
+        1,
+        payload.len().saturating_sub(cursor),
+    )
+    .unwrap_or(0);
+    let mut rows = Vec::with_capacity(capacity);
     let mut boundaries = Vec::new();
     for (marker, length) in [
         (b"\xe1\xe3".as_slice(), 2),

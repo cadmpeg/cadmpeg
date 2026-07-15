@@ -5,6 +5,8 @@
 //! boundary, and namespace links. A [`SurfacePrototype`] contains named template
 //! parameters. A named prototype locates its adjacent first positional instance.
 
+use cadmpeg_ir::cursor::bounded_len;
+
 use crate::psb::{self, compact_int};
 use crate::scalar;
 use std::collections::BTreeMap;
@@ -804,7 +806,12 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[u8]) -> Vec<SurfaceRow
         let mut framed = Vec::new();
         let mut saw_framed_candidate = false;
         for frame in frames {
-            let mut selected = Vec::<SurfaceRow>::with_capacity(frame.count);
+            // Each framed row occupies at least one payload byte in the frame
+            // span, so the declared count cannot exceed the span byte length.
+            let capacity =
+                bounded_len(frame.count as u64, 1, frame.end.saturating_sub(frame.start))
+                    .unwrap_or(0);
+            let mut selected = Vec::<SurfaceRow>::with_capacity(capacity);
             for row in result
                 .iter()
                 .filter(|row| row.offset >= frame.start && row.offset < frame.end)
@@ -892,12 +899,15 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                 }
             }
             if matches!(name, "u_params" | "v_params") {
-                let slots = named_spline_scalar_slots(
-                    name,
-                    &body[values_start..],
-                    usize::try_from(count).unwrap_or(usize::MAX),
-                    cache,
-                );
+                // Each declared slot is at least a one-byte scalar token in the
+                // value bytes, so the count cannot exceed the remaining bytes.
+                let Some(slot_count) =
+                    bounded_len(u64::from(count), 1, body.len().saturating_sub(values_start))
+                else {
+                    return SurfaceNamedValue::Opaque(body.to_vec());
+                };
+                let slots =
+                    named_spline_scalar_slots(name, &body[values_start..], slot_count, cache);
                 return SurfaceNamedValue::CountedScalarArray {
                     count,
                     values: slots.iter().map(|slot| slot.0).collect(),
@@ -918,12 +928,15 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                 return SurfaceNamedValue::CompactIntArray(values);
             }
             if name == "params" {
-                let slots = named_spline_scalar_slots(
-                    name,
-                    &body[values_start..],
-                    usize::try_from(count).unwrap_or(usize::MAX),
-                    cache,
-                );
+                // Each declared slot is at least a one-byte scalar token in the
+                // value bytes, so the count cannot exceed the remaining bytes.
+                let Some(slot_count) =
+                    bounded_len(u64::from(count), 1, body.len().saturating_sub(values_start))
+                else {
+                    return SurfaceNamedValue::Opaque(body.to_vec());
+                };
+                let slots =
+                    named_spline_scalar_slots(name, &body[values_start..], slot_count, cache);
                 return SurfaceNamedValue::CountedScalarArray {
                     count,
                     values: slots.iter().map(|slot| slot.0).collect(),
