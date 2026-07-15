@@ -930,6 +930,12 @@ lane order. The independently resolved class relation identifies the owning
 attribute definition, but a value receives a semantic field name only through
 the class-specific field-value serialization.
 
+When the class relation resolves, each neutral source-attribute name is the
+exact class name followed by its type-82, type-83, or type-84 family and
+zero-based type-81 reference ordinal. Without a resolved class it retains only
+the family and ordinal. This qualification assigns class ownership without
+assigning a declared field role.
+
 `hostglobalvariables` stores numeric expressions as independently length-framed ASCII records:
 
 ```text

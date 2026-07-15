@@ -4845,8 +4845,9 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     use cadmpeg_ir::AnnotationBuilder;
 
     use crate::native::{
-        ParasolidEntity51NumericKind, ParasolidEntity51NumericUse, ParasolidEntity52IntegerRecord,
-        ParasolidEntity53DoubleRecord, ParasolidTopologyAttributeListReference,
+        ParasolidAttributeDefinition, ParasolidEntity51NumericKind, ParasolidEntity51NumericUse,
+        ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
+        ParasolidTopologyAttributeClassUse, ParasolidTopologyAttributeListReference,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -4902,12 +4903,35 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             inflated_offset: 200,
         },
     ];
+    let definition = ParasolidAttributeDefinition {
+        id: "definition".into(),
+        stream_ordinal: 3,
+        xmt: 34,
+        name: "SDL/TYSA_DENSITY".into(),
+        field_count: 1,
+        field_record_xmt: 35,
+        field_record_references: [36, 37],
+        field_record_header_words: [0, 9000],
+        field_descriptor_prefix: [0; 26],
+        field_codes: vec![1],
+        inflated_offset: 100,
+    };
+    let class_use = ParasolidTopologyAttributeClassUse {
+        id: "class-use".into(),
+        topology_attribute_reference: references[2].id.clone(),
+        entity_51_record: "entity".into(),
+        class_discriminator: 33,
+        definition_xmt: definition.xmt,
+        attribute_definition: definition.id.clone(),
+    };
     let mut annotations = AnnotationBuilder::new();
 
     crate::decode::attach_parasolid_topology_numeric_attributes(
         &mut ir,
         &crate::decode::ParasolidNumericAttributeSources {
             topology_references: &references,
+            class_uses: &[class_use],
+            definitions: &[definition],
             numeric_uses: &uses,
             integers: &[integer],
             doubles: &[double],
@@ -4927,6 +4951,10 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         AttributeTarget::Shell(ShellId("nx:s3:shell#58".into()))
     );
     assert_eq!(attributes[0].name, "parasolid_type_integer_reference_3");
+    assert_eq!(
+        attributes[4].name,
+        "SDL/TYSA_DENSITY.parasolid_type_integer_reference_3"
+    );
     assert_eq!(
         attributes[0].values,
         [

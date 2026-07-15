@@ -7023,6 +7023,8 @@ fn attach_native_object_model(
     attach_parasolid_topology_string_attributes(
         ir,
         &parasolid_topology_attribute_list_references,
+        &parasolid_topology_attribute_class_uses,
+        &parasolid_attribute_definitions,
         &parasolid_entity_51_string_uses,
         &parasolid_entity_54_string_records,
         annotations,
@@ -7031,6 +7033,8 @@ fn attach_native_object_model(
         ir,
         &ParasolidNumericAttributeSources {
             topology_references: &parasolid_topology_attribute_list_references,
+            class_uses: &parasolid_topology_attribute_class_uses,
+            definitions: &parasolid_attribute_definitions,
             numeric_uses: &parasolid_entity_51_numeric_uses,
             integers: &parasolid_entity_52_integer_records,
             doubles: &parasolid_entity_53_double_records,
@@ -7739,10 +7743,13 @@ fn attach_native_object_model(
 fn attach_parasolid_topology_string_attributes(
     ir: &mut CadIr,
     topology_references: &[crate::native::ParasolidTopologyAttributeListReference],
+    class_uses: &[crate::native::ParasolidTopologyAttributeClassUse],
+    definitions: &[crate::native::ParasolidAttributeDefinition],
     string_uses: &[crate::native::ParasolidEntity51StringUse],
     strings: &[crate::native::ParasolidEntity54StringRecord],
     annotations: &mut AnnotationBuilder,
 ) {
+    let class_names = parasolid_topology_attribute_class_names(class_uses, definitions);
     let strings_by_id = strings
         .iter()
         .map(|record| (record.id.as_str(), record))
@@ -7800,13 +7807,18 @@ fn attach_parasolid_topology_string_attributes(
                 .tag("ENTITY_54_STRING_ATTRIBUTE");
             annotations.derived(&id.0, "target");
             annotations.derived(&id.0, "name");
+            let generic_name = format!(
+                "parasolid_type_84_reference_{}",
+                string_use.reference_ordinal
+            );
             ir.model.attributes.push(SourceAttribute {
                 id,
                 target: target.clone(),
-                name: format!(
-                    "parasolid_type_84_reference_{}",
-                    string_use.reference_ordinal
-                ),
+                name: class_names
+                    .get(reference.id.as_str())
+                    .map_or(generic_name.clone(), |class_name| {
+                        format!("{class_name}.{generic_name}")
+                    }),
                 values: vec![AttributeValue::String(string.value.clone())],
             });
         }
@@ -7818,9 +7830,30 @@ fn attach_parasolid_topology_string_attributes(
 
 pub(crate) struct ParasolidNumericAttributeSources<'a> {
     pub(crate) topology_references: &'a [crate::native::ParasolidTopologyAttributeListReference],
+    pub(crate) class_uses: &'a [crate::native::ParasolidTopologyAttributeClassUse],
+    pub(crate) definitions: &'a [crate::native::ParasolidAttributeDefinition],
     pub(crate) numeric_uses: &'a [crate::native::ParasolidEntity51NumericUse],
     pub(crate) integers: &'a [crate::native::ParasolidEntity52IntegerRecord],
     pub(crate) doubles: &'a [crate::native::ParasolidEntity53DoubleRecord],
+}
+
+fn parasolid_topology_attribute_class_names<'a>(
+    class_uses: &'a [crate::native::ParasolidTopologyAttributeClassUse],
+    definitions: &'a [crate::native::ParasolidAttributeDefinition],
+) -> BTreeMap<&'a str, &'a str> {
+    let definitions = definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition.name.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    class_uses
+        .iter()
+        .filter_map(|class_use| {
+            Some((
+                class_use.topology_attribute_reference.as_str(),
+                *definitions.get(class_use.attribute_definition.as_str())?,
+            ))
+        })
+        .collect()
 }
 
 fn parasolid_topology_kind(topology_type: u8) -> Option<&'static str> {
@@ -7878,6 +7911,8 @@ pub(crate) fn attach_parasolid_topology_numeric_attributes(
     sources: &ParasolidNumericAttributeSources<'_>,
     annotations: &mut AnnotationBuilder,
 ) {
+    let class_names =
+        parasolid_topology_attribute_class_names(sources.class_uses, sources.definitions);
     let integers_by_id = sources
         .integers
         .iter()
@@ -7972,13 +8007,18 @@ pub(crate) fn attach_parasolid_topology_numeric_attributes(
                 .tag(tag);
             annotations.derived(&id.0, "target");
             annotations.derived(&id.0, "name");
+            let generic_name = format!(
+                "parasolid_type_{lane}_reference_{}",
+                numeric_use.reference_ordinal
+            );
             ir.model.attributes.push(SourceAttribute {
                 id,
                 target: target.clone(),
-                name: format!(
-                    "parasolid_type_{lane}_reference_{}",
-                    numeric_use.reference_ordinal
-                ),
+                name: class_names
+                    .get(reference.id.as_str())
+                    .map_or(generic_name.clone(), |class_name| {
+                        format!("{class_name}.{generic_name}")
+                    }),
                 values,
             });
         }
