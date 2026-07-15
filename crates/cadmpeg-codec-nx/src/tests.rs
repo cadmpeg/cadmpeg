@@ -320,6 +320,78 @@ fn nx_feature_source_content_orders_parameter_occurrences_with_text() {
 }
 
 #[test]
+fn nx_native_feature_parameters_require_unique_resolved_names() {
+    let expression = |id: &str, name: &str, text: &str| crate::native::Expression {
+        id: id.to_string(),
+        object_id: None,
+        record: None,
+        declaration: None,
+        name: name.to_string(),
+        parameter_index: None,
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: text.to_string(),
+        value: None,
+        source_entry: "entry".to_string(),
+        source_offset: 0,
+    };
+    let parameter_use = |id: &str, expression: &str| crate::native::FeatureParameterUse {
+        id: id.to_string(),
+        operation_label: "operation".to_string(),
+        expression: expression.to_string(),
+        bindings: vec![format!("binding-{id}")],
+        source_offsets: vec![0],
+    };
+    let expressions = vec![
+        expression("expression-a", "p1_length", "p2_length * 2"),
+        expression("expression-b", "p2_length", "12.5"),
+    ];
+    let uses = [
+        parameter_use("use-a", "expression-a"),
+        parameter_use("use-b", "expression-b"),
+    ];
+    let use_refs = uses.iter().collect::<Vec<_>>();
+    let parameters = crate::decode::native_feature_parameters(&use_refs, &expressions);
+    assert_eq!(
+        parameters,
+        std::collections::BTreeMap::from([
+            ("p1_length".to_string(), "p2_length * 2".to_string()),
+            ("p2_length".to_string(), "12.5".to_string()),
+        ])
+    );
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition_with_parameters(
+            "EXTRUDE",
+            &[],
+            None,
+            None,
+            None,
+            parameters,
+        ),
+        cadmpeg_ir::features::FeatureDefinition::Native {
+            kind: "EXTRUDE".to_string(),
+            parameters: std::collections::BTreeMap::from([
+                ("p1_length".to_string(), "p2_length * 2".to_string()),
+                ("p2_length".to_string(), "12.5".to_string()),
+            ]),
+            properties: std::collections::BTreeMap::new(),
+        }
+    );
+
+    let duplicate_expressions = vec![
+        expression("expression-a", "p1_length", "1"),
+        expression("expression-b", "p1_length", "2"),
+    ];
+    assert!(crate::decode::native_feature_parameters(&use_refs, &duplicate_expressions).is_empty());
+    let unresolved = [parameter_use("use-c", "missing")];
+    assert!(crate::decode::native_feature_parameters(
+        &unresolved.iter().collect::<Vec<_>>(),
+        &expressions,
+    )
+    .is_empty());
+}
+
+#[test]
 fn nx_block_source_content_includes_complete_ordered_dimension_run() {
     use cadmpeg_ir::features::{FeatureSourceContent, ParameterId};
 
@@ -1953,16 +2025,20 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
     assert!(feature_sketch_preceding_named_point_uses(&references, &[gap, other_store]).is_empty());
 
     let unresolved = [references[0].clone(), reference(1, true, None)];
-    assert!(
-        feature_sketch_preceding_named_point_uses(&unresolved, &[preceding.clone()]).is_empty()
-    );
+    assert!(feature_sketch_preceding_named_point_uses(
+        &unresolved,
+        std::slice::from_ref(&preceding)
+    )
+    .is_empty());
     let noncontiguous = [
         references[0].clone(),
         reference(2, true, Some("nx:om-data-blocks-2:block#13")),
     ];
-    assert!(
-        feature_sketch_preceding_named_point_uses(&noncontiguous, &[preceding.clone()]).is_empty()
-    );
+    assert!(feature_sketch_preceding_named_point_uses(
+        &noncontiguous,
+        std::slice::from_ref(&preceding),
+    )
+    .is_empty());
     let bad_terminal = [
         references[0].clone(),
         reference(1, false, Some("nx:om-data-blocks-2:block#13")),

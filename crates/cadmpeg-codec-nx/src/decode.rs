@@ -5581,6 +5581,7 @@ fn attach_native_object_model(
             operation_body_scalar_triples: &feature_operation_body_scalar_triples,
             parameter_bindings: &feature_parameter_bindings,
             parameter_uses: &feature_parameter_uses,
+            expressions: &expressions,
             operation_records: &feature_operation_records,
             payload_strings: &feature_payload_strings,
             simple_hole_templates: &feature_simple_hole_templates,
@@ -6403,6 +6404,7 @@ struct FeatureOperationSources<'a> {
     operation_body_scalar_triples: &'a [crate::native::FeatureOperationBodyScalarTriple],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
     parameter_uses: &'a [crate::native::FeatureParameterUse],
+    expressions: &'a [crate::native::Expression],
     operation_records: &'a [crate::native::FeatureOperationRecord],
     payload_strings: &'a [crate::native::FeaturePayloadString],
     simple_hole_templates: &'a [crate::native::FeatureSimpleHoleTemplate],
@@ -6450,6 +6452,7 @@ fn attach_feature_operations(
         operation_body_scalar_triples,
         parameter_bindings,
         parameter_uses,
+        expressions,
         operation_records,
         payload_strings,
         simple_hole_templates,
@@ -7117,6 +7120,10 @@ fn attach_feature_operations(
                 );
             }
         }
+        let operation_parameter_uses = parameter_uses_by_operation
+            .get(label.id.as_str())
+            .map_or([].as_slice(), Vec::as_slice);
+        let native_parameters = native_feature_parameters(operation_parameter_uses, expressions);
         let definition = booleans.get(label.id.as_str()).map_or_else(
             || {
                 trim_body_projection
@@ -7124,12 +7131,13 @@ fn attach_feature_operations(
                     .or_else(|| blend_projection.map(|(definition, _)| definition))
                     .or_else(|| offset_projection.map(|(definition, _)| definition))
                     .unwrap_or_else(|| {
-                        non_boolean_feature_definition(
+                        non_boolean_feature_definition_with_parameters(
                             &label.value,
                             &operation_payload_strings,
                             block_dimension_values,
                             block_placement,
                             simple_hole_diameters.get(label.id.as_str()).copied(),
+                            native_parameters,
                         )
                     })
             },
@@ -7163,9 +7171,6 @@ fn attach_feature_operations(
             .note(&id, stream, label.source_offset)
             .tag("FEATURE_OPERATION");
         annotations.exactness(&id, Exactness::Derived);
-        let operation_parameter_uses = parameter_uses_by_operation
-            .get(label.id.as_str())
-            .map_or([].as_slice(), Vec::as_slice);
         let mut source_content =
             feature_source_content(operation_payload_string_records, operation_parameter_uses);
         if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
@@ -7544,12 +7549,31 @@ pub(crate) fn block_placement(ir: &CadIr, dimensions: [f64; 3]) -> Option<Transf
     Some(*placement)
 }
 
+#[cfg(test)]
 pub(crate) fn non_boolean_feature_definition(
     kind: &str,
     payload_strings: &[&str],
     block_dimensions: Option<[f64; 3]>,
     block_placement: Option<Transform>,
     hole_diameter: Option<Length>,
+) -> FeatureDefinition {
+    non_boolean_feature_definition_with_parameters(
+        kind,
+        payload_strings,
+        block_dimensions,
+        block_placement,
+        hole_diameter,
+        BTreeMap::new(),
+    )
+}
+
+pub(crate) fn non_boolean_feature_definition_with_parameters(
+    kind: &str,
+    payload_strings: &[&str],
+    block_dimensions: Option<[f64; 3]>,
+    block_placement: Option<Transform>,
+    hole_diameter: Option<Length>,
+    native_parameters: BTreeMap<String, String>,
 ) -> FeatureDefinition {
     if let ("BLOCK", Some(dimensions)) = (kind, block_dimensions) {
         return FeatureDefinition::Block {
@@ -7573,10 +7597,33 @@ pub(crate) fn non_boolean_feature_definition(
         },
         _ => FeatureDefinition::Native {
             kind: kind.to_string(),
-            parameters: BTreeMap::new(),
+            parameters: native_parameters,
             properties: BTreeMap::new(),
         },
     }
+}
+
+pub(crate) fn native_feature_parameters(
+    uses: &[&crate::native::FeatureParameterUse],
+    expressions: &[crate::native::Expression],
+) -> BTreeMap<String, String> {
+    let by_id = expressions
+        .iter()
+        .map(|expression| (expression.id.as_str(), expression))
+        .collect::<BTreeMap<_, _>>();
+    let mut parameters = BTreeMap::new();
+    for parameter_use in uses {
+        let Some(expression) = by_id.get(parameter_use.expression.as_str()) else {
+            return BTreeMap::new();
+        };
+        if parameters
+            .insert(expression.name.clone(), expression.expression.clone())
+            .is_some()
+        {
+            return BTreeMap::new();
+        }
+    }
+    parameters
 }
 
 /// Derive a shared simple-hole diameter only when the active B-rep supplies a
