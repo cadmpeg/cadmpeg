@@ -243,6 +243,8 @@ For a point-line dimension, a resolved point operand identifies the sole profile
 
 For horizontal and vertical point-point dimensions, a resolved operand identifies the sole distinct profile locus in the complete owning sketch whose absolute horizontal or vertical displacement equals the stored distance. When neither operand resolves directly, the operands identify the sole unordered profile-locus pair with that axis displacement. Zero or multiple compatible loci or pairs leave the missing operands unresolved.
 
+When both horizontal- or vertical-distance references identify loci whose axis displacement differs from the stored distance, each referenced locus independently selects its sole distinct locus at that axis displacement. The dimension uses the resulting pair only when these searches produce one unique unordered pair. The repaired pair retains a referenced locus; ambiguity and unrelated scalar-compatible pairs leave the relation native.
+
 A relation instance without a driving scalar uses its display scalar's attached name record to identify an existing same-named parameter owned by the same sketch feature. The binding requires one parameter and applies only when no driving relation or earlier display-only relation has claimed that parameter.
 
 Distance, horizontal-distance, vertical-distance, and circular-dimension driving scalars store metres. Angular driving scalars store radians. These relation-family units apply independently of the owning Keywords dimension's expression spelling.
