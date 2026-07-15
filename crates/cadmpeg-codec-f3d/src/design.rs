@@ -905,8 +905,12 @@ fn resolved_edge_group(
         return EdgeSelection::Unresolved;
     }
     let stream = native_stream(&group.id);
-    let mut edges = Vec::new();
+    let mut matched_operands = Vec::with_capacity(group.members.len());
+    let mut member_identities = HashSet::new();
     for member in &group.members {
+        if !member_identities.insert(*member) {
+            return EdgeSelection::Native(group.id.clone());
+        }
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == stream
                 && operand.scope_record_index == group.scope_record_index
@@ -918,9 +922,25 @@ fn resolved_edge_group(
         if matches.next().is_some() {
             return EdgeSelection::Native(group.id.clone());
         }
-        let Some(edge_slot) = resolved_edge_operand(operand) else {
-            return EdgeSelection::Native(group.id.clone());
-        };
+        matched_operands.push(operand);
+    }
+    let resolved_slots = matched_operands
+        .iter()
+        .map(|operand| resolved_edge_operand(operand))
+        .collect::<Option<Vec<_>>>()
+        .or_else(|| {
+            common_deleted_edge_group_candidates(
+                matched_operands
+                    .iter()
+                    .map(|operand| operand.deleted_boundary_edge_slots.as_slice()),
+                matched_operands.len(),
+            )
+        });
+    let Some(resolved_slots) = resolved_slots else {
+        return EdgeSelection::Native(group.id.clone());
+    };
+    let mut edges = Vec::new();
+    for edge_slot in resolved_slots {
         let edge = EdgeId(format!("f3d:brep:entity#{edge_slot}"));
         if !edges.contains(&edge) {
             edges.push(edge);
@@ -934,6 +954,31 @@ fn resolved_edge_group(
             native: group.id.clone(),
         }
     }
+}
+
+fn common_deleted_edge_group_candidates<'a>(
+    candidate_sets: impl IntoIterator<Item = &'a [i64]>,
+    member_count: usize,
+) -> Option<Vec<i64>> {
+    if member_count == 0 {
+        return None;
+    }
+    let mut candidate_sets = candidate_sets.into_iter();
+    let mut candidates = candidate_sets.next()?.to_vec();
+    candidates.sort_unstable();
+    candidates.dedup();
+    if candidates.len() != member_count {
+        return None;
+    }
+    for candidate_set in candidate_sets {
+        let mut normalized = candidate_set.to_vec();
+        normalized.sort_unstable();
+        normalized.dedup();
+        if normalized != candidates {
+            return None;
+        }
+    }
+    Some(candidates)
 }
 
 fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
@@ -14466,6 +14511,32 @@ mod relation_tests {
                 &[selector_with_counts(0, &[17], &[18])],
                 [&[17, 18][..]],
             ),
+            None
+        );
+    }
+
+    #[test]
+    fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
+        assert_eq!(
+            super::common_deleted_edge_group_candidates(
+                [&[19, 17, 18, 17][..], &[18, 19, 17][..], &[17, 18, 19][..]],
+                3,
+            ),
+            Some(vec![17, 18, 19])
+        );
+        assert_eq!(
+            super::common_deleted_edge_group_candidates(
+                [&[17, 18, 19][..], &[17, 18][..], &[17, 18, 19][..]],
+                3,
+            ),
+            None
+        );
+        assert_eq!(
+            super::common_deleted_edge_group_candidates([&[17, 18, 19][..], &[17, 18, 19][..]], 2,),
+            None
+        );
+        assert_eq!(
+            super::common_deleted_edge_group_candidates(std::iter::empty::<&[i64]>(), 0),
             None
         );
     }
