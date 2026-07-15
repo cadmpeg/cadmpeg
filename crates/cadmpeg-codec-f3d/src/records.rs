@@ -468,6 +468,10 @@ pub struct DesignDimensionRecipeRecord {
 /// One persistent Design selector/reference tail in a dimension recipe.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignRecipeReference {
+    /// Native persistent-subentity selector.
+    pub selector: i64,
+    /// Byte offset of `selector`.
+    pub selector_offset: u64,
     /// ASCII persistent-subentity selector token.
     pub token: String,
     /// Byte offset of the token bytes.

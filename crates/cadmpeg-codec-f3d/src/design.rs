@@ -5280,9 +5280,9 @@ pub(crate) fn decode_recipe_references(
     let mut references = Vec::new();
     let mut at = 22usize;
     while prefix.len().saturating_sub(at) > 4 {
-        if u32_at(prefix, at).is_none_or(|value| value == 0) {
+        let Some(selector) = u32_at(prefix, at).filter(|value| *value != 0) else {
             return Vec::new();
-        }
+        };
         let token_encoding_at = at + 4;
         let length_prefixed = lp_ascii(prefix, token_encoding_at).and_then(|(token, marker_at)| {
             (!token.is_empty()
@@ -5313,6 +5313,8 @@ pub(crate) fn decode_recipe_references(
             return Vec::new();
         }
         references.push(crate::records::DesignRecipeReference {
+            selector: i64::from(selector),
+            selector_offset: prefix_offset.saturating_add(at as u64),
             token,
             token_offset: prefix_offset.saturating_add(token_at as u64),
             design_reference: i64::from(design_reference),
@@ -5393,7 +5395,8 @@ pub(crate) fn recipe_reference_candidate_edges(
     let mut edges = tags
         .iter()
         .filter(|tag| {
-            tag.token == reference.token
+            tag.selector == reference.selector
+                && tag.token == reference.token
                 && tag.design_references.contains(&reference.design_reference)
         })
         .filter_map(|tag| match &tag.target {
@@ -5415,7 +5418,8 @@ pub(crate) fn recipe_reference_candidate_faces(
     let mut faces = tags
         .iter()
         .filter(|tag| {
-            tag.token == reference.token
+            tag.selector == reference.selector
+                && tag.token == reference.token
                 && tag.design_references.contains(&reference.design_reference)
         })
         .filter_map(|tag| match &tag.target {
@@ -10933,6 +10937,8 @@ mod relation_tests {
 
         let references = super::decode_recipe_references(&prefix, 1_000);
         assert_eq!(references.len(), 2);
+        assert_eq!(references[0].selector, 1);
+        assert_eq!(references[0].selector_offset, 1_022);
         assert_eq!(references[0].token, "13");
         assert_eq!(references[0].token_offset, 1_000 + first_token_at as u64);
         assert_eq!(references[0].design_reference, 331);
@@ -10940,6 +10946,8 @@ mod relation_tests {
             references[0].design_reference_offset,
             1_000 + first_reference_at as u64
         );
+        assert_eq!(references[1].selector, 2);
+        assert_eq!(references[1].selector_offset, 1_048);
         assert_eq!(references[1].token, "9");
         assert_eq!(references[1].token_offset, 1_000 + second_token_at as u64);
         assert_eq!(references[1].design_reference, 303);
@@ -10965,6 +10973,14 @@ mod relation_tests {
                         selector: 1,
                         token: "13".into(),
                         design_references: vec![999],
+                        ordinal: 0,
+                    },
+                    PersistentSubentityTag {
+                        id: "wrong-selector".into(),
+                        target: AttributeTarget::Face(FaceId("face-c".into())),
+                        selector: 2,
+                        token: "13".into(),
+                        design_references: vec![331],
                         ordinal: 0,
                     },
                     PersistentSubentityTag {
@@ -12294,6 +12310,8 @@ mod relation_tests {
         assert_eq!(operand.next_record_index, 104);
         assert_eq!(operand.next_byte_offset, face_next_at);
         operand.recipe_references.push(DesignRecipeReference {
+            selector: 1,
+            selector_offset: 1_101,
             token: "3".into(),
             token_offset: 1,
             design_reference: 303,

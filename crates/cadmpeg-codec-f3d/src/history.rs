@@ -2201,6 +2201,8 @@ mod tests {
             [&candidates[0]]
         );
         let reference = crate::records::DesignRecipeReference {
+            selector: 1,
+            selector_offset: 0,
             token: "1".into(),
             token_offset: 0,
             design_reference: 1,
