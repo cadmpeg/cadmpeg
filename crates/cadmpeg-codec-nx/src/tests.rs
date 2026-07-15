@@ -9577,8 +9577,10 @@ fn blend_contact_offset_requires_the_serialized_range_sign() {
 
 #[test]
 fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
-    use cadmpeg_ir::geometry::{BlendSupport, Curve, ProceduralSurface, Surface};
-    use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+    use cadmpeg_ir::geometry::{
+        BlendSupport, Curve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, Surface,
+    };
+    use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
     let first = SurfaceId("synthetic:first-plane".into());
@@ -9644,6 +9646,21 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     });
     let expected = Point2::new(8.0, 0.35);
     let point = crate::decode::blend_surface_point(&ir, &surface, expected.u, expected.v).unwrap();
+
+    assert_eq!(
+        crate::decode::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
+        0.25
+    );
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: ProceduralCurveId("synthetic:spine-construction".into()),
+        curve: spine.clone(),
+        definition: ProceduralCurveDefinition::Unknown { record: None },
+        cache_fit_tolerance: Some(0.75),
+    });
+    assert_eq!(
+        crate::decode::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
+        1.0
+    );
 
     let actual = crate::decode::blend_surface_parameters(&ir, &surface, point, None).unwrap();
 

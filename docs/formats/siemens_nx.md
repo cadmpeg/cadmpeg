@@ -593,6 +593,8 @@ For an intersection CHART_s point on a constant-radius BLEND_SURF, the nearest r
 
 For a finite NURBS spine, failure of the nearest-centre initial pair invokes a bounded canonical-patch search over the complete active spine domain and section interval `s ∈ [0,1]`. A `9 × 5` grid includes both domain boundaries. Undefined canal evaluations reject only their grid positions. The closest finite grid position seeds the same decreasing-residual refinement, and a refined fallback leaving the closed section interval is rejected. Forward evaluation within `chordal_error` remains mandatory.
 
+When a BLEND_SURF spine is itself a procedural curve represented by a cached carrier, forward support-chart evaluation uses the sum of the chart's `chordal_error` and the spine carrier's cache-fit tolerance. A completed support lane raises the dependent intersection curve's cache-fit tolerance to at least that sum. An exact line or NURBS spine contributes no additional tolerance. This propagation preserves the independently serialized radius and bounds the accumulated deviation of nested cached constructions.
+
 **Chained blend-on-blend** recurses into the support blend canal. A cyclic support graph does not define a canal and is invalid. Offsetting a constant-radius canal along its normal gives a canal with radius `r+δ`: `B(t,s; r+δ) = B(t,s; r) + δ·n(t,s)`. A spine uses one branch pair `(i0,i1)` for each polyline point.
 
 **Primitive reduction.** A constant-radius blend with a circular spine has torus parameters `major = circle radius`, `minor = r`. A line spine has cylinder radius `r`. Reduction requires `|range[0]| == |range[1]|` and a circular or linear spine with at least five points.

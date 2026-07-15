@@ -1750,6 +1750,8 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
             else {
                 continue;
             };
+            let effective_fit_tolerance =
+                blend_spine_cache_fit_tolerance(ir, surface_id, *fit_tolerance);
             let mut blend_grid = None;
             let mut blend_grid_initialized = false;
             let mut uv = Vec::with_capacity(points.len());
@@ -1773,7 +1775,7 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
                                     other_pcurve,
                                     parameters[point_index],
                                     *point,
-                                    *fit_tolerance,
+                                    effective_fit_tolerance,
                                 )
                             })
                             .or_else(|| offset_surface_parameters(ir, surface_id, *point, seed))
@@ -1783,7 +1785,7 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
                                     surface_id,
                                     *point,
                                     seed,
-                                    *fit_tolerance,
+                                    effective_fit_tolerance,
                                     BlendParameterGrid::Disabled,
                                 )
                             })
@@ -1797,7 +1799,7 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
                                     surface_id,
                                     *point,
                                     seed,
-                                    *fit_tolerance,
+                                    effective_fit_tolerance,
                                     blend_grid.as_deref().map_or(
                                         BlendParameterGrid::Disabled,
                                         BlendParameterGrid::Cached,
@@ -1830,7 +1832,7 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
             }
             let reproduces_chart = uv.iter().zip(points).all(|(uv, point)| {
                 decoded_surface_point(ir, surface_id, uv.u, uv.v)
-                    .is_some_and(|actual| point_distance(actual, *point) <= *fit_tolerance)
+                    .is_some_and(|actual| point_distance(actual, *point) <= effective_fit_tolerance)
             });
             if reproduces_chart {
                 replacements.push((
@@ -1843,11 +1845,12 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
                         weights: None,
                         periodic: false,
                     },
+                    effective_fit_tolerance,
                 ));
             }
         }
     }
-    for (procedural_id, side, pcurve) in replacements {
+    for (procedural_id, side, pcurve, effective_fit_tolerance) in replacements {
         let Some(procedural) = ir
             .model
             .procedural_curves
@@ -1862,9 +1865,32 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
         };
         if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
             context.sides[side].pcurve = Some(pcurve);
+            procedural.cache_fit_tolerance = Some(
+                procedural
+                    .cache_fit_tolerance
+                    .unwrap_or(0.0)
+                    .max(effective_fit_tolerance),
+            );
         }
     }
     complete_coupled_support_uv(ir, pending);
+}
+
+pub(crate) fn blend_spine_cache_fit_tolerance(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    fit_tolerance: f64,
+) -> f64 {
+    blend_surface_definition(ir, surface)
+        .and_then(|(_, spine, _, _)| {
+            ir.model
+                .procedural_curves
+                .iter()
+                .find(|procedural| procedural.curve == spine)
+                .and_then(|procedural| procedural.cache_fit_tolerance)
+        })
+        .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0)
+        .map_or(fit_tolerance, |tolerance| fit_tolerance + tolerance)
 }
 
 fn complete_coupled_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
