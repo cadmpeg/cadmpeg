@@ -8504,10 +8504,27 @@ fn attach_feature_operations(
                 "sketch_point_dependency_use".to_string(),
                 dependency.sketch_point_use.clone(),
             );
-            source_properties.insert(
-                "sketch_point_dependency_block".to_string(),
-                dependency.shared_data_block.clone(),
-            );
+            match &dependency.block_relation {
+                crate::native::FeatureSketchDatumCsysBlockRelation::Shared { data_block } => {
+                    source_properties.insert(
+                        "sketch_point_dependency_shared_block".to_string(),
+                        data_block.clone(),
+                    );
+                }
+                crate::native::FeatureSketchDatumCsysBlockRelation::Consecutive {
+                    point_data_block,
+                    construction_data_block,
+                } => {
+                    source_properties.insert(
+                        "sketch_point_dependency_point_block".to_string(),
+                        point_data_block.clone(),
+                    );
+                    source_properties.insert(
+                        "sketch_point_dependency_construction_block".to_string(),
+                        construction_data_block.clone(),
+                    );
+                }
+            }
             source_properties.insert(
                 "sketch_datum_csys_dependency".to_string(),
                 dependency.id.clone(),

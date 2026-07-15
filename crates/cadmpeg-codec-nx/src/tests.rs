@@ -2443,8 +2443,8 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
 #[test]
 fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
     use crate::native::{
-        FeatureDatumCsysConstruction, FeatureOperationLabel, FeatureSketchPointUse,
-        OffsetStoreNamedPoint,
+        FeatureDatumCsysConstruction, FeatureOperationLabel, FeatureSketchDatumCsysBlockRelation,
+        FeatureSketchPointUse, OffsetStoreNamedPoint,
     };
 
     let label = |id: &str, ordinal| FeatureOperationLabel {
@@ -2493,7 +2493,60 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
     assert_eq!(dependencies[0].datum_csys_operation_label, "csys");
     assert_eq!(dependencies[0].sketch_operation_label, "sketch");
     assert_eq!(dependencies[0].sketch_point_use, "point-use");
-    assert_eq!(dependencies[0].shared_data_block, "shared");
+    assert_eq!(
+        dependencies[0].block_relation,
+        FeatureSketchDatumCsysBlockRelation::Shared {
+            data_block: "shared".to_string()
+        }
+    );
+
+    let consecutive_point = OffsetStoreNamedPoint {
+        id: "consecutive-point".to_string(),
+        name: "Point2".to_string(),
+        data_blocks: vec![
+            "nx:om:offset-store#7:block#10".to_string(),
+            "nx:om:offset-store#7:block#11".to_string(),
+        ],
+        values: [3.0, 4.0],
+        value_source_offsets: [500, 520],
+        source_offset: 490,
+    };
+    let consecutive_use = FeatureSketchPointUse {
+        id: "consecutive-use".to_string(),
+        named_point: consecutive_point.id.clone(),
+        ..point_use.clone()
+    };
+    let mut consecutive_construction = construction.clone();
+    consecutive_construction.id = "consecutive-construction".to_string();
+    consecutive_construction.data_blocks[0] = "nx:om:offset-store#7:block#12".to_string();
+    let consecutive_dependencies = crate::native::feature_sketch_datum_csys_dependencies(
+        &labels,
+        &[consecutive_point],
+        &[consecutive_use],
+        &[consecutive_construction],
+    );
+    assert_eq!(
+        consecutive_dependencies[0].block_relation,
+        FeatureSketchDatumCsysBlockRelation::Consecutive {
+            point_data_block: "nx:om:offset-store#7:block#11".to_string(),
+            construction_data_block: "nx:om:offset-store#7:block#12".to_string(),
+        }
+    );
+
+    let mut ambiguous_point = point.clone();
+    ambiguous_point.id = "ambiguous-point".to_string();
+    let ambiguous_use = FeatureSketchPointUse {
+        id: "ambiguous-use".to_string(),
+        named_point: ambiguous_point.id.clone(),
+        ..point_use.clone()
+    };
+    assert!(crate::native::feature_sketch_datum_csys_dependencies(
+        &labels,
+        &[point.clone(), ambiguous_point],
+        &[point_use.clone(), ambiguous_use],
+        std::slice::from_ref(&construction),
+    )
+    .is_empty());
 
     let reversed_labels = [label("csys", 0), label("sketch", 1)];
     assert!(crate::native::feature_sketch_datum_csys_dependencies(

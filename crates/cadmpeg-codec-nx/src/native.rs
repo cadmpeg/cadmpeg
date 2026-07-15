@@ -1742,6 +1742,24 @@ pub struct FeatureSketchPointUse {
 }
 
 /// Exact ordered dependency from a sketch point to a datum coordinate system.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FeatureSketchDatumCsysBlockRelation {
+    /// The named-point span and coordinate-system construction address one block.
+    Shared {
+        /// Block addressed by both the named-point span and construction.
+        data_block: String,
+    },
+    /// The coordinate-system construction begins immediately after the named-point span.
+    Consecutive {
+        /// Final block in the complete named-point span.
+        point_data_block: String,
+        /// First block in the coordinate-system construction.
+        construction_data_block: String,
+    },
+}
+
+/// Exact ordered dependency from a sketch point to a datum coordinate system.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchDatumCsysDependency {
     /// Globally unique dependency identity.
@@ -1754,8 +1772,8 @@ pub struct FeatureSketchDatumCsysDependency {
     pub sketch_point_use: String,
     /// Exact datum-coordinate-system construction witnessing consumption.
     pub datum_csys_construction: String,
-    /// Exact offset-store block shared by the point and construction.
-    pub shared_data_block: String,
+    /// Exact block relation between the complete point span and construction.
+    pub block_relation: FeatureSketchDatumCsysBlockRelation,
     /// Absolute source offset of the first sketch reference witnessing the point identity.
     pub source_offset: u64,
 }
@@ -4491,6 +4509,11 @@ pub fn feature_sketch_datum_csys_dependencies(
     point_uses: &[FeatureSketchPointUse],
     constructions: &[FeatureDatumCsysConstruction],
 ) -> Vec<FeatureSketchDatumCsysDependency> {
+    fn block_key(block: &str) -> Option<(&str, u32)> {
+        let (store, ordinal) = block.rsplit_once(":block#")?;
+        Some((store, ordinal.parse().ok()?))
+    }
+
     let positions = labels
         .iter()
         .enumerate()
@@ -4521,17 +4544,46 @@ pub fn feature_sketch_datum_csys_dependencies(
                 .iter()
                 .filter(|block| point.data_blocks.contains(block))
             {
-                candidates.push((point_use, shared_block));
+                candidates.push((
+                    point_use,
+                    FeatureSketchDatumCsysBlockRelation::Shared {
+                        data_block: shared_block.clone(),
+                    },
+                ));
+            }
+            let Some(point_last_block) = point.data_blocks.last() else {
+                continue;
+            };
+            let Some(construction_first_block) = construction.data_blocks.first() else {
+                continue;
+            };
+            if let (
+                Some((point_store, point_ordinal)),
+                Some((construction_store, construction_ordinal)),
+            ) = (
+                block_key(point_last_block),
+                block_key(construction_first_block),
+            ) {
+                if point_store == construction_store
+                    && point_ordinal.checked_add(1) == Some(construction_ordinal)
+                {
+                    candidates.push((
+                        point_use,
+                        FeatureSketchDatumCsysBlockRelation::Consecutive {
+                            point_data_block: point_last_block.clone(),
+                            construction_data_block: construction_first_block.clone(),
+                        },
+                    ));
+                }
             }
         }
-        candidates.sort_by(|(left_use, left_block), (right_use, right_block)| {
-            (left_use.id.as_str(), left_block.as_str())
-                .cmp(&(right_use.id.as_str(), right_block.as_str()))
+        candidates.sort_by(|(left_use, left_relation), (right_use, right_relation)| {
+            (left_use.id.as_str(), left_relation).cmp(&(right_use.id.as_str(), right_relation))
         });
-        candidates.dedup_by(|(left_use, left_block), (right_use, right_block)| {
-            left_use.id == right_use.id && left_block == right_block
+        candidates.dedup_by(|(left_use, left_relation), (right_use, right_relation)| {
+            left_use.id == right_use.id && left_relation == right_relation
         });
-        let [(point_use, shared_block)] = candidates.as_slice() else {
+        let [(point_use, block_relation)] = candidates.as_slice() else {
             continue;
         };
         dependencies.push(FeatureSketchDatumCsysDependency {
@@ -4544,7 +4596,7 @@ pub fn feature_sketch_datum_csys_dependencies(
             datum_csys_operation_label: construction.operation_label.clone(),
             sketch_point_use: point_use.id.clone(),
             datum_csys_construction: construction.id.clone(),
-            shared_data_block: (*shared_block).clone(),
+            block_relation: block_relation.clone(),
             source_offset: point_use.source_offsets[0],
         });
     }
