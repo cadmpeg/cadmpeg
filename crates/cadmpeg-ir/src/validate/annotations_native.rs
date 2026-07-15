@@ -45,7 +45,7 @@ fn annotated_entity_json(ir: &CadIr, wanted: &HashSet<&str>) -> HashMap<String, 
     {
         if wanted.contains(record.id.as_str()) {
             if let Ok(value) = serde_json::to_value(record) {
-                entities.insert(record.id.clone(), value);
+                entities.entry(record.id.clone()).or_insert(value);
             }
         }
     }
@@ -291,5 +291,36 @@ pub(super) fn check_native_links(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::annotated_entity_json;
+    use crate::{examples::unit_cube, NativeNamespace, NativeRecord};
+    use serde_json::{Map, Value};
+    use std::collections::HashSet;
+
+    #[test]
+    fn model_entity_wins_when_native_id_collides() {
+        let mut ir = unit_cube();
+        let id = ir.model.points[0].id.0.clone();
+        ir.native.0.insert(
+            "collision".into(),
+            NativeNamespace {
+                version: 1,
+                arenas: [(
+                    "records".into(),
+                    vec![NativeRecord {
+                        id: id.clone(),
+                        fields: Map::from_iter([("native_only".into(), Value::Bool(true))]),
+                    }],
+                )]
+                .into(),
+            },
+        );
+        let entities = annotated_entity_json(&ir, &HashSet::from([id.as_str()]));
+        assert!(entities[&id].get("position").is_some());
+        assert!(entities[&id].get("native_only").is_none());
     }
 }

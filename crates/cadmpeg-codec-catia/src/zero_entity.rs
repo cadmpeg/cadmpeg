@@ -1250,7 +1250,8 @@ fn parse_carrier_runs(
                     .get(position + 1)
                     .map_or(bytes.len(), |next| next.offset);
                 if end.checked_sub(record.offset) != Some(expected_len) {
-                    return None;
+                    position += 1;
+                    continue;
                 }
                 expanded = ZeroEntityRecord {
                     ordinal: record.ordinal,
@@ -1648,6 +1649,34 @@ fn counted_references(bytes: &[u8], position: usize) -> Option<(Vec<u32>, usize)
 #[cfg(test)]
 mod occurrence_tests {
     use super::*;
+
+    #[test]
+    fn malformed_extended_support_does_not_discard_other_topology() {
+        let carrier = ZeroEntityRecord {
+            ordinal: 0,
+            offset: 0,
+            tag: [0x27, 0x00],
+            bytes: vec![0; 12],
+        };
+        let mut support_bytes = vec![0; 20];
+        support_bytes[12] = 0x10;
+        let support = ZeroEntityRecord {
+            ordinal: 1,
+            offset: 12,
+            tag: [0x21, 0x45],
+            bytes: support_bytes,
+        };
+        let next = ZeroEntityRecord {
+            ordinal: 2,
+            offset: 100,
+            tag: [0x5f, 0x00],
+            bytes: vec![0; 12],
+        };
+        let (runs, supports) =
+            parse_carrier_runs(&[carrier, support, next], &[0; 200]).expect("partial carrier scan");
+        assert!(runs.is_empty());
+        assert!(supports.is_empty());
+    }
 
     fn support(index: usize, endpoints: Option<[[f64; 3]; 2]>) -> ZeroSupport {
         ZeroSupport {

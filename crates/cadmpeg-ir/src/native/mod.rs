@@ -62,19 +62,7 @@ impl NativeNamespace {
         name: impl Into<String>,
         records: &[T],
     ) -> Result<(), NativeConvertError> {
-        let mut converted = Vec::with_capacity(records.len());
-        for record in records {
-            let Value::Object(mut fields) = serde_json::to_value(record)? else {
-                return Err(NativeConvertError::NonObject);
-            };
-            let Some(Value::String(id)) = fields.remove("id") else {
-                return Err(NativeConvertError::MissingId);
-            };
-            converted.push(NativeRecord { id, fields });
-        }
-        converted.sort_by(|left, right| left.id.cmp(&right.id));
-        self.arenas.insert(name.into(), converted);
-        Ok(())
+        self.set_arena_iter(name, records.iter(), records.len())
     }
 
     /// Replace an arena while consuming codec-owned typed records as they are
@@ -84,7 +72,17 @@ impl NativeNamespace {
         name: impl Into<String>,
         records: Vec<T>,
     ) -> Result<(), NativeConvertError> {
-        let mut converted = Vec::with_capacity(records.len());
+        let len = records.len();
+        self.set_arena_iter(name, records, len)
+    }
+
+    fn set_arena_iter<T: Serialize>(
+        &mut self,
+        name: impl Into<String>,
+        records: impl IntoIterator<Item = T>,
+        len: usize,
+    ) -> Result<(), NativeConvertError> {
+        let mut converted = Vec::with_capacity(len);
         for record in records {
             let Value::Object(mut fields) = serde_json::to_value(record)? else {
                 return Err(NativeConvertError::NonObject);
