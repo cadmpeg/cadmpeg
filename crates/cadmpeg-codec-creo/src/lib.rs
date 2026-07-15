@@ -50,6 +50,7 @@
 //! and feature evaluation remain incomplete. The decode report identifies
 //! these losses.
 
+mod compress;
 pub mod container;
 pub mod curve;
 pub mod datum;

@@ -115,8 +115,23 @@ pub struct Section {
     pub offset: usize,
     /// Payload length in bytes (header to the next section, or EOF).
     pub length: usize,
+    /// Expanded payload length from the TOC, excluding the section header.
+    pub expanded_length: Option<usize>,
     /// Role classification.
     pub role: &'static str,
+}
+
+/// A section payload decoded from Unix `compress` framing.
+#[derive(Debug, Clone)]
+pub struct ExpandedSection {
+    /// Normalized owning section name.
+    pub name: String,
+    /// Offset of the compressed payload in the source file.
+    pub source_offset: usize,
+    /// Number of compressed source bytes.
+    pub compressed_length: usize,
+    /// Complete expanded PSB payload.
+    pub data: Vec<u8>,
 }
 
 /// The byte-backed count headers read from the visible-geometry section.
@@ -156,6 +171,8 @@ pub struct ContainerScan {
     pub model_name: Option<String>,
     /// Enumerated sections in file order.
     pub sections: Vec<Section>,
+    /// Successfully expanded Unix-compress section payloads.
+    pub expanded_sections: Vec<ExpandedSection>,
     /// Identified layout family.
     pub layout: Layout,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
@@ -371,6 +388,7 @@ fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
             raw_name: raw.clone(),
             offset: *hdr_off,
             length: end.saturating_sub(*hdr_off),
+            expanded_length: None,
             role,
         });
     }
@@ -415,22 +433,25 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<Section> {
             if name == "NEXT_TOC_ENTRY" {
                 continue;
             }
-            let (raw_name, offset_field, length_field) = if name == "ModelView" {
-                let (Some(id), Some(offset), Some(length)) =
+            let (raw_name, offset_field, length_field, expanded_field) = if name == "ModelView" {
+                let (Some(id), Some(offset), Some(length), Some(expanded)) =
+                    (fields.get(1), fields.get(2), fields.get(3), fields.get(4))
+                else {
+                    continue;
+                };
+                (format!("ModelView#{id}"), *offset, *length, *expanded)
+            } else {
+                let (Some(offset), Some(length), Some(expanded)) =
                     (fields.get(1), fields.get(2), fields.get(3))
                 else {
                     continue;
                 };
-                (format!("ModelView#{id}"), *offset, *length)
-            } else {
-                let (Some(offset), Some(length)) = (fields.get(1), fields.get(2)) else {
-                    continue;
-                };
-                (name.to_string(), *offset, *length)
+                (name.to_string(), *offset, *length, *expanded)
             };
-            let (Ok(relative_offset), Ok(length)) = (
+            let (Ok(relative_offset), Ok(length), Ok(expanded_length)) = (
                 usize::from_str_radix(offset_field, 16),
                 usize::from_str_radix(length_field, 16),
+                usize::from_str_radix(expanded_field, 16),
             ) else {
                 continue;
             };
@@ -453,12 +474,40 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<Section> {
                 raw_name,
                 offset,
                 length,
+                expanded_length: Some(expanded_length),
             });
         }
     }
     sections.sort_by_key(|section| section.offset);
     sections.dedup_by_key(|section| section.offset);
     sections
+}
+
+fn expanded_sections(data: &[u8], sections: &[Section]) -> Vec<ExpandedSection> {
+    const MAX_EXPANDED_SECTION: usize = 256 * 1024 * 1024;
+    sections
+        .iter()
+        .filter_map(|section| {
+            let expected_length = section.expanded_length?;
+            if expected_length > MAX_EXPANDED_SECTION {
+                return None;
+            }
+            let header_length = section.raw_name.len().checked_add(2)?;
+            let source_offset = section.offset.checked_add(header_length)?;
+            let end = section.offset.checked_add(section.length)?;
+            let payload = data.get(source_offset..end)?;
+            if !payload.starts_with(&[0x1f, 0x9d]) {
+                return None;
+            }
+            let expanded = crate::compress::decode(payload, expected_length)?;
+            Some(ExpandedSection {
+                name: section.name.clone(),
+                source_offset,
+                compressed_length: payload.len(),
+                data: expanded,
+            })
+        })
+        .collect()
 }
 
 fn toc_lists_section(toc: &[u8], name: &[u8]) -> bool {
@@ -1267,6 +1316,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     } else {
         sections
     };
+    let expanded_sections = expanded_sections(&data, &sections);
     let layout = identify_layout(&sections);
     let census = geom_census(&data, &sections);
     let principal_unit = principal_unit(&data);
@@ -1379,6 +1429,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         version_line,
         model_name,
         sections,
+        expanded_sections,
         layout,
         census,
         principal_unit,
@@ -1452,12 +1503,25 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             if s.raw_name != s.name {
                 attributes.insert("raw_name".to_string(), s.raw_name.clone());
             }
+            let expanded = scan.expanded_sections.iter().find(|expanded| {
+                expanded.name == s.name
+                    && expanded.source_offset > s.offset
+                    && expanded.source_offset < s.offset.saturating_add(s.length)
+            });
+            if let Some(expanded) = expanded {
+                attributes.insert(
+                    "expanded_payload_size".to_string(),
+                    expanded.data.len().to_string(),
+                );
+            }
             ContainerEntry {
                 name: s.name.clone(),
                 role: s.role.to_string(),
-                compression: "none".to_string(),
+                compression: expanded.map_or("none", |_| "unix-compress").to_string(),
                 compressed_size: s.length as u64,
-                uncompressed_size: s.length as u64,
+                uncompressed_size: expanded.map_or(s.length as u64, |expanded| {
+                    (expanded.data.len() + s.raw_name.len() + 2) as u64
+                }),
                 attributes,
             }
         })
@@ -1491,6 +1555,12 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 
     if has_thumbnail(scan) {
         notes.push("THMB_IMG_MAIN carries a JPEG preview (excluded from geometry)".to_string());
+    }
+    if !scan.expanded_sections.is_empty() {
+        notes.push(format!(
+            "expanded {} Unix-compress section payload(s) with TOC-validated output lengths",
+            scan.expanded_sections.len()
+        ));
     }
 
     notes.push(

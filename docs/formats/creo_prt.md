@@ -44,6 +44,14 @@ offset contains the matching section header and its stored extent is inside the
 file. Valid TOC entries are the authoritative section directory; delimiter
 scanning is the fallback when no TOC entry validates.
 
+A section payload beginning `1f 9d <flags>` uses Unix `compress` LZW framing.
+The low five flag bits give the maximum code width from 9 through 16; bit 7
+enables block mode and code 256 clears the dictionary. Codes are packed least
+significant bit first in code-width-sized byte blocks. Block alignment resets
+when the code width increases or a clear code resets it to nine. Expansion is
+valid only when the output length equals the TOC expanded-length field. The
+expanded payload begins directly with its PSB named record.
+
 PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology may describe some geometric concepts, but it does not define PSB byte semantics.
 
 ### 1.1 Layout families

@@ -275,6 +275,34 @@ fn scan_uses_fixed_width_toc_offsets_for_adjacent_sections() {
 }
 
 #[test]
+fn scan_expands_toc_sized_unix_compress_payload() {
+    let mut data = b"#UGC:2 P test\n#-END_OF_UGC_HEADER\n".to_vec();
+    let header_base = data.len();
+    data.extend_from_slice(format!("{:<80}\n", "#UGC_TOC 2 1 81 17").as_bytes());
+    let section_offset = 2 * 81;
+    let compressed = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
+    let section_length = b"#SolidPrimdata\n".len() + compressed.len();
+    data.extend_from_slice(
+        format!(
+            "{:<80}\n",
+            format!("SolidPrimdata {section_offset:x} {section_length:x} 3")
+        )
+        .as_bytes(),
+    );
+    assert_eq!(data.len(), header_base + section_offset);
+    data.extend_from_slice(b"#SolidPrimdata\n");
+    data.extend_from_slice(&compressed);
+
+    let scan = container::scan_bytes(data);
+
+    assert_eq!(scan.expanded_sections.len(), 1);
+    assert_eq!(scan.expanded_sections[0].data, b"ABC");
+    let summary = container::summarize(&scan);
+    assert_eq!(summary.entries[0].compression, "unix-compress");
+    assert_eq!(summary.entries[0].uncompressed_size, 18);
+}
+
+#[test]
 fn decode_extracts_jpeg_thumbnail_as_native_asset() {
     let data = build_prt("c", &[("THMB_IMG_MAIN", jpeg_payload())]);
     let result = decode::decode(

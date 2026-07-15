@@ -537,6 +537,58 @@ struct CreoFaceComponentRecord {
 }
 
 #[derive(Serialize)]
+struct CreoExpandedSectionRecord {
+    id: String,
+    name: String,
+    source_offset: usize,
+    compressed_length: usize,
+    expanded_length: usize,
+    sha256: String,
+}
+
+fn expanded_section_records(scan: &ContainerScan) -> Vec<CreoExpandedSectionRecord> {
+    scan.expanded_sections
+        .iter()
+        .map(|section| CreoExpandedSectionRecord {
+            id: format!(
+                "creo:container:expanded_section#{}:{}",
+                section.name, section.source_offset
+            ),
+            name: section.name.clone(),
+            source_offset: section.source_offset,
+            compressed_length: section.compressed_length,
+            expanded_length: section.data.len(),
+            sha256: sha256_hex(&section.data),
+        })
+        .collect()
+}
+
+fn attach_expanded_sections(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), CodecError> {
+    let records = expanded_section_records(scan);
+    if records.is_empty() {
+        return Ok(());
+    }
+    for record in &records {
+        annotate(
+            annotations,
+            &record.id,
+            &record.name,
+            record.source_offset as u64,
+            "unix_compress_expanded_section",
+            Exactness::Derived,
+        );
+    }
+    let namespace = ir.native.namespace_mut("creo");
+    namespace.version = 1;
+    namespace.set_arena("expanded_sections", &records)?;
+    Ok(())
+}
+
+#[derive(Serialize)]
 struct CreoFcCurveCoordinateRecord {
     id: String,
     curve_id: u32,
@@ -16402,6 +16454,7 @@ fn build_container_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
     preserve_passthrough_sections(scan, &mut ir, &mut annotations)?;
+    attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     ir.annotations = annotations.build();
     Ok(ir)
 }
@@ -16787,6 +16840,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     reconcile_feature_links(scan, &mut ir);
     transfer_curve_expression_features(scan, &mut ir, &mut annotations);
     transfer_feature_dimensions(scan, &mut ir, &mut annotations);
+    attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     let surface_rows = surface_row_records(scan);
     if !surface_rows.is_empty() {
         for record in &surface_rows {
@@ -17422,6 +17476,18 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_curve_expression_record_count".to_string(),
         scan.curve_expressions.len().to_string(),
+    );
+    attributes.insert(
+        "expanded_section_count".to_string(),
+        scan.expanded_sections.len().to_string(),
+    );
+    attributes.insert(
+        "expanded_section_byte_count".to_string(),
+        scan.expanded_sections
+            .iter()
+            .map(|section| section.data.len())
+            .sum::<usize>()
+            .to_string(),
     );
     if let Some(family_table) = scan.family_table {
         attributes.insert(
