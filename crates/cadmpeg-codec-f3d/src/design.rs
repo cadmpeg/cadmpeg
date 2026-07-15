@@ -949,6 +949,14 @@ fn resolved_edge_group(
         .collect::<Option<Vec<_>>>()
         .or_else(|| unique_edge_group_assignment(&matched_operands))
         .or_else(|| {
+            context_only_edge_group_candidates(matched_operands.iter().map(|operand| {
+                (
+                    resolved_edge_operand(operand),
+                    operand.changed_boundary_edge_slots.as_slice(),
+                )
+            }))
+        })
+        .or_else(|| {
             common_deleted_edge_group_candidates(
                 matched_operands
                     .iter()
@@ -988,6 +996,24 @@ fn resolved_edge_group(
             native: group.id.clone(),
         }
     }
+}
+
+fn context_only_edge_group_candidates<'a>(
+    members: impl IntoIterator<Item = (Option<i64>, &'a [i64])>,
+) -> Option<Vec<i64>> {
+    let mut edges = Vec::new();
+    for (resolved, changed_candidates) in members {
+        match resolved {
+            Some(edge) => {
+                if !edges.contains(&edge) {
+                    edges.push(edge);
+                }
+            }
+            None if changed_candidates.is_empty() => {}
+            None => return None,
+        }
+    }
+    (!edges.is_empty()).then_some(edges)
 }
 
 pub(crate) fn feature_input_topology_id(
@@ -15146,6 +15172,27 @@ mod relation_tests {
         duplicate_identity[1][0].0 = 11;
         assert_eq!(
             super::partition_unique_incomplete_edge_group(1, &duplicate_identity),
+            None
+        );
+    }
+
+    #[test]
+    fn edge_group_ignores_members_without_changed_edge_candidates() {
+        assert_eq!(
+            super::context_only_edge_group_candidates([
+                (None, &[][..]),
+                (Some(17), &[17, 18][..]),
+                (Some(17), &[17][..]),
+                (None, &[][..]),
+            ]),
+            Some(vec![17])
+        );
+        assert_eq!(
+            super::context_only_edge_group_candidates([(Some(17), &[17][..]), (None, &[18][..]),]),
+            None
+        );
+        assert_eq!(
+            super::context_only_edge_group_candidates([(None, &[][..])]),
             None
         );
     }
