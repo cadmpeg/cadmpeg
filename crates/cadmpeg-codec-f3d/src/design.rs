@@ -1282,10 +1282,21 @@ fn neutral_feature_id_parts(
 }
 
 fn neutral_parameter_id(parameter: &DesignParameter) -> cadmpeg_ir::features::ParameterId {
-    cadmpeg_ir::features::ParameterId(format!(
-        "f3d:model:parameter#{}@{}",
+    neutral_parameter_id_parts(
         native_stream(&parameter.id).unwrap_or("f3d:design"),
-        parameter.record_index
+        parameter.source_ordinal,
+    )
+}
+
+fn neutral_parameter_id_parts(
+    stream: &str,
+    source_ordinal: u32,
+) -> cadmpeg_ir::features::ParameterId {
+    cadmpeg_ir::features::ParameterId(format!(
+        "f3d:model:parameter#{}:{}{}",
+        stream.len(),
+        stream,
+        source_ordinal,
     ))
 }
 
@@ -9732,18 +9743,18 @@ mod relation_tests {
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
         exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
         find_dimension_locus_pair, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_feature_id_parts, neutral_sketch_entity_id,
-        neutral_sketch_id, next_indexed_record_offset, null_locus_dimension_definition,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, point_on_sketch_entity,
-        project_configurations, project_dimension_constraints, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
-        radial_dimension_definition, recipe_record_prefix, region_containing_points,
-        remove_dimension_frame_relations, repeated_linear_dimension,
+        indirect_angular_lines, neutral_feature_id_parts, neutral_parameter_id_parts,
+        neutral_sketch_entity_id, neutral_sketch_id, next_indexed_record_offset,
+        null_locus_dimension_definition, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        point_on_sketch_entity, project_configurations, project_dimension_constraints,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design, radial_dimension_definition, recipe_record_prefix,
+        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
         resolved_face_group, two_locus_distance_dimension,
     };
@@ -9810,6 +9821,18 @@ mod relation_tests {
         assert_eq!(first, same);
         assert_ne!(first, different_stream);
         assert_ne!(first, different_family);
+    }
+
+    #[test]
+    fn parameter_identity_uses_stream_and_native_source_ordinal() {
+        let first = neutral_parameter_id_parts("Design/A:12", 3);
+        let same = neutral_parameter_id_parts("Design/A:12", 3);
+        let different_stream = neutral_parameter_id_parts("Design/A", 123);
+        let different_ordinal = neutral_parameter_id_parts("Design/A:12", 4);
+
+        assert_eq!(first, same);
+        assert_ne!(first, different_stream);
+        assert_ne!(first, different_ordinal);
     }
 
     #[test]
@@ -13055,7 +13078,10 @@ mod relation_tests {
         else {
             panic!("expected repeated recipe-backed dimension")
         };
-        assert_eq!(parameter.0, format!("f3d:model:parameter#{stream}@20"));
+        assert_eq!(
+            parameter.0,
+            format!("f3d:model:parameter#{}:{stream}4", stream.len())
+        );
         assert_eq!(measurements.len(), 2);
         assert!(measurements.iter().all(|measurement| matches!(
             measurement,
@@ -13261,6 +13287,7 @@ mod relation_tests {
             .expect("generated user parameter is canonical");
             parameter.id = format!("f3d:{stream}:parameter#{record_index}");
             parameter.record_index = record_index;
+            parameter.source_ordinal = record_index;
             parameter
         };
         let (_, parameters) = project_parameter_design(
@@ -13444,6 +13471,7 @@ mod relation_tests {
             .unwrap();
             parameter.id = format!("f3d:Design/BulkStream.dat:parameter#{record_index}");
             parameter.record_index = record_index;
+            parameter.source_ordinal = record_index;
             parameter
         };
         let owner =
@@ -13907,6 +13935,7 @@ mod relation_tests {
             .expect("generated feature parameter is canonical");
             parameter.id = format!("f3d:native:parameter#{record_index}");
             parameter.record_index = record_index;
+            parameter.source_ordinal = record_index;
             parameter
         };
         let owner = |record_index, scope_record_index, parameter_record_index, local_ordinal| {
@@ -14277,6 +14306,7 @@ mod relation_tests {
             .expect("generated owned parameter is canonical");
             parameter.id = format!("f3d:native:parameter#{record_index}");
             parameter.record_index = record_index;
+            parameter.source_ordinal = record_index;
             parameter
         };
         let owner = |record_index, scope_record_index, parameter_record_index| {
