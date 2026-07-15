@@ -3,8 +3,9 @@
 
 use crate::datum::DatumPlane;
 use crate::feature::{
-    AffectedIdKind, BinaryFlag, FeatureAffectedIds, FeatureDefinition, FeatureEntityTable,
-    FeatureGeometryTable, FeatureGeometryTableKind, FeatureParameterFrameKind, FeatureSegmentKind,
+    placement_instructions, AffectedIdKind, BinaryFlag, FeatureAffectedIds, FeatureDefinition,
+    FeatureEntityTable, FeatureGeometryTable, FeatureGeometryTableKind, FeatureParameterFrameKind,
+    FeatureSegmentKind,
 };
 use crate::surface::{
     OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceKind, SurfaceRow,
@@ -373,6 +374,192 @@ fn generated_section_cap_plane_equation(
     Some(*equation)
 }
 
+fn zero_offset_standard_section_plane_equation(
+    definition: &FeatureDefinition,
+    section: &crate::feature::FeatureSection3d,
+    reference_id: u32,
+    reference: ([f64; 3], f64),
+    sources: &PlacementSources<'_>,
+    entity_tables: &[FeatureEntityTable],
+) -> Option<([f64; 3], f64)> {
+    let feature_id = definition.owner_feature_id?;
+    let sketch_id = section.sketch_plane_entity_id?;
+    let instructions = placement_instructions(definition);
+    let instruction = instructions.first()?;
+    instructions
+        .iter()
+        .all(|candidate| {
+            candidate.kind == instruction.kind
+                && candidate.zero_offset == instruction.zero_offset
+                && candidate.dimension_id == instruction.dimension_id
+                && candidate.reference_id == instruction.reference_id
+                && candidate.geometry1_id == instruction.geometry1_id
+                && candidate.geometry2_id == instruction.geometry2_id
+                && candidate.member1 == instruction.member1
+                && candidate.member2 == instruction.member2
+        })
+        .then_some(())?;
+    (instruction.kind == 20_127
+        && instruction.zero_offset
+        && instruction.dimension_id.is_none()
+        && instruction.reference_id.is_none()
+        && instruction.geometry1_id == Some(reference_id)
+        && instruction.geometry2_id.is_none()
+        && instruction.member1 == 0
+        && instruction.member2 == 0)
+        .then_some(())?;
+    let datum_tables = sources
+        .geometry_tables
+        .iter()
+        .filter(|table| {
+            table.feature_id == feature_id
+                && table.kind == FeatureGeometryTableKind::DatumIds
+                && table.entry_ids.as_deref() == Some(&[sketch_id])
+        })
+        .count();
+    (datum_tables == 1).then_some(())?;
+    let tables = entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| {
+            table
+                .entries
+                .iter()
+                .map(|entry| entry.class_id)
+                .eq([204, 203, 200, 200])
+        })
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    let cap_id = table.entries[1].entity_id;
+    let cap = plane_equation(
+        cap_id,
+        sources.datums,
+        sources.model_planes,
+        sources.outline_planes,
+    )?;
+    let candidates = sources
+        .datums
+        .iter()
+        .filter_map(|datum| {
+            let equation = (datum.normal, datum.offset);
+            let cap_alignment = dot(equation.0, cap.0).abs();
+            let reference_alignment = dot(equation.0, reference.0).abs();
+            ((cap_alignment - 1.0).abs() <= 1e-12 && reference_alignment <= 1e-12)
+                .then_some(equation)
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    let aligned_cap_offset = if dot(candidate.0, cap.0).is_sign_negative() {
+        -cap.1
+    } else {
+        cap.1
+    };
+    let separation = (candidate.1 - aligned_cap_offset).abs();
+    let scale = candidate.1.abs().max(cap.1.abs()).max(1.0);
+    (separation > 1e-12 * scale).then_some(*candidate)
+}
+
+fn circular_profile_aligned_origin(
+    definition: &FeatureDefinition,
+    feature_id: u32,
+    sketch_plane: ([f64; 3], f64),
+    u_axis: [f64; 3],
+    v_axis: [f64; 3],
+    sources: &PlacementSources<'_>,
+    entity_tables: &[FeatureEntityTable],
+) -> Option<[f64; 3]> {
+    let tables = entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| {
+            table
+                .entries
+                .iter()
+                .map(|entry| entry.class_id)
+                .eq([204, 203, 200, 200])
+        })
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    let profile_external_id = table.entries[2].source_entity_id?;
+    let profile_internal_id = definition
+        .order_table
+        .as_ref()?
+        .rows
+        .iter()
+        .find(|row| row.external_id == profile_external_id)?
+        .internal_id;
+    let circles = definition
+        .saved_section
+        .iter()
+        .flat_map(|section| &section.entities)
+        .filter_map(|entity| match entity {
+            crate::feature::FeatureSavedEntity::Circle(circle)
+                if circle.entity_id == profile_internal_id =>
+            {
+                Some(circle)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [circle] = circles.as_slice() else {
+        return None;
+    };
+    let [Some(center_u), Some(center_v), _] = circle.center else {
+        return None;
+    };
+    let radius = circle.radius.filter(|radius| *radius > 1e-12)?;
+    let cap_id = table.entries[1].entity_id;
+    let envelopes = sources
+        .plane_envelopes
+        .iter()
+        .filter(|record| record.surface_id == cap_id)
+        .collect::<Vec<_>>();
+    let [envelope] = envelopes.as_slice() else {
+        return None;
+    };
+    let corners = match &envelope.envelope {
+        PlaneEnvelope::Standard { corners_3d, .. } | PlaneEnvelope::Compact { corners_3d, .. } => {
+            corners_3d
+        }
+    };
+    let corners = corners
+        .iter()
+        .map(|corner| Some([corner[0]?, corner[1]?, corner[2]?]))
+        .collect::<Option<Vec<_>>>()?;
+    let [first, second] = corners.as_slice() else {
+        return None;
+    };
+    let axis = (0..3).find(|axis| envelope.corner_coordinate_equal[*axis] == Some(true))?;
+    let radial = (0..3).filter(|index| *index != axis).collect::<Vec<_>>();
+    let spans = radial
+        .iter()
+        .map(|index| (second[*index] - first[*index]).abs())
+        .collect::<Vec<_>>();
+    let tolerance_scale = spans
+        .iter()
+        .chain(std::iter::once(&radius))
+        .copied()
+        .fold(1.0, f64::max);
+    (spans.len() == 2
+        && spans[0] > 1e-12
+        && (spans[0] - spans[1]).abs() <= 1e-9 * tolerance_scale
+        && (0.5 * spans[0] - radius).abs() <= 1e-9 * tolerance_scale)
+        .then_some(())?;
+    let cap_center: [f64; 3] = std::array::from_fn(|index| 0.5 * (first[index] + second[index]));
+    let signed_distance = dot(sketch_plane.0, cap_center) - sketch_plane.1;
+    let profile_center = add(cap_center, scale(sketch_plane.0, -signed_distance));
+    Some(add(
+        add(profile_center, scale(u_axis, -center_u)),
+        scale(v_axis, -center_v),
+    ))
+}
+
 /// Resolve feature frames whose sketch and orientation references reduce to
 /// two perpendicular model-space datum planes.
 pub(crate) fn resolve(
@@ -439,6 +626,16 @@ pub(crate) fn resolve(
             } else if let Some(reference) = direct_reference {
                 if let Some(sketch) =
                     generated_datum_plane_equation(sketch_id, reference_id, reference.0, sources)
+                        .or_else(|| {
+                            zero_offset_standard_section_plane_equation(
+                                definition,
+                                section,
+                                reference_id,
+                                reference,
+                                sources,
+                                entity_tables,
+                            )
+                        })
                 {
                     if dot(sketch.0, reference.0).abs() < 1.0 - 1e-12
                         && !candidates.contains(&(sketch, reference))
@@ -487,13 +684,28 @@ pub(crate) fn resolve(
         }
         let sketch_factor = (sketch_offset - cosine * reference_offset) / denominator;
         let reference_factor = (reference_offset - cosine * sketch_offset) / denominator;
+        let intersection_origin = add(
+            scale(sketch_normal, sketch_factor),
+            scale(reference_normal, reference_factor),
+        );
+        let origin = definition
+            .owner_feature_id
+            .and_then(|feature_id| {
+                circular_profile_aligned_origin(
+                    definition,
+                    feature_id,
+                    (sketch_normal, sketch_offset),
+                    u_axis,
+                    reference_axis,
+                    sources,
+                    entity_tables,
+                )
+            })
+            .unwrap_or(intersection_origin);
         result.push(FeatureSectionTransform {
             definition_id: definition.id,
             feature_id: definition.owner_feature_id,
-            origin: add(
-                scale(sketch_normal, sketch_factor),
-                scale(reference_normal, reference_factor),
-            ),
+            origin,
             u_axis,
             v_axis: reference_axis,
             normal,

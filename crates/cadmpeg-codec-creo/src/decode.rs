@@ -783,6 +783,23 @@ struct CreoFeatureSectionTransformRecord {
     source_section: String,
 }
 
+#[derive(Serialize)]
+struct CreoFeaturePlacementInstructionRecord {
+    id: String,
+    definition_id: u32,
+    owner_feature_id: Option<u32>,
+    instruction_type: u32,
+    zero_offset: bool,
+    dimension_id: Option<u32>,
+    reference_id: Option<u32>,
+    geometry1_id: Option<u32>,
+    geometry2_id: Option<u32>,
+    member1: u32,
+    member2: u32,
+    offset: usize,
+    source_section: String,
+}
+
 fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
     scan.feature_entities
         .iter()
@@ -1369,6 +1386,36 @@ fn feature_section_transform_records(
             normal: record.normal,
             offset: record.offset,
             source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn feature_placement_instruction_records(
+    scan: &ContainerScan,
+) -> Vec<CreoFeaturePlacementInstructionRecord> {
+    scan.feature_definitions
+        .iter()
+        .flat_map(|definition| {
+            crate::feature::placement_instructions(definition)
+                .into_iter()
+                .map(|instruction| CreoFeaturePlacementInstructionRecord {
+                    id: format!(
+                        "creo:featdefs:placement_instruction#{}:{}",
+                        definition.id, instruction.offset
+                    ),
+                    definition_id: definition.id,
+                    owner_feature_id: definition.owner_feature_id,
+                    instruction_type: instruction.kind,
+                    zero_offset: instruction.zero_offset,
+                    dimension_id: instruction.dimension_id,
+                    reference_id: instruction.reference_id,
+                    geometry1_id: instruction.geometry1_id,
+                    geometry2_id: instruction.geometry2_id,
+                    member1: instruction.member1,
+                    member2: instruction.member2,
+                    offset: instruction.offset,
+                    source_section: source_section(scan, instruction.offset),
+                })
         })
         .collect()
 }
@@ -6196,6 +6243,278 @@ fn add_extrusion_pcurve(
     id
 }
 
+fn transfer_resolved_circular_extrusion_breps(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut transferred = 0;
+    for (transform_index, transform) in scan.feature_section_transforms.iter().enumerate() {
+        let Some(feature_id) = transform.feature_id else {
+            continue;
+        };
+        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Extrude)
+            || scan.feature_section_transforms[..transform_index]
+                .iter()
+                .filter_map(|preceding| preceding.feature_id)
+                .any(|preceding| feature_recipe(scan, preceding).is_some())
+        {
+            continue;
+        }
+        let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
+        let Some(sketch) = ir
+            .model
+            .sketches
+            .iter()
+            .find(|sketch| sketch.id == sketch_id)
+        else {
+            continue;
+        };
+        let [profile] = sketch.profiles.as_slice() else {
+            continue;
+        };
+        let [entity_use] = profile.as_slice() else {
+            continue;
+        };
+        let Some(SketchGeometry::Circle { center, radius }) = ir
+            .model
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.id == entity_use.entity && entity.sketch == sketch_id)
+            .map(|entity| entity.geometry.clone())
+        else {
+            continue;
+        };
+        let Some(span) = extrusion_span(
+            transform.origin,
+            transform.normal,
+            feature_plane_equations(scan, feature_id),
+        ) else {
+            continue;
+        };
+        let prefix = format!("creo:feature:extrusion#{feature_id}");
+        let body_id = BodyId(format!("{prefix}:body"));
+        if ir.model.bodies.iter().any(|body| body.id == body_id) {
+            continue;
+        }
+        let region_id = RegionId(format!("{prefix}:region"));
+        let shell_id = ShellId(format!("{prefix}:shell"));
+        let section_center = [center.u, center.v];
+        let center = section_point_in_model(transform, section_center);
+        let seam =
+            std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius.0 * transform.u_axis[axis]);
+        let sides = [("bottom", span.lower), ("top", span.upper)];
+        let mut face_ids = Vec::new();
+        let mut cap_coedges = Vec::new();
+        let mut side_coedges = Vec::new();
+        for (side_index, (side, offset)) in sides.into_iter().enumerate() {
+            let cap_surface = SurfaceId(format!("{prefix}:surface:{side}"));
+            let cap_face = FaceId(format!("{prefix}:face:{side}"));
+            let cap_loop = LoopId(format!("{prefix}:loop:{side}"));
+            let curve_id = CurveId(format!("{prefix}:curve:{side}"));
+            let edge_id = EdgeId(format!("{prefix}:edge:{side}"));
+            let point_id = PointId(format!("{prefix}:point:{side}"));
+            let vertex_id = VertexId(format!("{prefix}:vertex:{side}"));
+            let cap_coedge = CoedgeId(format!("{prefix}:coedge:{side}:cap"));
+            let side_coedge = CoedgeId(format!("{prefix}:coedge:{side}:side"));
+            let cap_pcurve = add_extrusion_pcurve(
+                ir,
+                annotations,
+                PcurveId(format!("{prefix}:pcurve:{side}:cap")),
+                transform.offset,
+                circular_pcurve(section_center, radius.0, 0.0, std::f64::consts::TAU),
+            );
+            let side_pcurve = add_extrusion_pcurve(
+                ir,
+                annotations,
+                PcurveId(format!("{prefix}:pcurve:{side}:side")),
+                transform.offset,
+                line_pcurve([0.0, offset], [std::f64::consts::TAU, offset]),
+            );
+            ir.model.surfaces.push(Surface {
+                id: cap_surface.clone(),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(
+                        transform.origin[0] + offset * transform.normal[0],
+                        transform.origin[1] + offset * transform.normal[1],
+                        transform.origin[2] + offset * transform.normal[2],
+                    ),
+                    normal: Vector3::new(
+                        transform.normal[0],
+                        transform.normal[1],
+                        transform.normal[2],
+                    ),
+                    u_axis: Vector3::new(
+                        transform.u_axis[0],
+                        transform.u_axis[1],
+                        transform.u_axis[2],
+                    ),
+                },
+                source_object: None,
+            });
+            ir.model.curves.push(Curve {
+                id: curve_id.clone(),
+                geometry: CurveGeometry::Circle {
+                    center: Point3::new(
+                        center[0] + offset * transform.normal[0],
+                        center[1] + offset * transform.normal[1],
+                        center[2] + offset * transform.normal[2],
+                    ),
+                    axis: Vector3::new(
+                        transform.normal[0],
+                        transform.normal[1],
+                        transform.normal[2],
+                    ),
+                    ref_direction: Vector3::new(
+                        transform.u_axis[0],
+                        transform.u_axis[1],
+                        transform.u_axis[2],
+                    ),
+                    radius: radius.0,
+                },
+                source_object: None,
+            });
+            ir.model.points.push(Point {
+                id: point_id.clone(),
+                position: Point3::new(
+                    seam[0] + offset * transform.normal[0],
+                    seam[1] + offset * transform.normal[1],
+                    seam[2] + offset * transform.normal[2],
+                ),
+            });
+            ir.model.vertices.push(Vertex {
+                id: vertex_id.clone(),
+                point: point_id,
+                tolerance: None,
+            });
+            ir.model.edges.push(Edge {
+                id: edge_id.clone(),
+                curve: Some(curve_id),
+                start: vertex_id.clone(),
+                end: vertex_id,
+                param_range: Some([0.0, std::f64::consts::TAU]),
+                tolerance: None,
+            });
+            ir.model.loops.push(IrLoop {
+                id: cap_loop.clone(),
+                face: cap_face.clone(),
+                coedges: vec![cap_coedge.clone()],
+            });
+            ir.model.coedges.push(Coedge {
+                id: cap_coedge.clone(),
+                owner_loop: cap_loop.clone(),
+                edge: edge_id.clone(),
+                next: cap_coedge.clone(),
+                previous: cap_coedge.clone(),
+                radial_next: side_coedge.clone(),
+                sense: if side_index == 0 {
+                    Sense::Reversed
+                } else {
+                    Sense::Forward
+                },
+                pcurve: Some(cap_pcurve),
+            });
+            ir.model.faces.push(Face {
+                id: cap_face.clone(),
+                shell: shell_id.clone(),
+                surface: cap_surface,
+                sense: if side_index == 0 {
+                    Sense::Reversed
+                } else {
+                    Sense::Forward
+                },
+                loops: vec![cap_loop],
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+            face_ids.push(cap_face);
+            cap_coedges.push(cap_coedge);
+            side_coedges.push((side_coedge, edge_id, side_pcurve));
+        }
+        let side_surface = SurfaceId(format!("{prefix}:surface:side"));
+        let side_face = FaceId(format!("{prefix}:face:side"));
+        let mut side_loops = Vec::new();
+        ir.model.surfaces.push(Surface {
+            id: side_surface.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(center[0], center[1], center[2]),
+                axis: Vector3::new(
+                    transform.normal[0],
+                    transform.normal[1],
+                    transform.normal[2],
+                ),
+                ref_direction: Vector3::new(
+                    transform.u_axis[0],
+                    transform.u_axis[1],
+                    transform.u_axis[2],
+                ),
+                radius: radius.0,
+            },
+            source_object: None,
+        });
+        for (side_index, ((side, _), (coedge, edge, pcurve))) in
+            sides.into_iter().zip(side_coedges).enumerate()
+        {
+            let loop_id = LoopId(format!("{prefix}:loop:side:{side}"));
+            ir.model.loops.push(IrLoop {
+                id: loop_id.clone(),
+                face: side_face.clone(),
+                coedges: vec![coedge.clone()],
+            });
+            ir.model.coedges.push(Coedge {
+                id: coedge.clone(),
+                owner_loop: loop_id.clone(),
+                edge,
+                next: coedge.clone(),
+                previous: coedge.clone(),
+                radial_next: cap_coedges[side_index].clone(),
+                sense: if side_index == 0 {
+                    Sense::Forward
+                } else {
+                    Sense::Reversed
+                },
+                pcurve: Some(pcurve),
+            });
+            side_loops.push(loop_id);
+        }
+        ir.model.faces.push(Face {
+            id: side_face.clone(),
+            shell: shell_id.clone(),
+            surface: side_surface,
+            sense: Sense::Forward,
+            loops: side_loops,
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        face_ids.push(side_face);
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id.clone(),
+            faces: face_ids,
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id],
+        });
+        ir.model.bodies.push(Body {
+            id: body_id,
+            kind: BodyKind::Solid,
+            regions: vec![region_id],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 fn transfer_resolved_extrusion_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -8238,7 +8557,7 @@ fn saved_entity_is_generated_profile(
     let Some(feature_id) = feature_id else {
         return false;
     };
-    tables
+    let direct = tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
         .flat_map(|table| &table.entries)
@@ -8249,7 +8568,31 @@ fn saved_entity_is_generated_profile(
                     && row.feature_id == feature_id
                     && row.kind == expected_kind
             })
-        })
+        });
+    direct
+        || (expected_kind == crate::surface::SurfaceKind::Cylinder
+            && tables
+                .iter()
+                .filter(|table| table.feature_id == Some(feature_id))
+                .any(|table| {
+                    let [rowless_cap, cap, profile, cylinder] = table.entries.as_slice() else {
+                        return false;
+                    };
+                    [
+                        rowless_cap.class_id,
+                        cap.class_id,
+                        profile.class_id,
+                        cylinder.class_id,
+                    ] == [204, 203, 200, 200]
+                        && profile.source_entity_id == Some(source_entity_id)
+                        && cylinder.source_entity_id.is_none()
+                        && table.non_surface_entity_ids.contains(&profile.entity_id)
+                        && rows.iter().any(|row| {
+                            row.id == cylinder.entity_id
+                                && row.feature_id == feature_id
+                                && row.kind == crate::surface::SurfaceKind::Cylinder
+                        })
+                }))
 }
 
 fn ordered_analytic_surface_id(
@@ -17466,6 +17809,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
     transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
     transfer_plane_brep(scan, &mut ir, &mut annotations);
+    let feature_circular_extrusion_brep_count =
+        transfer_resolved_circular_extrusion_breps(scan, &mut ir, &mut annotations);
     let feature_extrusion_brep_count =
         transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
     if let Some(source) = &mut ir.source {
@@ -17520,6 +17865,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         source.attributes.insert(
             "transferred_rowless_round_cylinder_count".to_string(),
             rowless_round_cylinder_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_feature_circular_extrusion_brep_count".to_string(),
+            feature_circular_extrusion_brep_count.to_string(),
         );
         source.attributes.insert(
             "transferred_feature_extrusion_brep_count".to_string(),
@@ -18087,6 +18436,15 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("feature_section_transforms", &feature_section_transforms)?;
     }
+    let feature_placement_instructions = feature_placement_instruction_records(scan);
+    if !feature_placement_instructions.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena(
+            "feature_placement_instructions",
+            &feature_placement_instructions,
+        )?;
+    }
     let pcurve_endpoints = pcurve_endpoint_records(scan);
     if !pcurve_endpoints.is_empty() {
         for (record, offset) in &pcurve_endpoints {
@@ -18651,6 +19009,14 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_feature_section_transform_count".to_string(),
         scan.feature_section_transforms.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_placement_instruction_count".to_string(),
+        scan.feature_definitions
+            .iter()
+            .map(|definition| crate::feature::placement_instructions(definition).len())
+            .sum::<usize>()
+            .to_string(),
     );
     attributes.insert(
         "decoded_feature_operation_state_count".to_string(),

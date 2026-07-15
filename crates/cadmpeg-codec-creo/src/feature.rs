@@ -569,6 +569,30 @@ pub struct FeatureParameterFrame {
     pub offset: usize,
 }
 
+/// One instantiated row from a feature definition's `place_instruction_ptrs`
+/// table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeaturePlacementInstruction {
+    /// Stored placement instruction family.
+    pub kind: u32,
+    /// Whether the scalar offset lane stores exact zero.
+    pub zero_offset: bool,
+    /// Optional driving dimension identifier.
+    pub dimension_id: Option<u32>,
+    /// Optional referenced placement object.
+    pub reference_id: Option<u32>,
+    /// First optional geometry operand.
+    pub geometry1_id: Option<u32>,
+    /// Second optional geometry operand.
+    pub geometry2_id: Option<u32>,
+    /// First membership selector.
+    pub member1: u32,
+    /// Second membership selector.
+    pub member2: u32,
+    /// Byte offset of the positional row marker.
+    pub offset: usize,
+}
+
 /// Feature-history phase associated with a local outline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutlinePhase {
@@ -1629,6 +1653,82 @@ fn next_solver_int(payload: &[u8], offset: &mut usize) -> Option<u32> {
         return Some((u32::from(head - 0xc0) << 16) | (u32::from(high) << 8) | u32::from(low));
     }
     next_segment_int(payload, offset)
+}
+
+fn next_nullable_segment_int(payload: &[u8], offset: &mut usize) -> Result<Option<u32>, ()> {
+    if payload.get(*offset) == Some(&0xf6) {
+        *offset += 1;
+        return Ok(None);
+    }
+    next_segment_int(payload, offset).map(Some).ok_or(())
+}
+
+/// Decode instantiated placement-instruction rows from one bounded feature
+/// definition.
+pub fn placement_instructions(definition: &FeatureDefinition) -> Vec<FeaturePlacementInstruction> {
+    placement_instruction_rows(&definition.body, definition.offset)
+}
+
+fn placement_instruction_rows(
+    payload: &[u8],
+    definition_offset: usize,
+) -> Vec<FeaturePlacementInstruction> {
+    let Some(table_class) =
+        named_array_class(payload, b"place_instruction_ptrs\0", 0, payload.len())
+    else {
+        return Vec::new();
+    };
+    let mut rows = Vec::new();
+    for marker in 0..payload.len() {
+        if payload.get(marker..marker + 2) != Some(&[0xf1, psb::token::ENTITY_REF]) {
+            continue;
+        }
+        let Ok((class, after_class)) = psb::reference_id(payload, marker + 2) else {
+            continue;
+        };
+        if class != table_class || payload.get(after_class) != Some(&psb::token::COMPOUND_CLOSE) {
+            continue;
+        }
+        let mut cursor = after_class + 1;
+        let Some(kind) = next_solver_int(payload, &mut cursor) else {
+            continue;
+        };
+        let zero_offset = payload.get(cursor) == Some(&0x18);
+        if !zero_offset {
+            continue;
+        }
+        cursor += 1;
+        let Ok(dimension_id) = next_nullable_segment_int(payload, &mut cursor) else {
+            continue;
+        };
+        let Ok(reference_id) = next_nullable_segment_int(payload, &mut cursor) else {
+            continue;
+        };
+        let Ok(geometry1_id) = next_nullable_segment_int(payload, &mut cursor) else {
+            continue;
+        };
+        let Ok(geometry2_id) = next_nullable_segment_int(payload, &mut cursor) else {
+            continue;
+        };
+        let Some(member1) = next_segment_int(payload, &mut cursor) else {
+            continue;
+        };
+        let Some(member2) = next_segment_int(payload, &mut cursor) else {
+            continue;
+        };
+        rows.push(FeaturePlacementInstruction {
+            kind,
+            zero_offset,
+            dimension_id,
+            reference_id,
+            geometry1_id,
+            geometry2_id,
+            member1,
+            member2,
+            offset: definition_offset + marker,
+        });
+    }
+    rows
 }
 
 fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegmentTable> {
@@ -6857,5 +6957,23 @@ mod tests {
             cursor = next;
         }
         assert_eq!(cursor, body.len());
+    }
+
+    #[test]
+    fn decodes_zero_offset_positional_placement_instruction() {
+        let payload = b"place_instruction_ptrs\0\xf8\x03\xf7\x0b\xfb\xe3\
+            \xf1\xf7\x0b\xe3\xc0\x4e\x9f\x18\xf6\xf6\x02\xf6\x00\x00\x00\xe6";
+        let rows = placement_instruction_rows(payload, 1000);
+        let [row] = rows.as_slice() else {
+            panic!("placement row");
+        };
+        assert_eq!(row.kind, 20_127);
+        assert!(row.zero_offset);
+        assert_eq!(row.dimension_id, None);
+        assert_eq!(row.reference_id, None);
+        assert_eq!(row.geometry1_id, Some(2));
+        assert_eq!(row.geometry2_id, None);
+        assert_eq!([row.member1, row.member2], [0, 0]);
+        assert_eq!(row.offset, 1029);
     }
 }

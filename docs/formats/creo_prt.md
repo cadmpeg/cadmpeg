@@ -1013,9 +1013,9 @@ A blind class-917 circular section sweep instead has four entries with classes
 source-profile entity, and one cylinder use. The source-profile entry carries
 its section entity identifier; the cylinder entry does not. The materialized
 cap plane's complete square outline fixes the cylinder axis, radial center, and
-radius. Translation along the axis does not change the infinite cylinder
-carrier, so a second cap is required for trimming extent but not for the
-carrier equation.
+radius. A type-20127 zero-offset placement instruction fixes the section at the
+parallel standard datum; the materialized cap then fixes the blind trimming
+extent.
 
 A typed schema row that owns a materialized `srf_array` row is an active construction feature. The root schema class supplies its operation family independently of an `MdlStatus` operation name.
 
@@ -1060,6 +1060,13 @@ and doubled internal quarter-turn knots. Its directrix direction retains the
 directrix degree, knots, poles, and weights.
 
 Evaluating one closed linear-sweep profile produces one side face per oriented profile entity. A line produces a planar side face and an arc produces a cylindrical side face. Each profile vertex produces an edge parallel to the sweep direction. The exact signed area is the sum of line chord terms and circular-arc sector terms. Its sign selects the cap and side face senses. The two cap loops use the profile edges in opposite directions, and every cap or longitudinal edge has exactly two face uses. Cap-face pcurves are the section entities in the cap plane's `(u,v)` frame: lines remain lines and arcs become exact rational quadratic arcs. A planar side face uses profile distance and sweep offset as its parameters. A cylindrical side face uses profile angle and sweep offset. Its cap-edge pcurves hold the sweep offset constant and its longitudinal-edge pcurves hold the profile parameter constant. A multi-profile solid sweep has one outer profile that strictly contains every hole profile. Hole profiles are pairwise disjoint, unnested, and oriented opposite the outer profile.
+
+Evaluating a one-circle linear-sweep profile produces two planar caps and one
+cylindrical side face. Each cap circle is one closed edge with one seam vertex.
+The cap and side coedges form a two-use radial pair. The side face has one
+closed loop at each axial bound. Cap pcurves retain the circle's section-space
+center and increasing full-turn parameterization; side pcurves run from zero
+through `2π` at constant sweep offset.
 
 A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. The array's compact-integer count is not limited to a one-byte or 64-entry range. Each declared entry has an optional `f7 1e` prefix, a canonical entity-reference identifier, a compact entry class, a positional body, and an `e3` close within the bounded feature row. A class `200` entry carries its source section entity's external identifier immediately after the class when that lane is populated; a structural marker in that position leaves the source absent. The record close follows these typed compact lanes; an `e3` byte can be the low byte of their canonical two-byte form. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
 
@@ -1118,6 +1125,16 @@ The row's `geom_id` remains the separate datum-geometry identifier used by
 
 `gsec3d_ptr` binds a 2D section to its placement, saved-section data, plane references, reference planes, order table, and dimension tables. `plane_flip` negates the sketch normal and extrusion side when it is not `f6`.
 
+`place_instruction_ptrs` declares an entity-reference class. Each instantiated
+positional row begins `f1 f7 <declared-class> e3`, followed by instruction
+type, scalar offset, nullable dimension, nullable reference, nullable first and
+second geometry operands, and two membership selectors. `f6` is null in an
+identifier lane. Instruction type 20127 with exact zero offset, null dimension
+and reference, the `gsec3d` reference datum as its first geometry operand, null
+second geometry operand, and zero membership selectors places the section at
+zero offset from the standard datum parallel to the generated cap. Repeated
+identical rows are identical regeneration states of one placement.
+
 In `gsec3d` placement, project the referenced datum normal into the sketch
 plane to obtain the in-plane type-2 direction `v`, then derive the type-1
 direction as `u = v × n`. The resulting section-to-model transform is a proper
@@ -1138,6 +1155,14 @@ model([s, t, 0]) = origin + s*u + t*v
 A set `plane_flip` or section `flip` negates `n` and its plane offset. A set
 reference `flip_flag` negates `u` and its plane offset. Apply the two sketch
 normal flips independently before deriving `v`.
+
+For the blind class-917 `204, 203, 200, 200` layout, the type-20127 placement
+selects the unique construction datum parallel to the materialized cap and
+perpendicular to the referenced orientation datum. The cap must have nonzero
+separation from that datum. Its complete square outline supplies the generated
+cylinder center. Translating the section origin within its plane so the saved
+circle center maps to that cylinder center preserves the stored sketch
+coordinates and fixes the model-space profile placement.
 
 Parallel plane references and set flip fields do not use this transform case.
 
