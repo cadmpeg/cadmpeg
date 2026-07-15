@@ -51,6 +51,60 @@ fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
         .map(u32::from_le_bytes)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) enum Predictor {
+    Lag1,
+    Lag2,
+    Stride1,
+    Stride2,
+    StripIndex,
+    Ramp,
+    Xor1,
+    Xor2,
+    Null,
+}
+
+/// Reconstruct JT primal integers from predictor residuals.
+pub(crate) fn unpack_predictor_residuals(residuals: &[i32], predictor: Predictor) -> Vec<i32> {
+    if predictor == Predictor::Null {
+        return residuals.to_vec();
+    }
+
+    let mut values = Vec::with_capacity(residuals.len());
+    for (index, &residual) in residuals.iter().enumerate() {
+        if index < 4 {
+            values.push(residual);
+            continue;
+        }
+        let v1 = values[index - 1];
+        let v2 = values[index - 2];
+        let v4 = values[index - 4];
+        let predicted = match predictor {
+            Predictor::Lag1 | Predictor::Xor1 => v1,
+            Predictor::Lag2 | Predictor::Xor2 => v2,
+            Predictor::Stride1 => v1.wrapping_add(v1.wrapping_sub(v2)),
+            Predictor::Stride2 => v2.wrapping_add(v2.wrapping_sub(v4)),
+            Predictor::StripIndex => {
+                let stride = v2.wrapping_sub(v4);
+                if (-7..=7).contains(&stride) {
+                    v2.wrapping_add(stride)
+                } else {
+                    v2.wrapping_add(2)
+                }
+            }
+            Predictor::Ramp => index as i32,
+            Predictor::Null => unreachable!(),
+        };
+        values.push(if matches!(predictor, Predictor::Xor1 | Predictor::Xor2) {
+            residual ^ predicted
+        } else {
+            residual.wrapping_add(predicted)
+        });
+    }
+    values
+}
+
 /// Bound one complete JT Int32 Compressed Data Packet Mk. 2 without interpreting its symbols.
 pub(crate) fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usize)> {
     if depth > 3 {

@@ -402,6 +402,61 @@ fn jt_int32_cdp2_frames_zero_chop_nested_packet() {
 }
 
 #[test]
+fn jt_predictors_reconstruct_primal_integers() {
+    use crate::jt::{unpack_predictor_residuals, Predictor};
+
+    let primers = [10, 20, 30, 40];
+    let residuals = [10, 20, 30, 40, 5, -2];
+    assert_eq!(
+        unpack_predictor_residuals(&residuals, Predictor::Lag1),
+        [10, 20, 30, 40, 45, 43]
+    );
+    assert_eq!(
+        unpack_predictor_residuals(&residuals, Predictor::Lag2),
+        [10, 20, 30, 40, 35, 38]
+    );
+    assert_eq!(
+        unpack_predictor_residuals(&residuals, Predictor::Stride1),
+        [10, 20, 30, 40, 55, 68]
+    );
+    assert_eq!(
+        unpack_predictor_residuals(&residuals, Predictor::Stride2),
+        [10, 20, 30, 40, 55, 58]
+    );
+    assert_eq!(
+        unpack_predictor_residuals(&residuals, Predictor::StripIndex),
+        [10, 20, 30, 40, 37, 40]
+    );
+    assert_eq!(
+        unpack_predictor_residuals(&residuals, Predictor::Ramp),
+        [10, 20, 30, 40, 9, 3]
+    );
+    assert_eq!(
+        unpack_predictor_residuals(&[10, 20, 30, 40, 45 ^ 40], Predictor::Xor1),
+        [10, 20, 30, 40, 45]
+    );
+    assert_eq!(
+        unpack_predictor_residuals(&[10, 20, 30, 40, 35 ^ 30], Predictor::Xor2),
+        [10, 20, 30, 40, 35]
+    );
+    assert_eq!(
+        unpack_predictor_residuals(&residuals, Predictor::Null),
+        residuals
+    );
+    assert_eq!(primers, residuals[..4]);
+}
+
+#[test]
+fn jt_predictors_use_wrapping_i32_arithmetic() {
+    use crate::jt::{unpack_predictor_residuals, Predictor};
+
+    assert_eq!(
+        unpack_predictor_residuals(&[0, 0, 0, i32::MAX, 1], Predictor::Lag1),
+        [0, 0, 0, i32::MAX, i32::MIN]
+    );
+}
+
+#[test]
 fn jt9_topology_bounds_variable_high_degree_lane_count() {
     fn representation(high_degree_lanes: usize, topological_vertices: u32) -> Vec<u8> {
         let mut bytes = vec![0; (21 + high_degree_lanes + 2) * 4];

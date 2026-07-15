@@ -1446,10 +1446,11 @@ pub fn display_jt_initial_face_degree_symbols(
         let Some((_, _, _, _, representation)) = parse_jt9_tri_strip_lod_header(body) else {
             return Vec::new();
         };
-        let Some((degrees, packet_byte_len)) = crate::jt::decode_int32_cdp2(representation, 0)
+        let Some((residuals, packet_byte_len)) = crate::jt::decode_int32_cdp2(representation, 0)
         else {
             return Vec::new();
         };
+        let degrees = crate::jt::unpack_predictor_residuals(&residuals, crate::jt::Predictor::Null);
         let Some(packet) = representation.get(..packet_byte_len) else {
             return Vec::new();
         };
