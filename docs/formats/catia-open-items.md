@@ -39,7 +39,6 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The object-stream body-kind and outward-shell sign fields are unresolved; one-body ownership and incidence determine a stable topology gauge but do not identify the source sign bytes.
 - `b5 03 2d` bytes `+29..+76`.
 - The operation names and semantic roles of the six control bytes and two scalars in `b5 03 37/3b` support-bound surface constructions are unresolved.
-- The relation supplying the pole grid for elided-pole `a8 03 34` records.
 
 ## Zero-entity `a9 03`
 

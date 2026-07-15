@@ -368,6 +368,13 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             surfaces.insert(surface.object_id, B5Surface::Nurbs(nurbs));
         }
     }
+    for header in a8_headers.values().filter(|header| header.poles_elided) {
+        if let Some(surface) = crate::geometry::a8_surface_from_external_grid(bytes, header) {
+            if let SurfaceGeometry::Nurbs(nurbs) = surface.geometry {
+                surfaces.insert(surface.object_id, B5Surface::Nurbs(nurbs));
+            }
+        }
+    }
     for record in &records {
         let Some(target) = surface_alias_target(record) else {
             continue;
@@ -477,7 +484,6 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             .and_then(|surface| lift_pcurve_endpoints(surface, &profiles, &pcurve.control_points));
     }
     let source_face_count = records.iter().filter(|record| record.class == 0x5f).count();
-    let source_loop_count = records.iter().filter(|record| record.class == 0x62).count();
     let mut loops: BTreeMap<u32, B5Loop> = records
         .iter()
         .filter(|record| record.class == 0x62)
@@ -559,11 +565,11 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         .iter()
         .flat_map(|face| face.loops.iter().copied())
         .collect();
+    loops.retain(|loop_id, _| referenced_loops.contains(loop_id));
     let complete = faces.len() == source_face_count
-        && loops.len() == source_loop_count
-        && loops.iter().all(|(loop_id, loop_)| {
-            referenced_loops.contains(loop_id)
-                && loop_
+        && referenced_loops.iter().all(|loop_id| {
+            loops.get(loop_id).is_some_and(|loop_| {
+                loop_
                     .pcurves
                     .iter()
                     .zip(&loop_.edges)
@@ -577,7 +583,8 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                             || implicit_pcurves.get(pcurve) == Some(&loop_.surface))
                             && edge_vertices.contains_key(edge)
                     })
-                && unique_loop_chain(loop_, &edge_vertices)
+                    && unique_loop_chain(loop_, &edge_vertices)
+            })
         });
     Some(B5Graph {
         complete,

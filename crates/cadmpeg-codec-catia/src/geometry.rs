@@ -3639,6 +3639,102 @@ pub fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
     out
 }
 
+/// Resolve an elided-pole `a8 03 34` carrier from its uniquely sized external
+/// grid allocation. The allocation occupies the complete unframed gap between
+/// a length-closed `b5 03 21` pcurve and the following A/B-family frame.
+#[must_use]
+pub fn a8_surface_from_external_grid(data: &[u8], header: &A8SurfaceHeader) -> Option<A8Surface> {
+    if !header.poles_elided {
+        return None;
+    }
+    let poles = usize::try_from(header.u_count)
+        .ok()?
+        .checked_mul(usize::try_from(header.v_count).ok()?)?;
+    let weight_bytes = if header.rational {
+        poles.checked_mul(8)?
+    } else {
+        0
+    };
+    let grid_bytes = poles.checked_mul(24)?.checked_add(weight_bytes)?;
+    let mut candidates = Vec::new();
+    let mut search = 0usize;
+    while let Some(relative) = data[search..]
+        .windows(3)
+        .position(|bytes| bytes == [0xb5, 0x03, 0x21])
+    {
+        let frame = search + relative;
+        search = frame + 3;
+        let payload_len = usize::from(*data.get(frame + 3)?);
+        let start = frame.checked_add(8)?.checked_add(payload_len)?;
+        let end = start.checked_add(grid_bytes)?;
+        if !matches!(
+            data.get(end..end + 3),
+            Some([
+                0xa5 | 0xa8 | 0xa9 | 0xb2 | 0xb3 | 0xb4 | 0xb5 | 0xb6,
+                0x03,
+                _
+            ])
+        ) {
+            continue;
+        }
+        let mut at = start;
+        let mut control_points = Vec::with_capacity(poles);
+        let mut complete = true;
+        for _ in 0..poles {
+            let Some(point) = f64_point(data, at) else {
+                complete = false;
+                break;
+            };
+            control_points.push(point);
+            at += 24;
+        }
+        if !complete
+            || control_points
+                .iter()
+                .flat_map(|point| [point.x, point.y, point.z])
+                .any(|coordinate| !coordinate.is_finite() || coordinate.abs() >= 1e9)
+        {
+            continue;
+        }
+        let weights = if header.rational {
+            let Some(values) = f64_values(data, &mut at, poles, end) else {
+                continue;
+            };
+            if values
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight == 0.0)
+            {
+                continue;
+            }
+            Some(values)
+        } else {
+            None
+        };
+        if at == end {
+            candidates.push((control_points, weights));
+        }
+    }
+    let [(control_points, weights)] = candidates.as_slice() else {
+        return None;
+    };
+    Some(A8Surface {
+        pos: header.pos,
+        object_id: header.object_id,
+        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: header.u_degree,
+            v_degree: header.v_degree,
+            u_knots: expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
+            v_knots: expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
+            u_count: header.u_count,
+            v_count: header.v_count,
+            control_points: control_points.clone(),
+            weights: weights.clone(),
+            u_periodic: false,
+            v_periodic: false,
+        }),
+    })
+}
+
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
 pub fn a5_surfaces(data: &[u8]) -> Vec<A8Surface> {

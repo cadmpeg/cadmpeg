@@ -3488,6 +3488,40 @@ fn a8_surface_header_identifies_an_elided_pole_grid() {
 }
 
 #[test]
+fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
+    let mut bytes = a8_surface_stream();
+    bytes.truncate(59);
+    let mut tail = vec![0; 141];
+    tail[..4].copy_from_slice(&[0x05, 0x21, 0x05, 0x05]);
+    bytes.extend_from_slice(&tail);
+    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    let mut pcurve_payload = vec![0; 58];
+    pcurve_payload[0] = 0x81;
+    pcurve_payload[57] = 0x07;
+    bytes.extend_from_slice(&[0xb5, 0x03, 0x21, 58, 1, 0, 0, 0]);
+    bytes.extend_from_slice(&pcurve_payload);
+    for point in 0..9 {
+        for coordinate in [f64::from(point), f64::from(point % 3), 2.0] {
+            bytes.extend_from_slice(&coordinate.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0, 2, 0, 0, 0]);
+
+    let [header] = crate::geometry::a8_surface_headers(&bytes)
+        .try_into()
+        .expect("one elided header");
+    let surface = crate::geometry::a8_surface_from_external_grid(&bytes, &header)
+        .expect("unique external pole allocation");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.control_points.len(), 9);
+    assert_eq!(surface.control_points[8], Point3::new(8.0, 2.0, 2.0));
+}
+
+#[test]
 fn a8_pcurve_parser_reads_degree5_uv_jet() {
     let pcurves = crate::geometry::a8_pcurves(&a8_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
