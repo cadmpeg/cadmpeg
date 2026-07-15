@@ -236,8 +236,23 @@ pub struct FcCurveControlPoints {
     pub subtype: u8,
     /// Ordered exact world-coordinate values, in mm.
     pub values_mm: Vec<f64>,
+    /// World-coordinate tokens with exact body-relative spans.
+    pub tokens: Vec<FcCurveCoordinateToken>,
     /// Byte offset of the source positional curve row.
     pub offset: usize,
+}
+
+/// One recognized world-coordinate token in an `fc <subtype>` body.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FcCurveCoordinateToken {
+    /// Decoded model length in millimeters.
+    pub value_mm: f64,
+    /// Exact source bytes occupied by the token.
+    pub raw: Vec<u8>,
+    /// Token offset relative to the complete curve parameter body.
+    pub offset: usize,
+    /// Number of source bytes occupied by the token.
+    pub length: usize,
 }
 
 /// Circle proven by the decoded points of an `fc 05` curve body.
@@ -1111,23 +1126,29 @@ pub fn fc_control_points(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCont
         let Some((&subtype, lane)) = tail.split_first() else {
             continue;
         };
-        let mut values_mm = Vec::new();
+        let mut tokens = Vec::new();
         let mut cursor = 0;
         while cursor < lane.len() {
             if matches!(lane[cursor], 0x46 | 0x2d) {
                 if let Some((value, next)) = scalar::decode(lane, cursor) {
-                    values_mm.push(value);
+                    tokens.push(FcCurveCoordinateToken {
+                        value_mm: value,
+                        raw: lane[cursor..next].to_vec(),
+                        offset: cursor + 2,
+                        length: next - cursor,
+                    });
                     cursor = next;
                     continue;
                 }
             }
             cursor += 1;
         }
-        if values_mm.len() >= 4 {
+        if tokens.len() >= 4 {
             result.push(FcCurveControlPoints {
                 curve_id: record.curve_id,
                 subtype,
-                values_mm,
+                values_mm: tokens.iter().map(|token| token.value_mm).collect(),
+                tokens,
                 offset: record.offset,
             });
         }

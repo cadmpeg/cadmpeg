@@ -3219,10 +3219,16 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     assert_eq!(control_points.curve_id, 7);
     assert_eq!(control_points.subtype, 8);
     assert_eq!(control_points.values_mm, vec![3.0, -3.0, 2.0, -2.0]);
+    assert_eq!(control_points.tokens[0].offset, 2);
+    assert_eq!(control_points.tokens[0].length, 8);
+    assert_eq!(control_points.tokens[0].raw, [0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(control_points.tokens[1].offset, 10);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["fc_curve_control_points"];
     assert_eq!(records[0].fields["curve_id"], 7);
     assert_eq!(records[0].fields["values_mm"][1], -3.0);
+    assert_eq!(records[0].fields["tokens"][1]["offset"], 10);
+    assert_eq!(records[0].fields["tokens"][1]["length"], 8);
 }
 
 #[test]

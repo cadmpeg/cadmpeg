@@ -532,8 +532,17 @@ struct CreoFcCurveControlPointRecord {
     curve_id: u32,
     subtype: u8,
     values_mm: Vec<f64>,
+    tokens: Vec<CreoFcCurveCoordinateToken>,
     offset: usize,
     source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoFcCurveCoordinateToken {
+    value_mm: f64,
+    raw: Vec<u8>,
+    offset: usize,
+    length: usize,
 }
 
 #[derive(Serialize)]
@@ -1024,6 +1033,16 @@ fn fc_curve_control_point_records(scan: &ContainerScan) -> Vec<CreoFcCurveContro
             curve_id: record.curve_id,
             subtype: record.subtype,
             values_mm: record.values_mm.clone(),
+            tokens: record
+                .tokens
+                .iter()
+                .map(|token| CreoFcCurveCoordinateToken {
+                    value_mm: token.value_mm,
+                    raw: token.raw.clone(),
+                    offset: token.offset,
+                    length: token.length,
+                })
+                .collect(),
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })

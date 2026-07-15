@@ -472,6 +472,11 @@ the `fc 05` prefix followed by the single-byte `ff` body terminator. A body
 without the terminator can end immediately after the final group. Other
 unclaimed trailing bytes invalidate the analytic circle carrier.
 
+Recognized eight-byte `46` and `2d` world-coordinate tokens in an `fc` body
+retain their decoded millimeter value, exact bytes, body-relative offset, and
+token length. Bytes between recognized tokens remain owned by the enclosing
+curve parameter body; scalar order does not assign point or parameter roles.
+
 Within the `fc 05` scalar lane, `8b <tail6>` reconstructs the IEEE-754 bytes `40 00 <tail6>` and consumes seven stored bytes. This lane-specific interpretation takes precedence over the context-independent `8b` scalar form.
 
 An `fc 05` cap pair belongs to one cylinder when each curve suffix binds one
