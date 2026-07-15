@@ -945,7 +945,10 @@ direction.
 The four consecutive triples are the local x axis, local y axis, local z axis,
 and origin. When a definition contains exactly one complete `local_sys`, its
 local z axis and origin define the section-plane equation. A zero-length local
-z axis does not define a plane.
+z axis does not define a plane. Perpendicular nonzero local-x and local-z axes
+also define the section's in-plane reference equation through the stored
+origin. This complete local frame supplies section orientation when the
+section's referenced plane entities do not reduce to one orientation plane.
 
 A class-923 feature with exactly one resolved plane carrier defines that datum plane by the carrier's model-space origin, normal, and in-plane reference direction.
 

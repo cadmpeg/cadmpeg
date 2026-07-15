@@ -59,6 +59,11 @@ fn scale(vector: [f64; 3], factor: f64) -> [f64; 3] {
     vector.map(|value| value * factor)
 }
 
+fn normalize(vector: [f64; 3]) -> Option<[f64; 3]> {
+    let magnitude = dot(vector, vector).sqrt();
+    (magnitude > 1e-12).then(|| scale(vector, magnitude.recip()))
+}
+
 fn plane_equation(
     id: u32,
     datums: &[DatumPlane],
@@ -97,6 +102,45 @@ fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<([f
     let normal = scale(raw_normal, magnitude.recip());
     let origin: [f64; 3] = values[9..12].try_into().ok()?;
     Some((normal, dot(normal, origin)))
+}
+
+fn definition_local_frame_transform(
+    definition: &FeatureDefinition,
+    section: &crate::feature::FeatureSection3d,
+) -> Option<FeatureSectionTransform> {
+    let feature_id = definition.owner_feature_id?;
+    let frames = definition
+        .parameter_frames
+        .iter()
+        .filter(|frame| frame.kind == FeatureParameterFrameKind::LocalSystem)
+        .collect::<Vec<_>>();
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    let values: [f64; 12] = frame.decoded_values.clone()?.try_into().ok()?;
+    let mut u_axis = normalize(values[0..3].try_into().ok()?)?;
+    let mut normal = normalize(values[6..9].try_into().ok()?)?;
+    (dot(u_axis, normal).abs() <= 1e-12).then_some(())?;
+    let origin: [f64; 3] = values[9..12].try_into().ok()?;
+    if section.sketch_plane_flip == Some(BinaryFlag::Set) {
+        normal = scale(normal, -1.0);
+    }
+    if section.orientation.section_flip == Some(BinaryFlag::Set) {
+        normal = scale(normal, -1.0);
+    }
+    if section.orientation.reference_flip == Some(BinaryFlag::Set) {
+        u_axis = scale(u_axis, -1.0);
+    }
+    let v_axis = cross(normal, u_axis);
+    ((dot(v_axis, v_axis) - 1.0).abs() <= 1e-12).then_some(FeatureSectionTransform {
+        definition_id: definition.id,
+        feature_id: Some(feature_id),
+        origin,
+        u_axis,
+        v_axis,
+        normal,
+        offset: section.offset,
+    })
 }
 
 fn generated_datum_plane_equation(
@@ -404,6 +448,12 @@ pub(crate) fn resolve(
                 }
             }
         }
+        if candidates.len() != 1 {
+            if let Some(transform) = definition_local_frame_transform(definition, section) {
+                result.push(transform);
+            }
+            continue;
+        }
         let [(sketch, reference)] = candidates.as_slice() else {
             continue;
         };
@@ -568,6 +618,53 @@ mod tests {
                 definition_id: 42,
                 feature_id: Some(42),
                 origin: [2.0, 0.0, 3.0],
+                u_axis: [0.0, 0.0, 1.0],
+                v_axis: [0.0, -1.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                offset: 100,
+            }]
+        );
+    }
+
+    #[test]
+    fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
+        let mut definition = blank_definition();
+        definition.parameter_frames = vec![FeatureParameterFrame {
+            kind: FeatureParameterFrameKind::LocalSystem,
+            body: Vec::new(),
+            decoded_values: Some(vec![
+                0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0,
+            ]),
+            offset: 1,
+        }];
+        definition.section_3d = Some(FeatureSection3d {
+            sketch_plane_entity_id: Some(348),
+            sketch_plane_flip: Some(BinaryFlag::Clear),
+            reference_plane_entity_ids: vec![2, 274],
+            reference_plane_datum_geometry_id: None,
+            orientation: FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: 100,
+        });
+
+        assert_eq!(
+            resolve(
+                &[definition],
+                &PlacementSources {
+                    datums: &[],
+                    surface_rows: &[],
+                    model_planes: &[],
+                    outline_planes: &[],
+                    plane_envelopes: &[],
+                    geometry_tables: &[],
+                    affected_ids: &[],
+                },
+                &[],
+            ),
+            vec![FeatureSectionTransform {
+                definition_id: 42,
+                feature_id: Some(42),
+                origin: [-3.0, -4.0, 0.0],
                 u_axis: [0.0, 0.0, 1.0],
                 v_axis: [0.0, -1.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
