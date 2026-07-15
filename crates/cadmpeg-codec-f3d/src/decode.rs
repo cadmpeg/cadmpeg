@@ -1509,6 +1509,18 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
             provenance: None,
         });
     }
+    if s.missing_face_surfaces > 0 {
+        losses.push(LossNote {
+            category: LossCategory::Topology,
+            severity: Severity::Warning,
+            message: format!(
+                "{} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {}.",
+                s.missing_face_surfaces,
+                format_kind_counts(&s.missing_face_surface_kinds)
+            ),
+            provenance: None,
+        });
+    }
     if s.unknown_surface_faces > 0 {
         losses.push(LossNote {
             category: LossCategory::Geometry,

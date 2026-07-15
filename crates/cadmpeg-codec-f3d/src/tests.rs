@@ -11362,6 +11362,41 @@ fn decode_keeps_face_on_unknown_surface() {
 }
 
 #[test]
+fn decode_reports_faces_with_missing_surface_references() {
+    for (surface, condition) in [(-1i64, "null-reference=1"), (999, "dangling-reference=1")] {
+        let mut smbh = synthetic_mixed_smbh();
+        let start = asm_header::record_stream_start(&smbh).unwrap();
+        let limit = asm_header::first_delta_state_offset(&smbh).unwrap();
+        let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
+        let face = records
+            .iter()
+            .filter(|record| record.head == "face")
+            .nth(1)
+            .expect("second generated face");
+        let record = &mut smbh[face.offset..face.offset + face.len];
+        let surface_ref = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
+        record[surface_ref + 1..surface_ref + 9].copy_from_slice(&surface.to_le_bytes());
+
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("missing face surface remains an explicitly lossy decode");
+        assert_eq!(result.ir.model.faces.len(), 1);
+        let note = result
+            .report
+            .losses
+            .iter()
+            .find(|loss| loss.message.contains("required surface reference"))
+            .unwrap_or_else(|| {
+                panic!("missing face-surface loss note: {:?}", result.report.losses)
+            });
+        assert!(note.message.contains(condition), "{}", note.message);
+    }
+}
+
+#[test]
 fn decode_reports_undecoded_edge_curve_kinds() {
     let mut smbh = synthetic_geometry_with_procedural_curve_smbh();
     let needle = b"nubs";

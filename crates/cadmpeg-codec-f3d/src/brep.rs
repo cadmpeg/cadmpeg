@@ -149,6 +149,10 @@ pub struct AnnotationRecord {
 /// Counts used to construct the B-rep loss report.
 #[derive(Default)]
 pub struct Stats {
+    /// Faces omitted because their required surface reference is null or dangling.
+    pub missing_face_surfaces: usize,
+    /// Omitted face counts by null/dangling surface-reference condition.
+    pub missing_face_surface_kinds: std::collections::BTreeMap<String, usize>,
     /// Faces resting on a spline/procedural surface whose shape was not decoded
     /// into a typed carrier; emitted with an unknown-geometry surface.
     pub unknown_surface_faces: usize,
@@ -849,11 +853,18 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             continue;
         }
         let Some(surf_ref) = r.ref_at(7) else {
+            out.stats.missing_face_surfaces += 1;
+            count_kind(&mut out.stats.missing_face_surface_kinds, "null-reference");
             continue;
         };
         let Some(surf_rec) = by_index.get(&surf_ref) else {
             // Dangling surface reference: a face without a resolvable surface
             // cannot be emitted (the IR requires one), so it is dropped.
+            out.stats.missing_face_surfaces += 1;
+            count_kind(
+                &mut out.stats.missing_face_surface_kinds,
+                "dangling-reference",
+            );
             continue;
         };
         kept_faces.insert(r.index as i64);
