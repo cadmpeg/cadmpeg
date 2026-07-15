@@ -108,8 +108,15 @@ pub fn tokens(data: &[u8]) -> Vec<Token> {
                     (end - offset, TokenKind::ArrayOpen)
                 }
             }
-            token::SCALAR_BODY if offset + 2 < data.len() => (3, TokenKind::ScalarBody),
-            token::SCALAR_BODY => (data.len() - offset, TokenKind::Truncated(head)),
+            token::SCALAR_BODY => {
+                let (_, dimensions_end) = compact_int(data, offset + 1);
+                let (_, count_end) = compact_int(data, dimensions_end);
+                if dimensions_end == offset + 1 || count_end == dimensions_end {
+                    (data.len() - offset, TokenKind::Truncated(head))
+                } else {
+                    (count_end - offset, TokenKind::ScalarBody)
+                }
+            }
             token::ARRAY_CLOSE => (1, TokenKind::ArrayClose),
             0xe2 => (1, TokenKind::CompoundOpen),
             0xe3 => (1, TokenKind::CompoundClose),
@@ -322,6 +329,14 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn token_walker_bounds_compact_scalar_body_extents() {
+        let tokens = tokens(&[0xf9, 0x80, 0x88, 0x03, 0x0f]);
+        assert_eq!(tokens[0].kind, TokenKind::ScalarBody);
+        assert_eq!(tokens[0].length, 4);
+        assert_eq!(tokens[1].offset, 4);
     }
 
     #[test]

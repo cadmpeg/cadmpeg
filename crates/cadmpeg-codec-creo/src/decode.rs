@@ -481,8 +481,8 @@ enum CreoFeatureFieldValue {
         terminated: bool,
     },
     ScalarArray {
-        dimensions: u8,
-        count: u8,
+        dimensions: u32,
+        count: u32,
         body: Vec<u8>,
         decoded_values: Option<Vec<f64>>,
     },
@@ -1413,7 +1413,7 @@ struct CreoSurfaceNamedParameterRecord {
     name: String,
     value_kind: &'static str,
     compact_values: Vec<u32>,
-    scalar_dimensions: Option<u8>,
+    scalar_dimensions: Option<u32>,
     scalar_count: Option<u32>,
     scalar_values: Vec<Option<f64>>,
     scalar_tokens: Vec<Vec<u8>>,
@@ -1626,7 +1626,7 @@ fn surface_named_parameter_record(
             "scalar_array",
             Vec::new(),
             Some(*dimensions),
-            Some(u32::from(*count)),
+            Some(*count),
             values.clone(),
             tokens.clone(),
             Vec::new(),
@@ -15104,7 +15104,7 @@ fn prototype_vector_array(
     else {
         return None;
     };
-    let vector_count = usize::from(*dimensions);
+    let vector_count = usize::try_from(*dimensions).ok()?;
     (values.len() == vector_count.checked_mul(3)?).then_some(())?;
     values
         .chunks_exact(3)

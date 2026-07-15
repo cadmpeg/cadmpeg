@@ -156,9 +156,9 @@ pub enum SurfaceNamedValue {
     /// Dimensioned `f9` scalar body.
     ScalarArray {
         /// Stored dimension value.
-        dimensions: u8,
+        dimensions: u32,
         /// Stored element count.
-        count: u8,
+        count: u32,
         /// Decoded slots with unresolved values retained.
         values: Vec<Option<f64>>,
         /// Exact token bytes for each declared slot.
@@ -908,24 +908,40 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
             }
         }
     }
-    if body.first() == Some(&psb::token::SCALAR_BODY) && body.len() >= 3 {
-        let dimensions = body[1];
-        let count = body[2];
-        let slot_count = usize::from(dimensions) * usize::from(count);
+    if body.first() == Some(&psb::token::SCALAR_BODY) {
+        let (dimensions, dimensions_end) = compact_int(body, 1);
+        let (count, values_start) = compact_int(body, dimensions_end);
+        let slot_count = usize::try_from(dimensions).ok().and_then(|dimensions| {
+            usize::try_from(count)
+                .ok()
+                .and_then(|count| dimensions.checked_mul(count))
+        });
+        let Some(slot_count) = slot_count.filter(|slot_count| {
+            dimensions_end > 1
+                && values_start > dimensions_end
+                && *slot_count
+                    <= body
+                        .len()
+                        .saturating_sub(values_start)
+                        .saturating_mul(16)
+                        .max(12)
+        }) else {
+            return SurfaceNamedValue::Opaque(body.to_vec());
+        };
         let spline_slots = matches!(
             name,
             "i_points" | "end_u_tangts" | "end_v_tangts" | "end_uv_deriv" | "tangts" | "end_tangts"
         )
-        .then(|| named_spline_scalar_slots(name, &body[3..], slot_count, cache));
+        .then(|| named_spline_scalar_slots(name, &body[values_start..], slot_count, cache));
         return SurfaceNamedValue::ScalarArray {
             dimensions,
             count,
             values: if let Some(slots) = &spline_slots {
                 slots.iter().map(|slot| slot.0).collect()
             } else if name == "local_sys" {
-                row_scalar_slots(&body[3..], slot_count, cache)
+                row_scalar_slots(&body[values_start..], slot_count, cache)
             } else {
-                scalar_slots(&body[3..], slot_count, cache)
+                scalar_slots(&body[values_start..], slot_count, cache)
             },
             tokens: if let Some(slots) = spline_slots {
                 slots.into_iter().map(|slot| slot.1).collect()
@@ -2614,6 +2630,26 @@ mod tests {
         };
 
         assert_eq!(values[0], Some(0.5));
+    }
+
+    #[test]
+    fn dimensioned_scalar_arrays_decode_compact_extents() {
+        let mut body = vec![0xf9, 0x80, 0x88, 0x03];
+        body.extend([0x0f; 136 * 3]);
+        let SurfaceNamedValue::ScalarArray {
+            dimensions,
+            count,
+            values,
+            ..
+        } = named_surface_value("i_points", &body, &scalar::ScalarCache::default())
+        else {
+            panic!("dimensioned scalar array");
+        };
+
+        assert_eq!(dimensions, 136);
+        assert_eq!(count, 3);
+        assert_eq!(values.len(), 408);
+        assert!(values.iter().all(|value| *value == Some(0.0)));
     }
 
     #[test]

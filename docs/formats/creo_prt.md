@@ -409,7 +409,8 @@ the final frame only when it ends at the body boundary.
 Spline and fillet prototypes can carry `i_points`, `tangts`, `end_tangts`,
 `end_u_tangts`, `end_v_tangts`, `end_uv_deriv`, `u_params`, `v_params`,
 `ctr_spline`, `tan_spline`, `par_v_0`, `par_v_1`, and `offset_type` named
-fields. An `f9 <dimensions> <count>` field declares exactly
+fields. Both extents in `f9 <dimensions_ci> <count_ci>` use compact integers.
+The field declares exactly
 `dimensions * count` scalar slots and retains unresolved slots in position.
 `u_params` and `v_params` can instead use `f8 <count>` followed by exactly
 `count` scalar slots; unresolved slots retain their declared positions.

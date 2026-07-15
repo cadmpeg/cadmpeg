@@ -386,9 +386,9 @@ pub enum FeatureFieldValue {
     /// An `f9 <dimensions> <count>` scalar-array wrapper and its undecoded body.
     ScalarArray {
         /// Scalar tuple dimensionality from the wrapper.
-        dimensions: u8,
+        dimensions: u32,
         /// Number of scalar tuples from the wrapper.
-        count: u8,
+        count: u32,
         /// Exact scalar-body bytes after the wrapper header.
         body: Vec<u8>,
         /// Values when exactly `dimensions × count` defined scalar tokens
@@ -4185,15 +4185,32 @@ fn field_value(payload: &[u8]) -> FeatureFieldValue {
     if payload.is_empty() {
         return FeatureFieldValue::Empty;
     }
-    if payload[0] == psb::token::SCALAR_BODY && payload.len() >= 3 {
-        let slot_count = usize::from(payload[1]).checked_mul(usize::from(payload[2]));
+    if payload[0] == psb::token::SCALAR_BODY {
+        let (dimensions, dimensions_end) = psb::compact_int(payload, 1);
+        let (count, values_start) = psb::compact_int(payload, dimensions_end);
+        let slot_count = usize::try_from(dimensions).ok().and_then(|dimensions| {
+            usize::try_from(count)
+                .ok()
+                .and_then(|count| dimensions.checked_mul(count))
+        });
+        let Some(slot_count) = slot_count.filter(|slot_count| {
+            dimensions_end > 1
+                && values_start > dimensions_end
+                && *slot_count
+                    <= payload
+                        .len()
+                        .saturating_sub(values_start)
+                        .saturating_mul(16)
+                        .max(12)
+        }) else {
+            return FeatureFieldValue::Raw(payload.to_vec());
+        };
         let cache = scalar::ScalarCache::from_section(payload);
-        let decoded_values =
-            slot_count.and_then(|slots| decode_exact_scalars(&payload[3..], slots, &cache));
+        let decoded_values = decode_exact_scalars(&payload[values_start..], slot_count, &cache);
         return FeatureFieldValue::ScalarArray {
-            dimensions: payload[1],
-            count: payload[2],
-            body: payload[3..].to_vec(),
+            dimensions,
+            count,
+            body: payload[values_start..].to_vec(),
             decoded_values,
         };
     }
@@ -6741,6 +6758,26 @@ mod tests {
             Some([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
         );
         assert_eq!(spline.parameters, Some(vec![0.0, 1.0]));
+    }
+
+    #[test]
+    fn decodes_compact_feature_scalar_array_extents() {
+        let mut payload = vec![psb::token::SCALAR_BODY, 0x80, 0x88, 0x03];
+        payload.extend(std::iter::repeat_n(0x0f, 136 * 3));
+
+        let FeatureFieldValue::ScalarArray {
+            dimensions,
+            count,
+            body,
+            decoded_values,
+        } = field_value(&payload)
+        else {
+            panic!("scalar array");
+        };
+        assert_eq!(dimensions, 136);
+        assert_eq!(count, 3);
+        assert_eq!(body.len(), 408);
+        assert_eq!(decoded_values, Some(vec![0.0; 408]));
     }
 
     #[test]
