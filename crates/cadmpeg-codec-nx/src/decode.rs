@@ -1735,39 +1735,6 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
         let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
             continue;
         };
-        let missing = context
-            .sides
-            .each_ref()
-            .map(|side| pcurve_requires_completion(side.pcurve.as_ref()));
-        if missing.into_iter().any(|value| value) {
-            if let [Some(first_surface), Some(second_surface)] =
-                context.sides.each_ref().map(|side| side.surface.as_ref())
-            {
-                if let Some(lanes) = continue_surface_intersection_parameters(
-                    ir,
-                    [first_surface, second_surface],
-                    points,
-                    *fit_tolerance,
-                ) {
-                    for side in 0..2 {
-                        if missing[side] {
-                            replacements.push((
-                                procedural_id.clone(),
-                                side,
-                                PcurveGeometry::Nurbs {
-                                    degree: 1,
-                                    knots: linear_knots(parameters),
-                                    control_points: lanes[side].clone(),
-                                    weights: None,
-                                    periodic: false,
-                                },
-                            ));
-                        }
-                    }
-                    continue;
-                }
-            }
-        }
         for side in 0..2 {
             if !pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
                 continue;
@@ -1853,6 +1820,90 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
                         degree: 1,
                         knots: linear_knots(parameters),
                         control_points: uv,
+                        weights: None,
+                        periodic: false,
+                    },
+                ));
+            }
+        }
+    }
+    for (procedural_id, side, pcurve) in replacements {
+        let Some(procedural) = ir
+            .model
+            .procedural_curves
+            .iter_mut()
+            .find(|procedural| procedural.id == procedural_id)
+        else {
+            continue;
+        };
+        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
+        else {
+            continue;
+        };
+        if pcurve_requires_completion(context.sides[side].pcurve.as_ref()) {
+            context.sides[side].pcurve = Some(pcurve);
+        }
+    }
+    complete_coupled_support_uv(ir, pending);
+}
+
+fn complete_coupled_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+    let mut replacements = Vec::new();
+    for (procedural_id, points, parameters, fit_tolerance, _) in pending {
+        let Some(procedural) = ir
+            .model
+            .procedural_curves
+            .iter()
+            .find(|procedural| &procedural.id == procedural_id)
+        else {
+            continue;
+        };
+        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+            continue;
+        };
+        let missing = context
+            .sides
+            .each_ref()
+            .map(|side| pcurve_requires_completion(side.pcurve.as_ref()));
+        let [Some(first_surface), Some(second_surface)] =
+            context.sides.each_ref().map(|side| side.surface.as_ref())
+        else {
+            continue;
+        };
+        let surfaces = [first_surface, second_surface];
+        let unresolved_procedural_support = (0..2).any(|side| {
+            missing[side]
+                && pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), 0).is_some()
+                && ir.model.surfaces.iter().any(|surface| {
+                    &surface.id == surfaces[side]
+                        && matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
+                })
+        });
+        if !unresolved_procedural_support {
+            continue;
+        }
+        let seeds = context
+            .sides
+            .each_ref()
+            .map(|side| pcurve_control_point_seed(side.pcurve.as_ref(), 0));
+        let Some(lanes) = continue_surface_intersection_parameters_with_seeds(
+            ir,
+            surfaces,
+            points,
+            *fit_tolerance,
+            seeds,
+        ) else {
+            continue;
+        };
+        for side in 0..2 {
+            if missing[side] {
+                replacements.push((
+                    procedural_id.clone(),
+                    side,
+                    PcurveGeometry::Nurbs {
+                        degree: 1,
+                        knots: linear_knots(parameters),
+                        control_points: lanes[side].clone(),
                         weights: None,
                         periodic: false,
                     },
@@ -3054,11 +3105,28 @@ fn model_surface_derivative(
 /// Continue one chart-selected surface-intersection branch in both support
 /// parameter spaces. The chart seeds and orders the branch; corrected points
 /// satisfy the two support surfaces rather than interpolating chart samples.
+#[cfg(test)]
 pub(crate) fn continue_surface_intersection_parameters(
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     chart: &[Point3],
     fit_tolerance: f64,
+) -> Option<[Vec<Point2>; 2]> {
+    continue_surface_intersection_parameters_with_seeds(
+        ir,
+        surfaces,
+        chart,
+        fit_tolerance,
+        [None, None],
+    )
+}
+
+fn continue_surface_intersection_parameters_with_seeds(
+    ir: &CadIr,
+    surfaces: [&SurfaceId; 2],
+    chart: &[Point3],
+    fit_tolerance: f64,
+    seeds: [Option<Point2>; 2],
 ) -> Option<[Vec<Point2>; 2]> {
     if chart.len() < 2 || !fit_tolerance.is_finite() || fit_tolerance <= 0.0 {
         return None;
@@ -3081,8 +3149,8 @@ pub(crate) fn continue_surface_intersection_parameters(
         }
     };
     let first = [
-        fit_parameters(surfaces[0], chart[0], None)?,
-        fit_parameters(surfaces[1], chart[0], None)?,
+        fit_parameters(surfaces[0], chart[0], seeds[0])?,
+        fit_parameters(surfaces[1], chart[0], seeds[1])?,
     ];
     let domains = surfaces.map(|surface| surface_parameter_domain(ir, surface));
     let seed = [first[0].u, first[0].v, first[1].u, first[1].v];
