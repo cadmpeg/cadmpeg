@@ -152,6 +152,8 @@ pub struct Stats {
     /// Faces resting on a spline/procedural surface whose shape was not decoded
     /// into a typed carrier; emitted with an unknown-geometry surface.
     pub unknown_surface_faces: usize,
+    /// Undecoded face-surface counts by full native record name.
+    pub unknown_surface_kinds: std::collections::BTreeMap<String, usize>,
     /// Faces whose surface record explicitly delegates shape to mesh attributes.
     pub mesh_surface_faces: usize,
     /// Spline surface records whose cached B-spline block was decoded into a
@@ -162,11 +164,15 @@ pub struct Stats {
     pub nurbs_curves: usize,
     /// Edges whose 3D curve is a procedural carrier (emitted with no curve).
     pub procedural_curve_edges: usize,
+    /// Undecoded edge-curve counts by full native record name.
+    pub procedural_curve_kinds: std::collections::BTreeMap<String, usize>,
     /// Coedges that carried an explicit UV pcurve ref with no decodable 2D
     /// carrier on the face surface's parameterization (undecodable bytes, or
     /// UV values on the exact procedural parameterization rather than the
     /// solved cache's).
     pub undecoded_pcurve_refs: usize,
+    /// Undecoded coedge-pcurve counts by full native record name.
+    pub undecoded_pcurve_kinds: std::collections::BTreeMap<String, usize>,
     /// Procedural blends for which only one of two support families resolved.
     pub partial_procedural_supports: usize,
     /// Record names in the active slice that were neither topology nor a
@@ -174,6 +180,10 @@ pub struct Stats {
     pub other_records: usize,
     /// Residual record counts by full record name.
     pub other_record_kinds: std::collections::BTreeMap<String, usize>,
+}
+
+fn count_kind(counts: &mut std::collections::BTreeMap<String, usize>, kind: &str) {
+    *counts.entry(kind.to_owned()).or_default() += 1;
 }
 
 // ---- geometry carrier decode -------------------------------------------------
@@ -935,6 +945,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 out.stats.mesh_surface_faces += 1;
             } else {
                 out.stats.unknown_surface_faces += 1;
+                count_kind(&mut out.stats.unknown_surface_kinds, &surf_rec.head);
             }
         }
     }
@@ -1065,9 +1076,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 kept_pcurves.insert(pc);
                             } else {
                                 out.stats.undecoded_pcurve_refs += 1;
+                                count_kind(&mut out.stats.undecoded_pcurve_kinds, &prec.head);
                             }
                         } else {
                             out.stats.undecoded_pcurve_refs += 1;
+                            count_kind(&mut out.stats.undecoded_pcurve_kinds, "dangling-reference");
                         }
                     }
                     if let Some(ei) = ce.ref_at(6) {
@@ -1162,7 +1175,17 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                             } else {
                                                 undecoded_carriers.insert(cv);
                                                 out.stats.procedural_curve_edges += 1;
+                                                count_kind(
+                                                    &mut out.stats.procedural_curve_kinds,
+                                                    &crec.head,
+                                                );
                                             }
+                                        } else {
+                                            out.stats.procedural_curve_edges += 1;
+                                            count_kind(
+                                                &mut out.stats.procedural_curve_kinds,
+                                                "dangling-reference",
+                                            );
                                         }
                                     }
                                     _ => {}
@@ -1304,7 +1327,17 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                 } else {
                                                     undecoded_carriers.insert(curve_index);
                                                     out.stats.procedural_curve_edges += 1;
+                                                    count_kind(
+                                                        &mut out.stats.procedural_curve_kinds,
+                                                        &curve_record.head,
+                                                    );
                                                 }
+                                                } else {
+                                                    out.stats.procedural_curve_edges += 1;
+                                                    count_kind(
+                                                        &mut out.stats.procedural_curve_kinds,
+                                                        "dangling-reference",
+                                                    );
                                                 }
                                             }
                                         }

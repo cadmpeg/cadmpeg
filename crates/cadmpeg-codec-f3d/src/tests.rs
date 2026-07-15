@@ -11354,10 +11354,67 @@ fn decode_keeps_face_on_unknown_surface() {
         .find(|l| l.message.contains("unknown-geometry surface"))
         .expect("unknown-surface loss note present");
     assert_eq!(note.severity, cadmpeg_ir::report::Severity::Warning);
+    assert!(note.message.contains("Native kinds: splne=1."));
 
     // The decoded document still validates.
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
+}
+
+#[test]
+fn decode_reports_undecoded_edge_curve_kinds() {
+    let mut smbh = synthetic_geometry_with_procedural_curve_smbh();
+    let needle = b"nubs";
+    let position = smbh
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .expect("procedural NURBS cache present");
+    smbh[position] = b'x';
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("undecoded edge-curve carrier remains a successful topology decode");
+
+    let note = result
+        .report
+        .losses
+        .iter()
+        .find(|loss| loss.message.contains("no decodable inline B-spline cache"))
+        .expect("undecoded edge-curve loss note");
+    assert!(
+        note.message.contains("Native kinds: intcurve=1."),
+        "{}",
+        note.message
+    );
+}
+
+#[test]
+fn decode_reports_dangling_edge_curve_references() {
+    let mut smbh = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&smbh).unwrap();
+    let limit = asm_header::first_delta_state_offset(&smbh).unwrap();
+    let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let record = &mut smbh[edge.offset..edge.offset + edge.len];
+    let curve_ref = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
+    record[curve_ref + 1..curve_ref + 9].copy_from_slice(&999i64.to_le_bytes());
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("dangling curve reference remains a successful topology decode");
+    let note = result
+        .report
+        .losses
+        .iter()
+        .find(|loss| loss.message.contains("no decodable inline B-spline cache"))
+        .expect("dangling edge-curve loss note");
+    assert!(note.message.contains("Native kinds: dangling-reference=1."));
 }
 
 #[test]
@@ -17736,7 +17793,40 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
             .coedges
             .iter()
             .all(|coedge| coedge.pcurve.is_none()));
+        let note = result
+            .report
+            .losses
+            .iter()
+            .find(|loss| loss.message.contains("explicit UV pcurve reference"))
+            .expect("undecoded pcurve loss note");
+        assert!(note.message.contains("Native kinds: pcurve=1."));
     }
+}
+
+#[test]
+fn generated_pcurve_reports_dangling_carrier_reference() {
+    let mut smbh = synthetic_geometry_with_pcurve_smbh();
+    let start = asm_header::record_stream_start(&smbh).unwrap();
+    let limit = asm_header::first_delta_state_offset(&smbh).unwrap();
+    let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
+    let coedge = &records[7];
+    let record = &mut smbh[coedge.offset..coedge.offset + coedge.len];
+    let pcurve_ref = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
+    record[pcurve_ref + 1..pcurve_ref + 9].copy_from_slice(&999i64.to_le_bytes());
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("dangling pcurve reference remains a successful topology decode");
+    let note = result
+        .report
+        .losses
+        .iter()
+        .find(|loss| loss.message.contains("explicit UV pcurve reference"))
+        .expect("dangling pcurve loss note");
+    assert!(note.message.contains("Native kinds: dangling-reference=1."));
 }
 
 #[test]

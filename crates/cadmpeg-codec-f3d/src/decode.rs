@@ -1473,6 +1473,14 @@ fn source_and_tolerances(scan: &ContainerScan, active: &BrepFacts) -> (SourceMet
 }
 
 /// Loss report for a successful geometry decode.
+fn format_kind_counts(counts: &std::collections::BTreeMap<String, usize>) -> String {
+    counts
+        .iter()
+        .map(|(name, count)| format!("{name}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     let s = &decoded.stats;
     let mut losses = Vec::new();
@@ -1511,8 +1519,9 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
                  subtype reference, or the record is a procedural form this codec does not \
                  evaluate); the face, its loops, and trims are emitted with an unknown-geometry \
                  surface linking to the preserved record bytes. Topology is transferred; the \
-                 underlying surface shape is not.",
-                s.unknown_surface_faces
+                 underlying surface shape is not. Native kinds: {}.",
+                s.unknown_surface_faces,
+                format_kind_counts(&s.unknown_surface_kinds)
             ),
             provenance: None,
         });
@@ -1535,8 +1544,9 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
             message: format!(
                 "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
                  B-spline cache; the edge was emitted with its vertices and parameter range but no \
-                 attributed curve carrier.",
-                s.procedural_curve_edges
+                 attributed curve carrier. Native kinds: {}.",
+                s.procedural_curve_edges,
+                format_kind_counts(&s.procedural_curve_kinds)
             ),
             provenance: None,
         });
@@ -1548,8 +1558,9 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
             message: format!(
                 "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
                  carrier on the face surface's parameterization; those coedges were emitted \
-                 without a pcurve.",
-                s.undecoded_pcurve_refs
+                 without a pcurve. Native kinds: {}.",
+                s.undecoded_pcurve_refs,
+                format_kind_counts(&s.undecoded_pcurve_kinds)
             ),
             provenance: None,
         });
