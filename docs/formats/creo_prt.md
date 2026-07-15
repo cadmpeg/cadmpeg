@@ -891,7 +891,8 @@ choice sequence
 `00 00 ea 44 00 00 f6 f6 f6 00 00 00 00` places
 `ea 44 00 00` in `angle_choice` and defines a complete 360-degree revolution.
 The preceding zero is the inactive `depth_choice`; it is not a zero angular
-extent.
+extent. The same complete `83 df ...` choice sequence inside the bounded
+section definition applies to its owning DEPDB rotational recipe.
 
 When a class-911 hole owns exactly two complete outline-backed plane rows, their
 stored order is the entry and termination order. The planes are parallel.

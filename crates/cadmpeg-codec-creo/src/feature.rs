@@ -4615,6 +4615,50 @@ pub fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
     result
 }
 
+/// Decode full-turn termination stored inside an owned DEPDB section
+/// definition. The owning current-state recipe must independently select a
+/// rotational sweep.
+pub fn definition_revolution_extents(
+    definitions: &[FeatureDefinition],
+    operations: &[FeatureOperation],
+) -> Vec<FeatureRevolutionExtent> {
+    const FULL_TURN: &[u8] = &[
+        0x83, 0xdf, 0xf6, 0xe3, 0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00,
+        0x00, 0x00,
+    ];
+    let mut result = Vec::new();
+    for definition in definitions {
+        let Some(feature_id) = definition.owner_feature_id else {
+            continue;
+        };
+        let recipe_matches = operations.iter().any(|operation| {
+            operation.feature_id == feature_id
+                && operation
+                    .recipe
+                    .is_some_and(|recipe| recipe.kind() == FeatureRecipeKind::Revolve)
+        });
+        if !recipe_matches {
+            continue;
+        }
+        let offsets = definition
+            .body
+            .windows(FULL_TURN.len())
+            .enumerate()
+            .filter_map(|(offset, window)| (window == FULL_TURN).then_some(offset))
+            .collect::<Vec<_>>();
+        let [offset] = offsets.as_slice() else {
+            continue;
+        };
+        result.push(FeatureRevolutionExtent {
+            feature_id,
+            kind: FeatureRevolutionExtentKind::FullTurn,
+            offset: definition.offset + offset + 6,
+        });
+    }
+    result.sort_by_key(|record| record.offset);
+    result
+}
+
 fn definitions_in_ranges(
     payload: &[u8],
     starts: &[(usize, u32, Option<u32>, bool)],
@@ -5660,6 +5704,29 @@ mod tests {
 
         assert_eq!(definition.id, 247);
         assert_eq!(definition.owner_feature_id, Some(247));
+    }
+
+    #[test]
+    fn decodes_owned_depdb_full_turn_for_rotational_recipe() {
+        let mut definition = pending_replay(&[]);
+        definition.id = 247;
+        definition.owner_feature_id = Some(247);
+        definition.offset = 100;
+        definition.body = vec![
+            0x83, 0xdf, 0xf6, 0xe3, 0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00,
+            0x00, 0x00, 0x00,
+        ];
+        let revolve = operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10);
+
+        let decoded = definition_revolution_extents(&[definition.clone()], &[revolve]);
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].feature_id, 247);
+        assert_eq!(decoded[0].kind, FeatureRevolutionExtentKind::FullTurn);
+        assert_eq!(decoded[0].offset, 106);
+
+        let extrude = operation(247, Some(FeatureRecipe::ProtrudeExtrude), 10);
+        assert!(definition_revolution_extents(&[definition], &[extrude]).is_empty());
     }
 
     #[test]

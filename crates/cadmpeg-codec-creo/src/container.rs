@@ -1214,7 +1214,6 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     feature_affected_ids.sort_by_key(|record| record.offset);
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
     let feature_loop_restore_directions = feature::loop_restore_directions(&feature_rows);
-    let feature_revolution_extents = feature::revolution_extents(&feature_rows);
     let feature_entity_tables =
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
     let feature_operation_states = feature_operation_states(&data, &sections);
@@ -1248,6 +1247,12 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         &feature_operations,
         &depdb_ranges,
     );
+    let mut feature_revolution_extents = feature::revolution_extents(&feature_rows);
+    feature_revolution_extents.extend(feature::definition_revolution_extents(
+        &feature_definitions,
+        &feature_operations,
+    ));
+    feature_revolution_extents.sort_by_key(|record| record.offset);
     let feature_section_transforms = placement::resolve(
         &feature_definitions,
         &placement::PlacementSources {
