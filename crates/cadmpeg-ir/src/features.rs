@@ -992,6 +992,7 @@ pub enum EdgeSelection {
         native: String,
     },
     /// Proven historical edges plus source operands whose edge identity is unresolved.
+    /// `edges` is empty when the input state is known but no member identity resolves.
     HistoricalPartial {
         /// Input topology containing every resolved edge.
         state: FeatureInputTopologyId,

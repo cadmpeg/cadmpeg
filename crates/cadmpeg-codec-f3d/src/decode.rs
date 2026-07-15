@@ -289,7 +289,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr) {
     push(
         gaps.partially_resolved_edge_members,
         format!(
-            "{} edge-treatment operand(s) remain unresolved inside otherwise typed historical selections.",
+            "{} edge-treatment operand(s) remain unresolved inside state-bound historical selections.",
             gaps.partially_resolved_edge_members
         ),
     );

@@ -1176,7 +1176,7 @@ fn partial_historical_edge_selection<'a>(
             unresolved.push(identity.to_owned());
         }
     }
-    if edges.is_empty() || unresolved.is_empty() {
+    if unresolved.is_empty() {
         return None;
     }
     Some(EdgeSelection::HistoricalPartial {
@@ -10927,14 +10927,21 @@ mod relation_tests {
             "group",
         )
         .is_none());
-        assert!(partial_historical_edge_selection(
-            [("operand-a", None), ("operand-b", None)],
-            41,
-            "feature",
-            FeatureInputTopologyId("state".into()),
-            "group",
-        )
-        .is_none());
+        assert_eq!(
+            partial_historical_edge_selection(
+                [("operand-a", None), ("operand-b", None)],
+                41,
+                "feature",
+                FeatureInputTopologyId("state".into()),
+                "group",
+            ),
+            Some(EdgeSelection::HistoricalPartial {
+                state: FeatureInputTopologyId("state".into()),
+                edges: Vec::new(),
+                unresolved: vec!["operand-a".into(), "operand-b".into()],
+                native: "group".into(),
+            })
+        );
     }
 
     #[test]

@@ -2309,6 +2309,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for selection in edge_selections {
+            let allow_empty = matches!(selection, EdgeSelection::HistoricalPartial { .. });
             match selection {
                 EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => check_ids(
                     findings,
@@ -2337,6 +2338,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             native,
                         ),
                         "edge",
+                        allow_empty,
                         &input_topologies,
                         |topology| {
                             topology
@@ -2405,6 +2407,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             native,
                         ),
                         "face",
+                        false,
                         &input_topologies,
                         |topology| {
                             topology
@@ -2443,6 +2446,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             native,
                         ),
                         "body",
+                        false,
                         &input_topologies,
                         |topology| {
                             topology
@@ -2464,6 +2468,7 @@ fn check_historical_selection<'a, I, F>(
     feature: &crate::features::FeatureId,
     selection: (&crate::ids::FeatureInputTopologyId, I, &str),
     kind: &str,
+    allow_empty: bool,
     states: &HashMap<&str, &crate::features::FeatureInputTopology>,
     members: F,
 ) where
@@ -2498,7 +2503,7 @@ fn check_historical_selection<'a, I, F>(
     }
     let available = members(state).into_iter().collect::<HashSet<_>>();
     let selected = selected.into_iter().collect::<Vec<_>>();
-    if selected.is_empty() {
+    if selected.is_empty() && !allow_empty {
         findings.push(Finding {
             check: Check::Counts,
             severity: Severity::Error,
