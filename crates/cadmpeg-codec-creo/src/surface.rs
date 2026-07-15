@@ -1450,6 +1450,29 @@ fn surface_body_compound_close(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<usize> {
+    if kind == SurfaceKind::Extrusion {
+        const FRAME_MARKER: &[u8] = &[0x00, 0x0c, 0x9a];
+        if let Some(marker) = find(body, FRAME_MARKER, 0) {
+            let mut cursor = marker + FRAME_MARKER.len();
+            for slot in 0..6 {
+                let (_, next) = if matches!(slot, 0 | 3)
+                    || (matches!(slot, 1 | 4) && body.get(cursor) == Some(&0x2d))
+                {
+                    scalar::decode_tabulated_cylinder_first_frame_coordinate(body, cursor, cache)?
+                } else {
+                    scalar::decode_tabulated_cylinder_frame_coordinate(body, cursor, cache)?
+                };
+                cursor = next;
+            }
+            if body.get(cursor) == Some(&psb::token::ENTITY_REF) {
+                let (_, next) = psb::reference_id(body, cursor + 1).ok()?;
+                cursor = next;
+            }
+            if body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE) {
+                return Some(cursor);
+            }
+        }
+    }
     let mut cursor = 0;
     while cursor < body.len() {
         if body[cursor] == psb::token::COMPOUND_CLOSE {
@@ -2401,6 +2424,24 @@ mod tests {
                     vec![0x2d, 8, 0, 0, 0, 0, 0, 0],
                 ],
             })
+        );
+    }
+
+    #[test]
+    fn tabulated_cylinder_frame_owns_compound_close_bytes_inside_scalars() {
+        let mut body = vec![0x00, 0x0c, 0x9a];
+        body.extend_from_slice(&[0x4a, 0x13, 0x21, 0xe3, 0xe3, 0x00, 0x00]);
+        body.extend_from_slice(&[0xe4, 0x0f]);
+        body.extend_from_slice(&[0x4a, 0x13, 0x1f, 0x1c, 0x0b, 0x00, 0x00]);
+        body.extend_from_slice(&[0xe4, 0x0f, 0xf7, 0x23, 0xe3]);
+
+        assert_eq!(
+            surface_body_compound_close(
+                SurfaceKind::Extrusion,
+                &body,
+                &scalar::ScalarCache::default(),
+            ),
+            Some(body.len() - 1)
         );
     }
 

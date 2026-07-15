@@ -300,7 +300,9 @@ a three-scalar model-space sweep-direction frame followed by the bytes
 `00 0c 9a`. The directrix construction begins after this marker. Replay-bound
 rows carry a six-scalar frame after the marker; that frame does not contain two
 straight-directrix endpoints. An optional terminal `f7` entity reference
-follows the frame. In a row without a cubic replay, the six-scalar frame stores
+follows the frame, and the following `e3` closes the positional body. Scalar
+payload bytes inside the six declared slots do not close the body. In a row
+without a cubic replay, the six-scalar frame stores
 the start and end XYZ points of a straight directrix. A nonzero sweep direction
 and nondegenerate straight directrix define an unbounded plane.
 
