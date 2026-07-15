@@ -282,6 +282,7 @@ struct CreoFeatureEntityReferenceRecord {
 struct CreoFeatureEntityTableRecord {
     id: String,
     owner_feature_id: Option<u32>,
+    table_class_id: u32,
     entry_ids: Vec<u32>,
     entries: Vec<CreoFeatureEntityTableEntryRecord>,
     surface_ids: Vec<u32>,
@@ -331,6 +332,7 @@ fn feature_entity_table_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityTa
         .map(|table| CreoFeatureEntityTableRecord {
             id: format!("creo:allfeatur:entity_table#{}", table.offset),
             owner_feature_id: table.feature_id,
+            table_class_id: table.table_class_id,
             entry_ids: table.entry_ids.clone(),
             entries: table
                 .entries
@@ -8605,6 +8607,7 @@ mod resolved_sketch_tests {
     fn generated_source_ids_bind_carriers_independently_of_table_position() {
         let table = crate::feature::FeatureEntityTable {
             feature_id: Some(17),
+            table_class_id: 80,
             entry_ids: vec![42, 41, 43],
             entries: vec![
                 crate::feature::FeatureEntityTableEntry {
@@ -8741,6 +8744,7 @@ mod resolved_sketch_tests {
         ];
         let table = crate::feature::FeatureEntityTable {
             feature_id: Some(23),
+            table_class_id: 80,
             entry_ids: vec![10, 11, 12, 13],
             entries: Vec::new(),
             surface_ids: vec![10, 11, 13],

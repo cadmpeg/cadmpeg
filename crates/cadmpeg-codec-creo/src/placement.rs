@@ -585,6 +585,7 @@ mod tests {
         let entity_tables = [
             FeatureEntityTable {
                 feature_id: Some(40),
+                table_class_id: 80,
                 entry_ids: vec![700],
                 entries: vec![crate::feature::FeatureEntityTableEntry {
                     entity_id: 700,
@@ -600,6 +601,7 @@ mod tests {
             },
             FeatureEntityTable {
                 feature_id: Some(40),
+                table_class_id: 80,
                 entry_ids: vec![43, 92],
                 entries: entries.to_vec(),
                 surface_ids: vec![43, 92],

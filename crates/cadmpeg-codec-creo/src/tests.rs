@@ -1017,6 +1017,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     assert_eq!(scan.feature_entity_tables.len(), 1);
     let table = &scan.feature_entity_tables[0];
     assert_eq!(table.feature_id, Some(4));
+    assert_eq!(table.table_class_id, 29);
     assert_eq!(table.entry_ids, vec![7, 9]);
     assert_eq!(table.entries.len(), 2);
     assert!(!table.entries[0].prefixed);
@@ -1055,6 +1056,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     let tables = &result.ir.native.namespace("creo").unwrap().arenas["feature_entity_tables"];
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].fields["owner_feature_id"], 4);
+    assert_eq!(tables[0].fields["table_class_id"], 29);
     assert_eq!(tables[0].fields["entry_ids"][0], 7);
     assert_eq!(tables[0].fields["entry_ids"][1], 9);
     assert_eq!(tables[0].fields["entries"][0]["class_id"], 200);

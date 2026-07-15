@@ -252,6 +252,8 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
 pub struct FeatureEntityTable {
     /// Owning feature when the table lies in a bounded `AllFeatur` feature row.
     pub feature_id: Option<u32>,
+    /// Entity-class identifier following the table's `f7` marker.
+    pub table_class_id: u32,
     /// Entity identifiers in their declared generated-entity order.
     pub entry_ids: Vec<u32>,
     /// Structurally bounded records in their declared generated-entity order.
@@ -5120,7 +5122,8 @@ pub fn entity_tables(
         if count == 0 || payload.get(after_count) != Some(&psb::token::ENTITY_REF) {
             continue;
         }
-        let Ok((_, after_table_class)) = psb::reference_id(payload, after_count + 1) else {
+        let Ok((table_class_id, after_table_class)) = psb::reference_id(payload, after_count + 1)
+        else {
             continue;
         };
         if payload.get(after_table_class..after_table_class + 2) != Some(&[0xfb, 0xe3]) {
@@ -5151,6 +5154,7 @@ pub fn entity_tables(
             .collect();
         tables.push(FeatureEntityTable {
             feature_id: Some(feature_id),
+            table_class_id,
             entry_ids,
             entries,
             surface_ids,
@@ -5302,6 +5306,7 @@ mod tests {
     fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable {
         FeatureEntityTable {
             feature_id: Some(owner),
+            table_class_id: 80,
             entry_ids: Vec::new(),
             entries: source_ids
                 .iter()
