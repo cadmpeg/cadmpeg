@@ -1494,7 +1494,7 @@ fn standard_mesh_missing_edge_assignments_impl(
     type PlacementConstraints<'a> = (
         Option<&'a [[u32; 2]]>,
         &'a HashMap<MeshCorner, u32>,
-        Option<&'a [Vec<[usize; 2]>]>,
+        Option<(&'a [Arc<HashSet<usize>>], &'a [PointTransitions])>,
         &'a MeshCornerPoints,
     );
     type PointTransitions = HashMap<usize, Arc<HashSet<usize>>>;
@@ -1758,32 +1758,11 @@ fn standard_mesh_missing_edge_assignments_impl(
             }
         }
 
-        let (edge_ports, corner_ports, edge_candidates, corner_points) = constraints;
+        let (edge_ports, corner_ports, endpoint_constraints, corner_points) = constraints;
         if missing.len() > u64::BITS as usize {
             return None;
         }
-        let edge_points = edge_candidates.map(|candidates| {
-            candidates
-                .iter()
-                .map(|pairs| Arc::new(pairs.iter().flatten().copied().collect()))
-                .collect::<Vec<_>>()
-        });
-        let point_transitions = edge_candidates.map(|candidates| {
-            candidates
-                .iter()
-                .map(|pairs| {
-                    let mut transitions = HashMap::<usize, HashSet<usize>>::new();
-                    for [left, right] in pairs {
-                        transitions.entry(*left).or_default().insert(*right);
-                        transitions.entry(*right).or_default().insert(*left);
-                    }
-                    transitions
-                        .into_iter()
-                        .map(|(point, targets)| (point, Arc::new(targets)))
-                        .collect()
-                })
-                .collect::<Vec<_>>()
-        });
+        let (edge_points, point_transitions) = endpoint_constraints.unzip();
         let mut search = Search {
             face,
             gaps,
@@ -1792,8 +1771,8 @@ fn standard_mesh_missing_edge_assignments_impl(
             rows,
             edge_ports,
             corner_ports,
-            edge_points: edge_points.as_deref(),
-            point_transitions: point_transitions.as_deref(),
+            edge_points,
+            point_transitions,
             corner_points,
             canonical_spans: canonicalize_spans
                 && (gaps.len() == 1 || gaps.len() > MAX_EXHAUSTIVE_GAPS),
@@ -2044,6 +2023,31 @@ fn standard_mesh_missing_edge_assignments_impl(
     if edge_candidates.is_some_and(|candidates| candidates.len() != edge_rows.len()) {
         return None;
     }
+    let edge_point_domains = edge_candidates.map(|candidates| {
+        candidates
+            .iter()
+            .map(|pairs| Arc::new(pairs.iter().flatten().copied().collect::<HashSet<_>>()))
+            .collect::<Vec<_>>()
+    });
+    let edge_point_transitions = edge_candidates.map(|candidates| {
+        candidates
+            .iter()
+            .map(|pairs| {
+                let mut transitions = HashMap::<usize, HashSet<usize>>::new();
+                for [left, right] in pairs {
+                    transitions.entry(*left).or_default().insert(*right);
+                    transitions.entry(*right).or_default().insert(*left);
+                }
+                transitions
+                    .into_iter()
+                    .map(|(point, targets)| (point, Arc::new(targets)))
+                    .collect()
+            })
+            .collect::<Vec<_>>()
+    });
+    let endpoint_constraints = edge_point_domains
+        .as_deref()
+        .zip(edge_point_transitions.as_deref());
     let coverage = standard_mesh_face_coverage(bytes, edge_faces)?;
     let edge_ports = standard_mesh_edge_ports(bytes)?;
     let singleton_edge_points = edge_candidates.map(|candidates| {
@@ -2126,7 +2130,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                             (
                                 Some(&edge_ports),
                                 &corner_ports,
-                                edge_candidates,
+                                endpoint_constraints,
                                 &corner_points,
                             ),
                             canonicalize_spans,
@@ -2139,7 +2143,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                             &cycle_lengths,
                             &face.missing_edges,
                             &edge_rows,
-                            (None, &HashMap::new(), edge_candidates, &corner_points),
+                            (None, &HashMap::new(), endpoint_constraints, &corner_points),
                             canonicalize_spans,
                         )
                     })
