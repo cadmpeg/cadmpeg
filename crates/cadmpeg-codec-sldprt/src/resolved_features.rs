@@ -685,6 +685,53 @@ mod marker_tests {
     }
 
     #[test]
+    fn object_indexed_qualified_point_operand_precedes_point_ordinal_fallback() {
+        let marker = |id: &str, offset, object_index, kind, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: offset as u32,
+            offset,
+            object_index,
+            local_id: Some(100 + offset as u32),
+            kind,
+            state_value: None,
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let markers = [
+            marker(
+                "unrelated-point",
+                0,
+                Some(3),
+                SketchInputKind::Point,
+                Some([0.0, 0.0]),
+            ),
+            marker(
+                "indexed-curve-locus",
+                1,
+                Some(0),
+                SketchInputKind::LineOrCircle,
+                Some([1.0, 0.0]),
+            ),
+            marker(
+                "indexed-relation",
+                2,
+                Some(0),
+                SketchInputKind::Relation(SketchRelationKind::Distance),
+                None,
+            ),
+        ];
+
+        assert_eq!(
+            resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0xbc7c), 0)
+                .map(|marker| marker.id.as_str()),
+            Some("indexed-curve-locus")
+        );
+    }
+
+    #[test]
     fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
         let marker = |id: &str, local_id, kind, links: &[&str]| SketchInputEntity {
             id: id.into(),
@@ -2617,6 +2664,27 @@ fn resolve_operand_marker_excluding<'a>(
     excluded: &HashSet<String>,
 ) -> Option<&'a SketchInputEntity> {
     let entities = entities.into_iter().collect::<Vec<_>>();
+    if kind == FeatureInputOperandKind::Native(0xbc7c) {
+        let indexed = entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| entity.coordinates_m.is_some())
+            .filter(|entity| {
+                matches!(
+                    entity.kind,
+                    SketchInputKind::Point
+                        | SketchInputKind::ConstrainedPoint
+                        | SketchInputKind::LineOrCircle
+                        | SketchInputKind::Arc
+                )
+            })
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        if let [entity] = indexed.as_slice() {
+            return Some(*entity);
+        }
+    }
     let mut compatible = entities
         .iter()
         .copied()
