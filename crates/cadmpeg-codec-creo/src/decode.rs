@@ -6291,6 +6291,435 @@ fn add_extrusion_pcurve(
     id
 }
 
+fn revolution_boundary_pcurve(
+    surface: &SurfaceGeometry,
+    point: [f64; 3],
+    axis: RevolutionAxis,
+) -> Option<PcurveGeometry> {
+    let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
+    let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
+    let point_from = |origin: Point3| {
+        [
+            point[0] - origin.x,
+            point[1] - origin.y,
+            point[2] - origin.z,
+        ]
+    };
+    let vector = |value: Vector3| [value.x, value.y, value.z];
+    let azimuth = |relative: [f64; 3], carrier_axis: [f64; 3], reference: [f64; 3]| {
+        let tangent = cross(carrier_axis, reference);
+        dot(relative, tangent).atan2(dot(relative, reference))
+    };
+    match surface {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            let normal = vector(*normal);
+            let u_axis = vector(*u_axis);
+            let v_axis = cross(normal, u_axis);
+            let axis_relative = [
+                axis_origin[0] - origin.x,
+                axis_origin[1] - origin.y,
+                axis_origin[2] - origin.z,
+            ];
+            let center = [dot(axis_relative, u_axis), dot(axis_relative, v_axis)];
+            let relative = point_from(*origin);
+            let uv = [dot(relative, u_axis), dot(relative, v_axis)];
+            let radial = [uv[0] - center[0], uv[1] - center[1]];
+            let radius = radial[0].hypot(radial[1]);
+            (radius > 1e-12).then_some(())?;
+            let start = radial[1].atan2(radial[0]);
+            let direction = if dot(normal, axis_direction).is_sign_negative() {
+                -std::f64::consts::TAU
+            } else {
+                std::f64::consts::TAU
+            };
+            Some(circular_pcurve(center, radius, start, start + direction))
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            ..
+        }
+        | SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            ..
+        } => {
+            let carrier_axis = vector(*axis);
+            let relative = point_from(*origin);
+            let u = azimuth(relative, carrier_axis, vector(*ref_direction));
+            let v = dot(relative, carrier_axis);
+            let direction = if dot(carrier_axis, axis_direction).is_sign_negative() {
+                -std::f64::consts::TAU
+            } else {
+                std::f64::consts::TAU
+            };
+            Some(line_pcurve([u, v], [u + direction, v]))
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            ..
+        } => {
+            let carrier_axis = vector(*axis);
+            let relative = point_from(*center);
+            let u = azimuth(relative, carrier_axis, vector(*ref_direction));
+            let axial = dot(relative, carrier_axis);
+            let radial = std::array::from_fn::<_, 3, _>(|index| {
+                relative[index] - axial * carrier_axis[index]
+            });
+            let v = axial.atan2(dot(radial, radial).sqrt());
+            Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v]))
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            let carrier_axis = vector(*axis);
+            let reference = vector(*ref_direction);
+            let relative = point_from(*center);
+            let axial = dot(relative, carrier_axis);
+            let radial = std::array::from_fn::<_, 3, _>(|index| {
+                relative[index] - axial * carrier_axis[index]
+            });
+            let radial_distance = dot(radial, radial).sqrt();
+            let positive_residual = ((radial_distance - major_radius)
+                .mul_add(radial_distance - major_radius, axial * axial)
+                - minor_radius * minor_radius)
+                .abs();
+            let negative_residual = ((-radial_distance - major_radius)
+                .mul_add(-radial_distance - major_radius, axial * axial)
+                - minor_radius * minor_radius)
+                .abs();
+            let base_u = azimuth(relative, carrier_axis, reference);
+            let (u, signed_ring) = if negative_residual < positive_residual {
+                (base_u + std::f64::consts::PI, -radial_distance)
+            } else {
+                (base_u, radial_distance)
+            };
+            let scale = minor_radius.abs().max(radial_distance).max(1.0);
+            (positive_residual.min(negative_residual) <= 1e-9 * scale * scale).then_some(())?;
+            let v = axial.atan2(signed_ring - major_radius);
+            Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v]))
+        }
+        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
+fn revolution_face_sense(
+    transform: &crate::placement::FeatureSectionTransform,
+    segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
+    surface: &SurfaceGeometry,
+    axis: RevolutionAxis,
+    profile_area: f64,
+) -> Option<Sense> {
+    let (point, tangent) = if let Some((center, radius, start, delta)) = profile_arc(segment) {
+        let angle = start + 0.5 * delta;
+        (
+            [
+                center[0] + radius * angle.cos(),
+                center[1] + radius * angle.sin(),
+            ],
+            [-delta.signum() * angle.sin(), delta.signum() * angle.cos()],
+        )
+    } else {
+        (
+            [
+                0.5 * (segment.2[0] + segment.3[0]),
+                0.5 * (segment.2[1] + segment.3[1]),
+            ],
+            [segment.3[0] - segment.2[0], segment.3[1] - segment.2[1]],
+        )
+    };
+    let outward = if profile_area.is_sign_positive() {
+        [tangent[1], -tangent[0]]
+    } else {
+        [-tangent[1], tangent[0]]
+    };
+    let outward = normalized(std::array::from_fn(|index| {
+        outward[0] * transform.u_axis[index] + outward[1] * transform.v_axis[index]
+    }))?;
+    let model_point = section_point_in_model(transform, point);
+    let pcurve = revolution_boundary_pcurve(surface, model_point, axis)?;
+    let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0)?;
+    let epsilon = 1e-6;
+    let before_u = cadmpeg_ir::eval::surface_point(surface, uv.u - epsilon, uv.v)?;
+    let after_u = cadmpeg_ir::eval::surface_point(surface, uv.u + epsilon, uv.v)?;
+    let before_v = cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v - epsilon)?;
+    let after_v = cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v + epsilon)?;
+    let du = [
+        after_u.x - before_u.x,
+        after_u.y - before_u.y,
+        after_u.z - before_u.z,
+    ];
+    let dv = [
+        after_v.x - before_v.x,
+        after_v.y - before_v.y,
+        after_v.z - before_v.z,
+    ];
+    let carrier_normal = normalized(cross(du, dv))?;
+    let alignment = dot(carrier_normal, outward);
+    (alignment.abs() > 1e-8).then_some(())?;
+    Some(if alignment.is_sign_positive() {
+        Sense::Forward
+    } else {
+        Sense::Reversed
+    })
+}
+
+fn transfer_resolved_revolution_breps(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut transferred = 0;
+    for (transform_index, transform) in scan.feature_section_transforms.iter().enumerate() {
+        let Some(feature_id) = transform.feature_id else {
+            continue;
+        };
+        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve)
+            || scan.feature_section_transforms[..transform_index]
+                .iter()
+                .filter_map(|preceding| preceding.feature_id)
+                .any(|preceding| feature_recipe(scan, preceding).is_some())
+            || !scan.feature_revolution_extents.iter().any(|extent| {
+                extent.feature_id == feature_id
+                    && extent.kind == crate::feature::FeatureRevolutionExtentKind::FullTurn
+            })
+        {
+            continue;
+        }
+        let Some(definition) = scan
+            .feature_definitions
+            .iter()
+            .find(|definition| definition.id == transform.definition_id)
+        else {
+            continue;
+        };
+        let Some(axis) = resolved_revolution_axis(definition, transform) else {
+            continue;
+        };
+        let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
+        let Some(mut profiles) = resolved_sketch_profiles(ir, &sketch_id, 2) else {
+            continue;
+        };
+        let [profile] = profiles.as_mut_slice() else {
+            continue;
+        };
+        let Some(area) = extrusion_profile_signed_area(profile) else {
+            continue;
+        };
+        let vertex_curves = profile
+            .iter()
+            .map(|(_, _, point, _)| revolved_section_circle(transform, *point, axis))
+            .collect::<Vec<_>>();
+        let surface_geometries = profile
+            .iter()
+            .map(|(geometry, _, _, _)| revolved_section_surface(transform, geometry, axis))
+            .collect::<Option<Vec<_>>>();
+        let Some(surface_geometries) = surface_geometries else {
+            continue;
+        };
+        let boundaries_are_complete =
+            profile
+                .iter()
+                .enumerate()
+                .all(|(index, (_, _, start, end))| {
+                    let next = (index + 1) % profile.len();
+                    (vertex_curves[index].is_some() || vertex_curves[next].is_some())
+                        && [
+                            (*start, vertex_curves[index].is_some()),
+                            (*end, vertex_curves[next].is_some()),
+                        ]
+                        .into_iter()
+                        .all(|(section_point, present)| {
+                            !present
+                                || revolution_boundary_pcurve(
+                                    &surface_geometries[index],
+                                    section_point_in_model(transform, section_point),
+                                    axis,
+                                )
+                                .is_some()
+                        })
+                });
+        if !boundaries_are_complete {
+            continue;
+        }
+        let face_senses = profile
+            .iter()
+            .zip(&surface_geometries)
+            .map(|(segment, surface)| {
+                revolution_face_sense(transform, segment, surface, axis, area)
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(face_senses) = face_senses else {
+            continue;
+        };
+        let prefix = format!("creo:feature:revolution#{feature_id}");
+        let body_id = BodyId(format!("{prefix}:body"));
+        if ir.model.bodies.iter().any(|body| body.id == body_id) {
+            continue;
+        }
+        let region_id = RegionId(format!("{prefix}:region"));
+        let shell_id = ShellId(format!("{prefix}:shell"));
+        let count = profile.len();
+        let mut edges = vec![None; count];
+        for (index, ((_, _, point, _), curve_geometry)) in
+            profile.iter().zip(vertex_curves).enumerate()
+        {
+            let Some(curve_geometry) = curve_geometry else {
+                continue;
+            };
+            let CurveGeometry::Circle {
+                center,
+                axis: curve_axis,
+                ref_direction,
+                radius,
+            } = curve_geometry
+            else {
+                unreachable!();
+            };
+            let curve_id = CurveId(format!("{prefix}:curve:vertex:{index}"));
+            let point_id = PointId(format!("{prefix}:point:vertex:{index}"));
+            let vertex_id = VertexId(format!("{prefix}:vertex:{index}"));
+            let edge_id = EdgeId(format!("{prefix}:edge:vertex:{index}"));
+            let position = section_point_in_model(transform, *point);
+            ir.model.curves.push(Curve {
+                id: curve_id.clone(),
+                geometry: CurveGeometry::Circle {
+                    center,
+                    axis: curve_axis,
+                    ref_direction,
+                    radius,
+                },
+                source_object: None,
+            });
+            ir.model.points.push(Point {
+                id: point_id.clone(),
+                position: Point3::new(position[0], position[1], position[2]),
+            });
+            ir.model.vertices.push(Vertex {
+                id: vertex_id.clone(),
+                point: point_id,
+                tolerance: None,
+            });
+            ir.model.edges.push(Edge {
+                id: edge_id.clone(),
+                curve: Some(curve_id),
+                start: vertex_id.clone(),
+                end: vertex_id,
+                param_range: Some([0.0, std::f64::consts::TAU]),
+                tolerance: None,
+            });
+            edges[index] = Some(edge_id);
+        }
+        let mut faces = Vec::new();
+        for (index, (((_, _, start, end), surface_geometry), face_sense)) in profile
+            .iter()
+            .zip(surface_geometries)
+            .zip(face_senses)
+            .enumerate()
+        {
+            let next = (index + 1) % count;
+            let surface_id = SurfaceId(format!("{prefix}:surface:{index}"));
+            let face_id = FaceId(format!("{prefix}:face:{index}"));
+            ir.model.surfaces.push(Surface {
+                id: surface_id.clone(),
+                geometry: surface_geometry.clone(),
+                source_object: None,
+            });
+            let mut loops = Vec::new();
+            for (boundary, vertex_index, section_point, sense) in [
+                ("start", index, *start, Sense::Reversed),
+                ("end", next, *end, Sense::Forward),
+            ] {
+                let Some(edge_id) = edges[vertex_index].clone() else {
+                    continue;
+                };
+                let loop_id = LoopId(format!("{prefix}:loop:{index}:{boundary}"));
+                let coedge_id = CoedgeId(format!("{prefix}:coedge:{index}:{boundary}"));
+                let radial_index = if boundary == "start" {
+                    (index + count - 1) % count
+                } else {
+                    next
+                };
+                let radial_boundary = if boundary == "start" { "end" } else { "start" };
+                let point = section_point_in_model(transform, section_point);
+                let pcurve_geometry = revolution_boundary_pcurve(&surface_geometry, point, axis)
+                    .expect("revolution boundary was prevalidated");
+                let pcurve = add_extrusion_pcurve(
+                    ir,
+                    annotations,
+                    PcurveId(format!("{prefix}:pcurve:{index}:{boundary}")),
+                    transform.offset,
+                    pcurve_geometry,
+                );
+                ir.model.loops.push(IrLoop {
+                    id: loop_id.clone(),
+                    face: face_id.clone(),
+                    coedges: vec![coedge_id.clone()],
+                });
+                ir.model.coedges.push(Coedge {
+                    id: coedge_id.clone(),
+                    owner_loop: loop_id.clone(),
+                    edge: edge_id,
+                    next: coedge_id.clone(),
+                    previous: coedge_id,
+                    radial_next: CoedgeId(format!(
+                        "{prefix}:coedge:{radial_index}:{radial_boundary}"
+                    )),
+                    sense,
+                    pcurve: Some(pcurve),
+                });
+                loops.push(loop_id);
+            }
+            ir.model.faces.push(Face {
+                id: face_id.clone(),
+                shell: shell_id.clone(),
+                surface: surface_id,
+                sense: face_sense,
+                loops,
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+            faces.push(face_id);
+        }
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id.clone(),
+            faces,
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id],
+        });
+        ir.model.bodies.push(Body {
+            id: body_id,
+            kind: BodyKind::Solid,
+            regions: vec![region_id],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 fn transfer_resolved_circular_extrusion_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -11124,6 +11553,30 @@ mod resolved_sketch_tests {
             Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
                 if major_radius == 5.0 && minor_radius == 2.0
         ));
+    }
+
+    #[test]
+    fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
+        let surface = SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 2.0,
+            minor_radius: 5.0,
+        };
+        let axis = RevolutionAxis {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        };
+        let pcurve =
+            revolution_boundary_pcurve(&surface, [-3.0, 0.0, 0.0], axis).expect("spindle boundary");
+        for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, parameter).expect("pcurve point");
+            let point =
+                cadmpeg_ir::eval::surface_point(&surface, uv.u, uv.v).expect("surface point");
+            assert!((point.x.hypot(point.y) - 3.0).abs() < 1e-12);
+            assert!(point.z.abs() < 1e-12);
+        }
     }
 
     #[test]
@@ -17801,6 +18254,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
     transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
     transfer_plane_brep(scan, &mut ir, &mut annotations);
+    let feature_revolution_brep_count =
+        transfer_resolved_revolution_breps(scan, &mut ir, &mut annotations);
     let feature_circular_extrusion_brep_count =
         transfer_resolved_circular_extrusion_breps(scan, &mut ir, &mut annotations);
     let feature_extrusion_brep_count =
@@ -17857,6 +18312,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         source.attributes.insert(
             "transferred_rowless_round_cylinder_count".to_string(),
             rowless_round_cylinder_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_feature_revolution_brep_count".to_string(),
+            feature_revolution_brep_count.to_string(),
         );
         source.attributes.insert(
             "transferred_feature_circular_extrusion_brep_count".to_string(),

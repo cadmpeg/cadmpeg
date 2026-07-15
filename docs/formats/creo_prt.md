@@ -976,7 +976,9 @@ choice sequence
 `ea 44 00 00` in `angle_choice` and defines a complete 360-degree revolution.
 The preceding zero is the inactive `depth_choice`; it is not a zero angular
 extent. The same complete `83 df ...` choice sequence inside the bounded
-section definition applies to its owning DEPDB rotational recipe.
+section definition applies to its owning DEPDB rotational recipe. Repeated
+identical sequences are distinct stored regeneration states with the same
+full-turn extent.
 
 When a class-911 hole owns exactly two complete outline-backed plane rows, their
 stored order is the entry and termination order. The planes are parallel.
@@ -1058,6 +1060,19 @@ Its angular direction has degree two, nine poles at successive 45-degree
 positions, weights alternating `1` and `sqrt(2)/2`, four quarter-turn spans,
 and doubled internal quarter-turn knots. Its directrix direction retains the
 directrix degree, knots, poles, and weights.
+
+Evaluating one closed line/arc profile through a full turn produces one face
+per oriented profile entity. A profile vertex off the revolution axis produces
+one closed circular edge with one seam vertex; the preceding and following
+faces form its two radial uses. A profile vertex on the axis collapses and
+produces no edge. Each face has one singleton loop for each off-axis endpoint.
+Planar, cylindrical, conical, spherical, and toroidal faces use their analytic
+parameterizations. Boundary pcurves traverse one full azimuth at constant
+axial, polar, or tube parameter; a planar boundary is an exact rational
+quadratic circle. A spindle-torus boundary retains the signed ring branch, so
+a negative ring shifts azimuth by π instead of reflecting the trim. Face sense
+is the analytic carrier normal aligned to the outward side of the oriented
+section profile.
 
 Evaluating one closed linear-sweep profile produces one side face per oriented profile entity. A line produces a planar side face and an arc produces a cylindrical side face. Each profile vertex produces an edge parallel to the sweep direction. The exact signed area is the sum of line chord terms and circular-arc sector terms. Its sign selects the cap and side face senses. The two cap loops use the profile edges in opposite directions, and every cap or longitudinal edge has exactly two face uses. Cap-face pcurves are the section entities in the cap plane's `(u,v)` frame: lines remain lines and arcs become exact rational quadratic arcs. A planar side face uses profile distance and sweep offset as its parameters. A cylindrical side face uses profile angle and sweep offset. Its cap-edge pcurves hold the sweep offset constant and its longitudinal-edge pcurves hold the profile parameter constant. A multi-profile solid sweep has one outer profile that strictly contains every hole profile. Hole profiles are pairwise disjoint, unnested, and oriented opposite the outer profile.
 

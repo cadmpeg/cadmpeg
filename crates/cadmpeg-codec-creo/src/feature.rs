@@ -4767,14 +4767,11 @@ pub fn definition_revolution_extents(
             .enumerate()
             .filter_map(|(offset, window)| (window == FULL_TURN).then_some(offset))
             .collect::<Vec<_>>();
-        let [offset] = offsets.as_slice() else {
-            continue;
-        };
-        result.push(FeatureRevolutionExtent {
+        result.extend(offsets.into_iter().map(|offset| FeatureRevolutionExtent {
             feature_id,
             kind: FeatureRevolutionExtentKind::FullTurn,
             offset: definition.offset + offset + 6,
-        });
+        }));
     }
     result.sort_by_key(|record| record.offset);
     result
@@ -5903,6 +5900,31 @@ mod tests {
 
         let extrude = operation(247, Some(FeatureRecipe::ProtrudeExtrude), 10);
         assert!(definition_revolution_extents(&[definition], &[extrude]).is_empty());
+    }
+
+    #[test]
+    fn preserves_repeated_identical_depdb_full_turn_states() {
+        let sequence = [
+            0x83, 0xdf, 0xf6, 0xe3, 0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00,
+            0x00, 0x00, 0x00,
+        ];
+        let mut definition = pending_replay(&[]);
+        definition.id = 247;
+        definition.owner_feature_id = Some(247);
+        definition.offset = 100;
+        definition.body.extend(sequence);
+        definition.body.extend([0xe7, 0x04, 0x00, 0xe1]);
+        definition.body.extend(sequence);
+        let revolve = operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10);
+
+        let decoded = definition_revolution_extents(&[definition], &[revolve]);
+
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].offset, 106);
+        assert_eq!(decoded[1].offset, 127);
+        assert!(decoded
+            .iter()
+            .all(|extent| extent.kind == FeatureRevolutionExtentKind::FullTurn));
     }
 
     #[test]
