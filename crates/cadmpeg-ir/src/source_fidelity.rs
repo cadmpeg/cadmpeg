@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::annotations::Annotations;
 use crate::byte_ledger::ByteLedger;
+use crate::unknown::UnknownRecord;
 
 /// Source bytes retained to support exact recovery of opaque ledger spans.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -63,6 +64,19 @@ impl Default for SourceFidelity {
 }
 
 impl SourceFidelity {
+    /// Transfer source accounting from decoder records into this sidecar.
+    pub fn retain_unknown_records(&mut self, stream: &str, records: &[UnknownRecord]) {
+        self.retained_records
+            .extend(records.iter().map(|record| RetainedSourceRecord {
+                id: record.id.to_string(),
+                stream: stream.into(),
+                offset: record.offset,
+                byte_len: record.byte_len,
+                sha256: record.sha256.clone(),
+                data: record.data.clone(),
+            }));
+    }
+
     /// Canonicalize sidecar collections independently from the product model.
     pub fn finalize(&mut self) {
         self.byte_ledger.finalize();
@@ -75,7 +89,10 @@ impl SourceFidelity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{validate_with_source_fidelity, ByteSpan, ByteSpanClass, CadIr, Check};
+    use crate::ids::UnknownId;
+    use crate::{
+        validate_with_source_fidelity, ByteSpan, ByteSpanClass, CadIr, Check, UnknownRecord,
+    };
 
     #[test]
     fn sidecar_version_is_independent_and_explicit() {
@@ -83,6 +100,30 @@ mod tests {
 
         assert_eq!(value["schema_version"], SOURCE_FIDELITY_VERSION);
         assert!(value.get("ir_version").is_none());
+    }
+
+    #[test]
+    fn transfers_unknown_source_accounting_without_product_fields() {
+        let record = UnknownRecord {
+            id: UnknownId("native:x#1".into()),
+            offset: 7,
+            byte_len: 3,
+            sha256: crate::hash::sha256_hex(b"abc"),
+            data: Some(b"abc".to_vec()),
+            links: vec!["body:1".into()],
+        };
+        let mut sidecar = SourceFidelity::default();
+        sidecar.retain_unknown_records("objects", std::slice::from_ref(&record));
+
+        assert_eq!(sidecar.retained_records[0].stream, "objects");
+        assert_eq!(sidecar.retained_records[0].offset, 7);
+        let product = crate::NativeUnknownRecord::from(&record);
+        let value = serde_json::to_value(product).expect("serialize product record");
+        assert_eq!(value["links"][0], "body:1");
+        assert!(value.get("offset").is_none());
+        assert!(value.get("byte_len").is_none());
+        assert!(value.get("sha256").is_none());
+        assert!(value.get("data").is_none());
     }
 
     fn recovery_sidecar(data: &[u8]) -> SourceFidelity {

@@ -16,7 +16,7 @@ use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{Tolerances, Units};
-use crate::unknown::UnknownRecord;
+use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 
 macro_rules! arena_registry {
     ($macro:ident) => {
@@ -158,6 +158,30 @@ impl CadIr {
         &mut self,
         format: &str,
         records: &[UnknownRecord],
+    ) -> Result<(), crate::native::NativeConvertError> {
+        let namespace = self.native.namespace_mut(format);
+        if namespace.version == 0 {
+            namespace.version = 1;
+        }
+        namespace.set_arena("unknowns", records)
+    }
+
+    /// Deserialize source-independent records from the reserved `unknowns` arena.
+    pub fn native_unknown_refs(
+        &self,
+        format: &str,
+    ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
+        self.native.namespace(format).map_or_else(
+            || Ok(Vec::new()),
+            |namespace| namespace.arena_as("unknowns"),
+        )
+    }
+
+    /// Replace the reserved `unknowns` arena with source-independent records.
+    pub fn set_native_unknown_refs(
+        &mut self,
+        format: &str,
+        records: &[NativeUnknownRecord],
     ) -> Result<(), crate::native::NativeConvertError> {
         let namespace = self.native.namespace_mut(format);
         if namespace.version == 0 {

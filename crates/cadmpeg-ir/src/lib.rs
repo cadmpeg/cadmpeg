@@ -91,7 +91,7 @@ pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
 };
-pub use unknown::UnknownRecord;
+pub use unknown::{NativeUnknownRecord, UnknownRecord};
 pub use validate::{validate, validate_with_source_fidelity};
 
 pub mod unknown;
