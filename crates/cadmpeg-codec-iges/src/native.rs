@@ -2813,7 +2813,7 @@ pub(crate) fn store(
                 _ => return None,
             };
             Some(NativeProperty {
-                id: format!("iges:property#D{}", entry.sequence),
+                id: format!("iges:application:property#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 form: entry.form,
                 declared_value_count: record.integer(1),

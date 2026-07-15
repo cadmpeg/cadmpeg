@@ -5084,6 +5084,9 @@ fn decode_types_scalar_and_string_property_forms() {
         .unwrap();
     let properties = &result.ir.native.namespace("iges").unwrap().arenas["properties"];
     assert_eq!(properties.len(), 14);
+    assert!(properties
+        .iter()
+        .all(|property| property.id.starts_with("iges:application:property#D")));
     let property = |form| {
         properties
             .iter()
