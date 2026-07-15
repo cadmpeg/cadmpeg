@@ -1389,6 +1389,7 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.design_fillet_radius_groups,
+        &native.design_edge_operands,
         &native.design_face_operands,
         &native.design_sketch_placements,
     );

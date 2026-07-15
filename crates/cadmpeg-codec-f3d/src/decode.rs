@@ -391,6 +391,7 @@ pub fn decode(
                 &native.design_parameter_scopes,
                 &native.design_construction_operand_groups,
                 &native.design_fillet_radius_groups,
+                &native.design_edge_operands,
                 &native.design_face_operands,
                 &native.design_sketch_placements,
             );
@@ -622,6 +623,7 @@ pub fn decode(
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.design_fillet_radius_groups,
+        &native.design_edge_operands,
         &native.design_face_operands,
         &native.design_sketch_placements,
     );

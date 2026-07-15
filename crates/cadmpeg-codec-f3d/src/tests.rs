@@ -4634,6 +4634,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
         &[],
         &[],
         &[],
+        &[],
     );
     source_less.model.parameters = parameters;
 

@@ -1164,12 +1164,11 @@ pub struct DesignEdgeRecipeSelectorContext {
     /// clause entry.
     pub incidence_matching_edge_slots: Vec<i64>,
     /// The sole incidence-compatible historical edge when the matching set is
-    /// a singleton. This remains topology context, not a resolved selection.
+    /// a singleton.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unique_incidence_edge_slot: Option<i64>,
     /// Changed historical edges whose incident loop counts satisfy every
-    /// present clause entry. This is a topology-context match, not a resolved
-    /// selection.
+    /// present clause entry.
     pub boundary_count_matching_edge_slots: Vec<i64>,
 }
 

@@ -244,6 +244,7 @@ pub fn project_parameter_design(
     scopes: &[DesignParameterScope],
     construction_groups: &[DesignConstructionOperandGroup],
     fillet_radius_groups: &[DesignFilletRadiusGroup],
+    edge_operands: &[DesignEdgeOperand],
     face_operands: &[DesignFaceOperand],
     placements: &[DesignSketchPlacement],
 ) -> (
@@ -378,10 +379,9 @@ pub fn project_parameter_design(
                                 native_stream(&group.id) == Some(native_scope)
                                     && group.record_index == assignment.group_record_index
                             })
-                            .filter(|group| !group.lost_edge_references.is_empty())
                             .map_or_else(
                                 || EdgeSelection::Native(assignment.id.clone()),
-                                |_| EdgeSelection::Unresolved,
+                                |group| resolved_edge_group(group, edge_operands),
                             );
                         FilletGroup {
                             edges,
@@ -416,7 +416,7 @@ pub fn project_parameter_design(
                     },
                 }
             } else if scope.kind == "Chamfer" {
-                project_chamfer(scope, &parameters, construction_groups)
+                project_chamfer(scope, &parameters, construction_groups, edge_operands)
             } else {
                 let mut properties = BTreeMap::new();
                 if let Some(profile) = scope.extrude_profile.as_ref() {
@@ -679,6 +679,7 @@ fn project_chamfer(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     construction_groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
 ) -> cadmpeg_ir::features::FeatureDefinition {
     use cadmpeg_ir::features::{
         ChamferForm, ChamferGroup, ChamferSpec, EdgeSelection, FeatureDefinition,
@@ -764,10 +765,7 @@ fn project_chamfer(
             let edge_group = edge_groups.get(index).copied();
             ChamferGroup {
                 edges: match edge_group {
-                    Some(group) if !group.lost_edge_references.is_empty() => {
-                        EdgeSelection::Unresolved
-                    }
-                    Some(group) => EdgeSelection::Native(group.id.clone()),
+                    Some(group) => resolved_edge_group(group, edge_operands),
                     None => EdgeSelection::Native(scope.id.clone()),
                 },
                 spec: spec
@@ -777,6 +775,62 @@ fn project_chamfer(
         })
         .collect();
     FeatureDefinition::Chamfer { groups }
+}
+
+fn resolved_edge_group(
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignEdgeOperand],
+) -> cadmpeg_ir::features::EdgeSelection {
+    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::ids::EdgeId;
+
+    if !group.lost_edge_references.is_empty() {
+        return EdgeSelection::Unresolved;
+    }
+    let stream = native_stream(&group.id);
+    let mut edges = Vec::new();
+    for member in &group.members {
+        let mut matches = operands.iter().filter(|operand| {
+            native_stream(&operand.id) == stream
+                && operand.scope_record_index == group.scope_record_index
+                && operand.record_index == *member
+        });
+        let Some(operand) = matches.next() else {
+            return EdgeSelection::Native(group.id.clone());
+        };
+        if matches.next().is_some() {
+            return EdgeSelection::Native(group.id.clone());
+        }
+        let Some(edge_slot) = resolved_edge_operand(operand) else {
+            return EdgeSelection::Native(group.id.clone());
+        };
+        let edge = EdgeId(format!("f3d:brep:entity#{edge_slot}"));
+        if !edges.contains(&edge) {
+            edges.push(edge);
+        }
+    }
+    if edges.is_empty() {
+        EdgeSelection::Native(group.id.clone())
+    } else {
+        EdgeSelection::Resolved {
+            edges,
+            native: group.id.clone(),
+        }
+    }
+}
+
+fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
+    resolved_edge_selectors(&operand.recipe_selectors)
+}
+
+fn resolved_edge_selectors(
+    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+) -> Option<i64> {
+    let mut selectors = selector_contexts.iter();
+    let selected = selectors.next()?.unique_incidence_edge_slot?;
+    selectors
+        .all(|selector| selector.unique_incidence_edge_slot == Some(selected))
+        .then_some(selected)
 }
 
 fn project_extrude(
@@ -9563,7 +9617,8 @@ mod relation_tests {
         project_dimension_constraints, project_extrude, project_parameter_design,
         project_sketch_constraints, project_sketch_design, recipe_record_prefix,
         region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
-        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
+        resolved_edge_selectors, resolved_extrude_profile_selection, resolved_face_group,
+        two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -12978,6 +13033,7 @@ mod relation_tests {
             &[],
             &[],
             &[],
+            &[],
         );
         let half = parameters
             .iter()
@@ -13046,7 +13102,7 @@ mod relation_tests {
         half.source_ordinal = 5;
 
         let (features, projected) =
-            project_parameter_design(&[half, width], &[], &[], &[], &[], &[], &[]);
+            project_parameter_design(&[half, width], &[], &[], &[], &[], &[], &[], &[]);
         assert!(features.is_empty());
         assert_eq!(projected[0].name, "Width");
         assert_eq!(projected[0].owner, None);
@@ -13110,7 +13166,7 @@ mod relation_tests {
         };
 
         let (features, parameters) =
-            project_parameter_design(&[parameter], &[owner], &[scope], &[], &[], &[], &[]);
+            project_parameter_design(&[parameter], &[owner], &[scope], &[], &[], &[], &[], &[]);
         assert_eq!(features.len(), 1);
         assert!(matches!(
             &features[0].definition,
@@ -13208,6 +13264,7 @@ mod relation_tests {
                 owner(103, 23, 202),
             ],
             &[scope(201), scope(202)],
+            &[],
             &[],
             &[],
             &[],
@@ -13364,6 +13421,7 @@ mod relation_tests {
             &[owned_along],
             &[owner],
             &[sketch_scope, scope.clone()],
+            &[],
             &[],
             &[],
             &[],
@@ -13669,6 +13727,7 @@ mod relation_tests {
             &[],
             &[],
             &[],
+            &[],
         );
 
         let fillet = features
@@ -13740,6 +13799,7 @@ mod relation_tests {
             &[],
             &[],
             &[],
+            &[],
         );
         assert!(matches!(
             &features[0].definition,
@@ -13755,6 +13815,33 @@ mod relation_tests {
                     },
                 ] if selection == &construction_groups[0].id)
         ));
+    }
+
+    #[test]
+    fn edge_recipe_selectors_resolve_only_unanimous_singletons() {
+        use crate::records::DesignEdgeRecipeSelectorContext;
+
+        let selector = |selector, edge: Option<i64>| DesignEdgeRecipeSelectorContext {
+            selector,
+            clause_entries: [None, None],
+            clause_triplet_edge_slots: [None, None],
+            incidence_matching_edge_slots: edge.into_iter().collect(),
+            unique_incidence_edge_slot: edge,
+            boundary_count_matching_edge_slots: Vec::new(),
+        };
+        assert_eq!(
+            resolved_edge_selectors(&[selector(0, Some(17)), selector(1, Some(17))]),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_selectors(&[selector(0, Some(17)), selector(1, Some(18))]),
+            None
+        );
+        assert_eq!(
+            resolved_edge_selectors(&[selector(0, Some(17)), selector(1, None)]),
+            None
+        );
+        assert_eq!(resolved_edge_selectors(&[]), None);
     }
 
     #[test]
@@ -13886,6 +13973,7 @@ mod relation_tests {
             &assignments,
             &[],
             &[],
+            &[],
         );
         let FeatureDefinition::Fillet { groups } = &features[0].definition else {
             panic!("expected typed Fillet");
@@ -13982,6 +14070,7 @@ mod relation_tests {
             &[],
             &[],
             &[],
+            &[],
         );
         let width = parameters
             .iter()
@@ -14041,7 +14130,7 @@ mod relation_tests {
         let predecessor = scope(12, 200, "Fillet", Some(10), Some(9));
         let successor = scope(22, 100, "Chamfer", Some(11), Some(10));
         let (features, _) =
-            project_parameter_design(&[], &[], &[successor, predecessor], &[], &[], &[], &[]);
+            project_parameter_design(&[], &[], &[successor, predecessor], &[], &[], &[], &[], &[]);
         let predecessor = features
             .iter()
             .find(|feature| feature.native_ref.as_deref() == Some("f3d:native:scope#12"))
