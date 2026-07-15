@@ -3018,8 +3018,10 @@ pub fn project_dimension_constraints(
                     )
                 })
                 .unwrap_or_default();
-            let definition = match linear_candidates.as_slice() {
-                [definition] => definition.clone(),
+            let repeated = repeated_linear_dimension(&linear_candidates, parameter_id.clone());
+            let definition = match (linear_candidates.as_slice(), repeated) {
+                ([definition], _) => definition.clone(),
+                (_, Some(definition)) => definition,
                 _ => Definition::Native {
                     native_kind: parameter.source_kind.clone(),
                     entities: recipe_dimension_candidate_entities(&linear_candidates),
@@ -3048,6 +3050,76 @@ pub fn project_dimension_constraints(
     ));
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+fn repeated_linear_dimension(
+    candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinition],
+    parameter: cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchDistanceMeasurement as Measurement,
+        SketchLocus,
+    };
+
+    if candidates.len() < 2 {
+        return None;
+    }
+    let mut entities = HashSet::new();
+    let mut measurements = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let (first, second, measurement) = match candidate {
+            Definition::Distance { entities: pair, .. } => {
+                let [first, second] = pair.as_slice() else {
+                    return None;
+                };
+                (
+                    first,
+                    second,
+                    Measurement::Distance {
+                        first: SketchLocus::Entity(first.clone()),
+                        second: SketchLocus::Entity(second.clone()),
+                    },
+                )
+            }
+            Definition::HorizontalDistance { first, second, .. } => (
+                locus_entity_id(first),
+                locus_entity_id(second),
+                Measurement::Horizontal {
+                    first: first.clone(),
+                    second: second.clone(),
+                },
+            ),
+            Definition::VerticalDistance { first, second, .. } => (
+                locus_entity_id(first),
+                locus_entity_id(second),
+                Measurement::Vertical {
+                    first: first.clone(),
+                    second: second.clone(),
+                },
+            ),
+            _ => return None,
+        };
+        if first == second || !entities.insert(first.clone()) || !entities.insert(second.clone()) {
+            return None;
+        }
+        measurements.push(measurement);
+    }
+    Some(Definition::RepeatedDistance {
+        measurements,
+        parameter,
+    })
+}
+
+fn locus_entity_id(
+    locus: &cadmpeg_ir::sketches::SketchLocus,
+) -> &cadmpeg_ir::sketches::SketchEntityId {
+    use cadmpeg_ir::sketches::SketchLocus;
+    match locus {
+        SketchLocus::Entity(entity)
+        | SketchLocus::Start(entity)
+        | SketchLocus::End(entity)
+        | SketchLocus::Center(entity) => entity,
+    }
 }
 
 fn null_locus_dimension_definition(
@@ -9490,7 +9562,7 @@ mod relation_tests {
         parse_sketch_placement_candidates, parse_sketch_relation, point_on_sketch_entity,
         project_dimension_constraints, project_extrude, project_parameter_design,
         project_sketch_constraints, project_sketch_design, recipe_record_prefix,
-        region_containing_points, remove_dimension_frame_relations,
+        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
     };
     use crate::records::{
@@ -12567,7 +12639,7 @@ mod relation_tests {
     }
 
     #[test]
-    fn recipe_backed_dimension_projects_ordered_native_operands() {
+    fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         let stream = "f3d:A";
         let placement = DesignSketchPlacement {
             id: format!("{stream}:design-sketch-placement#0"),
@@ -12678,32 +12750,20 @@ mod relation_tests {
         let [constraint] = constraints.as_slice() else {
             panic!("expected one recipe-backed dimension")
         };
-        let SketchConstraintDefinition::Native {
-            entities,
-            operands,
+        let SketchConstraintDefinition::RepeatedDistance {
+            measurements,
             parameter,
             ..
         } = &constraint.definition
         else {
-            panic!("expected native recipe-backed dimension")
+            panic!("expected repeated recipe-backed dimension")
         };
-        assert!(parameter.is_some());
-        assert_eq!(
-            entities,
-            &[
-                SketchEntityId("first".into()),
-                SketchEntityId("second".into()),
-                SketchEntityId("third".into()),
-                SketchEntityId("fourth".into()),
-            ]
-        );
-        assert_eq!(
-            operands
-                .iter()
-                .map(|operand| operand.object_index)
-                .collect::<Vec<_>>(),
-            [30, 31]
-        );
+        assert_eq!(parameter.0, format!("f3d:model:parameter#{stream}@20"));
+        assert_eq!(measurements.len(), 2);
+        assert!(measurements.iter().all(|measurement| matches!(
+            measurement,
+            cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance { .. }
+        )));
     }
 
     #[test]
@@ -14025,5 +14085,41 @@ mod relation_tests {
         assert_eq!(parsed.6, 4);
         assert_eq!(parsed.8, [1224, 1228, 1236]);
         assert_eq!(parsed.10, 120);
+    }
+
+    #[test]
+    fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
+        use cadmpeg_ir::features::ParameterId;
+        use cadmpeg_ir::sketches::{
+            SketchConstraintDefinition as Definition, SketchDistanceMeasurement as Measurement,
+            SketchEntityId, SketchLocus,
+        };
+
+        let entity = |name: &str| SketchEntityId(format!("generated:{name}"));
+        let parameter = ParameterId("generated:distance".into());
+        let horizontal = |first: &str, second: &str| Definition::HorizontalDistance {
+            first: SketchLocus::Entity(entity(first)),
+            second: SketchLocus::Entity(entity(second)),
+            parameter: parameter.clone(),
+        };
+        let candidates = vec![horizontal("a", "b"), horizontal("c", "d")];
+        let Definition::RepeatedDistance {
+            measurements,
+            parameter: actual,
+        } = repeated_linear_dimension(&candidates, parameter.clone()).unwrap()
+        else {
+            panic!("expected repeated distance")
+        };
+        assert_eq!(actual, parameter);
+        assert!(matches!(
+            measurements.as_slice(),
+            [
+                Measurement::Horizontal { .. },
+                Measurement::Horizontal { .. }
+            ]
+        ));
+
+        let ambiguous = vec![horizontal("a", "b"), horizontal("a", "c")];
+        assert!(repeated_linear_dimension(&ambiguous, parameter).is_none());
     }
 }

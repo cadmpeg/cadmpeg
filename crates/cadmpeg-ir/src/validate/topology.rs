@@ -1264,6 +1264,24 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 Some(parameter.0.as_str()),
             ),
+            Definition::RepeatedDistance {
+                measurements,
+                parameter,
+            } => (
+                measurements
+                    .iter()
+                    .flat_map(|measurement| {
+                        use crate::sketches::SketchDistanceMeasurement as Measurement;
+                        let (first, second) = match measurement {
+                            Measurement::Distance { first, second }
+                            | Measurement::Horizontal { first, second }
+                            | Measurement::Vertical { first, second } => (first, second),
+                        };
+                        [locus_entity(first).clone(), locus_entity(second).clone()]
+                    })
+                    .collect(),
+                Some(parameter.0.as_str()),
+            ),
             Definition::Angle {
                 first,
                 second,

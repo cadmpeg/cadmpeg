@@ -214,6 +214,33 @@ pub struct SketchOffsetPair {
     pub result: SketchEntityId,
 }
 
+/// One independently measured pair within a repeated linear dimension.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SketchDistanceMeasurement {
+    /// Euclidean separation between two loci.
+    Distance {
+        /// First measured locus.
+        first: SketchLocus,
+        /// Second measured locus.
+        second: SketchLocus,
+    },
+    /// Horizontal separation between two loci.
+    Horizontal {
+        /// First measured locus.
+        first: SketchLocus,
+        /// Second measured locus.
+        second: SketchLocus,
+    },
+    /// Vertical separation between two loci.
+    Vertical {
+        /// First measured locus.
+        first: SketchLocus,
+        /// Second measured locus.
+        second: SketchLocus,
+    },
+}
+
 /// Neutral geometric and dimensional sketch relations.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -347,6 +374,13 @@ pub enum SketchConstraintDefinition {
         /// Second measured locus.
         second: SketchLocus,
         /// Driving vertical-distance parameter.
+        parameter: ParameterId,
+    },
+    /// Multiple disjoint locus pairs controlled by one linear parameter.
+    RepeatedDistance {
+        /// Ordered independent measurements.
+        measurements: Vec<SketchDistanceMeasurement>,
+        /// Shared driving distance parameter.
         parameter: ParameterId,
     },
     /// Angle controlled by a design parameter.

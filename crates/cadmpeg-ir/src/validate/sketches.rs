@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::sketches::{SketchConstraintDefinition as Constraint, SketchGeometry, SketchLocus};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
     findings.push(Finding {
@@ -202,6 +202,23 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             Constraint::Coincident { entities } => entities.len() >= 2,
             Constraint::CoincidentLoci { loci } => loci.len() >= 2,
             Constraint::Distance { entities, .. } => !entities.is_empty(),
+            Constraint::RepeatedDistance { measurements, .. } => {
+                let mut entities = HashSet::new();
+                !measurements.is_empty()
+                    && measurements.iter().all(|measurement| {
+                        use crate::sketches::SketchDistanceMeasurement as Measurement;
+                        let (first, second) = match measurement {
+                            Measurement::Distance { first, second }
+                            | Measurement::Horizontal { first, second }
+                            | Measurement::Vertical { first, second } => (first, second),
+                        };
+                        let first = locus_entity(first);
+                        let second = locus_entity(second);
+                        first != second
+                            && entities.insert(first.clone())
+                            && entities.insert(second.clone())
+                    })
+            }
             Constraint::Offset {
                 pairs,
                 signed_distance,
@@ -367,6 +384,18 @@ fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
         Constraint::DistanceLoci { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
         | Constraint::VerticalDistance { first, second, .. } => vec![first, second],
+        Constraint::RepeatedDistance { measurements, .. } => measurements
+            .iter()
+            .flat_map(|measurement| {
+                use crate::sketches::SketchDistanceMeasurement as Measurement;
+                let (first, second) = match measurement {
+                    Measurement::Distance { first, second }
+                    | Measurement::Horizontal { first, second }
+                    | Measurement::Vertical { first, second } => (first, second),
+                };
+                [first, second]
+            })
+            .collect(),
         _ => Vec::new(),
     }
 }
