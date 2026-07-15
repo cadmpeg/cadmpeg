@@ -841,6 +841,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     let mut kept_points: HashSet<i64> = HashSet::new();
     let mut kept_surfaces: HashSet<i64> = HashSet::new();
     let mut unknown_surface_records: HashSet<i64> = HashSet::new();
+    let mut cached_unknown_procedural_surfaces: HashSet<i64> = HashSet::new();
     let mut kept_curves: HashSet<i64> = HashSet::new();
     let mut kept_pcurves: HashSet<i64> = HashSet::new();
     let mut pcurve_geo: HashMap<i64, PcurveGeometry> = HashMap::new();
@@ -899,6 +900,10 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     &subtype_tables,
                 ) {
                     e.insert((SurfaceGeometry::Nurbs(ns), false));
+                    if surf_rec.head == "spline" && !procedural_surface_defs.contains_key(&surf_ref)
+                    {
+                        cached_unknown_procedural_surfaces.insert(surf_ref);
+                    }
                     out.stats.nurbs_surfaces += 1;
                 }
             }
@@ -3576,6 +3581,15 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         definition,
                         cache_fit_tolerance: procedural.cache_fit_tolerance,
                     });
+                } else if cached_unknown_procedural_surfaces.contains(&i) {
+                    out.procedural_surfaces.push(ProceduralSurface {
+                        id: format!("f3d:brep:procedural_surface#{i}").into(),
+                        surface: SurfaceId(id(i)),
+                        definition: ProceduralSurfaceDefinition::Unknown {
+                            record: Some(UnknownId(unknown_record_id(r))),
+                        },
+                        cache_fit_tolerance: None,
+                    });
                 }
             }
             _ if unknown_surface_records.contains(&i) => {
@@ -4773,10 +4787,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         .filter_map(creation_timestamp)
         .collect();
 
-    // Preserve undecoded carriers referenced by real topology as passthrough.
+    // Preserve undecoded carriers and cached carriers with opaque procedural
+    // definitions referenced by real topology as passthrough.
     for r in records {
         let i = r.index as i64;
-        if undecoded_carriers.contains(&i) {
+        if undecoded_carriers.contains(&i) || cached_unknown_procedural_surfaces.contains(&i) {
             out.unknowns.push(UnknownRecord {
                 id: UnknownId(unknown_record_id(r)),
                 offset: r.offset as u64,

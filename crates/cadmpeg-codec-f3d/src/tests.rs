@@ -11535,6 +11535,58 @@ fn decode_keeps_face_on_unknown_surface() {
 }
 
 #[test]
+fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+
+    for family in [
+        "crv_crv_v_bl_spl_sur",
+        "crv_srf_v_bl_spl_sur",
+        "sfcv_free_bl_spl_sur",
+        "VBL_OFFSURF",
+        "offsetvbsur",
+        "skin_spl_sur2",
+    ] {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_exact_spl_sur_smbh(family))),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{family} cached decode: {error}"));
+        let surface = result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_)))
+            .unwrap_or_else(|| panic!("{family} must retain its solved NURBS carrier"));
+        let procedural = result
+            .ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.surface == surface.id)
+            .unwrap_or_else(|| panic!("{family} must retain its construction identity"));
+        let ProceduralSurfaceDefinition::Unknown {
+            record: Some(record),
+        } = &procedural.definition
+        else {
+            panic!("{family} must retain its opaque construction")
+        };
+        assert!(result
+            .ir
+            .native_unknowns("f3d")
+            .unwrap()
+            .iter()
+            .any(|unknown| unknown.id == *record));
+        assert!(!result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("unknown-geometry surface")));
+    }
+}
+
+#[test]
 fn decode_reports_faces_with_missing_surface_references() {
     for (surface, condition) in [(-1i64, "null-reference=1"), (999, "dangling-reference=1")] {
         let mut smbh = synthetic_mixed_smbh();
