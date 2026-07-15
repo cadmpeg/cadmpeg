@@ -30,6 +30,11 @@ const MAGIC: &[u8; 8] = b"SPLMSSTR";
 fn display_jt_index_requires_every_declared_header() {
     use crate::container::{Container, DirEntry, Region};
 
+    let inflated = b"synthetic JT payload";
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(inflated).unwrap();
+    let compressed = encoder.finish().unwrap();
+    let segment_byte_len = 24 + 9 + compressed.len() as u32;
     let mut data = Vec::new();
     data.extend_from_slice(&9_u32.to_le_bytes());
     data.extend_from_slice(&1_u32.to_le_bytes());
@@ -48,9 +53,15 @@ fn display_jt_index_requires_every_declared_header() {
     data.extend_from_slice(&1_u32.to_le_bytes());
     data.extend_from_slice(&[2; 16]);
     data.extend_from_slice(&137_u32.to_le_bytes());
-    data.extend_from_slice(&63_u32.to_le_bytes());
-    data.extend_from_slice(&7_u32.to_le_bytes());
-    data.extend_from_slice(&[0xaa; 63]);
+    data.extend_from_slice(&segment_byte_len.to_le_bytes());
+    data.extend_from_slice(&1_u32.to_be_bytes());
+    data.extend_from_slice(&[2; 16]);
+    data.extend_from_slice(&1_u32.to_le_bytes());
+    data.extend_from_slice(&segment_byte_len.to_le_bytes());
+    data.extend_from_slice(&2_u32.to_le_bytes());
+    data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
+    data.push(2);
+    data.extend_from_slice(&compressed);
     let container = Container {
         data: data.clone(),
         version: 6,
@@ -69,11 +80,36 @@ fn display_jt_index_requires_every_declared_header() {
     assert_eq!(indices[0].rows[0].value, 100);
     let documents = crate::native::display_jt_documents(&container, &indices);
     assert_eq!(documents[0].toc_offset, 105);
-    assert_eq!(documents[0].physical_byte_len, 200);
+    assert_eq!(
+        documents[0].physical_byte_len,
+        137 + u64::from(segment_byte_len)
+    );
     assert_eq!(documents[0].toc_entries.len(), 1);
     assert_eq!(documents[0].toc_entries[0].segment_offset, 137);
-    assert_eq!(documents[0].toc_entries[0].segment_byte_len, 63);
-    assert_eq!(documents[0].toc_entries[0].attributes, [7, 0, 0, 0]);
+    assert_eq!(
+        documents[0].toc_entries[0].segment_byte_len,
+        segment_byte_len
+    );
+    assert_eq!(documents[0].toc_entries[0].attributes, [0, 0, 0, 1]);
+    let segments = crate::native::display_jt_segments(&container, &documents);
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0].segment_type, 1);
+    assert_eq!(segments[0].segment_byte_len, segment_byte_len);
+    let compression = segments[0].compression.as_ref().unwrap();
+    assert_eq!(
+        compression.compressed_data_byte_len,
+        compressed.len() as u32 + 1
+    );
+    assert_eq!(compression.compressed_byte_len, compressed.len() as u32);
+    assert_eq!(
+        compression.inflated_sha256,
+        cadmpeg_ir::hash::sha256_hex(inflated)
+    );
+
+    let mut malformed_compression = container.clone();
+    malformed_compression.data[165..169]
+        .copy_from_slice(&(compressed.len() as u32 + 2).to_le_bytes());
+    assert!(crate::native::display_jt_segments(&malformed_compression, &documents).is_empty());
 
     let mut malformed = container;
     malformed.data[28] = b'X';

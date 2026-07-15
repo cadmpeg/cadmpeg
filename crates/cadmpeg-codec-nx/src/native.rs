@@ -2,7 +2,9 @@
 //! Typed Siemens NX object-model records retained in the native namespace.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Read as _;
 
+use flate2::read::ZlibDecoder;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::hash::sha256_hex;
@@ -80,6 +82,44 @@ pub struct DisplayJtTocEntry {
     pub attributes: Vec<u8>,
     /// Absolute source offset of the TOC entry.
     pub source_offset: u64,
+}
+
+/// One physically bounded segment in an embedded JT document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtSegment {
+    /// Globally unique segment identity.
+    pub id: String,
+    /// Owning JT document.
+    pub document: String,
+    /// Owning table-of-contents entry.
+    pub toc_entry: String,
+    /// Exact 16-byte segment identifier.
+    pub segment_id: Vec<u8>,
+    /// Segment type repeated by the table-of-contents attribute word.
+    pub segment_type: u32,
+    /// Physical segment byte length, including its 24-byte header.
+    pub segment_byte_len: u32,
+    /// SHA-256 of the bytes following the segment header.
+    pub payload_sha256: String,
+    /// Complete compressed-data envelope when the payload is compressed.
+    pub compression: Option<DisplayJtCompression>,
+    /// Absolute source offset of the segment header.
+    pub source_offset: u64,
+}
+
+/// Validated compressed-data envelope following a JT segment header.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtCompression {
+    /// Serialized compression flag.
+    pub flag: u32,
+    /// Declared byte length of the algorithm byte and compressed member.
+    pub compressed_data_byte_len: u32,
+    /// Serialized compression algorithm identifier.
+    pub algorithm: u8,
+    /// Physical zlib-member byte length.
+    pub compressed_byte_len: u32,
+    /// SHA-256 of the completely inflated payload.
+    pub inflated_sha256: String,
 }
 
 /// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
@@ -288,6 +328,120 @@ pub fn display_jt_documents(
         });
     }
     documents
+}
+
+/// Decode every segment declared by complete embedded JT documents.
+pub fn display_jt_segments(
+    container: &Container,
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtSegment> {
+    let mut segments = Vec::new();
+    for document in documents {
+        let (Ok(start), Ok(byte_len)) = (
+            usize::try_from(document.source_offset),
+            usize::try_from(document.physical_byte_len),
+        ) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container.data.get(start..start.saturating_add(byte_len)) else {
+            return Vec::new();
+        };
+        for entry in &document.toc_entries {
+            let (Ok(segment_start), Ok(segment_len)) = (
+                usize::try_from(entry.segment_offset),
+                usize::try_from(entry.segment_byte_len),
+            ) else {
+                return Vec::new();
+            };
+            let Some(segment) = bytes.get(segment_start..segment_start.saturating_add(segment_len))
+            else {
+                return Vec::new();
+            };
+            let Some(segment_id) = segment.get(..16) else {
+                return Vec::new();
+            };
+            let Some(segment_type) = segment
+                .get(16..20)
+                .and_then(|value| value.try_into().ok())
+                .map(u32::from_le_bytes)
+            else {
+                return Vec::new();
+            };
+            let Some(header_byte_len) = segment
+                .get(20..24)
+                .and_then(|value| value.try_into().ok())
+                .map(u32::from_le_bytes)
+            else {
+                return Vec::new();
+            };
+            let Some(attribute_type) = entry
+                .attributes
+                .as_slice()
+                .try_into()
+                .ok()
+                .map(u32::from_be_bytes)
+            else {
+                return Vec::new();
+            };
+            if segment_id != entry.segment_id
+                || segment_type != attribute_type
+                || header_byte_len != entry.segment_byte_len
+            {
+                return Vec::new();
+            }
+            let payload = &segment[24..];
+            let compression = if payload.get(..4) == Some(2_u32.to_le_bytes().as_slice()) {
+                let Some(compressed_data_byte_len) = payload
+                    .get(4..8)
+                    .and_then(|value| value.try_into().ok())
+                    .map(u32::from_le_bytes)
+                else {
+                    return Vec::new();
+                };
+                let Some(&algorithm) = payload.get(8) else {
+                    return Vec::new();
+                };
+                if algorithm != 2 {
+                    return Vec::new();
+                }
+                let compressed = &payload[9..];
+                if compressed_data_byte_len as usize != compressed.len() + 1 {
+                    return Vec::new();
+                }
+                let mut decoder = ZlibDecoder::new(compressed);
+                let mut inflated = Vec::new();
+                if decoder.read_to_end(&mut inflated).is_err()
+                    || decoder.total_in() != compressed.len() as u64
+                {
+                    return Vec::new();
+                }
+                let Ok(compressed_byte_len) = u32::try_from(compressed.len()) else {
+                    return Vec::new();
+                };
+                Some(DisplayJtCompression {
+                    flag: 2,
+                    compressed_data_byte_len,
+                    algorithm,
+                    compressed_byte_len,
+                    inflated_sha256: sha256_hex(&inflated),
+                })
+            } else {
+                None
+            };
+            segments.push(DisplayJtSegment {
+                id: format!("nx:display-jt:segment#{}-{}", document.id, entry.ordinal),
+                document: document.id.clone(),
+                toc_entry: entry.id.clone(),
+                segment_id: segment_id.to_vec(),
+                segment_type,
+                segment_byte_len: header_byte_len,
+                payload_sha256: sha256_hex(payload),
+                compression,
+                source_offset: document.source_offset + u64::from(entry.segment_offset),
+            });
+        }
+    }
+    segments
 }
 
 /// Complete typed source record for one Parasolid offset surface.
