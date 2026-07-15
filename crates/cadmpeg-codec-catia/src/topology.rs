@@ -1489,6 +1489,7 @@ fn standard_mesh_missing_edge_assignments_impl(
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
 ) -> Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>> {
     const MAX_ASSIGNMENTS_PER_FACE: usize = 65_536;
+    const MAX_EXHAUSTIVE_GAPS: usize = 9;
     type PlacementConstraints<'a> = (
         Option<&'a [[u32; 2]]>,
         &'a HashMap<MeshCorner, u32>,
@@ -1496,6 +1497,7 @@ fn standard_mesh_missing_edge_assignments_impl(
         &'a MeshCornerPoints,
     );
     type PointTransitions = HashMap<usize, Arc<HashSet<usize>>>;
+    type DeadState = (usize, usize, u64, Option<u32>, Vec<usize>, bool);
 
     fn enumerate_face(
         face: usize,
@@ -1517,10 +1519,13 @@ fn standard_mesh_missing_edge_assignments_impl(
             point_transitions: Option<&'a [PointTransitions]>,
             corner_points: &'a MeshCornerPoints,
             canonical_spans: bool,
+            canonical_gap_partitions: bool,
+            dead_states: HashSet<DeadState>,
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
         }
         impl Search<'_> {
+            #[allow(clippy::too_many_arguments)]
             fn walk(
                 &mut self,
                 gap: usize,
@@ -1528,6 +1533,46 @@ fn standard_mesh_missing_edge_assignments_impl(
                 used: u64,
                 current_port: Option<u32>,
                 current_points: Option<Arc<HashSet<usize>>>,
+                gap_placed_start: usize,
+                placed: &mut Vec<MeshEdgePlacementCandidate>,
+            ) -> Option<()> {
+                let mut points = current_points
+                    .as_ref()
+                    .map(|points| points.iter().copied().collect::<Vec<_>>())
+                    .unwrap_or_default();
+                points.sort_unstable();
+                let has_flexible = placed[gap_placed_start..]
+                    .iter()
+                    .any(|placement| self.rows[placement.edge].handles.len() == 2);
+                let state = (gap, offset, used, current_port, points, has_flexible);
+                if self.dead_states.contains(&state) {
+                    return Some(());
+                }
+                let before = self.assignments;
+                self.walk_state(
+                    gap,
+                    offset,
+                    used,
+                    current_port,
+                    current_points,
+                    gap_placed_start,
+                    placed,
+                )?;
+                if self.assignments == before {
+                    self.dead_states.insert(state);
+                }
+                Some(())
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn walk_state(
+                &mut self,
+                gap: usize,
+                offset: usize,
+                used: u64,
+                current_port: Option<u32>,
+                current_points: Option<Arc<HashSet<usize>>>,
+                gap_placed_start: usize,
                 placed: &mut Vec<MeshEdgePlacementCandidate>,
             ) -> Option<()> {
                 if self.assignments > MAX_ASSIGNMENTS_PER_FACE {
@@ -1541,7 +1586,12 @@ fn standard_mesh_missing_edge_assignments_impl(
                     return Some(());
                 }
                 let target = self.gaps[gap].length;
-                if offset == target {
+                let can_expand_gap = self.canonical_gap_partitions
+                    && offset < target
+                    && placed[gap_placed_start..]
+                        .iter()
+                        .any(|placement| self.rows[placement.edge].handles.len() == 2);
+                if offset == target || can_expand_gap {
                     let value = &self.gaps[gap];
                     let end = (value.start + value.length) % self.cycle_lengths[value.cycle];
                     if current_port
@@ -1573,7 +1623,37 @@ fn standard_mesh_missing_edge_assignments_impl(
                             .cloned()
                             .map(Arc::new)
                     });
-                    return self.walk(gap + 1, 0, used, next_port, next_points, placed);
+                    let saved = placed[gap_placed_start..].to_vec();
+                    if offset < target {
+                        let slack = target - offset;
+                        let Some(flexible) = placed[gap_placed_start..]
+                            .iter_mut()
+                            .find(|placement| self.rows[placement.edge].handles.len() == 2)
+                        else {
+                            return Some(());
+                        };
+                        flexible.segment_count = flexible.segment_count.checked_add(slack)?;
+                        let mut at = value.start;
+                        for placement in &mut placed[gap_placed_start..] {
+                            placement.start = at % self.cycle_lengths[value.cycle];
+                            at = at.checked_add(placement.segment_count)?;
+                            placement.end = at % self.cycle_lengths[value.cycle];
+                        }
+                    }
+                    self.walk(
+                        gap + 1,
+                        0,
+                        used,
+                        next_port,
+                        next_points,
+                        placed.len(),
+                        placed,
+                    )?;
+                    placed.truncate(gap_placed_start);
+                    placed.extend(saved);
+                    if offset == target {
+                        return Some(());
+                    }
                 }
                 for rank in 0..self.missing.len() {
                     if used & (1 << rank) != 0 {
@@ -1584,6 +1664,9 @@ fn standard_mesh_missing_edge_assignments_impl(
                     let remaining = target - offset;
                     let canonical_span = (self.canonical_spans && stored_span == 1)
                         .then(|| {
+                            if self.canonical_gap_partitions {
+                                return Some(1);
+                            }
                             self.missing
                                 .iter()
                                 .enumerate()
@@ -1661,6 +1744,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                                 used | (1 << rank),
                                 next_port,
                                 next_points.clone(),
+                                gap_placed_start,
                                 placed,
                             )?;
                         }
@@ -1709,7 +1793,10 @@ fn standard_mesh_missing_edge_assignments_impl(
             edge_points: edge_points.as_deref(),
             point_transitions: point_transitions.as_deref(),
             corner_points,
-            canonical_spans: edge_candidates.is_some() && gaps.len() == 1,
+            canonical_spans: edge_candidates.is_some()
+                && (gaps.len() == 1 || gaps.len() > MAX_EXHAUSTIVE_GAPS),
+            canonical_gap_partitions: edge_candidates.is_some() && gaps.len() > MAX_EXHAUSTIVE_GAPS,
+            dead_states: HashSet::new(),
             assignments: 0,
             complete: Vec::new(),
         };
@@ -1720,7 +1807,7 @@ fn standard_mesh_missing_edge_assignments_impl(
             .first()
             .and_then(|gap| corner_points.get(&(face, gap.cycle, gap.start)).cloned())
             .map(Arc::new);
-        search.walk(0, 0, 0, first_port, first_points, &mut Vec::new())?;
+        search.walk(0, 0, 0, first_port, first_points, 0, &mut Vec::new())?;
         if search.assignments == 0 || search.assignments > MAX_ASSIGNMENTS_PER_FACE {
             return None;
         }
