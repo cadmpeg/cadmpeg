@@ -239,6 +239,43 @@ pub struct DisplayJtBaseNodeData {
     pub source_offset: u64,
 }
 
+/// Complete JT 9 partition node linking an LSG branch to a partition file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtPartitionNode {
+    /// Globally unique partition-node identity.
+    pub id: String,
+    /// Owning common node-data record.
+    pub base_node: String,
+    /// Serialized node object identifier.
+    pub object_id: u32,
+    /// Group-node data version.
+    pub group_version: u16,
+    /// Ordered child node object identifiers.
+    pub child_object_ids: Vec<u32>,
+    /// Serialized partition flags.
+    pub partition_flags: u32,
+    /// Exact partition filename UTF-16 code units.
+    pub file_name_code_units: Vec<u16>,
+    /// Decoded partition filename.
+    pub file_name: String,
+    /// Transformed axis-aligned bounds as minimum and maximum XYZ corners.
+    pub transformed_bounds: [[f32; 3]; 2],
+    /// Total descendant surface area in normalized coordinate space.
+    pub area: f32,
+    /// Minimum and maximum descendant vertex counts.
+    pub vertex_count_range: [i32; 2],
+    /// Minimum and maximum descendant node counts.
+    pub node_count_range: [i32; 2],
+    /// Minimum and maximum descendant polygon counts.
+    pub polygon_count_range: [i32; 2],
+    /// Untransformed bounds when partition flag bit zero is set.
+    pub untransformed_bounds: Option<[[f32; 3]; 2]>,
+    /// Reserved bounds when partition flag bit zero is clear.
+    pub reserved_bounds: Option<[[f32; 3]; 2]>,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
 struct ParsedJtElement<'a> {
     offset: usize,
     object_type_id: &'a [u8],
@@ -327,6 +364,138 @@ pub(crate) fn parse_jt_base_node_body(
         .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
         .collect();
     Some((version, flags, attribute_object_ids, &body[header_end..]))
+}
+
+pub(crate) struct ParsedJtPartitionNode {
+    pub(crate) group_version: u16,
+    pub(crate) child_object_ids: Vec<u32>,
+    pub(crate) partition_flags: u32,
+    pub(crate) file_name_code_units: Vec<u16>,
+    pub(crate) file_name: String,
+    pub(crate) transformed_bounds: [[f32; 3]; 2],
+    pub(crate) area: f32,
+    pub(crate) vertex_count_range: [i32; 2],
+    pub(crate) node_count_range: [i32; 2],
+    pub(crate) polygon_count_range: [i32; 2],
+    pub(crate) untransformed_bounds: Option<[[f32; 3]; 2]>,
+    pub(crate) reserved_bounds: Option<[[f32; 3]; 2]>,
+}
+
+pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtPartitionNode> {
+    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+    let group_version = u16::from_le_bytes(family.get(..2)?.try_into().ok()?);
+    let child_count = u32::from_le_bytes(family.get(2..6)?.try_into().ok()?);
+    let child_count = usize::try_from(child_count).ok()?;
+    let children_end = 6usize.checked_add(child_count.checked_mul(4)?)?;
+    let child_object_ids = family
+        .get(6..children_end)?
+        .chunks_exact(4)
+        .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
+        .collect::<Vec<_>>();
+    let partition_flags = u32::from_le_bytes(
+        family
+            .get(children_end..children_end.checked_add(4)?)?
+            .try_into()
+            .ok()?,
+    );
+    if partition_flags & !1 != 0 {
+        return None;
+    }
+    let name_count_offset = children_end.checked_add(4)?;
+    let name_count = u32::from_le_bytes(
+        family
+            .get(name_count_offset..name_count_offset.checked_add(4)?)?
+            .try_into()
+            .ok()?,
+    );
+    let name_count = usize::try_from(name_count).ok()?;
+    let name_start = name_count_offset.checked_add(4)?;
+    let name_end = name_start.checked_add(name_count.checked_mul(2)?)?;
+    let file_name_code_units = family
+        .get(name_start..name_end)?
+        .chunks_exact(2)
+        .map(|value| u16::from_le_bytes(value.try_into().expect("two-byte chunk")))
+        .collect::<Vec<_>>();
+    let file_name = String::from_utf16(&file_name_code_units).ok()?;
+    if file_name.is_empty() || file_name.chars().any(char::is_control) {
+        return None;
+    }
+    let f32_at = |offset: usize| {
+        family
+            .get(offset..offset.checked_add(4)?)
+            .and_then(|value| value.try_into().ok())
+            .map(f32::from_le_bytes)
+            .filter(|value| value.is_finite())
+    };
+    let bounds_at = |offset: usize| {
+        let bounds = [
+            [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
+            [
+                f32_at(offset + 12)?,
+                f32_at(offset + 16)?,
+                f32_at(offset + 20)?,
+            ],
+        ];
+        bounds[0]
+            .iter()
+            .zip(bounds[1])
+            .all(|(minimum, maximum)| *minimum <= maximum)
+            .then_some(bounds)
+    };
+    let first_bounds = bounds_at(name_end)?;
+    let mut cursor = name_end.checked_add(24)?;
+    let (reserved_bounds, transformed_bounds) = if partition_flags & 1 == 0 {
+        let transformed = bounds_at(cursor)?;
+        cursor = cursor.checked_add(24)?;
+        (Some(first_bounds), transformed)
+    } else {
+        (None, first_bounds)
+    };
+    let area = f32_at(cursor)?;
+    if area < 0.0 {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let count_range = |offset: usize| {
+        let minimum = i32::from_le_bytes(
+            family
+                .get(offset..offset.checked_add(4)?)?
+                .try_into()
+                .ok()?,
+        );
+        let maximum = i32::from_le_bytes(
+            family
+                .get(offset + 4..offset.checked_add(8)?)?
+                .try_into()
+                .ok()?,
+        );
+        (minimum >= 0 && (maximum == -1 || maximum >= minimum)).then_some([minimum, maximum])
+    };
+    let vertex_count_range = count_range(cursor)?;
+    let node_count_range = count_range(cursor + 8)?;
+    let polygon_count_range = count_range(cursor + 16)?;
+    cursor = cursor.checked_add(24)?;
+    let untransformed_bounds = if partition_flags & 1 != 0 {
+        let bounds = bounds_at(cursor)?;
+        cursor = cursor.checked_add(24)?;
+        Some(bounds)
+    } else {
+        None
+    };
+    (cursor == family.len()).then_some(ParsedJtPartitionNode {
+        group_version,
+        child_object_ids,
+        partition_flags,
+        file_name_code_units,
+        file_name,
+        transformed_bounds,
+        area,
+        vertex_count_range,
+        node_count_range,
+        polygon_count_range,
+        untransformed_bounds,
+        reserved_bounds,
+    })
 }
 
 /// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
@@ -892,6 +1061,79 @@ pub fn display_jt_base_node_data(
                 attribute_object_ids,
                 family_data_byte_len: family_data.len() as u32,
                 family_data_sha256: sha256_hex(family_data),
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    nodes
+}
+
+/// Decode complete JT 9 partition nodes from logical scene-graph segments.
+pub fn display_jt_partition_nodes(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtPartitionNode> {
+    const PARTITION_NODE_TYPE: [u8; 16] = [
+        0x3e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut nodes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major >= 10 {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != PARTITION_NODE_TYPE {
+                continue;
+            }
+            let Some(node) = parse_jt9_partition_node_body(element.body) else {
+                return Vec::new();
+            };
+            nodes.push(DisplayJtPartitionNode {
+                id: format!("{}-partition-node-{ordinal}", segment.id),
+                base_node: format!("{}-base-node-{ordinal}", segment.id),
+                object_id: element.object_id,
+                group_version: node.group_version,
+                child_object_ids: node.child_object_ids,
+                partition_flags: node.partition_flags,
+                file_name_code_units: node.file_name_code_units,
+                file_name: node.file_name,
+                transformed_bounds: node.transformed_bounds,
+                area: node.area,
+                vertex_count_range: node.vertex_count_range,
+                node_count_range: node.node_count_range,
+                polygon_count_range: node.polygon_count_range,
+                untransformed_bounds: node.untransformed_bounds,
+                reserved_bounds: node.reserved_bounds,
                 source_offset: segment.source_offset + 24,
             });
         }
