@@ -200,7 +200,7 @@ fn display_jt_string_property_body_requires_exact_utf16_frame() {
 #[test]
 fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
     let mut body = Vec::new();
-    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.push(1);
     body.extend_from_slice(&0x20_u32.to_le_bytes());
     body.extend_from_slice(&2_u32.to_le_bytes());
     body.extend_from_slice(&7_u32.to_le_bytes());
@@ -213,7 +213,7 @@ fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
     assert_eq!(attributes, [7, 9]);
     assert_eq!(family, [4, 3, 2, 1]);
 
-    body.truncate(17);
+    body.truncate(16);
     assert!(crate::native::parse_jt_base_node_body(&body).is_none());
 }
 

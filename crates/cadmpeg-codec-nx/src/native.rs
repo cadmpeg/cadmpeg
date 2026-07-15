@@ -222,7 +222,7 @@ pub struct DisplayJtBaseNodeData {
     /// Serialized node object identifier.
     pub object_id: u32,
     /// Common node-data version.
-    pub version: u16,
+    pub version: u8,
     /// Serialized node flags.
     pub flags: u32,
     /// Ordered attribute object identifiers.
@@ -297,13 +297,13 @@ pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<(Vec<u16
     Some((code_units, value))
 }
 
-pub(crate) fn parse_jt_base_node_body(body: &[u8]) -> Option<(u16, u32, Vec<u32>, &[u8])> {
-    let version = u16::from_le_bytes(body.get(..2)?.try_into().ok()?);
-    let flags = u32::from_le_bytes(body.get(2..6)?.try_into().ok()?);
-    let attribute_count = u32::from_le_bytes(body.get(6..10)?.try_into().ok()?);
+pub(crate) fn parse_jt_base_node_body(body: &[u8]) -> Option<(u8, u32, Vec<u32>, &[u8])> {
+    let &version = body.first()?;
+    let flags = u32::from_le_bytes(body.get(1..5)?.try_into().ok()?);
+    let attribute_count = u32::from_le_bytes(body.get(5..9)?.try_into().ok()?);
     let attribute_count = usize::try_from(attribute_count).ok()?;
-    let header_end = 10usize.checked_add(attribute_count.checked_mul(4)?)?;
-    let attributes = body.get(10..header_end)?;
+    let header_end = 9usize.checked_add(attribute_count.checked_mul(4)?)?;
+    let attributes = body.get(9..header_end)?;
     let attribute_object_ids = attributes
         .chunks_exact(4)
         .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
