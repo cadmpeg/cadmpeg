@@ -8312,8 +8312,22 @@ fn native_rolling_ball_side(
                 CodecError::Malformed(format!("rolling-ball support {id} is missing"))
             })?;
         native_embedded_surface(bytes, &surface.geometry)?;
-        if matches!(surface.geometry, SurfaceGeometry::Plane { .. }) {
-            bytes.extend_from_slice(&[0x0b; 4]);
+        if matches!(
+            surface.geometry,
+            SurfaceGeometry::Cylinder { .. }
+                | SurfaceGeometry::Cone { .. }
+                | SurfaceGeometry::Sphere { .. }
+                | SurfaceGeometry::Torus { .. }
+        ) {
+            bytes.truncate(bytes.len() - 4);
+        }
+        for range in side.surface_ranges {
+            for endpoint in range {
+                bytes.push(native_bool(endpoint.is_some()));
+                if let Some(value) = endpoint {
+                    native_f64(bytes, value);
+                }
+            }
         }
     } else {
         native_ident(bytes, "null_surface")?;
@@ -8329,9 +8343,18 @@ fn native_rolling_ball_side(
             })?;
         let curve = native_spline_field_curve(
             &curve.geometry,
-            native_pcurve_knot_domain(side.pcurve.as_ref())?,
+            match side.curve_range {
+                [Some(lower), Some(upper)] => Some([lower, upper]),
+                _ => native_pcurve_knot_domain(side.pcurve.as_ref())?,
+            },
         )?;
         native_nurbs_curve(bytes, &curve)?;
+        for endpoint in side.curve_range {
+            bytes.push(native_bool(endpoint.is_some()));
+            if let Some(value) = endpoint {
+                native_f64(bytes, value);
+            }
+        }
     } else {
         native_ident(bytes, "null_curve")?;
     }
@@ -8431,12 +8454,21 @@ fn encode_complete_native_rolling_ball(
     for side in construction.sides.iter() {
         native_rolling_ball_side(bytes, target, side)?;
     }
-    let slice_range = match construction.u_range {
+    let slice_range = match construction.slice_range {
         [Some(lower), Some(upper)] => Some([lower, upper]),
-        _ => None,
+        _ => match construction.u_range {
+            [Some(lower), Some(upper)] => Some([lower, upper]),
+            _ => None,
+        },
     };
     let slice = native_loft_curve_in_range(target, &construction.slice, slice_range)?;
     native_nurbs_curve(bytes, &slice)?;
+    for endpoint in construction.slice_range {
+        bytes.push(native_bool(endpoint.is_some()));
+        if let Some(value) = endpoint {
+            native_f64(bytes, value);
+        }
+    }
     for offset in construction.offsets {
         native_f64(bytes, offset / 10.0);
     }

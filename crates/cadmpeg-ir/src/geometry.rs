@@ -1042,9 +1042,15 @@ pub struct RollingBallSide {
     /// Primary support surface, absent for `null_surface`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<SurfaceId>,
+    /// Optional native support-surface U and V endpoints.
+    #[serde(default)]
+    pub surface_ranges: [[Option<f64>; 2]; 2],
     /// Side curve, absent for `null_curve`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub curve: Option<CurveId>,
+    /// Optional native side-curve parameter endpoints.
+    #[serde(default)]
+    pub curve_range: [Option<f64>; 2],
     /// Primary BS2 pcurve, absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcurve: Option<PcurveGeometry>,
@@ -1109,6 +1115,9 @@ pub struct RollingBallConstruction {
     pub sides: Box<[RollingBallSide; 2]>,
     /// Stored slice or center curve.
     pub slice: CurveId,
+    /// Optional native slice-curve parameter endpoints.
+    #[serde(default)]
+    pub slice_range: [Option<f64>; 2],
     /// Two signed support offsets in document length units.
     pub offsets: [f64; 2],
     /// Optional-radius selector field.

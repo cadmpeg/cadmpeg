@@ -817,7 +817,9 @@ pub enum DecodedProceduralSurfaceDefinition {
 pub(crate) struct EmbeddedRollingBallSide {
     pub(crate) support_kind: cadmpeg_ir::geometry::VariableBlendSupportKind,
     pub(crate) surface: Option<SurfaceGeometry>,
+    pub(crate) surface_ranges: [[Option<f64>; 2]; 2],
     pub(crate) curve: Option<CurveGeometry>,
+    pub(crate) curve_range: [Option<f64>; 2],
     pub(crate) pcurve: Option<NurbsPcurve>,
     pub(crate) location: Point3,
     pub(crate) secondary_pcurve: Option<NurbsPcurve>,
@@ -924,6 +926,7 @@ pub struct EmbeddedRollingBall {
     pub(crate) definition_index: i64,
     pub(crate) sides: Box<[EmbeddedRollingBallSide; 2]>,
     pub(crate) slice: CurveGeometry,
+    pub(crate) slice_range: [Option<f64>; 2],
     pub(crate) offsets: [f64; 2],
     pub(crate) radius_selector: EmbeddedRollingBallRadiusSelector,
     pub(crate) u_range: [Option<f64>; 2],
@@ -3582,29 +3585,24 @@ fn decode_rolling_ball_side(
         _ => return None,
     };
     let saved = *position;
-    let surface = if take_native_ident(bytes, position).as_deref() == Some("null_surface") {
-        None
-    } else {
-        *position = saved;
-        Some(decode_rolling_ball_surface(
-            bytes,
-            position,
-            int_width,
-            reference_context,
-        )?)
-    };
+    let (surface, surface_ranges) =
+        if take_native_ident(bytes, position).as_deref() == Some("null_surface") {
+            (None, [[None, None], [None, None]])
+        } else {
+            *position = saved;
+            let (surface, ranges) =
+                decode_rolling_ball_surface(bytes, position, int_width, reference_context)?;
+            (Some(surface), ranges)
+        };
     let saved = *position;
-    let curve = if take_native_ident(bytes, position).as_deref() == Some("null_curve") {
-        None
-    } else {
-        *position = saved;
-        Some(decode_rolling_ball_curve(
-            bytes,
-            position,
-            int_width,
-            reference_context,
-        )?)
-    };
+    let (curve, curve_range) =
+        if take_native_ident(bytes, position).as_deref() == Some("null_curve") {
+            (None, [None, None])
+        } else {
+            *position = saved;
+            let curve = decode_rolling_ball_curve(bytes, position, int_width, reference_context)?;
+            (Some(curve.geometry), curve.parameter_range)
+        };
     let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
     let location = take_native_vec3(bytes, position, 0x13)?;
     let secondary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
@@ -3624,7 +3622,9 @@ fn decode_rolling_ball_side(
     Some(EmbeddedRollingBallSide {
         support_kind,
         surface,
+        surface_ranges,
         curve,
+        curve_range,
         pcurve,
         location: Point3::new(
             location[0] * LEN_TO_MM,
@@ -3642,14 +3642,15 @@ fn decode_rolling_ball_surface(
     position: &mut usize,
     int_width: usize,
     reference_context: Option<(&[u8], &SubtypeTables)>,
-) -> Option<SurfaceGeometry> {
+) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
     let saved = *position;
     let kind = take_native_ident(bytes, position)?;
     if kind == "spline" {
         if marker_at(bytes, *position).is_some() {
             let surface = decode_surface_block(bytes, *position, int_width)?;
             *position = surface.end;
-            return Some(SurfaceGeometry::Nurbs(surface.surface));
+            let ranges = decode_surface_ranges(bytes, position)?;
+            return Some((SurfaceGeometry::Nurbs(surface.surface), ranges));
         }
         take_bool(bytes, position)?;
         let scope = subtype_span(bytes, *position, int_width)?;
@@ -3664,19 +3665,29 @@ fn decode_rolling_ball_surface(
             })
             .or(inline)?;
         *position += scope.len();
-        for _ in 0..4 {
-            take_bool(bytes, position)?;
-        }
-        return Some(SurfaceGeometry::Nurbs(surface));
+        let ranges = decode_surface_ranges(bytes, position)?;
+        return Some((SurfaceGeometry::Nurbs(surface), ranges));
     }
     *position = saved;
-    let surface = decode_embedded_surface(bytes, position, int_width)?;
-    if kind == "plane" {
-        for _ in 0..4 {
-            take_bool(bytes, position)?;
-        }
-    }
-    Some(surface)
+    decode_embedded_surface_with_ranges(bytes, position, int_width)
+}
+
+fn decode_surface_ranges(bytes: &[u8], position: &mut usize) -> Option<[[Option<f64>; 2]; 2]> {
+    Some([
+        [
+            take_optional_range_value(bytes, position)?,
+            take_optional_range_value(bytes, position)?,
+        ],
+        [
+            take_optional_range_value(bytes, position)?,
+            take_optional_range_value(bytes, position)?,
+        ],
+    ])
+}
+
+struct DecodedRollingBallCurve {
+    geometry: CurveGeometry,
+    parameter_range: [Option<f64>; 2],
 }
 
 fn decode_rolling_ball_curve(
@@ -3684,11 +3695,18 @@ fn decode_rolling_ball_curve(
     position: &mut usize,
     int_width: usize,
     reference_context: Option<(&[u8], &SubtypeTables)>,
-) -> Option<CurveGeometry> {
+) -> Option<DecodedRollingBallCurve> {
     if marker_at(bytes, *position).is_some() {
         let curve = decode_curve_block(bytes, *position, int_width)?;
         *position = curve.end;
-        return Some(CurveGeometry::Nurbs(curve.curve));
+        let parameter_range = [
+            take_optional_range_value(bytes, position)?,
+            take_optional_range_value(bytes, position)?,
+        ];
+        return Some(DecodedRollingBallCurve {
+            geometry: CurveGeometry::Nurbs(curve.curve),
+            parameter_range,
+        });
     }
     let kind = take_native_ident(bytes, position)?;
     if kind == "intcurve" {
@@ -3705,9 +3723,14 @@ fn decode_rolling_ball_curve(
             })
             .or(inline)?;
         *position += scope.len();
-        take_bool(bytes, position)?;
-        take_bool(bytes, position)?;
-        return Some(CurveGeometry::Nurbs(curve));
+        let parameter_range = [
+            take_optional_range_value(bytes, position)?,
+            take_optional_range_value(bytes, position)?,
+        ];
+        return Some(DecodedRollingBallCurve {
+            geometry: CurveGeometry::Nurbs(curve),
+            parameter_range,
+        });
     }
     let geometry = match kind.as_str() {
         "straight" => {
@@ -3766,9 +3789,14 @@ fn decode_rolling_ball_curve(
         }
         _ => return None,
     };
-    take_bool(bytes, position)?;
-    take_bool(bytes, position)?;
-    Some(geometry)
+    let parameter_range = [
+        take_optional_range_value(bytes, position)?,
+        take_optional_range_value(bytes, position)?,
+    ];
+    Some(DecodedRollingBallCurve {
+        geometry,
+        parameter_range,
+    })
 }
 
 fn decode_rolling_ball_third_side(
@@ -4468,7 +4496,7 @@ fn decode_full_rb_blend_spl_sur(
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([None, None]),
-            spine: match &slice {
+            spine: match &slice.geometry {
                 CurveGeometry::Nurbs(curve) => Some(curve.clone()),
                 _ => None,
             },
@@ -4477,7 +4505,8 @@ fn decode_full_rb_blend_spl_sur(
             native: Some(Box::new(EmbeddedRollingBall {
                 definition_index,
                 sides,
-                slice,
+                slice: slice.geometry,
+                slice_range: slice.parameter_range,
                 offsets,
                 radius_selector,
                 u_range,
@@ -6463,11 +6492,34 @@ fn decode_embedded_surface(
     position: &mut usize,
     int_width: usize,
 ) -> Option<SurfaceGeometry> {
+    decode_embedded_surface_fields(bytes, position, int_width, false).map(|(surface, _)| surface)
+}
+
+fn decode_embedded_surface_with_ranges(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
+    decode_embedded_surface_fields(bytes, position, int_width, true)
+}
+
+fn decode_embedded_surface_fields(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    preserve_ranges: bool,
+) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
+    let no_ranges = [[None, None], [None, None]];
     let kind = take_native_ident(bytes, position)?;
     if kind == "spline" {
         let decoded = decode_surface_block(bytes, *position, int_width)?;
         *position = decoded.end;
-        return Some(SurfaceGeometry::Nurbs(decoded.surface));
+        let ranges = if preserve_ranges {
+            decode_surface_ranges(bytes, position)?
+        } else {
+            no_ranges
+        };
+        return Some((SurfaceGeometry::Nurbs(decoded.surface), ranges));
     }
     let point = take_native_vec3(bytes, position, 0x13)?;
     let point = Point3::new(
@@ -6480,11 +6532,19 @@ fn decode_embedded_surface(
             let normal = normalized(take_native_vec3(bytes, position, 0x14)?)?;
             let u_axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
             take_bool(bytes, position)?;
-            Some(SurfaceGeometry::Plane {
-                origin: point,
-                normal,
-                u_axis,
-            })
+            let ranges = if preserve_ranges {
+                decode_surface_ranges(bytes, position)?
+            } else {
+                no_ranges
+            };
+            Some((
+                SurfaceGeometry::Plane {
+                    origin: point,
+                    normal,
+                    u_axis,
+                },
+                ranges,
+            ))
         }
         "cone" => {
             let native_axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
@@ -6498,61 +6558,86 @@ fn decode_embedded_surface(
             let sine = take_f64(bytes, position)?;
             let cosine = take_f64(bytes, position)?;
             take_f64(bytes, position)?;
-            for _ in 0..5 {
-                take_bool(bytes, position)?;
-            }
-            if sine.abs() <= f64::EPSILON && ratio == 1.0 {
-                Some(SurfaceGeometry::Cylinder {
+            take_bool(bytes, position)?;
+            let ranges = if preserve_ranges {
+                decode_surface_ranges(bytes, position)?
+            } else {
+                for _ in 0..4 {
+                    take_bool(bytes, position)?;
+                }
+                no_ranges
+            };
+            let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
+                SurfaceGeometry::Cylinder {
                     origin: point,
                     axis: native_axis,
                     ref_direction,
                     radius,
-                })
+                }
             } else {
                 let axis = if sine * cosine < 0.0 {
                     Vector3::new(-native_axis.x, -native_axis.y, -native_axis.z)
                 } else {
                     native_axis
                 };
-                Some(SurfaceGeometry::Cone {
+                SurfaceGeometry::Cone {
                     origin: point,
                     axis,
                     ref_direction,
                     radius,
                     ratio,
                     half_angle: sine.abs().asin(),
-                })
-            }
+                }
+            };
+            Some((surface, ranges))
         }
         "sphere" => {
             let radius = take_f64(bytes, position)? * LEN_TO_MM;
             let ref_direction = normalized(take_native_vec3(bytes, position, 0x14)?)?;
             let axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
-            for _ in 0..5 {
-                take_bool(bytes, position)?;
-            }
-            Some(SurfaceGeometry::Sphere {
-                center: point,
-                axis,
-                ref_direction,
-                radius,
-            })
+            take_bool(bytes, position)?;
+            let ranges = if preserve_ranges {
+                decode_surface_ranges(bytes, position)?
+            } else {
+                for _ in 0..4 {
+                    take_bool(bytes, position)?;
+                }
+                no_ranges
+            };
+            Some((
+                SurfaceGeometry::Sphere {
+                    center: point,
+                    axis,
+                    ref_direction,
+                    radius,
+                },
+                ranges,
+            ))
         }
         "torus" => {
             let axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
             let major_radius = take_f64(bytes, position)? * LEN_TO_MM;
             let minor_radius = take_f64(bytes, position)? * LEN_TO_MM;
             let ref_direction = normalized(take_native_vec3(bytes, position, 0x14)?)?;
-            for _ in 0..5 {
-                take_bool(bytes, position)?;
-            }
-            Some(SurfaceGeometry::Torus {
-                center: point,
-                axis,
-                ref_direction,
-                major_radius,
-                minor_radius,
-            })
+            take_bool(bytes, position)?;
+            let ranges = if preserve_ranges {
+                decode_surface_ranges(bytes, position)?
+            } else {
+                for _ in 0..4 {
+                    take_bool(bytes, position)?;
+                }
+                no_ranges
+            };
+            Some((
+                SurfaceGeometry::Torus {
+                    center: point,
+                    axis,
+                    ref_direction,
+                    major_radius,
+                    minor_radius,
+                },
+                ranges,
+            ))
         }
         _ => None,
     }
@@ -7110,6 +7195,15 @@ fn subtype_refs(bytes: &[u8], int_width: usize) -> Vec<usize> {
                     refs.push(index as usize);
                 }
             }
+        } else if bytes.get(pos) == Some(&0x0f)
+            && bytes.get(pos + 1) == Some(&0x04)
+            && bytes.get(pos + 2 + int_width) == Some(&0x10)
+        {
+            if let Some(index) = read_int(bytes, pos + 2, int_width) {
+                if index >= 0 {
+                    refs.push(index as usize);
+                }
+            }
         }
         match next_token(bytes, pos, int_width) {
             Some(next) => pos = next,
@@ -7386,6 +7480,7 @@ mod width_tests {
         );
         push_ident(&mut bytes, "null_surface");
         bytes.extend_from_slice(&curve_block(int_width));
+        bytes.extend_from_slice(&[0x0b, 0x0b]);
         bytes.extend_from_slice(&pcurve_block(int_width));
         push_position(&mut bytes, [7.0, 8.0, 9.0]);
         push_ident(&mut bytes, "nullbs");
@@ -7723,11 +7818,17 @@ mod width_tests {
             push_ident(&mut straight, "straight");
             push_position(&mut straight, [1.0, 2.0, 3.0]);
             push_vector(&mut straight, [0.0, 2.0, 0.0]);
-            straight.extend_from_slice(&[0x0b, 0x0b]);
+            straight.push(0x0a);
+            push_f64(&mut straight, -2.0);
+            straight.push(0x0a);
+            push_f64(&mut straight, 3.0);
             let mut position = 0;
             assert!(matches!(
                 decode_rolling_ball_curve(&straight, &mut position, int_width, None),
-                Some(CurveGeometry::Line { origin, direction })
+                Some(DecodedRollingBallCurve {
+                    geometry: CurveGeometry::Line { origin, direction },
+                    parameter_range: [Some(-2.0), Some(3.0)],
+                })
                     if origin == Point3::new(10.0, 20.0, 30.0)
                         && direction == Vector3::new(0.0, 1.0, 0.0)
             ));
@@ -7744,7 +7845,10 @@ mod width_tests {
             let mut position = 0;
             assert!(matches!(
                 decode_rolling_ball_curve(&intcurve, &mut position, int_width, None),
-                Some(CurveGeometry::Nurbs(curve)) if curve.degree == 1
+                Some(DecodedRollingBallCurve {
+                    geometry: CurveGeometry::Nurbs(curve),
+                    parameter_range: [None, None],
+                }) if curve.degree == 1
             ));
             assert_eq!(position, intcurve.len());
 
@@ -7774,7 +7878,10 @@ mod width_tests {
                     int_width,
                     Some((&active, &tables)),
                 ),
-                Some(CurveGeometry::Nurbs(curve)) if curve.degree == 1
+                Some(DecodedRollingBallCurve {
+                    geometry: CurveGeometry::Nurbs(curve),
+                    parameter_range: [None, None],
+                }) if curve.degree == 1
             ));
             assert_eq!(position, intcurve.len());
         }
@@ -7790,11 +7897,17 @@ mod width_tests {
             push_ident(&mut bytes, "exact_spl_sur");
             bytes.extend_from_slice(&surface_block(int_width));
             bytes.push(0x10);
-            bytes.extend_from_slice(&[0x0b; 4]);
+            for value in [-1.0, 2.0, -3.0, 4.0] {
+                bytes.push(0x0a);
+                push_f64(&mut bytes, value);
+            }
             let mut position = 0;
             assert!(matches!(
                 decode_rolling_ball_surface(&bytes, &mut position, int_width, None),
-                Some(SurfaceGeometry::Nurbs(surface))
+                Some((
+                    SurfaceGeometry::Nurbs(surface),
+                    [[Some(-1.0), Some(2.0)], [Some(-3.0), Some(4.0)]],
+                ))
                     if surface.u_degree == 1 && surface.v_degree == 1
             ));
             assert_eq!(position, bytes.len());
@@ -8064,6 +8177,26 @@ mod width_tests {
         )
         .expect("resolved width-4 ref");
         assert_eq!((surface.u_count, surface.v_count), (2, 2));
+    }
+
+    #[test]
+    fn surface_cache_resolves_compact_subtype_refs_at_both_widths() {
+        for int_width in [4usize, 8] {
+            let mut active = vec![0x0f];
+            push_ident(&mut active, "spl_sur");
+            active.extend_from_slice(&surface_block(int_width));
+            active.push(0x10);
+            let mut record = vec![0x0f];
+            push_int(&mut record, 0x04, 0, int_width);
+            record.push(0x10);
+            let surface = decode_surface_cache_resolving_refs(
+                &record,
+                &active,
+                &SubtypeTables::from_stream(&active),
+            )
+            .unwrap_or_else(|| panic!("compact subtype ref at width {int_width}"));
+            assert_eq!((surface.u_count, surface.v_count), (2, 2));
+        }
     }
 
     #[test]

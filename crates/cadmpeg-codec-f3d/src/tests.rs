@@ -3717,6 +3717,7 @@ fn append_generated_rolling_ball_side(bytes: &mut Vec<u8>, label: &str, x: f64) 
     bytes.push(0x0b);
     bytes.extend_from_slice(&[0x0b; 4]);
     bytes.extend_from_slice(&generated_curve_block());
+    bytes.extend_from_slice(&[0x0b, 0x0b]);
     bytes.extend_from_slice(&generated_pcurve_block());
     t_pos(bytes, [x, 2.0, 3.0]);
     t_ident(bytes, "nullbs");
@@ -3742,6 +3743,7 @@ fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
     append_generated_rolling_ball_side(&mut surface, "left", 1.0);
     append_generated_rolling_ball_side(&mut surface, "right", 4.0);
     surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&[0x0b, 0x0b]);
     for value in [-0.3, -0.6] {
         t_dbl(&mut surface, value);
     }

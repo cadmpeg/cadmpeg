@@ -523,7 +523,7 @@ Native ASM NURBS control grids are the per-face cache. `surface_fit_tolerance ==
 
 ### 7.6 `intcurve` and `spline` subtypes
 
-Procedural intcurve subtypes (`exact_int_cur`, `off_int_cur`, `proj_int_cur`, `int_int_cur`, `sss_int_cur`, …) and spline-surface subtypes (`rb_blend_spl_sur`, `sss_blend_spl_sur`, `var_blend_spl_sur`, `loft_spl_sur`, `sweep_spl_sur`, `net_spl_sur`, VBL/taper families, …) each carry per-subtype field tails and version/`asm_major` gates. A `ref N` nested inside a surface, curve, or pcurve body indexes a per-file subtype table, not a byte offset. Each subtype definition — a `0x0F` opening followed by a `0x0d`/`0x0e` name token other than `ref` — contributes one table entry in stream order. Definitions are recognized at token boundaries only: the same byte pattern inside a token payload (an `f64`, a string body) is data, not a table entry.
+Procedural intcurve subtypes (`exact_int_cur`, `off_int_cur`, `proj_int_cur`, `int_int_cur`, `sss_int_cur`, …) and spline-surface subtypes (`rb_blend_spl_sur`, `sss_blend_spl_sur`, `var_blend_spl_sur`, `loft_spl_sur`, `sweep_spl_sur`, `net_spl_sur`, VBL/taper families, …) each carry per-subtype field tails and version/`asm_major` gates. A named `ref N` scope or compact `0x0F LONG N 0x10` scope nested inside a surface, curve, or pcurve body indexes a per-file subtype table, not a byte offset. Each subtype definition — a `0x0F` opening followed by a `0x0d`/`0x0e` name token other than `ref` — contributes one table entry in stream order. Definitions and references are recognized at token boundaries only: the same byte pattern inside a token payload (an `f64`, a string body) is data, not a table entry.
 
 Legacy intcurve subtype names select the same layouts as their modern names: `bldcur`→`blend_int_cur`, `blndsprngcur`→`spring_int_cur`, `exactcur`→`exact_int_cur`, `lawintcur`→`law_int_cur`, `offintcur`→`off_int_cur`, `offsetintcur`→`offset_int_cur`, `offsurfintcur`→`off_surf_int_cur`, `parasil`→`para_silh_int_cur`, `parcur`→`par_int_cur`, `projcur`→`proj_int_cur`, `surfcur`→`surf_int_cur`, `surfintcur`→`int_int_cur`, `d5c2_cur`→`skin_int_cur`, and `subsetintcur`→`subset_int_cur`. Native generation uses the modern spelling.
 
@@ -561,6 +561,7 @@ rb_blend_spl_sur :=
   rolling-ball-side
   rolling-ball-side
   curve slice
+  OPTIONAL_RANGE_ENDPOINT slice_range[2]
   LENGTH offset_left
   LENGTH offset_right
   (ENUM_VALUE -1 | DOUBLE radius_selector)
@@ -578,8 +579,12 @@ rb_blend_spl_sur :=
 
 rolling-ball-side :=
   TEXT support_kind
-  nullable-surface
+  ( null_surface
+  | surface
+    OPTIONAL_RANGE_ENDPOINT surface_u_range[2]
+    OPTIONAL_RANGE_ENDPOINT surface_v_range[2] )
   nullable-curve
+  OPTIONAL_RANGE_ENDPOINT curve_range[2]
   nullable-bs2-pcurve
   POSITION location
   nullable-bs2-pcurve
@@ -598,7 +603,7 @@ rolling-ball-third-side :=
   BOOLEAN flag
 ```
 
-`definition_index` is the subtype definition-table index stored by the construction. `support_kind` uses the closed blend-support discriminator set defined for variable blends. `null_surface`, `null_curve`, and `nullbs` encode absent support geometry. Modern sides append the extension integer and tertiary pcurve; legacy sides end after the secondary pcurve. An optional range endpoint is `BOOLEAN false` when absent and `BOOLEAN true DOUBLE value` when finite. The two offsets and fit tolerance are lengths. `ENUM_VALUE -1` selects the absent-radius branch; a `DOUBLE` carries an explicit selector value. `sss_blend_spl_sur` appends the third-side graph after the three discontinuity arrays. The final surface cache is the solved face surface.
+`definition_index` is the subtype definition-table index stored by the construction. `support_kind` uses the closed blend-support discriminator set defined for variable blends. `null_surface`, `null_curve`, and `nullbs` encode absent support geometry. Every present embedded side or slice curve is followed by two optional parameter-range endpoints. Modern sides append the extension integer and tertiary pcurve; legacy sides end after the secondary pcurve. An optional range endpoint is `BOOLEAN false` when absent and `BOOLEAN true DOUBLE value` when finite. The two offsets and fit tolerance are lengths. `ENUM_VALUE -1` selects the absent-radius branch; a `DOUBLE` carries an explicit selector value. `sss_blend_spl_sur` appends the third-side graph after the three discontinuity arrays. The final surface cache is the solved face surface.
 
 A circular rolling-ball construction with equal nonzero signed offsets has a constant radius equal to the offset magnitude. Two nonparallel plane supports and a nonperiodic collinear NURBS slice define an analytic cylinder when the slice direction is parallel to the planes' intersection and every slice pole lies on a line whose perpendicular distance from each plane equals the constant radius. The cylinder axis is that line, the radius is the offset magnitude, and its reference direction is the canonical direction derived from the axis.
 

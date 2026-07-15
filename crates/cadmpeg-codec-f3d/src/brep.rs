@@ -3472,7 +3472,9 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     resolved_sides.push(RollingBallSide {
                                         support_kind: side.support_kind,
                                         surface,
+                                        surface_ranges: side.surface_ranges,
                                         curve,
+                                        curve_range: side.curve_range,
                                         pcurve: side.pcurve.map(embedded_pcurve_geometry),
                                         location: side.location,
                                         secondary_pcurve: side
@@ -3530,6 +3532,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     definition_index: native.definition_index,
                                     sides: Box::new([first, second]),
                                     slice,
+                                    slice_range: native.slice_range,
                                     offsets: native.offsets,
                                     radius_selector: match native.radius_selector {
                                         nurbs::EmbeddedRollingBallRadiusSelector::None => {
@@ -3554,6 +3557,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 .filter(|support| support.is_some())
                                 .count()
                                 == 1
+                                && native.is_none()
                             {
                                 out.stats.partial_procedural_supports += 1;
                             }
