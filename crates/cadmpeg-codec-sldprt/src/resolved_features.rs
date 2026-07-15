@@ -366,14 +366,14 @@ mod marker_tests {
         compact_edge_selection_at, compact_extrusion_through_all_at, compact_extrusion_to_face_at,
         compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
         compact_reference_plane_source, compact_single_face_reference_path_at,
-        compact_surface_selection_at, component_path_features, component_path_terminal_feature,
-        component_profile_source_at, component_reference_curve_path_at,
-        coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
-        marker_local_id, marker_local_links, marker_object_index, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
-        SCALAR_HEADER,
+        compact_surface_selection_at, complete_ordered_compact_line_profile,
+        component_path_features, component_path_terminal_feature, component_profile_source_at,
+        component_reference_curve_path_at, coordinate_marker_local_links, marker_coordinates,
+        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
+        named_scalars, native_scalar_matches_discrete_parameter, object_names,
+        ordered_compact_line_profile, ordered_rectangle_corners, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers, unique_locus,
+        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -494,6 +494,35 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_rectangle_requires_each_axis_corner_exactly_once() {
+        let corners = [
+            Point2::new(25.75, 14.15),
+            Point2::new(-25.75, -14.15),
+            Point2::new(-25.75, 14.15),
+            Point2::new(25.75, -14.15),
+        ];
+        assert_eq!(
+            ordered_rectangle_corners(&corners),
+            Some([
+                Point2::new(-25.75, -14.15),
+                Point2::new(25.75, -14.15),
+                Point2::new(25.75, 14.15),
+                Point2::new(-25.75, 14.15),
+            ])
+        );
+
+        let duplicate = [corners[0], corners[0], corners[2], corners[3]];
+        assert_eq!(ordered_rectangle_corners(&duplicate), None);
+        let non_rectangular = [
+            corners[0],
+            corners[1],
+            corners[2],
+            Point2::new(24.0, -14.15),
+        ];
+        assert_eq!(ordered_rectangle_corners(&non_rectangular), None);
+    }
+
+    #[test]
     fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
         let marker = SketchInputEntity {
             id: "marker".into(),
@@ -554,6 +583,7 @@ mod marker_tests {
                 ("left", true)
             ]
         );
+        assert_eq!(complete_ordered_compact_line_profile(&lines, 5), None);
     }
 
     #[test]
@@ -5112,9 +5142,16 @@ pub(crate) fn project_compact_sketch_profiles(
             if markers.len() != addresses.len() || markers.len() < 3 {
                 continue;
             }
-            let Some(source_id) = compact_reference_plane_source(interval)
-                .or_else(|| compact_reference_plane_source(&lane.native_payload))
-            else {
+            let context_start = object_index
+                .checked_sub(1)
+                .and_then(|index| objects.get(index))
+                .and_then(|(offset, _)| usize::try_from(*offset).ok())
+                .unwrap_or(0);
+            let Some(source_id) = compact_reference_plane_source(interval).or_else(|| {
+                lane.native_payload
+                    .get(context_start..end)
+                    .and_then(compact_reference_plane_source)
+            }) else {
                 continue;
             };
             let Some(&(origin, normal, u_axis)) = plane_frames.get(&source_id) else {
@@ -5144,6 +5181,15 @@ pub(crate) fn project_compact_sketch_profiles(
             if let (Some(curves), Some(vertices)) =
                 (region_addresses.as_deref(), chain_addresses.as_deref())
             {
+                let project = |marker: &SketchInputEntity| {
+                    let [u, v] = marker.coordinates_m?;
+                    let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                    let point = transform.apply(native)?;
+                    Some(Point2::new(
+                        point.0 as f64 * QUANTUM,
+                        point.1 as f64 * QUANTUM,
+                    ))
+                };
                 let lines = curves
                     .iter()
                     .zip(vertices)
@@ -5151,16 +5197,6 @@ pub(crate) fn project_compact_sketch_profiles(
                     .filter_map(|(index, (curve, vertex))| {
                         let curve = markers.get(usize::from(*curve).checked_sub(1)?)?;
                         let vertex = markers.get(usize::from(*vertex).checked_sub(1)?)?;
-                        let project = |marker: &SketchInputEntity| {
-                            let [u, v] = marker.coordinates_m?;
-                            let native =
-                                quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                            let point = transform.apply(native)?;
-                            Some(Point2::new(
-                                point.0 as f64 * QUANTUM,
-                                point.1 as f64 * QUANTUM,
-                            ))
-                        };
                         let start = project(curve)?;
                         let end = project(vertex)?;
                         (start != end).then(|| {
@@ -5177,20 +5213,69 @@ pub(crate) fn project_compact_sketch_profiles(
                         })
                     })
                     .collect::<Vec<_>>();
-                let Some(profile) = ordered_compact_line_profile(&lines) else {
-                    continue;
+                let profile = if let Some(profile) =
+                    complete_ordered_compact_line_profile(&lines, markers.len())
+                {
+                    for (entity_id, marker, vertex, start, end) in lines {
+                        sketch_entities.push(SketchEntity {
+                            id: entity_id,
+                            sketch: sketch_id.clone(),
+                            construction: false,
+                            native_ref: Some(marker.id.clone()),
+                            geometry_ref: None,
+                            endpoint_refs: vec![marker.id.clone(), vertex.id.clone()],
+                            geometry: SketchGeometry::Line { start, end },
+                        });
+                    }
+                    profile
+                } else {
+                    let Some(points) = markers
+                        .iter()
+                        .map(|marker| project(marker))
+                        .collect::<Option<Vec<_>>>()
+                    else {
+                        continue;
+                    };
+                    let Some(corners) = ordered_rectangle_corners(&points) else {
+                        continue;
+                    };
+                    let Some(corner_markers) = corners
+                        .iter()
+                        .map(|corner| {
+                            points
+                                .iter()
+                                .position(|point| point == corner)
+                                .and_then(|index| markers.get(index).copied())
+                        })
+                        .collect::<Option<Vec<_>>>()
+                    else {
+                        continue;
+                    };
+                    let mut profile = Vec::with_capacity(corners.len());
+                    for (index, start) in corners.iter().enumerate() {
+                        let end = corners[(index + 1) % corners.len()];
+                        let start_marker = corner_markers[index];
+                        let end_marker = corner_markers[(index + 1) % corner_markers.len()];
+                        let entity_id = SketchEntityId(format!(
+                            "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
+                            native_feature.ordinal
+                        ));
+                        profile.push(SketchEntityUse {
+                            entity: entity_id.clone(),
+                            reversed: false,
+                        });
+                        sketch_entities.push(SketchEntity {
+                            id: entity_id,
+                            sketch: sketch_id.clone(),
+                            construction: false,
+                            native_ref: Some(start_marker.id.clone()),
+                            geometry_ref: None,
+                            endpoint_refs: vec![start_marker.id.clone(), end_marker.id.clone()],
+                            geometry: SketchGeometry::Line { start: *start, end },
+                        });
+                    }
+                    profile
                 };
-                for (entity_id, marker, vertex, start, end) in lines {
-                    sketch_entities.push(SketchEntity {
-                        id: entity_id,
-                        sketch: sketch_id.clone(),
-                        construction: false,
-                        native_ref: Some(marker.id.clone()),
-                        geometry_ref: None,
-                        endpoint_refs: vec![marker.id.clone(), vertex.id.clone()],
-                        geometry: SketchGeometry::Line { start, end },
-                    });
-                }
                 let mut sketch = sketch;
                 sketch.profiles.push(profile);
                 sketches.push(sketch);
@@ -5254,6 +5339,31 @@ pub(crate) fn project_compact_sketch_profiles(
     }
 }
 
+fn ordered_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> {
+    let [_, _, _, _] = points else {
+        return None;
+    };
+    let mut u = points.iter().map(|point| point.u).collect::<Vec<_>>();
+    u.sort_by(f64::total_cmp);
+    u.dedup();
+    let mut v = points.iter().map(|point| point.v).collect::<Vec<_>>();
+    v.sort_by(f64::total_cmp);
+    v.dedup();
+    let ([u0, u1], [v0, v1]) = (u.as_slice(), v.as_slice()) else {
+        return None;
+    };
+    let corners = [
+        Point2::new(*u0, *v0),
+        Point2::new(*u1, *v0),
+        Point2::new(*u1, *v1),
+        Point2::new(*u0, *v1),
+    ];
+    corners
+        .iter()
+        .all(|corner| points.iter().filter(|point| *point == corner).count() == 1)
+        .then_some(corners)
+}
+
 fn ordered_compact_line_profile(
     lines: &[(
         SketchEntityId,
@@ -5300,6 +5410,21 @@ fn ordered_compact_line_profile(
         current = candidate.2;
     }
     (current == origin).then_some(profile)
+}
+
+fn complete_ordered_compact_line_profile(
+    lines: &[(
+        SketchEntityId,
+        &SketchInputEntity,
+        &SketchInputEntity,
+        Point2,
+        Point2,
+    )],
+    marker_count: usize,
+) -> Option<Vec<SketchEntityUse>> {
+    (lines.len() == marker_count)
+        .then(|| ordered_compact_line_profile(lines))
+        .flatten()
 }
 
 fn compact_line_region_addresses(payload: &[u8]) -> Option<Vec<u16>> {
