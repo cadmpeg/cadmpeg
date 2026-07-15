@@ -1593,7 +1593,7 @@ pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
     for (index, row) in all_rows
         .iter()
         .enumerate()
-        .filter(|(_, row)| row.kind == SurfaceKind::Plane && row.boundary_type != 0)
+        .filter(|(_, row)| row.kind == SurfaceKind::Plane)
     {
         let row_end = all_rows
             .get(index + 1)
@@ -2035,6 +2035,25 @@ mod tests {
                 normal: [1.0, 0.0, 0.0],
                 u_axis: [0.0, 1.0, 0.0],
                 offset: 20,
+            }]
+        );
+    }
+
+    #[test]
+    fn decodes_named_plane_outline_with_zero_boundary_type() {
+        let payload = b"srf_array\0\xf8\x01\xe0\x01geom_id\0\x07\xe0\x01geom_type\0\x22\xe0\x01feat_id\0\x04\xe0\x01orient\0\x01\xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\x00\xe0\x02outline\0\xf9\x02\x03\xe4\x18\xe4\xe4\xe4\x18\xe0\x00srf_prim_ptr(plane)\0\xe3";
+
+        assert_eq!(rows(payload).len(), 1);
+        assert_eq!(plane_envelopes(payload).len(), 1);
+
+        assert_eq!(
+            outline_planes(&plane_envelopes(payload)),
+            vec![OutlinePlane {
+                surface_id: 7,
+                origin: [1.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                u_axis: [0.0, 1.0, 0.0],
+                offset: 104,
             }]
         );
     }
