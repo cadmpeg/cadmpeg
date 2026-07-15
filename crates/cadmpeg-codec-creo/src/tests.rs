@@ -4149,7 +4149,8 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
         b"\xe3Body ID 17\0\xe3\
         \xf7\x3b\x11\x83\x95\xf6\x04Profile 1\0\xf6\0protextrude\0",
     );
-    let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", depdb)]));
+    let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.feature_definitions.len(), 1);
     let definition = &scan.feature_definitions[0];
@@ -4160,6 +4161,18 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
     assert_eq!(variables.points[0].point_id, 7);
     assert_eq!(variables.points[0].u, Some(1.0));
     assert_eq!(variables.points[0].v, Some(3.0));
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
+    assert_eq!(records[0].fields["source_section"], "DEPDB_DATA");
+    assert_annotation(
+        &result.ir,
+        "creo:featdefs:feature_definition#2",
+        "creo:DEPDB_DATA",
+        definition.offset as u64,
+        "feature_definition_record",
+        Exactness::ByteExact,
+    );
 }
 
 #[test]

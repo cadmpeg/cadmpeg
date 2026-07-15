@@ -70,6 +70,7 @@ struct CreoFeatureDefinitionRecord {
     id: String,
     definition_id: u32,
     owner_feature_id: Option<u32>,
+    source_section: String,
     body: Vec<u8>,
     parameter_frames: Vec<CreoFeatureParameterFrame>,
     outlines: Vec<CreoFeatureOutline>,
@@ -2196,6 +2197,7 @@ fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatureDefinition
             id: feature_definition_record_id(definition.id),
             definition_id: definition.id,
             owner_feature_id: definition.owner_feature_id,
+            source_section: source_section(scan, definition.offset),
             body: definition.body.clone(),
             parameter_frames: definition
                 .parameter_frames
@@ -16240,7 +16242,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             annotate(
                 &mut annotations,
                 &definition.id,
-                "FeatDefs",
+                &definition.source_section,
                 definition.offset as u64,
                 "feature_definition_record",
                 Exactness::ByteExact,
