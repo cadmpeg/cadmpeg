@@ -724,6 +724,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.changed_boundary_edge_contexts.clear();
         operand.recipe_reference_contexts.clear();
         operand.recipe_selectors.clear();
+        operand.resolved_edge_slot = None;
         let stream = crate::design::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -814,6 +815,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
             operand.recipe_structure.as_ref(),
             &operand.changed_boundary_edge_contexts,
         );
+        operand.resolved_edge_slot = crate::design::resolve_edge_operand_candidates(operand);
     }
 }
 

@@ -937,6 +937,12 @@ fn resolved_edge_group(
 }
 
 fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
+    operand
+        .resolved_edge_slot
+        .or_else(|| resolve_edge_operand_candidates(operand))
+}
+
+pub(crate) fn resolve_edge_operand_candidates(operand: &DesignEdgeOperand) -> Option<i64> {
     resolved_edge_candidate_intersection(
         &operand.recipe_selectors,
         operand
@@ -7305,6 +7311,7 @@ fn parse_edge_operand(
         changed_boundary_edge_contexts: Vec::new(),
         recipe_reference_contexts: Vec::new(),
         recipe_selectors: Vec::new(),
+        resolved_edge_slot: None,
         next_record_index: indexed[4].1,
         next_byte_offset,
     })
@@ -11917,6 +11924,10 @@ mod relation_tests {
         assert_eq!(edge_operand.recipe_record_index, 103);
         assert_eq!(edge_operand.recipe_record_byte_offset, recipe_record_at);
         assert_eq!(edge_operand.recipe_id, recipe.id);
+        assert_eq!(edge_operand.resolved_edge_slot, None);
+        edge_operand.resolved_edge_slot = Some(17);
+        assert_eq!(super::resolved_edge_operand(&edge_operand), Some(17));
+        edge_operand.resolved_edge_slot = None;
         assert_eq!(
             edge_operand.recipe_program_offset,
             recipe_name_at as u64 + 16

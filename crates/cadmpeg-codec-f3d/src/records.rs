@@ -1103,6 +1103,10 @@ pub struct DesignEdgeOperand {
     /// context matching the selector's incident-loop boundary counts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recipe_selectors: Vec<DesignEdgeRecipeSelectorContext>,
+    /// Stable historical edge slot proven by the selector/reference candidate
+    /// intersection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_edge_slot: Option<i64>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
