@@ -244,12 +244,24 @@ pub struct SurfaceParameterRecord {
     pub scalar_frames: Vec<SurfaceParameterScalarFrame>,
     /// Maximal scalar-token frame ending at the body boundary.
     pub terminal_scalar_frame: Option<SurfaceParameterScalarFrame>,
+    /// Replay-bound tabulated-cylinder envelope frame decoded with the
+    /// containing section's scalar cache.
+    pub tabulated_cylinder_frame: Option<TabulatedCylinderFrame>,
     /// Structural form that bounded the body.
     pub boundary: SurfaceBodyBoundary,
     /// Byte offset of the positional surface row in the original stream.
     pub offset: usize,
     /// Byte offset of the first parameter-body byte in the original stream.
     pub body_offset: usize,
+}
+
+/// Six-slot model-space envelope frame following a tabulated-cylinder marker.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TabulatedCylinderFrame {
+    /// Ordered frame coordinates.
+    pub values: [f64; 6],
+    /// Scalar-lane prefix byte for each coordinate.
+    pub prefixes: [u8; 6],
 }
 
 /// One contiguous positional scalar frame with no intervening bytes.
@@ -1297,6 +1309,10 @@ fn parameter_records_for_rows(
         let opaque_spans = opaque_spans(&body, &scalar_tokens);
         let scalar_frames = scalar_frames(&scalar_tokens);
         let terminal_scalar_frame = terminal_scalar_frame(&body, &scalar_frames);
+        let tabulated_cylinder_frame = (row.kind == SurfaceKind::Extrusion)
+            .then(|| decode_tabulated_cylinder_frame(&body, &cache))
+            .flatten()
+            .map(|(frame, _)| frame);
         records.push(SurfaceParameterRecord {
             surface_id: row.id,
             scalar_values: scalar_tokens
@@ -1307,6 +1323,7 @@ fn parameter_records_for_rows(
             opaque_spans,
             scalar_frames,
             terminal_scalar_frame,
+            tabulated_cylinder_frame,
             body,
             boundary,
             offset: row.offset,
@@ -1314,6 +1331,37 @@ fn parameter_records_for_rows(
         });
     }
     records
+}
+
+fn decode_tabulated_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<(TabulatedCylinderFrame, usize)> {
+    const FRAME_MARKER: &[u8] = &[0x00, 0x0c, 0x9a];
+    let marker = find(body, FRAME_MARKER, 0)?;
+    let mut cursor = marker + FRAME_MARKER.len();
+    let mut values = Vec::with_capacity(6);
+    let mut prefixes = Vec::with_capacity(6);
+    for slot in 0..6 {
+        prefixes.push(*body.get(cursor)?);
+        let (value, next) = if matches!(slot, 0 | 3)
+            || (matches!(slot, 1 | 4) && body.get(cursor) == Some(&0x2d))
+        {
+            scalar::decode_tabulated_cylinder_first_frame_coordinate(body, cursor, cache)?
+        } else {
+            scalar::decode_tabulated_cylinder_frame_coordinate(body, cursor, cache)?
+        };
+        value.is_finite().then_some(())?;
+        values.push(value);
+        cursor = next;
+    }
+    Some((
+        TabulatedCylinderFrame {
+            values: values.try_into().ok()?,
+            prefixes: prefixes.try_into().ok()?,
+        },
+        cursor,
+    ))
 }
 
 /// Decode the cubic curve replay owned by the preceding positional
@@ -1451,19 +1499,7 @@ fn surface_body_compound_close(
     cache: &scalar::ScalarCache,
 ) -> Option<usize> {
     if kind == SurfaceKind::Extrusion {
-        const FRAME_MARKER: &[u8] = &[0x00, 0x0c, 0x9a];
-        if let Some(marker) = find(body, FRAME_MARKER, 0) {
-            let mut cursor = marker + FRAME_MARKER.len();
-            for slot in 0..6 {
-                let (_, next) = if matches!(slot, 0 | 3)
-                    || (matches!(slot, 1 | 4) && body.get(cursor) == Some(&0x2d))
-                {
-                    scalar::decode_tabulated_cylinder_first_frame_coordinate(body, cursor, cache)?
-                } else {
-                    scalar::decode_tabulated_cylinder_frame_coordinate(body, cursor, cache)?
-                };
-                cursor = next;
-            }
+        if let Some((_, mut cursor)) = decode_tabulated_cylinder_frame(body, cache) {
             if body.get(cursor) == Some(&psb::token::ENTITY_REF) {
                 let (_, next) = psb::reference_id(body, cursor + 1).ok()?;
                 cursor = next;
@@ -2434,6 +2470,12 @@ mod tests {
         body.extend_from_slice(&[0xe4, 0x0f]);
         body.extend_from_slice(&[0x4a, 0x13, 0x1f, 0x1c, 0x0b, 0x00, 0x00]);
         body.extend_from_slice(&[0xe4, 0x0f, 0xf7, 0x23, 0xe3]);
+
+        let (frame, frame_end) =
+            decode_tabulated_cylinder_frame(&body, &scalar::ScalarCache::default())
+                .expect("complete tabulated-cylinder frame");
+        assert_eq!(frame.prefixes, [0x4a, 0xe4, 0x0f, 0x4a, 0xe4, 0x0f]);
+        assert_eq!(frame_end, body.len() - 3);
 
         assert_eq!(
             surface_body_compound_close(

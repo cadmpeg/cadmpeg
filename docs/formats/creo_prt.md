@@ -305,6 +305,9 @@ payload bytes inside the six declared slots do not close the body. In a row
 without a cubic replay, the six-scalar frame stores
 the start and end XYZ points of a straight directrix. A nonzero sweep direction
 and nondegenerate straight directrix define an unbounded plane.
+Frame slots using cache-indexed scalar forms resolve against the scalar cache of
+the containing geometry section; the resolved values remain part of the
+surface parameter record.
 
 A repeated `tab_cyl` cubic-curve replay has this structure:
 

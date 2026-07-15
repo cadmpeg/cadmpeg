@@ -1384,10 +1384,17 @@ struct CreoSurfaceParameterRecord {
     opaque_spans: Vec<CreoSurfaceParameterOpaqueSpan>,
     scalar_frames: Vec<CreoSurfaceParameterScalarFrame>,
     terminal_scalar_frame: Option<CreoSurfaceParameterScalarFrame>,
+    tabulated_cylinder_frame: Option<CreoTabulatedCylinderFrame>,
     extrusion_direction: Option<[f64; 3]>,
     row_offset: usize,
     body_offset: usize,
     source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoTabulatedCylinderFrame {
+    values: [f64; 6],
+    prefixes: [u8; 6],
 }
 
 #[derive(Serialize)]
@@ -1945,6 +1952,12 @@ fn surface_parameter_records(
                                 length: slot.length,
                             })
                             .collect(),
+                    }
+                }),
+                tabulated_cylinder_frame: record.tabulated_cylinder_frame.map(|frame| {
+                    CreoTabulatedCylinderFrame {
+                        values: frame.values,
+                        prefixes: frame.prefixes,
                     }
                 }),
                 extrusion_direction: (row.kind == crate::surface::SurfaceKind::Extrusion)
@@ -4958,36 +4971,43 @@ fn placed_tabulated_cylinder_directrix(
         .iter()
         .copied()
         .collect::<Option<Vec<_>>>()?;
-    let cache = crate::scalar::ScalarCache::default();
     let (values, layout) = (|| {
-        let marker = parameters
-            .body
-            .windows(3)
-            .position(|window| window == [0x00, 0x0c, 0x9a])?;
-        let mut cursor = marker + 3;
-        let mut values = Vec::with_capacity(6);
-        let mut heads = Vec::with_capacity(6);
-        for slot in 0..6 {
-            heads.push(*parameters.body.get(cursor)?);
-            let (value, end) = if matches!(slot, 0 | 3)
-                || (matches!(slot, 1 | 4) && parameters.body.get(cursor) == Some(&0x2d))
-            {
-                crate::scalar::decode_tabulated_cylinder_first_frame_coordinate(
-                    &parameters.body,
-                    cursor,
-                    &cache,
-                )?
-            } else {
-                crate::scalar::decode_tabulated_cylinder_frame_coordinate(
-                    &parameters.body,
-                    cursor,
-                    &cache,
-                )?
-            };
-            value.is_finite().then_some(())?;
-            values.push(value);
-            cursor = end;
-        }
+        let frame = parameters.tabulated_cylinder_frame.or_else(|| {
+            let cache = crate::scalar::ScalarCache::default();
+            let marker = parameters
+                .body
+                .windows(3)
+                .position(|window| window == [0x00, 0x0c, 0x9a])?;
+            let mut cursor = marker + 3;
+            let mut values = Vec::with_capacity(6);
+            let mut prefixes = Vec::with_capacity(6);
+            for slot in 0..6 {
+                prefixes.push(*parameters.body.get(cursor)?);
+                let (value, next) = if matches!(slot, 0 | 3)
+                    || (matches!(slot, 1 | 4) && parameters.body.get(cursor) == Some(&0x2d))
+                {
+                    crate::scalar::decode_tabulated_cylinder_first_frame_coordinate(
+                        &parameters.body,
+                        cursor,
+                        &cache,
+                    )?
+                } else {
+                    crate::scalar::decode_tabulated_cylinder_frame_coordinate(
+                        &parameters.body,
+                        cursor,
+                        &cache,
+                    )?
+                };
+                values.push(value);
+                cursor = next;
+            }
+            Some(crate::surface::TabulatedCylinderFrame {
+                values: values.try_into().ok()?,
+                prefixes: prefixes.try_into().ok()?,
+            })
+        })?;
+        let values = frame.values.to_vec();
+        let heads = frame.prefixes;
         let resistor_layout = matches!(heads.as_slice(), [_, 0x46, 0x2f, _, 0x46, 0x2e]);
         let zero_offset_layout = is_zero_offset_signed_planar_frame(&heads);
         if resistor_layout {
@@ -10216,6 +10236,7 @@ mod resolved_sketch_tests {
                 },
             ],
             terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
             body_offset: 0,
@@ -10303,6 +10324,7 @@ mod resolved_sketch_tests {
                 ],
             }],
             terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
             body_offset: 0,
