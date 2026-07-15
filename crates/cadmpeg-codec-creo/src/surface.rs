@@ -1241,9 +1241,23 @@ fn named_record_boundary(
 
 /// Decode bounded parameter bodies for positional `srf_array` rows.
 pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
+    parameter_records_for_rows(payload, rows(payload))
+}
+
+/// Decode bounded positional parameter bodies from a DEPDB cross-section
+/// surface namespace.
+#[must_use]
+pub fn cross_section_parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
+    parameter_records_for_rows(payload, cross_section_rows(payload))
+}
+
+fn parameter_records_for_rows(
+    payload: &[u8],
+    rows: Vec<SurfaceRow>,
+) -> Vec<SurfaceParameterRecord> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut headers = Vec::<(SurfaceRow, usize)>::new();
-    for row in rows(payload) {
+    for row in rows {
         let Some(body_start) = positional_body_start(payload, &row) else {
             continue;
         };
@@ -2037,6 +2051,13 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, 7);
         assert_eq!(rows[0].boundary_type, 0x06);
+        let parameters = cross_section_parameter_records(payload);
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].surface_id, 7);
+        assert!(parameters[0]
+            .body
+            .windows(6)
+            .any(|bytes| bytes == b"\x2d\x25\x32\xf6\x01\x01"));
     }
 
     #[test]

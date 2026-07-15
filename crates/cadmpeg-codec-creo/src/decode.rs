@@ -1801,14 +1801,16 @@ fn tabulated_cylinder_curve_replay_records(
         .collect()
 }
 
-fn surface_parameter_records(scan: &ContainerScan) -> Vec<CreoSurfaceParameterRecord> {
-    scan.surface_parameters
+fn surface_parameter_records(
+    scan: &ContainerScan,
+    rows: &[crate::surface::SurfaceRow],
+    parameters: &[crate::surface::SurfaceParameterRecord],
+    namespace: &str,
+) -> Vec<CreoSurfaceParameterRecord> {
+    parameters
         .iter()
         .filter_map(|record| {
-            let row = scan
-                .surface_rows
-                .iter()
-                .find(|row| row.id == record.surface_id)?;
+            let row = rows.iter().find(|row| row.id == record.surface_id)?;
             let surface_family = surface_family(row.kind);
             let boundary = match record.boundary {
                 crate::surface::SurfaceBodyBoundary::CompoundClose => "compound_close",
@@ -1818,7 +1820,7 @@ fn surface_parameter_records(scan: &ContainerScan) -> Vec<CreoSurfaceParameterRe
             };
             let source_section = source_section(scan, record.body_offset);
             Some(CreoSurfaceParameterRecord {
-                id: format!("creo:visibgeom:surface_parameter#{}", record.surface_id),
+                id: format!("creo:{namespace}:surface_parameter#{}", record.surface_id),
                 surface_id: record.surface_id,
                 surface_type_byte: row.type_byte,
                 surface_family,
@@ -17324,7 +17326,12 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("face_components", &face_components)?;
     }
-    let surface_parameters = surface_parameter_records(scan);
+    let surface_parameters = surface_parameter_records(
+        scan,
+        &scan.surface_rows,
+        &scan.surface_parameters,
+        "visibgeom",
+    );
     if !surface_parameters.is_empty() {
         for record in &surface_parameters {
             annotate(
@@ -17339,6 +17346,30 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("surface_parameters", &surface_parameters)?;
+    }
+    let cross_section_surface_parameters = surface_parameter_records(
+        scan,
+        &scan.cross_section_surface_rows,
+        &scan.cross_section_surface_parameters,
+        "cross_section_geometry",
+    );
+    if !cross_section_surface_parameters.is_empty() {
+        for record in &cross_section_surface_parameters {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.body_offset as u64,
+                "cross_section_surface_parameter_frame",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena(
+            "cross_section_surface_parameters",
+            &cross_section_surface_parameters,
+        )?;
     }
     let plane_local_systems = plane_local_system_records(scan);
     if !plane_local_systems.is_empty() {
@@ -17724,6 +17755,10 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_surface_parameter_record_count".to_string(),
         scan.surface_parameters.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_cross_section_surface_parameter_record_count".to_string(),
+        scan.cross_section_surface_parameters.len().to_string(),
     );
     attributes.insert(
         "decoded_positional_extrusion_direction_count".to_string(),

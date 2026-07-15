@@ -1108,7 +1108,8 @@ The DEPDB `Xsections` section contains an independent
 prefix. Each named prototype row has boundary type `00`; every positional
 replay has boundary type `06`. Other boundary types inside the counted frame
 belong to row bodies. Cross-section identifiers do not join the material
-model-face namespace.
+model-face namespace. Their bounded positional parameter bodies use the same
+scalar-token and row-boundary rules and remain in the cross-section namespace.
 
 ## 8. Additional record semantics
 

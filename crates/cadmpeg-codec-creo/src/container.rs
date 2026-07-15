@@ -195,6 +195,8 @@ pub struct ContainerScan {
     pub cross_section_surface_rows: Vec<SurfaceRow>,
     /// Bounded scalar parameter bodies from positional surface rows.
     pub surface_parameters: Vec<SurfaceParameterRecord>,
+    /// Bounded scalar parameter bodies from DEPDB cross-section surface rows.
+    pub cross_section_surface_parameters: Vec<SurfaceParameterRecord>,
     /// Cubic curve replay records bound to following tabulated-cylinder rows.
     pub tabulated_cylinder_curve_replays: Vec<TabulatedCylinderCurveReplay>,
     /// Inherited support frames following positional plane envelopes.
@@ -759,6 +761,34 @@ fn surface_parameters(data: &[u8], sections: &[Section]) -> Vec<SurfaceParameter
         let end = (section.offset + section.length).min(data.len());
         records.extend(
             surface::parameter_records(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record.body_offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn cross_section_surface_parameters(
+    data: &[u8],
+    sections: &[Section],
+) -> Vec<SurfaceParameterRecord> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "Xsections")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
+        if find(payload, b"Sld_Xsections\0", 0).is_none() {
+            continue;
+        }
+        records.extend(
+            surface::cross_section_parameter_records(payload)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1390,6 +1420,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let surface_rows = surface_rows(&data, &sections);
     let cross_section_surface_rows = cross_section_surface_rows(&data, &sections);
     let surface_parameters = surface_parameters(&data, &sections);
+    let cross_section_surface_parameters = cross_section_surface_parameters(&data, &sections);
     let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replays(&data, &sections);
     let plane_local_systems = plane_local_systems(&data, &sections);
     let plane_envelopes = plane_envelopes(&data, &sections);
@@ -1506,6 +1537,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         surface_rows,
         cross_section_surface_rows,
         surface_parameters,
+        cross_section_surface_parameters,
         tabulated_cylinder_curve_replays,
         plane_local_systems,
         plane_envelopes,
