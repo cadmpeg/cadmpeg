@@ -14903,7 +14903,7 @@ mod resolved_sketch_tests {
         let cone_generators = apex_plane_cone_generator_candidates(cone_degenerate_plane, cone);
         assert_eq!(cone_generators.len(), 2);
         assert!(matches!(
-            select_unique_line_candidate(
+            select_unique_curve_candidate(
                 cone_generators,
                 [[0.0, 1.0, -1.0], [0.0, 2.0, 0.0]],
             ),
@@ -14939,6 +14939,28 @@ mod resolved_sketch_tests {
         assert!(cone_sphere_vertex[1].abs() < 1e-12);
         assert!((cone_sphere_vertex[2] + 1.0).abs() < 1e-12);
         assert!(carrier_intersection_curve(sphere, cone).is_none());
+        let cone_secant_sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [0.0, 0.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 5.0,
+        });
+        let cone_sphere_candidates =
+            coaxial_cone_sphere_circle_candidates(cone, cone_secant_sphere);
+        assert_eq!(cone_sphere_candidates.len(), 2);
+        let upper_parameter = (-4.0 + 184.0_f64.sqrt()) / 4.0;
+        let upper_radius = 2.0 + upper_parameter;
+        assert!(matches!(
+            select_unique_curve_candidate(
+                cone_sphere_candidates,
+                [
+                    [upper_radius, 0.0, upper_parameter],
+                    [0.0, upper_radius, upper_parameter],
+                ],
+            ),
+            Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cone_sphere_secant_circle"))
+                if (center.z - upper_parameter).abs() < 1e-12
+                    && (radius - upper_radius).abs() < 1e-12
+        ));
 
         let torus = CarrierEquation::Torus(TorusEquation {
             center: [0.0, 0.0, 0.0],
@@ -17869,20 +17891,102 @@ fn apex_plane_cone_generator_candidates(
         .collect()
 }
 
-fn line_contains_points(geometry: &CurveGeometry, points: [[f64; 3]; 2]) -> bool {
-    let CurveGeometry::Line { origin, direction } = geometry else {
-        return false;
+fn coaxial_cone_sphere_circle_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let ((CarrierEquation::Cone(cone), CarrierEquation::Sphere(sphere))
+    | (CarrierEquation::Sphere(sphere), CarrierEquation::Cone(cone))) = (first, second)
+    else {
+        return Vec::new();
     };
-    let origin = [origin.x, origin.y, origin.z];
-    let Some(direction) = normalized([direction.x, direction.y, direction.z]) else {
-        return false;
+    let Some(axis) = normalized(cone.axis) else {
+        return Vec::new();
     };
-    points.into_iter().all(|point| {
-        let relative: [f64; 3] = std::array::from_fn(|index| point[index] - origin[index]);
-        let residual = cross(relative, direction);
-        let scale = dot(relative, relative).sqrt().max(1.0);
-        dot(residual, residual).sqrt() <= 1e-7 * scale
-    })
+    let relative: [f64; 3] = std::array::from_fn(|index| sphere.center[index] - cone.origin[index]);
+    let sphere_axial = dot(relative, axis);
+    let transverse: [f64; 3] =
+        std::array::from_fn(|index| relative[index] - sphere_axial * axis[index]);
+    let scale = cone.radius.max(sphere.radius).max(1.0);
+    if dot(transverse, transverse).sqrt() > 1e-9 * scale {
+        return Vec::new();
+    }
+    let slope = cone.half_angle.tan();
+    if slope.abs() <= 1e-12 || !slope.is_finite() || cone.radius < 0.0 {
+        return Vec::new();
+    }
+    let quadratic = 1.0 + slope * slope;
+    let linear = 2.0 * (cone.radius * slope - sphere_axial);
+    let constant =
+        cone.radius * cone.radius + sphere_axial * sphere_axial - sphere.radius * sphere.radius;
+    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
+    let discriminant_scale = linear
+        .abs()
+        .max((4.0 * quadratic * constant).abs().sqrt())
+        .max(1.0);
+    if discriminant <= 1e-9 * discriminant_scale * discriminant_scale {
+        return Vec::new();
+    }
+    let Some(reference) = normalized(cone.ref_direction) else {
+        return Vec::new();
+    };
+    let root_delta = discriminant.sqrt();
+    [-root_delta, root_delta]
+        .into_iter()
+        .filter_map(|delta| {
+            let parameter = (-linear + delta) / (2.0 * quadratic);
+            let radius = (cone.radius + parameter * slope).abs();
+            if radius <= 1e-12 * scale {
+                return None;
+            }
+            let center: [f64; 3] =
+                std::array::from_fn(|index| cone.origin[index] + parameter * axis[index]);
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(axis[0], axis[1], axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius,
+                },
+                "coaxial_cone_sphere_secant_circle",
+            ))
+        })
+        .collect()
+}
+
+fn curve_contains_points(geometry: &CurveGeometry, points: [[f64; 3]; 2]) -> bool {
+    match geometry {
+        CurveGeometry::Line { origin, direction } => {
+            let origin = [origin.x, origin.y, origin.z];
+            let Some(direction) = normalized([direction.x, direction.y, direction.z]) else {
+                return false;
+            };
+            points.into_iter().all(|point| {
+                let relative: [f64; 3] = std::array::from_fn(|index| point[index] - origin[index]);
+                let residual = cross(relative, direction);
+                let scale = dot(relative, relative).sqrt().max(1.0);
+                dot(residual, residual).sqrt() <= 1e-7 * scale
+            })
+        }
+        CurveGeometry::Circle {
+            center,
+            axis,
+            radius,
+            ..
+        } => {
+            let center = [center.x, center.y, center.z];
+            let Some(axis) = normalized([axis.x, axis.y, axis.z]) else {
+                return false;
+            };
+            points.into_iter().all(|point| {
+                let relative: [f64; 3] = std::array::from_fn(|index| point[index] - center[index]);
+                let scale = radius.abs().max(1.0);
+                dot(relative, axis).abs() <= 1e-7 * scale
+                    && (dot(relative, relative).sqrt() - radius).abs() <= 1e-7 * scale
+            })
+        }
+        _ => false,
+    }
 }
 
 fn select_parallel_plane_cylinder_generator(
@@ -17890,19 +17994,19 @@ fn select_parallel_plane_cylinder_generator(
     second: CarrierEquation,
     points: [[f64; 3]; 2],
 ) -> Option<(CurveGeometry, &'static str)> {
-    select_unique_line_candidate(
+    select_unique_curve_candidate(
         parallel_plane_cylinder_generator_candidates(first, second),
         points,
     )
 }
 
-fn select_unique_line_candidate(
+fn select_unique_curve_candidate(
     candidates: Vec<(CurveGeometry, &'static str)>,
     points: [[f64; 3]; 2],
 ) -> Option<(CurveGeometry, &'static str)> {
     let candidates = candidates
         .into_iter()
-        .filter(|(geometry, _)| line_contains_points(geometry, points))
+        .filter(|(geometry, _)| curve_contains_points(geometry, points))
         .collect::<Vec<_>>();
     let [candidate] = candidates.as_slice() else {
         return None;
@@ -17949,10 +18053,16 @@ fn transfer_carrier_intersection_curves(
                 *solved_vertices.get(&end)?,
             ];
             select_parallel_plane_cylinder_generator(first, second, points).or_else(|| {
-                select_unique_line_candidate(
+                select_unique_curve_candidate(
                     apex_plane_cone_generator_candidates(first, second),
                     points,
                 )
+                .or_else(|| {
+                    select_unique_curve_candidate(
+                        coaxial_cone_sphere_circle_candidates(first, second),
+                        points,
+                    )
+                })
             })
         });
         let Some((geometry, tag)) = resolved else {
