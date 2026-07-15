@@ -16576,7 +16576,11 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                 .collect(),
             triangles,
             strip_lengths: strip.strip_lengths.clone(),
-            normals: Vec::new(),
+            normals: strip
+                .normals
+                .iter()
+                .map(|normal| Vector3::new(normal[0], normal[1], normal[2]))
+                .collect(),
             channels: Vec::new(),
         });
     }

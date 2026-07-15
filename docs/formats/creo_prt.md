@@ -1413,5 +1413,8 @@ declared count can be decoded.
 Within `value(prim_tristripsetwithatt)`, `p_accum_set_size f8 <count>`
 contains monotonically increasing cumulative vertex counts. Consecutive
 differences are triangle-strip lengths and each is at least three.
-`mv_p_xyz` supplies exactly the final cumulative count of XYZ positions.
+`mv_p_xyz` supplies exactly the final cumulative count of XYZ positions. An
+`mv_p_NxNyNzxyz` array supplies the same position count through complete
+normal-position tuples and transfers its first three tuple values as vertex
+normals.
 Strip triangles alternate winding: `[i,i+1,i+2]`, then `[i,i+2,i+1]`.
