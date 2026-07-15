@@ -30,9 +30,17 @@ const MAGIC: &[u8; 8] = b"SPLMSSTR";
 fn display_jt_index_requires_every_declared_header() {
     use crate::container::{Container, DirEntry, Region};
 
-    let inflated = b"synthetic JT payload";
+    let mut inflated = Vec::new();
+    inflated.extend_from_slice(&24_u32.to_le_bytes());
+    inflated.extend_from_slice(&[3; 16]);
+    inflated.extend_from_slice(&5_u32.to_le_bytes());
+    inflated.push(0);
+    inflated.extend_from_slice(&[9, 8, 7]);
+    inflated.extend_from_slice(&16_u32.to_le_bytes());
+    inflated.extend_from_slice(&[0xff; 16]);
+    inflated.extend_from_slice(&[6, 5]);
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-    encoder.write_all(inflated).unwrap();
+    encoder.write_all(&inflated).unwrap();
     let compressed = encoder.finish().unwrap();
     let segment_byte_len = 24 + 9 + compressed.len() as u32;
     let mut data = Vec::new();
@@ -103,11 +111,21 @@ fn display_jt_index_requires_every_declared_header() {
     assert_eq!(compression.compressed_byte_len, compressed.len() as u32);
     assert_eq!(
         compression.inflated_sha256,
-        cadmpeg_ir::hash::sha256_hex(inflated)
+        cadmpeg_ir::hash::sha256_hex(&inflated)
     );
+    let (compressed_elements, sequences) =
+        crate::native::display_jt_compressed_element_sequences(&container, &segments);
+    assert_eq!(compressed_elements.len(), 1);
+    assert_eq!(compressed_elements[0].segment_type, 1);
+    assert_eq!(compressed_elements[0].object_type_id, [3; 16]);
+    assert_eq!(compressed_elements[0].object_id, 5);
+    assert_eq!(compressed_elements[0].body_byte_len, 3);
+    assert_eq!(sequences.len(), 1);
+    assert_eq!(sequences[0].framed_byte_len, 48);
+    assert_eq!(sequences[0].tail, [6, 5]);
 
     let mut malformed_compression = container.clone();
-    malformed_compression.data[165..169]
+    malformed_compression.data[193..197]
         .copy_from_slice(&(compressed.len() as u32 + 2).to_le_bytes());
     assert!(crate::native::display_jt_segments(&malformed_compression, &documents).is_empty());
 
@@ -164,6 +182,19 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
     let mut malformed = container;
     *malformed.data.last_mut().unwrap() = 1;
     assert!(crate::native::display_jt_shape_lod_elements(&malformed, &[segment]).is_empty());
+}
+
+#[test]
+fn display_jt_string_property_body_requires_exact_utf16_frame() {
+    let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
+    body.extend_from_slice(&3_u32.to_le_bytes());
+    body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
+    let (units, value) = crate::native::parse_jt_string_property_atom_body(&body).unwrap();
+    assert_eq!(units, [0x4e, 0x58, 0x3a9]);
+    assert_eq!(value, "NXΩ");
+
+    body.push(0);
+    assert!(crate::native::parse_jt_string_property_atom_body(&body).is_none());
 }
 
 fn be_f64(v: f64) -> [u8; 8] {

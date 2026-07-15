@@ -145,6 +145,133 @@ pub struct DisplayJtShapeLodElement {
     pub source_offset: u64,
 }
 
+/// One object element decoded from a compressed JT segment payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtCompressedElement {
+    /// Globally unique element identity.
+    pub id: String,
+    /// Owning compressed segment.
+    pub segment: String,
+    /// Owning segment type.
+    pub segment_type: u32,
+    /// Zero-based serialized element order.
+    pub ordinal: u32,
+    /// Exact 16-byte object-type identifier.
+    pub object_type_id: Vec<u8>,
+    /// Serialized object identifier.
+    pub object_id: u32,
+    /// Serialized object-base-type discriminator.
+    pub object_base_type: u8,
+    /// Bytes following the common element header.
+    pub body_byte_len: u32,
+    /// SHA-256 of the bytes following the common element header.
+    pub body_sha256: String,
+    /// Offset of the element length in the inflated payload.
+    pub inflated_offset: u32,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+/// Complete element sequence and post-marker tail of one compressed JT segment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtCompressedElementSequence {
+    /// Globally unique sequence identity.
+    pub id: String,
+    /// Owning compressed segment.
+    pub segment: String,
+    /// Owning segment type.
+    pub segment_type: u32,
+    /// Ordered decoded element identities.
+    pub elements: Vec<String>,
+    /// Inflated byte length through the end-object marker.
+    pub framed_byte_len: u32,
+    /// Exact bytes following the end-object marker.
+    pub tail: Vec<u8>,
+    /// SHA-256 of the exact post-marker tail.
+    pub tail_sha256: String,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+/// One UTF-16 string property atom in a type-31 JT segment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtStringPropertyAtom {
+    /// Globally unique property-atom identity.
+    pub id: String,
+    /// Owning compressed element.
+    pub element: String,
+    /// Serialized object identifier.
+    pub object_id: u32,
+    /// Exact serialized UTF-16 code units.
+    pub code_units: Vec<u16>,
+    /// Decoded string value.
+    pub value: String,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
+struct ParsedJtElement<'a> {
+    offset: usize,
+    object_type_id: &'a [u8],
+    object_id: u32,
+    object_base_type: u8,
+    body: &'a [u8],
+}
+
+fn parse_jt_element_sequence(payload: &[u8]) -> Option<(Vec<ParsedJtElement<'_>>, usize)> {
+    const END_OBJECT_TYPE: [u8; 16] = [0xff; 16];
+    let mut elements = Vec::new();
+    let mut cursor = 0usize;
+    loop {
+        let element_byte_len = payload
+            .get(cursor..cursor.checked_add(4)?)
+            .and_then(|value| value.try_into().ok())
+            .map(u32::from_le_bytes)?;
+        let element_end = cursor
+            .checked_add(4)?
+            .checked_add(usize::try_from(element_byte_len).ok()?)?;
+        let element = payload.get(cursor + 4..element_end)?;
+        if element_byte_len == 16 && element == END_OBJECT_TYPE {
+            return Some((elements, element_end));
+        }
+        let object_type_id = element.get(..16)?;
+        let object_id = element
+            .get(16..20)
+            .and_then(|value| value.try_into().ok())
+            .map(u32::from_le_bytes)?;
+        let &object_base_type = element.get(20)?;
+        elements.push(ParsedJtElement {
+            offset: cursor,
+            object_type_id,
+            object_id,
+            object_base_type,
+            body: &element[21..],
+        });
+        cursor = element_end;
+    }
+}
+
+pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<(Vec<u16>, String)> {
+    const PREFIX: [u8; 8] = [1, 0, 0, 0, 0, 0x40, 1, 0];
+    if body.get(..8) != Some(PREFIX.as_slice()) {
+        return None;
+    }
+    let count = body
+        .get(8..12)
+        .and_then(|value| value.try_into().ok())
+        .map(u32::from_le_bytes)?;
+    let count = usize::try_from(count).ok()?;
+    if body.len() != 12usize.checked_add(count.checked_mul(2)?)? {
+        return None;
+    }
+    let code_units = body[12..]
+        .chunks_exact(2)
+        .map(|unit| u16::from_le_bytes([unit[0], unit[1]]))
+        .collect::<Vec<_>>();
+    let value = String::from_utf16(&code_units).ok()?;
+    Some((code_units, value))
+}
+
 /// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
 pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
     const JT_HEADER: &[u8] = b"Version ";
@@ -472,7 +599,6 @@ pub fn display_jt_shape_lod_elements(
     container: &Container,
     segments: &[DisplayJtSegment],
 ) -> Vec<DisplayJtShapeLodElement> {
-    const END_OBJECT_TYPE: [u8; 16] = [0xff; 16];
     const SEGMENT_TAIL: [u8; 6] = [1, 0, 0, 0, 0, 0];
     let mut elements = Vec::new();
     for segment in segments.iter().filter(|segment| segment.segment_type == 7) {
@@ -486,64 +612,153 @@ pub fn display_jt_shape_lod_elements(
             return Vec::new();
         };
         let payload = &bytes[24..];
-        let mut cursor = 0usize;
-        let mut ordinal = 0u32;
-        loop {
-            let Some(element_byte_len) = payload
-                .get(cursor..cursor.saturating_add(4))
-                .and_then(|value| value.try_into().ok())
-                .map(u32::from_le_bytes)
-            else {
-                return Vec::new();
-            };
-            let Ok(element_byte_len_usize) = usize::try_from(element_byte_len) else {
-                return Vec::new();
-            };
-            let Some(element_end) = cursor
-                .checked_add(4)
-                .and_then(|value| value.checked_add(element_byte_len_usize))
-            else {
-                return Vec::new();
-            };
-            let Some(element) = payload.get(cursor + 4..element_end) else {
-                return Vec::new();
-            };
-            if element_byte_len == 16 && element == END_OBJECT_TYPE {
-                if payload.get(element_end..) != Some(SEGMENT_TAIL.as_slice()) {
-                    return Vec::new();
-                }
-                break;
-            }
-            let Some(object_type_id) = element.get(..16) else {
-                return Vec::new();
-            };
-            let Some(object_id) = element
-                .get(16..20)
-                .and_then(|value| value.try_into().ok())
-                .map(u32::from_le_bytes)
-            else {
-                return Vec::new();
-            };
-            let Some(&object_base_type) = element.get(20) else {
-                return Vec::new();
-            };
-            let body = &element[21..];
+        let Some((parsed, framed_end)) = parse_jt_element_sequence(payload) else {
+            return Vec::new();
+        };
+        if payload.get(framed_end..) != Some(SEGMENT_TAIL.as_slice()) {
+            return Vec::new();
+        }
+        for (ordinal, element) in parsed.into_iter().enumerate() {
             elements.push(DisplayJtShapeLodElement {
                 id: format!("{}-element-{ordinal}", segment.id),
                 segment: segment.id.clone(),
-                ordinal,
-                object_type_id: object_type_id.to_vec(),
-                object_id,
-                object_base_type,
-                body_byte_len: body.len() as u32,
-                body_sha256: sha256_hex(body),
-                source_offset: segment.source_offset + 24 + cursor as u64,
+                ordinal: ordinal as u32,
+                object_type_id: element.object_type_id.to_vec(),
+                object_id: element.object_id,
+                object_base_type: element.object_base_type,
+                body_byte_len: element.body.len() as u32,
+                body_sha256: sha256_hex(element.body),
+                source_offset: segment.source_offset + 24 + element.offset as u64,
             });
-            ordinal = ordinal.saturating_add(1);
-            cursor = element_end;
         }
     }
     elements
+}
+
+/// Decode element framing and exact post-marker tails from compressed segments.
+pub fn display_jt_compressed_element_sequences(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+) -> (
+    Vec<DisplayJtCompressedElement>,
+    Vec<DisplayJtCompressedElementSequence>,
+) {
+    let mut elements = Vec::new();
+    let mut sequences = Vec::new();
+    for segment in segments
+        .iter()
+        .filter(|segment| segment.compression.is_some())
+    {
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return (Vec::new(), Vec::new());
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return (Vec::new(), Vec::new());
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return (Vec::new(), Vec::new());
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return (Vec::new(), Vec::new());
+        }
+        let Some((parsed, framed_end)) = parse_jt_element_sequence(&inflated) else {
+            return (Vec::new(), Vec::new());
+        };
+        let mut element_ids = Vec::with_capacity(parsed.len());
+        for (ordinal, element) in parsed.into_iter().enumerate() {
+            let id = format!("{}-inflated-element-{ordinal}", segment.id);
+            element_ids.push(id.clone());
+            elements.push(DisplayJtCompressedElement {
+                id,
+                segment: segment.id.clone(),
+                segment_type: segment.segment_type,
+                ordinal: ordinal as u32,
+                object_type_id: element.object_type_id.to_vec(),
+                object_id: element.object_id,
+                object_base_type: element.object_base_type,
+                body_byte_len: element.body.len() as u32,
+                body_sha256: sha256_hex(element.body),
+                inflated_offset: element.offset as u32,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+        let tail = &inflated[framed_end..];
+        sequences.push(DisplayJtCompressedElementSequence {
+            id: format!("{}-inflated-sequence", segment.id),
+            segment: segment.id.clone(),
+            segment_type: segment.segment_type,
+            elements: element_ids,
+            framed_byte_len: framed_end as u32,
+            tail: tail.to_vec(),
+            tail_sha256: sha256_hex(tail),
+            source_offset: segment.source_offset + 24,
+        });
+    }
+    (elements, sequences)
+}
+
+/// Decode all string property atoms from complete type-31 segment sequences.
+pub fn display_jt_string_property_atoms(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+) -> Vec<DisplayJtStringPropertyAtom> {
+    const STRING_PROPERTY_ATOM_TYPE: [u8; 16] = [
+        0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut atoms = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 31) {
+        if segment.compression.is_none() {
+            return Vec::new();
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != STRING_PROPERTY_ATOM_TYPE || element.object_base_type != 0
+            {
+                return Vec::new();
+            }
+            let Some((code_units, value)) = parse_jt_string_property_atom_body(element.body) else {
+                return Vec::new();
+            };
+            atoms.push(DisplayJtStringPropertyAtom {
+                id: format!("{}-string-property-atom-{ordinal}", segment.id),
+                element: format!("{}-inflated-element-{ordinal}", segment.id),
+                object_id: element.object_id,
+                code_units,
+                value,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    atoms
 }
 
 /// Complete typed source record for one Parasolid offset surface.

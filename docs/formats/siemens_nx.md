@@ -180,6 +180,10 @@ Each TOC range contains `segment_id[16], segment_type:u32 LE, segment_byte_len:u
 
 A type-7 shape-LOD payload is an ordered sequence of `element_byte_len:u32 LE, object_type_id[16], object_id:u32 LE, object_base_type:u8, body[]` elements. `element_byte_len` counts every byte after its own word, so `body` has length `element_byte_len - 21`. The sequence ends with `element_byte_len = 16, object_type_id = ff[16]`, followed by the exact six-byte segment tail `01 00 00 00 00 00`. Elements retain their segment, order, exact object-type identifier, object identifier, base-type discriminator, body length and hash, and source offset. An undersized or out-of-bounds element, absent end marker, or noncanonical segment tail rejects all shape-LOD elements atomically.
 
+The inflated content of a compressed segment uses the same element-length, object-type, object-identifier, base-type, and end-object-marker framing. Bytes after the end-object marker are a segment-type-specific tail and remain exact rather than being interpreted as another element. A compressed sequence retains the owning segment and type, ordered element identities, framed byte length, exact tail bytes and hash, and physical envelope offset. Each element retains its inflated offset. An invalid element length or absent end-object marker rejects all compressed element sequences atomically.
+
+Every element in a type-31 segment is a string property atom with object-type identifier `6e10dd10-c82a-d111-9b6b-0080c7bb5997`, base type zero, and body `01 00 00 00 00 40 01 00, code_unit_count:u32 LE, value[code_unit_count]:u16 LE`. The body ends after the declared UTF-16 code units. Each atom retains its compressed-element identity, object identifier, exact code units, decoded string, and physical envelope offset. A different object type or base type, invalid UTF-16, count mismatch, or trailing body byte rejects all type-31 string property atoms atomically.
+
 `/Root/images/preview` is a JPEG marker stream beginning with SOI `ff d8`.
 The first SOF segment supplies sample precision, non-zero big-endian height and
 width, and a non-zero component count. Its payload length is exactly
