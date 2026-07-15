@@ -4982,6 +4982,15 @@ impl MeshSelectionSearch<'_> {
         if options.is_empty() {
             return;
         }
+        options.sort_unstable_by_key(|(assignment, directions, quotient)| {
+            let mut measured = quotient.clone();
+            let root_count = measured.root_count();
+            let domain_freedom = (0..measured.union.len())
+                .filter(|&node| measured.union.find(node) == node)
+                .map(|node| measured.domains[node].len())
+                .fold(0usize, usize::saturating_add);
+            (root_count, domain_freedom, *assignment, directions.clone())
+        });
         let branching = options.len() > 1;
         for (assignment_index, directions, next_quotient) in options {
             if branching {
