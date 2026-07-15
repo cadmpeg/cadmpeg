@@ -2671,7 +2671,7 @@ fn blend_boundary_parameter(
         *reversed.get(boundary)?,
         depth + 1,
     )?;
-    closest_linear_pcurve_parameter(pcurve, uv)
+    closest_pcurve_parameter(pcurve, uv)
 }
 
 fn blend_boundary_parameter_from_support_pcurve(
@@ -2697,16 +2697,13 @@ fn blend_boundary_parameter_from_support_pcurve(
     }
     let support_uv = pcurve_uv(support_pcurve, curve_parameter)?;
     let contact_pcurve = spine_contact_pcurve(ir, support, &spine, radius, reversed[boundary], 0)?;
-    let parameter = closest_linear_pcurve_parameter(contact_pcurve, support_uv)?;
+    let parameter = closest_pcurve_parameter(contact_pcurve, support_uv)?;
     blend_boundary_point(ir, blend, parameter, boundary, 0)
         .filter(|candidate| point_distance(*candidate, point) <= fit_tolerance)
         .map(|_| Point2::new(parameter, boundary as f64))
 }
 
-pub(crate) fn closest_linear_pcurve_parameter(
-    pcurve: &PcurveGeometry,
-    point: Point2,
-) -> Option<f64> {
+pub(crate) fn closest_pcurve_parameter(pcurve: &PcurveGeometry, point: Point2) -> Option<f64> {
     let PcurveGeometry::Nurbs {
         degree,
         knots,
@@ -2717,8 +2714,49 @@ pub(crate) fn closest_linear_pcurve_parameter(
     else {
         return None;
     };
-    if *degree != 1 || weights.is_some() || knots.len() != control_points.len() + 2 {
+    let degree = usize::try_from(*degree).ok()?;
+    let count = control_points.len();
+    if count <= degree || knots.len() != count.checked_add(degree)?.checked_add(1)? {
         return None;
+    }
+    let domain = [*knots.get(degree)?, *knots.get(count)?];
+    if !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1] {
+        return None;
+    }
+    if degree != 1 || weights.is_some() {
+        let squared_distance = |parameter| {
+            let position = pcurve_uv(pcurve, parameter)?;
+            Some((position.u - point.u).powi(2) + (position.v - point.v).powi(2))
+        };
+        let samples = knot_domain_samples(knots, degree, domain);
+        let distances = samples
+            .iter()
+            .map(|parameter| squared_distance(*parameter))
+            .collect::<Option<Vec<_>>>()?;
+        let mut best = samples[0];
+        let mut best_distance = distances[0];
+        for (index, &distance) in distances.iter().enumerate() {
+            if distance < best_distance {
+                best = samples[index];
+                best_distance = distance;
+            }
+            if index > 0
+                && index + 1 < samples.len()
+                && distance <= distances[index - 1]
+                && distance <= distances[index + 1]
+            {
+                let (parameter, distance) = golden_section_minimum(
+                    samples[index - 1],
+                    samples[index + 1],
+                    &squared_distance,
+                )?;
+                if distance < best_distance {
+                    best = parameter;
+                    best_distance = distance;
+                }
+            }
+        }
+        return Some(best);
     }
     let mut candidates = control_points
         .windows(2)

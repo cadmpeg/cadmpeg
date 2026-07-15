@@ -9725,7 +9725,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
 }
 
 #[test]
-fn linear_spine_contact_pcurve_inverts_support_parameters_across_spans() {
+fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     let pcurve = PcurveGeometry::Nurbs {
         degree: 1,
         knots: vec![2.0, 2.0, 5.0, 9.0, 9.0],
@@ -9738,10 +9738,8 @@ fn linear_spine_contact_pcurve_inverts_support_parameters_across_spans() {
         periodic: false,
     };
 
-    let first =
-        crate::decode::closest_linear_pcurve_parameter(&pcurve, Point2::new(0.5, 4.5)).unwrap();
-    let second =
-        crate::decode::closest_linear_pcurve_parameter(&pcurve, Point2::new(5.0, 4.5)).unwrap();
+    let first = crate::decode::closest_pcurve_parameter(&pcurve, Point2::new(0.5, 4.5)).unwrap();
+    let second = crate::decode::closest_pcurve_parameter(&pcurve, Point2::new(5.0, 4.5)).unwrap();
 
     assert!((first - 3.5).abs() < 1.0e-12);
     assert!((second - 8.0).abs() < 1.0e-12);
@@ -9753,9 +9751,24 @@ fn linear_spine_contact_pcurve_inverts_support_parameters_across_spans() {
         weights: Some(vec![1.0, 2.0]),
         periodic: false,
     };
-    assert!(
-        crate::decode::closest_linear_pcurve_parameter(&rational, Point2::new(0.5, 0.0)).is_none()
-    );
+    let rational_parameter =
+        crate::decode::closest_pcurve_parameter(&rational, Point2::new(0.5, 0.0)).unwrap();
+    assert!((rational_parameter - 1.0 / 3.0).abs() < 1.0e-10);
+
+    let quadratic = PcurveGeometry::Nurbs {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        control_points: vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 1.0),
+            Point2::new(2.0, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+    let quadratic_parameter =
+        crate::decode::closest_pcurve_parameter(&quadratic, Point2::new(1.0, 0.5)).unwrap();
+    assert!((quadratic_parameter - 0.5).abs() < 1.0e-10);
 }
 
 #[test]
