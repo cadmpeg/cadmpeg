@@ -86,31 +86,33 @@ pub fn decode(
     if options.container_only {
         let (ir, annotations) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return Ok(decode_result(ir, report, annotations));
+        return decode_result(ir, report, annotations);
     }
 
     if let Some((ir, report, annotations)) = try_decode_geometry(&scan) {
-        return Ok(decode_result(ir, report, annotations));
+        return decode_result(ir, report, annotations);
     }
 
     let (ir, annotations) = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
-    Ok(decode_result(ir, report, annotations))
+    decode_result(ir, report, annotations)
 }
 
 fn decode_result(
-    ir: CadIr,
+    mut ir: CadIr,
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
-) -> DecodeResult {
-    DecodeResult::with_source_fidelity(
+) -> Result<DecodeResult, CodecError> {
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..cadmpeg_ir::SourceFidelity::default()
+    };
+    source_fidelity.separate_native_unknown_records(&mut ir, "nx")?;
+    Ok(DecodeResult::with_source_fidelity(
         ir,
         report,
-        cadmpeg_ir::SourceFidelity {
-            annotations,
-            ..cadmpeg_ir::SourceFidelity::default()
-        },
-    )
+        source_fidelity,
+    ))
 }
 
 /// Aggregate carrier counts across the decoded streams, for reporting.
