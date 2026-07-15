@@ -56,6 +56,8 @@ struct CreoSketchRecord {
     source_section: String,
     section_3d: Option<CreoSketchSection3d>,
     table_headers: Vec<CreoSketchTableHeader>,
+    section_points: Vec<CreoSketchSectionPoint>,
+    solved_external_ids: Vec<u32>,
     variables: Vec<CreoSketchVariable>,
     segments: Vec<CreoSketchSegment>,
     trim_entities: Vec<CreoSketchTrimEntity>,
@@ -66,6 +68,13 @@ struct CreoSketchRecord {
     relations: Vec<CreoSketchRelation>,
     skamps: Vec<CreoSketchSkamp>,
     relation_triples: Vec<CreoSketchRelationTriple>,
+}
+
+#[derive(Serialize)]
+struct CreoSketchSectionPoint {
+    point_id: u32,
+    u: Option<f64>,
+    v: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -2078,6 +2087,20 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     offset: section.offset,
                 }),
             table_headers: sketch_table_headers(definition),
+            section_points: definition
+                .variables
+                .iter()
+                .flat_map(|table| &table.points)
+                .map(|point| CreoSketchSectionPoint {
+                    point_id: point.point_id,
+                    u: point.u,
+                    v: point.v,
+                })
+                .collect(),
+            solved_external_ids: definition
+                .trim_entities
+                .as_ref()
+                .map_or_else(Vec::new, |table| table.solved_external_ids.clone()),
             variables: definition
                 .variables
                 .iter()

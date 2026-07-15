@@ -2074,6 +2074,13 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(headers[0]["declared_count"], 2);
     assert_eq!(headers[0]["entity_ref"], 1);
     assert_eq!(headers[0]["row_count"], 2);
+    let points = sketches[0].fields["section_points"]
+        .as_array()
+        .expect("section points");
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0]["point_id"], 7);
+    assert_eq!(points[0]["u"], 1.0);
+    assert_eq!(points[0]["v"], 3.0);
     let variables = sketches[0].fields["variables"]
         .as_array()
         .expect("variables array");
