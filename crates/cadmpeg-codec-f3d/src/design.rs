@@ -1303,12 +1303,11 @@ pub(crate) fn face_operand_candidates(operand: &DesignFaceOperand) -> &[cadmpeg_
 }
 
 /// Resolve selected-face Extrude starts from exact sketch-plane coincidence.
-#[derive(Clone, Copy)]
 pub(crate) struct ExtrudeStartPlaneResolution<'a> {
     pub faces: &'a [cadmpeg_ir::topology::Face],
     pub surfaces: &'a [cadmpeg_ir::geometry::Surface],
     pub groups: &'a [DesignConstructionOperandGroup],
-    pub operands: &'a [DesignFaceOperand],
+    pub operands: &'a mut [DesignFaceOperand],
     pub linear_tolerance: f64,
     pub angular_tolerance: f64,
 }
@@ -1387,6 +1386,7 @@ pub(crate) fn bind_extrude_start_planes(
             })
             .collect::<Vec<_>>();
         if let [face] = coincident.as_slice() {
+            retain_face_operand_resolution(group, resolution.operands, face);
             *start = ExtrudeStart::FromFace {
                 face: FaceSelection::Resolved {
                     faces: vec![face.clone()],
@@ -1396,6 +1396,40 @@ pub(crate) fn bind_extrude_start_planes(
             };
         }
     }
+}
+
+fn retain_face_operand_resolution(
+    group: &DesignConstructionOperandGroup,
+    operands: &mut [DesignFaceOperand],
+    face: &cadmpeg_ir::ids::FaceId,
+) -> bool {
+    let Some(stream) = native_stream(&group.id) else {
+        return false;
+    };
+    let Some(slot) = face
+        .0
+        .rsplit_once('#')
+        .and_then(|(_, slot)| slot.parse::<i64>().ok())
+    else {
+        return false;
+    };
+    let mut matches = operands.iter_mut().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.scope_record_index == group.scope_record_index
+            && group.members.contains(&operand.record_index)
+            && face_operand_candidates(operand).contains(face)
+            && operand
+                .resolved_face_slot
+                .is_none_or(|resolved| resolved == slot)
+    });
+    let Some(operand) = matches.next() else {
+        return false;
+    };
+    if matches.next().is_some() {
+        return false;
+    }
+    operand.resolved_face_slot = Some(slot);
+    true
 }
 
 fn face_coincident_with_sketch(
@@ -12321,6 +12355,19 @@ mod relation_tests {
             resolved_face_group(&group, std::slice::from_ref(&operand)),
             Some(FaceSelection::Resolved { faces, native })
                 if faces == [FaceId("f3d:brep:entity#50".into())] && native == group.id
+        ));
+        operand.resolved_face_slot = None;
+        assert!(super::retain_face_operand_resolution(
+            &group,
+            std::slice::from_mut(&mut operand),
+            &FaceId("f3d:brep:entity#50".into()),
+        ));
+        assert_eq!(operand.resolved_face_slot, Some(50));
+        let mut ambiguous = [operand.clone(), operand];
+        assert!(!super::retain_face_operand_resolution(
+            &group,
+            &mut ambiguous,
+            &FaceId("f3d:brep:entity#50".into()),
         ));
     }
 
