@@ -4496,42 +4496,56 @@ impl MeshSelectionSearch<'_> {
             }
             let mut before = quotient.clone();
             let mut changed = false;
-            let supported = self.assignments[face]
-                .iter()
-                .filter(|assignment| {
-                    quotient.assignment_has_option(assignment, self.edge_candidates)
-                })
-                .collect::<Vec<_>>();
-            if supported.is_empty() {
-                return false;
-            }
-            let option_bound = supported.iter().try_fold(0usize, |total, assignment| {
-                let unknown = assignment
+            let deterministic = self.assignments[face].len() == 1
+                && self.assignments[face][0]
                     .boundaries
                     .iter()
                     .flatten()
-                    .filter(|use_| use_.reversed.is_none())
-                    .count();
-                total.checked_add(1usize.checked_shl(unknown as u32)?)
-            });
-            if option_bound.is_none_or(|bound| bound > MAX_FACE_EQUATION_OPTIONS) {
-                continue;
-            }
-            let mut common = None::<HashSet<[usize; 2]>>;
-            for assignment in supported {
-                let Some(assignment_common) =
-                    common_assignment_equations(quotient, assignment, self.edge_candidates)
-                else {
+                    .all(|use_| use_.reversed.is_some());
+            let equations = if deterministic {
+                let [choice] = self.possible_face_choices[face].as_slice() else {
                     return false;
                 };
-                match &mut common {
-                    Some(common) => {
-                        common.retain(|equation| assignment_common.contains(equation));
-                    }
-                    None => common = Some(assignment_common),
+                choice.clone()
+            } else {
+                let supported = self.assignments[face]
+                    .iter()
+                    .filter(|assignment| {
+                        quotient.assignment_has_option(assignment, self.edge_candidates)
+                    })
+                    .collect::<Vec<_>>();
+                if supported.is_empty() {
+                    return false;
                 }
-            }
-            for [left, right] in common.unwrap_or_default() {
+                let option_bound = supported.iter().try_fold(0usize, |total, assignment| {
+                    let unknown = assignment
+                        .boundaries
+                        .iter()
+                        .flatten()
+                        .filter(|use_| use_.reversed.is_none())
+                        .count();
+                    total.checked_add(1usize.checked_shl(unknown as u32)?)
+                });
+                if option_bound.is_none_or(|bound| bound > MAX_FACE_EQUATION_OPTIONS) {
+                    continue;
+                }
+                let mut common = None::<HashSet<[usize; 2]>>;
+                for assignment in supported {
+                    let Some(assignment_common) =
+                        common_assignment_equations(quotient, assignment, self.edge_candidates)
+                    else {
+                        return false;
+                    };
+                    match &mut common {
+                        Some(common) => {
+                            common.retain(|equation| assignment_common.contains(equation));
+                        }
+                        None => common = Some(assignment_common),
+                    }
+                }
+                common.unwrap_or_default().into_iter().collect()
+            };
+            for [left, right] in equations {
                 if quotient.union.find(left) == quotient.union.find(right) {
                     continue;
                 }
