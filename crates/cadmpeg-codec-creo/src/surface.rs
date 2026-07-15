@@ -954,7 +954,13 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
         };
         let spline_slots = matches!(
             name,
-            "i_points" | "end_u_tangts" | "end_v_tangts" | "end_uv_deriv" | "tangts" | "end_tangts"
+            "i_pnts"
+                | "i_points"
+                | "end_u_tangts"
+                | "end_v_tangts"
+                | "end_uv_deriv"
+                | "tangts"
+                | "end_tangts"
         )
         .then(|| named_spline_scalar_slots(name, &body[values_start..], slot_count, cache));
         return SurfaceNamedValue::ScalarArray {
@@ -1545,6 +1551,12 @@ fn named_spline_scalar_slots(
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while slots.len() < count {
+        if matches!(name, "i_pnts" | "i_points")
+            && body.get(cursor..cursor + 2) == Some(&[psb::token::SCALAR_BODY, 0x00])
+        {
+            cursor += 2;
+            continue;
+        }
         let Some((value, next)) = named_spline_scalar_slot(name, body, cursor, cache) else {
             break;
         };
@@ -1587,10 +1599,10 @@ fn named_spline_scalar_slot(
         return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
-    if name == "i_points" && matches!(head, 0x63 | 0x68 | 0x6e | 0x70) {
+    if matches!(name, "i_pnts" | "i_points") && matches!(head, 0x63 | 0x68 | 0x6e | 0x70) {
         return named_positive_dict(body, offset).map(|(value, next)| (Some(value), next));
     }
-    if name == "i_points" && matches!(head, 0xb3 | 0xb9) {
+    if matches!(name, "i_pnts" | "i_points") && matches!(head, 0xb3 | 0xb9) {
         return scalar::decode_in_lane(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
@@ -2407,6 +2419,19 @@ mod tests {
                 (Some(1.0), vec![0xe4]),
             ]
         );
+    }
+
+    #[test]
+    fn interpolation_point_aliases_skip_tuple_continuation_markers() {
+        let body = [0xe4, 0x0f, 0xe4, 0xf9, 0x00, 0x2f, 0x14, 0x00, 0x18];
+        for name in ["i_pnts", "i_points"] {
+            let slots = named_spline_scalar_slots(name, &body, 6, &scalar::ScalarCache::default());
+            assert_eq!(
+                slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
+                [Some(1.0), Some(0.0), Some(1.0), Some(5.0), Some(0.0), None]
+            );
+            assert_eq!(slots[3].1, [0x2f, 0x14, 0x00]);
+        }
     }
 
     #[test]
