@@ -1271,6 +1271,16 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .map(move |member| (native_stream, group.scope_record_index, *member))
         })
         .collect::<HashSet<_>>();
+    let mut expected_face_operands = native.design_face_operands.clone();
+    history::bind_face_operand_history_candidates(
+        &mut expected_face_operands,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+    );
+    let expected_face_operands = expected_face_operands
+        .iter()
+        .map(|operand| (operand.id.as_str(), operand))
+        .collect::<HashMap<_, _>>();
     let mut face_operand_records = HashSet::new();
     for operand in &native.design_face_operands {
         let native_stream = design_stream(&operand.id);
@@ -1343,6 +1353,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     .chain(std::iter::once(operand.next_byte_offset)),
             )
             .collect::<Vec<_>>();
+        let expected_history = expected_face_operands.get(operand.id.as_str());
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && operand.paired_class_tag.len() == 3
@@ -1439,6 +1450,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 )
             && operand.candidate_faces == expected_faces
             && operand.unreferenced_candidate_faces == expected_unreferenced_faces
+            && expected_history.is_some_and(|expected| {
+                operand.preceding_candidate_faces == expected.preceding_candidate_faces
+                    && operand.changed_candidate_faces == expected.changed_candidate_faces
+                    && operand.historical_support_contexts == expected.historical_support_contexts
+            })
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
                     && recipe.kind == operand.recipe_kind

@@ -590,6 +590,7 @@ pub(crate) fn bind_face_operand_history_candidates(
     for operand in operands {
         operand.preceding_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
+        operand.historical_support_contexts.clear();
         operand.resolved_face_slot = None;
         let stream = crate::design::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
@@ -625,9 +626,91 @@ pub(crate) fn bind_face_operand_history_candidates(
                 .into_iter()
                 .cloned()
                 .collect();
+        operand.historical_support_contexts = historical_face_support_contexts(
+            crate::design::face_operand_candidates(operand),
+            histories,
+            topology,
+            transition,
+        );
         operand.resolved_face_slot =
             crate::design::resolve_face_operand_history_candidates(operand);
     }
+}
+
+fn historical_face_support_contexts(
+    candidates: &[cadmpeg_ir::ids::FaceId],
+    histories: &[AsmHistory],
+    preceding_topology: &AsmHistoricalTopology,
+    transition: &AsmHistoricalTransition,
+) -> Vec<crate::records::DesignHistoricalFaceSupportContext> {
+    let preceding_faces = preceding_topology
+        .faces
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+    let changed_faces = transition
+        .topology
+        .faces
+        .deleted
+        .iter()
+        .chain(&transition.topology.faces.updated)
+        .copied()
+        .collect::<HashSet<_>>();
+    candidates
+        .iter()
+        .filter_map(|candidate| {
+            let active_face_slot = stable_ref(&candidate.0)?;
+            let mut carriers = histories
+                .iter()
+                .flat_map(|history| &history.states)
+                .filter_map(|state| state.topology.as_ref())
+                .map(|topology| {
+                    let bindings = topology
+                        .face_surfaces
+                        .iter()
+                        .filter(|binding| binding.entity == active_face_slot)
+                        .collect::<Vec<_>>();
+                    match bindings.as_slice() {
+                        [] => Some(None),
+                        [binding] => Some(Some(binding.carrier)),
+                        _ => None,
+                    }
+                })
+                .collect::<Option<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+            carriers.sort_unstable();
+            carriers.dedup();
+            let [surface_slot] = carriers.as_slice() else {
+                return None;
+            };
+            let mut preceding_face_slots = preceding_topology
+                .face_surfaces
+                .iter()
+                .filter(|binding| {
+                    binding.carrier == *surface_slot && preceding_faces.contains(&binding.entity)
+                })
+                .map(|binding| binding.entity)
+                .collect::<Vec<_>>();
+            preceding_face_slots.sort_unstable();
+            preceding_face_slots.dedup();
+            if preceding_face_slots.is_empty() {
+                return None;
+            }
+            let changed_preceding_face_slots = preceding_face_slots
+                .iter()
+                .copied()
+                .filter(|face| changed_faces.contains(face))
+                .collect();
+            Some(crate::records::DesignHistoricalFaceSupportContext {
+                active_face_slot,
+                surface_slot: *surface_slot,
+                preceding_face_slots,
+                changed_preceding_face_slots,
+            })
+        })
+        .collect()
 }
 
 fn face_boundary_edges(
@@ -1968,6 +2051,90 @@ mod tests {
         assert!(
             preceding_support_face_slots(&result_faces, &ambiguous_result, &preceding).is_empty()
         );
+    }
+
+    #[test]
+    fn active_face_support_retains_invariant_preceding_owners() {
+        use cadmpeg_ir::ids::FaceId;
+
+        let state = |state_id, topology| AsmDeltaState {
+            id: format!("state-{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology: Some(topology),
+            transition: None,
+        };
+        let active = AsmHistoricalTopology {
+            faces: vec![40],
+            face_surfaces: vec![AsmHistoricalCarrierBinding {
+                entity: 40,
+                carrier: 20,
+            }],
+            ..AsmHistoricalTopology::default()
+        };
+        let history = AsmHistory {
+            id: "history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            states: vec![state(2, active.clone()), state(3, active)],
+        };
+        let preceding = AsmHistoricalTopology {
+            faces: vec![4, 5],
+            face_surfaces: vec![
+                AsmHistoricalCarrierBinding {
+                    entity: 4,
+                    carrier: 20,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 5,
+                    carrier: 20,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        let mut transition = AsmHistoricalTransition {
+            previous_state_id: Some(1),
+            records: AsmHistoricalEntityDelta::default(),
+            topology: AsmHistoricalTopologyDelta::default(),
+        };
+        transition.topology.faces.updated = vec![5];
+        assert_eq!(
+            historical_face_support_contexts(
+                &[FaceId("f3d:brep:entity#40".into())],
+                &[history.clone()],
+                &preceding,
+                &transition,
+            ),
+            [crate::records::DesignHistoricalFaceSupportContext {
+                active_face_slot: 40,
+                surface_slot: 20,
+                preceding_face_slots: vec![4, 5],
+                changed_preceding_face_slots: vec![5],
+            }]
+        );
+
+        let mut variant = history;
+        variant.states[1].topology.as_mut().unwrap().face_surfaces[0].carrier = 21;
+        assert!(historical_face_support_contexts(
+            &[FaceId("f3d:brep:entity#40".into())],
+            &[variant],
+            &preceding,
+            &transition,
+        )
+        .is_empty());
     }
 
     #[test]

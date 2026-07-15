@@ -7801,6 +7801,7 @@ fn parse_face_operand(
         unreferenced_candidate_faces: Vec::new(),
         preceding_candidate_faces: Vec::new(),
         changed_candidate_faces: Vec::new(),
+        historical_support_contexts: Vec::new(),
         resolved_face_slot: None,
         next_record_index: indexed[4].1,
         next_byte_offset,

@@ -1117,6 +1117,20 @@ pub struct DesignEdgeOperand {
     pub next_byte_offset: u64,
 }
 
+/// Stable surface-support relation from an active face candidate to the
+/// topology preceding its owning feature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignHistoricalFaceSupportContext {
+    /// Stable slot of the active face candidate.
+    pub active_face_slot: i64,
+    /// Invariant stable surface-carrier slot.
+    pub surface_slot: i64,
+    /// Preceding face slots owning the surface carrier.
+    pub preceding_face_slots: Vec<i64>,
+    /// Preceding owners deleted or updated by the feature transition.
+    pub changed_preceding_face_slots: Vec<i64>,
+}
+
 /// Historical edge-boundary context for one ordered edge-recipe prefix reference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignEdgeRecipeReferenceContext {
@@ -1362,6 +1376,10 @@ pub struct DesignFaceOperand {
     /// exact ASM state transition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed_candidate_faces: Vec<FaceId>,
+    /// Active candidates mapped through an invariant surface carrier to face
+    /// owners in the immediately preceding historical topology.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub historical_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
     /// Stable historical face slot proven by the preceding topology or exact
     /// feature transition.
     #[serde(default, skip_serializing_if = "Option::is_none")]
