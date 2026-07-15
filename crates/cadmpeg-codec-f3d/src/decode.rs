@@ -885,7 +885,7 @@ fn populate_annotations(
                 .any(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
             {
                 note(
-                    &crate::design::neutral_sketch_entity_id(&entity.id, entity.record_index).0,
+                    &crate::design::neutral_sketch_point_id(&entity.id, entity.persistent_id).0,
                     "sketch_entity",
                 );
             }
@@ -899,7 +899,12 @@ fn populate_annotations(
                 .any(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
             {
                 note(
-                    &crate::design::neutral_sketch_entity_id(&entity.id, entity.record_index).0,
+                    &crate::design::neutral_sketch_curve_id(
+                        &entity.id,
+                        entity.primary_id,
+                        entity.secondary_id,
+                    )
+                    .0,
                     "sketch_entity",
                 );
             }

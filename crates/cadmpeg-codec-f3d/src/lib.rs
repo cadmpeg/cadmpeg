@@ -2059,6 +2059,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let mut sketch_point_identities = HashSet::new();
     for point in &native.sketch_points {
         if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
             findings.push(Finding {
@@ -2066,6 +2067,33 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 severity: Severity::Error,
                 message: "Fusion sketch point contains a non-finite coordinate".into(),
                 entity: Some(point.id.clone()),
+            });
+        }
+        if point.persistent_id == 0
+            || !sketch_point_identities.insert((design_stream(&point.id), point.persistent_id))
+        {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion sketch point has an invalid persistent identity".into(),
+                entity: Some(point.id.clone()),
+            });
+        }
+    }
+    let mut sketch_curve_identities = HashSet::new();
+    for curve in &native.sketch_curve_identities {
+        if curve.primary_id == 0
+            || !sketch_curve_identities.insert((
+                design_stream(&curve.id),
+                curve.primary_id,
+                curve.secondary_id,
+            ))
+        {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion sketch curve has an invalid persistent identity".into(),
+                entity: Some(curve.id.clone()),
             });
         }
     }

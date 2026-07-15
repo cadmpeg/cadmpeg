@@ -1310,13 +1310,28 @@ pub(crate) fn neutral_sketch_id(
     ))
 }
 
-pub(crate) fn neutral_sketch_entity_id(
+pub(crate) fn neutral_sketch_point_id(
     native_ref: &str,
-    record_index: u32,
+    persistent_id: u64,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
+    let stream = native_stream(native_ref).unwrap_or("f3d:design");
     cadmpeg_ir::sketches::SketchEntityId(format!(
-        "f3d:model:sketch-entity#{}@{record_index}",
-        native_stream(native_ref).unwrap_or("f3d:design")
+        "f3d:model:sketch-entity#{}:{}p{persistent_id}",
+        stream.len(),
+        stream,
+    ))
+}
+
+pub(crate) fn neutral_sketch_curve_id(
+    native_ref: &str,
+    primary_id: u64,
+    secondary_id: u64,
+) -> cadmpeg_ir::sketches::SketchEntityId {
+    let stream = native_stream(native_ref).unwrap_or("f3d:design");
+    cadmpeg_ir::sketches::SketchEntityId(format!(
+        "f3d:model:sketch-entity#{}:{}c{primary_id}:{secondary_id}",
+        stream.len(),
+        stream,
     ))
 }
 
@@ -1399,7 +1414,7 @@ pub fn project_sketch_design(
             let placement =
                 placements_by_suffix.get(&(native_stream(&point.id)?, point.owner_reference?))?;
             Some(SketchEntity {
-                id: neutral_sketch_entity_id(&point.id, point.record_index),
+                id: neutral_sketch_point_id(&point.id, point.persistent_id),
                 sketch: neutral_sketch_id(placement),
                 construction: false,
                 native_ref: Some(point.id.clone()),
@@ -1473,7 +1488,7 @@ pub fn project_sketch_design(
             _ => return None,
         };
         Some(SketchEntity {
-            id: neutral_sketch_entity_id(&curve.id, curve.record_index),
+            id: neutral_sketch_curve_id(&curve.id, curve.primary_id, curve.secondary_id),
             sketch: neutral_sketch_id(placement),
             construction: false,
             native_ref: Some(curve.id.clone()),
@@ -1591,12 +1606,15 @@ fn resolved_extrude_profile_selection(
     let resolved_profiles = exact_member_run.then(|| {
         let mut selected = Vec::new();
         for member in &selection_members {
-            let SketchRelationOperand::Curve { record_index, .. } =
-                member.resolved_geometry.as_ref()?
+            let SketchRelationOperand::Curve {
+                primary_id,
+                secondary_id,
+                ..
+            } = member.resolved_geometry.as_ref()?
             else {
                 return None;
             };
-            let entity = neutral_sketch_entity_id(&member.id, *record_index);
+            let entity = neutral_sketch_curve_id(&member.id, *primary_id, *secondary_id);
             let matches = sketch
                 .profiles
                 .iter()
@@ -9744,17 +9762,18 @@ mod relation_tests {
         exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
         find_dimension_locus_pair, identity_matrix, indexed_record_containing,
         indirect_angular_lines, neutral_feature_id_parts, neutral_parameter_id_parts,
-        neutral_sketch_entity_id, neutral_sketch_id, next_indexed_record_offset,
-        null_locus_dimension_definition, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        point_on_sketch_entity, project_configurations, project_dimension_constraints,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design, radial_dimension_definition, recipe_record_prefix,
-        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
+        neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id,
+        next_indexed_record_offset, null_locus_dimension_definition,
+        parse_construction_operand_group, parse_construction_operand_identity,
+        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, point_on_sketch_entity,
+        project_configurations, project_dimension_constraints, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        radial_dimension_definition, recipe_record_prefix, region_containing_points,
+        remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
         resolved_face_group, two_locus_distance_dimension,
     };
@@ -9833,6 +9852,23 @@ mod relation_tests {
         assert_eq!(first, same);
         assert_ne!(first, different_stream);
         assert_ne!(first, different_ordinal);
+    }
+
+    #[test]
+    fn sketch_geometry_identity_uses_native_persistent_ids() {
+        let point = neutral_sketch_point_id("f3d:Design/A:point#10", 42);
+        let relocated_point = neutral_sketch_point_id("f3d:Design/A:point#999", 42);
+        let curve = neutral_sketch_curve_id("f3d:Design/A:curve#10", 42, 0);
+        let relocated_curve = neutral_sketch_curve_id("f3d:Design/A:curve#999", 42, 0);
+
+        assert_eq!(point, relocated_point);
+        assert_eq!(curve, relocated_curve);
+        assert_ne!(point, curve);
+        assert_ne!(
+            curve,
+            neutral_sketch_curve_id("f3d:Design/A:curve#10", 42, 1)
+        );
+        assert_ne!(point, neutral_sketch_point_id("f3d:Design", 42));
     }
 
     #[test]
@@ -11608,7 +11644,7 @@ mod relation_tests {
             normal: Vector3::new(0.0, 0.0, 1.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
             profiles: vec![vec![SketchEntityUse {
-                entity: neutral_sketch_entity_id(&member.id, 400),
+                entity: neutral_sketch_curve_id(&member.id, 586, 0),
                 reversed: false,
             }]],
             native_ref: None,
