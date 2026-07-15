@@ -820,35 +820,48 @@ fn resolved_edge_group(
 }
 
 fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
-    let selected = resolved_edge_selectors(&operand.recipe_selectors)?;
-    let shared_edges = operand
-        .recipe_reference_contexts
-        .iter()
-        .map(|context| context.changed_shared_edge_slots.as_slice());
-    edge_is_shared_by_recipe_references(selected, shared_edges).then_some(selected)
+    resolved_edge_candidate_intersection(
+        &operand.recipe_selectors,
+        operand
+            .recipe_reference_contexts
+            .iter()
+            .map(|context| context.changed_shared_edge_slots.as_slice()),
+    )
 }
 
-fn resolved_edge_selectors(
+fn resolved_edge_candidate_intersection<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
     let mut selectors = selector_contexts.iter();
-    let selected = selectors.next()?.unique_incidence_edge_slot?;
-    selectors
-        .all(|selector| selector.unique_incidence_edge_slot == Some(selected))
-        .then_some(selected)
-}
-
-fn edge_is_shared_by_recipe_references<'a>(
-    selected: i64,
-    shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
-) -> bool {
-    let mut nonempty = shared_edge_sets
-        .into_iter()
-        .filter(|shared_edges| !shared_edges.is_empty());
-    nonempty
-        .next()
-        .is_some_and(|shared_edges| shared_edges.contains(&selected))
-        && nonempty.all(|shared_edges| shared_edges.contains(&selected))
+    let first = selectors.next()?.incidence_matching_edge_slots.as_slice();
+    if first.is_empty() {
+        return None;
+    }
+    let mut candidates = first.to_vec();
+    candidates.sort_unstable();
+    candidates.dedup();
+    for selector in selectors {
+        if selector.incidence_matching_edge_slots.is_empty() {
+            return None;
+        }
+        candidates.retain(|candidate| selector.incidence_matching_edge_slots.contains(candidate));
+        if candidates.is_empty() {
+            return None;
+        }
+    }
+    let mut corroborated = false;
+    for shared_edges in shared_edge_sets {
+        if shared_edges.is_empty() {
+            continue;
+        }
+        corroborated = true;
+        candidates.retain(|candidate| shared_edges.contains(candidate));
+        if candidates.is_empty() {
+            return None;
+        }
+    }
+    (corroborated && candidates.len() == 1).then_some(candidates[0])
 }
 
 fn project_extrude(
@@ -9623,11 +9636,11 @@ mod relation_tests {
         bind_face_operand_candidates, bind_lost_edge_groups, bind_parameter_companion_payloads,
         bind_sketch_graph, body_bound_candidates, closed_sketch_profiles, companion_owned_interval,
         contiguous_i32_program, decode_fillet_radius_groups, design_parameter_prefix,
-        directional_point_dimension, edge_is_shared_by_recipe_references, exact_atomic_constraint,
-        exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
-        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
-        indexed_record_containing, indirect_angular_lines, neutral_sketch_entity_id,
-        neutral_sketch_id, next_indexed_record_offset, null_locus_dimension_definition,
+        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
+        exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
+        find_dimension_locus_pair, identity_matrix, indexed_record_containing,
+        indirect_angular_lines, neutral_sketch_entity_id, neutral_sketch_id,
+        next_indexed_record_offset, null_locus_dimension_definition,
         parse_construction_operand_group, parse_construction_operand_identity,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -9637,8 +9650,8 @@ mod relation_tests {
         project_dimension_constraints, project_extrude, project_parameter_design,
         project_sketch_constraints, project_sketch_design, recipe_record_prefix,
         region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
-        resolved_edge_selectors, resolved_extrude_profile_selection, resolved_face_group,
-        two_locus_distance_dimension,
+        resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
+        resolved_face_group, two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -13838,39 +13851,50 @@ mod relation_tests {
     }
 
     #[test]
-    fn edge_recipe_selectors_resolve_only_unanimous_singletons() {
+    fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         use crate::records::DesignEdgeRecipeSelectorContext;
 
-        let selector = |selector, edge: Option<i64>| DesignEdgeRecipeSelectorContext {
+        let selector = |selector, edges: &[i64]| DesignEdgeRecipeSelectorContext {
             selector,
             clause_entries: [None, None],
             clause_triplet_edge_slots: [None, None],
-            incidence_matching_edge_slots: edge.into_iter().collect(),
-            unique_incidence_edge_slot: edge,
+            incidence_matching_edge_slots: edges.to_vec(),
+            unique_incidence_edge_slot: (edges.len() == 1).then(|| edges[0]),
             boundary_count_matching_edge_slots: Vec::new(),
         };
         assert_eq!(
-            resolved_edge_selectors(&[selector(0, Some(17)), selector(1, Some(17))]),
+            resolved_edge_candidate_intersection(
+                &[selector(0, &[17, 18]), selector(1, &[17, 19])],
+                [&[17, 20][..], &[15, 17][..]],
+            ),
             Some(17)
         );
         assert_eq!(
-            resolved_edge_selectors(&[selector(0, Some(17)), selector(1, Some(18))]),
+            resolved_edge_candidate_intersection(
+                &[selector(0, &[17, 18]), selector(1, &[17, 18])],
+                [&[17, 18][..]],
+            ),
             None
         );
         assert_eq!(
-            resolved_edge_selectors(&[selector(0, Some(17)), selector(1, None)]),
+            resolved_edge_candidate_intersection(
+                &[selector(0, &[17]), selector(1, &[18])],
+                [&[17, 18][..]],
+            ),
             None
         );
-        assert_eq!(resolved_edge_selectors(&[]), None);
-        assert!(edge_is_shared_by_recipe_references(
-            17,
-            [&[17, 18][..], &[15, 17][..]]
-        ));
-        assert!(!edge_is_shared_by_recipe_references(
-            17,
-            [&[17, 18][..], &[15, 16][..]]
-        ));
-        assert!(!edge_is_shared_by_recipe_references(17, [&[][..]]));
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                &[selector(0, &[17]), selector(1, &[])],
+                [&[17][..]],
+            ),
+            None
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(&[selector(0, &[17])], [&[][..]]),
+            None
+        );
+        assert_eq!(resolved_edge_candidate_intersection(&[], [&[17][..]]), None);
     }
 
     #[test]
