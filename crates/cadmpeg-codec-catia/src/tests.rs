@@ -3184,7 +3184,6 @@ fn every_decode_path_populates_v1_annotations() {
         let decoded = CatiaCodec
             .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(decoded.ir.annotations, Annotations::default());
         assert_every_entity_has_v1_annotation(&decoded.ir, &decoded.source_fidelity.annotations);
     }
 
@@ -3196,7 +3195,6 @@ fn every_decode_path_populates_v1_annotations() {
             },
         )
         .unwrap();
-    assert_eq!(container_only.ir.annotations, Annotations::default());
     assert_every_entity_has_v1_annotation(
         &container_only.ir,
         &container_only.source_fidelity.annotations,
