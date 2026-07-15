@@ -1994,8 +1994,8 @@ fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
 #[test]
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     use crate::native::{
-        feature_sketch_payload_named_records, FeatureSketchConstructionPayload,
-        FeatureSketchPayloadFixedPair, FeatureSketchPayloadName,
+        feature_sketch_fixed_points, feature_sketch_payload_named_records,
+        FeatureSketchConstructionPayload, FeatureSketchPayloadFixedPair, FeatureSketchPayloadName,
     };
     let payload = FeatureSketchConstructionPayload {
         id: "payload".to_string(),
@@ -2032,14 +2032,15 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
         value_source_offsets: [1028, 1037],
     };
 
-    let records = feature_sketch_payload_named_records(
-        &[payload],
-        &[name("first", 0, 10), name("second", 1, 50)],
-        &[],
-        &[pair],
-    );
+    let names = [name("first", 0, 10), name("second", 1, 50)];
+    let pairs = [pair];
+    let records = feature_sketch_payload_named_records(&[payload], &names, &[], &pairs);
     assert_eq!(records[0].fixed_pairs, ["pair"]);
     assert!(records[1].fixed_pairs.is_empty());
+    let points = feature_sketch_fixed_points(&records, &names, &pairs);
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].name, "Point1");
+    assert_eq!(points[0].values, [0.5, -0.5]);
 }
 
 #[test]

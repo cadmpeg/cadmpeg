@@ -1580,6 +1580,25 @@ pub struct FeatureSketchPoint {
     pub coordinates: [f64; 2],
 }
 
+/// Complete named dimensionless fixed-point record in a reconstructed sketch payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureSketchFixedPoint {
+    /// Globally unique fixed-point identity.
+    pub id: String,
+    /// Owning `SKETCH` operation label.
+    pub operation_label: String,
+    /// Name-delimited payload record carrying the pair.
+    pub named_record: String,
+    /// Exact `Point<positive decimal>` source name.
+    pub name: String,
+    /// Exact fixed-pair field carrying the two values.
+    pub fixed_pair: String,
+    /// Ordered dimensionless signed Q1.55 values.
+    pub values: [f64; 2],
+    /// Absolute source offset of the fixed-pair discriminator.
+    pub source_offset: u64,
+}
+
 /// Exact same-name point identity within one reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureSketchPointGroup {
@@ -4011,6 +4030,47 @@ pub fn feature_sketch_points(
                 name: name.value.clone(),
                 scalar_fields: [first.id.clone(), second.id.clone()],
                 coordinates: [first.value, second.value],
+            })
+        })
+        .collect()
+}
+
+/// Decode `Point<positive decimal>` records containing exactly one fixed pair.
+pub fn feature_sketch_fixed_points(
+    records: &[FeatureSketchPayloadNamedRecord],
+    names: &[FeatureSketchPayloadName],
+    fixed_pairs: &[FeatureSketchPayloadFixedPair],
+) -> Vec<FeatureSketchFixedPoint> {
+    let names = names
+        .iter()
+        .map(|name| (name.id.as_str(), name))
+        .collect::<BTreeMap<_, _>>();
+    let fixed_pairs = fixed_pairs
+        .iter()
+        .map(|pair| (pair.id.as_str(), pair))
+        .collect::<BTreeMap<_, _>>();
+    records
+        .iter()
+        .filter_map(|record| {
+            if !record.scalar_fields.is_empty() {
+                return None;
+            }
+            let [fixed_pair_id] = record.fixed_pairs.as_slice() else {
+                return None;
+            };
+            let name = names.get(record.name_field.as_str())?;
+            parse_sketch_point_name(&name.value)?;
+            let pair = fixed_pairs.get(fixed_pair_id.as_str())?;
+            Some(FeatureSketchFixedPoint {
+                id: record
+                    .id
+                    .replacen("sketch-payload-record", "sketch-fixed-point", 1),
+                operation_label: record.operation_label.clone(),
+                named_record: record.id.clone(),
+                name: name.value.clone(),
+                fixed_pair: pair.id.clone(),
+                values: pair.values,
+                source_offset: pair.source_offset,
             })
         })
         .collect()
