@@ -828,7 +828,10 @@ fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
 }
 
 fn synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh() -> Vec<u8> {
-    let mut bytes = synthetic_geometry_with_pcurve_smbh();
+    replace_generated_face_with_nurbs_surface(synthetic_geometry_with_pcurve_smbh())
+}
+
+fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
@@ -843,6 +846,10 @@ fn synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh() -> Vec<u8> {
     t_end(&mut surface);
     bytes.splice(old.offset..old.offset + old.len, surface);
     bytes
+}
+
+fn synthetic_geometry_with_ref_pcurve_on_nurbs_surface_smbh() -> Vec<u8> {
+    replace_generated_face_with_nurbs_surface(synthetic_geometry_with_ref_pcurve_smbh())
 }
 
 fn synthetic_geometry_with_short_pcurve_tail_smbh() -> Vec<u8> {
@@ -17255,8 +17262,9 @@ fn ref_pcurve_collects_intcurve_uv_candidates() {
     let pcurve = candidates
         .first()
         .expect("intcurve UV cache is a candidate");
-    assert_eq!(pcurve.control_points[0].u, 0.25);
-    assert_eq!(pcurve.control_points[1].v, 1.5);
+    assert!(pcurve.unambiguous_2d);
+    assert_eq!(pcurve.curve.control_points[0].u, 0.25);
+    assert_eq!(pcurve.curve.control_points[1].v, 1.5);
 }
 
 #[test]
@@ -17279,7 +17287,8 @@ fn ref_pcurve_resolves_intcurve_subtype_candidates() {
     let pcurve = candidates
         .first()
         .expect("intcurve subtype carries a UV candidate");
-    assert_eq!(pcurve.control_points[1].v, 1.5);
+    assert!(pcurve.unambiguous_2d);
+    assert_eq!(pcurve.curve.control_points[1].v, 1.5);
 }
 
 #[test]
@@ -17315,6 +17324,35 @@ fn inline_pcurve_scope_is_its_exact_carrier_identity() {
             &DecodeOptions::default(),
         )
         .expect("structurally unique inline pcurve decode");
+
+    assert_eq!(result.ir.model.pcurves.len(), 1);
+    assert_eq!(
+        result
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.pcurve.is_some())
+            .count(),
+        1
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("explicit UV pcurve reference")));
+}
+
+#[test]
+fn unique_bs2_intcurve_role_is_its_ref_pcurve_carrier() {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_ref_pcurve_on_nurbs_surface_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("structurally unique ref pcurve decode");
 
     assert_eq!(result.ir.model.pcurves.len(), 1);
     assert_eq!(

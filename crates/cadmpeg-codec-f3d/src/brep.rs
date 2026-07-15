@@ -988,12 +988,28 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             let decoded = if inline && candidates.len() == 1 {
                                 let candidate =
                                     candidates.into_iter().next().expect("one candidate");
-                                let range = pcurve_ranges_on_domain(&candidate, edge)
+                                let range = pcurve_ranges_on_domain(&candidate.curve, edge)
                                     .and_then(|ranges| ranges.into_iter().next());
-                                range.map(|range| (candidate, range))
+                                range.map(|range| (candidate.curve, range))
+                            } else if candidates
+                                .iter()
+                                .filter(|candidate| candidate.unambiguous_2d)
+                                .count()
+                                == 1
+                            {
+                                let candidate = candidates
+                                    .into_iter()
+                                    .find(|candidate| candidate.unambiguous_2d)
+                                    .expect("one unambiguous candidate");
+                                let range = pcurve_ranges_on_domain(&candidate.curve, edge)
+                                    .and_then(|ranges| ranges.into_iter().next());
+                                range.map(|range| (candidate.curve, range))
                             } else {
                                 select_face_pcurve(
-                                    candidates,
+                                    candidates
+                                        .into_iter()
+                                        .map(|candidate| candidate.curve)
+                                        .collect(),
                                     face.ref_at(7)
                                         .and_then(|surface| surface_geo.get(&surface))
                                         .map(|(geometry, _)| geometry),

@@ -493,6 +493,14 @@ pub struct NurbsPcurve {
     pub periodic: bool,
 }
 
+/// One BS2 parse reachable from an explicit pcurve carrier.
+pub(crate) struct PcurveCandidate {
+    /// Decoded parameter-space curve.
+    pub(crate) curve: NurbsPcurve,
+    /// The same bytes do not also form a 3D NURBS curve block.
+    pub(crate) unambiguous_2d: bool,
+}
+
 /// Writable value offsets for one 2D pcurve cache.
 pub(crate) struct PcurvePatchLayout {
     /// Payload width of integer and enum fields.
@@ -6746,13 +6754,14 @@ pub fn decode_pcurve_cache_resolving_refs(
 /// subtype references, the blocks of the definitions it links. A ref-form
 /// pcurve delegates its UV carrier to an `intcurve` entity whose record can
 /// hold several 2D blocks (side pcurves and construction machinery); the
-/// caller selects among the candidates by checking their endpoints against
-/// the face surface and edge vertices.
-pub fn decode_pcurve_cache_candidates_resolving_refs(
+/// dimensional-role flag separates genuine BS2 blocks from BS3 blocks whose
+/// bytes also admit a BS2 parse. The caller uses endpoint agreement only when
+/// several genuine BS2 candidates remain.
+pub(crate) fn decode_pcurve_cache_candidates_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
     tables: &SubtypeTables,
-) -> Vec<NurbsPcurve> {
+) -> Vec<PcurveCandidate> {
     for int_width in INT_WIDTHS {
         let mut out = Vec::new();
         collect_pcurve_candidates(
@@ -6776,7 +6785,7 @@ fn collect_pcurve_candidates(
     tables: &SubtypeTables,
     seen: &mut Vec<usize>,
     int_width: usize,
-    out: &mut Vec<NurbsPcurve>,
+    out: &mut Vec<PcurveCandidate>,
 ) {
     // A 3D curve block's bytes can also parse as a 2D block; such ambiguous
     // reads rank after every unambiguous 2D block so an unverified caller
@@ -6785,9 +6794,15 @@ fn collect_pcurve_candidates(
     for position in marker_positions(bytes) {
         if let Some(pcurve) = decode_pcurve_block(bytes, position, int_width) {
             if decode_curve_block(bytes, position, int_width).is_some() {
-                ambiguous.push(pcurve);
+                ambiguous.push(PcurveCandidate {
+                    curve: pcurve,
+                    unambiguous_2d: false,
+                });
             } else {
-                out.push(pcurve);
+                out.push(PcurveCandidate {
+                    curve: pcurve,
+                    unambiguous_2d: true,
+                });
             }
         }
     }
