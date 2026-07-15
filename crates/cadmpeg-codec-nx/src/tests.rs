@@ -4794,6 +4794,7 @@ fn topology_attribute_class_uses_resolve_instance_discriminators_by_xmt() {
         field_record_references: [21, 22],
         field_record_header_words: [0, 9000],
         field_descriptor_prefix: [0; 26],
+        field_storage: None,
         field_codes: vec![1],
         inflated_offset: 100,
     };
@@ -4913,6 +4914,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         field_record_references: [36, 37],
         field_record_header_words: [0, 9000],
         field_descriptor_prefix: [0; 26],
+        field_storage: Some(crate::native::ParasolidAttributeFieldStorage::Double),
         field_codes: vec![1],
         inflated_offset: 100,
     };
@@ -8396,6 +8398,10 @@ fn parasolid_attribute_definition_requires_declared_printable_name_and_field_rec
     assert_eq!(definitions[0].field_record_references, [0x30, 0x31]);
     assert_eq!(definitions[0].field_record_header_words, [0, 0x2328]);
     assert_eq!(definitions[0].field_descriptor_prefix, descriptor);
+    assert_eq!(
+        crate::native::parasolid_attribute_field_storage(&definitions[0].field_descriptor_prefix),
+        Some(crate::native::ParasolidAttributeFieldStorage::Double)
+    );
     assert_eq!(definitions[0].field_codes, [1]);
 
     let truncated = &bytes[..bytes.len() - 1];

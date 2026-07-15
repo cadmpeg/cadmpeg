@@ -624,10 +624,37 @@ pub struct ParasolidAttributeDefinition {
     pub field_record_header_words: [u16; 2],
     /// Exact 26-byte descriptor prefix following the field-record header.
     pub field_descriptor_prefix: [u8; 26],
+    /// Typed primary storage declared by the descriptor's `03` atom.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_storage: Option<ParasolidAttributeFieldStorage>,
     /// One serialized code for every declared field.
     pub field_codes: Vec<u8>,
     /// Offset of the declaration in the inflated stream.
     pub inflated_offset: u64,
+}
+
+/// Primary storage alphabet declared by a Parasolid attribute field descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParasolidAttributeFieldStorage {
+    /// Void or flag storage.
+    Void,
+    /// Component/reference or string storage.
+    Component,
+    /// Binary64 floating-point storage.
+    Double,
+}
+
+pub(crate) fn parasolid_attribute_field_storage(
+    descriptor: &[u8; 26],
+) -> Option<ParasolidAttributeFieldStorage> {
+    (descriptor[4] == 0x03).then_some(())?;
+    match descriptor[5] {
+        0x00 => Some(ParasolidAttributeFieldStorage::Void),
+        0x05 => Some(ParasolidAttributeFieldStorage::Component),
+        0x06 => Some(ParasolidAttributeFieldStorage::Double),
+        _ => None,
+    }
 }
 
 /// Explicit topology-record ownership of one Parasolid attribute list.
@@ -5934,6 +5961,9 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
                     field_record_references: definition.field_record_references,
                     field_record_header_words: definition.field_record_header_words,
                     field_descriptor_prefix: definition.field_descriptor_prefix,
+                    field_storage: parasolid_attribute_field_storage(
+                        &definition.field_descriptor_prefix,
+                    ),
                     field_codes: definition.field_codes.to_vec(),
                     inflated_offset: definition.offset as u64,
                 })
