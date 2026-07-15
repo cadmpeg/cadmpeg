@@ -1699,6 +1699,25 @@ pub struct FeatureExtrudePayloadHeader {
     pub source_offset: u64,
 }
 
+/// Exact terminal discriminator lane from a bounded extrusion payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureExtrudePayloadFooter {
+    /// Globally unique footer identity.
+    pub id: String,
+    /// Owning `EXTRUDE` operation label.
+    pub operation_label: String,
+    /// Two compact type indices following the footer prelude.
+    pub type_indices: [u32; 2],
+    /// Two values in the counted footer lane.
+    pub mode_indices: [u32; 2],
+    /// Four serialized one-byte flags.
+    pub flags: [u8; 4],
+    /// Compact values preceding the payload terminator.
+    pub trailing_indices: Vec<u32>,
+    /// Absolute file offset of the footer prelude.
+    pub source_offset: u64,
+}
+
 /// Serialized width form of an extrusion payload scalar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -4353,6 +4372,48 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
         }
     }
     headers
+}
+
+/// Decode exact terminal discriminator lanes from bounded extrusion payloads.
+pub fn feature_extrude_payload_footers(container: &Container) -> Vec<FeatureExtrudePayloadFooter> {
+    let sections = container.om_sections();
+    let mut footers = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let Some(footer) = crate::om::extrude_payload_footer(record) else {
+                continue;
+            };
+            footers.push(FeatureExtrudePayloadFooter {
+                id: format!(
+                    "nx:feature-history:extrude-payload-footer#{section_key}-{operation_ordinal}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                ),
+                type_indices: footer.type_indices,
+                mode_indices: footer.mode_indices,
+                flags: footer.flags,
+                trailing_indices: footer.trailing_indices,
+                source_offset: entry_offset + footer.offset as u64,
+            });
+        }
+    }
+    footers
 }
 
 /// Decode typed scalar triples following extrusion body-reference fields.

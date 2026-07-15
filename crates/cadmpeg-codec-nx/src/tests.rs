@@ -3120,6 +3120,52 @@ fn om_extrude_header_decodes_shifted_ieee_scalars() {
 }
 
 #[test]
+fn om_extrude_footer_requires_one_complete_terminal_lane() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "EXTRUDE",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let footer = crate::om::extrude_payload_footer(record).unwrap();
+    assert_eq!(footer.offset, 200);
+    assert_eq!(footer.type_indices, [351, 171]);
+    assert_eq!(footer.mode_indices, [2, 1]);
+    assert_eq!(footer.flags, [1, 2, 1, 1]);
+    assert_eq!(footer.trailing_indices, [5, 255]);
+
+    let truncated = &payload[..payload.len() - 1];
+    assert!(
+        crate::om::extrude_payload_footer(crate::om::OperationRecord {
+            payload: truncated,
+            bytes: truncated,
+            ..record
+        })
+        .is_none()
+    );
+
+    let mut ambiguous = payload[..payload.len() - 1].to_vec();
+    ambiguous.extend_from_slice(payload);
+    assert!(
+        crate::om::extrude_payload_footer(crate::om::OperationRecord {
+            payload: &ambiguous,
+            bytes: &ambiguous,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_extrude_body_scalar_lane_decodes_zero_binary32_and_binary64() {
     let label = crate::om::OperationLabel {
         header_offset: 100,

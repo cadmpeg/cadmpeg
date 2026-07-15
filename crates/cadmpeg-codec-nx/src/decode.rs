@@ -4832,6 +4832,8 @@ fn attach_native_object_model(
         crate::native::feature_extrude_profile_references(&scan.container);
     let feature_extrude_payload_headers =
         crate::native::feature_extrude_payload_headers(&scan.container);
+    let feature_extrude_payload_footers =
+        crate::native::feature_extrude_payload_footers(&scan.container);
     let feature_extrude_payload_scalar_triples =
         crate::native::feature_extrude_payload_scalar_triples(&scan.container);
     let feature_operation_body_scalar_triples =
@@ -5039,6 +5041,7 @@ fn attach_native_object_model(
         && feature_sketch_references.is_empty()
         && feature_extrude_profile_references.is_empty()
         && feature_extrude_payload_headers.is_empty()
+        && feature_extrude_payload_footers.is_empty()
         && feature_extrude_payload_scalar_triples.is_empty()
         && feature_operation_body_scalar_triples.is_empty()
         && feature_operation_body_members.is_empty()
@@ -5574,6 +5577,7 @@ fn attach_native_object_model(
             block_payload_point_groups: &feature_block_payload_point_groups,
             extrude_32_constructions: &feature_extrude_32_constructions,
             extrude_payload_headers: &feature_extrude_payload_headers,
+            extrude_payload_footers: &feature_extrude_payload_footers,
             operation_body_scalar_triples: &feature_operation_body_scalar_triples,
             parameter_bindings: &feature_parameter_bindings,
             parameter_uses: &feature_parameter_uses,
@@ -5839,6 +5843,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_extrude_payload_headers",
             &feature_extrude_payload_headers,
+        )?;
+    }
+    if !feature_extrude_payload_footers.is_empty() {
+        namespace.set_arena(
+            "feature_extrude_payload_footers",
+            &feature_extrude_payload_footers,
         )?;
     }
     if !feature_extrude_payload_scalar_triples.is_empty() {
@@ -6389,6 +6399,7 @@ struct FeatureOperationSources<'a> {
     block_payload_point_groups: &'a [crate::native::FeatureBlockPayloadPointGroup],
     extrude_32_constructions: &'a [crate::native::FeatureExtrude32Construction],
     extrude_payload_headers: &'a [crate::native::FeatureExtrudePayloadHeader],
+    extrude_payload_footers: &'a [crate::native::FeatureExtrudePayloadFooter],
     operation_body_scalar_triples: &'a [crate::native::FeatureOperationBodyScalarTriple],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
     parameter_uses: &'a [crate::native::FeatureParameterUse],
@@ -6435,6 +6446,7 @@ fn attach_feature_operations(
         block_payload_point_groups,
         extrude_32_constructions,
         extrude_payload_headers,
+        extrude_payload_footers,
         operation_body_scalar_triples,
         parameter_bindings,
         parameter_uses,
@@ -6630,6 +6642,10 @@ fn attach_feature_operations(
     let extrude_payload_headers_by_operation = extrude_payload_headers
         .iter()
         .map(|header| (header.operation_label.as_str(), header))
+        .collect::<BTreeMap<_, _>>();
+    let extrude_payload_footers_by_operation = extrude_payload_footers
+        .iter()
+        .map(|footer| (footer.operation_label.as_str(), footer))
         .collect::<BTreeMap<_, _>>();
     let mut operation_body_scalar_triples_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureOperationBodyScalarTriple>>::new();
@@ -6854,6 +6870,9 @@ fn attach_feature_operations(
         }
         if let Some(header) = extrude_payload_headers_by_operation.get(label.id.as_str()) {
             source_properties.insert("extrude_payload_header".to_string(), header.id.clone());
+        }
+        if let Some(footer) = extrude_payload_footers_by_operation.get(label.id.as_str()) {
+            source_properties.insert("extrude_payload_footer".to_string(), footer.id.clone());
         }
         for triple in operation_body_scalar_triples_by_operation
             .get(label.id.as_str())

@@ -651,6 +651,21 @@ pub struct ExtrudePayloadHeader {
     pub scalars: [f64; 2],
 }
 
+/// Exact terminal discriminator lane in a bounded extrusion payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtrudePayloadFooter {
+    /// Payload-relative offset of the fixed footer prelude.
+    pub offset: usize,
+    /// Two compact type indices following `01 01 02`.
+    pub type_indices: [u32; 2],
+    /// Two values in the exact `01 03` counted lane.
+    pub mode_indices: [u32; 2],
+    /// Four serialized one-byte flags.
+    pub flags: [u8; 4],
+    /// Compact values between `29 29` and the terminal zero.
+    pub trailing_indices: Vec<u32>,
+}
+
 /// Nonempty scalar lane serialized twice in a simple-hole payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SimpleHoleRepeatedScalarLane {
@@ -1333,6 +1348,73 @@ pub fn extrude_payload_header(record: OperationRecord<'_>) -> Option<ExtrudePayl
             shifted_ieee_f64(record.payload.get(13..21)?)?,
         ],
     })
+}
+
+/// Decode the unique terminal discriminator lane in an `EXTRUDE` payload.
+pub fn extrude_payload_footer(record: OperationRecord<'_>) -> Option<ExtrudePayloadFooter> {
+    if record.label.value != "EXTRUDE" || record.payload.last() != Some(&0) {
+        return None;
+    }
+    let mut matches = Vec::new();
+    for start in 0..record.payload.len().saturating_sub(18) {
+        if record.payload.get(start..start + 3) != Some(&[0x01, 0x01, 0x02]) {
+            continue;
+        }
+        let mut at = start + 3;
+        let mut type_indices = [0; 2];
+        let mut valid = true;
+        for value in &mut type_indices {
+            let Some((CompactIndex::Value(index), width)) =
+                record.payload.get(at..).and_then(compact_index)
+            else {
+                valid = false;
+                break;
+            };
+            *value = index;
+            at += width;
+        }
+        if !valid || record.payload.get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
+            continue;
+        }
+        at += 4;
+        let Some(flags) = record
+            .payload
+            .get(at..at + 4)
+            .and_then(|bytes| bytes.try_into().ok())
+        else {
+            continue;
+        };
+        at += 4;
+        if record.payload.get(at..at + 5) != Some(&[0x00, 0x00, 0x00, 0x29, 0x29]) {
+            continue;
+        }
+        at += 5;
+        let Some(trailing) = record.payload.get(at..record.payload.len() - 1) else {
+            continue;
+        };
+        let Some(trailing_indices) = compact_indices(trailing).and_then(|indices| {
+            indices
+                .into_iter()
+                .map(|index| match index {
+                    CompactIndex::Value(value) => Some(value),
+                    CompactIndex::Null => None,
+                })
+                .collect::<Option<Vec<_>>>()
+        }) else {
+            continue;
+        };
+        matches.push(ExtrudePayloadFooter {
+            offset: record.payload_offset + start,
+            type_indices,
+            mode_indices: [2, 1],
+            flags,
+            trailing_indices,
+        });
+    }
+    let [footer] = matches.as_slice() else {
+        return None;
+    };
+    Some(footer.clone())
 }
 
 fn shifted_ieee_f64(bytes: &[u8]) -> Option<f64> {
