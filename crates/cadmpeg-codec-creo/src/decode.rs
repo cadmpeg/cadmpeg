@@ -9572,6 +9572,25 @@ fn cap_square_center_radius(corners: [[f64; 3]; 2], axis_index: usize) -> Option
     ))
 }
 
+fn cylinder_from_single_cap_outline(cap: PartialCapOutline) -> Option<SurfaceGeometry> {
+    let (_, _, axis, corners) = cap;
+    let axis = normalized(axis)?;
+    let axis_index = (0..3).find(|index| {
+        axis[*index].abs() > 1.0 - 1e-9
+            && (0..3).all(|other| other == *index || axis[other].abs() < 1e-9)
+    })?;
+    let (center, radius) = cap_square_center_radius(corners?, axis_index)?;
+    let radial_axis = (0..3).find(|index| *index != axis_index)?;
+    let mut ref_direction = [0.0; 3];
+    ref_direction[radial_axis] = 1.0;
+    Some(SurfaceGeometry::Cylinder {
+        origin: Point3::new(center[0], center[1], center[2]),
+        axis: Vector3::new(axis[0], axis[1], axis[2]),
+        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+        radius,
+    })
+}
+
 fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<SurfaceGeometry> {
     let placement = hole_placement(caps.map(|(id, origin, normal, _)| (id, origin, normal)))?;
     let axis = placement.1;
@@ -9726,6 +9745,77 @@ struct CircularSweepGeometry {
     direction: [f64; 3],
     extent: Extent,
     geometry: SurfaceGeometry,
+}
+
+fn single_cap_circular_sweep_geometry(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<(u32, SurfaceGeometry)> {
+    let tables = scan
+        .feature_entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    let [rowless_cap, cap_id, profile_id, cylinder_id] = table.entries.as_slice() else {
+        return None;
+    };
+    ([
+        rowless_cap.class_id,
+        cap_id.class_id,
+        profile_id.class_id,
+        cylinder_id.class_id,
+    ] == [204, 203, 200, 200]
+        && profile_id.source_entity_id.is_some()
+        && cylinder_id.source_entity_id.is_none()
+        && table
+            .non_surface_entity_ids
+            .contains(&rowless_cap.entity_id)
+        && table.non_surface_entity_ids.contains(&profile_id.entity_id))
+    .then_some(())?;
+    scan.surface_rows
+        .iter()
+        .any(|row| {
+            row.id == cap_id.entity_id
+                && row.feature_id == feature_id
+                && row.kind == crate::surface::SurfaceKind::Plane
+        })
+        .then_some(())?;
+    scan.surface_rows
+        .iter()
+        .any(|row| {
+            row.id == cylinder_id.entity_id
+                && row.feature_id == feature_id
+                && row.kind == crate::surface::SurfaceKind::Cylinder
+        })
+        .then_some(())?;
+    let planes = feature_outline_planes(scan, feature_id)
+        .into_iter()
+        .filter(|plane| plane.0 == cap_id.entity_id)
+        .collect::<Vec<_>>();
+    let [plane] = planes.as_slice() else {
+        return None;
+    };
+    let envelopes = scan
+        .plane_envelopes
+        .iter()
+        .filter(|envelope| envelope.surface_id == cap_id.entity_id)
+        .collect::<Vec<_>>();
+    let [envelope] = envelopes.as_slice() else {
+        return None;
+    };
+    let cap = (
+        plane.0,
+        plane.1,
+        plane.2,
+        plane_envelope_corners(&envelope.envelope),
+    );
+    Some((
+        cylinder_id.entity_id,
+        cylinder_from_single_cap_outline(cap)?,
+    ))
 }
 
 fn circular_sweep_feature_definition(
@@ -10820,6 +10910,18 @@ mod resolved_sketch_tests {
                 if origin == Point3::new(-12.5, 4.0, 0.0)
                     && axis == Vector3::new(0.0, -1.0, 0.0)
                     && radius == 0.75
+        ));
+        assert!(matches!(
+            cylinder_from_single_cap_outline((
+                46,
+                [0.0, 16.0, 0.0],
+                [0.0, 1.0, 0.0],
+                Some([[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]]),
+            )),
+            Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
+                if origin == Point3::new(0.0, 16.0, 0.0)
+                    && axis == Vector3::new(0.0, 1.0, 0.0)
+                    && radius == 4.45
         ));
     }
 
@@ -16449,6 +16551,60 @@ fn transfer_circular_sweep_cylinders(
     transferred
 }
 
+fn transfer_single_cap_circular_sweep_cylinders(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let feature_ids = scan
+        .feature_rows
+        .iter()
+        .filter(|row| {
+            feature_recipe(scan, row.feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude)
+        })
+        .map(|row| row.feature_id)
+        .collect::<BTreeSet<_>>();
+    let mut transferred = 0;
+    for feature_id in feature_ids {
+        let Some((cylinder_id, geometry)) = single_cap_circular_sweep_geometry(scan, feature_id)
+        else {
+            continue;
+        };
+        let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        let row = scan
+            .surface_rows
+            .iter()
+            .find(|row| row.id == cylinder_id)
+            .expect("validated single-cap cylinder row");
+        annotate(
+            annotations,
+            &id,
+            "AllFeatur",
+            row.offset as u64,
+            "single_cap_circular_sweep_cylinder",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry,
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{cylinder_id}"),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 /// Decode a `.prt` stream into an IR document and loss report.
 ///
 /// The stream is read from its beginning. When `options.container_only` is set,
@@ -16702,6 +16858,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         transfer_feature_extrusion_surfaces(scan, &mut ir, &mut annotations);
     let circular_sweep_cylinder_count =
         transfer_circular_sweep_cylinders(scan, &mut ir, &mut annotations);
+    let single_cap_circular_sweep_cylinder_count =
+        transfer_single_cap_circular_sweep_cylinders(scan, &mut ir, &mut annotations);
     let hole_cylinder_count = transfer_hole_cylinders(scan, &mut ir, &mut annotations);
     let rowless_round_cylinder_count =
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
@@ -16737,6 +16895,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         source.attributes.insert(
             "transferred_circular_sweep_cylinder_count".to_string(),
             circular_sweep_cylinder_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_single_cap_circular_sweep_cylinder_count".to_string(),
+            single_cap_circular_sweep_cylinder_count.to_string(),
         );
         source.attributes.insert(
             "transferred_hole_cylinder_count".to_string(),
@@ -17945,7 +18107,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              plane, torus, and interpolation-spline prototypes, unbound straight positional \
              surface-of-extrusion planes, \
              topology-bound `fc 05` \
-             cylinders with a resolved axis-normal cap plane, four-entry circular-sweep cylinders, \
+             cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind \
+             circular-sweep cylinders, \
              and four-entry simple-hole cylinders with complete cap outlines transfer as carriers; \
              other parameter bodies remain structural records.",
             scan.sections.len(),

@@ -965,6 +965,15 @@ planes define the neutral extrusion direction and blind extent. A
 `Protrusion` has join semantics when an earlier modeling feature establishes a
 body; otherwise its Boolean operation remains unresolved.
 
+A blind class-917 circular section sweep instead has four entries with classes
+`204, 203, 200, 200`: a rowless cap use, one materialized cap plane, the
+source-profile entity, and one cylinder use. The source-profile entry carries
+its section entity identifier; the cylinder entry does not. The materialized
+cap plane's complete square outline fixes the cylinder axis, radial center, and
+radius. Translation along the axis does not change the infinite cylinder
+carrier, so a second cap is required for trimming extent but not for the
+carrier equation.
+
 A typed schema row that owns a materialized `srf_array` row is an active construction feature. The root schema class supplies its operation family independently of an `MdlStatus` operation name.
 
 Every bounded `feat_defs_<id>` body transfers byte-for-byte to the Creo native
