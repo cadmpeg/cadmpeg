@@ -369,10 +369,7 @@ pub fn decode_tabulated_cylinder_second_coordinate(
     if matches!(head, 0xa7..=0xb1) {
         return ieee7_dict(data, offset, 0xbf2c + u16::from(head));
     }
-    if matches!(head, 0xb2..=0xc7) {
-        return ieee7_dict(data, offset, 0xbf2d + u16::from(head));
-    }
-    if matches!(head, 0xc8..=0xcf) {
+    if matches!(head, 0xb2..=0xcf) {
         return ieee7_dict(data, offset, 0xbf2d + u16::from(head));
     }
     if matches!(head, 0xd0..=0xdc) {

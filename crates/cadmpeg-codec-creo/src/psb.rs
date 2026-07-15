@@ -119,7 +119,7 @@ pub fn tokens(data: &[u8]) -> Vec<Token> {
             }
             token::ARRAY_CLOSE => (1, TokenKind::ArrayClose),
             0xe2 => (1, TokenKind::CompoundOpen),
-            0xe3 => (1, TokenKind::CompoundClose),
+            token::COMPOUND_CLOSE => (1, TokenKind::CompoundClose),
             0x29 | 0x2a | 0x2e | 0x2f | 0x42 | 0x43 | 0x47 | 0x48 => {
                 if offset + 3 <= data.len() {
                     (3, TokenKind::ShortFloat)

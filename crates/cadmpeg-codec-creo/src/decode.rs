@@ -1122,13 +1122,15 @@ fn half_edge_ref(id: crate::topology::HalfEdgeId) -> CreoHalfEdgeRef {
 }
 
 fn half_edge_records(scan: &ContainerScan) -> Vec<CreoHalfEdgeRecord> {
+    let topology_rows = scan
+        .curve_topology_rows
+        .iter()
+        .map(|row| (row.id, row))
+        .collect::<BTreeMap<_, _>>();
     scan.half_edges
         .iter()
         .filter_map(|edge| {
-            let row = scan
-                .curve_topology_rows
-                .iter()
-                .find(|row| row.id == edge.id.curve_id)?;
+            let row = topology_rows.get(&edge.id.curve_id)?;
             Some(CreoHalfEdgeRecord {
                 id: format!(
                     "creo:topology:half_edge#{}:{}",
@@ -15913,13 +15915,6 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                         CarrierEquation::Torus(torus) => tori.push(torus),
                     }
                 }
-                for plane in &planes {
-                    for sphere in &spheres {
-                        if let Some(point) = tangent_plane_sphere_point(*plane, *sphere) {
-                            candidates.push(point);
-                        }
-                    }
-                }
                 if planes.len() == 3 {
                     if let Some(point) = solve_planes(&planes) {
                         candidates.push(point);
@@ -19065,6 +19060,9 @@ fn transfer_cross_section_planes(
             "creo:cross_section_geometry:surface#{}",
             frame.surface_id
         ));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
         annotate(
             annotations,
             &id,
@@ -20728,10 +20726,17 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     }
 }
 
-/// Build diagnostics for data that cannot be represented in the emitted IR.
 fn has_transferred_geometry(ir: &CadIr) -> bool {
     let model = &ir.model;
     !model.points.is_empty()
+        || !model.vertices.is_empty()
+        || !model.edges.is_empty()
+        || !model.coedges.is_empty()
+        || !model.loops.is_empty()
+        || !model.faces.is_empty()
+        || !model.shells.is_empty()
+        || !model.regions.is_empty()
+        || !model.bodies.is_empty()
         || model
             .surfaces
             .iter()
@@ -20759,6 +20764,7 @@ fn has_transferred_geometry(ir: &CadIr) -> bool {
         || !model.tessellations.is_empty()
 }
 
+/// Build diagnostics for data that cannot be represented in the emitted IR.
 fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let geom_sections = scan

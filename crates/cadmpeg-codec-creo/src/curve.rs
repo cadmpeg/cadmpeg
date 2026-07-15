@@ -914,25 +914,30 @@ pub fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
     let cache = scalar::ScalarCache::from_section(payload);
     let positional_count = count - 1;
     let mut rows = Vec::with_capacity(positional_count);
-    while rows.len() < positional_count {
-        let mut boundaries = Vec::new();
-        for (marker, length) in [
-            (b"\xe1\xe3".as_slice(), 2),
-            (b"\xe1\xf5\x05\xf6\xe3", 5),
-            (b"\xe1\xe0", 1),
-        ] {
-            let mut search = cursor;
-            while let Some(offset) = find(payload, marker, search) {
-                boundaries.push((offset, length));
-                search = offset + marker.len();
-            }
+    let mut boundaries = Vec::new();
+    for (marker, length) in [
+        (b"\xe1\xe3".as_slice(), 2),
+        (b"\xe1\xf5\x05\xf6\xe3", 5),
+        (b"\xe1\xe0", 1),
+    ] {
+        let mut search = cursor;
+        while let Some(offset) = find(payload, marker, search) {
+            boundaries.push((offset, length));
+            search = offset + marker.len();
         }
-        boundaries.sort_unstable();
-        boundaries.dedup();
-        let Some((row, terminator, length)) = boundaries.into_iter().find_map(|(end, length)| {
-            let row = parse_depdb_curve_segment(&payload[cursor..end], cursor, &cache)?;
-            Some((row, end, length))
-        }) else {
+    }
+    boundaries.sort_unstable();
+    boundaries.dedup();
+    while rows.len() < positional_count {
+        let first_candidate = boundaries.partition_point(|(end, _)| *end < cursor);
+        let Some((row, terminator, length)) = boundaries[first_candidate..]
+            .iter()
+            .copied()
+            .find_map(|(end, length)| {
+                let row = parse_depdb_curve_segment(&payload[cursor..end], cursor, &cache)?;
+                Some((row, end, length))
+            })
+        else {
             return Vec::new();
         };
         rows.push(row);

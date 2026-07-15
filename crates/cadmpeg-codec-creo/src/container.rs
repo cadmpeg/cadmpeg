@@ -676,7 +676,7 @@ fn family_table(data: &[u8], sections: &[Section]) -> Option<FamilyTableRecord> 
     Some(FamilyTableRecord { pointer, offset })
 }
 
-fn is_model_geometry_namespace(data: &[u8], sections: &[Section], section: &Section) -> bool {
+fn model_geometry_sections(data: &[u8], sections: &[Section]) -> Vec<Section> {
     let visible_namespace_present = sections.iter().any(|candidate| {
         if candidate.name != VISIBGEOM {
             return false;
@@ -685,24 +685,30 @@ fn is_model_geometry_namespace(data: &[u8], sections: &[Section], section: &Sect
         let payload = &data[candidate.offset..end];
         find(payload, b"srf_array\0", 0).is_some() || find(payload, b"crv_array\0", 0).is_some()
     });
-    if visible_namespace_present {
-        section.name == VISIBGEOM
-    } else {
-        if section.name != "DEPDB_DATA" {
-            return false;
-        }
-        let end = (section.offset + section.length).min(data.len());
-        let payload = &data[section.offset..end];
-        find(payload, b"srf_array\0", 0).is_some() || find(payload, b"crv_array\0", 0).is_some()
-    }
+    sections
+        .iter()
+        .filter(|section| {
+            if visible_namespace_present {
+                section.name == VISIBGEOM
+            } else if section.name == "DEPDB_DATA" {
+                let end = section
+                    .offset
+                    .saturating_add(section.length)
+                    .min(data.len());
+                let payload = &data[section.offset..end];
+                find(payload, b"srf_array\0", 0).is_some()
+                    || find(payload, b"crv_array\0", 0).is_some()
+            } else {
+                false
+            }
+        })
+        .cloned()
+        .collect()
 }
 
 fn surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceRow> {
     let mut rows = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         rows.extend(
             surface::rows(&data[section.offset..end])
@@ -743,10 +749,7 @@ fn cross_section_surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceR
 
 fn surface_prototypes(data: &[u8], sections: &[Section]) -> Vec<SurfacePrototype> {
     let mut prototypes = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         prototypes.extend(
             surface::prototypes(&data[section.offset..end])
@@ -763,10 +766,7 @@ fn surface_prototypes(data: &[u8], sections: &[Section]) -> Vec<SurfacePrototype
 
 fn surface_prototype_records(data: &[u8], sections: &[Section]) -> Vec<SurfacePrototypeRecord> {
     let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
             surface::named_prototype_records(&data[section.offset..end])
@@ -787,10 +787,7 @@ fn surface_prototype_records(data: &[u8], sections: &[Section]) -> Vec<SurfacePr
 
 fn surface_parameters(data: &[u8], sections: &[Section]) -> Vec<SurfaceParameterRecord> {
     let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
             surface::parameter_records(&data[section.offset..end])
@@ -839,10 +836,7 @@ fn tabulated_cylinder_curve_replays(
     sections: &[Section],
 ) -> Vec<TabulatedCylinderCurveReplay> {
     let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
             surface::tabulated_cylinder_curve_replays(&data[section.offset..end])
@@ -860,10 +854,7 @@ fn tabulated_cylinder_curve_replays(
 
 fn plane_local_systems(data: &[u8], sections: &[Section]) -> Vec<PlaneLocalSystem> {
     let mut systems = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         systems.extend(
             surface::plane_local_systems(&data[section.offset..end])
@@ -906,10 +897,7 @@ fn cross_section_plane_local_systems(data: &[u8], sections: &[Section]) -> Vec<P
 
 fn plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<PlaneEnvelopeRecord> {
     let mut envelopes = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         envelopes.extend(
             surface::plane_envelopes(&data[section.offset..end])
@@ -951,10 +939,7 @@ fn cross_section_plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<Plane
 
 fn curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<CurvePrototype> {
     let mut prototypes = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         prototypes.extend(
             curve::prototypes(&data[section.offset..end])
@@ -998,10 +983,7 @@ fn curve_expressions(data: &[u8], sections: &[Section]) -> Vec<CurveExpressionRe
 
 fn curve_parameters(data: &[u8], sections: &[Section]) -> Vec<CurveParameterRecord> {
     let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
             curve::parameter_records(&data[section.offset..end])
@@ -1020,10 +1002,7 @@ fn curve_parameters(data: &[u8], sections: &[Section]) -> Vec<CurveParameterReco
 
 fn prototype_pcurves(data: &[u8], sections: &[Section]) -> Vec<PrototypePcurveEndpoints> {
     let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
             curve::prototype_pcurve_endpoints(&data[section.offset..end])
@@ -1040,10 +1019,7 @@ fn prototype_pcurves(data: &[u8], sections: &[Section]) -> Vec<PrototypePcurveEn
 
 fn curve_prototype_topology(data: &[u8], sections: &[Section]) -> Vec<CurvePrototypeTopology> {
     let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
             curve::prototype_topology(&data[section.offset..end])
@@ -1060,10 +1036,7 @@ fn curve_prototype_topology(data: &[u8], sections: &[Section]) -> Vec<CurveProto
 
 fn curve_topology_rows(data: &[u8], sections: &[Section]) -> Vec<CurveTopologyRow> {
     let mut rows = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         rows.extend(
             curve::topology_rows(&data[section.offset..end])
@@ -1568,17 +1541,19 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         .flat_map(|section| primdata::triangle_strips(&section.data))
         .collect();
     let layout = identify_layout(&sections);
+    let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
     let principal_unit = principal_unit(&data);
     let family_table = family_table(&data, &sections);
-    let surface_rows = surface_rows(&data, &sections);
+    let surface_rows = surface_rows(&data, &model_geometry_sections);
     let cross_section_surface_rows = cross_section_surface_rows(&data, &sections);
-    let surface_parameters = surface_parameters(&data, &sections);
+    let surface_parameters = surface_parameters(&data, &model_geometry_sections);
     let cross_section_surface_parameters = cross_section_surface_parameters(&data, &sections);
-    let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replays(&data, &sections);
-    let plane_local_systems = plane_local_systems(&data, &sections);
+    let tabulated_cylinder_curve_replays =
+        tabulated_cylinder_curve_replays(&data, &model_geometry_sections);
+    let plane_local_systems = plane_local_systems(&data, &model_geometry_sections);
     let cross_section_plane_local_systems = cross_section_plane_local_systems(&data, &sections);
-    let plane_envelopes = plane_envelopes(&data, &sections);
+    let plane_envelopes = plane_envelopes(&data, &model_geometry_sections);
     let cross_section_plane_envelopes = cross_section_plane_envelopes(&data, &sections);
     let mut outline_planes = surface::outline_planes(&plane_envelopes);
     for plane in surface::frame_bound_outline_planes(&plane_envelopes, &plane_local_systems) {
@@ -1603,21 +1578,21 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         }
     }
     cross_section_outline_planes.sort_by_key(|plane| plane.offset);
-    let surface_prototypes = surface_prototypes(&data, &sections);
-    let surface_prototype_records = surface_prototype_records(&data, &sections);
-    let curve_prototypes = curve_prototypes(&data, &sections);
+    let surface_prototypes = surface_prototypes(&data, &model_geometry_sections);
+    let surface_prototype_records = surface_prototype_records(&data, &model_geometry_sections);
+    let curve_prototypes = curve_prototypes(&data, &model_geometry_sections);
     let cross_section_curve_prototypes = cross_section_curve_prototypes(&data, &sections);
     let curve_expressions = curve_expressions(&data, &sections);
-    let curve_parameters = curve_parameters(&data, &sections);
-    let curve_topology_rows = curve_topology_rows(&data, &sections);
+    let curve_parameters = curve_parameters(&data, &model_geometry_sections);
+    let curve_topology_rows = curve_topology_rows(&data, &model_geometry_sections);
     let cross_section_curve_rows = cross_section_curve_rows(&data, &sections);
     let pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
     let fc_curve_coordinates = curve::fc_coordinates(&curve_parameters);
     let fc05_circles = curve::fc05_circles(&curve_parameters);
     let fc05_cylinder_cap_pairs =
         curve::fc05_cylinder_cap_pairs(&fc05_circles, &curve_topology_rows, &surface_rows);
-    let prototype_pcurves = prototype_pcurves(&data, &sections);
-    let curve_prototype_topology = curve_prototype_topology(&data, &sections);
+    let prototype_pcurves = prototype_pcurves(&data, &model_geometry_sections);
+    let curve_prototype_topology = curve_prototype_topology(&data, &model_geometry_sections);
     let bound_prototype_pcurves =
         curve::bind_prototype_pcurves(&prototype_pcurves, &curve_prototype_topology);
     let (half_edges, loops) = topology::build(&curve_topology_rows);

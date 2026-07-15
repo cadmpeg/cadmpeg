@@ -1155,14 +1155,6 @@ fn scalar_tokens(
                 length: next - cursor,
             });
             cursor = next;
-        } else if matches!(body.get(cursor), Some(0x73 | 0xbb)) && cursor + 7 <= body.len() {
-            tokens.push(SurfaceParameterScalar {
-                value: None,
-                raw: body[cursor..cursor + 7].to_vec(),
-                offset: cursor,
-                length: 7,
-            });
-            cursor += 7;
         } else {
             cursor += 1;
         }
@@ -1248,8 +1240,6 @@ fn named_record_boundary(
         }
         if let Some((_, next)) = decode_row_scalar(kind, body, cursor, cache) {
             cursor = next;
-        } else if matches!(body.get(cursor), Some(0x73 | 0xbb)) && cursor + 7 <= body.len() {
-            cursor += 7;
         } else {
             cursor += 1;
         }
@@ -1523,8 +1513,6 @@ fn surface_body_compound_close(
         }
         if let Some((_, next)) = decode_row_scalar(kind, body, cursor, cache) {
             cursor = next;
-        } else if matches!(body.get(cursor), Some(0x73 | 0xbb)) && cursor + 7 <= body.len() {
-            cursor += 7;
         } else {
             cursor += 1;
         }
@@ -1595,7 +1583,7 @@ fn named_spline_scalar_slot(
         return scalar::decode_in_lane(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
-    if matches!(head, 0x28 | 0x41) || (name == "v_params" && head == 0x28) {
+    if matches!(head, 0x28 | 0x41) {
         return named_ieee8(body, offset, 0x3f).map(|(value, next)| (Some(value), next));
     }
     if name == "params" && head == 0x2d {
@@ -1696,9 +1684,6 @@ fn scalar_slots_with_tokens_and_end(
         {
             slots.push((Some(value), body[cursor..next].to_vec()));
             cursor = next;
-        } else if matches!(body.get(cursor), Some(0x73 | 0xbb)) && cursor + 7 <= body.len() {
-            slots.push((None, body[cursor..cursor + 7].to_vec()));
-            cursor += 7;
         } else {
             cursor += 1;
         }
