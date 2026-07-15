@@ -15450,6 +15450,35 @@ fn bt_text_color_rejects_non_decimal_and_overwide_values() {
 }
 
 #[test]
+fn invalid_color_attribute_does_not_hide_later_chain_color() {
+    use std::collections::HashMap;
+
+    let mut bytes = Vec::new();
+    t_ident(&mut bytes, "face");
+    t_ref(&mut bytes, 1);
+    t_end(&mut bytes);
+    t_subident(&mut bytes, "entatt_color");
+    t_subident(&mut bytes, "bt");
+    t_ident(&mut bytes, "attrib");
+    t_ref(&mut bytes, 2);
+    push_u8_string(&mut bytes, "not-a-color");
+    t_end(&mut bytes);
+    t_subident(&mut bytes, "rgb_color");
+    t_subident(&mut bytes, "st");
+    t_ident(&mut bytes, "attrib");
+    t_ref(&mut bytes, -1);
+    t_dbl(&mut bytes, 0.1);
+    t_dbl(&mut bytes, 0.2);
+    t_dbl(&mut bytes, 0.3);
+    t_end(&mut bytes);
+
+    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
+    let color = crate::brep::attribute_chain_color(&records[0], &by_index).unwrap();
+    assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
+}
+
+#[test]
 fn transform_decodes_column_major_basis_and_scaled_translation() {
     use crate::sab::{Record, Token};
 
