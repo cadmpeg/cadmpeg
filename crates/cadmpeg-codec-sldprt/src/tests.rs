@@ -4346,6 +4346,33 @@ fn semantic_writer_round_trips_active_configuration() {
 }
 
 #[test]
+fn decode_preserves_unresolved_active_configuration() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Manufacturing"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swName="Part" swConfigurationName="Missing"/></swSolidWorks>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(decoded
+        .ir
+        .model
+        .configurations
+        .iter()
+        .all(|configuration| !configuration.active));
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn encoder_partitions_source_less_bodies_by_configuration() {
     use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
     use cadmpeg_ir::math::{Point3, Vector3};

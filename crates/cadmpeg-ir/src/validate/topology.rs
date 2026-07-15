@@ -1319,7 +1319,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         findings.push(Finding {
             check: Check::Counts,
             severity: Severity::Error,
-            message: "design requires exactly one active configuration".into(),
+            message: "design permits at most one active configuration".into(),
             entity: None,
         });
     }

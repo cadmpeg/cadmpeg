@@ -989,7 +989,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     assert!(report
         .findings
         .iter()
-        .any(|finding| finding.message.contains("exactly one active configuration")));
+        .any(|finding| finding.message.contains("at most one active configuration")));
     assert!(report.findings.iter().any(|finding| finding
         .message
         .contains("repeats configuration source index")));
@@ -1006,7 +1006,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     assert!(!report
         .findings
         .iter()
-        .any(|finding| finding.message.contains("exactly one active configuration")));
+        .any(|finding| finding.message.contains("at most one active configuration")));
 
     ir.model.configurations[0].name = "Default".into();
     ir.model.configurations[1].name = "Default".into();
