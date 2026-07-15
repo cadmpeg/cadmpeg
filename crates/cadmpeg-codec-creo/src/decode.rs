@@ -37,6 +37,7 @@ use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
 };
+use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, Point, Region, Sense, Shell, Vertex,
 };
@@ -16491,6 +16492,45 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
     preserve_passthrough_sections(scan, &mut ir, &mut annotations)?;
+    for strip in &scan.primitive_triangle_strips {
+        let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
+        let mut triangles = Vec::new();
+        let mut base = 0u32;
+        for length in &strip.strip_lengths {
+            for index in 0..length.saturating_sub(2) {
+                let a = base + index;
+                let triangle = if index % 2 == 0 {
+                    [a, a + 1, a + 2]
+                } else {
+                    [a, a + 2, a + 1]
+                };
+                triangles.push(triangle);
+            }
+            base += length;
+        }
+        annotate(
+            &mut annotations,
+            &id,
+            "SolidPrimdata",
+            strip.offset as u64,
+            "display_triangle_strip",
+            Exactness::Derived,
+        );
+        ir.model.tessellations.push(Tessellation {
+            id,
+            body: None,
+            source_object: None,
+            vertices: strip
+                .positions
+                .iter()
+                .map(|point| Point3::new(point[0], point[1], point[2]))
+                .collect(),
+            triangles,
+            strip_lengths: strip.strip_lengths.clone(),
+            normals: Vec::new(),
+            channels: Vec::new(),
+        });
+    }
     for plane in &scan.datum_planes {
         let id = SurfaceId(format!("creo:actdatums:surface#{}", plane.id));
         annotate(

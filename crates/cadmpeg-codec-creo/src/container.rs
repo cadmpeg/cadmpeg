@@ -28,7 +28,7 @@ use crate::feature::{
     FeatureOperation, FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
 use crate::placement::{self, FeatureSectionTransform};
-use crate::primdata::{self, PrimitiveScalarArray};
+use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
 use crate::psb;
 use crate::surface::{
     self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceParameterRecord,
@@ -176,6 +176,8 @@ pub struct ContainerScan {
     pub expanded_sections: Vec<ExpandedSection>,
     /// Complete named model-space scalar arrays from expanded primitive data.
     pub primitive_scalar_arrays: Vec<PrimitiveScalarArray>,
+    /// Complete named position-only triangle strips from expanded primitive data.
+    pub primitive_triangle_strips: Vec<PrimitiveTriangleStrip>,
     /// Identified layout family.
     pub layout: Layout,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
@@ -1325,6 +1327,11 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         .filter(|section| section.name == "SolidPrimdata")
         .flat_map(|section| primdata::scalar_arrays(&section.data))
         .collect();
+    let primitive_triangle_strips = expanded_sections
+        .iter()
+        .filter(|section| section.name == "SolidPrimdata")
+        .flat_map(|section| primdata::triangle_strips(&section.data))
+        .collect();
     let layout = identify_layout(&sections);
     let census = geom_census(&data, &sections);
     let principal_unit = principal_unit(&data);
@@ -1439,6 +1446,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         sections,
         expanded_sections,
         primitive_scalar_arrays,
+        primitive_triangle_strips,
         layout,
         census,
         principal_unit,

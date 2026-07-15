@@ -1390,3 +1390,9 @@ four-byte negative value beginning `36..3d` maps by adding `89` hexadecimal
 to the leading byte. The remaining three bytes are the unchanged IEEE-754
 fraction/exponent tail. A scalar array is complete only when exactly its
 declared count can be decoded.
+
+Within `value(prim_tristripsetwithatt)`, `p_accum_set_size f8 <count>`
+contains monotonically increasing cumulative vertex counts. Consecutive
+differences are triangle-strip lengths and each is at least three.
+`mv_p_xyz` supplies exactly the final cumulative count of XYZ positions.
+Strip triangles alternate winding: `[i,i+1,i+2]`, then `[i,i+2,i+1]`.

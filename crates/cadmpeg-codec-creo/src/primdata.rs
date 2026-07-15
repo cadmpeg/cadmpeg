@@ -16,6 +16,90 @@ pub struct PrimitiveScalarArray {
     pub values: Vec<f64>,
 }
 
+/// One complete position-only triangle-strip primitive.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrimitiveTriangleStrip {
+    /// Byte offset of `value(prim_tristripsetwithatt)` in the expanded section.
+    pub offset: usize,
+    /// Consecutive model-space positions.
+    pub positions: Vec<[f64; 3]>,
+    /// Vertex count of each consecutive triangle strip.
+    pub strip_lengths: Vec<u32>,
+}
+
+/// Decode named position-only triangle-strip primitives.
+pub fn triangle_strips(data: &[u8]) -> Vec<PrimitiveTriangleStrip> {
+    const RECORD: &[u8] = b"value(prim_tristripsetwithatt)\0";
+    const ACCUM: &[u8] = b"\xe0\x01p_accum_set_size\0";
+    let mut strips = Vec::new();
+    for (offset, _) in data
+        .windows(RECORD.len())
+        .enumerate()
+        .filter(|(_, window)| *window == RECORD)
+    {
+        let end = data[offset + RECORD.len()..]
+            .windows(b"\xe0\x00value(".len())
+            .position(|window| window == b"\xe0\x00value(")
+            .map_or(data.len(), |relative| offset + RECORD.len() + relative);
+        let record = &data[offset..end];
+        let Some(accum) = record
+            .windows(ACCUM.len())
+            .position(|window| window == ACCUM)
+            .map(|relative| relative + ACCUM.len())
+        else {
+            continue;
+        };
+        if record.get(accum) != Some(&psb::token::ARRAY_OPEN) {
+            continue;
+        }
+        let (count, mut cursor) = psb::compact_int(record, accum + 1);
+        let mut cumulative = Vec::new();
+        for _ in 0..count {
+            let (value, next) = psb::compact_int(record, cursor);
+            if next == cursor {
+                cumulative.clear();
+                break;
+            }
+            cumulative.push(value);
+            cursor = next;
+        }
+        let Some(array) = scalar_arrays(record)
+            .into_iter()
+            .find(|array| array.field == "mv_p_xyz" && array.values.len() % 3 == 0)
+        else {
+            continue;
+        };
+        let vertex_count = u32::try_from(array.values.len() / 3).ok();
+        if cumulative.last().copied() != vertex_count {
+            continue;
+        }
+        let mut previous = 0;
+        let mut strip_lengths = Vec::with_capacity(cumulative.len());
+        for current in cumulative {
+            let Some(length) = current.checked_sub(previous).filter(|length| *length >= 3) else {
+                strip_lengths.clear();
+                break;
+            };
+            strip_lengths.push(length);
+            previous = current;
+        }
+        if strip_lengths.is_empty() {
+            continue;
+        }
+        let positions = array
+            .values
+            .chunks_exact(3)
+            .map(|point| [point[0], point[1], point[2]])
+            .collect();
+        strips.push(PrimitiveTriangleStrip {
+            offset,
+            positions,
+            strip_lengths,
+        });
+    }
+    strips
+}
+
 /// Decode model-space scalar arrays from an expanded primitive-data section.
 ///
 /// Primitive coordinates use a float32 lane distinct from the float64 lanes
@@ -148,5 +232,22 @@ mod tests {
         assert_eq!(arrays.len(), 1);
         assert_eq!(arrays[0].field, "mv_p_xyz");
         assert_eq!(arrays[0].values.len(), 3);
+    }
+
+    #[test]
+    fn decodes_named_triangle_strip() {
+        let mut bytes =
+            b"value(prim_tristripsetwithatt)\0\xe0\x01p_accum_set_size\0\xf8\x01\x03".to_vec();
+        bytes.extend(named(
+            "mv_p_xyz",
+            &[
+                0x00, 0x00, 0x00, 0x48, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            ],
+            9,
+        ));
+        let strips = triangle_strips(&bytes);
+        assert_eq!(strips.len(), 1);
+        assert_eq!(strips[0].positions.len(), 3);
+        assert_eq!(strips[0].strip_lengths, [3]);
     }
 }
