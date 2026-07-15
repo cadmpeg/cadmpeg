@@ -740,6 +740,23 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let expected_offset = container::scan_bytes(data.clone()).outline_planes[0].offset as u64;
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let namespace = result.ir.native.namespace("creo").unwrap();
+    assert_eq!(
+        namespace.arenas["plane_local_systems"][0].fields["surface_id"],
+        7
+    );
+    assert_eq!(
+        namespace.arenas["plane_envelopes"][0].fields["surface_id"],
+        7
+    );
+    assert_eq!(
+        namespace.arenas["plane_envelopes"][0].fields["envelope"]["kind"],
+        "standard"
+    );
+    assert_eq!(
+        namespace.arenas["outline_planes"][0].fields["normal"][2],
+        1.0
+    );
 
     assert_eq!(result.ir.model.surfaces.len(), 1);
     let surface = &result.ir.model.surfaces[0];

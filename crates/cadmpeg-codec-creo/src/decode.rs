@@ -526,6 +526,57 @@ struct CreoCurvePrototypeRecord {
     source_section: String,
 }
 
+#[derive(Serialize)]
+struct CreoPlaneLocalSystemRecord {
+    id: String,
+    surface_id: u32,
+    body: Vec<u8>,
+    slots: Vec<Option<f64>>,
+    origin: Option<[f64; 3]>,
+    u_axis: Option<[f64; 3]>,
+    normal: Option<[f64; 3]>,
+    classification: &'static str,
+    row_offset: usize,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoPlaneEnvelopeRecord {
+    id: String,
+    surface_id: u32,
+    body: Vec<u8>,
+    envelope: CreoPlaneEnvelope,
+    corner_coordinate_equal: [Option<bool>; 3],
+    row_offset: usize,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum CreoPlaneEnvelope {
+    Standard {
+        bounds_2d: [[Option<f64>; 2]; 2],
+        corners_3d: [[Option<f64>; 3]; 2],
+    },
+    Compact {
+        prefix: [Option<f64>; 3],
+        corners_3d: [[Option<f64>; 3]; 2],
+    },
+}
+
+#[derive(Serialize)]
+struct CreoOutlinePlaneRecord {
+    id: String,
+    surface_id: u32,
+    origin: [f64; 3],
+    normal: [f64; 3],
+    u_axis: [f64; 3],
+    offset: usize,
+    source_section: String,
+}
+
 fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
     scan.feature_entities
         .iter()
@@ -958,6 +1009,82 @@ fn curve_prototype_records(scan: &ContainerScan) -> Vec<CreoCurvePrototypeRecord
             curve_id: record.id,
             type_byte: record.type_byte,
             generating_feature_id: record.feature_id,
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn plane_local_system_records(scan: &ContainerScan) -> Vec<CreoPlaneLocalSystemRecord> {
+    scan.plane_local_systems
+        .iter()
+        .map(|record| CreoPlaneLocalSystemRecord {
+            id: format!(
+                "creo:surface:plane_local_system#{}:{}",
+                record.offset, record.surface_id
+            ),
+            surface_id: record.surface_id,
+            body: record.body.clone(),
+            slots: record.slots.clone(),
+            origin: record.origin,
+            u_axis: record.u_axis,
+            normal: record.normal,
+            classification: match record.classification {
+                crate::surface::LocalSystemClassification::Simple => "simple",
+                crate::surface::LocalSystemClassification::Unclassified => "unclassified",
+            },
+            row_offset: record.row_offset,
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn plane_envelope_records(scan: &ContainerScan) -> Vec<CreoPlaneEnvelopeRecord> {
+    scan.plane_envelopes
+        .iter()
+        .map(|record| CreoPlaneEnvelopeRecord {
+            id: format!(
+                "creo:surface:plane_envelope#{}:{}",
+                record.offset, record.surface_id
+            ),
+            surface_id: record.surface_id,
+            body: record.body.clone(),
+            envelope: match &record.envelope {
+                crate::surface::PlaneEnvelope::Standard {
+                    bounds_2d,
+                    corners_3d,
+                } => CreoPlaneEnvelope::Standard {
+                    bounds_2d: *bounds_2d,
+                    corners_3d: *corners_3d,
+                },
+                crate::surface::PlaneEnvelope::Compact { prefix, corners_3d } => {
+                    CreoPlaneEnvelope::Compact {
+                        prefix: *prefix,
+                        corners_3d: *corners_3d,
+                    }
+                }
+            },
+            corner_coordinate_equal: record.corner_coordinate_equal,
+            row_offset: record.row_offset,
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+fn outline_plane_records(scan: &ContainerScan) -> Vec<CreoOutlinePlaneRecord> {
+    scan.outline_planes
+        .iter()
+        .map(|record| CreoOutlinePlaneRecord {
+            id: format!(
+                "creo:surface:outline_plane#{}:{}",
+                record.offset, record.surface_id
+            ),
+            surface_id: record.surface_id,
+            origin: record.origin,
+            normal: record.normal,
+            u_axis: record.u_axis,
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })
@@ -15950,6 +16077,24 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("surface_parameters", &surface_parameters)?;
+    }
+    let plane_local_systems = plane_local_system_records(scan);
+    if !plane_local_systems.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("plane_local_systems", &plane_local_systems)?;
+    }
+    let plane_envelopes = plane_envelope_records(scan);
+    if !plane_envelopes.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("plane_envelopes", &plane_envelopes)?;
+    }
+    let outline_planes = outline_plane_records(scan);
+    if !outline_planes.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("outline_planes", &outline_planes)?;
     }
     let pcurve_endpoints = pcurve_endpoint_records(scan);
     if !pcurve_endpoints.is_empty() {
