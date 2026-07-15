@@ -9826,6 +9826,34 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     };
     origin.y = 1.0;
     assert!(crate::decode::constant_surface_offset_between(&ir, &support, &offset, 0).is_none());
+
+    let support_plane = SurfaceId("synthetic:support-plane".into());
+    let offset_plane = SurfaceId("synthetic:offset-plane".into());
+    let plane = |id, origin| Surface {
+        id,
+        geometry: SurfaceGeometry::Plane {
+            origin,
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    };
+    ir.model.surfaces.extend([
+        plane(support_plane.clone(), Point3::new(10.0, 20.0, 30.0)),
+        plane(offset_plane.clone(), Point3::new(10.0, 20.0, 35.0)),
+    ]);
+    assert_eq!(
+        crate::decode::constant_surface_offset_between(&ir, &support_plane, &offset_plane, 0),
+        Some(5.0)
+    );
+    let SurfaceGeometry::Plane { origin, .. } = &mut ir.model.surfaces[3].geometry else {
+        unreachable!()
+    };
+    origin.x += 1.0;
+    assert!(
+        crate::decode::constant_surface_offset_between(&ir, &support_plane, &offset_plane, 0)
+            .is_none()
+    );
 }
 
 #[test]

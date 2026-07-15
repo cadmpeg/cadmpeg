@@ -2880,6 +2880,43 @@ pub(crate) fn constant_surface_offset_between(
 fn analytic_surface_offset(support: &SurfaceGeometry, offset: &SurfaceGeometry) -> Option<f64> {
     match (support, offset) {
         (
+            SurfaceGeometry::Plane {
+                origin: support_origin,
+                normal: support_normal,
+                u_axis: support_u,
+            },
+            SurfaceGeometry::Plane {
+                origin: offset_origin,
+                normal: offset_normal,
+                u_axis: offset_u,
+            },
+        ) if support_normal == offset_normal && support_u == offset_u => {
+            let delta = Vector3::new(
+                offset_origin.x - support_origin.x,
+                offset_origin.y - support_origin.y,
+                offset_origin.z - support_origin.z,
+            );
+            let distance = dot_vector(delta, *support_normal);
+            let residual = Vector3::new(
+                delta.x - distance * support_normal.x,
+                delta.y - distance * support_normal.y,
+                delta.z - distance * support_normal.z,
+            );
+            let scale = [
+                support_origin.x,
+                support_origin.y,
+                support_origin.z,
+                offset_origin.x,
+                offset_origin.y,
+                offset_origin.z,
+                distance,
+            ]
+            .into_iter()
+            .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+            let tolerance = 64.0 * f64::EPSILON * scale;
+            (dot_vector(residual, residual) <= tolerance * tolerance).then_some(distance)
+        }
+        (
             SurfaceGeometry::Cylinder {
                 origin: support_origin,
                 axis: support_axis,
