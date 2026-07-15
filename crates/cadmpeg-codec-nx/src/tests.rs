@@ -1975,6 +1975,23 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
 }
 
 #[test]
+fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
+    let bytes = [
+        0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    let pairs = crate::om::sketch_payload_fixed_pairs(&bytes);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].values, [0.5, -0.5]);
+    assert_eq!(pairs[0].value_offsets, [8, 17]);
+    assert_eq!(pairs[0].raw_values[0], [0x40, 0, 0, 0, 0, 0, 0]);
+
+    let mut malformed = bytes;
+    malformed[16] = 1;
+    assert!(crate::om::sketch_payload_fixed_pairs(&malformed).is_empty());
+}
+
+#[test]
 fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
     use crate::native::{
         feature_sketch_named_point_block_uses, FeatureSketchReference, OffsetStoreNamedPoint,

@@ -5525,6 +5525,10 @@ fn attach_native_object_model(
             &scan.container,
             &feature_sketch_construction_payloads,
         );
+    let feature_sketch_payload_fixed_pairs = crate::native::feature_sketch_payload_fixed_pairs(
+        &scan.container,
+        &feature_sketch_construction_payloads,
+    );
     let feature_sketch_payload_scalars = crate::native::feature_sketch_payload_scalars(
         &scan.container,
         &feature_sketch_construction_inputs,
@@ -5689,6 +5693,7 @@ fn attach_native_object_model(
         && feature_sketch_construction_payloads.is_empty()
         && feature_sketch_payload_scalars.is_empty()
         && feature_sketch_payload_names.is_empty()
+        && feature_sketch_payload_fixed_pairs.is_empty()
         && feature_sketch_payload_named_records.is_empty()
         && feature_sketch_points.is_empty()
         && feature_sketch_point_groups.is_empty()
@@ -5951,6 +5956,12 @@ fn attach_native_object_model(
             .tag("FEATURE_SKETCH_RECORD");
         annotations.exactness(&sketch.id, Exactness::Derived);
     }
+    for pair in &feature_sketch_payload_fixed_pairs {
+        annotations
+            .note(&pair.id, annotation_stream, pair.source_offset)
+            .tag("FEATURE_SKETCH_FIXED_PAIR");
+        annotations.exactness(&pair.id, Exactness::ByteExact);
+    }
     for record in &feature_operation_records {
         annotations
             .note(&record.id, annotation_stream, record.source_offset)
@@ -6204,6 +6215,7 @@ fn attach_native_object_model(
             operation_body_operands: &feature_operation_body_operands,
             sketch_construction_inputs: &feature_sketch_construction_inputs,
             sketch_coordinate_pairs: &feature_sketch_payload_coordinate_pairs,
+            sketch_fixed_pairs: &feature_sketch_payload_fixed_pairs,
             block_constructions: &feature_block_constructions,
             block_dimensions: &feature_block_dimensions,
             block_payload_points: &feature_block_payload_points,
@@ -6603,6 +6615,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_sketch_payload_coordinate_pairs",
             &feature_sketch_payload_coordinate_pairs,
+        )?;
+    }
+    if !feature_sketch_payload_fixed_pairs.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_payload_fixed_pairs",
+            &feature_sketch_payload_fixed_pairs,
         )?;
     }
     if !feature_sketch_payload_scalars.is_empty() {
@@ -7034,6 +7052,7 @@ struct FeatureOperationSources<'a> {
     operation_body_operands: &'a [crate::native::FeatureOperationBodyOperand],
     sketch_construction_inputs: &'a [crate::native::FeatureSketchConstructionInputs],
     sketch_coordinate_pairs: &'a [crate::native::FeatureSketchPayloadCoordinatePair],
+    sketch_fixed_pairs: &'a [crate::native::FeatureSketchPayloadFixedPair],
     block_constructions: &'a [crate::native::FeatureBlockConstruction],
     block_dimensions: &'a [crate::native::FeatureBlockDimensions],
     block_payload_points: &'a [crate::native::FeatureBlockPayloadPoint],
@@ -7083,6 +7102,7 @@ fn attach_feature_operations(
         operation_body_operands,
         sketch_construction_inputs,
         sketch_coordinate_pairs,
+        sketch_fixed_pairs,
         block_constructions,
         block_dimensions,
         block_payload_points,
@@ -7255,6 +7275,14 @@ fn attach_feature_operations(
         BTreeMap::<&str, Vec<&crate::native::FeatureSketchPayloadCoordinatePair>>::new();
     for pair in sketch_coordinate_pairs {
         sketch_coordinate_pairs_by_operation
+            .entry(pair.operation_label.as_str())
+            .or_default()
+            .push(pair);
+    }
+    let mut sketch_fixed_pairs_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureSketchPayloadFixedPair>>::new();
+    for pair in sketch_fixed_pairs {
+        sketch_fixed_pairs_by_operation
             .entry(pair.operation_label.as_str())
             .or_default()
             .push(pair);
@@ -7491,6 +7519,16 @@ fn attach_feature_operations(
         {
             source_properties.insert(
                 format!("sketch_coordinate_pair.{}", pair.ordinal),
+                pair.id.clone(),
+            );
+        }
+        for pair in sketch_fixed_pairs_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("sketch_fixed_pair.{}", pair.ordinal),
                 pair.id.clone(),
             );
         }
