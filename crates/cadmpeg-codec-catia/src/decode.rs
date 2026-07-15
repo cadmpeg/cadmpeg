@@ -1208,7 +1208,8 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 mod chart_tests {
     use super::{
         attach_standard_free_vertices, build_standard_edge_curve, canonical_periodic_range,
-        circle_parameter_range_from_surface_branch, combine_propagated_endpoint_pairs,
+        circle_parameter_range_from_surface_branch,
+        circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
         e5_body_kinds, e5_boundary_curve, e5_occurrence_intersection_context, e5_pcurve_on_surface,
         equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes, include_native_endpoint_pairs,
         intersection_line_direction, ordered_range, parameter_ranges_reversed, point_distance,
@@ -1243,6 +1244,28 @@ mod chart_tests {
         assert!(unique_index_owners(&[vec![0]], 2).is_none());
         assert!(unique_index_owners(&[vec![1]], 1).is_none());
         assert!(unique_index_owners(&[Vec::new()], 0).is_none());
+    }
+
+    #[test]
+    fn circular_face_intervals_allow_seams_but_reject_crossing_boundaries() {
+        let tau = std::f64::consts::TAU;
+        assert!(circular_ranges_are_nonoverlapping_or_coincident(&[
+            [0.0, 1.0],
+            [1.0, 3.0],
+            [3.0, tau],
+        ]));
+        assert!(circular_ranges_are_nonoverlapping_or_coincident(&[
+            [0.0, std::f64::consts::PI],
+            [0.0, std::f64::consts::PI],
+        ]));
+        assert!(!circular_ranges_are_nonoverlapping_or_coincident(&[
+            [0.0, 4.0],
+            [2.0, 5.0],
+        ]));
+        assert!(circular_ranges_are_nonoverlapping_or_coincident(&[
+            [5.0, 7.0],
+            [7.0 - tau, 5.0],
+        ]));
     }
 
     #[test]
@@ -4531,6 +4554,35 @@ fn attach_standard_topology(
         }
     }
     if let Some(options) = &mut endpoint_options {
+        for (edge, pairs) in options.iter_mut().enumerate() {
+            let support = &supports[edge];
+            if matches!(support.geometry, geometry::StandardCurveGeometry::Bspline) {
+                continue;
+            }
+            pairs.retain(|pair| {
+                let Some(start) = ir.model.points.get(pair[0]).map(|point| point.position) else {
+                    return false;
+                };
+                let Some(end) = ir.model.points.get(pair[1]).map(|point| point.position) else {
+                    return false;
+                };
+                support.faces.iter().all(|&face| {
+                    let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
+                        return false;
+                    };
+                    standard_pcurve_geometry(
+                        &surface.geometry,
+                        support,
+                        start,
+                        end,
+                        geometry::standard_face_witness(brep, bindings[face].2),
+                    )
+                    .is_some()
+                })
+            });
+        }
+    }
+    if let Some(options) = &mut endpoint_options {
         loop {
             let seeds = options
                 .iter()
@@ -4759,7 +4811,17 @@ fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
-        topology::parse_standard_mesh_endpoint_candidates(brep, &edge_faces, options)
+        topology::parse_standard_mesh_incidence_candidates(brep, &edge_faces, options, |pairs| {
+            standard_circle_pair_solution_is_simple(
+                ir,
+                bindings,
+                &surface_indices,
+                brep,
+                &supports,
+                pairs,
+            )
+        })
+        .or_else(|| topology::parse_standard_mesh_endpoint_candidates(brep, &edge_faces, options))
     }) {
         bound
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
@@ -5725,6 +5787,112 @@ fn build_standard_edge_curve(
         }
     }
     (Some(id), param_range)
+}
+
+fn standard_circle_pair_solution_is_simple(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    brep: &[u8],
+    supports: &[geometry::StandardCurveSupport],
+    pairs: &[[usize; 2]],
+) -> bool {
+    type CircleFaceKey = (u64, u64, u64, u64, usize);
+
+    let mut ranges = HashMap::<CircleFaceKey, Vec<[f64; 2]>>::new();
+    for (support, pair) in supports.iter().zip(pairs) {
+        let geometry::StandardCurveGeometry::Circle { center, radius } = &support.geometry else {
+            continue;
+        };
+        let Some(start) = ir.model.points.get(pair[0]).map(|point| point.position) else {
+            return false;
+        };
+        let Some(end) = ir.model.points.get(pair[1]).map(|point| point.position) else {
+            return false;
+        };
+        let axes = support
+            .faces
+            .iter()
+            .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
+            .filter_map(|surface| circle_axis_from_carrier(*center, *radius, &surface.geometry))
+            .collect::<Vec<_>>();
+        let Some(axis) = axes.first().copied() else {
+            continue;
+        };
+        if axes
+            .iter()
+            .skip(1)
+            .any(|other| axis_dot(axis, *other).abs() < 0.9999)
+        {
+            return false;
+        }
+        let candidates = [axis, scale_vector(axis, -1.0)]
+            .into_iter()
+            .filter_map(|axis| {
+                let reference = cadmpeg_ir::geometry::derive_reference_direction(axis);
+                let range = standard_circle_param_range(
+                    ir,
+                    bindings,
+                    surface_indices,
+                    brep,
+                    support,
+                    *center,
+                    *radius,
+                    axis,
+                    reference,
+                    start,
+                    end,
+                )?;
+                canonical_periodic_range(range)
+            })
+            .collect::<Vec<_>>();
+        let [range] = candidates.as_slice() else {
+            continue;
+        };
+        for &face in &support.faces {
+            let key = (
+                center.x.to_bits(),
+                center.y.to_bits(),
+                center.z.to_bits(),
+                radius.to_bits(),
+                face,
+            );
+            ranges.entry(key).or_default().push(*range);
+        }
+    }
+    ranges
+        .values()
+        .all(|ranges| circular_ranges_are_nonoverlapping_or_coincident(ranges))
+}
+
+fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2]]) -> bool {
+    fn segments(range: [f64; 2]) -> Vec<[f64; 2]> {
+        let span = range[1] - range[0];
+        let start = range[0].rem_euclid(std::f64::consts::TAU);
+        let end = start + span;
+        if end <= std::f64::consts::TAU {
+            vec![[start, end]]
+        } else {
+            vec![
+                [start, std::f64::consts::TAU],
+                [0.0, end - std::f64::consts::TAU],
+            ]
+        }
+    }
+
+    let coincident = ranges.iter().skip(1).all(|range| {
+        (range[0] - ranges[0][0]).abs() <= 1e-9 && (range[1] - ranges[0][1]).abs() <= 1e-9
+    });
+    coincident
+        || ranges.iter().enumerate().all(|(left_index, left)| {
+            ranges[left_index + 1..].iter().all(|right| {
+                !segments(*left).iter().any(|left| {
+                    segments(*right)
+                        .iter()
+                        .any(|right| left[1].min(right[1]) - left[0].max(right[0]) > 1e-6)
+                })
+            })
+        })
 }
 
 #[allow(clippy::too_many_arguments)]
