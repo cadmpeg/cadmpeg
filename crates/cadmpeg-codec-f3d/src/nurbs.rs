@@ -3586,15 +3586,12 @@ fn decode_rolling_ball_side(
         None
     } else {
         *position = saved;
-        let kind = take_native_ident(bytes, position)?;
-        *position = saved;
-        let surface = decode_embedded_surface(bytes, position, int_width)?;
-        if kind == "plane" {
-            for _ in 0..4 {
-                take_bool(bytes, position)?;
-            }
-        }
-        Some(surface)
+        Some(decode_rolling_ball_surface(
+            bytes,
+            position,
+            int_width,
+            reference_context,
+        )?)
     };
     let saved = *position;
     let curve = if take_native_ident(bytes, position).as_deref() == Some("null_curve") {
@@ -3638,6 +3635,48 @@ fn decode_rolling_ball_side(
         extension,
         tertiary_pcurve,
     })
+}
+
+fn decode_rolling_ball_surface(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    reference_context: Option<(&[u8], &SubtypeTables)>,
+) -> Option<SurfaceGeometry> {
+    let saved = *position;
+    let kind = take_native_ident(bytes, position)?;
+    if kind == "spline" {
+        if marker_at(bytes, *position).is_some() {
+            let surface = decode_surface_block(bytes, *position, int_width)?;
+            *position = surface.end;
+            return Some(SurfaceGeometry::Nurbs(surface.surface));
+        }
+        take_bool(bytes, position)?;
+        let scope = subtype_span(bytes, *position, int_width)?;
+        let inline = marker_positions(scope)
+            .into_iter()
+            .filter_map(|at| decode_surface_block(scope, at, int_width))
+            .next_back()
+            .map(|decoded| decoded.surface);
+        let surface = reference_context
+            .and_then(|(active_bytes, tables)| {
+                decode_surface_cache_resolving_refs(scope, active_bytes, tables)
+            })
+            .or(inline)?;
+        *position += scope.len();
+        for _ in 0..4 {
+            take_bool(bytes, position)?;
+        }
+        return Some(SurfaceGeometry::Nurbs(surface));
+    }
+    *position = saved;
+    let surface = decode_embedded_surface(bytes, position, int_width)?;
+    if kind == "plane" {
+        for _ in 0..4 {
+            take_bool(bytes, position)?;
+        }
+    }
+    Some(surface)
 }
 
 fn decode_rolling_ball_curve(
@@ -7738,6 +7777,27 @@ mod width_tests {
                 Some(CurveGeometry::Nurbs(curve)) if curve.degree == 1
             ));
             assert_eq!(position, intcurve.len());
+        }
+    }
+
+    #[test]
+    fn rolling_ball_surfaces_decode_framed_spline_supports() {
+        for int_width in [4usize, 8] {
+            let mut bytes = Vec::new();
+            push_ident(&mut bytes, "spline");
+            bytes.push(0x0b);
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "exact_spl_sur");
+            bytes.extend_from_slice(&surface_block(int_width));
+            bytes.push(0x10);
+            bytes.extend_from_slice(&[0x0b; 4]);
+            let mut position = 0;
+            assert!(matches!(
+                decode_rolling_ball_surface(&bytes, &mut position, int_width, None),
+                Some(SurfaceGeometry::Nurbs(surface))
+                    if surface.u_degree == 1 && surface.v_degree == 1
+            ));
+            assert_eq!(position, bytes.len());
         }
     }
 
