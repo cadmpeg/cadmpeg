@@ -702,7 +702,7 @@ On a body, `generic_tag_attrib_def` supplies a design/construction ID distinct f
 
 #### Edge-recipe incidence matching
 
-For each selector, an edge is an incidence match when, for every present clause entry, its incident loops contain both encoded boundary-count and coedge-ordinal incidences. Each selector retains all matching changed historical edge slots in stable slot order. Incidence matches are topology context and do not resolve the operand's selected edge.
+For each selector, an edge is an incidence match when, for every present clause entry, its incident loops contain both encoded boundary-count and coedge-ordinal incidences. Each selector retains all matching changed historical edge slots in stable slot order and separately retains the edge slot when that set is a singleton. Incidence matches, including singleton matches, are topology context and do not resolve the operand's selected edge.
 
 ### 8.2 Materials
 

@@ -877,12 +877,17 @@ fn recipe_selector_candidates(
                     })
                 })
                 .map(|context| context.edge_slot)
-                .collect();
+                .collect::<Vec<_>>();
+            let unique_incidence_edge_slot = match incidence_matching_edge_slots.as_slice() {
+                [edge] => Some(*edge),
+                _ => None,
+            };
             crate::records::DesignEdgeRecipeSelectorContext {
                 selector: *selector,
                 clause_entries,
                 clause_triplet_edge_slots,
                 incidence_matching_edge_slots,
+                unique_incidence_edge_slot,
                 boundary_count_matching_edge_slots,
             }
         })
@@ -1869,9 +1874,11 @@ mod tests {
             [Some([vec![7, 8], vec![7, 8]]), Some([vec![8], vec![8]])]
         );
         assert_eq!(selectors[0].incidence_matching_edge_slots, [8]);
+        assert_eq!(selectors[0].unique_incidence_edge_slot, Some(8));
         assert_eq!(selectors[1].selector, 2);
         assert_eq!(selectors[1].boundary_count_matching_edge_slots, [7, 8]);
         assert_eq!(selectors[1].incidence_matching_edge_slots, [7, 8]);
+        assert_eq!(selectors[1].unique_incidence_edge_slot, None);
         assert_eq!(
             selectors[1].clause_triplet_edge_slots,
             [Some([vec![7, 8], vec![7, 8]]), None]
