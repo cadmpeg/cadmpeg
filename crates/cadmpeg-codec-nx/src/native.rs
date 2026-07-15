@@ -1216,6 +1216,27 @@ pub struct FeatureDatumCsysPayloadScalarPair {
     pub discriminator: Vec<u8>,
 }
 
+/// One exactly framed scalar field in a reconstructed datum-CSYS payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureDatumCsysPayloadScalar {
+    /// Globally unique scalar-field identity.
+    pub id: String,
+    /// Owning `DATUM_CSYS` operation label.
+    pub operation_label: String,
+    /// Reconstructed payload carrying the field.
+    pub datum_csys_payload: String,
+    /// Zero-based field order within the payload.
+    pub ordinal: u32,
+    /// Serialized discriminator following the `50 59 66` marker.
+    pub field_code: u8,
+    /// Finite shifted-IEEE binary64 value.
+    pub value: f64,
+    /// Payload-relative offset of the field marker.
+    pub payload_offset: u64,
+    /// Absolute source offset of the field marker.
+    pub source_offset: u64,
+}
+
 /// Typed descriptor from one of the final three datum-CSYS construction lanes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDatumCsysDescriptor {
@@ -3348,6 +3369,50 @@ pub fn feature_datum_csys_payload_scalar_pairs(
                             source_offset(pair.value_offsets[1])?,
                         ],
                         discriminator: pair.discriminator,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode complete shifted-binary64 fields from reconstructed datum-CSYS payloads.
+pub fn feature_datum_csys_payload_scalars(
+    container: &Container,
+    payloads: &[FeatureDatumCsysPayload],
+) -> Vec<FeatureDatumCsysPayloadScalar> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            let source_offset =
+                |relative: usize| {
+                    let relative = relative as u64;
+                    starts.iter().zip(&lengths).zip(&sources).find_map(
+                        |((start, length), source)| {
+                            (relative >= *start && relative < start.saturating_add(*length))
+                                .then_some(source + relative - start)
+                        },
+                    )
+                };
+            crate::om::construction_payload_scalar_fields(&bytes)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, scalar)| {
+                    Some(FeatureDatumCsysPayloadScalar {
+                        id: format!("{}-scalar-{ordinal}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        datum_csys_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        field_code: scalar.field_code,
+                        value: scalar.value,
+                        payload_offset: scalar.offset as u64,
+                        source_offset: source_offset(scalar.offset)?,
                     })
                 })
                 .collect()

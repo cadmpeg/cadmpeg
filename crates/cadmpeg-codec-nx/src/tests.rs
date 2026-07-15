@@ -2518,6 +2518,21 @@ fn nx_sketch_point_names_require_positive_decimal_suffixes() {
 }
 
 #[test]
+fn om_datum_csys_scalar_field_uses_the_common_shifted_binary64_frame() {
+    let mut shifted = 25.4_f64.to_be_bytes();
+    shifted[0] -= 0x10;
+    let mut payload = vec![0xaa, 0x50, 0x59, 0x66, 0x64, 0x00];
+    payload.extend_from_slice(&shifted);
+    payload.push(0xbb);
+
+    let fields = crate::om::construction_payload_scalar_fields(&payload);
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].offset, 1);
+    assert_eq!(fields[0].field_code, 0x64);
+    assert_eq!(fields[0].value, 25.4);
+}
+
+#[test]
 fn om_simple_hole_lane_requires_two_identical_nonempty_scalar_runs() {
     let shifted = |value: f64| {
         let mut bytes = value.to_be_bytes();
