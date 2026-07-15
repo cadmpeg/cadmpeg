@@ -153,6 +153,7 @@ struct DesignProjectionGaps {
     profile_selections: usize,
     face_selections: usize,
     native_edge_selections: usize,
+    partially_resolved_edge_members: usize,
     unresolved_edge_selections: usize,
 }
 
@@ -178,6 +179,9 @@ fn design_projection_gaps(ir: &CadIr) -> DesignProjectionGaps {
     let mut edge_selection = |selection: &EdgeSelection| match selection {
         EdgeSelection::Native(_) => gaps.native_edge_selections += 1,
         EdgeSelection::Unresolved => gaps.unresolved_edge_selections += 1,
+        EdgeSelection::HistoricalPartial { unresolved, .. } => {
+            gaps.partially_resolved_edge_members += unresolved.len();
+        }
         EdgeSelection::Edges(_)
         | EdgeSelection::Resolved { .. }
         | EdgeSelection::Historical { .. } => {}
@@ -280,6 +284,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr) {
         format!(
             "{} edge-treatment selection(s) retain native construction recipes because no neutral historical edge selection was resolved.",
             gaps.native_edge_selections
+        ),
+    );
+    push(
+        gaps.partially_resolved_edge_members,
+        format!(
+            "{} edge-treatment operand(s) remain unresolved inside otherwise typed historical selections.",
+            gaps.partially_resolved_edge_members
         ),
     );
     push(
@@ -1976,6 +1987,7 @@ mod tests {
                 profile_selections: 1,
                 face_selections: 1,
                 native_edge_selections: 1,
+                partially_resolved_edge_members: 0,
                 unresolved_edge_selections: 1,
             }
         );

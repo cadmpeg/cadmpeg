@@ -2309,6 +2309,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     state,
                     edges,
                     native,
+                }
+                | EdgeSelection::HistoricalPartial {
+                    state,
+                    edges,
+                    native,
+                    ..
                 } => {
                     check_historical_selection(
                         findings,
@@ -2328,6 +2334,38 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                                 .collect()
                         },
                     );
+                    if let EdgeSelection::HistoricalPartial { unresolved, .. } = selection {
+                        let mut identities = HashSet::new();
+                        for identity in unresolved {
+                            if identity.trim().is_empty() {
+                                findings.push(Finding {
+                                    check: Check::ReferentialIntegrity,
+                                    severity: Severity::Error,
+                                    message: "partial historical edge selection has an empty unresolved operand identity".into(),
+                                    entity: Some(feature.id.0.clone()),
+                                });
+                            } else if !identities.insert(identity) {
+                                findings.push(Finding {
+                                    check: Check::ReferentialIntegrity,
+                                    severity: Severity::Error,
+                                    message: format!(
+                                        "partial historical edge selection repeats unresolved operand `{identity}`"
+                                    ),
+                                    entity: Some(feature.id.0.clone()),
+                                });
+                            }
+                        }
+                        if unresolved.is_empty() {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message:
+                                    "partial historical edge selection has no unresolved operands"
+                                        .into(),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                        }
+                    }
                 }
                 EdgeSelection::Unresolved | EdgeSelection::Native(_) => {}
             }

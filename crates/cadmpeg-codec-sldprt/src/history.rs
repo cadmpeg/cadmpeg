@@ -2820,7 +2820,9 @@ fn face_selection_value(selection: &FaceSelection) -> Option<String> {
 
 fn edge_selection_value(selection: &EdgeSelection) -> Option<String> {
     match selection {
-        EdgeSelection::Native(native) | EdgeSelection::Resolved { native, .. }
+        EdgeSelection::Native(native)
+        | EdgeSelection::Resolved { native, .. }
+        | EdgeSelection::HistoricalPartial { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())

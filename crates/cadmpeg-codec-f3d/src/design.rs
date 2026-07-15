@@ -1113,9 +1113,6 @@ fn resolved_edge_group(
             )
         })
         .or_else(|| scope_partition_edge_group_candidates(group, groups, operands));
-    let Some(resolved_slots) = resolved_slots else {
-        return EdgeSelection::Native(group.id.clone());
-    };
     let Some(previous_state_id) = previous_state_id else {
         return EdgeSelection::Native(group.id.clone());
     };
@@ -1124,6 +1121,18 @@ fn resolved_edge_group(
         .0
         .split_once('#')
         .map_or(feature_id.0.as_str(), |(_, key)| key);
+    let Some(resolved_slots) = resolved_slots else {
+        return partial_historical_edge_selection(
+            matched_operands
+                .iter()
+                .map(|operand| (operand.id.as_str(), resolved_edge_operand(operand))),
+            previous_state_id,
+            feature_key,
+            state,
+            &group.id,
+        )
+        .unwrap_or_else(|| EdgeSelection::Native(group.id.clone()));
+    };
     let mut edges = Vec::new();
     for edge_slot in resolved_slots {
         let edge = HistoricalEdgeId(format!(
@@ -1144,6 +1153,47 @@ fn resolved_edge_group(
             native: group.id.clone(),
         }
     }
+}
+
+fn partial_historical_edge_selection<'a>(
+    members: impl IntoIterator<Item = (&'a str, Option<i64>)>,
+    previous_state_id: i64,
+    feature_key: &str,
+    state: cadmpeg_ir::ids::FeatureInputTopologyId,
+    native: &str,
+) -> Option<cadmpeg_ir::features::EdgeSelection> {
+    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::ids::HistoricalEdgeId;
+
+    let mut edges = Vec::new();
+    let mut unresolved = Vec::new();
+    for (identity, edge) in members {
+        if let Some(edge) = edge {
+            if !edges.contains(&edge) {
+                edges.push(edge);
+            }
+        } else {
+            unresolved.push(identity.to_owned());
+        }
+    }
+    if edges.is_empty() || unresolved.is_empty() {
+        return None;
+    }
+    Some(EdgeSelection::HistoricalPartial {
+        state,
+        edges: edges
+            .into_iter()
+            .map(|edge_slot| {
+                HistoricalEdgeId(format!(
+                    "f3d:history-input:edge#{}:{}:{previous_state_id}:{edge_slot}",
+                    feature_key.len(),
+                    feature_key
+                ))
+            })
+            .collect(),
+        unresolved,
+        native: native.to_owned(),
+    })
 }
 
 fn context_only_edge_group_candidates<'a>(
@@ -10617,12 +10667,12 @@ mod relation_tests {
         parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
         parse_face_operand, parse_parameter_companion, parse_parameter_owner,
         parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        point_on_sketch_entity, project_configurations, project_dimension_constraints,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design, radial_dimension_definition, recipe_record_prefix,
-        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
-        resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
-        resolved_face_group, two_locus_distance_dimension,
+        partial_historical_edge_selection, point_on_sketch_entity, project_configurations,
+        project_dimension_constraints, project_extrude, project_parameter_design,
+        project_sketch_constraints, project_sketch_design, radial_dimension_definition,
+        recipe_record_prefix, region_containing_points, remove_dimension_frame_relations,
+        repeated_linear_dimension, resolved_edge_candidate_intersection,
+        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
         unresolved_configuration_parameter_override_count, unresolved_configuration_rule_count,
         unresolved_configuration_suppressed_feature_count,
     };
@@ -10825,6 +10875,53 @@ mod relation_tests {
             unresolved_configuration_suppressed_feature_count(&ambiguous),
             1
         );
+    }
+
+    #[test]
+    fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
+        use cadmpeg_ir::features::EdgeSelection;
+        use cadmpeg_ir::ids::FeatureInputTopologyId;
+
+        let state = FeatureInputTopologyId("f3d:history-input:state#feature".into());
+        let selection = partial_historical_edge_selection(
+            [
+                ("operand-a", Some(17)),
+                ("operand-b", None),
+                ("operand-c", Some(17)),
+            ],
+            41,
+            "feature",
+            state.clone(),
+            "group",
+        )
+        .expect("mixed proof state");
+        assert_eq!(
+            selection,
+            EdgeSelection::HistoricalPartial {
+                state,
+                edges: vec![cadmpeg_ir::ids::HistoricalEdgeId(
+                    "f3d:history-input:edge#7:feature:41:17".into()
+                )],
+                unresolved: vec!["operand-b".into()],
+                native: "group".into(),
+            }
+        );
+        assert!(partial_historical_edge_selection(
+            [("operand-a", Some(17)), ("operand-b", Some(18))],
+            41,
+            "feature",
+            FeatureInputTopologyId("state".into()),
+            "group",
+        )
+        .is_none());
+        assert!(partial_historical_edge_selection(
+            [("operand-a", None), ("operand-b", None)],
+            41,
+            "feature",
+            FeatureInputTopologyId("state".into()),
+            "group",
+        )
+        .is_none());
     }
 
     #[test]

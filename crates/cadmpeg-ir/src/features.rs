@@ -991,6 +991,17 @@ pub enum EdgeSelection {
         /// Format-native selection reference.
         native: String,
     },
+    /// Proven historical edges plus source operands whose edge identity is unresolved.
+    HistoricalPartial {
+        /// Input topology containing every resolved edge.
+        state: FeatureInputTopologyId,
+        /// Proven state-local edge identities in source operand order.
+        edges: Vec<HistoricalEdgeId>,
+        /// Stable native identities of unresolved source operands.
+        unresolved: Vec<String>,
+        /// Format-native group selection reference.
+        native: String,
+    },
     /// Format-native selection reference.
     Native(String),
 }

@@ -2910,6 +2910,12 @@ fn edge_selections_round_trip_through_json() {
             edges: vec![HistoricalEdgeId("synthetic:history-input:edge#0".into())],
             native: "edge:9".into(),
         },
+        EdgeSelection::HistoricalPartial {
+            state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+            edges: vec![HistoricalEdgeId("synthetic:history-input:edge#0".into())],
+            unresolved: vec!["native:edge-operand#1".into()],
+            native: "edge:9".into(),
+        },
         EdgeSelection::Native("sldprt:history:feature#10:0".into()),
     ];
     let json = serde_json::to_string(&selections).unwrap();
