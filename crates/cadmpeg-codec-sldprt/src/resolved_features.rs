@@ -7432,6 +7432,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                         .as_deref()
                         .and_then(|id| parameters_by_scalar.get(id).copied())
                         .or_else(|| {
+                            relation.parameter_scalar_ref.is_none().then_some(())?;
                             let lane = lanes.iter().find(|lane| {
                                 lane.relation_instances
                                     .iter()
@@ -7529,6 +7530,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 .as_deref()
                 .and_then(|id| parameters_by_scalar.get(id).copied())
                 .or_else(|| {
+                    relation.parameter_scalar_ref.is_none().then_some(())?;
                     relation_parameter_by_display_name(relation, lane, features, parameters)
                 });
             let (Some([u, v]), Some(parameter)) = (marker.coordinates_m, parameter) else {
@@ -7908,6 +7910,7 @@ pub(crate) fn project_relation_solved_point_geometry(
                 .and_then(|scalar| parameters_by_scalar.get(scalar))
                 .copied()
                 .or_else(|| {
+                    relation.parameter_scalar_ref.is_none().then_some(())?;
                     relation_parameter_by_display_name(relation, lane, features, parameters)
                 });
             let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) =
