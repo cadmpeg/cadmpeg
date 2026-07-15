@@ -201,11 +201,10 @@ pub struct E5Loop {
 }
 
 impl E5Loop {
-    /// Shell-consistent traversal senses when the radial parity system closes,
-    /// otherwise the loop-local head-to-tail senses.
+    /// Shell-consistent traversal senses when the radial parity system closes.
     #[must_use]
-    pub fn resolved_reversed(&self) -> &[bool] {
-        self.absolute_reversed.as_deref().unwrap_or(&self.reversed)
+    pub fn resolved_reversed(&self) -> Option<&[bool]> {
+        self.absolute_reversed.as_deref()
     }
 }
 
@@ -356,7 +355,9 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
             loops: resolved_loops,
         });
     }
-    solve_absolute_orientation(&mut faces);
+    if !solve_absolute_orientation(&mut faces) {
+        return None;
+    }
     let edges: BTreeMap<u32, E5Edge> = edges
         .into_iter()
         .filter(|(id, _)| reachable_edges.contains(id))
@@ -581,7 +582,7 @@ fn parse_jet_pcurve(payload: &[u8], mut position: usize, surface: u32) -> Option
     })
 }
 
-fn solve_absolute_orientation(faces: &mut [E5Face]) {
+fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
     let mut locations = Vec::new();
     for (face_index, face) in faces.iter().enumerate() {
         for (loop_index, loop_) in face.loops.iter().enumerate() {
@@ -667,6 +668,7 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
                 .collect(),
         );
     }
+    solved.into_iter().all(|value| value.is_some())
 }
 
 fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Option<Vec<E5Body>> {
@@ -946,7 +948,7 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
 
 #[cfg(test)]
 mod tests {
-    use super::{solve_loop_chain, E5Edge};
+    use super::{solve_absolute_orientation, solve_loop_chain, E5Edge, E5Face, E5Loop};
     use std::collections::BTreeMap;
 
     #[test]
@@ -978,5 +980,44 @@ mod tests {
             ),
         ]);
         assert_eq!(solve_loop_chain(&[1, 2], &edges), Some(vec![false, false]));
+    }
+
+    #[test]
+    fn frustrated_radial_parity_has_no_absolute_orientation() {
+        let loop_ = |record_id, edge_uses| E5Loop {
+            record_id,
+            surface: record_id + 100,
+            pcurves: vec![record_id + 200; 2],
+            edge_uses,
+            reversed: vec![false, false],
+            absolute_reversed: None,
+            outer: Some(true),
+        };
+        let mut faces = vec![
+            E5Face {
+                record_id: 1,
+                surface: 101,
+                trailer_sign: 1,
+                loops: vec![loop_(11, vec![1, 3])],
+            },
+            E5Face {
+                record_id: 2,
+                surface: 102,
+                trailer_sign: 1,
+                loops: vec![loop_(12, vec![1, 2])],
+            },
+            E5Face {
+                record_id: 3,
+                surface: 103,
+                trailer_sign: 1,
+                loops: vec![loop_(13, vec![2, 3])],
+            },
+        ];
+
+        assert!(!solve_absolute_orientation(&mut faces));
+        assert!(faces
+            .iter()
+            .flat_map(|face| &face.loops)
+            .all(|loop_| loop_.absolute_reversed.is_none()));
     }
 }

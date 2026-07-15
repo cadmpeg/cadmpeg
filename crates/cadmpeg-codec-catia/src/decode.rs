@@ -2777,7 +2777,9 @@ fn transfer_e5_topology(
                 face: face_id.clone(),
                 coedges: coedge_ids.clone(),
             });
-            let senses = loop_.resolved_reversed();
+            let Some(senses) = loop_.resolved_reversed() else {
+                return false;
+            };
             for (index, ((&edge_ref, &pcurve_ref), &reversed)) in loop_
                 .edge_uses
                 .iter()

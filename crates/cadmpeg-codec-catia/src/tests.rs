@@ -2857,7 +2857,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     );
     assert_eq!(
         topology.faces[1].loops[0].resolved_reversed(),
-        [true, true, true]
+        Some([true, true, true].as_slice())
     );
     assert_eq!(topology.bodies[0].faces, vec![600, 601]);
     assert_eq!(topology.bodies[0].face_orientation_signs, vec![1, 1]);
