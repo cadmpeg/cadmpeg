@@ -276,6 +276,35 @@ pub struct DisplayJtPartitionNode {
     pub source_offset: u64,
 }
 
+/// Complete JT 9 range-LOD node selecting among ordered child nodes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtRangeLodNode {
+    /// Globally unique range-LOD-node identity.
+    pub id: String,
+    /// Owning common node-data record.
+    pub base_node: String,
+    /// Serialized node object identifier.
+    pub object_id: u32,
+    /// Group-node data version.
+    pub group_version: u16,
+    /// Ordered alternate-representation child identifiers.
+    pub child_object_ids: Vec<u32>,
+    /// LOD-node data version.
+    pub lod_version: u16,
+    /// Reserved finite floating-point vector.
+    pub reserved_values: Vec<f32>,
+    /// Reserved signed integer.
+    pub reserved_value: i32,
+    /// Range-LOD data version.
+    pub range_version: u16,
+    /// Strictly increasing nonnegative eye-distance limits.
+    pub range_limits: Vec<f32>,
+    /// Model-coordinate centre for range selection.
+    pub center: [f32; 3],
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
 struct ParsedJtElement<'a> {
     offset: usize,
     object_type_id: &'a [u8],
@@ -381,27 +410,27 @@ pub(crate) struct ParsedJtPartitionNode {
     pub(crate) reserved_bounds: Option<[[f32; 3]; 2]>,
 }
 
-pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtPartitionNode> {
-    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
-    let group_version = u16::from_le_bytes(family.get(..2)?.try_into().ok()?);
-    let child_count = u32::from_le_bytes(family.get(2..6)?.try_into().ok()?);
-    let child_count = usize::try_from(child_count).ok()?;
-    let children_end = 6usize.checked_add(child_count.checked_mul(4)?)?;
-    let child_object_ids = family
-        .get(6..children_end)?
+fn parse_jt9_group_data(bytes: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
+    let version = u16::from_le_bytes(bytes.get(..2)?.try_into().ok()?);
+    let count = u32::from_le_bytes(bytes.get(2..6)?.try_into().ok()?);
+    let count = usize::try_from(count).ok()?;
+    let end = 6usize.checked_add(count.checked_mul(4)?)?;
+    let children = bytes
+        .get(6..end)?
         .chunks_exact(4)
         .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
-        .collect::<Vec<_>>();
-    let partition_flags = u32::from_le_bytes(
-        family
-            .get(children_end..children_end.checked_add(4)?)?
-            .try_into()
-            .ok()?,
-    );
+        .collect();
+    Some((version, children, &bytes[end..]))
+}
+
+pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtPartitionNode> {
+    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+    let (group_version, child_object_ids, family) = parse_jt9_group_data(family)?;
+    let partition_flags = u32::from_le_bytes(family.get(..4)?.try_into().ok()?);
     if partition_flags & !1 != 0 {
         return None;
     }
-    let name_count_offset = children_end.checked_add(4)?;
+    let name_count_offset = 4usize;
     let name_count = u32::from_le_bytes(
         family
             .get(name_count_offset..name_count_offset.checked_add(4)?)?
@@ -495,6 +524,67 @@ pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtParti
         polygon_count_range,
         untransformed_bounds,
         reserved_bounds,
+    })
+}
+
+pub(crate) struct ParsedJtRangeLodNode {
+    pub(crate) group_version: u16,
+    pub(crate) child_object_ids: Vec<u32>,
+    pub(crate) lod_version: u16,
+    pub(crate) reserved_values: Vec<f32>,
+    pub(crate) reserved_value: i32,
+    pub(crate) range_version: u16,
+    pub(crate) range_limits: Vec<f32>,
+    pub(crate) center: [f32; 3],
+}
+
+fn parse_jt_f32_vector(bytes: &[u8]) -> Option<(Vec<f32>, &[u8])> {
+    let count = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+    let count = usize::try_from(count).ok()?;
+    let end = 4usize.checked_add(count.checked_mul(4)?)?;
+    let values = bytes
+        .get(4..end)?
+        .chunks_exact(4)
+        .map(|value| f32::from_le_bytes(value.try_into().expect("four-byte chunk")))
+        .collect::<Vec<_>>();
+    values
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some((values, &bytes[end..]))
+}
+
+pub(crate) fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRangeLodNode> {
+    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+    let (group_version, child_object_ids, mut family) = parse_jt9_group_data(family)?;
+    let lod_version = u16::from_le_bytes(family.get(..2)?.try_into().ok()?);
+    family = &family[2..];
+    let (reserved_values, remaining) = parse_jt_f32_vector(family)?;
+    family = remaining;
+    let reserved_value = i32::from_le_bytes(family.get(..4)?.try_into().ok()?);
+    let range_version = u16::from_le_bytes(family.get(4..6)?.try_into().ok()?);
+    let (range_limits, remaining) = parse_jt_f32_vector(&family[6..])?;
+    if range_limits.iter().any(|value| *value < 0.0)
+        || range_limits.windows(2).any(|pair| pair[0] >= pair[1])
+    {
+        return None;
+    }
+    let center = [
+        f32::from_le_bytes(remaining.get(0..4)?.try_into().ok()?),
+        f32::from_le_bytes(remaining.get(4..8)?.try_into().ok()?),
+        f32::from_le_bytes(remaining.get(8..12)?.try_into().ok()?),
+    ];
+    if remaining.len() != 12 || center.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
+    Some(ParsedJtRangeLodNode {
+        group_version,
+        child_object_ids,
+        lod_version,
+        reserved_values,
+        reserved_value,
+        range_version,
+        range_limits,
+        center,
     })
 }
 
@@ -1134,6 +1224,75 @@ pub fn display_jt_partition_nodes(
                 polygon_count_range: node.polygon_count_range,
                 untransformed_bounds: node.untransformed_bounds,
                 reserved_bounds: node.reserved_bounds,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    nodes
+}
+
+/// Decode complete JT 9 range-LOD nodes from logical scene-graph segments.
+pub fn display_jt_range_lod_nodes(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtRangeLodNode> {
+    const RANGE_LOD_NODE_TYPE: [u8; 16] = [
+        0x4c, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut nodes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major >= 10 {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != RANGE_LOD_NODE_TYPE {
+                continue;
+            }
+            let Some(node) = parse_jt9_range_lod_node_body(element.body) else {
+                return Vec::new();
+            };
+            nodes.push(DisplayJtRangeLodNode {
+                id: format!("{}-range-lod-node-{ordinal}", segment.id),
+                base_node: format!("{}-base-node-{ordinal}", segment.id),
+                object_id: element.object_id,
+                group_version: node.group_version,
+                child_object_ids: node.child_object_ids,
+                lod_version: node.lod_version,
+                reserved_values: node.reserved_values,
+                reserved_value: node.reserved_value,
+                range_version: node.range_version,
+                range_limits: node.range_limits,
+                center: node.center,
                 source_offset: segment.source_offset + 24,
             });
         }

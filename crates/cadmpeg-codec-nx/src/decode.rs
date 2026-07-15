@@ -6326,6 +6326,11 @@ fn attach_native_object_model(
         &display_jt_segments,
         &display_jt_documents,
     );
+    let display_jt_range_lod_nodes = crate::native::display_jt_range_lod_nodes(
+        &scan.container,
+        &display_jt_segments,
+        &display_jt_documents,
+    );
     let feature_datum_csys_constructions =
         crate::native::feature_datum_csys_constructions(&scan.container);
     let feature_datum_csys_payloads = crate::native::feature_datum_csys_payloads(
@@ -6740,6 +6745,12 @@ fn attach_native_object_model(
         annotations
             .note(&node.id, annotation_stream, node.source_offset)
             .tag("DISPLAY_JT_PARTITION_NODE");
+        annotations.exactness(&node.id, Exactness::ByteExact);
+    }
+    for node in &display_jt_range_lod_nodes {
+        annotations
+            .note(&node.id, annotation_stream, node.source_offset)
+            .tag("DISPLAY_JT_RANGE_LOD_NODE");
         annotations.exactness(&node.id, Exactness::ByteExact);
     }
     for row in &segment_index_rows {
@@ -7507,6 +7518,9 @@ fn attach_native_object_model(
     }
     if !display_jt_partition_nodes.is_empty() {
         namespace.set_arena("display_jt_partition_nodes", &display_jt_partition_nodes)?;
+    }
+    if !display_jt_range_lod_nodes.is_empty() {
+        namespace.set_arena("display_jt_range_lod_nodes", &display_jt_range_lod_nodes)?;
     }
     if !feature_datum_csys_constructions.is_empty() {
         namespace.set_arena(

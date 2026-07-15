@@ -273,6 +273,43 @@ fn display_jt9_partition_node_requires_complete_bounds_and_ranges() {
     assert!(crate::native::parse_jt9_partition_node_body(&body).is_none());
 }
 
+#[test]
+fn display_jt9_range_lod_requires_ordered_finite_limits() {
+    let mut body = Vec::new();
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&0_u32.to_le_bytes());
+    body.extend_from_slice(&0_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&2_u32.to_le_bytes());
+    body.extend_from_slice(&7_u32.to_le_bytes());
+    body.extend_from_slice(&9_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&1_u32.to_le_bytes());
+    body.extend_from_slice(&0.25_f32.to_le_bytes());
+    body.extend_from_slice(&(-2_i32).to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&2_u32.to_le_bytes());
+    body.extend_from_slice(&10.0_f32.to_le_bytes());
+    body.extend_from_slice(&20.0_f32.to_le_bytes());
+    for value in [1.0_f32, 2.0, 3.0] {
+        body.extend_from_slice(&value.to_le_bytes());
+    }
+    let node = crate::native::parse_jt9_range_lod_node_body(&body).unwrap();
+    assert_eq!(node.group_version, 1);
+    assert_eq!(node.child_object_ids, [7, 9]);
+    assert_eq!(node.lod_version, 1);
+    assert_eq!(node.reserved_values, [0.25]);
+    assert_eq!(node.reserved_value, -2);
+    assert_eq!(node.range_version, 1);
+    assert_eq!(node.range_limits, [10.0, 20.0]);
+    assert_eq!(node.center, [1.0, 2.0, 3.0]);
+
+    let range_offset = body.len() - 20;
+    body[range_offset..range_offset + 4].copy_from_slice(&5.0_f32.to_le_bytes());
+    body[range_offset + 4..range_offset + 8].copy_from_slice(&4.0_f32.to_le_bytes());
+    assert!(crate::native::parse_jt9_range_lod_node_body(&body).is_none());
+}
+
 fn be_f64(v: f64) -> [u8; 8] {
     v.to_be_bytes()
 }
