@@ -1039,6 +1039,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Loft { .. }
                 | ProceduralSurfaceDefinition::CompoundLoft { .. }
                 | ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
+                | ProceduralSurfaceDefinition::Law { .. }
                 | ProceduralSurfaceDefinition::Skin { .. }
                 | ProceduralSurfaceDefinition::Net { .. }
                 | ProceduralSurfaceDefinition::G2Blend { .. }

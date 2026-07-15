@@ -3462,6 +3462,54 @@ fn synthetic_skin_spl_sur_smbh(law_case: u8, expanded: bool) -> Vec<u8> {
     bytes
 }
 
+fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, name);
+    if legacy_ranges {
+        for value in [-1.0, 2.0, -3.0, 4.0] {
+            t_dbl(&mut surface, value);
+        }
+    }
+    push_u8_string(&mut surface, "primary-law");
+    t_long(&mut surface, 1);
+    push_u8_string(&mut surface, "SET");
+    t_dbl(&mut surface, -2.5);
+    t_long(&mut surface, 1);
+    push_u8_string(&mut surface, "aux-law");
+    t_long(&mut surface, 1);
+    push_u8_string(&mut surface, "TERM");
+    t_vec(&mut surface, [1.0, 2.0, 3.0]);
+    t_long(&mut surface, 1);
+    t_ident(&mut surface, "full");
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.007);
+    for values in [
+        &[0.1][..],
+        &[0.2, 0.3][..],
+        &[][..],
+        &[][..],
+        &[][..],
+        &[][..],
+    ] {
+        append_generated_float_array(&mut surface, values);
+    }
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
     push_u8_string(bytes, label);
     t_ident(bytes, "plane");
@@ -13941,6 +13989,70 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
         construction.formula.variables.as_slice(),
         [LawExpression::Spline { native_id: 5, .. }]
     ));
+}
+
+#[test]
+fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
+    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition};
+
+    for (name, legacy_ranges) in [("law_spl_sur", false), ("lawsur", true)] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_law_spl_sur_smbh(
+                    name,
+                    legacy_ranges,
+                ))),
+                &DecodeOptions::default(),
+            )
+            .expect("law surface decode");
+        let ProceduralSurfaceDefinition::Law { construction } =
+            &decoded.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected law surface")
+        };
+        assert_eq!(
+            construction.parameter_ranges,
+            legacy_ranges.then_some([[-1.0, 2.0], [-3.0, 4.0]])
+        );
+        assert_eq!(construction.primary.name, "primary-law");
+        assert!(matches!(
+            construction.primary.variables.as_slice(),
+            [LawExpression::Algebraic { operator, operands }]
+                if operator == "SET" && operands.len() == 1
+        ));
+        assert_eq!(construction.additional.len(), 1);
+        assert_eq!(construction.additional[0].name, "aux-law");
+        assert!(matches!(
+            construction.additional[0].variables.as_slice(),
+            [LawExpression::Algebraic { operator, operands }]
+                if operator == "TERM" && operands.len() == 2
+        ));
+        assert_eq!(construction.discontinuities[0], [0.1]);
+        assert_eq!(construction.discontinuities[1], [0.2, 0.3]);
+        assert_eq!(
+            decoded.ir.model.procedural_surfaces[0].cache_fit_tolerance,
+            Some(0.07)
+        );
+
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let mut encoded = Vec::new();
+        F3dCodec.encode(&source_less, &mut encoded).unwrap();
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap();
+        let ProceduralSurfaceDefinition::Law { construction } =
+            &round_trip.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected round-trip law surface")
+        };
+        assert_eq!(
+            construction.parameter_ranges,
+            legacy_ranges.then_some([[-1.0, 2.0], [-3.0, 4.0]])
+        );
+        assert_eq!(construction.additional.len(), 1);
+    }
 }
 
 #[test]

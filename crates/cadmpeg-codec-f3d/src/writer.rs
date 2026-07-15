@@ -6012,6 +6012,9 @@ fn native_procedural_surface(
         ProceduralSurfaceDefinition::Skin { construction } => {
             encode_native_skin_surface(bytes, target, procedural, construction, solved_cache)?;
         }
+        ProceduralSurfaceDefinition::Law { construction } => {
+            encode_native_law_surface(bytes, target, procedural, construction, solved_cache)?;
+        }
         ProceduralSurfaceDefinition::Net { construction } => {
             encode_native_net_surface(bytes, target, procedural, construction, solved_cache)?;
         }
@@ -7182,6 +7185,46 @@ fn native_law_formula(
     for variable in &formula.variables {
         native_law_expression(bytes, target, variable, 0)?;
     }
+    Ok(())
+}
+
+fn encode_native_law_surface(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::LawSurfaceConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
+        CodecError::Malformed("law surface requires a native cache-fit tolerance".into())
+    })?;
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "law_spl_sur")?;
+    if let Some(parameter_ranges) = construction.parameter_ranges {
+        for range in parameter_ranges {
+            for parameter in range {
+                native_f64(bytes, parameter);
+            }
+        }
+    }
+    native_law_formula(bytes, target, &construction.primary)?;
+    native_i64(
+        bytes,
+        i64::try_from(construction.additional.len()).map_err(|_| {
+            CodecError::NotImplemented("law surface formula count exceeds i64".into())
+        })?,
+    );
+    for formula in &construction.additional {
+        native_law_formula(bytes, target, formula)?;
+    }
+    native_ident(bytes, "full")?;
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, cache_fit_tolerance / 10.0);
+    for values in &construction.discontinuities {
+        native_compound_loft_float_array(bytes, values)?;
+    }
+    bytes.push(0x10);
     Ok(())
 }
 

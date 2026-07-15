@@ -2108,6 +2108,120 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 ),
                             }
                         }
+                        nurbs::DecodedProceduralSurfaceDefinition::Law(embedded) => {
+                            fn map_law_expression(
+                                out: &mut Brep,
+                                owner: i64,
+                                path: &str,
+                                expression: nurbs::EmbeddedLawExpression,
+                            ) -> cadmpeg_ir::geometry::LawExpression {
+                                match expression {
+                                    nurbs::EmbeddedLawExpression::Null => {
+                                        cadmpeg_ir::geometry::LawExpression::Null
+                                    }
+                                    nurbs::EmbeddedLawExpression::Integer(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Integer { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Double(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Double { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Point(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Point { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Vector(value) => {
+                                        cadmpeg_ir::geometry::LawExpression::Vector { value }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Transform { scalars, enums } => {
+                                        cadmpeg_ir::geometry::LawExpression::Transform {
+                                            scalars,
+                                            enums,
+                                        }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Edge { curve, parameters } => {
+                                        let id = CurveId(format!(
+                                            "f3d:brep:procedural_surface#{owner}:law:{path}:edge"
+                                        ));
+                                        out.curves.push(Curve {
+                                            id: id.clone(),
+                                            geometry: CurveGeometry::Nurbs(curve),
+                                            source_object: None,
+                                        });
+                                        cadmpeg_ir::geometry::LawExpression::Edge {
+                                            curve: id,
+                                            parameters,
+                                        }
+                                    }
+                                    nurbs::EmbeddedLawExpression::Spline {
+                                        native_id,
+                                        knots,
+                                        controls,
+                                        point,
+                                    } => cadmpeg_ir::geometry::LawExpression::Spline {
+                                        native_id,
+                                        knots,
+                                        controls,
+                                        point,
+                                    },
+                                    nurbs::EmbeddedLawExpression::Algebraic {
+                                        operator,
+                                        operands,
+                                    } => cadmpeg_ir::geometry::LawExpression::Algebraic {
+                                        operator,
+                                        operands: operands
+                                            .into_iter()
+                                            .enumerate()
+                                            .map(|(index, operand)| {
+                                                map_law_expression(
+                                                    out,
+                                                    owner,
+                                                    &format!("{path}:{index}"),
+                                                    operand,
+                                                )
+                                            })
+                                            .collect(),
+                                    },
+                                }
+                            }
+                            let map_formula =
+                                |out: &mut Brep, path: &str, formula: nurbs::EmbeddedLawFormula| {
+                                    cadmpeg_ir::geometry::LawFormula {
+                                        name: formula.name,
+                                        variables: formula
+                                            .variables
+                                            .into_iter()
+                                            .enumerate()
+                                            .map(|(index, expression)| {
+                                                map_law_expression(
+                                                    out,
+                                                    i,
+                                                    &format!("{path}:{index}"),
+                                                    expression,
+                                                )
+                                            })
+                                            .collect(),
+                                    }
+                                };
+                            let embedded = *embedded;
+                            let primary = map_formula(&mut out, "primary", embedded.primary);
+                            let additional = embedded
+                                .additional
+                                .into_iter()
+                                .enumerate()
+                                .map(|(index, formula)| {
+                                    map_formula(&mut out, &format!("additional:{index}"), formula)
+                                })
+                                .collect();
+                            ProceduralSurfaceDefinition::Law {
+                                construction: Box::new(
+                                    cadmpeg_ir::geometry::LawSurfaceConstruction {
+                                        parameter_ranges: embedded.parameter_ranges,
+                                        primary,
+                                        additional,
+                                        discontinuities: embedded.discontinuities,
+                                    },
+                                ),
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::Skin(embedded) => {
                             fn map_law_expression(
                                 out: &mut Brep,

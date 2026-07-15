@@ -640,6 +640,67 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::Law { construction } = &procedural.definition {
+            fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
+                if depth > 64 {
+                    return false;
+                }
+                match expression {
+                    crate::geometry::LawExpression::Null
+                    | crate::geometry::LawExpression::Integer { .. } => true,
+                    crate::geometry::LawExpression::Double { value } => value.is_finite(),
+                    crate::geometry::LawExpression::Point { value } => {
+                        value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Vector { value } => {
+                        value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Transform { scalars, .. } => {
+                        scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Edge { parameters, .. } => {
+                        parameters.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::Spline {
+                        knots,
+                        controls,
+                        point,
+                        ..
+                    } => {
+                        knots.iter().chain(controls).all(|value| value.is_finite())
+                            && point.x.is_finite()
+                            && point.y.is_finite()
+                            && point.z.is_finite()
+                    }
+                    crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                        operands.iter().all(|operand| law_valid(operand, depth + 1))
+                    }
+                }
+            }
+            let formula_valid = |formula: &crate::geometry::LawFormula| {
+                if formula.name == "null_law" {
+                    formula.variables.is_empty()
+                } else {
+                    formula.variables.iter().all(|value| law_valid(value, 0))
+                }
+            };
+            let valid = construction
+                .parameter_ranges
+                .iter()
+                .flatten()
+                .flatten()
+                .chain(construction.discontinuities.iter().flatten())
+                .all(|value| value.is_finite())
+                && formula_valid(&construction.primary)
+                && construction.additional.iter().all(formula_valid);
+            if !valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "law surface construction payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Skin { construction } = &procedural.definition {
             fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
                 if depth > 64 {

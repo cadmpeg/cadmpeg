@@ -714,6 +714,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     ScaledCompoundLoft(Box<EmbeddedScaledCompoundLoft>),
     /// Native skinned surface graph with embedded carriers.
     Skin(Box<EmbeddedSkinSurface>),
+    /// Native recursive law-surface graph.
+    Law(Box<EmbeddedLawSurface>),
     /// Native curve-network surface graph with embedded carriers.
     Net(Box<EmbeddedNetSurface>),
     /// Native sweep surface graph with embedded carriers.
@@ -1267,6 +1269,14 @@ pub(crate) enum EmbeddedLawExpression {
 pub(crate) struct EmbeddedLawFormula {
     pub(crate) name: String,
     pub(crate) variables: Vec<EmbeddedLawExpression>,
+}
+
+/// Embedded native law surface before stable IR ids are assigned.
+pub struct EmbeddedLawSurface {
+    pub(crate) parameter_ranges: Option<[[f64; 2]; 2]>,
+    pub(crate) primary: EmbeddedLawFormula,
+    pub(crate) additional: Vec<EmbeddedLawFormula>,
+    pub(crate) discontinuities: [Vec<f64>; 6],
 }
 
 pub(crate) enum EmbeddedSkinSurfaceLayout {
@@ -2173,6 +2183,68 @@ fn decode_skin_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
             parameter_curve: parameter_curve.curve,
             discontinuities,
             discontinuity_flag,
+        })),
+        cache_fit_tolerance,
+    })
+}
+
+fn decode_law_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+    let names: [&[u8]; 2] = [b"law_spl_sur", b"lawsur"];
+    let (start, name) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name))
+    })?;
+    let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name.len() + 3;
+    let parameter_ranges = if span.get(position) == Some(&0x06) {
+        Some([
+            [
+                take_f64(span, &mut position)?,
+                take_f64(span, &mut position)?,
+            ],
+            [
+                take_f64(span, &mut position)?,
+                take_f64(span, &mut position)?,
+            ],
+        ])
+    } else {
+        None
+    };
+    let primary = decode_law_formula(span, &mut position, int_width)?;
+    let count = usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
+    if count > 100_000 {
+        return None;
+    }
+    let additional = (0..count)
+        .map(|_| decode_law_formula(span, &mut position, int_width))
+        .collect::<Option<Vec<_>>>()?;
+    if take_native_ident(span, &mut position)?.as_str() != "full" {
+        return None;
+    }
+    let cache = decode_surface_block(span, position, int_width)?;
+    position = cache.end;
+    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let discontinuities = [
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+    ];
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Law(Box::new(EmbeddedLawSurface {
+            parameter_ranges,
+            primary,
+            additional,
+            discontinuities,
         })),
         cache_fit_tolerance,
     })
@@ -4224,6 +4296,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_compound_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_scaled_compound_loft_spl_sur(bytes, int_width))
+        .or_else(|| decode_law_spl_sur(bytes, int_width))
         .or_else(|| decode_skin_spl_sur(bytes, int_width))
         .or_else(|| decode_net_spl_sur(bytes, int_width))
         .or_else(|| decode_sweep_spl_sur(bytes, int_width))
@@ -7022,6 +7095,58 @@ mod width_tests {
                 EmbeddedLawExpression::Algebraic { operator, operands }
                     if operator == "TERM" && operands.len() == 2
             ));
+        }
+    }
+
+    #[test]
+    fn law_surface_layout_decodes_at_both_integer_widths() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "law_spl_sur");
+            for value in [-1.0, 2.0, -3.0, 4.0] {
+                push_f64(&mut bytes, value);
+            }
+            push_string(&mut bytes, "primary-law");
+            push_int(&mut bytes, 0x04, 1, int_width);
+            push_string(&mut bytes, "SET");
+            push_f64(&mut bytes, -2.5);
+            push_int(&mut bytes, 0x04, 1, int_width);
+            push_string(&mut bytes, "aux-law");
+            push_int(&mut bytes, 0x04, 1, int_width);
+            push_string(&mut bytes, "TERM");
+            push_vector(&mut bytes, [1.0, 2.0, 3.0]);
+            push_int(&mut bytes, 0x04, 1, int_width);
+            push_ident(&mut bytes, "full");
+            bytes.extend_from_slice(&surface_block(int_width));
+            push_f64(&mut bytes, 0.007);
+            for values in [
+                &[0.1][..],
+                &[0.2, 0.3][..],
+                &[][..],
+                &[][..],
+                &[][..],
+                &[][..],
+            ] {
+                push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                for value in values {
+                    push_f64(&mut bytes, *value);
+                }
+            }
+            bytes.push(0x10);
+
+            let decoded = decode_law_spl_sur(&bytes, int_width)
+                .unwrap_or_else(|| panic!("law surface at width {int_width}"));
+            let DecodedProceduralSurfaceDefinition::Law(construction) = decoded.definition else {
+                panic!("expected law surface at width {int_width}")
+            };
+            assert_eq!(
+                construction.parameter_ranges,
+                Some([[-1.0, 2.0], [-3.0, 4.0]])
+            );
+            assert_eq!(construction.primary.name, "primary-law");
+            assert_eq!(construction.additional.len(), 1);
+            assert_eq!(construction.discontinuities[1], [0.2, 0.3]);
+            assert_eq!(decoded.cache_fit_tolerance, Some(0.07));
         }
     }
 

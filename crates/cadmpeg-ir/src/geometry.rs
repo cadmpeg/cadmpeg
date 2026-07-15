@@ -355,6 +355,11 @@ pub enum ProceduralSurfaceDefinition {
         /// Complete native skin construction graph.
         construction: Box<SkinSurfaceConstruction>,
     },
+    /// Native surface defined by recursive law formulas.
+    Law {
+        /// Complete native law-surface construction graph.
+        construction: Box<LawSurfaceConstruction>,
+    },
     /// Native curve-network spline surface.
     Net {
         /// Complete native net construction graph.
@@ -1566,6 +1571,20 @@ pub struct LawFormula {
     pub name: String,
     /// Ordered recursive variables; empty for `null_law`.
     pub variables: Vec<LawExpression>,
+}
+
+/// Complete recursive construction stored by a native law spline surface.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LawSurfaceConstruction {
+    /// Legacy U and V parameter intervals; absent from modern layouts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_ranges: Option<[[f64; 2]; 2]>,
+    /// Primary recursive surface law.
+    pub primary: LawFormula,
+    /// Ordered counted auxiliary laws referenced by the primary law.
+    pub additional: Vec<LawFormula>,
+    /// Six ordered discontinuity arrays from the standard surface tail.
+    pub discontinuities: [Vec<f64>; 6],
 }
 
 /// One native law-expression node.

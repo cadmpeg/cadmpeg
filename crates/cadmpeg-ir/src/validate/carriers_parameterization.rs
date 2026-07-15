@@ -179,6 +179,31 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     collect_law_curves(variable, &mut curves);
                 }
             }
+            ProceduralSurfaceDefinition::Law { construction } => {
+                fn collect_law_curves<'a>(
+                    expression: &'a crate::geometry::LawExpression,
+                    curves: &mut HashSet<&'a str>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            curves.insert(&curve.0);
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                collect_law_curves(operand, curves);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for formula in
+                    std::iter::once(&construction.primary).chain(&construction.additional)
+                {
+                    for variable in &formula.variables {
+                        collect_law_curves(variable, &mut curves);
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::Net { construction } => {
                 fn collect_law_curves<'a>(
                     expression: &'a crate::geometry::LawExpression,

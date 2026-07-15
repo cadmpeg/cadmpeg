@@ -548,6 +548,35 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     check_law_curves(variable, ids, procedural, findings);
                 }
             }
+            ProceduralSurfaceDefinition::Law { construction } => {
+                fn check_law_curves(
+                    expression: &crate::geometry::LawExpression,
+                    ids: &IdSets,
+                    procedural: &crate::geometry::ProceduralSurface,
+                    findings: &mut Vec<Finding>,
+                ) {
+                    match expression {
+                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                            if !ids.curves.contains(&curve.0) {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            }
+                        }
+                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                            for operand in operands {
+                                check_law_curves(operand, ids, procedural, findings);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for formula in
+                    std::iter::once(&construction.primary).chain(&construction.additional)
+                {
+                    for variable in &formula.variables {
+                        check_law_curves(variable, ids, procedural, findings);
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::Net { construction } => {
                 fn check_law_curves(
                     expression: &crate::geometry::LawExpression,
