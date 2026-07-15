@@ -299,23 +299,52 @@ fn enrich(
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Result<IntersectionCurve, Rejection> {
-    let start = terms
-        .get(&construction.references[3])
-        .ok_or(Rejection::MissingStartTerm)?;
-    let end = terms
-        .get(&construction.references[4])
-        .ok_or(Rejection::MissingEndTerm)?;
     let chart = charts
         .get(&construction.references[2])
         .ok_or(Rejection::MissingChart)?;
-    if distance(
-        *start,
+    let chart_endpoints = [
         *chart.points.first().ok_or(Rejection::MissingChart)?,
-    ) > chart.fit_tolerance
-        || distance(*end, *chart.points.last().ok_or(Rejection::MissingChart)?)
-            > chart.fit_tolerance
+        *chart.points.last().ok_or(Rejection::MissingChart)?,
+    ];
+    let serialized_terms = [
+        terms.get(&construction.references[3]).copied(),
+        terms.get(&construction.references[4]).copied(),
+    ];
+    if serialized_terms
+        .iter()
+        .zip(chart_endpoints)
+        .any(|(term, endpoint)| {
+            term.is_some_and(|term| distance(term, endpoint) > chart.fit_tolerance)
+        })
     {
         return Err(Rejection::EndpointMismatch);
+    }
+    if serialized_terms.iter().any(Option::is_none) {
+        let topology_endpoints = graph
+            .unique_curve_edge_endpoints(construction.xmt)
+            .ok_or_else(|| {
+                if serialized_terms[0].is_none() {
+                    Rejection::MissingStartTerm
+                } else {
+                    Rejection::MissingEndTerm
+                }
+            })?;
+        let matching_permutations = [[0usize, 1usize], [1usize, 0usize]]
+            .into_iter()
+            .filter(|permutation| {
+                permutation.iter().enumerate().all(|(ordinal, topology)| {
+                    distance(chart_endpoints[ordinal], topology_endpoints[*topology])
+                        <= chart.fit_tolerance
+                })
+            })
+            .count();
+        if matching_permutations != 1 {
+            return Err(if serialized_terms[0].is_none() {
+                Rejection::MissingStartTerm
+            } else {
+                Rejection::MissingEndTerm
+            });
+        }
     }
     let support_uv = uv
         .get(&construction.references[5])

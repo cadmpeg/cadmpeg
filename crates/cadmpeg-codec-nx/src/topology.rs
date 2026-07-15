@@ -437,10 +437,11 @@ pub fn composite_curves(stream: &[u8]) -> Vec<CompositeCurve> {
             at += 1;
             let references: [u32; 6] =
                 read_sequence_at(&node.bytes, &mut at, 6)?.try_into().ok()?;
-            let complete_witness = references[2..=4].iter().all(|reference| *reference > 1);
+            let chart_with_optional_terms =
+                references[2] > 1 && references[3..=4].iter().all(|reference| *reference >= 1);
             let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
             (references.iter().all(|reference| *reference != 0)
-                && (complete_witness || null_witness)
+                && (chart_with_optional_terms || null_witness)
                 && (references[0] > 1 || references[1] > 1))
                 .then_some(CompositeCurve {
                     xmt: node.xmt,
@@ -771,6 +772,25 @@ impl Graph {
             }
         }
         references
+    }
+
+    /// Resolve the two model-space endpoints of the unique edge carrying a curve.
+    pub fn unique_curve_edge_endpoints(&self, curve_xmt: u32) -> Option<[Point3; 2]> {
+        let edges = self
+            .of_kind(16)
+            .filter_map(Node::edge_fields)
+            .filter(|edge| edge.curve == curve_xmt)
+            .collect::<Vec<_>>();
+        let [edge] = edges.as_slice() else {
+            return None;
+        };
+        let first_fin = self.get(17, edge.fin)?.fin_fields()?;
+        let second_fin = self.get(17, first_fin.forward)?.fin_fields()?;
+        let position = |vertex_xmt| {
+            let point_xmt = self.get(18, vertex_xmt)?.vertex_fields()?.point;
+            self.get(29, point_xmt)?.point_position()
+        };
+        Some([position(first_fin.vertex)?, position(second_fin.vertex)?])
     }
 
     /// Carrier identities required by the surviving fixed topology image.

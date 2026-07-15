@@ -5478,6 +5478,45 @@ fn charted_intersection_curve_topology_partition_stream() -> Vec<u8> {
     stream
 }
 
+fn charted_intersection_with_edge_endpoint_witnesses_stream() -> Vec<u8> {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let first_fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("first fin record");
+    put_ref(&mut stream, first_fin + 8, 13);
+    put_ref(&mut stream, first_fin + 10, 13);
+    let first_point = stream
+        .windows(4)
+        .position(|window| window == [0, 29, 0, 11])
+        .expect("first point record");
+    put_vec3(&mut stream, first_point + 16, [0.0, 0.0, 0.0]);
+
+    let mut second_fin = record(17, 23);
+    put_ref(&mut second_fin, 2, 13);
+    put_ref(&mut second_fin, 6, 5);
+    put_ref(&mut second_fin, 8, 7);
+    put_ref(&mut second_fin, 10, 7);
+    put_ref(&mut second_fin, 12, 14);
+    put_ref(&mut second_fin, 14, 1);
+    put_ref(&mut second_fin, 16, 8);
+    put_ref(&mut second_fin, 18, 12);
+    second_fin[22] = b'+';
+    stream.extend(second_fin);
+
+    let mut second_vertex = record(18, 28);
+    put_ref(&mut second_vertex, 2, 14);
+    put_ref(&mut second_vertex, 16, 15);
+    put_f64(&mut second_vertex, 18, 0.000_1);
+    stream.extend(second_vertex);
+
+    let mut second_point = record(29, 40);
+    put_ref(&mut second_point, 2, 15);
+    put_vec3(&mut second_point, 16, [0.01, 0.0, 0.0]);
+    stream.extend(second_point);
+    stream
+}
+
 fn charted_intersection_without_uv_stream() -> Vec<u8> {
     let mut stream = charted_intersection_curve_topology_partition_stream();
     let intersection = stream
@@ -7813,14 +7852,40 @@ fn decode_tracks_fully_extended_compact_geometry_headers() {
 }
 
 #[test]
-fn intersection_construction_requires_atomic_chart_term_witnesses() {
-    let mut stream = charted_intersection_curve_topology_partition_stream();
+fn intersection_construction_recovers_one_missing_term_from_unique_edge_endpoints() {
+    let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
     let intersection = stream
         .windows(4)
         .position(|window| window == [0, 38, 0, 12])
         .expect("intersection record");
     put_ref(&mut stream, intersection + 25, 1);
-    assert!(crate::topology::composite_curves(&stream).is_empty());
+    let scan = crate::intersection::scan(&stream);
+    assert_eq!(scan.constructions.len(), 1);
+    assert_eq!(scan.curves.len(), 1);
+    assert_eq!(
+        scan.rejected,
+        crate::intersection::RejectionCounts::default()
+    );
+}
+
+#[test]
+fn intersection_construction_rejects_missing_term_without_topology_endpoint_match() {
+    let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 25, 1);
+    let chart = stream
+        .windows(8)
+        .position(|window| window == [0, 40, 0, 0, 0, 2, 0, 20])
+        .expect("chart record");
+    put_f64(&mut stream, chart + 60, 0.005);
+
+    let scan = crate::intersection::scan(&stream);
+    assert_eq!(scan.constructions.len(), 1);
+    assert!(scan.curves.is_empty());
+    assert_eq!(scan.rejected.missing_start_term, 1);
 }
 
 #[test]
