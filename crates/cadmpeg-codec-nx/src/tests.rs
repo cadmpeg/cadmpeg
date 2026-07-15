@@ -7958,6 +7958,29 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
 }
 
 #[test]
+fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
+    let stream = offset_surface_topology_partition_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let surface = result.ir.model.procedural_surfaces[0].surface.clone();
+    let seed = Point2::new(12.0, 7.0);
+    let mut point =
+        cadmpeg_ir::eval::model_surface_point(&result.ir, &surface, seed.u, seed.v).unwrap();
+    point.x += 0.01;
+
+    let actual = crate::decode::offset_surface_parameters_with_tolerance(
+        &result.ir,
+        &surface,
+        point,
+        Some(seed),
+        Some(0.02),
+    )
+    .unwrap();
+
+    assert_eq!(actual, seed);
+}
+
+#[test]
 fn decode_tracks_fully_extended_offset_common_header() {
     let stream = offset_surface_with_fully_extended_common_header();
     assert_eq!(crate::topology::offset_surfaces(&stream).len(), 1);

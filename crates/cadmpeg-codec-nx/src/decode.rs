@@ -1778,7 +1778,15 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
                                     effective_fit_tolerance,
                                 )
                             })
-                            .or_else(|| offset_surface_parameters(ir, surface_id, *point, seed))
+                            .or_else(|| {
+                                offset_surface_parameters_with_tolerance(
+                                    ir,
+                                    surface_id,
+                                    *point,
+                                    seed,
+                                    Some(effective_fit_tolerance),
+                                )
+                            })
                             .or_else(|| {
                                 blend_surface_parameters_for_fit_with_grid(
                                     ir,
@@ -3131,6 +3139,16 @@ pub(crate) fn offset_surface_parameters(
     point: Point3,
     seed: Option<Point2>,
 ) -> Option<Point2> {
+    offset_surface_parameters_with_tolerance(ir, surface, point, seed, None)
+}
+
+pub(crate) fn offset_surface_parameters_with_tolerance(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+    fit_tolerance: Option<f64>,
+) -> Option<Point2> {
     let carrier = ir
         .model
         .surfaces
@@ -3149,10 +3167,10 @@ pub(crate) fn offset_surface_parameters(
     };
     let domain = surface_parameter_domain(ir, support);
     let mut parameters = seed
+        .or_else(|| initial_surface_parameters(ir, support, point, None))
         .or_else(|| {
             domain.and_then(|domain| coarse_model_surface_parameters(ir, surface, point, domain))
-        })
-        .or_else(|| initial_surface_parameters(ir, support, point, None))?;
+        })?;
     clamp_surface_parameters(&mut parameters, domain);
     for _ in 0..32 {
         let position = model_surface_point(ir, surface, parameters.u, parameters.v)?;
@@ -3161,6 +3179,13 @@ pub(crate) fn offset_surface_parameters(
             position.y - point.y,
             position.z - point.z,
         );
+        if fit_tolerance.is_some_and(|tolerance| {
+            tolerance.is_finite()
+                && tolerance >= 0.0
+                && dot_vector(residual, residual) <= tolerance * tolerance
+        }) {
+            break;
+        }
         let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
         let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
         let du = model_surface_derivative(ir, surface, parameters, u_step, true, domain)?;
@@ -3357,11 +3382,14 @@ fn continue_surface_intersection_parameters_with_seeds(
             .geometry;
         match geometry {
             SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, point, seed),
-            SurfaceGeometry::Procedural { .. } => {
-                offset_surface_parameters(ir, surface, point, seed).or_else(|| {
-                    blend_surface_parameters_for_fit(ir, surface, point, seed, fit_tolerance)
-                })
-            }
+            SurfaceGeometry::Procedural { .. } => offset_surface_parameters_with_tolerance(
+                ir,
+                surface,
+                point,
+                seed,
+                Some(fit_tolerance),
+            )
+            .or_else(|| blend_surface_parameters_for_fit(ir, surface, point, seed, fit_tolerance)),
             geometry => analytic_surface_parameters(geometry, point),
         }
     };
