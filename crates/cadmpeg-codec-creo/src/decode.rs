@@ -14985,6 +14985,22 @@ mod resolved_sketch_tests {
             Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_torus_tangent_circle"))
                 if center == Point3::new(0.0, 0.0, 0.0) && radius == 7.0
         ));
+        let secant_cylinder = parallel_cylinder([0.0, 0.0, 0.0], 6.0);
+        let cylinder_torus_candidates =
+            coaxial_cylinder_torus_circle_candidates(secant_cylinder, torus);
+        assert_eq!(cylinder_torus_candidates.len(), 2);
+        let section_height = 3.0_f64.sqrt();
+        assert!(matches!(
+            select_unique_curve_candidate(
+                cylinder_torus_candidates,
+                [
+                    [6.0, 0.0, section_height],
+                    [0.0, 6.0, section_height],
+                ],
+            ),
+            Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_torus_secant_circle"))
+                if (center.z - section_height).abs() < 1e-12 && radius == 6.0
+        ));
         let outer_circle_tangent = CarrierEquation::Plane(PlaneEquation {
             origin: [7.0, 0.0, 0.0],
             normal: [1.0, 0.0, 0.0],
@@ -17954,6 +17970,64 @@ fn coaxial_cone_sphere_circle_candidates(
         .collect()
 }
 
+fn coaxial_cylinder_torus_circle_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let ((CarrierEquation::Cylinder(cylinder), CarrierEquation::Torus(torus))
+    | (CarrierEquation::Torus(torus), CarrierEquation::Cylinder(cylinder))) = (first, second)
+    else {
+        return Vec::new();
+    };
+    let (Some(cylinder_axis), Some(torus_axis), Some(reference)) = (
+        normalized(cylinder.axis),
+        normalized(torus.axis),
+        normalized(cylinder.ref_direction),
+    ) else {
+        return Vec::new();
+    };
+    if (dot(cylinder_axis, torus_axis).abs() - 1.0).abs() > 1e-10 {
+        return Vec::new();
+    }
+    let relative: [f64; 3] =
+        std::array::from_fn(|index| torus.center[index] - cylinder.origin[index]);
+    let axial = dot(relative, cylinder_axis);
+    let transverse: [f64; 3] =
+        std::array::from_fn(|index| relative[index] - axial * cylinder_axis[index]);
+    let scale = torus
+        .major_radius
+        .max(torus.minor_radius)
+        .max(cylinder.radius)
+        .max(1.0);
+    if dot(transverse, transverse).sqrt() > 1e-9 * scale {
+        return Vec::new();
+    }
+    let radial_delta = cylinder.radius - torus.major_radius;
+    let height_squared = torus
+        .minor_radius
+        .mul_add(torus.minor_radius, -(radial_delta * radial_delta));
+    if height_squared <= 1e-9 * scale * scale || cylinder.radius <= 1e-12 * scale {
+        return Vec::new();
+    }
+    let height = height_squared.sqrt();
+    [-height, height]
+        .into_iter()
+        .map(|offset| {
+            let center: [f64; 3] =
+                std::array::from_fn(|index| torus.center[index] + offset * torus_axis[index]);
+            (
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(torus_axis[0], torus_axis[1], torus_axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius: cylinder.radius,
+                },
+                "coaxial_cylinder_torus_secant_circle",
+            )
+        })
+        .collect()
+}
+
 fn curve_contains_points(geometry: &CurveGeometry, points: [[f64; 3]; 2]) -> bool {
     match geometry {
         CurveGeometry::Line { origin, direction } => {
@@ -18060,6 +18134,12 @@ fn transfer_carrier_intersection_curves(
                 .or_else(|| {
                     select_unique_curve_candidate(
                         coaxial_cone_sphere_circle_candidates(first, second),
+                        points,
+                    )
+                })
+                .or_else(|| {
+                    select_unique_curve_candidate(
+                        coaxial_cylinder_torus_circle_candidates(first, second),
                         points,
                     )
                 })
