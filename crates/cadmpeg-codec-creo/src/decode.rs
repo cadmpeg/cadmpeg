@@ -1254,14 +1254,15 @@ fn curve_prototype_records(
         .collect()
 }
 
-fn plane_local_system_records(scan: &ContainerScan) -> Vec<CreoPlaneLocalSystemRecord> {
-    scan.plane_local_systems
+fn plane_local_system_records(
+    scan: &ContainerScan,
+    systems: &[crate::surface::PlaneLocalSystem],
+    id_prefix: &str,
+) -> Vec<CreoPlaneLocalSystemRecord> {
+    systems
         .iter()
         .map(|record| CreoPlaneLocalSystemRecord {
-            id: format!(
-                "creo:surface:plane_local_system#{}:{}",
-                record.offset, record.surface_id
-            ),
+            id: format!("{id_prefix}#{}:{}", record.offset, record.surface_id),
             surface_id: record.surface_id,
             body: record.body.clone(),
             slots: record.slots.clone(),
@@ -1279,14 +1280,15 @@ fn plane_local_system_records(scan: &ContainerScan) -> Vec<CreoPlaneLocalSystemR
         .collect()
 }
 
-fn plane_envelope_records(scan: &ContainerScan) -> Vec<CreoPlaneEnvelopeRecord> {
-    scan.plane_envelopes
+fn plane_envelope_records(
+    scan: &ContainerScan,
+    envelopes: &[crate::surface::PlaneEnvelopeRecord],
+    id_prefix: &str,
+) -> Vec<CreoPlaneEnvelopeRecord> {
+    envelopes
         .iter()
         .map(|record| CreoPlaneEnvelopeRecord {
-            id: format!(
-                "creo:surface:plane_envelope#{}:{}",
-                record.offset, record.surface_id
-            ),
+            id: format!("{id_prefix}#{}:{}", record.offset, record.surface_id),
             surface_id: record.surface_id,
             body: record.body.clone(),
             envelope: match &record.envelope {
@@ -1313,14 +1315,15 @@ fn plane_envelope_records(scan: &ContainerScan) -> Vec<CreoPlaneEnvelopeRecord> 
         .collect()
 }
 
-fn outline_plane_records(scan: &ContainerScan) -> Vec<CreoOutlinePlaneRecord> {
-    scan.outline_planes
+fn outline_plane_records(
+    scan: &ContainerScan,
+    planes: &[crate::surface::OutlinePlane],
+    id_prefix: &str,
+) -> Vec<CreoOutlinePlaneRecord> {
+    planes
         .iter()
         .map(|record| CreoOutlinePlaneRecord {
-            id: format!(
-                "creo:surface:outline_plane#{}:{}",
-                record.offset, record.surface_id
-            ),
+            id: format!("{id_prefix}#{}:{}", record.offset, record.surface_id),
             surface_id: record.surface_id,
             origin: record.origin,
             normal: record.normal,
@@ -16677,6 +16680,89 @@ fn transfer_single_cap_circular_sweep_cylinders(
     transferred
 }
 
+fn transfer_cross_section_planes(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut transferred = 0;
+    for frame in &scan.cross_section_plane_local_systems {
+        let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
+        else {
+            continue;
+        };
+        if is_axis_aligned(normal) {
+            continue;
+        }
+        let id = SurfaceId(format!(
+            "creo:cross_section_geometry:surface#{}",
+            frame.surface_id
+        ));
+        annotate(
+            annotations,
+            &id,
+            "Xsections",
+            frame.offset as u64,
+            "cross_section_plane_local_system",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(origin[0], origin[1], origin[2]),
+                normal: Vector3::new(normal[0], normal[1], normal[2]),
+                u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("Xsections:{}", frame.surface_id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    for plane in &scan.cross_section_outline_planes {
+        let id = SurfaceId(format!(
+            "creo:cross_section_geometry:surface#{}",
+            plane.surface_id
+        ));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "Xsections",
+            plane.offset as u64,
+            "cross_section_plane_outline_held_coordinate",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+                normal: Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
+                u_axis: Vector3::new(plane.u_axis[0], plane.u_axis[1], plane.u_axis[2]),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("Xsections:{}", plane.surface_id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 /// Decode a `.prt` stream into an IR document and loss report.
 ///
 /// The stream is read from its beginning. When `options.container_only` is set,
@@ -16914,6 +17000,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             }),
         });
     }
+    let cross_section_plane_count = transfer_cross_section_planes(scan, &mut ir, &mut annotations);
     let first_instance_prototype_surface_count =
         transfer_first_instance_prototype_surfaces(scan, &mut ir, &mut annotations);
     let positional_line_extrusion_plane_count =
@@ -16940,6 +17027,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let feature_extrusion_brep_count =
         transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
     if let Some(source) = &mut ir.source {
+        source.attributes.insert(
+            "transferred_cross_section_plane_count".to_string(),
+            cross_section_plane_count.to_string(),
+        );
         source.attributes.insert(
             "transferred_first_instance_prototype_surface_count".to_string(),
             first_instance_prototype_surface_count.to_string(),
@@ -17478,23 +17569,68 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             &cross_section_surface_parameters,
         )?;
     }
-    let plane_local_systems = plane_local_system_records(scan);
+    let plane_local_systems = plane_local_system_records(
+        scan,
+        &scan.plane_local_systems,
+        "creo:surface:plane_local_system",
+    );
     if !plane_local_systems.is_empty() {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("plane_local_systems", &plane_local_systems)?;
     }
-    let plane_envelopes = plane_envelope_records(scan);
+    let cross_section_plane_local_systems = plane_local_system_records(
+        scan,
+        &scan.cross_section_plane_local_systems,
+        "creo:cross_section_geometry:plane_local_system",
+    );
+    if !cross_section_plane_local_systems.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena(
+            "cross_section_plane_local_systems",
+            &cross_section_plane_local_systems,
+        )?;
+    }
+    let plane_envelopes =
+        plane_envelope_records(scan, &scan.plane_envelopes, "creo:surface:plane_envelope");
     if !plane_envelopes.is_empty() {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("plane_envelopes", &plane_envelopes)?;
     }
-    let outline_planes = outline_plane_records(scan);
+    let cross_section_plane_envelopes = plane_envelope_records(
+        scan,
+        &scan.cross_section_plane_envelopes,
+        "creo:cross_section_geometry:plane_envelope",
+    );
+    if !cross_section_plane_envelopes.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena(
+            "cross_section_plane_envelopes",
+            &cross_section_plane_envelopes,
+        )?;
+    }
+    let outline_planes =
+        outline_plane_records(scan, &scan.outline_planes, "creo:surface:outline_plane");
     if !outline_planes.is_empty() {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("outline_planes", &outline_planes)?;
+    }
+    let cross_section_outline_planes = outline_plane_records(
+        scan,
+        &scan.cross_section_outline_planes,
+        "creo:cross_section_geometry:outline_plane",
+    );
+    if !cross_section_outline_planes.is_empty() {
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena(
+            "cross_section_outline_planes",
+            &cross_section_outline_planes,
+        )?;
     }
     let datum_planes = datum_plane_records(scan);
     if !datum_planes.is_empty() {
@@ -17888,12 +18024,24 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         scan.plane_local_systems.len().to_string(),
     );
     attributes.insert(
+        "decoded_cross_section_plane_local_system_count".to_string(),
+        scan.cross_section_plane_local_systems.len().to_string(),
+    );
+    attributes.insert(
         "decoded_plane_envelope_count".to_string(),
         scan.plane_envelopes.len().to_string(),
     );
     attributes.insert(
+        "decoded_cross_section_plane_envelope_count".to_string(),
+        scan.cross_section_plane_envelopes.len().to_string(),
+    );
+    attributes.insert(
         "decoded_outline_plane_count".to_string(),
         scan.outline_planes.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_cross_section_outline_plane_count".to_string(),
+        scan.cross_section_outline_planes.len().to_string(),
     );
     attributes.insert(
         "decoded_surface_prototype_count".to_string(),

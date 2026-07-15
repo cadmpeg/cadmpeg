@@ -201,10 +201,16 @@ pub struct ContainerScan {
     pub tabulated_cylinder_curve_replays: Vec<TabulatedCylinderCurveReplay>,
     /// Inherited support frames following positional plane envelopes.
     pub plane_local_systems: Vec<PlaneLocalSystem>,
+    /// Plane support frames from the DEPDB cross-section namespace.
+    pub cross_section_plane_local_systems: Vec<PlaneLocalSystem>,
     /// Plane-specific standard and compact positional envelopes.
     pub plane_envelopes: Vec<PlaneEnvelopeRecord>,
+    /// Plane envelopes from the DEPDB cross-section namespace.
+    pub cross_section_plane_envelopes: Vec<PlaneEnvelopeRecord>,
     /// Axis-aligned placed planes derived from unambiguous outline corners.
     pub outline_planes: Vec<OutlinePlane>,
+    /// Placed planes derived inside the DEPDB cross-section namespace.
+    pub cross_section_outline_planes: Vec<OutlinePlane>,
     /// Labeled surface prototypes with fully decoded scalar fields.
     pub surface_prototypes: Vec<SurfacePrototype>,
     /// Bounded named `srf_prim_ptr(<kind>)` parameter records.
@@ -850,6 +856,31 @@ fn plane_local_systems(data: &[u8], sections: &[Section]) -> Vec<PlaneLocalSyste
     systems
 }
 
+fn cross_section_plane_local_systems(data: &[u8], sections: &[Section]) -> Vec<PlaneLocalSystem> {
+    let mut systems = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "Xsections")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
+        if find(payload, b"Sld_Xsections\0", 0).is_none() {
+            continue;
+        }
+        systems.extend(
+            surface::cross_section_plane_local_systems(payload)
+                .into_iter()
+                .map(|mut system| {
+                    system.row_offset += section.offset;
+                    system.offset += section.offset;
+                    system
+                }),
+        );
+    }
+    systems.sort_by_key(|system| system.offset);
+    systems
+}
+
 fn plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<PlaneEnvelopeRecord> {
     let mut envelopes = Vec::new();
     for section in sections
@@ -862,6 +893,30 @@ fn plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<PlaneEnvelopeRecord
                 .into_iter()
                 .map(|mut envelope| {
                     envelope.row_offset += section.offset;
+                    envelope.offset += section.offset;
+                    envelope
+                }),
+        );
+    }
+    envelopes.sort_by_key(|envelope| envelope.offset);
+    envelopes
+}
+
+fn cross_section_plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<PlaneEnvelopeRecord> {
+    let mut envelopes = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "Xsections")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
+        if find(payload, b"Sld_Xsections\0", 0).is_none() {
+            continue;
+        }
+        envelopes.extend(
+            surface::cross_section_plane_envelopes(payload)
+                .into_iter()
+                .map(|mut envelope| {
                     envelope.offset += section.offset;
                     envelope
                 }),
@@ -1471,7 +1526,9 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let cross_section_surface_parameters = cross_section_surface_parameters(&data, &sections);
     let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replays(&data, &sections);
     let plane_local_systems = plane_local_systems(&data, &sections);
+    let cross_section_plane_local_systems = cross_section_plane_local_systems(&data, &sections);
     let plane_envelopes = plane_envelopes(&data, &sections);
+    let cross_section_plane_envelopes = cross_section_plane_envelopes(&data, &sections);
     let mut outline_planes = surface::outline_planes(&plane_envelopes);
     for plane in surface::frame_bound_outline_planes(&plane_envelopes, &plane_local_systems) {
         if !outline_planes
@@ -1482,6 +1539,19 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         }
     }
     outline_planes.sort_by_key(|plane| plane.offset);
+    let mut cross_section_outline_planes = surface::outline_planes(&cross_section_plane_envelopes);
+    for plane in surface::frame_bound_outline_planes(
+        &cross_section_plane_envelopes,
+        &cross_section_plane_local_systems,
+    ) {
+        if !cross_section_outline_planes
+            .iter()
+            .any(|known| known.surface_id == plane.surface_id)
+        {
+            cross_section_outline_planes.push(plane);
+        }
+    }
+    cross_section_outline_planes.sort_by_key(|plane| plane.offset);
     let surface_prototypes = surface_prototypes(&data, &sections);
     let surface_prototype_records = surface_prototype_records(&data, &sections);
     let curve_prototypes = curve_prototypes(&data, &sections);
@@ -1590,8 +1660,11 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         cross_section_surface_parameters,
         tabulated_cylinder_curve_replays,
         plane_local_systems,
+        cross_section_plane_local_systems,
         plane_envelopes,
+        cross_section_plane_envelopes,
         outline_planes,
+        cross_section_outline_planes,
         surface_prototypes,
         surface_prototype_records,
         curve_prototypes,

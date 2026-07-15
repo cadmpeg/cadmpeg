@@ -1119,6 +1119,10 @@ replay has boundary type `06`. Other boundary types inside the counted frame
 belong to row bodies. Cross-section identifiers do not join the material
 model-face namespace. Their bounded positional parameter bodies use the same
 scalar-token and row-boundary rules and remain in the cross-section namespace.
+Plane rows use the standard or compact envelope layouts and the following
+bounded local-system chunk without changing namespace ownership. A complete
+held-coordinate outline or complete non-axis local frame defines a
+model-coordinate cross-section plane carrier; it is not a material model face.
 
 ## 8. Additional record semantics
 

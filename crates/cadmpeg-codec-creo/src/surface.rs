@@ -1739,8 +1739,18 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
 pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
+    plane_local_systems_for_rows(payload, rows(payload))
+}
+
+/// Decode plane local-system chunks from a DEPDB cross-section namespace.
+#[must_use]
+pub fn cross_section_plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
+    plane_local_systems_for_rows(payload, cross_section_rows(payload))
+}
+
+fn plane_local_systems_for_rows(payload: &[u8], rows: Vec<SurfaceRow>) -> Vec<PlaneLocalSystem> {
     let cache = scalar::ScalarCache::from_section(payload);
-    let headers = rows(payload)
+    let headers = rows
         .into_iter()
         .filter(|row| row.kind == SurfaceKind::Plane)
         .filter_map(|row| positional_body_start(payload, &row).map(|body_start| (row, body_start)))
@@ -1789,9 +1799,18 @@ pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
 
 /// Decode plane positional envelope bodies into their two defined layouts.
 pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
+    plane_envelopes_for_rows(payload, &rows(payload))
+}
+
+/// Decode plane envelopes from a DEPDB cross-section namespace.
+#[must_use]
+pub fn cross_section_plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
+    plane_envelopes_for_rows(payload, &cross_section_rows(payload))
+}
+
+fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<PlaneEnvelopeRecord> {
     const NAMED_OUTLINE: &[u8] = b"outline\0\xf9\x02\x03";
     let cache = scalar::ScalarCache::from_section(payload);
-    let all_rows = rows(payload);
     let headers = all_rows
         .iter()
         .filter(|row| row.kind == SurfaceKind::Plane)
@@ -2058,6 +2077,19 @@ mod tests {
             .body
             .windows(6)
             .any(|bytes| bytes == b"\x2d\x25\x32\xf6\x01\x01"));
+    }
+
+    #[test]
+    fn cross_section_plane_envelope_retains_its_namespace_geometry() {
+        let payload = b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x22\x04\x01\x06\0\xe4\xe4\xe4\xe4\x0f\x0f\x0f\xe4\x0f\xe4\xe3";
+
+        let envelopes = cross_section_plane_envelopes(payload);
+        assert_eq!(envelopes.len(), 1);
+        let planes = outline_planes(&envelopes);
+        assert_eq!(planes.len(), 1);
+        assert_eq!(planes[0].surface_id, 7);
+        assert_eq!(planes[0].origin, [0.0, 0.0, 0.0]);
+        assert_eq!(planes[0].normal, [0.0, 1.0, 0.0]);
     }
 
     #[test]
