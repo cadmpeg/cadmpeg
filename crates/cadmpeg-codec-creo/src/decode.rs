@@ -359,6 +359,19 @@ struct CreoFeatureChoiceRecord {
 }
 
 #[derive(Serialize)]
+struct CreoFeatureRowRecord {
+    id: String,
+    owner_feature_id: u32,
+    header: [u8; 2],
+    root_schema_class: Option<u32>,
+    stream_offset: usize,
+    body: Vec<u8>,
+    body_offset: usize,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
 struct CreoFeatureChoiceFieldRecord {
     id: String,
     owner_feature_id: u32,
@@ -559,6 +572,23 @@ fn feature_choice_records(scan: &ContainerScan) -> Vec<CreoFeatureChoiceRecord> 
             payload_offset: choice.payload_offset,
             offset: choice.offset,
             source_section: source_section(scan, choice.offset),
+        })
+        .collect()
+}
+
+fn feature_row_records(scan: &ContainerScan) -> Vec<CreoFeatureRowRecord> {
+    scan.feature_rows
+        .iter()
+        .map(|row| CreoFeatureRowRecord {
+            id: format!("creo:allfeatur:feature_row#{}", row.offset),
+            owner_feature_id: row.feature_id,
+            header: row.header,
+            root_schema_class: row.root_schema_class,
+            stream_offset: row.stream_offset,
+            body: row.body.clone(),
+            body_offset: row.body_offset,
+            offset: row.offset,
+            source_section: source_section(scan, row.offset),
         })
         .collect()
 }
@@ -15648,6 +15678,22 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("feature_directions", &feature_directions)?;
+    }
+    let feature_rows = feature_row_records(scan);
+    if !feature_rows.is_empty() {
+        for record in &feature_rows {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "feature_row",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_rows", &feature_rows)?;
     }
     let feature_choices = feature_choice_records(scan);
     if !feature_choices.is_empty() {

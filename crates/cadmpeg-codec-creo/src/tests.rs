@@ -1603,6 +1603,12 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     );
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let namespace = result.ir.native.namespace("creo").unwrap();
+    let rows = &namespace.arenas["feature_rows"];
+    assert_eq!(rows[0].fields["owner_feature_id"], 4);
+    assert_eq!(rows[0].fields["header"][0], 0xeb);
+    assert_eq!(rows[0].fields["header"][1], 0x04);
+    assert_eq!(rows[0].fields["body"][0], 0xeb);
+    assert_eq!(rows[0].fields["body"][2], 0xe0);
     let choices = &namespace.arenas["feature_choices"];
     assert_eq!(choices[0].fields["owner_feature_id"], 4);
     assert_eq!(choices[0].fields["label"], "blend_choice");
