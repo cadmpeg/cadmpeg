@@ -1344,6 +1344,19 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
     definitions
 }
 
+fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<FeatureDefinition> {
+    let mut definitions = rows
+        .iter()
+        .filter_map(|row| {
+            let mut definition = feature::depdb_section_definition(&row.body, row.feature_id)?;
+            offset_feature_definition(&mut definition, row.body_offset);
+            Some(definition)
+        })
+        .collect::<Vec<_>>();
+    definitions.sort_by_key(|definition| definition.offset);
+    definitions
+}
+
 fn positional_replay_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefinition> {
     let mut definitions = Vec::new();
     for section in sections.iter().filter(|section| section.name == "FeatDefs") {
@@ -1591,6 +1604,8 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_operation_states = feature_operation_states(&data, &sections);
     let feature_operations = feature_operations(&data, &sections);
     let mut feature_definitions = feature_definitions(&data, &sections);
+    feature_definitions.extend(feature_row_definitions(&feature_rows));
+    feature_definitions.sort_by_key(|definition| definition.offset);
     feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
     let claimed_definition_owners = feature_definitions
         .iter()
@@ -1801,5 +1816,30 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         container_kind: "psb".to_string(),
         entries,
         notes,
+    }
+}
+
+#[cfg(test)]
+mod feature_row_definition_tests {
+    use super::*;
+
+    #[test]
+    fn embedded_section_definition_inherits_its_bounded_feature_row_owner() {
+        let row = FeatureRow {
+            feature_id: 42,
+            header: [0xe3, 0xf6],
+            root_schema_class: Some(917),
+            stream_offset: 100,
+            body: b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0".to_vec(),
+            body_offset: 120,
+            offset: 118,
+        };
+
+        let definitions = feature_row_definitions(&[row]);
+
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions[0].id, 2);
+        assert_eq!(definitions[0].owner_feature_id, Some(42));
+        assert_eq!(definitions[0].offset, 127);
     }
 }

@@ -884,6 +884,11 @@ labelled section definition. Its labelled table records define the positional
 table classes used by following unlabeled `S2D` definitions. The next labelled
 `gsec2d_ptr`, unlabeled `S2D`, or feature-definition record ends its body.
 
+The same labelled section-definition form may occur inside an `AllFeatur`
+feature row. The containing row identifier is the section-definition owner.
+The definition body is bounded by the end of that feature row; nested section
+tables and saved-result records remain members of the definition.
+
 `AllFeatur` edge-treatment rows are feature recipes. `strong_parents`, `geoms_affected`, `edgs_affected`, and `contours` contain compact-int identifiers for the current body; they are neither coordinate arrays nor global geometry counts. The first edge-treatment row supplies the labelled schema, and later round and chamfer rows replay that schema positionally.
 
 Within an `AllFeatur` `lo_restore` body, named-record type-one fields
@@ -910,6 +915,11 @@ cylinder carrier is placed, their common positive radius independently defines
 the constant fillet radius; differing radii define no constant-radius result.
 
 The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, and class 923 is a datum-plane definition. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
+
+Every byte-bounded `AllFeatur` row denotes a history feature independently of
+whether the feature owns a materialized surface row. A recognized root schema
+class selects its neutral operation type. Other root schema classes retain a
+native operation with the schema class as a typed source property.
 
 Each `DEPDB_DATA` recipe row ends with its canonical `f7` recipe binding. Its
 body begins at the section boundary or immediately after the preceding recipe

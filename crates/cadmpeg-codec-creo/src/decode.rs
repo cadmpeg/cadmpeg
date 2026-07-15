@@ -17238,20 +17238,13 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     }
     for row in &scan.feature_rows {
         let id = IrFeatureId(format!("creo:model:feature#{}", row.feature_id));
-        if ir.model.features.iter().any(|feature| feature.id == id)
-            || !scan
-                .surface_rows
-                .iter()
-                .any(|surface| surface.feature_id == row.feature_id)
-        {
+        if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
         let Some(schema_class) = row.root_schema_class else {
             continue;
         };
-        let Some(kind) = schema_operation_kind(schema_class) else {
-            continue;
-        };
+        let kind = schema_operation_kind(schema_class).unwrap_or("Native Feature");
         annotate(
             &mut annotations,
             &id,
