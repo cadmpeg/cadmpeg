@@ -255,14 +255,17 @@ fn validate_terminate_counts(lines: &[PhysicalLine]) -> Result<(), CodecError> {
         (b'P', Section::Parameter),
     ];
     for (field, (marker, section)) in data.chunks_exact(8).zip(expected) {
-        if field[0] != marker || field[1..].iter().any(|byte| !byte.is_ascii_digit()) {
+        let count = std::str::from_utf8(&field[1..])
+            .ok()
+            .map(str::trim)
+            .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()));
+        if field[0] != marker || count.is_none() {
             return Err(CodecError::Malformed(format!(
                 "IGES Terminate field for {} is malformed",
                 section.name()
             )));
         }
-        let declared = std::str::from_utf8(&field[1..])
-            .ok()
+        let declared = count
             .and_then(|text| text.parse::<usize>().ok())
             .ok_or_else(|| {
                 CodecError::Malformed(format!(

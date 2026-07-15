@@ -7230,6 +7230,15 @@ fn inspect_rejects_terminate_count_mismatch() {
 }
 
 #[test]
+fn inspect_accepts_space_padded_terminate_counts() {
+    let mut bytes = card(b"original fixture", b'S', 1);
+    bytes.extend(card(b"1H,,1H;,,;", b'G', 1));
+    bytes.extend(card(b"S      1G      1D      0P      0", b'T', 1));
+
+    IgesCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+}
+
+#[test]
 fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
     let bytes = point_file();
     let source_length = u64::try_from(bytes.len()).unwrap();
