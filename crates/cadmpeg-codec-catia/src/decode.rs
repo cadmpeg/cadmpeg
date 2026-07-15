@@ -33,6 +33,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
+use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::container::{self, ContainerScan};
@@ -110,6 +111,18 @@ fn annotate(
     let stream = annotations.stream(format!("catia:{stream_name}"));
     annotations.note(&id, stream, offset).tag(tag);
     annotations.exactness(id, exactness);
+}
+
+fn standard_carrier_source(tag: u32) -> SourceObjectAssociation {
+    SourceObjectAssociation {
+        format: "catia".to_string(),
+        object_id: format!("cgm-carrier:{tag:06x}"),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    }
 }
 
 fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
@@ -4141,7 +4154,10 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let mut typed = TypedCounts::default();
     for (i, record) in records.iter().enumerate() {
         let geometry::StandardSurfaceRecord::Analytic(prefix) = record else {
-            let geometry::StandardSurfaceRecord::Freeform { pos, forward, .. } = record else {
+            let geometry::StandardSurfaceRecord::Freeform {
+                pos, tag, forward, ..
+            } = record
+            else {
                 unreachable!()
             };
             let id = SurfaceId(format!("catia:standard:surf#{i}"));
@@ -4150,7 +4166,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             surfaces.push(Surface {
                 id,
                 geometry: SurfaceGeometry::Unknown { record: None },
-                source_object: None,
+                source_object: Some(standard_carrier_source(*tag)),
             });
             continue;
         };
@@ -4180,7 +4196,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
                 surfaces.push(Surface {
                     id,
                     geometry: geom,
-                    source_object: None,
+                    source_object: Some(standard_carrier_source(prefix.target)),
                 });
             }
             None => {
@@ -4202,7 +4218,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
                     geometry: SurfaceGeometry::Unknown {
                         record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
                     },
-                    source_object: None,
+                    source_object: Some(standard_carrier_source(prefix.target)),
                 });
             }
         }

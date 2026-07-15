@@ -2325,6 +2325,35 @@ fn scan_parses_directory_and_identifies_standard() {
 }
 
 #[test]
+fn standard_decode_retains_native_surface_carrier_tags() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart()),
+            &DecodeOptions::default(),
+        )
+        .expect("standard decode");
+    let identities = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            surface
+                .source_object
+                .as_ref()
+                .map(|source| (source.format.as_str(), source.object_id.as_str()))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        identities,
+        [
+            ("catia", "cgm-carrier:ccbbaa"),
+            ("catia", "cgm-carrier:332211"),
+        ]
+    );
+}
+
+#[test]
 fn scan_parses_outer_directory_with_absolute_extents() {
     let bytes = outer_directory_catpart();
     let scan = crate::container::scan_bytes(bytes.clone());
