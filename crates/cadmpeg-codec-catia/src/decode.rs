@@ -1764,6 +1764,64 @@ mod chart_tests {
     }
 
     #[test]
+    fn standard_parallel_line_rows_bind_by_serialized_branch_rank() {
+        let mut ir = CadIr::empty(Units::default());
+        for (index, position) in [
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(-2.0, 0.0, 1.0),
+            Point3::new(2.0, 0.0, 1.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            ir.model.points.push(Point {
+                id: PointId(format!("p{index}")),
+                position,
+            });
+        }
+        for index in 0..2 {
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId(format!("s{index}")),
+                geometry: SurfaceGeometry::Cylinder {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                    radius: 2.0,
+                },
+                source_object: None,
+            });
+        }
+        let bindings = [
+            (SurfaceId("s0".to_string()), true, 0),
+            (SurfaceId("s1".to_string()), true, 0),
+        ];
+        let indices = [
+            (SurfaceId("s0".to_string()), 0),
+            (SurfaceId("s1".to_string()), 1),
+        ]
+        .into_iter()
+        .collect();
+        let supports = [0, 1].map(|index| StandardCurveSupport {
+            pos: index,
+            tag: index as u32,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Line,
+        });
+
+        let choices = resolve_standard_endpoint_pairs(
+            &ir,
+            &bindings,
+            &indices,
+            &supports,
+            &[vec![0, 1, 2, 3], vec![0, 1, 2, 3]],
+        )
+        .expect("endpoint option pass");
+
+        assert_eq!(choices, [vec![[0, 2]], vec![[1, 3]]]);
+    }
+
+    #[test]
     fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
         let points = [
             Point {
@@ -5030,9 +5088,14 @@ fn resolve_standard_endpoint_pairs(
         if pairs.len() < edges.len() {
             continue;
         }
-        for (rank, edge) in edges.into_iter().enumerate() {
-            resolved[edge].clone_from(&pairs);
-            resolved[edge].rotate_left(rank % pairs.len());
+        if pairs.len() == edges.len() {
+            for (edge, pair) in edges.into_iter().zip(pairs) {
+                resolved[edge] = vec![pair];
+            }
+        } else {
+            for edge in edges {
+                resolved[edge].clone_from(&pairs);
+            }
         }
     }
     let mut fallback_relation_budget = 65_536usize;
