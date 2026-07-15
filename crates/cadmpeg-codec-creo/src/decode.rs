@@ -34,8 +34,9 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
+    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchCoordinateAxis,
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
+    SketchNativeOperand,
 };
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
@@ -7009,6 +7010,34 @@ fn section_skamp_line_pair(
     }))
 }
 
+fn section_skamp_same_coordinate(
+    definition: &crate::feature::FeatureDefinition,
+    first: &crate::feature::FeatureSkampItem,
+    second: &crate::feature::FeatureSkampItem,
+) -> Option<(SketchLocus, SketchLocus, SketchCoordinateAxis)> {
+    let first_locus = section_skamp_point_locus(definition, first)?;
+    let second_locus = section_skamp_point_locus(definition, second)?;
+    let points = resolved_section_points(definition);
+    let first_point = points.get(&section_skamp_selected_point_id(definition, first)?)?;
+    let second_point = points.get(&section_skamp_selected_point_id(definition, second)?)?;
+    let scale = first_point
+        .iter()
+        .chain(second_point)
+        .map(|coordinate| coordinate.abs())
+        .fold(1.0, f64::max);
+    let tolerance = 1e-9 * scale;
+    let equal = [
+        (first_point[0] - second_point[0]).abs() <= tolerance,
+        (first_point[1] - second_point[1]).abs() <= tolerance,
+    ];
+    let axis = match equal {
+        [true, false] => SketchCoordinateAxis::U,
+        [false, true] => SketchCoordinateAxis::V,
+        _ => return None,
+    };
+    Some((first_locus, second_locus, axis))
+}
+
 fn section_skamp_is_line(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
@@ -7220,6 +7249,17 @@ fn section_skamp_constraints(
                             "creo:featdefs:sketch_entity#{}:{}",
                             definition.id, axis.entity_id
                         )),
+                    }
+                }
+                (17, [first, second])
+                    if section_skamp_same_coordinate(definition, first, second).is_some() =>
+                {
+                    let (first, second, axis) =
+                        section_skamp_same_coordinate(definition, first, second)?;
+                    SketchConstraintDefinition::SameCoordinate {
+                        first,
+                        second,
+                        axis,
                     }
                 }
                 _ => {
@@ -12320,6 +12360,23 @@ mod resolved_sketch_tests {
                     ],
                     offset: 81,
                 },
+                crate::feature::FeatureSkamp {
+                    id: 17,
+                    kind: 17,
+                    flags: 0,
+                    status: 0,
+                    items: vec![
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 2,
+                        },
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 15,
+                            sense: 2,
+                        },
+                    ],
+                    offset: 82,
+                },
             ],
             triples: Vec::new(),
             offset: 45,
@@ -12330,7 +12387,24 @@ mod resolved_sketch_tests {
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
-            variables: None,
+            variables: Some(crate::feature::FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                points: vec![
+                    crate::feature::FeatureSectionPoint {
+                        point_id: 1,
+                        u: Some(0.0),
+                        v: Some(2.0),
+                    },
+                    crate::feature::FeatureSectionPoint {
+                        point_id: 5,
+                        u: Some(3.0),
+                        v: Some(2.0),
+                    },
+                ],
+                offset: 89,
+            }),
             segments: Some(crate::feature::FeatureSegmentTable {
                 declared_count: 5,
                 entity_ref: None,
@@ -12529,6 +12603,18 @@ mod resolved_sketch_tests {
             SketchConstraintDefinition::Equal {
                 first: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
                 second: SketchEntityId("creo:featdefs:sketch_entity#917:16".to_string()),
+            }
+        );
+        assert_eq!(
+            constraints[14].0.definition,
+            SketchConstraintDefinition::SameCoordinate {
+                first: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                second: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:15".to_string()
+                )),
+                axis: SketchCoordinateAxis::V,
             }
         );
         let mut distance_definition = definition.clone();

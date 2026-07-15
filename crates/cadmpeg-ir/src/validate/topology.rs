@@ -1128,6 +1128,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 None,
             ),
+            Definition::SameCoordinate { first, second, .. } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                None,
+            ),
             Definition::Midpoint { point, entity } => {
                 (vec![locus_entity(point).clone(), entity.clone()], None)
             }

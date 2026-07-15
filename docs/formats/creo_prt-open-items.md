@@ -27,7 +27,7 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - The DEPDB fields binding feature recipes and sparse edge records into body topology are unspecified.
 - The byte-backed outer/inner loop discriminator for multi-loop faces is unspecified.
 - Fields binding vertex identifiers to XYZ coordinates and rowless face uses are unspecified.
-- Section-to-datum joins, relation equations other than signed type-zero linear dimensions and type-14 radii, type-one angular relation direction selectors, `skamp_ptr` incidence types 10 through 13 and 15 or later, and the `ed ba 10 0c 8d ee 90 b4 0c` solver sentinel are unspecified.
+- Section-to-datum joins, relation equations other than signed type-zero linear dimensions and type-14 radii, type-one angular relation direction selectors, `skamp_ptr` incidence types 10 through 13, 15, and 35, and the `ed ba 10 0c 8d ee 90 b4 0c` solver sentinel are unspecified.
 - The geometric roles and selection order of multiple feature-definition `local_sys` and `transf` twelve-slot frames are unspecified.
 - The entity/locus roles of the three decoded four-slot `relat_ptr` operand vectors are unspecified.
 - The DEPDB sweep-axis relation for parts without `ActDatums` is unspecified,

@@ -195,6 +195,16 @@ pub struct SketchNativeOperand {
     pub native_ref: Option<String>,
 }
 
+/// Coordinate axis selected by a sketch relation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchCoordinateAxis {
+    /// First coordinate in sketch space.
+    U,
+    /// Second coordinate in sketch space.
+    V,
+}
+
 /// Neutral geometric and dimensional sketch relations.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -208,6 +218,15 @@ pub enum SketchConstraintDefinition {
     CoincidentLoci {
         /// Coincident endpoints, centers, or complete entities.
         loci: Vec<SketchLocus>,
+    },
+    /// Two explicit loci share one sketch-space coordinate.
+    SameCoordinate {
+        /// First aligned locus.
+        first: SketchLocus,
+        /// Second aligned locus.
+        second: SketchLocus,
+        /// Shared sketch-space coordinate.
+        axis: SketchCoordinateAxis,
     },
     /// A point locus lies at the midpoint of a bounded entity.
     Midpoint {

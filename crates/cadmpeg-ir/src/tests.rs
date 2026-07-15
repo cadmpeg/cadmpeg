@@ -329,8 +329,8 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     use crate::features::ParameterId;
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+        SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
     };
 
     let entity = SketchEntityId("synthetic:test:entity#0".into());
@@ -341,6 +341,11 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
                 SketchLocus::Start(entity.clone()),
                 SketchLocus::Center(entity.clone()),
             ],
+        },
+        SketchConstraintDefinition::SameCoordinate {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
+            axis: SketchCoordinateAxis::V,
         },
         SketchConstraintDefinition::Midpoint {
             point: SketchLocus::End(entity.clone()),

@@ -687,6 +687,11 @@ endpoint-selected loci. The loci are symmetric about the line, in stored order.
 When the axis is uniquely horizontal or vertical and its held coordinate is
 solved, one solved locus determines the other by copying the coordinate along
 the axis and reflecting the perpendicular coordinate through the axis.
+A two-item type-seventeen incidence stores two endpoint or center loci that
+share one sketch coordinate. When exactly one of `u` and `v` is equal in the
+solved coordinates, that coordinate selects the neutral same-coordinate axis.
+An incidence with both coordinates equal or neither coordinate equal retains
+its native form because the selected axis is not established.
 An incidence item may reference a complete saved-section entity through its
 `order_table.ext_id`. When its type/sense pattern has no neutral constraint
 mapping, retain the incidence type, ordered entity identifiers, and sense values
