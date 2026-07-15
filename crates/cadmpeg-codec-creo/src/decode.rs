@@ -5941,6 +5941,54 @@ fn extrusion_profile_signed_area(
 
 type ExtrusionProfile = Vec<(SketchGeometry, bool, [f64; 2], [f64; 2])>;
 
+fn resolved_sketch_profiles(
+    ir: &CadIr,
+    sketch_id: &SketchId,
+    minimum_entity_count: usize,
+) -> Option<Vec<ExtrusionProfile>> {
+    let sketch = ir
+        .model
+        .sketches
+        .iter()
+        .find(|sketch| sketch.id == *sketch_id)?;
+    (!sketch.profiles.is_empty()).then_some(())?;
+    let entities = ir
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch_id)
+        .map(|entity| (entity.id.clone(), entity))
+        .collect::<BTreeMap<_, _>>();
+    let mut profiles = Vec::new();
+    for profile in &sketch.profiles {
+        let mut geometries = Vec::new();
+        for entity_use in profile {
+            let entity = entities.get(&entity_use.entity)?;
+            let (mut start, mut end) = sketch_geometry_endpoints(&entity.geometry)?;
+            if entity_use.reversed {
+                std::mem::swap(&mut start, &mut end);
+            }
+            geometries.push((entity.geometry.clone(), entity_use.reversed, start, end));
+        }
+        (geometries.len() >= minimum_entity_count).then_some(())?;
+        let scale = geometries
+            .iter()
+            .flat_map(|(_, _, start, end)| start.iter().chain(end))
+            .map(|value| value.abs())
+            .fold(1.0, f64::max);
+        geometries
+            .iter()
+            .enumerate()
+            .all(|(index, (_, _, _, end))| {
+                let next = geometries[(index + 1) % geometries.len()].2;
+                (end[0] - next[0]).hypot(end[1] - next[1]) <= 1e-9 * scale
+            })
+            .then_some(())?;
+        profiles.push(geometries);
+    }
+    Some(profiles)
+}
+
 fn segments_intersect(first: [[f64; 2]; 2], second: [[f64; 2]; 2], tolerance: f64) -> bool {
     let orient = |a: [f64; 2], b: [f64; 2], point: [f64; 2]| {
         (b[0] - a[0]).mul_add(point[1] - a[1], -((b[1] - a[1]) * (point[0] - a[0])))
@@ -6536,71 +6584,15 @@ fn transfer_resolved_extrusion_breps(
             continue;
         }
         let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
-        let Some(sketch) = ir
-            .model
-            .sketches
-            .iter()
-            .find(|sketch| sketch.id == sketch_id)
-        else {
-            continue;
-        };
-        if sketch.profiles.is_empty() {
-            continue;
-        }
         let cap_origins = feature_plane_equations(scan, feature_id);
         let Some(span) = extrusion_span(transform.origin, transform.normal, cap_origins) else {
             continue;
         };
         let length = span.upper - span.lower;
-        let entities = ir
-            .model
-            .sketch_entities
-            .iter()
-            .filter(|entity| entity.sketch == sketch_id)
-            .map(|entity| (entity.id.clone(), entity))
-            .collect::<BTreeMap<_, _>>();
-        let mut profiles = Vec::new();
-        let mut supported = true;
-        for profile in &sketch.profiles {
-            let mut geometries = Vec::new();
-            for entity_use in profile {
-                let Some(entity) = entities.get(&entity_use.entity) else {
-                    supported = false;
-                    break;
-                };
-                let Some((mut start, mut end)) = sketch_geometry_endpoints(&entity.geometry) else {
-                    supported = false;
-                    break;
-                };
-                if entity_use.reversed {
-                    std::mem::swap(&mut start, &mut end);
-                }
-                geometries.push((entity.geometry.clone(), entity_use.reversed, start, end));
-            }
-            if !supported || geometries.len() < 2 {
-                break;
-            }
-            let scale = geometries
-                .iter()
-                .flat_map(|(_, _, start, end)| start.iter().chain(end))
-                .map(|value| value.abs())
-                .fold(1.0, f64::max);
-            if geometries
-                .iter()
-                .enumerate()
-                .any(|(index, (_, _, _, end))| {
-                    let next = geometries[(index + 1) % geometries.len()].2;
-                    (end[0] - next[0]).hypot(end[1] - next[1]) > 1e-9 * scale
-                })
-            {
-                supported = false;
-                break;
-            }
-            profiles.push(geometries);
-        }
-        if !supported {
+        let Some(profiles) = resolved_sketch_profiles(ir, &sketch_id, 2) else {
             continue;
-        }
+        };
+        let mut supported = true;
         let (profiles, outer_area) = if profiles.len() == 1 {
             let Some(area) = extrusion_profile_signed_area(&profiles[0]) else {
                 continue;
