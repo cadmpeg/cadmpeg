@@ -877,6 +877,9 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             }
         }
         if !surface_geo.contains_key(&surf_ref) && procedural_surface_defs.contains_key(&surf_ref) {
+            let analytic_geometry = procedural_surface_defs
+                .get(&surf_ref)
+                .and_then(|procedural| analytic_procedural_surface(&procedural.definition));
             let construction_is_exact_carrier =
                 procedural_surface_defs
                     .get(&surf_ref)
@@ -886,7 +889,9 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             surface_geo.insert(
                 surf_ref,
                 (
-                    if construction_is_exact_carrier {
+                    if let Some(geometry) = analytic_geometry {
+                        geometry
+                    } else if construction_is_exact_carrier {
                         SurfaceGeometry::Procedural {
                             construction: ProceduralSurfaceId(format!(
                                 "f3d:brep:procedural_surface#{surf_ref}"
@@ -4798,6 +4803,188 @@ fn procedural_surface_definition_is_exact_carrier(
     }
 }
 
+fn analytic_procedural_surface(
+    definition: &nurbs::DecodedProceduralSurfaceDefinition,
+) -> Option<SurfaceGeometry> {
+    let nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
+        directrix,
+        direction,
+        ..
+    } = definition
+    else {
+        return None;
+    };
+    let (center, normal, ref_direction, radius) = rational_quadratic_circle(directrix)?;
+    let direction_norm = direction.norm();
+    if !direction_norm.is_finite() || direction_norm <= f64::EPSILON {
+        return None;
+    }
+    let axis = Vector3::new(
+        direction.x / direction_norm,
+        direction.y / direction_norm,
+        direction.z / direction_norm,
+    );
+    let alignment = dot_vector(axis, normal).abs();
+    if 1.0 - alignment > 1.0e-10 {
+        return None;
+    }
+    Some(SurfaceGeometry::Cylinder {
+        origin: center,
+        axis,
+        ref_direction,
+        radius,
+    })
+}
+
+fn rational_quadratic_circle(
+    curve: &cadmpeg_ir::geometry::NurbsCurve,
+) -> Option<(Point3, Vector3, Vector3, f64)> {
+    let weights = curve.weights.as_deref()?;
+    if curve.degree != 2
+        || curve.periodic
+        || curve.control_points.len() != 9
+        || weights.len() != 9
+        || curve.knots.len() != 12
+    {
+        return None;
+    }
+    let knot_tolerance = 1.0e-12 * (curve.knots[11] - curve.knots[0]).abs().max(1.0);
+    let spans = [
+        curve.knots[0],
+        curve.knots[3],
+        curve.knots[5],
+        curve.knots[7],
+        curve.knots[9],
+    ];
+    if !(curve.knots[..3]
+        .iter()
+        .all(|value| (*value - spans[0]).abs() <= knot_tolerance)
+        && curve.knots[3..5]
+            .iter()
+            .all(|value| (*value - spans[1]).abs() <= knot_tolerance)
+        && curve.knots[5..7]
+            .iter()
+            .all(|value| (*value - spans[2]).abs() <= knot_tolerance)
+        && curve.knots[7..9]
+            .iter()
+            .all(|value| (*value - spans[3]).abs() <= knot_tolerance)
+        && curve.knots[9..]
+            .iter()
+            .all(|value| (*value - spans[4]).abs() <= knot_tolerance))
+    {
+        return None;
+    }
+    let step = spans[1] - spans[0];
+    if !step.is_finite()
+        || step <= 0.0
+        || spans
+            .windows(2)
+            .any(|pair| ((pair[1] - pair[0]) - step).abs() > knot_tolerance)
+    {
+        return None;
+    }
+    let weight_tolerance = 1.0e-12;
+    let quadrant_weight = std::f64::consts::FRAC_1_SQRT_2;
+    if weights.iter().enumerate().any(|(index, weight)| {
+        !weight.is_finite()
+            || if index % 2 == 0 {
+                (*weight - 1.0).abs() > weight_tolerance
+            } else {
+                (*weight - quadrant_weight).abs() > weight_tolerance
+            }
+    }) {
+        return None;
+    }
+    let point_distance = |left: Point3, right: Point3| point_vector(left, right).norm();
+    let scale = curve
+        .control_points
+        .windows(2)
+        .map(|pair| point_distance(pair[0], pair[1]))
+        .fold(0.0_f64, f64::max)
+        .max(1.0);
+    let tolerance = 1.0e-10 * scale;
+    if point_distance(curve.control_points[0], curve.control_points[8]) > tolerance {
+        return None;
+    }
+    let first_center = point_sum_difference(
+        curve.control_points[0],
+        curve.control_points[2],
+        curve.control_points[1],
+    );
+    for span in 0..4 {
+        let start = curve.control_points[span * 2];
+        let control = curve.control_points[span * 2 + 1];
+        let end = curve.control_points[span * 2 + 2];
+        let center = point_sum_difference(start, end, control);
+        if point_distance(center, first_center) > tolerance {
+            return None;
+        }
+    }
+    let first_radial = point_vector(first_center, curve.control_points[0]);
+    let radius = first_radial.norm();
+    if !radius.is_finite() || radius <= tolerance {
+        return None;
+    }
+    let mut normal = None;
+    for span in 0..4 {
+        let radial = point_vector(first_center, curve.control_points[span * 2]);
+        let next = point_vector(first_center, curve.control_points[span * 2 + 2]);
+        if (radial.norm() - radius).abs() > tolerance
+            || dot_vector(radial, next).abs() > tolerance * radius
+        {
+            return None;
+        }
+        let span_normal = cross_vector(radial, next);
+        let span_normal_norm = span_normal.norm();
+        if span_normal_norm <= tolerance * radius {
+            return None;
+        }
+        let span_normal = Vector3::new(
+            span_normal.x / span_normal_norm,
+            span_normal.y / span_normal_norm,
+            span_normal.z / span_normal_norm,
+        );
+        if normal.is_some_and(|normal: Vector3| dot_vector(normal, span_normal) < 1.0 - 1.0e-10) {
+            return None;
+        }
+        normal.get_or_insert(span_normal);
+    }
+    Some((
+        first_center,
+        normal?,
+        Vector3::new(
+            first_radial.x / radius,
+            first_radial.y / radius,
+            first_radial.z / radius,
+        ),
+        radius,
+    ))
+}
+
+fn point_vector(origin: Point3, point: Point3) -> Vector3 {
+    Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z)
+}
+
+fn point_sum_difference(first: Point3, second: Point3, subtract: Point3) -> Point3 {
+    Point3::new(
+        first.x + second.x - subtract.x,
+        first.y + second.y - subtract.y,
+        first.z + second.z - subtract.z,
+    )
+}
+
+fn dot_vector(first: Vector3, second: Vector3) -> f64 {
+    first.x * second.x + first.y * second.y + first.z * second.z
+}
+
+fn cross_vector(first: Vector3, second: Vector3) -> Vector3 {
+    Vector3::new(
+        first.y * second.z - first.z * second.y,
+        first.z * second.x - first.x * second.z,
+        first.x * second.y - first.y * second.x,
+    )
+}
+
 /// Snap edge parameter ranges that overshoot their B-spline carrier's knot
 /// domain by floating-point noise back onto the domain boundary. Native edge
 /// ranges and cache knot vectors are stored independently and can disagree in
@@ -5489,6 +5676,64 @@ fn region_chain(body_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<Regi
 #[cfg(test)]
 mod topology_tests {
     use super::*;
+
+    fn exact_circle_directrix() -> cadmpeg_ir::geometry::NurbsCurve {
+        let center = Point3::new(2.0, 3.0, 4.0);
+        let point = |x, y| Point3::new(center.x + x, center.y + y, center.z);
+        cadmpeg_ir::geometry::NurbsCurve {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
+            control_points: vec![
+                point(5.0, 0.0),
+                point(5.0, 5.0),
+                point(0.0, 5.0),
+                point(-5.0, 5.0),
+                point(-5.0, 0.0),
+                point(-5.0, -5.0),
+                point(0.0, -5.0),
+                point(5.0, -5.0),
+                point(5.0, 0.0),
+            ],
+            weights: Some(vec![
+                1.0,
+                std::f64::consts::FRAC_1_SQRT_2,
+                1.0,
+                std::f64::consts::FRAC_1_SQRT_2,
+                1.0,
+                std::f64::consts::FRAC_1_SQRT_2,
+                1.0,
+                std::f64::consts::FRAC_1_SQRT_2,
+                1.0,
+            ]),
+            periodic: false,
+        }
+    }
+
+    #[test]
+    fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
+        let definition = |direction| nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
+            directrix: exact_circle_directrix(),
+            parameter_interval: [0.0, 4.0],
+            direction,
+            native_position: Point3::new(0.0, 0.0, 0.0),
+        };
+        assert!(matches!(
+            analytic_procedural_surface(&definition(Vector3::new(0.0, 0.0, -8.0))),
+            Some(SurfaceGeometry::Cylinder {
+                origin,
+                axis,
+                ref_direction,
+                radius,
+            }) if origin == Point3::new(2.0, 3.0, 4.0)
+                && axis == Vector3::new(0.0, 0.0, -1.0)
+                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && radius == 5.0
+        ));
+        assert!(analytic_procedural_surface(&definition(Vector3::new(1.0, 0.0, 8.0))).is_none());
+        let mut approximate = exact_circle_directrix();
+        approximate.control_points[3].x += 1.0e-5;
+        assert!(rational_quadratic_circle(&approximate).is_none());
+    }
 
     #[test]
     fn normalized_topology_heads_are_not_other_records() {

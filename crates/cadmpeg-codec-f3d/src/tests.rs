@@ -6425,6 +6425,77 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
 }
 
 #[test]
+fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_cacheless_cyl_spl_sur_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated cache-less extrusion decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let ProceduralSurfaceDefinition::Extrusion {
+        directrix,
+        parameter_interval,
+        direction,
+        ..
+    } = &mut source_less.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected extrusion definition")
+    };
+    *parameter_interval = Some([0.0, std::f64::consts::TAU]);
+    *direction = Vector3::new(0.0, 0.0, -20.0);
+    source_less
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == *directrix)
+        .expect("extrusion directrix")
+        .geometry = CurveGeometry::Circle {
+        center: Point3::new(2.0, 3.0, 4.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 5.0,
+    };
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less circle extrusion encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less circle extrusion round trip");
+    let surface = round_trip
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == round_trip.ir.model.procedural_surfaces[0].surface)
+        .expect("extrusion carrier");
+    let SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+    } = surface.geometry
+    else {
+        panic!("unexpected extrusion carrier: {:?}", surface.geometry)
+    };
+    assert!((origin.x - 2.0).abs() < 1.0e-12);
+    assert!((origin.y - 3.0).abs() < 1.0e-12);
+    assert!((origin.z - 4.0).abs() < 1.0e-12);
+    assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
+    assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
+    assert!(ref_direction.y.abs() < 1.0e-12);
+    assert!(ref_direction.z.abs() < 1.0e-12);
+    assert_eq!(radius, 5.0);
+}
+
+#[test]
 fn generated_source_less_writes_rolling_ball_blend_definition() {
     let source = f3d_with_smbh(&synthetic_rb_blend_spl_sur_smbh());
     let decoded = F3dCodec

@@ -546,6 +546,8 @@ cyl_spl_sur :=
 
 `u_start` and `u_end` are directrix parameters. `extrusion_direction` is length-bearing. `POSITION` is stored in model-space length units and is retained independently of the directrix. The optional final `surface-cache` is the solved NURBS surface, and `cache_fit_tolerance` is a length. Without that cache, the directrix, parameter interval, direction, and position still define and retain the exact translational-extrusion construction. Native generation writes the stored interval and position without deriving or replacing either field.
 
+A cacheless translational extrusion is an analytic cylinder when its directrix is a closed nonperiodic degree-two rational NURBS with four equal parameter spans, double interior knots, triple end knots, nine poles, alternating weights `1` and `sqrt(1/2)`, and four ordered quarter-circle arcs sharing one center and radius, and when `extrusion_direction` is parallel to the circle normal. Each middle pole is the sum of its two endpoint poles minus the common center. Consecutive endpoint radial vectors are perpendicular, have the same positive length, and have consistently oriented cross products. The cylinder origin is the common center, its axis follows the normalized extrusion direction, its reference direction follows the first radial vector, and its radius is the shared radial length. A nonclosed, noncircular, degenerate, or obliquely extruded directrix remains a procedural extrusion.
+
 ```
 rb_blend_spl_sur :=
   0x0f 0x0d "rb_blend_spl_sur"
