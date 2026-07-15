@@ -745,19 +745,21 @@ impl IncidenceCandidateSearch<'_> {
     }
 
     fn candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
-        let mut faces = self.edge_faces[edge].to_vec();
-        faces.sort_unstable();
-        faces.dedup();
-        faces.iter().all(|&face| {
-            pair.iter().enumerate().all(|(rank, &point)| {
-                let multiplicity = 1 + usize::from(rank == 0 && pair[0] == pair[1]);
-                usize::from(self.degrees[face][point]) + multiplicity <= 2
-            })
+        let faces = self.edge_faces[edge];
+        faces.into_iter().enumerate().all(|(face_rank, face)| {
+            if face_rank == 0 || face != faces[0] {
+                pair.iter().enumerate().all(|(rank, &point)| {
+                    let multiplicity = 1 + usize::from(rank == 0 && pair[0] == pair[1]);
+                    usize::from(self.degrees[face][point]) + multiplicity <= 2
+                })
+            } else {
+                true
+            }
         })
     }
 
-    fn feasible(&self) -> bool {
-        for face in 0..self.face_count {
+    fn faces_feasible(&self, faces: impl IntoIterator<Item = usize>) -> bool {
+        for face in faces {
             for &point in &self.open_points[face] {
                 let can_complete = self.face_edges[face].iter().copied().any(|edge| {
                     self.assignment[edge].is_none()
@@ -772,6 +774,10 @@ impl IncidenceCandidateSearch<'_> {
             }
         }
         true
+    }
+
+    fn feasible(&self) -> bool {
+        self.faces_feasible(0..self.face_count)
     }
 
     fn search(&mut self) {
@@ -867,21 +873,23 @@ impl IncidenceCandidateSearch<'_> {
             if !self.candidate_fits(edge, pair) {
                 continue;
             }
-            let mut faces = self.edge_faces[edge].to_vec();
-            faces.sort_unstable();
-            faces.dedup();
-            for &face in &faces {
+            let edge_faces = self.edge_faces[edge];
+            let faces = edge_faces
+                .into_iter()
+                .enumerate()
+                .filter_map(|(rank, face)| (rank == 0 || face != edge_faces[0]).then_some(face));
+            for face in faces.clone() {
                 for &point in &pair {
                     self.adjust_degree(face, point, true);
                 }
             }
             self.assignment[edge] = Some(pair);
-            let feasible = self.feasible();
+            let feasible = self.faces_feasible(faces.clone());
             if feasible {
                 self.search();
             }
             self.assignment[edge] = None;
-            for &face in &faces {
+            for face in faces {
                 for &point in &pair {
                     self.adjust_degree(face, point, false);
                 }
