@@ -1276,6 +1276,11 @@ A curve-equation entity carries its placement in `local_sys f9 <dimensions> <cou
 
 A `protextrude` or `protrevolve` operation references its sweep axis through `gsec3d_ptr` placement fields rather than an inline axis vector. The `srf_array` row `feat_id` binds each materialized carrier to the generating feature. Extruding a section line yields a plane, extruding an arc yields a cylinder, and extruding an interpolation spline yields a degree-one ruled NURBS surface that retains the spline's degree, knot vector, control points, and weights along the directrix parameter. The feature's cap-plane offsets bound the translation parameter, including symmetric and two-sided spans. A closed profile yields cap planes. Each solved `ent_tab` carrier defines an unbounded surface of revolution independently of the operation's angular trim. A line parallel, angled, or perpendicular to the axis yields a cylinder, circular cone, or plane. A circular arc or complete circle with center on or off the axis yields a sphere or torus. An interpolation spline yields a full-turn tensor-product NURBS carrier. Saved analytic entities use their `order_table` source identity and same-feature generated-surface entry exactly as saved splines do. The projected carrier-to-axis vector defines the zero-azimuth direction; construction segments outside `ent_tab` do not generate surfaces.
 
+A section with a resolved `gsec3d_ptr` placement is an ordered planar sketch
+history node owning the placed sketch geometry. When the section transform has
+a generating feature identifier, that feature depends on the sketch history
+node. The sketch node precedes its profile consumer in construction order.
+
 `FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table
 pointer. The configuration-root identity is
 `creo:family_info:driver_table#root`. `e1` is an explicit null pointer; `f7

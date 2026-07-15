@@ -19,6 +19,7 @@ use cadmpeg_ir::features::{
     FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
     FeatureSourceContent, FeatureTreeNodeRole, HoleKind, Length, ParameterId, ParameterValue,
     PatternForm, PatternKind, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
+    SketchSpace,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -7288,6 +7289,15 @@ fn transfer_resolved_sketches(
     annotations: &mut AnnotationBuilder,
 ) {
     for transform in &scan.feature_section_transforms {
+        if scan
+            .feature_section_transforms
+            .iter()
+            .filter(|candidate| candidate.definition_id == transform.definition_id)
+            .count()
+            != 1
+        {
+            continue;
+        }
         let Some(definition) = scan
             .feature_definitions
             .iter()
@@ -7730,7 +7740,7 @@ fn transfer_resolved_sketches(
             Exactness::Derived,
         );
         ir.model.sketches.push(Sketch {
-            id: sketch_id,
+            id: sketch_id.clone(),
             name: None,
             configuration: None,
             origin: Point3::new(
@@ -7751,6 +7761,65 @@ fn transfer_resolved_sketches(
             profiles,
             native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
         });
+        let feature_id = IrFeatureId(format!("creo:model:sketch_feature#{}", definition.id));
+        annotate(
+            annotations,
+            &feature_id.0,
+            "FeatDefs",
+            transform.offset as u64,
+            "section_sketch_feature",
+            Exactness::Derived,
+        );
+        ir.model.features.push(Feature {
+            id: feature_id,
+            ordinal: ir.model.features.len() as u64,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("section".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: IrFeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: Some(sketch_id),
+            },
+            native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+        });
+    }
+}
+
+fn link_feature_sketch_history(scan: &ContainerScan, ir: &mut CadIr) {
+    let links = scan
+        .feature_section_transforms
+        .iter()
+        .filter_map(|transform| {
+            let owner = IrFeatureId(format!("creo:model:feature#{}", transform.feature_id?));
+            let sketch_feature = IrFeatureId(format!(
+                "creo:model:sketch_feature#{}",
+                transform.definition_id
+            ));
+            ir.model
+                .features
+                .iter()
+                .any(|feature| feature.id == sketch_feature)
+                .then_some((owner, sketch_feature))
+        })
+        .collect::<Vec<_>>();
+    for (owner, sketch_feature) in links {
+        let Some(feature) = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.id == owner)
+        else {
+            continue;
+        };
+        if !feature.dependencies.contains(&sketch_feature) {
+            feature.dependencies.push(sketch_feature);
+        }
     }
 }
 
@@ -16512,6 +16581,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             native_ref: owning_feature_definition_ref(scan, row.feature_id),
         });
     }
+    link_feature_sketch_history(scan, &mut ir);
     reconcile_feature_links(scan, &mut ir);
     transfer_curve_expression_features(scan, &mut ir, &mut annotations);
     transfer_feature_dimensions(scan, &mut ir, &mut annotations);
