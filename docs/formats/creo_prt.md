@@ -826,6 +826,14 @@ unlabeled instance. Definitions without this reciprocal unique join have no
 owner. They remain section definitions and retain their complete bounded body.
 Replay order does not define feature identity.
 
+DEPDB also stores an internal sketch-datum chain. A procedural recipe feature
+`F` immediately followed in feature-state order by a non-recipe feature
+`F + 1` owns the unique section definition whose `gsec3d_ptr.sketch_plane`
+entity is `F + 2`. The intermediate feature is the section datum. When more
+than one definition selects the same sketch-plane entity, the chain does not
+select a regeneration snapshot and none of those definitions acquires the
+owner.
+
 In `DEPDB_DATA`, `gsec2d_ptr 00 e0 0a name 00 S2D<digits> 00` begins a
 labelled section definition. Its labelled table records define the positional
 table classes used by following unlabeled `S2D` definitions. The next labelled

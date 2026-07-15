@@ -29,7 +29,11 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - Section-to-datum joins, relation equations other than signed type-zero linear dimensions and type-14 radii, type-one angular relation direction selectors, `skamp_ptr` incidence types 10 through 13 and 15 or later, and the `ed ba 10 0c 8d ee 90 b4 0c` solver sentinel are unspecified.
 - The geometric roles and selection order of multiple feature-definition `local_sys` and `transf` twelve-slot frames are unspecified.
 - The entity/locus roles of the three decoded four-slot `relat_ptr` operand vectors are unspecified.
-- The DEPDB sketch-datum and sweep-axis relation for parts without `ActDatums` is unspecified, including the feature-definition datum defaults or standard-datum convention that supplies the `protextrude` axis.
+- The DEPDB sweep-axis relation for parts without `ActDatums` is unspecified,
+  including the feature-definition datum defaults or standard-datum convention
+  that supplies the `protextrude` axis. The current regeneration snapshot is
+  unspecified when several section definitions select the same internal
+  sketch-plane entity.
 - Sketch-datum resolution without a unique generated-datum parent-table remainder is unspecified, including selection of a perpendicular orienting datum when the nested reference datum is parallel to the sketch normal.
 - In named `ActDatums` outline slots outside the paired standalone-zero axis slots, the value semantics of `18 <index>`, `a5`, `9f`, `5c`, and `45` are unspecified. Their values determine nonzero datum offsets and extents.
 - The direction-bit rule assigning pcurve endpoint pairs A and B to traversal start and end is unspecified, as is the partition of shared surface references into face instances.

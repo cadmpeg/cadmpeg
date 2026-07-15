@@ -5188,6 +5188,68 @@ pub fn bind_replay_definition_owners(
     }
 }
 
+/// Bind a DEPDB section through the consecutive recipe, internal datum, and
+/// sketch-plane identifier chain. Repeated definitions for one plane remain
+/// unowned because the current regeneration snapshot is not established.
+pub fn bind_depdb_section_owners(
+    definitions: &mut [FeatureDefinition],
+    operations: &[FeatureOperation],
+    depdb_ranges: &[(usize, usize)],
+) {
+    let in_depdb = |offset: usize| {
+        depdb_ranges
+            .iter()
+            .any(|(start, end)| offset >= *start && offset < *end)
+    };
+    let claimed_owner_ids = definitions
+        .iter()
+        .filter_map(|definition| definition.owner_feature_id)
+        .collect::<BTreeSet<_>>();
+    let mut definitions_per_plane = BTreeMap::new();
+    for plane_id in definitions.iter().filter_map(|definition| {
+        (definition.owner_feature_id.is_none() && in_depdb(definition.offset))
+            .then_some(definition.section_3d.as_ref()?.sketch_plane_entity_id?)
+    }) {
+        *definitions_per_plane.entry(plane_id).or_insert(0usize) += 1;
+    }
+    let mut ordered_operations = operations.iter().collect::<Vec<_>>();
+    ordered_operations.sort_by_key(|operation| operation.offset);
+    for definition in definitions
+        .iter_mut()
+        .filter(|definition| definition.owner_feature_id.is_none())
+    {
+        let Some(plane_id) = definition
+            .section_3d
+            .as_ref()
+            .and_then(|section| section.sketch_plane_entity_id)
+            .filter(|plane_id| *plane_id >= 2)
+        else {
+            continue;
+        };
+        if definitions_per_plane.get(&plane_id) != Some(&1) {
+            continue;
+        }
+        let owner_id = plane_id - 2;
+        let datum_id = plane_id - 1;
+        if claimed_owner_ids.contains(&owner_id) {
+            continue;
+        }
+        let matches = ordered_operations
+            .windows(2)
+            .filter(|pair| {
+                pair[0].feature_id == owner_id
+                    && pair[0].recipe.is_some()
+                    && pair[1].feature_id == datum_id
+                    && pair[1].recipe.is_none()
+            })
+            .count();
+        if matches == 1 {
+            definition.id = owner_id;
+            definition.owner_feature_id = Some(owner_id);
+        }
+    }
+}
+
 /// Decode the implicit named-record entity table and every canonical `f7`
 /// reference, preserving both source context and unresolved target IDs.
 pub fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEntityReference>) {
@@ -5550,6 +5612,110 @@ mod tests {
             &BTreeSet::from([42]),
         );
         assert_eq!(claimed[0].owner_feature_id, None);
+    }
+
+    fn operation(
+        feature_id: u32,
+        recipe: Option<FeatureRecipe>,
+        offset: usize,
+    ) -> FeatureOperation {
+        FeatureOperation {
+            feature_id,
+            kind: String::new(),
+            display_name_stored: false,
+            stored_name: None,
+            stored_name_bytes: None,
+            identifier_keyword: None,
+            status_prefix: None,
+            recipe,
+            root_schema_class: None,
+            parent_feature_id: None,
+            offset,
+            state_offset: offset,
+        }
+    }
+
+    #[test]
+    fn binds_unique_depdb_section_from_recipe_datum_plane_chain() {
+        let mut definition = pending_replay(&[]);
+        definition.section_3d = Some(FeatureSection3d {
+            sketch_plane_entity_id: Some(249),
+            sketch_plane_flip: None,
+            reference_plane_entity_ids: Vec::new(),
+            reference_plane_datum_geometry_id: None,
+            orientation: FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: 0,
+        });
+        let operations = [
+            operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
+            operation(248, None, 20),
+        ];
+
+        bind_depdb_section_owners(
+            std::slice::from_mut(&mut definition),
+            &operations,
+            &[(0, usize::MAX)],
+        );
+
+        assert_eq!(definition.id, 247);
+        assert_eq!(definition.owner_feature_id, Some(247));
+    }
+
+    #[test]
+    fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
+        let section = FeatureSection3d {
+            sketch_plane_entity_id: Some(249),
+            sketch_plane_flip: None,
+            reference_plane_entity_ids: Vec::new(),
+            reference_plane_datum_geometry_id: None,
+            orientation: FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: 0,
+        };
+        let mut repeated = [pending_replay(&[]), pending_replay(&[])];
+        for definition in &mut repeated {
+            definition.section_3d = Some(section.clone());
+        }
+        let consecutive = [
+            operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
+            operation(248, None, 20),
+        ];
+        bind_depdb_section_owners(&mut repeated, &consecutive, &[(0, usize::MAX)]);
+        assert!(repeated
+            .iter()
+            .all(|definition| definition.owner_feature_id.is_none()));
+
+        let mut separated = pending_replay(&[]);
+        separated.section_3d = Some(section);
+        let operations = [
+            operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
+            operation(900, None, 15),
+            operation(248, None, 20),
+        ];
+        bind_depdb_section_owners(
+            std::slice::from_mut(&mut separated),
+            &operations,
+            &[(0, usize::MAX)],
+        );
+        assert_eq!(separated.owner_feature_id, None);
+
+        let mut claimed = pending_replay(&[]);
+        claimed.id = 247;
+        claimed.owner_feature_id = Some(247);
+        let mut candidate = pending_replay(&[]);
+        candidate.section_3d = Some(FeatureSection3d {
+            sketch_plane_entity_id: Some(249),
+            sketch_plane_flip: None,
+            reference_plane_entity_ids: Vec::new(),
+            reference_plane_datum_geometry_id: None,
+            orientation: FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: 0,
+        });
+        let mut definitions = [claimed, candidate];
+        bind_depdb_section_owners(&mut definitions, &consecutive, &[(0, usize::MAX)]);
+        assert_eq!(definitions[1].owner_feature_id, None);
     }
 
     #[test]

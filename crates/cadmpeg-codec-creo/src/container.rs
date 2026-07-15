@@ -1217,6 +1217,8 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_revolution_extents = feature::revolution_extents(&feature_rows);
     let feature_entity_tables =
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
+    let feature_operation_states = feature_operation_states(&data, &sections);
+    let feature_operations = feature_operations(&data, &sections);
     let mut feature_definitions = feature_definitions(&data, &sections);
     feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
     let claimed_definition_owners = feature_definitions
@@ -1231,6 +1233,21 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     );
     feature_definitions.extend(replay_definitions);
     feature_definitions.sort_by_key(|definition| definition.offset);
+    let depdb_ranges = sections
+        .iter()
+        .filter(|section| section.name == "DEPDB_DATA")
+        .map(|section| {
+            (
+                section.offset,
+                section.offset.saturating_add(section.length),
+            )
+        })
+        .collect::<Vec<_>>();
+    feature::bind_depdb_section_owners(
+        &mut feature_definitions,
+        &feature_operations,
+        &depdb_ranges,
+    );
     let feature_section_transforms = placement::resolve(
         &feature_definitions,
         &placement::PlacementSources {
@@ -1244,8 +1261,6 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         },
         &feature_entity_tables,
     );
-    let feature_operation_states = feature_operation_states(&data, &sections);
-    let feature_operations = feature_operations(&data, &sections);
     let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections);
     let declared_body_count = geomlists_value(&data, &sections, b"n_bodies\0");
     let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0");
