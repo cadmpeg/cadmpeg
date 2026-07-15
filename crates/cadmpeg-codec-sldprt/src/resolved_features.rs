@@ -16486,7 +16486,7 @@ fn validate_solved_dimension(
         Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => value.0,
         _ => unreachable!("dimension parameter compatibility was checked by the caller"),
     };
-    let measured = match &constraint.definition {
+    let mut measured = match &constraint.definition {
         SketchConstraintDefinition::DistanceLoci { first, second, .. } => match (first, second) {
             (SketchLocus::Entity(first), SketchLocus::Entity(second))
                 if !generated_locus_is_point(ir, first)
@@ -16594,6 +16594,12 @@ fn validate_solved_dimension(
         }
         _ => unreachable!("only dimension definitions are passed"),
     };
+    if matches!(&constraint.definition, SketchConstraintDefinition::Angle { .. }) {
+        let supplement = std::f64::consts::PI - measured;
+        if (supplement - expected).abs() < (measured - expected).abs() {
+            measured = supplement;
+        }
+    }
     let tolerance = SKETCH_POINT_TOLERANCE * (1.0 + measured.abs().max(expected.abs()));
     if !measured.is_finite() || (measured - expected).abs() > tolerance {
         return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
@@ -18594,7 +18600,11 @@ fn patch_direct_ellipse(
     let parameters = match (start_angle, end_angle) {
         (Some(start), Some(end)) => [start.0, end.0],
         (None, None) => [0.0, 0.0],
-        _ => unreachable!(),
+        _ => {
+            return Err(cadmpeg_ir::codec::CodecError::Malformed(
+                "SLDPRT sketch ellipse has only one bounded endpoint".into(),
+            ));
+        }
     };
     for (attr, parameter) in [request.start_attr, request.end_attr]
         .into_iter()

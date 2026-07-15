@@ -641,6 +641,14 @@ impl SldprtNative {
                         offset,
                     )
                 }) != Some(record.components.clone())
+                    || crate::resolved_features::component_path_features(
+                        &record.components,
+                        &features,
+                    ) != record.producer_feature_refs
+                    || crate::resolved_features::component_path_terminal_feature(
+                        &record.components,
+                        &features,
+                    ) != record.terminal_feature_ref
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input surface selection {} disagrees with its payload",

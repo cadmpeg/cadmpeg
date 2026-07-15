@@ -1485,10 +1485,10 @@ fn project_extrude(
         )
     } else if let Some(children) = feature.properties.get("DissectableChildren") {
         let profiles = resolve_native_refs(children, native_by_source)?;
-        let [profile] = profiles.as_slice() else {
-            return None;
-        };
-        ProfileRef::Native(profile.clone())
+        match profiles.as_slice() {
+            [profile] => ProfileRef::Native(profile.clone()),
+            _ => ProfileRef::Unresolved(feature.id.clone()),
+        }
     } else {
         ProfileRef::Unresolved(feature.id.clone())
     };
