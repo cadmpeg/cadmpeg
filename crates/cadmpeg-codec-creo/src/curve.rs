@@ -136,6 +136,25 @@ pub struct CurveTopologyRow {
     pub offset: usize,
 }
 
+/// One DEPDB cross-section curve row with its one-sided topology suffix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DepdbCurveRow {
+    /// Curve identifier in the cross-section `crv_array` namespace.
+    pub id: u32,
+    /// Raw curve-family discriminator.
+    pub type_byte: u8,
+    /// Owning feature identifier.
+    pub feature_id: u32,
+    /// Stored per-side direction flags.
+    pub directions: [u8; 2],
+    /// The `[0, X1, F1, 0]` one-sided suffix.
+    pub suffix: [u32; 4],
+    /// Exact bytes between the fixed prefix and one-sided suffix.
+    pub body: Vec<u8>,
+    /// Byte offset of the row identifier.
+    pub offset: usize,
+}
+
 /// Resolution state of a curve row's four-reference topology suffix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CurveSuffixStatus {
@@ -852,6 +871,113 @@ pub fn topology_rows(payload: &[u8]) -> Vec<CurveTopologyRow> {
     rows.sort_by_key(|row| row.offset);
     rows.dedup_by_key(|row| row.offset);
     rows
+}
+
+/// Decode a complete DEPDB `crv_array\0 f2 f8 <count>` cross-section array.
+/// Any malformed row or count mismatch withholds the entire array.
+#[must_use]
+pub fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
+    let Some(array) = find(payload, b"crv_array\0", 0) else {
+        return Vec::new();
+    };
+    let header = array + b"crv_array\0".len();
+    if payload.get(header..header + 2) != Some(&[0xf2, psb::token::ARRAY_OPEN]) {
+        return Vec::new();
+    }
+    let (count, after_count) = compact_int(payload, header + 2);
+    if after_count == header + 2 {
+        return Vec::new();
+    }
+    let Ok(count) = usize::try_from(count) else {
+        return Vec::new();
+    };
+    if count == 0 || prototypes(payload).len() != 1 {
+        return Vec::new();
+    }
+    let Some(topology) = find(payload, b"topol_ref_data\0", after_count) else {
+        return Vec::new();
+    };
+    let mut cursor = topology + b"topol_ref_data\0".len();
+    let positional_count = count - 1;
+    let mut rows = Vec::with_capacity(positional_count);
+    while rows.len() < positional_count {
+        let mut boundaries = Vec::new();
+        for (marker, length) in [
+            (b"\xe1\xe3".as_slice(), 2),
+            (b"\xe1\xf5\x05\xf6\xe3", 5),
+            (b"\xe1\xe0", 1),
+        ] {
+            let mut search = cursor;
+            while let Some(offset) = find(payload, marker, search) {
+                boundaries.push((offset, length));
+                search = offset + marker.len();
+            }
+        }
+        boundaries.sort_unstable();
+        boundaries.dedup();
+        let Some((row, terminator, length)) = boundaries.into_iter().find_map(|(end, length)| {
+            let row = parse_depdb_curve_segment(&payload[cursor..end], cursor)?;
+            Some((row, end, length))
+        }) else {
+            return Vec::new();
+        };
+        rows.push(row);
+        cursor = terminator + length;
+    }
+    if rows.len() == positional_count {
+        rows
+    } else {
+        Vec::new()
+    }
+}
+
+fn parse_depdb_curve_segment(segment: &[u8], absolute_offset: usize) -> Option<DepdbCurveRow> {
+    let suffixes = (4..=11)
+        .filter_map(|suffix_length| {
+            let start = segment.len().checked_sub(suffix_length)?;
+            let (zero0, p1) = compact_int(segment, start);
+            let (x1, p2) = compact_int(segment, p1);
+            let (f1, p3) = compact_int(segment, p2);
+            let (zero1, end) = compact_int(segment, p3);
+            (p1 > start && p2 > p1 && p3 > p2 && end == segment.len())
+                .then_some((start, [zero0, x1, f1, zero1]))
+        })
+        .filter(|(_, suffix)| suffix[0] == 0 && suffix[3] == 0)
+        .collect::<Vec<_>>();
+    let [(suffix_start, suffix)] = suffixes.as_slice() else {
+        return None;
+    };
+    let prefixes = (0..*suffix_start).filter_map(|start| {
+        let prefix = topology_prefix_fields(segment, start)?;
+        (prefix.end <= *suffix_start).then_some((start, prefix))
+    });
+    let prefixes = prefixes
+        .fold(BTreeMap::new(), |mut by_end, (start, prefix)| {
+            by_end
+                .entry(prefix.end)
+                .and_modify(|(known_start, known_prefix)| {
+                    if start < *known_start {
+                        *known_start = start;
+                        *known_prefix = prefix;
+                    }
+                })
+                .or_insert((start, prefix));
+            by_end
+        })
+        .into_values()
+        .collect::<Vec<_>>();
+    let [(row_start, prefix)] = prefixes.as_slice() else {
+        return None;
+    };
+    Some(DepdbCurveRow {
+        id: prefix.id,
+        type_byte: prefix.type_byte,
+        feature_id: prefix.feature_id,
+        directions: prefix.directions,
+        suffix: *suffix,
+        body: segment[prefix.end..*suffix_start].to_vec(),
+        offset: absolute_offset + row_start,
+    })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1787,6 +1913,20 @@ mod tests {
                 offset: 15,
             }]
         );
+    }
+
+    #[test]
+    fn decodes_complete_depdb_one_sided_curve_array() {
+        let payload = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xff\0\x09\x0a\0\xe1\xe0next_record\0";
+
+        let rows = depdb_cross_section_rows(payload);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, 7);
+        assert_eq!(rows[0].type_byte, 8);
+        assert_eq!(rows[0].feature_id, 4);
+        assert_eq!(rows[0].directions, [1, 0xf6]);
+        assert_eq!(rows[0].suffix, [0, 9, 10, 0]);
+        assert_eq!(rows[0].body, [0xff]);
     }
 
     #[test]

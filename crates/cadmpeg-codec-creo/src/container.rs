@@ -18,8 +18,8 @@ use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveParameterRecord, CurvePrototype,
-    CurvePrototypeTopology, CurveTopologyRow, Fc05Circle, Fc05CylinderCapPair, FcCurveCoordinates,
-    PcurveEndpoints, PrototypePcurveEndpoints,
+    CurvePrototypeTopology, CurveTopologyRow, DepdbCurveRow, Fc05Circle, Fc05CylinderCapPair,
+    FcCurveCoordinates, PcurveEndpoints, PrototypePcurveEndpoints,
 };
 use crate::datum::{self, DatumPlane};
 use crate::feature::{
@@ -212,6 +212,8 @@ pub struct ContainerScan {
     /// Labeled curve prototypes from geometry sections. The curve body and
     /// its analytic interpretation are decoded separately.
     pub curve_prototypes: Vec<CurvePrototype>,
+    /// Labeled first curve rows from DEPDB cross-section namespaces.
+    pub cross_section_curve_prototypes: Vec<CurvePrototype>,
     /// Source programs from curve-from-equation entity records.
     pub curve_expressions: Vec<CurveExpressionRecord>,
     /// Bounded analytic parameter bodies from positional curve rows.
@@ -234,6 +236,8 @@ pub struct ContainerScan {
     /// Curve rows with an unambiguous canonical four-reference topology
     /// suffix. These rows define the native half-edge adjacency graph.
     pub curve_topology_rows: Vec<CurveTopologyRow>,
+    /// Complete one-sided curve rows from the DEPDB cross-section namespace.
+    pub cross_section_curve_rows: Vec<DepdbCurveRow>,
     /// Resolved native half-edges and closed loops built from curve rows.
     pub half_edges: Vec<HalfEdge>,
     /// Closed rings of half-edges, one per resolved face loop.
@@ -996,6 +1000,50 @@ fn curve_topology_rows(data: &[u8], sections: &[Section]) -> Vec<CurveTopologyRo
     rows
 }
 
+fn cross_section_curve_rows(data: &[u8], sections: &[Section]) -> Vec<DepdbCurveRow> {
+    let mut rows = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "Xsections")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
+        if find(payload, b"Sld_Xsections\0", 0).is_none() {
+            continue;
+        }
+        rows.extend(
+            curve::depdb_cross_section_rows(payload)
+                .into_iter()
+                .map(|mut row| {
+                    row.offset += section.offset;
+                    row
+                }),
+        );
+    }
+    rows.sort_by_key(|row| row.offset);
+    rows
+}
+
+fn cross_section_curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<CurvePrototype> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "Xsections")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
+        if find(payload, b"Sld_Xsections\0", 0).is_none() {
+            continue;
+        }
+        records.extend(curve::prototypes(payload).into_iter().map(|mut record| {
+            record.offset += section.offset;
+            record
+        }));
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
 fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlane> {
     let mut planes = Vec::new();
     for section in sections
@@ -1437,9 +1485,11 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let surface_prototypes = surface_prototypes(&data, &sections);
     let surface_prototype_records = surface_prototype_records(&data, &sections);
     let curve_prototypes = curve_prototypes(&data, &sections);
+    let cross_section_curve_prototypes = cross_section_curve_prototypes(&data, &sections);
     let curve_expressions = curve_expressions(&data, &sections);
     let curve_parameters = curve_parameters(&data, &sections);
     let curve_topology_rows = curve_topology_rows(&data, &sections);
+    let cross_section_curve_rows = cross_section_curve_rows(&data, &sections);
     let pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
     let fc_curve_coordinates = curve::fc_coordinates(&curve_parameters);
     let fc05_circles = curve::fc05_circles(&curve_parameters);
@@ -1545,6 +1595,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         surface_prototypes,
         surface_prototype_records,
         curve_prototypes,
+        cross_section_curve_prototypes,
         curve_expressions,
         curve_parameters,
         pcurves,
@@ -1555,6 +1606,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         curve_prototype_topology,
         bound_prototype_pcurves,
         curve_topology_rows,
+        cross_section_curve_rows,
         half_edges,
         loops,
         face_components,

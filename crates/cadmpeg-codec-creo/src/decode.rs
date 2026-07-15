@@ -1236,11 +1236,15 @@ fn curve_prototype_topology_records(scan: &ContainerScan) -> Vec<CreoCurveProtot
         .collect()
 }
 
-fn curve_prototype_records(scan: &ContainerScan) -> Vec<CreoCurvePrototypeRecord> {
-    scan.curve_prototypes
+fn curve_prototype_records(
+    scan: &ContainerScan,
+    prototypes: &[crate::curve::CurvePrototype],
+    id_prefix: &str,
+) -> Vec<CreoCurvePrototypeRecord> {
+    prototypes
         .iter()
         .map(|record| CreoCurvePrototypeRecord {
-            id: format!("creo:curve:prototype#{}:{}", record.offset, record.id),
+            id: format!("{id_prefix}#{}:{}", record.offset, record.id),
             curve_id: record.id,
             type_byte: record.type_byte,
             generating_feature_id: record.feature_id,
@@ -1473,6 +1477,19 @@ struct CreoCurveTopologyRowRecord {
     directions: [u8; 2],
     faces: [u32; 2],
     next_edges: [u32; 2],
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoCrossSectionCurveRowRecord {
+    id: String,
+    curve_id: u32,
+    type_byte: u8,
+    feature_id: u32,
+    directions: [u8; 2],
+    suffix: [u32; 4],
+    body: Vec<u8>,
     offset: usize,
     source_section: String,
 }
@@ -1751,6 +1768,23 @@ fn curve_parameter_records(scan: &ContainerScan) -> Vec<CreoCurveParameterRecord
                 suffix_offset: record.suffix_offset,
                 source_section: source_section(scan, record.offset),
             }
+        })
+        .collect()
+}
+
+fn cross_section_curve_row_records(scan: &ContainerScan) -> Vec<CreoCrossSectionCurveRowRecord> {
+    scan.cross_section_curve_rows
+        .iter()
+        .map(|row| CreoCrossSectionCurveRowRecord {
+            id: format!("creo:cross_section_geometry:curve_row#{}", row.id),
+            curve_id: row.id,
+            type_byte: row.type_byte,
+            feature_id: row.feature_id,
+            directions: row.directions,
+            suffix: row.suffix,
+            body: row.body.clone(),
+            offset: row.offset,
+            source_section: source_section(scan, row.offset),
         })
         .collect()
 }
@@ -17254,7 +17288,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("curve_prototype_topology", &curve_prototype_topology)?;
     }
-    let curve_prototypes = curve_prototype_records(scan);
+    let curve_prototypes =
+        curve_prototype_records(scan, &scan.curve_prototypes, "creo:curve:prototype");
     if !curve_prototypes.is_empty() {
         for record in &curve_prototypes {
             annotate(
@@ -17269,6 +17304,29 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("curve_prototypes", &curve_prototypes)?;
+    }
+    let cross_section_curve_prototypes = curve_prototype_records(
+        scan,
+        &scan.cross_section_curve_prototypes,
+        "creo:cross_section_geometry:curve_prototype",
+    );
+    if !cross_section_curve_prototypes.is_empty() {
+        for record in &cross_section_curve_prototypes {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "cross_section_curve_prototype",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena(
+            "cross_section_curve_prototypes",
+            &cross_section_curve_prototypes,
+        )?;
     }
     let curve_topology_rows = curve_topology_row_records(scan);
     if !curve_topology_rows.is_empty() {
@@ -17285,6 +17343,22 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("curve_topology_rows", &curve_topology_rows)?;
+    }
+    let cross_section_curve_rows = cross_section_curve_row_records(scan);
+    if !cross_section_curve_rows.is_empty() {
+        for record in &cross_section_curve_rows {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "cross_section_curve_row",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("cross_section_curve_rows", &cross_section_curve_rows)?;
     }
     let half_edges = half_edge_records(scan);
     if !half_edges.is_empty() {
@@ -17881,6 +17955,14 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_curve_topology_row_count".to_string(),
         scan.curve_topology_rows.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_cross_section_curve_row_count".to_string(),
+        scan.cross_section_curve_rows.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_cross_section_curve_prototype_count".to_string(),
+        scan.cross_section_curve_prototypes.len().to_string(),
     );
     attributes.insert(
         "decoded_half_edge_count".to_string(),
