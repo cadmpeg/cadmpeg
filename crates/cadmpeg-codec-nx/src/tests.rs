@@ -9794,6 +9794,41 @@ fn blend_contact_offset_requires_the_serialized_range_sign() {
 }
 
 #[test]
+fn blend_contact_matches_separate_analytic_offset_carriers() {
+    use cadmpeg_ir::geometry::Surface;
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::Point3;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let support = SurfaceId("synthetic:support-cylinder".into());
+    let offset = SurfaceId("synthetic:offset-cylinder".into());
+    let cylinder = |id, radius| Surface {
+        id,
+        geometry: SurfaceGeometry::Cylinder {
+            origin: Point3::new(-46.75, 0.0, -112.06),
+            axis: Vector3::new(1.0, 0.0, 0.0),
+            ref_direction: Vector3::new(0.0, 0.0, -1.0),
+            radius,
+        },
+        source_object: None,
+    };
+    ir.model.surfaces.extend([
+        cylinder(support.clone(), 294.0),
+        cylinder(offset.clone(), 299.0),
+    ]);
+
+    assert_eq!(
+        crate::decode::constant_surface_offset_between(&ir, &support, &offset, 0),
+        Some(5.0)
+    );
+    let SurfaceGeometry::Cylinder { origin, .. } = &mut ir.model.surfaces[1].geometry else {
+        unreachable!()
+    };
+    origin.y = 1.0;
+    assert!(crate::decode::constant_surface_offset_between(&ir, &support, &offset, 0).is_none());
+}
+
+#[test]
 fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     use cadmpeg_ir::geometry::{
         BlendSupport, Curve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, Surface,

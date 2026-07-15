@@ -2824,7 +2824,6 @@ fn spine_contact_pcurve<'a>(
     depth: usize,
 ) -> Option<&'a PcurveGeometry> {
     (depth < 32).then_some(())?;
-    let (support_base, support_offset) = surface_offset_lineage(ir, support, depth + 1)?;
     let procedural = ir.model.procedural_curves.iter().find(|candidate| {
         candidate.curve == *spine
             && matches!(
@@ -2838,10 +2837,8 @@ fn spine_contact_pcurve<'a>(
     let candidates = context.sides.iter().filter_map(|side| {
         let side_surface = side.surface.as_ref()?;
         let pcurve = side.pcurve.as_ref()?;
-        let (side_base, side_offset) = surface_offset_lineage(ir, side_surface, depth + 1)?;
-        if side_base != support_base
-            || !blend_contact_offset_matches(support_offset, side_offset, radius, reversed)
-        {
+        let offset = constant_surface_offset_between(ir, support, side_surface, depth + 1)?;
+        if !blend_contact_offset_matches(0.0, offset, radius, reversed) {
             return None;
         }
         Some(pcurve)
@@ -2851,6 +2848,99 @@ fn spine_contact_pcurve<'a>(
         return None;
     };
     Some(*pcurve)
+}
+
+pub(crate) fn constant_surface_offset_between(
+    ir: &CadIr,
+    support: &SurfaceId,
+    offset_surface: &SurfaceId,
+    depth: usize,
+) -> Option<f64> {
+    let (support_base, support_offset) = surface_offset_lineage(ir, support, depth + 1)?;
+    let (offset_base, offset_distance) = surface_offset_lineage(ir, offset_surface, depth + 1)?;
+    if support_base == offset_base {
+        return Some(offset_distance - support_offset);
+    }
+    let support_geometry = &ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == support_base)?
+        .geometry;
+    let offset_geometry = &ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == offset_base)?
+        .geometry;
+    let analytic_offset = analytic_surface_offset(support_geometry, offset_geometry)?;
+    Some(analytic_offset + offset_distance - support_offset)
+}
+
+fn analytic_surface_offset(support: &SurfaceGeometry, offset: &SurfaceGeometry) -> Option<f64> {
+    match (support, offset) {
+        (
+            SurfaceGeometry::Cylinder {
+                origin: support_origin,
+                axis: support_axis,
+                ref_direction: support_ref,
+                radius: support_radius,
+            },
+            SurfaceGeometry::Cylinder {
+                origin: offset_origin,
+                axis: offset_axis,
+                ref_direction: offset_ref,
+                radius: offset_radius,
+            },
+        ) if support_origin == offset_origin
+            && support_axis == offset_axis
+            && support_ref == offset_ref =>
+        {
+            Some(offset_radius - support_radius)
+        }
+        (
+            SurfaceGeometry::Sphere {
+                center: support_center,
+                axis: support_axis,
+                ref_direction: support_ref,
+                radius: support_radius,
+            },
+            SurfaceGeometry::Sphere {
+                center: offset_center,
+                axis: offset_axis,
+                ref_direction: offset_ref,
+                radius: offset_radius,
+            },
+        ) if support_center == offset_center
+            && support_axis == offset_axis
+            && support_ref == offset_ref =>
+        {
+            Some(offset_radius - support_radius)
+        }
+        (
+            SurfaceGeometry::Torus {
+                center: support_center,
+                axis: support_axis,
+                ref_direction: support_ref,
+                major_radius: support_major,
+                minor_radius: support_minor,
+            },
+            SurfaceGeometry::Torus {
+                center: offset_center,
+                axis: offset_axis,
+                ref_direction: offset_ref,
+                major_radius: offset_major,
+                minor_radius: offset_minor,
+            },
+        ) if support_center == offset_center
+            && support_axis == offset_axis
+            && support_ref == offset_ref
+            && support_major.to_bits() == offset_major.to_bits() =>
+        {
+            Some(offset_minor - support_minor)
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn blend_contact_offset_matches(
