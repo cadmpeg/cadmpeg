@@ -5541,6 +5541,7 @@ fn attach_native_object_model(
         &feature_sketch_construction_payloads,
         &feature_sketch_payload_names,
         &feature_sketch_payload_scalars,
+        &feature_sketch_payload_fixed_pairs,
     );
     let feature_sketch_points = crate::native::feature_sketch_points(
         &feature_sketch_payload_named_records,

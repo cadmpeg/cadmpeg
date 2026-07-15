@@ -1992,6 +1992,57 @@ fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
 }
 
 #[test]
+fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
+    use crate::native::{
+        feature_sketch_payload_named_records, FeatureSketchConstructionPayload,
+        FeatureSketchPayloadFixedPair, FeatureSketchPayloadName,
+    };
+    let payload = FeatureSketchConstructionPayload {
+        id: "payload".to_string(),
+        operation_label: "sketch".to_string(),
+        construction_inputs: "inputs".to_string(),
+        data_blocks: vec!["block".to_string()],
+        byte_len: 100,
+        sha256: "00".repeat(32),
+        block_payload_offsets: vec![0],
+        block_byte_lengths: vec![100],
+        block_source_offsets: vec![1000],
+    };
+    let name = |id: &str, ordinal, offset| FeatureSketchPayloadName {
+        id: id.to_string(),
+        operation_label: "sketch".to_string(),
+        construction_payload: "payload".to_string(),
+        ordinal,
+        type_code: Some(1),
+        payload_leading: false,
+        value: format!("Point{}", ordinal + 1),
+        payload_offset: offset,
+        source_offset: 1000 + offset,
+    };
+    let pair = FeatureSketchPayloadFixedPair {
+        id: "pair".to_string(),
+        operation_label: "sketch".to_string(),
+        construction_payload: "payload".to_string(),
+        ordinal: 0,
+        values: [0.5, -0.5],
+        raw_values: [[0; 7]; 2],
+        payload_offset: 20,
+        value_payload_offsets: [28, 37],
+        source_offset: 1020,
+        value_source_offsets: [1028, 1037],
+    };
+
+    let records = feature_sketch_payload_named_records(
+        &[payload],
+        &[name("first", 0, 10), name("second", 1, 50)],
+        &[],
+        &[pair],
+    );
+    assert_eq!(records[0].fixed_pairs, ["pair"]);
+    assert!(records[1].fixed_pairs.is_empty());
+}
+
+#[test]
 fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
     use crate::native::{
         feature_sketch_named_point_block_uses, FeatureSketchReference, OffsetStoreNamedPoint,

@@ -1542,7 +1542,7 @@ pub struct FeatureSketchPayloadName {
     pub source_offset: u64,
 }
 
-/// Named sketch payload interval and its ordered framed scalar fields.
+/// Named sketch payload interval and its ordered framed numeric fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchPayloadNamedRecord {
     /// Globally unique named-record identity.
@@ -1555,6 +1555,8 @@ pub struct FeatureSketchPayloadNamedRecord {
     pub name_field: String,
     /// Ordered scalar fields before the next complete name field.
     pub scalar_fields: Vec<String>,
+    /// Ordered fixed-pair fields before the next complete name field.
+    pub fixed_pairs: Vec<String>,
     /// Payload-relative offset of the opening name marker.
     pub payload_start_offset: u64,
     /// Payload-relative exclusive end at the next name or payload boundary.
@@ -3917,6 +3919,7 @@ pub fn feature_sketch_payload_named_records(
     payloads: &[FeatureSketchConstructionPayload],
     names: &[FeatureSketchPayloadName],
     scalars: &[FeatureSketchPayloadScalar],
+    fixed_pairs: &[FeatureSketchPayloadFixedPair],
 ) -> Vec<FeatureSketchPayloadNamedRecord> {
     let mut records = Vec::new();
     for payload in payloads {
@@ -3938,6 +3941,15 @@ pub fn feature_sketch_payload_named_records(
                 })
                 .collect::<Vec<_>>();
             scalar_fields.sort_by_key(|scalar| scalar.payload_offset);
+            let mut record_fixed_pairs = fixed_pairs
+                .iter()
+                .filter(|pair| {
+                    pair.construction_payload == payload.id
+                        && pair.payload_offset > name.payload_offset
+                        && pair.payload_offset < end
+                })
+                .collect::<Vec<_>>();
+            record_fixed_pairs.sort_by_key(|pair| pair.payload_offset);
             records.push(FeatureSketchPayloadNamedRecord {
                 id: format!(
                     "nx:feature-history:sketch-payload-record#{}-{ordinal}",
@@ -3952,6 +3964,10 @@ pub fn feature_sketch_payload_named_records(
                 scalar_fields: scalar_fields
                     .into_iter()
                     .map(|scalar| scalar.id.clone())
+                    .collect(),
+                fixed_pairs: record_fixed_pairs
+                    .into_iter()
+                    .map(|pair| pair.id.clone())
                     .collect(),
                 payload_start_offset: name.payload_offset,
                 payload_end_offset: end,
