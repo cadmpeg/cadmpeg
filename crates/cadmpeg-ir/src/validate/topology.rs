@@ -1333,6 +1333,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
     let mut configuration_ordinals = HashSet::new();
     let mut configuration_source_indices = HashSet::new();
     let mut active_configurations = 0;
+    let parameter_ids = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.0.as_str())
+        .collect::<HashSet<_>>();
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {
@@ -1368,6 +1374,16 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     message: format!("configuration repeats body `{}`", body.0),
                     entity: Some(configuration.id.0.clone()),
                 });
+            }
+        }
+        for parameter in configuration.parameter_overrides.keys() {
+            if !parameter_ids.contains(parameter.0.as_str()) {
+                ref_error(
+                    findings,
+                    &configuration.id.0,
+                    "configuration parameter override",
+                    &parameter.0,
+                );
             }
         }
     }

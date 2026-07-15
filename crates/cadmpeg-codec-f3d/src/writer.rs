@@ -204,7 +204,8 @@ fn validate_configuration_projection(target: &CadIr, native: &F3dNative) -> Resu
             &configuration.payload,
         )?;
     }
-    let projected = crate::design::project_configurations(&native.design_configurations);
+    let mut projected = crate::design::project_configurations(&native.design_configurations);
+    crate::design::bind_configuration_parameter_overrides(&mut projected, &target.model.parameters);
     if target.model.configurations != projected {
         return Err(CodecError::Malformed(
             "neutral F3D configurations must equal the projection of native configuration tables"

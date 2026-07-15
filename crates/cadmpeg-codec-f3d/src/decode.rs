@@ -120,6 +120,18 @@ fn report_unresolved_configuration_rules(
             provenance: None,
         });
     }
+    let count =
+        crate::design::unresolved_configuration_parameter_override_count(&ir.model.configurations);
+    if count != 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{count} Design configuration parameter override(s) were retained without an unambiguous neutral parameter identity."
+            ),
+            provenance: None,
+        });
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -430,6 +442,10 @@ pub fn decode(
                 &native.design_face_operands,
                 &native.design_sketch_placements,
             );
+            crate::design::bind_configuration_parameter_overrides(
+                &mut ir.model.configurations,
+                &ir.model.parameters,
+            );
             ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
                 &ir.model.features,
                 &native.design_parameter_scopes,
@@ -667,6 +683,10 @@ pub fn decode(
         &native.design_edge_operands,
         &native.design_face_operands,
         &native.design_sketch_placements,
+    );
+    crate::design::bind_configuration_parameter_overrides(
+        &mut ir.model.configurations,
+        &ir.model.parameters,
     );
     ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
         &ir.model.features,

@@ -66,6 +66,9 @@ pub struct DesignConfiguration {
     /// Configuration-local named values not otherwise represented.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
+    /// Configuration-specific source expressions keyed by the overridden parameter.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub parameter_overrides: BTreeMap<ParameterId, String>,
     /// Bodies present when this configuration is active.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bodies: Vec<BodyId>,

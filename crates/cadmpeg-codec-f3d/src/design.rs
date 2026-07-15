@@ -239,6 +239,7 @@ pub fn project_configurations(
                 name: name.clone(),
                 material,
                 properties,
+                parameter_overrides: BTreeMap::new(),
                 bodies: Vec::new(),
                 native_ref: Some(table.id.clone()),
             });
@@ -273,6 +274,49 @@ pub fn project_configurations(
         );
     }
     projected
+}
+
+/// Replace name-keyed configuration properties with stable parameter references
+/// when exactly one neutral parameter has the named source identity.
+pub fn bind_configuration_parameter_overrides(
+    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+) {
+    for configuration in configurations {
+        let override_names = configuration
+            .properties
+            .keys()
+            .filter_map(|key| key.strip_prefix("parameter:"))
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        for name in override_names {
+            let mut matches = parameters.iter().filter(|parameter| parameter.name == name);
+            let Some(parameter) = matches.next() else {
+                continue;
+            };
+            if matches.next().is_some() {
+                continue;
+            }
+            let key = format!("parameter:{name}");
+            let expression = configuration
+                .properties
+                .remove(&key)
+                .expect("configuration override key came from this map");
+            configuration
+                .parameter_overrides
+                .insert(parameter.id.clone(), expression);
+        }
+    }
+}
+
+pub(crate) fn unresolved_configuration_parameter_override_count(
+    projected: &[cadmpeg_ir::features::DesignConfiguration],
+) -> usize {
+    projected
+        .iter()
+        .flat_map(|configuration| configuration.properties.keys())
+        .filter(|key| key.starts_with("parameter:"))
+        .count()
 }
 
 pub(crate) fn unresolved_configuration_rule_count(
@@ -10513,29 +10557,31 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod relation_tests {
     use super::{
-        assign_extrude_face_roles, bind_dimension_loci, bind_edge_operand_candidates,
-        bind_extrude_selection_geometry, bind_extrude_selection_identities,
-        bind_face_operand_candidates, bind_lost_edge_groups, bind_parameter_companion_payloads,
-        bind_sketch_graph, body_bound_candidates, closed_sketch_profiles, companion_owned_interval,
-        contiguous_i32_program, decode_fillet_radius_groups, design_parameter_prefix,
-        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
-        exact_counted_offset, exact_offset_constraint, expression_identifiers,
-        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
-        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
-        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
-        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
-        null_locus_dimension_definition, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        point_on_sketch_entity, project_configurations, project_dimension_constraints,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design, radial_dimension_definition, recipe_record_prefix,
-        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
+        assign_extrude_face_roles, bind_configuration_parameter_overrides, bind_dimension_loci,
+        bind_edge_operand_candidates, bind_extrude_selection_geometry,
+        bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
+        bind_parameter_companion_payloads, bind_sketch_graph, body_bound_candidates,
+        closed_sketch_profiles, companion_owned_interval, contiguous_i32_program,
+        decode_fillet_radius_groups, design_parameter_prefix, directional_point_dimension,
+        exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
+        exact_offset_constraint, expression_identifiers, find_dimension_locus_groups,
+        find_dimension_locus_pair, identity_matrix, indexed_record_containing,
+        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
+        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
+        neutral_sketch_point_id, next_indexed_record_offset, null_locus_dimension_definition,
+        parse_construction_operand_group, parse_construction_operand_identity,
+        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, point_on_sketch_entity,
+        project_configurations, project_dimension_constraints, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        radial_dimension_definition, recipe_record_prefix, region_containing_points,
+        remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
-        resolved_face_group, two_locus_distance_dimension, unresolved_configuration_rule_count,
+        resolved_face_group, two_locus_distance_dimension,
+        unresolved_configuration_parameter_override_count, unresolved_configuration_rule_count,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConfiguration, DesignConfigurationKind,
@@ -10551,7 +10597,8 @@ mod relation_tests {
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
-        Angle, FaceSelection, FeatureDefinition, Length, ParameterValue, SketchProfileRegion,
+        Angle, DesignParameter as NeutralParameter, FaceSelection, FeatureDefinition, Length,
+        ParameterId, ParameterValue, SketchProfileRegion,
     };
     use cadmpeg_ir::ids::{EdgeId, FaceId, ShellId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -10559,7 +10606,7 @@ mod relation_tests {
         Sketch, SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId,
         SketchEntityUse, SketchGeometry, SketchId,
     };
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{BTreeMap, HashMap, HashSet};
 
     #[test]
     fn configuration_identity_is_stable_across_table_order_and_delimiter_names() {
@@ -10623,6 +10670,58 @@ mod relation_tests {
             .all(|configuration| configuration.properties.is_empty()));
         assert_eq!(
             unresolved_configuration_rule_count(&ambiguous, &projected),
+            1
+        );
+    }
+
+    #[test]
+    fn configuration_parameter_overrides_bind_only_unique_parameter_names() {
+        let table = DesignConfiguration {
+            id: "f3d:configuration:entry#table.dsgcfg".into(),
+            entry_name: "table.dsgcfg".into(),
+            kind: DesignConfigurationKind::Table,
+            payload: serde_json::json!({
+                "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
+            }),
+        };
+        let parameter = NeutralParameter {
+            id: ParameterId("f3d:model:parameter#width".into()),
+            owner: None,
+            ordinal: 0,
+            name: "width".into(),
+            expression: "10 mm".into(),
+            display: None,
+            value: None,
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let mut projected = project_configurations(&[table]);
+        bind_configuration_parameter_overrides(&mut projected, std::slice::from_ref(&parameter));
+        assert_eq!(projected[0].parameter_overrides[&parameter.id], "25 mm");
+        assert!(projected[0].properties.is_empty());
+        assert_eq!(
+            unresolved_configuration_parameter_override_count(&projected),
+            0
+        );
+
+        let duplicate = NeutralParameter {
+            id: ParameterId("f3d:model:parameter#other-width".into()),
+            ..parameter.clone()
+        };
+        let mut ambiguous = project_configurations(&[DesignConfiguration {
+            id: "f3d:configuration:entry#other.dsgcfg".into(),
+            entry_name: "other.dsgcfg".into(),
+            kind: DesignConfigurationKind::Table,
+            payload: serde_json::json!({
+                "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
+            }),
+        }]);
+        bind_configuration_parameter_overrides(&mut ambiguous, &[parameter, duplicate]);
+        assert!(ambiguous[0].parameter_overrides.is_empty());
+        assert_eq!(
+            unresolved_configuration_parameter_override_count(&ambiguous),
             1
         );
     }

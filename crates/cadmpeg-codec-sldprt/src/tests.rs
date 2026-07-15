@@ -3131,6 +3131,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Metric".into(),
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
+        parameter_overrides: BTreeMap::new(),
         bodies: vec![ir.model.bodies[0].id.clone()],
         native_ref: None,
     });
@@ -3142,6 +3143,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Empty".into(),
         material: None,
         properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
         bodies: Vec::new(),
         native_ref: None,
     });
@@ -3316,6 +3318,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             name: format!("Config {index}"),
             material: None,
             properties: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
             bodies: vec![body.clone()],
             native_ref: None,
         })

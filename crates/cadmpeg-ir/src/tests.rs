@@ -1009,13 +1009,27 @@ fn tessellation_counts_must_be_consistent() {
 
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
-    use crate::features::{ConfigurationId, DesignConfiguration};
+    use crate::features::{ConfigurationId, DesignConfiguration, DesignParameter, ParameterId};
     use crate::ids::BodyId;
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
     let configuration_id = ConfigurationId("synthetic:test:configuration#0".into());
+    let parameter_id = ParameterId("synthetic:test:parameter#width".into());
     let body = ir.model.bodies[0].id.clone();
+    ir.model.parameters.push(DesignParameter {
+        id: parameter_id.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "width".into(),
+        expression: "10 mm".into(),
+        display: None,
+        value: None,
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
     ir.model.configurations.push(DesignConfiguration {
         id: configuration_id.clone(),
         ordinal: 0,
@@ -1024,6 +1038,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         name: "Default".into(),
         material: None,
         properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::from([(parameter_id.clone(), "25 mm".into())]),
         bodies: vec![body.clone()],
         native_ref: None,
     });
@@ -1031,6 +1046,21 @@ fn configuration_body_membership_round_trips_and_validates() {
     assert!(validate(&ir, Vec::new()).is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
     assert_eq!(round_trip.model.configurations[0].bodies, vec![body]);
+    assert_eq!(
+        round_trip.model.configurations[0].parameter_overrides[&parameter_id],
+        "25 mm"
+    );
+
+    ir.model.configurations[0].parameter_overrides = BTreeMap::from([(
+        ParameterId("synthetic:test:parameter#missing".into()),
+        "30 mm".into(),
+    )]);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message.contains("configuration parameter override")
+    }));
+    ir.model.configurations[0].parameter_overrides.clear();
 
     ir.model.configurations[0].bodies = vec![
         BodyId("synthetic:test:body#missing".into()),
@@ -1054,6 +1084,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         name: "Alternate".into(),
         material: None,
         properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
         bodies: Vec::new(),
         native_ref: None,
     });

@@ -1005,6 +1005,7 @@ fn assign_configuration_bodies(
                 name: format!("Config-{source_index}"),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
+                parameter_overrides: std::collections::BTreeMap::new(),
                 bodies,
                 native_ref: None,
             });
