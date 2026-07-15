@@ -3452,25 +3452,25 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                             geometry,
                                             source_object: None,
                                         });
+                                        if resolved_supports[side_index].is_none() {
+                                            resolved_supports[side_index] = Some(BlendSupport {
+                                                surface: id.clone(),
+                                                reversed: false,
+                                            });
+                                        }
                                         id
                                     });
-                                    let curve = CurveId(format!("{prefix}:curve"));
-                                    out.curves.push(Curve {
-                                        id: curve.clone(),
-                                        geometry: CurveGeometry::Nurbs(side.curve),
-                                        source_object: None,
-                                    });
-                                    let exact_support = side.exact_support.map(|geometry| {
-                                        let id = SurfaceId(format!("{prefix}:exact_support"));
-                                        out.surfaces.push(Surface {
+                                    let curve = side.curve.map(|geometry| {
+                                        let id = CurveId(format!("{prefix}:curve"));
+                                        out.curves.push(Curve {
                                             id: id.clone(),
-                                            geometry: SurfaceGeometry::Nurbs(geometry),
+                                            geometry: CurveGeometry::Nurbs(geometry),
                                             source_object: None,
                                         });
                                         id
                                     });
                                     resolved_sides.push(RollingBallSide {
-                                        label: side.label,
+                                        support_kind: side.support_kind,
                                         surface,
                                         curve,
                                         pcurve: side.pcurve.map(embedded_pcurve_geometry),
@@ -3478,7 +3478,10 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         secondary_pcurve: side
                                             .secondary_pcurve
                                             .map(embedded_pcurve_geometry),
-                                        exact_support,
+                                        extension: side.extension,
+                                        tertiary_pcurve: side
+                                            .tertiary_pcurve
+                                            .map(embedded_pcurve_geometry),
                                     });
                                 }
                                 let [first, second]: [RollingBallSide; 2] = resolved_sides
@@ -3489,7 +3492,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 ));
                                 out.curves.push(Curve {
                                     id: slice.clone(),
-                                    geometry: CurveGeometry::Nurbs(native.slice),
+                                    geometry: native.slice,
                                     source_object: None,
                                 });
                                 let third = native.third.map(|side| {
@@ -3524,6 +3527,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     })
                                 });
                                 Box::new(RollingBallConstruction {
+                                    definition_index: native.definition_index,
                                     sides: Box::new([first, second]),
                                     slice,
                                     offsets: native.offsets,
@@ -3537,8 +3541,10 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     },
                                     u_range: native.u_range,
                                     v_range: native.v_range,
+                                    shape_prefix: native.shape_prefix,
                                     parameters: native.parameters,
                                     tail: native.tail,
+                                    cache_selector: native.cache_selector,
                                     discontinuities: native.discontinuities,
                                     third,
                                 })

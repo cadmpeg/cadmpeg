@@ -1037,13 +1037,14 @@ pub struct G2BlendConstruction {
 /// One complete native rolling-ball support side.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RollingBallSide {
-    /// Native side label.
-    pub label: String,
+    /// Geometry role selected by the support-side discriminator.
+    pub support_kind: VariableBlendSupportKind,
     /// Primary support surface, absent for `null_surface`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<SurfaceId>,
-    /// Side curve.
-    pub curve: CurveId,
+    /// Side curve, absent for `null_curve`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve: Option<CurveId>,
     /// Primary BS2 pcurve, absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcurve: Option<PcurveGeometry>,
@@ -1052,9 +1053,12 @@ pub struct RollingBallSide {
     /// ASM secondary BS2 pcurve, absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secondary_pcurve: Option<PcurveGeometry>,
-    /// Inline exact support surface, absent for a null spline.
+    /// Native extension integer between the secondary and tertiary pcurves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exact_support: Option<SurfaceId>,
+    pub extension: Option<i64>,
+    /// ASM tertiary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tertiary_pcurve: Option<PcurveGeometry>,
 }
 
 /// Third support graph appended by `sss_blend_spl_sur`.
@@ -1099,6 +1103,8 @@ pub enum RollingBallRadiusSelector {
 /// Complete byte-backed rolling-ball or three-surface blend context.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RollingBallConstruction {
+    /// Native subtype definition-table index.
+    pub definition_index: i64,
     /// Two ordered primary support sides.
     pub sides: Box<[RollingBallSide; 2]>,
     /// Stored slice or center curve.
@@ -1107,14 +1113,18 @@ pub struct RollingBallConstruction {
     pub offsets: [f64; 2],
     /// Optional-radius selector field.
     pub radius_selector: RollingBallRadiusSelector,
-    /// Native U interval.
-    pub u_range: [f64; 2],
-    /// Native V interval.
-    pub v_range: [f64; 2],
-    /// Three ordered trailing scalars.
-    pub parameters: [f64; 3],
+    /// Native optional U interval endpoints.
+    pub u_range: [Option<f64>; 2],
+    /// Native optional V interval endpoints.
+    pub v_range: [Option<f64>; 2],
+    /// Native integer preceding the trailing scalars.
+    pub shape_prefix: i64,
+    /// Two ordered trailing scalars.
+    pub parameters: [f64; 2],
     /// Native long following the trailing scalars.
     pub tail: i64,
+    /// Native selector preceding the solved surface cache.
+    pub cache_selector: i64,
     /// Three ordered ASM discontinuity arrays.
     pub discontinuities: [Vec<f64>; 3],
     /// Third side present only for `sss_blend_spl_sur`.

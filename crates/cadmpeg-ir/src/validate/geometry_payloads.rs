@@ -1450,7 +1450,13 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             };
             let ranges_valid = [&construction.u_range, &construction.v_range]
                 .iter()
-                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
+                .all(|range| {
+                    range.iter().flatten().all(|value| value.is_finite())
+                        && match range {
+                            [Some(lower), Some(upper)] => lower <= upper,
+                            _ => true,
+                        }
+                });
             let selector_valid = match construction.radius_selector {
                 crate::geometry::RollingBallRadiusSelector::None => true,
                 crate::geometry::RollingBallRadiusSelector::Value { value } => value.is_finite(),

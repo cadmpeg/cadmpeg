@@ -557,16 +557,19 @@ A translational extrusion is an analytic cylinder when its directrix is a closed
 ```
 rb_blend_spl_sur :=
   0x0f 0x0d "rb_blend_spl_sur"
+  LONG definition_index
   rolling-ball-side
   rolling-ball-side
   curve slice
   LENGTH offset_left
   LENGTH offset_right
   (ENUM_VALUE -1 | DOUBLE radius_selector)
-  INTERVAL u_range
-  INTERVAL v_range
-  DOUBLE parameter[3]
+  OPTIONAL_RANGE_ENDPOINT u_range[2]
+  OPTIONAL_RANGE_ENDPOINT v_range[2]
+  LONG shape_prefix
+  DOUBLE parameter[2]
   LONG tail
+  ENUM_VALUE cache_selector
   surface-cache
   DOUBLE cache_fit_tolerance
   FLOAT_ARRAY discontinuity[3]
@@ -574,13 +577,14 @@ rb_blend_spl_sur :=
   0x10
 
 rolling-ball-side :=
-  TEXT label
-  surface
-  curve
+  TEXT support_kind
+  nullable-surface
+  nullable-curve
   nullable-bs2-pcurve
   POSITION location
   nullable-bs2-pcurve
-  nullable-spline-surface
+  [ INTEGER extension
+    nullable-bs2-pcurve ]
 
 rolling-ball-third-side :=
   TEXT label
@@ -594,7 +598,7 @@ rolling-ball-third-side :=
   BOOLEAN flag
 ```
 
-The two offsets and fit tolerance are lengths. `ENUM_VALUE -1` selects the absent-radius branch; a `DOUBLE` carries an explicit selector value. Each side retains its support surface, side curve, primary and secondary pcurves, model-space location, and optional exact spline support. `sss_blend_spl_sur` appends the third-side graph after the three discontinuity arrays. The final surface cache is the solved face surface.
+`definition_index` is the subtype definition-table index stored by the construction. `support_kind` uses the closed blend-support discriminator set defined for variable blends. `null_surface`, `null_curve`, and `nullbs` encode absent support geometry. Modern sides append the extension integer and tertiary pcurve; legacy sides end after the secondary pcurve. An optional range endpoint is `BOOLEAN false` when absent and `BOOLEAN true DOUBLE value` when finite. The two offsets and fit tolerance are lengths. `ENUM_VALUE -1` selects the absent-radius branch; a `DOUBLE` carries an explicit selector value. `sss_blend_spl_sur` appends the third-side graph after the three discontinuity arrays. The final surface cache is the solved face surface.
 
 A circular rolling-ball construction with equal nonzero signed offsets has a constant radius equal to the offset magnitude. Two nonparallel plane supports and a nonperiodic collinear NURBS slice define an analytic cylinder when the slice direction is parallel to the planes' intersection and every slice pole lies on a line whose perpendicular distance from each plane equals the constant radius. The cylinder axis is that line, the radius is the offset magnitude, and its reference direction is the canonical direction derived from the axis.
 

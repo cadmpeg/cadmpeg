@@ -8291,7 +8291,17 @@ fn native_rolling_ball_side(
     target: &CadIr,
     side: &cadmpeg_ir::geometry::RollingBallSide,
 ) -> Result<(), CodecError> {
-    native_string(bytes, &side.label)?;
+    use cadmpeg_ir::geometry::VariableBlendSupportKind;
+    native_string(
+        bytes,
+        match side.support_kind {
+            VariableBlendSupportKind::CosineCurve => "blend_support_cos_curve",
+            VariableBlendSupportKind::Curve => "blend_support_curve",
+            VariableBlendSupportKind::PointCurve => "blend_support_point_curve",
+            VariableBlendSupportKind::Surface => "blend_support_surface",
+            VariableBlendSupportKind::ZeroCurve => "blend_support_zero_curve",
+        },
+    )?;
     if let Some(id) = &side.surface {
         let surface = target
             .model
@@ -8302,22 +8312,29 @@ fn native_rolling_ball_side(
                 CodecError::Malformed(format!("rolling-ball support {id} is missing"))
             })?;
         native_embedded_surface(bytes, &surface.geometry)?;
+        if matches!(surface.geometry, SurfaceGeometry::Plane { .. }) {
+            bytes.extend_from_slice(&[0x0b; 4]);
+        }
     } else {
         native_ident(bytes, "null_surface")?;
     }
-    let curve = target
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id == side.curve)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!("rolling-ball side curve {} is missing", side.curve))
-        })?;
-    let curve = native_spline_field_curve(
-        &curve.geometry,
-        native_pcurve_knot_domain(side.pcurve.as_ref())?,
-    )?;
-    native_nurbs_curve(bytes, &curve)?;
+    if let Some(id) = &side.curve {
+        let curve = target
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("rolling-ball side curve {id} is missing"))
+            })?;
+        let curve = native_spline_field_curve(
+            &curve.geometry,
+            native_pcurve_knot_domain(side.pcurve.as_ref())?,
+        )?;
+        native_nurbs_curve(bytes, &curve)?;
+    } else {
+        native_ident(bytes, "null_curve")?;
+    }
     native_optional_pcurve(bytes, side.pcurve.as_ref())?;
     native_point(
         bytes,
@@ -8328,24 +8345,13 @@ fn native_rolling_ball_side(
         ],
     );
     native_optional_pcurve(bytes, side.secondary_pcurve.as_ref())?;
-    if let Some(id) = &side.exact_support {
-        let surface = target
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == *id)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!("rolling-ball exact support {id} is missing"))
-            })?;
-        let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
-            return Err(CodecError::NotImplemented(
-                "rolling-ball exact support must be NURBS".into(),
-            ));
-        };
-        native_ident(bytes, "spline")?;
-        native_nurbs_surface(bytes, surface)?;
-    } else {
-        native_ident(bytes, "nullbs")?;
+    if let Some(extension) = side.extension {
+        native_i64(bytes, extension);
+        native_optional_pcurve(bytes, side.tertiary_pcurve.as_ref())?;
+    } else if side.tertiary_pcurve.is_some() {
+        return Err(CodecError::Malformed(
+            "rolling-ball tertiary pcurve requires an extension integer".into(),
+        ));
     }
     Ok(())
 }
@@ -8421,11 +8427,15 @@ fn encode_complete_native_rolling_ball(
             "rb_blend_spl_sur"
         },
     )?;
+    native_i64(bytes, construction.definition_index);
     for side in construction.sides.iter() {
         native_rolling_ball_side(bytes, target, side)?;
     }
-    let slice =
-        native_loft_curve_in_range(target, &construction.slice, Some(construction.u_range))?;
+    let slice_range = match construction.u_range {
+        [Some(lower), Some(upper)] => Some([lower, upper]),
+        _ => None,
+    };
+    let slice = native_loft_curve_in_range(target, &construction.slice, slice_range)?;
     native_nurbs_curve(bytes, &slice)?;
     for offset in construction.offsets {
         native_f64(bytes, offset / 10.0);
@@ -8437,13 +8447,19 @@ fn encode_complete_native_rolling_ball(
         }
     }
     for range in [construction.u_range, construction.v_range] {
-        native_f64(bytes, range[0]);
-        native_f64(bytes, range[1]);
+        for endpoint in range {
+            bytes.push(native_bool(endpoint.is_some()));
+            if let Some(value) = endpoint {
+                native_f64(bytes, value);
+            }
+        }
     }
+    native_i64(bytes, construction.shape_prefix);
     for parameter in construction.parameters {
         native_f64(bytes, parameter);
     }
     native_i64(bytes, construction.tail);
+    native_enum(bytes, construction.cache_selector);
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, cache_fit_tolerance / 10.0);
     for values in &construction.discontinuities {

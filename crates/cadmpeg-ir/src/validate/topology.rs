@@ -841,11 +841,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         };
                     check_curve(&native.slice, findings);
                     for side in native.sides.iter() {
-                        check_curve(&side.curve, findings);
-                        if let Some(surface) = &side.surface {
-                            check_surface(surface, findings);
+                        if let Some(curve) = &side.curve {
+                            check_curve(curve, findings);
                         }
-                        if let Some(surface) = &side.exact_support {
+                        if let Some(surface) = &side.surface {
                             check_surface(surface, findings);
                         }
                     }

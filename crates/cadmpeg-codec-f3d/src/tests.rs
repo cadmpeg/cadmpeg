@@ -3702,18 +3702,26 @@ fn synthetic_rb_blend_spl_sur_smbh() -> Vec<u8> {
 }
 
 fn append_generated_rolling_ball_side(bytes: &mut Vec<u8>, label: &str, x: f64) {
-    push_u8_string(bytes, label);
+    push_u8_string(
+        bytes,
+        if label == "left" {
+            "blend_support_surface"
+        } else {
+            "blend_support_curve"
+        },
+    );
     t_ident(bytes, "plane");
     t_pos(bytes, [x, 0.0, 0.0]);
     t_vec(bytes, [0.0, 0.0, 1.0]);
     t_vec(bytes, [1.0, 0.0, 0.0]);
     bytes.push(0x0b);
+    bytes.extend_from_slice(&[0x0b; 4]);
     bytes.extend_from_slice(&generated_curve_block());
     bytes.extend_from_slice(&generated_pcurve_block());
     t_pos(bytes, [x, 2.0, 3.0]);
     t_ident(bytes, "nullbs");
-    t_ident(bytes, "spline");
-    bytes.extend_from_slice(&generated_surface_block());
+    t_long(bytes, if label == "left" { 3 } else { 4 });
+    t_ident(bytes, "nullbs");
 }
 
 fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
@@ -3730,6 +3738,7 @@ fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
     t_ref(&mut surface, -1);
     surface.push(0x0f);
     t_ident(&mut surface, name);
+    t_long(&mut surface, 22507);
     append_generated_rolling_ball_side(&mut surface, "left", 1.0);
     append_generated_rolling_ball_side(&mut surface, "right", 4.0);
     surface.extend_from_slice(&generated_curve_block());
@@ -3738,10 +3747,18 @@ fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
     }
     surface.push(0x15);
     surface.extend_from_slice(&(-1i64).to_le_bytes());
-    for value in [-1.0, 2.0, -3.0, 4.0, 0.1, 0.2, 0.3] {
+    for value in [-1.0, 2.0] {
+        surface.push(0x0a);
+        t_dbl(&mut surface, value);
+    }
+    surface.push(0x0b);
+    surface.push(0x0b);
+    t_long(&mut surface, 1);
+    for value in [0.1, 0.2] {
         t_dbl(&mut surface, value);
     }
     t_long(&mut surface, 17);
+    push_tagged_i64(&mut surface, 0x15, 0);
     surface.extend_from_slice(&generated_surface_block());
     t_dbl(&mut surface, 0.004);
     for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
@@ -14732,21 +14749,31 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         else {
             panic!("expected complete rolling-ball graph")
         };
-        assert_eq!(native.sides[0].label, "left");
-        assert_eq!(native.sides[1].label, "right");
+        assert_eq!(native.definition_index, 22507);
+        assert_eq!(
+            native.sides[0].support_kind,
+            cadmpeg_ir::geometry::VariableBlendSupportKind::Surface
+        );
+        assert_eq!(
+            native.sides[1].support_kind,
+            cadmpeg_ir::geometry::VariableBlendSupportKind::Curve
+        );
         assert_eq!(
             native.sides[0].location,
             cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
         );
         assert!(native.sides.iter().all(|side| side.surface.is_some()));
         assert!(native.sides.iter().all(|side| side.pcurve.is_some()));
-        assert!(native.sides.iter().all(|side| side.exact_support.is_some()));
+        assert_eq!(native.sides[0].extension, Some(3));
+        assert_eq!(native.sides[1].extension, Some(4));
         assert_eq!(native.offsets, [-3.0, -6.0]);
         assert_eq!(native.radius_selector, RollingBallRadiusSelector::None);
-        assert_eq!(native.u_range, [-1.0, 2.0]);
-        assert_eq!(native.v_range, [-3.0, 4.0]);
-        assert_eq!(native.parameters, [0.1, 0.2, 0.3]);
+        assert_eq!(native.u_range, [Some(-1.0), Some(2.0)]);
+        assert_eq!(native.v_range, [None, None]);
+        assert_eq!(native.shape_prefix, 1);
+        assert_eq!(native.parameters, [0.1, 0.2]);
         assert_eq!(native.tail, 17);
+        assert_eq!(native.cache_selector, 0);
         assert_eq!(
             native.discontinuities,
             [vec![0.25], vec![], vec![0.5, 0.75]]
@@ -14775,7 +14802,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                 .model
                 .curves
                 .iter_mut()
-                .find(|curve| curve.id == *side)
+                .find(|curve| Some(&curve.id) == side.as_ref())
                 .expect("rolling-ball side curve")
                 .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
                 origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 3.0, -2.0),
@@ -14826,7 +14853,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                     .model
                     .curves
                     .iter()
-                    .find(|curve| curve.id == side.curve)
+                    .find(|curve| Some(&curve.id) == side.curve.as_ref())
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
                     if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]

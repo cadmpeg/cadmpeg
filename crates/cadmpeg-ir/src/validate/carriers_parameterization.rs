@@ -379,11 +379,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 if let Some(native) = native {
                     curves.insert(&native.slice.0);
                     for side in native.sides.iter() {
-                        curves.insert(&side.curve.0);
-                        if let Some(surface) = &side.surface {
-                            surfaces.insert(&surface.0);
+                        if let Some(curve) = &side.curve {
+                            curves.insert(&curve.0);
                         }
-                        if let Some(surface) = &side.exact_support {
+                        if let Some(surface) = &side.surface {
                             surfaces.insert(&surface.0);
                         }
                     }
