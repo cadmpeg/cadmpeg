@@ -1550,12 +1550,27 @@ fn named_spline_scalar_slots(
 ) -> Vec<ScalarTokenSlot> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
+    let mut continued_tuple = false;
     while slots.len() < count {
+        if matches!(name, "i_pnts" | "i_points")
+            && body.get(cursor..cursor + 2) == Some(&[psb::token::SCALAR_BODY, 0x00])
+        {
+            cursor += 2;
+            continued_tuple = true;
+            continue;
+        }
         let Some((value, next)) = named_spline_scalar_slot(name, body, cursor, cache) else {
             break;
         };
         slots.push((value, body[cursor..next].to_vec()));
         cursor = next;
+    }
+    if matches!(name, "i_pnts" | "i_points")
+        && continued_tuple
+        && cursor == body.len()
+        && slots.len() + 1 == count
+    {
+        slots.push((Some(0.0), Vec::new()));
     }
     slots.resize_with(count, || (None, Vec::new()));
     slots
@@ -1568,11 +1583,6 @@ fn named_spline_scalar_slot(
     cache: &scalar::ScalarCache,
 ) -> Option<(Option<f64>, usize)> {
     let head = *body.get(offset)?;
-    if matches!(name, "i_pnts" | "i_points")
-        && body.get(offset..offset + 2) == Some(&[psb::token::SCALAR_BODY, 0x00])
-    {
-        return Some((None, offset + 2));
-    }
     if head == 0x18 && offset + 1 == body.len() {
         return Some((Some(0.0), offset + 1));
     }
@@ -2421,15 +2431,23 @@ mod tests {
     }
 
     #[test]
-    fn interpolation_point_aliases_retain_unresolved_f9_zero_slots() {
+    fn interpolation_point_aliases_expand_continuation_and_terminal_zero() {
         let body = [0xe4, 0x0f, 0xe4, 0xf9, 0x00, 0x2f, 0x14, 0x00, 0x18];
         for name in ["i_pnts", "i_points"] {
             let slots = named_spline_scalar_slots(name, &body, 6, &scalar::ScalarCache::default());
             assert_eq!(
                 slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
-                [Some(1.0), Some(0.0), Some(1.0), None, Some(5.0), Some(0.0)]
+                [
+                    Some(1.0),
+                    Some(0.0),
+                    Some(1.0),
+                    Some(5.0),
+                    Some(0.0),
+                    Some(0.0)
+                ]
             );
-            assert_eq!(slots[3].1, [0xf9, 0x00]);
+            assert_eq!(slots[3].1, [0x2f, 0x14, 0x00]);
+            assert!(slots[5].1.is_empty());
         }
     }
 

@@ -4,9 +4,6 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 
 ## Geometry
 
-- The numeric mapping of the two-byte `f9 00` scalar form in prototype
-  `i_pnts` and `i_points` bodies is unspecified. The form occupies one
-  coordinate slot in the declared array shape.
 - Curve-equation `local_sys f9 04 03` inherited-slot transitions other than
   the defined rank-two body are unspecified.
 - DICT sign lattices outside the defined scalar lanes are unspecified.
