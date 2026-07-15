@@ -8029,10 +8029,16 @@ fn link_feature_sketch_history(scan: &ContainerScan, ir: &mut CadIr) {
         .iter()
         .filter_map(|transform| {
             let owner = IrFeatureId(format!("creo:model:feature#{}", transform.feature_id?));
-            let sketch_feature = IrFeatureId(format!(
-                "creo:model:sketch_feature#{}",
-                transform.definition_id
-            ));
+            let sketch_feature = owned_section_feature_id(scan, transform.definition_id)
+                .map_or_else(
+                    || {
+                        IrFeatureId(format!(
+                            "creo:model:sketch_feature#{}",
+                            transform.definition_id
+                        ))
+                    },
+                    |feature_id| IrFeatureId(format!("creo:model:feature#{feature_id}")),
+                );
             ir.model
                 .features
                 .iter()
@@ -8890,19 +8896,49 @@ fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
 }
 
 fn owned_section_feature_id(scan: &ContainerScan, definition_id: u32) -> Option<u32> {
-    let transforms = scan
-        .feature_section_transforms
+    let definitions = scan
+        .feature_definitions
         .iter()
-        .filter(|transform| transform.definition_id == definition_id)
+        .filter(|definition| definition.id == definition_id)
         .collect::<Vec<_>>();
-    let [transform] = transforms.as_slice() else {
+    let [definition] = definitions.as_slice() else {
         return None;
     };
-    let feature_id = transform.feature_id?;
-    scan.feature_rows
+    let rows = scan
+        .feature_rows
         .iter()
-        .any(|row| row.feature_id == feature_id && row.root_schema_class == Some(926))
-        .then_some(feature_id)
+        .filter(|row| {
+            row.root_schema_class == Some(926)
+                && definition.offset >= row.body_offset
+                && definition.offset < row.body_offset.saturating_add(row.body.len())
+        })
+        .collect::<Vec<_>>();
+    let [row] = rows.as_slice() else {
+        return None;
+    };
+    Some(row.feature_id)
+}
+
+fn section_definition_for_history_feature(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<&crate::feature::FeatureDefinition> {
+    let row = scan
+        .feature_rows
+        .iter()
+        .find(|row| row.feature_id == feature_id && row.root_schema_class == Some(926))?;
+    let definitions = scan
+        .feature_definitions
+        .iter()
+        .filter(|definition| {
+            definition.offset >= row.body_offset
+                && definition.offset < row.body_offset.saturating_add(row.body.len())
+        })
+        .collect::<Vec<_>>();
+    let [definition] = definitions.as_slice() else {
+        return None;
+    };
+    Some(*definition)
 }
 
 fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String, String> {
@@ -9274,10 +9310,13 @@ fn schema_feature_definition(
     kind: &str,
 ) -> IrFeatureDefinition {
     if schema_class == 926 {
-        let transforms = scan
-            .feature_section_transforms
-            .iter()
-            .filter(|transform| transform.feature_id == Some(feature_id))
+        let transforms = section_definition_for_history_feature(scan, feature_id)
+            .into_iter()
+            .flat_map(|definition| {
+                scan.feature_section_transforms
+                    .iter()
+                    .filter(move |transform| transform.definition_id == definition.id)
+            })
             .collect::<Vec<_>>();
         let sketch = if let [transform] = transforms.as_slice() {
             let sketch = SketchId(format!("creo:model:sketch#{}", transform.definition_id));

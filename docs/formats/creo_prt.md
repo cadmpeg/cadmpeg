@@ -887,17 +887,20 @@ DEPDB also stores an internal sketch-datum chain. A procedural recipe feature
 entity is `F + 2`. The intermediate feature is the section datum. When more
 than one definition selects the same sketch-plane entity, the chain does not
 select a regeneration snapshot and none of those definitions acquires the
-owner.
+owner. When the definition is contained by a class-926 row, `F` depends on
+that saved-section history feature.
 
 In `DEPDB_DATA`, `gsec2d_ptr 00 e0 0a name 00 S2D<digits> 00` begins a
 labelled section definition. Its labelled table records define the positional
 table classes used by following unlabeled `S2D` definitions. The next labelled
 `gsec2d_ptr`, unlabeled `S2D`, or feature-definition record ends its body.
 
-The same labelled section-definition form may occur inside an `AllFeatur`
-feature row. The containing row identifier is the section-definition owner.
-The definition body is bounded by the end of that feature row; nested section
-tables and saved-result records remain members of the definition.
+The same labelled section-definition form may occur inside a class-926
+`AllFeatur` feature row. The containing row identifies the saved-section
+history node. It does not replace the section-definition identifier or identify
+the modeling operation that consumes the section. The definition body is
+bounded by the end of that feature row; nested section tables and saved-result
+records remain members of the definition.
 
 `AllFeatur` edge-treatment rows are feature recipes. `strong_parents`, `geoms_affected`, `edgs_affected`, and `contours` contain compact-int identifiers for the current body; they are neither coordinate arrays nor global geometry counts. The first edge-treatment row supplies the labelled schema, and later round and chamfer rows replay that schema positionally.
 
@@ -926,10 +929,11 @@ the constant fillet radius; differing radii define no constant-radius result.
 
 The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, class 923 is a datum-plane definition, and class 926 is a saved section. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
 
-A class-926 row with one owned section transform is the history node for that
-planar sketch. The transform's definition identifier selects the neutral sketch
-and the row identifier remains the feature identifier. A definition without
-this unique row-and-transform join uses a definition-scoped sketch history node.
+A class-926 row containing one section definition is the history node for that
+planar sketch. The contained definition identifier selects the neutral sketch
+and the row identifier remains the history feature identifier. The section's
+modeling owner remains independent. A definition without this unique
+containment join uses a definition-scoped sketch history node.
 
 Every byte-bounded `AllFeatur` row denotes a history feature independently of
 whether the feature owns a materialized surface row. A recognized root schema
@@ -1109,7 +1113,10 @@ The row's `geom_id` remains the separate datum-geometry identifier used by
 
 `gsec3d_ptr` binds a 2D section to its placement, saved-section data, plane references, reference planes, order table, and dimension tables. `plane_flip` negates the sketch normal and extrusion side when it is not `f6`.
 
-In `gsec3d` placement, project the referenced datum normal into the sketch plane to obtain the in-plane sketch `u` direction, then derive `v` as `n × u`. The resulting section-to-model transform is a proper rigid transform and is not a stored global matrix.
+In `gsec3d` placement, project the referenced datum normal into the sketch
+plane to obtain the in-plane type-2 direction `v`, then derive the type-1
+direction as `u = v × n`. The resulting section-to-model transform is a proper
+right-handed rigid transform and is not a stored global matrix.
 
 When the sketch plane resolves to a placed plane carrier or axis-aligned
 `ActDatums` plane and the reference plane is perpendicular, their section
@@ -1117,9 +1124,9 @@ transform is:
 
 ```text
 n      = sketch_plane.normal
-u      = reference_plane.normal
-v      = cross(n, u)
-origin = sketch_plane.offset * n + reference_plane.offset * u
+v      = reference_plane.normal
+u      = cross(v, n)
+origin = sketch_plane.offset * n + reference_plane.offset * v
 model([s, t, 0]) = origin + s*u + t*v
 ```
 

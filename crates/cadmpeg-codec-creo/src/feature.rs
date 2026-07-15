@@ -5309,7 +5309,9 @@ pub fn bind_depdb_section_owners(
             })
             .count();
         if matches == 1 {
-            definition.id = owner_id;
+            if definition.id == 0 {
+                definition.id = owner_id;
+            }
             definition.owner_feature_id = Some(owner_id);
         }
     }
@@ -5749,6 +5751,34 @@ mod tests {
         );
 
         assert_eq!(definition.id, 247);
+        assert_eq!(definition.owner_feature_id, Some(247));
+    }
+
+    #[test]
+    fn depdb_owner_binding_preserves_stored_definition_identifier() {
+        let mut definition = pending_replay(&[]);
+        definition.id = 2;
+        definition.section_3d = Some(FeatureSection3d {
+            sketch_plane_entity_id: Some(249),
+            sketch_plane_flip: None,
+            reference_plane_entity_ids: Vec::new(),
+            reference_plane_datum_geometry_id: None,
+            orientation: FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: 0,
+        });
+        let operations = [
+            operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
+            operation(248, None, 20),
+        ];
+
+        bind_depdb_section_owners(
+            std::slice::from_mut(&mut definition),
+            &operations,
+            &[(0, usize::MAX)],
+        );
+
+        assert_eq!(definition.id, 2);
         assert_eq!(definition.owner_feature_id, Some(247));
     }
 

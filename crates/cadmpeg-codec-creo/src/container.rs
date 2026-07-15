@@ -1349,6 +1349,7 @@ fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<FeatureDefinition> {
         .iter()
         .filter_map(|row| {
             let mut definition = feature::depdb_section_definition(&row.body, row.feature_id)?;
+            definition.owner_feature_id = None;
             offset_feature_definition(&mut definition, row.body_offset);
             Some(definition)
         })
@@ -1604,9 +1605,9 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_operation_states = feature_operation_states(&data, &sections);
     let feature_operations = feature_operations(&data, &sections);
     let mut feature_definitions = feature_definitions(&data, &sections);
+    feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
     feature_definitions.extend(feature_row_definitions(&feature_rows));
     feature_definitions.sort_by_key(|definition| definition.offset);
-    feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
     let claimed_definition_owners = feature_definitions
         .iter()
         .filter_map(|definition| definition.owner_feature_id)
@@ -1619,7 +1620,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     );
     feature_definitions.extend(replay_definitions);
     feature_definitions.sort_by_key(|definition| definition.offset);
-    let depdb_ranges = sections
+    let mut section_owner_ranges = sections
         .iter()
         .filter(|section| section.name == "DEPDB_DATA")
         .map(|section| {
@@ -1629,10 +1630,23 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
             )
         })
         .collect::<Vec<_>>();
+    if sections.iter().any(|section| section.name == "DEPDB_DATA") {
+        section_owner_ranges.extend(
+            feature_rows
+                .iter()
+                .filter(|row| row.root_schema_class == Some(926))
+                .map(|row| {
+                    (
+                        row.body_offset,
+                        row.body_offset.saturating_add(row.body.len()),
+                    )
+                }),
+        );
+    }
     feature::bind_depdb_section_owners(
         &mut feature_definitions,
         &feature_operations,
-        &depdb_ranges,
+        &section_owner_ranges,
     );
     let mut feature_revolution_extents = feature::revolution_extents(&feature_rows);
     feature_revolution_extents.extend(feature::definition_revolution_extents(
@@ -1824,7 +1838,7 @@ mod feature_row_definition_tests {
     use super::*;
 
     #[test]
-    fn embedded_section_definition_inherits_its_bounded_feature_row_owner() {
+    fn embedded_section_definition_retains_separate_history_feature_owner() {
         let row = FeatureRow {
             feature_id: 42,
             header: [0xe3, 0xf6],
@@ -1839,7 +1853,7 @@ mod feature_row_definition_tests {
 
         assert_eq!(definitions.len(), 1);
         assert_eq!(definitions[0].id, 2);
-        assert_eq!(definitions[0].owner_feature_id, Some(42));
+        assert_eq!(definitions[0].owner_feature_id, None);
         assert_eq!(definitions[0].offset, 127);
     }
 }

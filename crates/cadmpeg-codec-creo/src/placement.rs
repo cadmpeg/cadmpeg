@@ -118,9 +118,9 @@ fn definition_local_frame_transform(
         return None;
     };
     let values: [f64; 12] = frame.decoded_values.clone()?.try_into().ok()?;
-    let mut u_axis = normalize(values[0..3].try_into().ok()?)?;
+    let mut reference_axis = normalize(values[0..3].try_into().ok()?)?;
     let mut normal = normalize(values[6..9].try_into().ok()?)?;
-    (dot(u_axis, normal).abs() <= 1e-12).then_some(())?;
+    (dot(reference_axis, normal).abs() <= 1e-12).then_some(())?;
     let origin: [f64; 3] = values[9..12].try_into().ok()?;
     if section.sketch_plane_flip == Some(BinaryFlag::Set) {
         normal = scale(normal, -1.0);
@@ -129,15 +129,15 @@ fn definition_local_frame_transform(
         normal = scale(normal, -1.0);
     }
     if section.orientation.reference_flip == Some(BinaryFlag::Set) {
-        u_axis = scale(u_axis, -1.0);
+        reference_axis = scale(reference_axis, -1.0);
     }
-    let v_axis = cross(normal, u_axis);
-    ((dot(v_axis, v_axis) - 1.0).abs() <= 1e-12).then_some(FeatureSectionTransform {
+    let u_axis = cross(reference_axis, normal);
+    ((dot(u_axis, u_axis) - 1.0).abs() <= 1e-12).then_some(FeatureSectionTransform {
         definition_id: definition.id,
         feature_id: Some(feature_id),
         origin,
         u_axis,
-        v_axis,
+        v_axis: reference_axis,
         normal,
         offset: section.offset,
     })
@@ -477,12 +477,12 @@ pub(crate) fn resolve(
         if denominator <= 1e-12 {
             continue;
         }
-        let u_axis = scale(
+        let reference_axis = scale(
             add(reference_normal, scale(normal, -cosine)),
             denominator.sqrt().recip(),
         );
-        let v_axis = cross(normal, u_axis);
-        if (dot(v_axis, v_axis) - 1.0).abs() > 1e-12 {
+        let u_axis = cross(reference_axis, normal);
+        if (dot(u_axis, u_axis) - 1.0).abs() > 1e-12 {
             continue;
         }
         let sketch_factor = (sketch_offset - cosine * reference_offset) / denominator;
@@ -495,7 +495,7 @@ pub(crate) fn resolve(
                 scale(reference_normal, reference_factor),
             ),
             u_axis,
-            v_axis,
+            v_axis: reference_axis,
             normal,
             offset: section.offset,
         });
@@ -618,8 +618,8 @@ mod tests {
                 definition_id: 42,
                 feature_id: Some(42),
                 origin: [2.0, 0.0, 3.0],
-                u_axis: [0.0, 0.0, 1.0],
-                v_axis: [0.0, -1.0, 0.0],
+                u_axis: [0.0, 1.0, 0.0],
+                v_axis: [0.0, 0.0, 1.0],
                 normal: [1.0, 0.0, 0.0],
                 offset: 100,
             }]
@@ -665,8 +665,8 @@ mod tests {
                 definition_id: 42,
                 feature_id: Some(42),
                 origin: [-3.0, -4.0, 0.0],
-                u_axis: [0.0, 0.0, 1.0],
-                v_axis: [0.0, -1.0, 0.0],
+                u_axis: [0.0, 1.0, 0.0],
+                v_axis: [0.0, 0.0, 1.0],
                 normal: [1.0, 0.0, 0.0],
                 offset: 100,
             }]
@@ -793,8 +793,8 @@ mod tests {
                 definition_id: 917,
                 feature_id: Some(40),
                 origin: [0.0, 0.0, 0.0],
-                u_axis: [1.0, 0.0, 0.0],
-                v_axis: [0.0, 0.0, -1.0],
+                u_axis: [0.0, 0.0, 1.0],
+                v_axis: [1.0, 0.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 offset: 100,
             }]
@@ -821,8 +821,8 @@ mod tests {
                     },
                     FeatureSectionPoint {
                         point_id: 9,
-                        u: Some(0.0),
-                        v: Some(1.0),
+                        u: Some(1.0),
+                        v: Some(0.0),
                     },
                 ],
                 offset: 10,
@@ -919,7 +919,8 @@ mod tests {
         assert_eq!(transforms[1].definition_id, 579);
         assert_eq!(transforms[1].feature_id, Some(579));
         assert_eq!(transforms[1].origin, [0.0, 1.0, 0.0]);
-        assert_eq!(transforms[1].u_axis, [0.0, 0.0, 1.0]);
+        assert_eq!(transforms[1].u_axis, [1.0, 0.0, 0.0]);
+        assert_eq!(transforms[1].v_axis, [0.0, 0.0, -1.0]);
         assert_eq!(transforms[1].normal, [0.0, 1.0, 0.0]);
     }
 
@@ -973,7 +974,8 @@ mod tests {
         );
         assert_eq!(transforms.len(), 1);
         assert_eq!(transforms[0].origin, [2.0, 0.0, 3.0]);
-        assert_eq!(transforms[0].u_axis, [0.0, 0.0, 1.0]);
+        assert_eq!(transforms[0].u_axis, [0.0, 1.0, 0.0]);
+        assert_eq!(transforms[0].v_axis, [0.0, 0.0, 1.0]);
     }
 
     #[test]
@@ -1040,8 +1042,8 @@ mod tests {
         );
         assert_eq!(transforms.len(), 1);
         assert_eq!(transforms[0].normal, [0.0, -1.0, 0.0]);
-        assert_eq!(transforms[0].u_axis, [1.0, 0.0, 0.0]);
-        assert_eq!(transforms[0].v_axis, [-0.0, 0.0, 1.0]);
+        assert_eq!(transforms[0].u_axis, [0.0, 0.0, -1.0]);
+        assert_eq!(transforms[0].v_axis, [1.0, 0.0, 0.0]);
     }
 
     #[test]
