@@ -196,13 +196,23 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Some(pcurve) = pointer(record, 3) else {
+        let pcurve = match record.integer(3) {
+            Some(0) => None,
+            Some(value) => u32::try_from(value)
+                .ok()
+                .filter(|sequence| sequence % 2 == 1),
+            None => None,
+        };
+        if record
+            .integer(3)
+            .is_none_or(|value| value != 0 && pcurve.is_none())
+        {
             losses.push(entity_loss(
                 entry,
                 "curve-on-surface parameter curve pointer is invalid",
             ));
             continue;
-        };
+        }
         let Some(model_curve) = pointer(record, 4) else {
             losses.push(entity_loss(
                 entry,
@@ -210,8 +220,11 @@ pub(super) fn project(
             ));
             continue;
         };
-        let pcurve_entry = entries.get(&pcurve).copied();
-        if pcurve_entry.is_none_or(|entry| entry.status.use_flag != 5) {
+        if pcurve.is_some_and(|pcurve| {
+            entries
+                .get(&pcurve)
+                .is_none_or(|entry| entry.status.use_flag != 5)
+        }) {
             losses.push(entity_loss(
                 entry,
                 "parameter curve does not have entity-use flag 05",
@@ -223,10 +236,10 @@ pub(super) fn project(
             BoundaryDefinition {
                 surface,
                 segments: vec![BoundarySegment {
-                    pcurves: vec![pcurve],
+                    pcurves: pcurve.into_iter().collect(),
                     model_curve,
                     sense: Sense::Forward,
-                    require_carrier_agreement: true,
+                    require_carrier_agreement: pcurve.is_some(),
                 }],
             },
         );

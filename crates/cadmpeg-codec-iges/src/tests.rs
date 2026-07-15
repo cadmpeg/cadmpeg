@@ -617,6 +617,46 @@ fn composite_curve_file() -> Vec<u8> {
     bytes
 }
 
+fn mixed_analytic_composite_curve_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (sequence, parameter_start, entity_type, label, status) in [
+        (1, 1, "100", "ARC", "00010000"),
+        (3, 2, "110", "LINE", "00010000"),
+        (5, 3, "102", "COMPOSIT", "00000000"),
+    ] {
+        bytes.extend(directory_card(
+            [
+                entity_type,
+                &parameter_start.to_string(),
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [entity_type, "0", "0", "1", "0", "", "", label, "0"],
+            sequence + 1,
+        ));
+    }
+    bytes.extend(parameter_card(b"100,0,0,0,1,0,0,1;", 1, 1));
+    bytes.extend(parameter_card(b"110,0,1,0,0,2,0;", 3, 2));
+    bytes.extend(parameter_card(b"102,2,1,3;", 5, 3));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
 #[test]
 fn decode_concatenates_ordered_composite_curve_children() {
     let result = IgesCodec
@@ -642,6 +682,36 @@ fn decode_concatenates_ordered_composite_curve_children() {
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(1, &nurbs.knots, &nurbs.control_points, None, 1.5),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0))
+    );
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_concatenates_exact_circular_arc_and_line_children() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(mixed_analytic_composite_curve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let composite = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .unwrap();
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &composite.geometry else {
+        panic!("expected an exact quadratic composite cache");
+    };
+    assert_eq!(nurbs.degree, 2);
+    assert_eq!(nurbs.control_points.len(), 5);
+    assert_eq!(
+        nurbs.weights.as_ref().unwrap()[1],
+        std::f64::consts::FRAC_1_SQRT_2
     );
     assert!(result.report.losses.is_empty());
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
@@ -1532,6 +1602,17 @@ fn trimmed_plane_file() -> Vec<u8> {
         b'T',
         1,
     ));
+    bytes
+}
+
+fn model_curve_only_trimmed_plane_file() -> Vec<u8> {
+    let mut bytes = trimmed_plane_file();
+    let parameter = b"142,0,1,5,3,3;";
+    let start = bytes
+        .windows(parameter.len())
+        .position(|window| window == parameter)
+        .unwrap();
+    bytes[start..start + parameter.len()].copy_from_slice(b"142,0,1,0,3,2;");
     bytes
 }
 
@@ -6799,6 +6880,46 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .unwrap();
     assert_eq!(coedge.radial_next, coedge.id);
     assert!(!coedge.pcurves.is_empty());
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_builds_a_model_curve_only_trimmed_sheet() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(model_curve_only_trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D9")
+        .unwrap();
+    let loop_ = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .unwrap();
+    let coedge = result
+        .ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id == loop_.coedges[0])
+        .unwrap();
+    assert!(coedge.pcurves.is_empty());
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
