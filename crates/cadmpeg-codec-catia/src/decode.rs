@@ -1213,13 +1213,13 @@ mod chart_tests {
         e5_body_kinds, e5_boundary_curve, e5_occurrence_intersection_context, e5_pcurve_on_surface,
         equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes, include_native_endpoint_pairs,
         intersection_line_direction, ordered_range, parameter_ranges_reversed, point_distance,
-        point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc,
+        point_on_known_surface, point_on_standard_face, quintic_jet_pcurve, rational_pcurve_arc,
         resolve_standard_endpoint_pairs, reverse_e5_pcurve_geometry,
         standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
         unique_index_owners, unique_native_identity_points,
     };
     use crate::e5::{E5Edge, E5Face, E5Loop, E5Topology};
-    use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
+    use crate::geometry::{FreeformFaceBounds, StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
     use cadmpeg_ir::geometry::{
@@ -2050,6 +2050,32 @@ mod chart_tests {
         assert!(point_on_known_surface(
             Point3::new(100.0, -50.0, 7.0),
             &SurfaceGeometry::Unknown { record: None }
+        ));
+    }
+
+    #[test]
+    fn freeform_face_bounds_constrain_unknown_surface_endpoints() {
+        let bounds = FreeformFaceBounds {
+            aabb_center: [2.0, 3.0, 4.0],
+            aabb_half_extents: [1.0, 2.0, 3.0],
+            sphere_center: [2.0, 3.0, 4.0],
+            sphere_radius: 3.5,
+        };
+        let surface = SurfaceGeometry::Unknown { record: None };
+        assert!(point_on_standard_face(
+            Point3::new(2.0, 4.0, 6.0),
+            &surface,
+            Some(bounds),
+        ));
+        assert!(!point_on_standard_face(
+            Point3::new(3.01, 3.0, 4.0),
+            &surface,
+            Some(bounds),
+        ));
+        assert!(!point_on_standard_face(
+            Point3::new(3.0, 5.0, 7.0),
+            &surface,
+            Some(bounds),
         ));
     }
 
@@ -4385,6 +4411,17 @@ fn attach_standard_topology(
         .enumerate()
         .map(|(index, surface)| (surface.id.clone(), index))
         .collect::<HashMap<_, _>>();
+    let face_bounds = geometry::standard_surface_records(brep, face_count)
+        .map(|records| {
+            records
+                .into_iter()
+                .map(|record| match record {
+                    geometry::StandardSurfaceRecord::Freeform { bounds, .. } => Some(bounds),
+                    geometry::StandardSurfaceRecord::Analytic(_) => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|bounds| bounds.len() == face_count);
     let mut endpoint_candidates = Vec::with_capacity(supports.len());
     let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
     for support in &supports {
@@ -4414,12 +4451,19 @@ fn attach_standard_topology(
                             .iter()
                             .enumerate()
                             .filter_map(|(index, point)| {
-                                let incident =
-                                    point_on_known_surface(point.position, &surface0.geometry)
-                                        && point_on_known_surface(
-                                            point.position,
-                                            &surface1.geometry,
-                                        );
+                                let incident = point_on_standard_face(
+                                    point.position,
+                                    &surface0.geometry,
+                                    face_bounds
+                                        .as_ref()
+                                        .and_then(|bounds| bounds[support.faces[0]]),
+                                ) && point_on_standard_face(
+                                    point.position,
+                                    &surface1.geometry,
+                                    face_bounds
+                                        .as_ref()
+                                        .and_then(|bounds| bounds[support.faces[1]]),
+                                );
                                 incident.then_some(index)
                             })
                             .collect()
@@ -5310,6 +5354,31 @@ fn face_surface<'a>(
 
 fn point_on_known_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
     matches!(surface, SurfaceGeometry::Unknown { .. }) || point_on_surface(point, surface)
+}
+
+fn point_on_standard_face(
+    point: Point3,
+    surface: &SurfaceGeometry,
+    bounds: Option<geometry::FreeformFaceBounds>,
+) -> bool {
+    const TOLERANCE: f64 = 2e-3;
+
+    if !point_on_known_surface(point, surface) {
+        return false;
+    }
+    bounds.is_none_or(|bounds| {
+        let coordinates = [point.x, point.y, point.z];
+        let inside_aabb = coordinates.iter().enumerate().all(|(axis, coordinate)| {
+            (*coordinate - bounds.aabb_center[axis]).abs()
+                <= bounds.aabb_half_extents[axis] + TOLERANCE
+        });
+        let distance_squared = coordinates
+            .iter()
+            .enumerate()
+            .map(|(axis, coordinate)| (*coordinate - bounds.sphere_center[axis]).powi(2))
+            .sum::<f64>();
+        inside_aabb && distance_squared.sqrt() <= bounds.sphere_radius + TOLERANCE
+    })
 }
 
 fn standard_pcurve_geometry(
