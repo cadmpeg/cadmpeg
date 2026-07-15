@@ -1480,13 +1480,14 @@ pub fn standard_mesh_missing_edge_assignments(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
 ) -> Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>> {
-    standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, None)
+    standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, None, false)
 }
 
 fn standard_mesh_missing_edge_assignments_impl(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
+    canonicalize_spans: bool,
 ) -> Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>> {
     const MAX_ASSIGNMENTS_PER_FACE: usize = 65_536;
     const MAX_EXHAUSTIVE_GAPS: usize = 9;
@@ -1506,6 +1507,7 @@ fn standard_mesh_missing_edge_assignments_impl(
         missing: &[usize],
         rows: &[EdgeRow],
         constraints: PlacementConstraints<'_>,
+        canonicalize_spans: bool,
     ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
         struct Search<'a> {
             face: usize,
@@ -1793,9 +1795,9 @@ fn standard_mesh_missing_edge_assignments_impl(
             edge_points: edge_points.as_deref(),
             point_transitions: point_transitions.as_deref(),
             corner_points,
-            canonical_spans: edge_candidates.is_some()
+            canonical_spans: canonicalize_spans
                 && (gaps.len() == 1 || gaps.len() > MAX_EXHAUSTIVE_GAPS),
-            canonical_gap_partitions: edge_candidates.is_some() && gaps.len() > MAX_EXHAUSTIVE_GAPS,
+            canonical_gap_partitions: canonicalize_spans && gaps.len() > MAX_EXHAUSTIVE_GAPS,
             dead_states: HashSet::new(),
             assignments: 0,
             complete: Vec::new(),
@@ -2035,6 +2037,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                             edge_candidates,
                             &corner_points,
                         ),
+                        canonicalize_spans,
                     )
                 })
                 .or_else(|| {
@@ -2045,6 +2048,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                         &face.missing_edges,
                         &edge_rows,
                         (None, &HashMap::new(), edge_candidates, &corner_points),
+                        canonicalize_spans,
                     )
                 })
                 .or_else(|| {
@@ -2055,6 +2059,7 @@ fn standard_mesh_missing_edge_assignments_impl(
                         &face.missing_edges,
                         &edge_rows,
                         (None, &HashMap::new(), None, &MeshCornerPoints::new()),
+                        canonicalize_spans,
                     )
                 })
             })
@@ -2107,7 +2112,7 @@ fn standard_mesh_boundary_assignments_impl(
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
 ) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
     let assignments =
-        standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, edge_candidates)?;
+        standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, edge_candidates, true)?;
     let runs = standard_mesh_edge_runs(bytes)?;
     let (face_start, face_count, _) = largest_fbb_run(bytes)?;
     let cycle_solutions = [1, 2, 3]
@@ -2455,12 +2460,7 @@ fn standard_mesh_assignment_corner_points(
         return None;
     }
     let runs = standard_mesh_edge_runs(bytes)?;
-    let edge_candidates = edge_points
-        .iter()
-        .map(|points| points.iter().copied().collect::<Vec<_>>())
-        .collect::<Vec<_>>();
-    let assignments =
-        standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, Some(&edge_candidates))?;
+    let assignments = standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, None, true)?;
     let (face_start, face_count, _) = largest_fbb_run(bytes)?;
     let cycle_solutions = [1, 2, 3]
         .into_iter()
