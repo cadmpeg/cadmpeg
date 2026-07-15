@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::annotations::Annotations;
 use crate::byte_ledger::ByteLedger;
 use crate::document::CadIr;
+use crate::ids::UnknownId;
 use crate::native::NativeConvertError;
 use crate::unknown::UnknownRecord;
 
@@ -115,6 +116,34 @@ impl SourceFidelity {
         ir.set_native_unknown_refs(format, &product_records)
     }
 
+    /// Build a codec-local source view by joining product links with retained records.
+    pub fn hydrate_native_unknown_records(
+        &self,
+        ir: &mut CadIr,
+        format: &str,
+    ) -> Result<(), NativeConvertError> {
+        let links = ir
+            .native_unknown_refs(format)?
+            .into_iter()
+            .map(|record| (record.id.0, record.links))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let prefix = format!("{format}:");
+        let records = self
+            .retained_records
+            .iter()
+            .filter(|record| record.id.starts_with(&prefix))
+            .map(|record| UnknownRecord {
+                id: UnknownId(record.id.clone()),
+                offset: record.offset,
+                byte_len: record.byte_len,
+                sha256: record.sha256.clone(),
+                data: record.data.clone(),
+                links: links.get(&record.id).cloned().unwrap_or_default(),
+            })
+            .collect::<Vec<_>>();
+        ir.set_native_unknowns(format, &records)
+    }
+
     /// Canonicalize sidecar collections independently from the product model.
     pub fn finalize(&mut self) {
         self.byte_ledger.finalize();
@@ -162,6 +191,14 @@ mod tests {
         assert!(value.get("byte_len").is_none());
         assert!(value.get("sha256").is_none());
         assert!(value.get("data").is_none());
+
+        let mut ir = CadIr::empty(crate::units::Units::default());
+        ir.set_native_unknown_refs("native", &[crate::NativeUnknownRecord::from(&record)])
+            .expect("store product record");
+        sidecar
+            .hydrate_native_unknown_records(&mut ir, "native")
+            .expect("hydrate codec source view");
+        assert_eq!(ir.native_unknowns("native").unwrap(), vec![record]);
     }
 
     fn recovery_sidecar(data: &[u8]) -> SourceFidelity {
