@@ -983,7 +983,8 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
 #[test]
 fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     use cadmpeg_ir::features::{
-        BooleanOp, ChamferSpec, EdgeSelection, FaceSelection, FeatureDefinition, HoleKind, RibDraft,
+        BooleanOp, ChamferSpec, EdgeSelection, FaceSelection, FeatureDefinition, HoleKind,
+        PatternKind, RibDraft,
     };
 
     assert!(matches!(
@@ -1018,6 +1019,15 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             side: None,
         }
     ));
+    for kind in ["Pattern Feature", "Pattern Geometry"] {
+        assert!(matches!(
+            crate::decode::non_boolean_feature_definition(kind, &[], None, None, None),
+            FeatureDefinition::Pattern {
+                seeds,
+                pattern: PatternKind::Unresolved { form: None },
+            } if seeds.is_empty()
+        ));
+    }
 }
 
 #[test]

@@ -23,8 +23,8 @@ use cadmpeg_ir::features::{
     Angle, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec, ConfigurationId,
     DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceSelection, Feature,
     FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
-    Length, ParameterId, ParameterValue, ProfileRef, RadiusForm, RadiusSpec, RibConstruction,
-    RibDraft, SketchSpace,
+    Length, ParameterId, ParameterValue, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
+    RibConstruction, RibDraft, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -9415,6 +9415,10 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             faces: FaceSelection::Unresolved,
             thickness: None,
             side: None,
+        },
+        "Pattern Feature" | "Pattern Geometry" => FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved { form: None },
         },
         _ => FeatureDefinition::Native {
             kind: kind.to_string(),
