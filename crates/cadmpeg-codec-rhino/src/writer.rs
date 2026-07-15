@@ -2267,6 +2267,10 @@ fn explicit_brep_c2_curve(
             }
             Ok((NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)))
         }
+        _ => Err(CodecError::NotImplemented(format!(
+            "pcurve {} geometry is not representable in the rhino writer",
+            pcurve.id.0
+        ))),
     }
 }
 
@@ -2361,6 +2365,12 @@ fn validate_nurbs_trim_loop(
             cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } => control_points
                 .iter()
                 .all(|point| inside_domain(point.u, point.v)),
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "pcurve {} geometry is not representable in the rhino writer",
+                    pcurve.id.0
+                )));
+            }
         };
         if !control_hull_inside {
             return Err(CodecError::Malformed(format!(

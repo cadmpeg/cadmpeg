@@ -2481,8 +2481,7 @@ fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
     let op = feature
         .properties
         .get("Operation")
-        .map(|value| parse_boolean_op(value))
-        .unwrap_or(Some(BooleanOp::Unresolved))?;
+        .map_or(Some(BooleanOp::Unresolved), |value| parse_boolean_op(value))?;
     if op == BooleanOp::NewBody {
         return None;
     }
@@ -3580,11 +3579,10 @@ fn validate_compact_edge_selection_edits(
         else {
             continue;
         };
-        let edges = match &feature.definition {
-            FeatureDefinition::Fillet { edges, .. } | FeatureDefinition::Chamfer { edges, .. } => {
-                edges
-            }
-            _ => continue,
+        let (FeatureDefinition::Fillet { edges, .. } | FeatureDefinition::Chamfer { edges, .. }) =
+            &feature.definition
+        else {
+            continue;
         };
         let native = crate::resolved_features::compact_edge_selection_set_value(edge_selections);
         let generated = edge_selections
@@ -7374,10 +7372,10 @@ pub fn sync_neutral_features(
             feature
                 .parameters
                 .iter()
-                .filter_map(move |(name, expression)| {
-                    (original.and_then(|parameters| parameters.get(name)) != Some(expression))
-                        .then(|| (feature.id.clone(), name.clone()))
+                .filter(move |(name, expression)| {
+                    original.and_then(|parameters| parameters.get(*name)) != Some(*expression)
                 })
+                .map(move |(name, _)| (feature.id.clone(), name.clone()))
         })
         .collect::<std::collections::HashSet<_>>();
     crate::resolved_features::sync_changed_feature_scalars(
@@ -7665,7 +7663,7 @@ fn path_source(
 fn extrude_op(kind: &str) -> Option<BooleanOp> {
     let kind = kind
         .bytes()
-        .filter(|byte| byte.is_ascii_alphanumeric())
+        .filter(u8::is_ascii_alphanumeric)
         .map(|byte| byte.to_ascii_lowercase())
         .collect::<Vec<_>>();
     match kind.as_slice() {

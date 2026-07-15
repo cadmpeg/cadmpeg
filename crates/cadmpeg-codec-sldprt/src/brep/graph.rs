@@ -1504,7 +1504,7 @@ fn quadratic_nurbs_has_constant_radius(
     radius: f64,
 ) -> bool {
     if radial_control_points.len() < 3
-        || radial_control_points.len() % 2 == 0
+        || radial_control_points.len().is_multiple_of(2)
         || knots.len() != radial_control_points.len() + 3
         || weights.is_some_and(|weights| weights.len() != radial_control_points.len())
         || !radius.is_finite()
@@ -1548,7 +1548,7 @@ fn quadratic_nurbs_has_constant_radius(
                 (point.u * weight, point.v * weight, weight)
             })
             .collect::<Vec<_>>();
-        for degree in 0usize..=4 {
+        for (degree, &denominator) in choose_4.iter().enumerate() {
             let mut identity = 0.0_f64;
             for i in 0usize..=2 {
                 let Some(j) = degree.checked_sub(i) else {
@@ -1557,7 +1557,7 @@ fn quadratic_nurbs_has_constant_radius(
                 if j > 2 {
                     continue;
                 }
-                let factor = choose_2[i] * choose_2[j] / choose_4[degree];
+                let factor = choose_2[i] * choose_2[j] / denominator;
                 identity += factor
                     * (homogeneous[i].0 * homogeneous[j].0 + homogeneous[i].1 * homogeneous[j].1
                         - radius * radius * homogeneous[i].2 * homogeneous[j].2);
@@ -2527,7 +2527,12 @@ fn synthesize_sphere_seams(
         .collect::<HashMap<_, _>>();
     let mut existing = Vec::new();
     for face in &out.faces {
-        let Some(SurfaceGeometry::Sphere { center, radius, axis, .. }) = surface_geometry.get(&face.surface).copied()
+        let Some(SurfaceGeometry::Sphere {
+            center,
+            radius,
+            axis,
+            ..
+        }) = surface_geometry.get(&face.surface).copied()
         else {
             continue;
         };
@@ -2573,11 +2578,12 @@ fn synthesize_sphere_seams(
                 center.y - radius * axis.y,
                 center.z - radius * axis.z,
             );
-            let squared_distance = |left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3| {
-                (left.x - right.x).powi(2)
-                    + (left.y - right.y).powi(2)
-                    + (left.z - right.z).powi(2)
-            };
+            let squared_distance =
+                |left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3| {
+                    (left.x - right.x).powi(2)
+                        + (left.y - right.y).powi(2)
+                        + (left.z - right.z).powi(2)
+                };
             let point = vertex_points
                 .get(&edge.start)
                 .or_else(|| vertex_points.get(&edge.end))
@@ -2588,10 +2594,7 @@ fn synthesize_sphere_seams(
                         south
                     }
                 });
-            existing.push((
-                *edge_index,
-                point,
-            ));
+            existing.push((*edge_index, point));
         }
     }
     for (edge_index, point) in existing {
@@ -2702,11 +2705,20 @@ fn synthesize_sphere_seams(
             let point_id = PointId(format!("sldprt:brep:point#sphere-seam-face:{face_index}"));
             let vertex_id = VertexId(format!("sldprt:brep:vertex#sphere-seam-face:{face_index}"));
             for id in [&point_id.0, &vertex_id.0] {
-                annotations.note(id, source_stream, 0).tag("derived_sphere_seam");
+                annotations
+                    .note(id, source_stream, 0)
+                    .tag("derived_sphere_seam");
                 annotations.exactness(id, Exactness::Derived);
             }
-            out.points.push(Point { id: point_id.clone(), position: seam_point });
-            out.vertices.push(Vertex { id: vertex_id.clone(), point: point_id, tolerance: None });
+            out.points.push(Point {
+                id: point_id.clone(),
+                position: seam_point,
+            });
+            out.vertices.push(Vertex {
+                id: vertex_id.clone(),
+                point: point_id,
+                tolerance: None,
+            });
             vertex_id
         });
         for id in [&curve_id.0, &edge_id.0, &coedge_id.0, &pcurve_id.0] {

@@ -1539,9 +1539,10 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             check_knots(findings, &pcurve.id.0, knots, "");
         }
-        if pcurve.parameter_range.is_some_and(|[start, end]| {
-            !start.is_finite() || !end.is_finite() || start > end
-        }) {
+        if pcurve
+            .parameter_range
+            .is_some_and(|[start, end]| !start.is_finite() || !end.is_finite() || start > end)
+        {
             bounds_err(findings, &pcurve.id.0, "pcurve parameter range is invalid");
         }
     }
