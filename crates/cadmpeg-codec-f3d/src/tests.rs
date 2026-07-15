@@ -610,26 +610,62 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         panic!("embedded use curve must be NURBS")
     };
     nurbs.control_points[0].x += 1.0;
-    let error = F3dCodec
-        .write_preserved(&edited, &mut Vec::new())
-        .expect_err("embedded use-curve edits require exact native patch support");
-    assert!(
-        error
-            .to_string()
-            .contains("f3d:brep:tolerant-coedge-curve#7"),
-        "{error}"
-    );
+    let expected = nurbs.clone();
+    let mut preserved = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut preserved)
+        .expect("embedded use-curve edit");
+    let preserved = F3dCodec
+        .decode(&mut Cursor::new(preserved), &DecodeOptions::default())
+        .expect("embedded use-curve edit round trip");
+    assert!(preserved.ir.model.curves.iter().any(|curve| {
+        curve.id == use_curve
+            && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref curve) if *curve == expected)
+    }));
 
-    let mut source_less = decoded.ir;
-    source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
-        .expect_err("source-less embedded use curves must not disappear");
-    assert!(
-        error.to_string().contains("use curve losslessly"),
-        "{error}"
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let generated_curve_id = cadmpeg_ir::ids::CurveId("generated:tolerant-use-curve#0".into());
+    source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
+        id: generated_curve_id.clone(),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(expected.clone()),
+        source_object: None,
+    });
+    let tolerant_coedge = source_less.model.coedges[0].id.clone();
+    source_less.model.coedges[0].use_curve = Some(generated_curve_id);
+    source_less.model.coedges[0].use_curve_parameter_range = Some([-2.0, 3.0]);
+    f3d_native_mut(&mut source_less).tolerant_coedge_parameters =
+        vec![crate::records::TolerantCoedgeParameters {
+            id: "generated:tolerant-coedge-parameters#0".into(),
+            coedge: tolerant_coedge,
+            record_index: 0,
+            parameter_range: [0.0, 1.0],
+            extension: crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+                target: None,
+                flag: false,
+                payload_token_count: 0,
+                parameter_range: Some([-2.0, 3.0]),
+            },
+        }];
+    let mut generated = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut generated)
+        .expect("source-less embedded use curves");
+    let generated = F3dCodec
+        .decode(&mut Cursor::new(generated), &DecodeOptions::default())
+        .expect("source-less embedded use-curve round trip");
+    assert_eq!(
+        generated
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.use_curve.is_some())
+            .count(),
+        1
     );
+    assert!(generated.ir.model.curves.iter().any(|curve| {
+        matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref curve) if *curve == expected)
+    }));
 }
 
 fn synthetic_geometry_with_history_smbh() -> Vec<u8> {

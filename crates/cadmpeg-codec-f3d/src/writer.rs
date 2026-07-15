@@ -132,14 +132,21 @@ fn validate_source_less_topology_tolerances(target: &CadIr) -> Result<(), CodecE
             edge.id
         )));
     }
-    if let Some(coedge) = target
-        .model
-        .coedges
-        .iter()
-        .find(|coedge| coedge.use_curve.is_some())
-    {
+    let tolerant = f3d_native(target)?
+        .map(|native| native.tolerant_coedge_parameters)
+        .unwrap_or_default();
+    if let Some(coedge) = target.model.coedges.iter().find(|coedge| {
+        coedge.use_curve.is_some()
+            && !tolerant.iter().any(|parameters| {
+                parameters.coedge == coedge.id
+                    && matches!(
+                        parameters.extension,
+                        crate::records::TolerantCoedgeExtension::EmbeddedCurve { target: None, .. }
+                    )
+            })
+    }) {
         return Err(CodecError::NotImplemented(format!(
-            "source-less F3D cannot serialize coedge {} use curve losslessly",
+            "source-less F3D coedge {} use curve lacks a cache-local tolerant extension",
             coedge.id
         )));
     }
@@ -951,9 +958,55 @@ fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Resu
         match &parameters.extension {
             crate::records::TolerantCoedgeExtension::None
             | crate::records::TolerantCoedgeExtension::Empty { target: None } => {}
+            crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+                target: None,
+                parameter_range,
+                ..
+            } => {
+                let coedge = target
+                    .model
+                    .coedges
+                    .iter()
+                    .find(|coedge| coedge.id == parameters.coedge)
+                    .expect("validated tolerant-coedge target");
+                let curve_id = coedge.use_curve.as_ref().ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "F3D tolerant-coedge extension {} has no use curve",
+                        parameters.id
+                    ))
+                })?;
+                let curve = target
+                    .model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == *curve_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "F3D tolerant-coedge extension {} references missing use curve {curve_id}",
+                            parameters.id
+                        ))
+                    })?;
+                if !matches!(curve.geometry, CurveGeometry::Nurbs(_)) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "source-less F3D tolerant-coedge extension {} requires a NURBS use curve",
+                        parameters.id
+                    )));
+                }
+                let effective_range = parameter_range.unwrap_or(parameters.parameter_range);
+                if effective_range.iter().any(|value| !value.is_finite())
+                    || coedge.use_curve_parameter_range != Some(effective_range)
+                {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D tolerant-coedge extension {} has an inconsistent use-curve parameter range",
+                        parameters.id
+                    )));
+                }
+            }
             crate::records::TolerantCoedgeExtension::Empty { target: Some(_) }
             | crate::records::TolerantCoedgeExtension::Reference { .. }
-            | crate::records::TolerantCoedgeExtension::EmbeddedCurve { .. } => {
+            | crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+                target: Some(_), ..
+            } => {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D cannot relocate tolerant-coedge extension {}",
                     parameters.id
@@ -1169,6 +1222,49 @@ fn native_tolerant_coedge_extension(
         | crate::records::TolerantCoedgeExtension::Empty { target: None } => {
             native_ref(records, -1);
             native_i64(records, 0);
+            native_i64(records, 0);
+            Ok(())
+        }
+        crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+            target: None,
+            flag,
+            parameter_range,
+            ..
+        } => {
+            let model_coedge = target
+                .model
+                .coedges
+                .iter()
+                .find(|candidate| candidate.id == *coedge)
+                .ok_or_else(|| CodecError::Malformed(format!("missing coedge {coedge}")))?;
+            let curve_id = model_coedge.use_curve.as_ref().ok_or_else(|| {
+                CodecError::Malformed(format!("tolerant coedge {coedge} has no use curve"))
+            })?;
+            let curve = target
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *curve_id)
+                .ok_or_else(|| CodecError::Malformed(format!("missing use curve {curve_id}")))?;
+            let CurveGeometry::Nurbs(curve) = &curve.geometry else {
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less F3D tolerant coedge {coedge} requires a NURBS use curve"
+                )));
+            };
+            native_ref(records, -1);
+            native_i64(records, 1);
+            records.push(native_bool(flag));
+            records.push(0x0f);
+            native_nurbs_curve(records, curve)?;
+            records.push(0x10);
+            if let Some([start, end]) = parameter_range {
+                records.push(0x0a);
+                native_f64(records, start);
+                records.push(0x0a);
+                native_f64(records, end);
+            } else {
+                records.extend_from_slice(&[0x0b, 0x0b]);
+            }
             native_i64(records, 0);
             Ok(())
         }
@@ -10963,18 +11059,6 @@ fn validate_tolerant_coedge_edits(
             "F3D tolerant-coedge regeneration requires the unchanged coedge-id set".into(),
         ));
     }
-    let baseline_curves = baseline
-        .model
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), curve))
-        .collect::<BTreeMap<_, _>>();
-    let target_curves = target
-        .model
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), curve))
-        .collect::<BTreeMap<_, _>>();
     for (id, before) in &baseline_coedges {
         let after = target_coedges[id];
         if after.use_curve != before.use_curve
@@ -10983,13 +11067,6 @@ fn validate_tolerant_coedge_edits(
             return Err(CodecError::NotImplemented(format!(
                 "F3D coedge use-curve edit changes embedded record structure: {id}"
             )));
-        }
-        if let Some(curve) = &before.use_curve {
-            if baseline_curves.get(curve.as_str()) != target_curves.get(curve.as_str()) {
-                return Err(CodecError::NotImplemented(format!(
-                    "F3D coedge use-curve geometry edit is not writable: {id}"
-                )));
-            }
         }
     }
     let baseline_parameters = f3d_native(baseline)?
@@ -14070,6 +14147,7 @@ fn validate_curve_edits(
                     )));
                 };
                 (id.starts_with("f3d:brep:entity#")
+                    || id.starts_with("f3d:brep:tolerant-coedge-curve#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":directrix") || id.ends_with(":spine"))))
                     && valid_edited_curve_structure(before, after)
@@ -15142,6 +15220,15 @@ fn patch_framed_geometry(
             }
         }
         if let Some(edit) = nurbs_curves.get(&id) {
+            patch_nurbs_curve_record(bytes, record, edit, false)?;
+        }
+        let tolerant_curve_id = format!("f3d:brep:tolerant-coedge-curve#{}", record.index);
+        if let Some(edit) = nurbs_curves.get(&tolerant_curve_id) {
+            if record.head != "tcoedge" {
+                return Err(CodecError::Malformed(format!(
+                    "F3D tolerant use-curve carrier {tolerant_curve_id} is not a tcoedge record"
+                )));
+            }
             patch_nurbs_curve_record(bytes, record, edit, false)?;
         }
         let procedural_curve_id = format!("f3d:brep:procedural_curve#{}", record.index);
