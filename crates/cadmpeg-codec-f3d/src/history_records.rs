@@ -75,6 +75,9 @@ pub(crate) struct AsmHistoricalTopology {
     pub vertices: Vec<i64>,
     pub points: Vec<i64>,
     pub surfaces: Vec<i64>,
+    /// Characteristic radii of analytic or constant-radius blend carriers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surface_radii: Vec<AsmHistoricalSurfaceRadius>,
     pub curves: Vec<i64>,
     pub pcurves: Vec<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -106,6 +109,12 @@ pub(crate) struct AsmHistoricalTopology {
     /// Model-space values of the point carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub point_positions: Vec<AsmHistoricalPoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalSurfaceRadius {
+    pub surface: i64,
+    pub radius: f64,
 }
 
 /// Stable point-carrier value in one historical B-rep state.

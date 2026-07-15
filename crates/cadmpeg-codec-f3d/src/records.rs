@@ -1105,6 +1105,9 @@ pub struct DesignEdgeOperand {
     /// the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub updated_boundary_edge_slots: Vec<i64>,
+    /// Deleted predecessor edges associated with inserted treatment-carrier radii.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
     /// Ordered incident-loop topology for every changed boundary edge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
@@ -1123,6 +1126,16 @@ pub struct DesignEdgeOperand {
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     pub next_byte_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+/// One radius-qualified historical edge candidate recovered from an inserted
+/// treatment face and its carrier-stable adjacent supports.
+pub struct DesignEdgeTreatmentRadiusCandidate {
+    /// Deleted stable edge slot shared by the preceding support faces.
+    pub edge_slot: i64,
+    /// Positive characteristic radius of the inserted treatment carrier.
+    pub radius: f64,
 }
 
 /// Stable surface-support relation from an active face candidate to the

@@ -536,6 +536,10 @@ pub fn project_parameter_design(
                             })
                             .map(|parameter| parameter.evaluated_value)
                             .filter(|weight| weight.is_finite());
+                        let edge_radius = match &radius {
+                            RadiusSpec::Constant { radius } => Some(radius.0),
+                            _ => None,
+                        };
                         let edges = construction_groups
                             .iter()
                             .find(|group| {
@@ -551,6 +555,7 @@ pub fn project_parameter_design(
                                         edge_operands,
                                         scope.previous_history_state_id,
                                         &neutral_feature_id(scope),
+                                        edge_radius,
                                     )
                                 },
                             );
@@ -1046,6 +1051,7 @@ fn project_chamfer(
                         edge_operands,
                         scope.previous_history_state_id,
                         &neutral_feature_id(scope),
+                        None,
                     ),
                     None => EdgeSelection::Native(scope.id.clone()),
                 },
@@ -1064,6 +1070,7 @@ fn resolved_edge_group(
     operands: &[DesignEdgeOperand],
     previous_state_id: Option<i64>,
     feature_id: &cadmpeg_ir::features::FeatureId,
+    treatment_radius: Option<f64>,
 ) -> cadmpeg_ir::features::EdgeSelection {
     use cadmpeg_ir::features::EdgeSelection;
     use cadmpeg_ir::ids::HistoricalEdgeId;
@@ -1118,6 +1125,10 @@ fn resolved_edge_group(
         .map(|operand| resolved_edge_operand(operand))
         .collect::<Option<Vec<_>>>()
         .or_else(|| unique_edge_group_assignment(&matched_operands))
+        .or_else(|| {
+            treatment_radius
+                .and_then(|radius| radius_edge_group_candidates(&matched_operands, radius))
+        })
         .or_else(|| {
             context_only_edge_group_candidates(matched_operands.iter().map(|operand| {
                 (
@@ -1266,6 +1277,57 @@ fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i
         })
         .collect::<Option<Vec<_>>>()?;
     unique_edge_assignment_with_context(&candidate_sets)
+}
+
+fn radius_edge_group_candidates(operands: &[&DesignEdgeOperand], radius: f64) -> Option<Vec<i64>> {
+    if operands.is_empty() || !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    let tolerance = 1.0e-9 * (1.0 + radius.abs());
+    let candidate_sets = operands
+        .iter()
+        .map(|operand| {
+            if let Some(edge) = resolved_edge_operand(operand) {
+                return Some(Some(vec![edge]));
+            }
+            let mut candidates = operand
+                .treatment_radius_candidates
+                .iter()
+                .filter(|candidate| {
+                    (candidate.radius - radius).abs() <= tolerance
+                        && operand
+                            .deleted_boundary_edge_slots
+                            .contains(&candidate.edge_slot)
+                })
+                .map(|candidate| candidate.edge_slot)
+                .collect::<Vec<_>>();
+            candidates.sort_unstable();
+            candidates.dedup();
+            if candidates.is_empty() {
+                operand
+                    .changed_boundary_edge_slots
+                    .is_empty()
+                    .then_some(None)
+            } else {
+                Some(Some(candidates))
+            }
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if let Some(assignment) = unique_edge_assignment_with_context(&candidate_sets) {
+        return Some(assignment);
+    }
+    let edge_sets = candidate_sets.into_iter().flatten().collect::<Vec<_>>();
+    let mut common = edge_sets.first()?.clone();
+    common.sort_unstable();
+    common.dedup();
+    (common.len() == edge_sets.len()
+        && edge_sets.iter().all(|set| {
+            let mut set = set.clone();
+            set.sort_unstable();
+            set.dedup();
+            set == common
+        }))
+    .then_some(common)
 }
 
 fn unique_edge_assignment_with_context(candidate_sets: &[Option<Vec<i64>>]) -> Option<Vec<i64>> {
@@ -8198,6 +8260,7 @@ fn parse_edge_operand(
         changed_boundary_edge_slots: Vec::new(),
         deleted_boundary_edge_slots: Vec::new(),
         updated_boundary_edge_slots: Vec::new(),
+        treatment_radius_candidates: Vec::new(),
         changed_boundary_edge_contexts: Vec::new(),
         recipe_reference_contexts: Vec::new(),
         recipe_selectors: Vec::new(),
@@ -13068,6 +13131,27 @@ mod relation_tests {
         edge_operand.resolved_edge_slot = Some(17);
         assert_eq!(super::resolved_edge_operand(&edge_operand), Some(17));
         edge_operand.resolved_edge_slot = None;
+        edge_operand.changed_boundary_edge_slots = vec![17, 18];
+        edge_operand.deleted_boundary_edge_slots = vec![17, 18];
+        edge_operand.treatment_radius_candidates = vec![
+            crate::records::DesignEdgeTreatmentRadiusCandidate {
+                edge_slot: 17,
+                radius: 3.0,
+            },
+            crate::records::DesignEdgeTreatmentRadiusCandidate {
+                edge_slot: 18,
+                radius: 3.0,
+            },
+        ];
+        let second_operand = edge_operand.clone();
+        assert_eq!(
+            super::radius_edge_group_candidates(&[&edge_operand, &second_operand], 3.0),
+            Some(vec![17, 18])
+        );
+        assert_eq!(
+            super::radius_edge_group_candidates(&[&edge_operand, &second_operand], 4.0),
+            None
+        );
         assert_eq!(
             edge_operand.recipe_program_offset,
             recipe_name_at as u64 + 16

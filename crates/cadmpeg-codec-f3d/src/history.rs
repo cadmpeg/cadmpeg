@@ -1062,6 +1062,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.changed_boundary_edge_slots.clear();
         operand.deleted_boundary_edge_slots.clear();
         operand.updated_boundary_edge_slots.clear();
+        operand.treatment_radius_candidates.clear();
         operand.changed_boundary_edge_contexts.clear();
         operand.recipe_reference_contexts.clear();
         operand.recipe_selectors.clear();
@@ -1129,6 +1130,13 @@ pub(crate) fn bind_edge_operand_history_candidates(
             &operand.preceding_boundary_edge_slots,
             &transition.topology.edges.updated,
         );
+        operand.treatment_radius_candidates = treatment_radius_candidates(
+            &operand.result_candidate_faces,
+            &transition.topology.faces.inserted,
+            result_topology,
+            topology,
+            &transition.topology.edges.deleted,
+        );
         operand.changed_boundary_edge_contexts = operand
             .changed_boundary_edge_slots
             .iter()
@@ -1158,6 +1166,103 @@ pub(crate) fn bind_edge_operand_history_candidates(
         );
         operand.resolved_edge_slot = crate::design::resolve_edge_operand_candidates(operand);
     }
+}
+
+fn treatment_radius_candidates(
+    result_candidate_faces: &[cadmpeg_ir::ids::FaceId],
+    inserted_faces: &[i64],
+    result: &AsmHistoricalTopology,
+    preceding: &AsmHistoricalTopology,
+    deleted_edges: &[i64],
+) -> Vec<crate::records::DesignEdgeTreatmentRadiusCandidate> {
+    let boundary = |face, topology: &AsmHistoricalTopology| {
+        face_boundary_contexts_for_slots(&[face], topology)
+            .into_iter()
+            .flat_map(|context| context.loops)
+            .flat_map(|loop_| loop_.edge_slots)
+            .collect::<HashSet<_>>()
+    };
+    let preceding_faces = preceding.faces.iter().copied().collect::<HashSet<_>>();
+    let preceding_surfaces = preceding.surfaces.iter().copied().collect::<HashSet<_>>();
+    let support = |result_face| {
+        let mut bindings = result
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == result_face);
+        let carrier = bindings.next()?.carrier;
+        if bindings.next().is_some() {
+            return None;
+        }
+        let mut matches = preceding.face_surfaces.iter().filter(|binding| {
+            binding.carrier == carrier && preceding_faces.contains(&binding.entity)
+        });
+        let face = matches.next()?.entity;
+        matches.next().is_none().then_some(face)
+    };
+    let result_faces = result.faces.iter().copied().collect::<Vec<_>>();
+    let mut out = Vec::new();
+    let candidate_edges = result_candidate_faces
+        .iter()
+        .filter_map(|face| stable_ref(&face.0))
+        .flat_map(|face| boundary(face, result))
+        .collect::<HashSet<_>>();
+    for inserted in inserted_faces.iter().copied() {
+        let inserted_boundary = boundary(inserted, result);
+        if inserted_boundary.is_disjoint(&candidate_edges) {
+            continue;
+        }
+        let mut carrier_bindings = result
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == inserted);
+        let Some(carrier) = carrier_bindings.next().map(|binding| binding.carrier) else {
+            continue;
+        };
+        if carrier_bindings.next().is_some() || preceding_surfaces.contains(&carrier) {
+            continue;
+        }
+        let mut radii = result
+            .surface_radii
+            .iter()
+            .filter(|candidate| candidate.surface == carrier);
+        let Some(radius) = radii.next().map(|candidate| candidate.radius) else {
+            continue;
+        };
+        if radii.next().is_some() || !radius.is_finite() || radius <= 0.0 {
+            continue;
+        }
+        let mut supports = result_faces
+            .iter()
+            .copied()
+            .filter(|face| *face != inserted)
+            .filter(|face| !boundary(*face, result).is_disjoint(&inserted_boundary))
+            .filter_map(support)
+            .collect::<Vec<_>>();
+        supports.sort_unstable();
+        supports.dedup();
+        for (ordinal, left) in supports.iter().enumerate() {
+            let left_edges = boundary(*left, preceding);
+            for right in supports.iter().skip(ordinal + 1) {
+                let right_edges = boundary(*right, preceding);
+                out.extend(
+                    left_edges
+                        .intersection(&right_edges)
+                        .filter(|edge| deleted_edges.contains(edge))
+                        .map(|edge| crate::records::DesignEdgeTreatmentRadiusCandidate {
+                            edge_slot: *edge,
+                            radius,
+                        }),
+                );
+            }
+        }
+    }
+    out.sort_by(|left, right| {
+        left.radius
+            .total_cmp(&right.radius)
+            .then(left.edge_slot.cmp(&right.edge_slot))
+    });
+    out.dedup_by(|left, right| left.radius == right.radius && left.edge_slot == right.edge_slot);
+    out
 }
 
 fn boundary_edges_in_changes(boundary_edges: &[i64], changes: &[i64]) -> Vec<i64> {
@@ -1681,6 +1786,43 @@ fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology
             .collect()
     }
 
+    let mut surface_radii = brep
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            use cadmpeg_ir::geometry::SurfaceGeometry;
+            let radius = match &surface.geometry {
+                SurfaceGeometry::Cylinder { radius, .. }
+                | SurfaceGeometry::Sphere { radius, .. } => *radius,
+                SurfaceGeometry::Torus { minor_radius, .. } => *minor_radius,
+                _ => return None,
+            };
+            Some(crate::history_records::AsmHistoricalSurfaceRadius {
+                surface: entity_ref(&surface.id.0)?,
+                radius: radius.abs(),
+            })
+        })
+        .collect::<Vec<_>>();
+    for procedural in &brep.procedural_surfaces {
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend { radius, .. } =
+            &procedural.definition
+        else {
+            continue;
+        };
+        let cadmpeg_ir::geometry::BlendRadiusLaw::Constant { signed_radius } = radius else {
+            continue;
+        };
+        let Some(surface) = entity_ref(&procedural.surface.0) else {
+            continue;
+        };
+        surface_radii.retain(|candidate| candidate.surface != surface);
+        surface_radii.push(crate::history_records::AsmHistoricalSurfaceRadius {
+            surface,
+            radius: signed_radius.abs(),
+        });
+    }
+    surface_radii.sort_by_key(|candidate| candidate.surface);
+
     Some(AsmHistoricalTopology {
         bodies: refs(brep.bodies.iter().map(|entity| entity.id.0.as_str()))?,
         regions: refs(brep.regions.iter().map(|entity| entity.id.0.as_str()))?,
@@ -1692,6 +1834,7 @@ fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology
         vertices: refs(brep.vertices.iter().map(|entity| entity.id.0.as_str()))?,
         points: refs(brep.points.iter().map(|entity| entity.id.0.as_str()))?,
         surfaces: refs(brep.surfaces.iter().map(|entity| entity.id.0.as_str()))?,
+        surface_radii,
         curves: refs(brep.curves.iter().map(|entity| entity.id.0.as_str()))?,
         pcurves: refs(brep.pcurves.iter().map(|entity| entity.id.0.as_str()))?,
         body_regions: relations(brep.bodies.iter().map(|body| {
@@ -2059,6 +2202,111 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history_records::AsmHistoricalSurfaceRadius;
+
+    #[test]
+    fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_edge() {
+        use cadmpeg_ir::ids::FaceId;
+
+        let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+            owner_ref,
+            member_refs,
+        };
+        let coedge = |coedge, owner_loop, edge| AsmHistoricalCoedge {
+            coedge,
+            owner_loop,
+            edge,
+            next: coedge,
+            previous: coedge,
+            radial_next: coedge,
+        };
+        let preceding = AsmHistoricalTopology {
+            faces: vec![10, 11],
+            surfaces: vec![100, 101],
+            face_loops: vec![relation(10, vec![110]), relation(11, vec![111])],
+            loop_coedges: vec![relation(110, vec![1100]), relation(111, vec![1110])],
+            coedge_topology: vec![coedge(1100, 110, 17), coedge(1110, 111, 17)],
+            face_surfaces: vec![
+                AsmHistoricalCarrierBinding {
+                    entity: 10,
+                    carrier: 100,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 11,
+                    carrier: 101,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        let result = AsmHistoricalTopology {
+            faces: vec![10, 11, 20],
+            surfaces: vec![100, 101, 200],
+            surface_radii: vec![AsmHistoricalSurfaceRadius {
+                surface: 200,
+                radius: 3.0,
+            }],
+            face_loops: vec![
+                relation(10, vec![210]),
+                relation(11, vec![211]),
+                relation(20, vec![220]),
+            ],
+            loop_coedges: vec![
+                relation(210, vec![2100]),
+                relation(211, vec![2110]),
+                relation(220, vec![2200, 2201]),
+            ],
+            coedge_topology: vec![
+                coedge(2100, 210, 30),
+                coedge(2110, 211, 31),
+                coedge(2200, 220, 30),
+                coedge(2201, 220, 31),
+            ],
+            face_surfaces: vec![
+                AsmHistoricalCarrierBinding {
+                    entity: 10,
+                    carrier: 100,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 11,
+                    carrier: 101,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 20,
+                    carrier: 200,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        let candidates = treatment_radius_candidates(
+            &[FaceId("f3d:brep:entity#10".into())],
+            &[20],
+            &result,
+            &preceding,
+            &[17],
+        );
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].edge_slot, 17);
+        assert_eq!(candidates[0].radius, 3.0);
+
+        let mut existing_carrier = preceding.clone();
+        existing_carrier.surfaces.push(200);
+        assert!(treatment_radius_candidates(
+            &[FaceId("f3d:brep:entity#10".into())],
+            &[20],
+            &result,
+            &existing_carrier,
+            &[17],
+        )
+        .is_empty());
+        assert!(treatment_radius_candidates(
+            &[FaceId("f3d:brep:entity#10".into())],
+            &[20],
+            &result,
+            &preceding,
+            &[18],
+        )
+        .is_empty());
+    }
 
     #[test]
     fn boundary_edge_change_partition_preserves_boundary_order() {
