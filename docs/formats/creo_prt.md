@@ -1097,6 +1097,8 @@ A saved line, arc, or circle with complete section-space geometry and an
 Under a complete model-space section frame, saved line endpoints and saved arc
 or circle centers map through the section axes; saved arcs and circles define
 model-space circle carriers with the section normal and stored radius.
+Under a resolved coplanar revolution axis, a circular section centered on the
+axis generates a sphere and an offset circular section generates a torus.
 It is a profile entity when a class-200 entry with the same `ext_id` binds it to
 a same-feature generated plane or cylinder of the corresponding family. Without
 that generated-carrier binding, the evaluated geometry remains a construction

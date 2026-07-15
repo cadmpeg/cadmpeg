@@ -3149,7 +3149,7 @@ fn revolved_section_surface(
                 half_angle: radial_rate.abs().atan2(axial_rate.abs()),
             })
         }
-        SketchGeometry::Arc { center, radius, .. } => {
+        SketchGeometry::Arc { center, radius, .. } | SketchGeometry::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
             let (on_axis, radial) = project(center);
             let major_radius = dot(radial, radial).sqrt();
@@ -4795,7 +4795,8 @@ fn transfer_resolved_extrusion_breps(
                                 direction: Vector3::new(direction[0], direction[1], direction[2]),
                             }
                         }
-                        SketchGeometry::Arc { center, radius, .. } => {
+                        SketchGeometry::Arc { center, radius, .. }
+                        | SketchGeometry::Circle { center, radius } => {
                             let center = section_point_in_model(transform, [center.u, center.v]);
                             let (axis_sign, _) = oriented_arc_parameterization(*reversed, 0.0, 0.0);
                             CurveGeometry::Circle {
@@ -8438,6 +8439,15 @@ mod resolved_sketch_tests {
         };
         assert!(matches!(
             revolved_section_surface(&transform, &offset_arc, axis),
+            Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
+                if major_radius == 5.0 && minor_radius == 2.0
+        ));
+        let offset_circle = SketchGeometry::Circle {
+            center: Point2::new(5.0, 3.0),
+            radius: Length(2.0),
+        };
+        assert!(matches!(
+            revolved_section_surface(&transform, &offset_circle, axis),
             Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
                 if major_radius == 5.0 && minor_radius == 2.0
         ));
