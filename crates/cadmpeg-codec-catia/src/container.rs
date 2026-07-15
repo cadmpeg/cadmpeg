@@ -714,7 +714,11 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
 
 /// Concatenate a logical stream's physical extents in `log_off` order.
 pub fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: usize) -> Vec<u8> {
-    let mut out = Vec::with_capacity(descriptor.logical_length as usize);
+    // A logical stream cannot exceed the physical file; clamp the eager
+    // reservation to the available bytes so a forged length cannot amplify it.
+    let capacity = cadmpeg_ir::cursor::bounded_len(descriptor.logical_length as u64, 1, data.len())
+        .unwrap_or(0);
+    let mut out = Vec::with_capacity(capacity);
     for e in &descriptor.extents {
         let start = inner + e.phys_off as usize;
         let end = start + e.phys_len as usize;

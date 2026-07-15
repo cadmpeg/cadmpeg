@@ -1394,6 +1394,13 @@ fn support_pcurve(record: &ZeroEntityRecord, carrier: &SurfaceGeometry) -> Optio
     if control_count < usize::try_from(degree).ok()? + 1 {
         return None;
     }
+    // Each control point consumes 16 bytes (two f64) from `pole_offset` onward;
+    // the summed-multiplicity count cannot exceed what the record can hold.
+    cadmpeg_ir::cursor::bounded_len(
+        control_count as u64,
+        16,
+        record.bytes.len().saturating_sub(pole_offset),
+    )?;
     let mut control_points = Vec::with_capacity(control_count);
     for index in 0..control_count {
         let offset = pole_offset + 16 * index;
