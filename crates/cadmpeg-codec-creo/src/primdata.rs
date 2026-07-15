@@ -19,11 +19,12 @@ pub struct PrimitiveScalarArray {
 /// Decode model-space scalar arrays from an expanded primitive-data section.
 ///
 /// Primitive coordinates use a float32 lane distinct from the float64 lanes
-/// in analytic geometry records. `00` is zero, `28 00` is one, and signed
-/// four-byte values replace the IEEE-754 high byte with a compact exponent
-/// byte. Only complete arrays whose declared count is satisfied are returned.
+/// in analytic geometry records. `00` is zero, `00 28 00` is a three-slot
+/// positive-Y unit vector, and signed four-byte values replace the IEEE-754
+/// high byte with a compact exponent byte. Only complete arrays whose declared
+/// count is satisfied are returned.
 pub fn scalar_arrays(data: &[u8]) -> Vec<PrimitiveScalarArray> {
-    const FIELDS: &[&str] = &["p1", "p2", "pts", "mv_p_NxNyNzxyz"];
+    const FIELDS: &[&str] = &["p1", "p2", "pts", "mv_p_xyz", "mv_p_NxNyNzxyz"];
     let mut arrays = Vec::new();
     for field in FIELDS {
         let mut marker = vec![psb::token::NAMED_RECORD, 0x06];
@@ -132,5 +133,20 @@ mod tests {
         let arrays = scalar_arrays(&bytes);
         assert_eq!(arrays.len(), 1);
         assert_eq!(arrays[0].count, 6);
+    }
+
+    #[test]
+    fn decodes_position_only_array() {
+        let bytes = named(
+            "mv_p_xyz",
+            &[
+                0x48, 0x21, 0x96, 0xec, 0x3a, 0xa2, 0xe2, 0xc4, 0x48, 0x2a, 0xbb, 0x34,
+            ],
+            3,
+        );
+        let arrays = scalar_arrays(&bytes);
+        assert_eq!(arrays.len(), 1);
+        assert_eq!(arrays[0].field, "mv_p_xyz");
+        assert_eq!(arrays[0].values.len(), 3);
     }
 }

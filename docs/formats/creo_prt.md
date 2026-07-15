@@ -1377,9 +1377,9 @@ Unix-compress streams with header `1f 9d 10` grow code width from 9 to 16 bits. 
 ### 8.4 Expanded primitive scalar arrays
 
 `SolidPrimdata` is a PSB compound stream. The named fields `p1`, `p2`, `pts`,
-and `mv_p_NxNyNzxyz` use `f8 <count>` arrays whose count is the number of
+`mv_p_xyz`, and `mv_p_NxNyNzxyz` use `f8 <count>` arrays whose count is the number of
 scalar values, not the number of points. `p1` and `p2` contain XYZ endpoints.
-`pts` contains consecutive XYZ points. `mv_p_NxNyNzxyz` contains consecutive
+`pts` and `mv_p_xyz` contain consecutive XYZ points. `mv_p_NxNyNzxyz` contains consecutive
 six-scalar tuples in normal-X, normal-Y, normal-Z, position-X, position-Y,
 position-Z order.
 
