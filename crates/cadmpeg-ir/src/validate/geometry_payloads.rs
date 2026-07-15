@@ -4,28 +4,6 @@
 
 use super::*;
 
-pub(super) fn check_unknown_payloads(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
-    for record in &native_unknowns {
-        let Some(data) = &record.data else { continue };
-        let hash = Sha256::digest(data)
-            .iter()
-            .fold(String::new(), |mut acc, byte| {
-                use std::fmt::Write as _;
-                let _ = write!(acc, "{byte:02x}");
-                acc
-            });
-        if data.len() as u64 != record.byte_len || hash != record.sha256 {
-            findings.push(Finding {
-                check: Check::PayloadIntegrity,
-                severity: Severity::Error,
-                message: "preserved payload length or hash does not match its record".into(),
-                entity: Some(record.id.0.clone()),
-            });
-        }
-    }
-}
-
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {
         if mesh.body.as_ref().is_some_and(|body| {

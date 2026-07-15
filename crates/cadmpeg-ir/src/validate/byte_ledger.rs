@@ -5,7 +5,7 @@ use crate::byte_ledger::ByteLedger;
 use crate::byte_ledger::ByteSpanClass;
 use crate::report::{Check, Finding, Severity};
 use crate::source_fidelity::RetainedSourceRecord;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 fn finding(findings: &mut Vec<Finding>, message: impl Into<String>) {
     findings.push(Finding {
@@ -18,12 +18,11 @@ fn finding(findings: &mut Vec<Finding>, message: impl Into<String>) {
 
 pub(super) fn check_byte_ledger(
     ledger: &ByteLedger,
-    legacy_retained_ids: &HashSet<String>,
-    retained_records: Option<&[RetainedSourceRecord]>,
+    retained_records: &[RetainedSourceRecord],
     findings: &mut Vec<Finding>,
 ) {
     let mut retained_by_id = BTreeMap::new();
-    for record in retained_records.unwrap_or_default() {
+    for record in retained_records {
         if record.id.is_empty() {
             finding(findings, "retained source record has an empty id");
         }
@@ -140,7 +139,7 @@ pub(super) fn check_byte_ledger(
                         ),
                     );
                 }
-            } else if retained_records.is_some() && !legacy_retained_ids.contains(id) {
+            } else {
                 finding(
                     findings,
                     format!("byte ledger retained record {id:?} does not resolve"),

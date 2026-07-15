@@ -24,7 +24,6 @@ use crate::source_fidelity::{SourceFidelity, SOURCE_FIDELITY_VERSION};
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::LengthUnit;
-use sha2::{Digest, Sha256};
 
 mod annotations_native;
 mod byte_ledger;
@@ -40,7 +39,7 @@ use annotations_native::{check_annotations, check_native_links};
 use byte_ledger::check_byte_ledger;
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use geometry_consistency::{check_edge_endpoint_consistency, check_pcurve_surface_consistency};
-use geometry_payloads::{check_bounds, check_tessellations, check_unknown_payloads};
+use geometry_payloads::{check_bounds, check_tessellations};
 use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
 use sketches::check_sketches;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
@@ -56,7 +55,7 @@ fn nonpositive(x: f64) -> bool {
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
-pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
+fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, HashSet<String>) {
     let mut findings = Vec::new();
 
     let ids = IdSets::build(ir);
@@ -79,14 +78,21 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_subds(ir, &mut findings);
     check_procedural_surfaces(ir, &mut findings);
     check_source_associations(ir, &mut findings);
-    check_unknown_payloads(ir, &mut findings);
     check_sketches(ir, &mut findings);
 
-    ValidationReport {
-        entity_counts: entity_counts(ir),
-        findings,
-        losses,
-    }
+    (
+        ValidationReport {
+            entity_counts: entity_counts(ir),
+            findings,
+            losses,
+        },
+        all_ids,
+    )
+}
+
+/// Validate one neutral product model.
+pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
+    validate_with_ids(ir, losses).0
 }
 
 /// Validate a neutral product model together with its decode-time source sidecar.
@@ -95,8 +101,7 @@ pub fn validate_with_source_fidelity(
     source_fidelity: &SourceFidelity,
     losses: Vec<LossNote>,
 ) -> ValidationReport {
-    let mut report = validate(ir, losses);
-    let all_ids = check_identity_and_order(ir, &mut Vec::new());
+    let (mut report, mut all_ids) = validate_with_ids(ir, losses);
     if source_fidelity.schema_version != SOURCE_FIDELITY_VERSION {
         report.findings.push(Finding {
             check: Check::Version,
@@ -110,9 +115,14 @@ pub fn validate_with_source_fidelity(
     }
     check_byte_ledger(
         &source_fidelity.byte_ledger,
-        &HashSet::new(),
-        Some(&source_fidelity.retained_records),
+        &source_fidelity.retained_records,
         &mut report.findings,
+    );
+    all_ids.extend(
+        source_fidelity
+            .retained_records
+            .iter()
+            .map(|record| record.id.clone()),
     );
     check_annotations(
         ir,

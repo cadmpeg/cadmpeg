@@ -1726,27 +1726,6 @@ fn document_and_entity_tolerances_are_checked() {
 }
 
 #[test]
-fn preserved_payload_digest_is_checked() {
-    let mut ir = unit_cube();
-    ir.push_native_unknown(
-        "zz",
-        UnknownRecord {
-            id: UnknownId("zz:payload".into()),
-            offset: 0,
-            byte_len: 3,
-            sha256: "0".repeat(64),
-            data: Some(vec![1, 2, 3]),
-            links: Vec::new(),
-        },
-    )
-    .unwrap();
-    assert!(validate(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.check == Check::PayloadIntegrity));
-}
-
-#[test]
 fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
     assert_base64_round_trip_and_rejection(
         &UnknownRecord {

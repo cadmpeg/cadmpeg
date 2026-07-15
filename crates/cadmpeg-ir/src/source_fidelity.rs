@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use crate::annotations::Annotations;
 use crate::byte_ledger::ByteLedger;
 use crate::document::CadIr;
-use crate::ids::UnknownId;
 use crate::native::NativeConvertError;
 use crate::unknown::UnknownRecord;
 
@@ -133,7 +132,7 @@ impl SourceFidelity {
             .iter()
             .filter(|record| record.id.starts_with(&prefix))
             .map(|record| UnknownRecord {
-                id: UnknownId(record.id.clone()),
+                id: crate::ids::UnknownId(record.id.clone()),
                 offset: record.offset,
                 byte_len: record.byte_len,
                 sha256: record.sha256.clone(),
@@ -368,6 +367,41 @@ mod tests {
         assert!(report.findings.iter().any(|finding| {
             finding.check == Check::Annotations
                 && finding.message == "provenance key does not resolve to an entity"
+        }));
+    }
+
+    #[test]
+    fn sidecar_annotations_may_name_source_only_retained_records() {
+        let mut sidecar = SourceFidelity {
+            retained_records: vec![RetainedSourceRecord {
+                id: "source:record#1".into(),
+                stream: "source".into(),
+                offset: 0,
+                byte_len: 1,
+                sha256: crate::hash::sha256_hex(b"x"),
+                data: Some(b"x".to_vec()),
+            }],
+            ..SourceFidelity::default()
+        };
+        sidecar.annotations.streams.push("source".into());
+        sidecar.annotations.provenance.insert(
+            "source:record#1".into(),
+            crate::Provenance {
+                stream: 0,
+                offset: 0,
+                tag: None,
+            },
+        );
+
+        let report = validate_with_source_fidelity(
+            &CadIr::empty(crate::units::Units::default()),
+            &sidecar,
+            Vec::new(),
+        );
+
+        assert!(!report.findings.iter().any(|finding| {
+            finding.check == Check::Annotations
+                && finding.entity.as_deref() == Some("source:record#1")
         }));
     }
 }
