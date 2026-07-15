@@ -256,6 +256,29 @@ pub struct DisplayJtCompressedVertexRecordsHeader {
     pub source_offset: u64,
 }
 
+/// Fixed quantization envelope of a JT 9 compressed coordinate array.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtVertexCoordinateArrayHeader {
+    /// Globally unique header identity.
+    pub id: String,
+    /// Owning tri-strip shape-LOD element.
+    pub element: String,
+    /// Number of unique coordinate records.
+    pub unique_vertex_count: u32,
+    /// Number of coordinate components per record.
+    pub component_count: u8,
+    /// Inclusive component ranges as minimum and maximum pairs for X, Y, and Z.
+    pub component_ranges: [[f32; 2]; 3],
+    /// Quantization bits for X, Y, and Z.
+    pub component_quantization_bits: [u8; 3],
+    /// Remaining compressed component-data length.
+    pub compressed_components_byte_len: u32,
+    /// Digest of the remaining compressed component data.
+    pub compressed_components_sha256: String,
+    /// Absolute source offset of this header.
+    pub source_offset: u64,
+}
+
 /// Complete JT 9 tri-strip shape node controlling one late-loaded mesh.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DisplayJtTriStripShapeNode {
@@ -1449,6 +1472,7 @@ pub fn display_jt_topology_packet_sequences(
 ) -> (
     Vec<DisplayJtTopologyPacketSequence>,
     Vec<DisplayJtCompressedVertexRecordsHeader>,
+    Vec<DisplayJtVertexCoordinateArrayHeader>,
 ) {
     const TRI_STRIP_LOD_TYPE: [u8; 16] = [
         0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
@@ -1480,29 +1504,30 @@ pub fn display_jt_topology_packet_sequences(
     const SPLIT_ROLES: [&str; 2] = ["split_face_symbols", "split_face_positions"];
     let mut sequences = Vec::new();
     let mut headers = Vec::new();
+    let mut coordinate_headers = Vec::new();
     for element in elements
         .iter()
         .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
     {
         let Ok(body_start) = usize::try_from(element.source_offset + 25) else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         };
         let Some(body) = container
             .data
             .get(body_start..body_start.saturating_add(element.body_byte_len as usize))
         else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         };
         let Some((lod_vertex_bindings, _, _, _, representation)) =
             parse_jt9_tri_strip_lod_header(body)
         else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         };
         let mut cursor = 0usize;
         let Some(high_degree_lane_count) =
             jt9_topology_high_degree_lane_count(representation, lod_vertex_bindings)
         else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         };
         let mut roles = Vec::with_capacity(23 + high_degree_lane_count);
         roles.extend(PREFIX_ROLES.map(str::to_string));
@@ -1514,22 +1539,22 @@ pub fn display_jt_topology_packet_sequences(
         let mut packets = Vec::with_capacity(roles.len());
         for role in roles {
             let Some(remaining) = representation.get(cursor..) else {
-                return (Vec::new(), Vec::new());
+                return (Vec::new(), Vec::new(), Vec::new());
             };
             let Some((value_count, codec, byte_len)) = crate::jt::frame_int32_cdp2(remaining, 0)
             else {
-                return (Vec::new(), Vec::new());
+                return (Vec::new(), Vec::new(), Vec::new());
             };
             let Some(packet_end) = cursor.checked_add(byte_len) else {
-                return (Vec::new(), Vec::new());
+                return (Vec::new(), Vec::new(), Vec::new());
             };
             let Some(packet) = representation.get(cursor..packet_end) else {
-                return (Vec::new(), Vec::new());
+                return (Vec::new(), Vec::new(), Vec::new());
             };
             let (Ok(byte_len), Ok(representation_offset)) =
                 (u32::try_from(byte_len), u32::try_from(cursor))
             else {
-                return (Vec::new(), Vec::new());
+                return (Vec::new(), Vec::new(), Vec::new());
             };
             packets.push(DisplayJtTopologyPacket {
                 role,
@@ -1542,21 +1567,21 @@ pub fn display_jt_topology_packet_sequences(
             cursor += byte_len as usize;
         }
         let Some(hash_end) = cursor.checked_add(4) else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         };
         let Some(composite_hash) = representation
             .get(cursor..hash_end)
             .and_then(|value| value.try_into().ok())
             .map(u32::from_le_bytes)
         else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         };
         cursor += 4;
         let Some(required_header_end) = cursor.checked_add(16) else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         };
         let Some(required_header) = representation.get(cursor..required_header_end) else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         };
         let vertex_bindings = u64::from_le_bytes(required_header[..8].try_into().expect("fixed"));
         let quantization = &required_header[8..12];
@@ -1565,7 +1590,10 @@ pub fn display_jt_topology_packet_sequences(
             || quantization[2] > 24
             || quantization[3] > 24
         {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
+        }
+        if vertex_bindings != lod_vertex_bindings {
+            return (Vec::new(), Vec::new(), Vec::new());
         }
         let topological_vertex_count =
             u32::from_le_bytes(required_header[12..16].try_into().expect("fixed"));
@@ -1573,10 +1601,10 @@ pub fn display_jt_topology_packet_sequences(
             (0, 16)
         } else {
             let Some(attribute_end) = cursor.checked_add(20) else {
-                return (Vec::new(), Vec::new());
+                return (Vec::new(), Vec::new(), Vec::new());
             };
             let Some(attribute_bytes) = representation.get(cursor + 16..attribute_end) else {
-                return (Vec::new(), Vec::new());
+                return (Vec::new(), Vec::new(), Vec::new());
             };
             (
                 u32::from_le_bytes(attribute_bytes.try_into().expect("fixed")),
@@ -1586,15 +1614,73 @@ pub fn display_jt_topology_packet_sequences(
         if i32::try_from(topological_vertex_count).is_err()
             || i32::try_from(vertex_attribute_count).is_err()
         {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         }
         let arrays = &representation[cursor + vertex_header_byte_len..];
         let (Ok(topology_byte_len), Ok(compressed_arrays_byte_len)) =
             (u32::try_from(cursor), u32::try_from(arrays.len()))
         else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         };
         let representation_source_offset = element.source_offset + 45;
+        if topological_vertex_count != 0 {
+            let Some(coordinate_header) = arrays.get(..32) else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            let unique_vertex_count =
+                u32::from_le_bytes(coordinate_header[..4].try_into().expect("fixed"));
+            let component_count = coordinate_header[4];
+            if unique_vertex_count != topological_vertex_count || component_count != 3 {
+                return (Vec::new(), Vec::new(), Vec::new());
+            }
+            let mut component_ranges = [[0.0; 2]; 3];
+            let mut component_quantization_bits = [0; 3];
+            for component in 0..3 {
+                let offset = 5 + component * 9;
+                let minimum = f32::from_le_bytes(
+                    coordinate_header[offset..offset + 4]
+                        .try_into()
+                        .expect("fixed"),
+                );
+                let maximum = f32::from_le_bytes(
+                    coordinate_header[offset + 4..offset + 8]
+                        .try_into()
+                        .expect("fixed"),
+                );
+                let bits = coordinate_header[offset + 8];
+                if !minimum.is_finite()
+                    || !maximum.is_finite()
+                    || minimum > maximum
+                    || bits > 32
+                    || bits != quantization[0]
+                {
+                    return (Vec::new(), Vec::new(), Vec::new());
+                }
+                component_ranges[component] = [minimum, maximum];
+                component_quantization_bits[component] = bits;
+            }
+            let compressed_components = &arrays[32..];
+            let Ok(compressed_components_byte_len) = u32::try_from(compressed_components.len())
+            else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            let Ok(vertex_header_byte_len_u64) = u64::try_from(vertex_header_byte_len) else {
+                return (Vec::new(), Vec::new(), Vec::new());
+            };
+            coordinate_headers.push(DisplayJtVertexCoordinateArrayHeader {
+                id: format!("{}-coordinate-array-header", element.id),
+                element: element.id.clone(),
+                unique_vertex_count,
+                component_count,
+                component_ranges,
+                component_quantization_bits,
+                compressed_components_byte_len,
+                compressed_components_sha256: sha256_hex(compressed_components),
+                source_offset: representation_source_offset
+                    + u64::from(topology_byte_len)
+                    + vertex_header_byte_len_u64,
+            });
+        }
         sequences.push(DisplayJtTopologyPacketSequence {
             id: format!("{}-topology-packets", element.id),
             element: element.id.clone(),
@@ -1618,7 +1704,7 @@ pub fn display_jt_topology_packet_sequences(
             source_offset: representation_source_offset + u64::from(topology_byte_len),
         });
     }
-    (sequences, headers)
+    (sequences, headers, coordinate_headers)
 }
 
 /// Decode element framing and exact post-marker tails from compressed segments.

@@ -6318,11 +6318,14 @@ fn attach_native_object_model(
             &scan.container,
             &display_jt_shape_lod_elements,
         );
-    let (display_jt_topology_packet_sequences, display_jt_vertex_records_headers) =
-        crate::native::display_jt_topology_packet_sequences(
-            &scan.container,
-            &display_jt_shape_lod_elements,
-        );
+    let (
+        display_jt_topology_packet_sequences,
+        display_jt_vertex_records_headers,
+        display_jt_coordinate_array_headers,
+    ) = crate::native::display_jt_topology_packet_sequences(
+        &scan.container,
+        &display_jt_shape_lod_elements,
+    );
     let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
         crate::native::display_jt_compressed_element_sequences(
             &scan.container,
@@ -6760,6 +6763,12 @@ fn attach_native_object_model(
         annotations
             .note(&header.id, annotation_stream, header.source_offset)
             .tag("DISPLAY_JT_VERTEX_RECORDS_HEADER");
+        annotations.exactness(&header.id, Exactness::ByteExact);
+    }
+    for header in &display_jt_coordinate_array_headers {
+        annotations
+            .note(&header.id, annotation_stream, header.source_offset)
+            .tag("DISPLAY_JT_COORDINATE_ARRAY_HEADER");
         annotations.exactness(&header.id, Exactness::ByteExact);
     }
     for sequence in &display_jt_compressed_element_sequences {
@@ -7574,6 +7583,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "display_jt_vertex_records_headers",
             &display_jt_vertex_records_headers,
+        )?;
+    }
+    if !display_jt_coordinate_array_headers.is_empty() {
+        namespace.set_arena(
+            "display_jt_coordinate_array_headers",
+            &display_jt_coordinate_array_headers,
         )?;
     }
     if !display_jt_compressed_element_sequences.is_empty() {
