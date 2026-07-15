@@ -464,7 +464,8 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
             let extents_start = offset + LOCAL_SYSTEM.len();
             let (dimensions, dimensions_end) = compact_int(payload, extents_start);
             let (count, body_start) = compact_int(payload, dimensions_end);
-            (dimensions_end > extents_start && body_start > dimensions_end).then_some(())?;
+            (dimensions_end > extents_start && body_start > dimensions_end && body_start <= end)
+                .then_some(())?;
             let body_end = payload[body_start..end]
                 .windows(1)
                 .position(|window| window[0] == psb::token::NAMED_RECORD)
@@ -488,7 +489,7 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
             continue;
         }
         let (count, mut cursor) = compact_int(payload, opener + 1);
-        if cursor == opener + 1 {
+        if cursor == opener + 1 || cursor > end {
             continue;
         }
         let mut lines = Vec::new();
@@ -679,6 +680,7 @@ struct ArithmeticParser<'a, V> {
     source: &'a [u8],
     cursor: usize,
     values: &'a BTreeMap<String, V>,
+    nesting: usize,
 }
 
 impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
@@ -730,18 +732,20 @@ impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
 
     fn factor(&mut self) -> Option<V> {
         self.whitespace();
-        match self.source.get(self.cursor)? {
-            b'+' => {
-                self.cursor += 1;
-                self.factor()
-            }
-            b'-' => {
-                self.cursor += 1;
-                Some(self.factor()?.negate())
-            }
+        let mut negate = false;
+        while let Some(sign @ (b'+' | b'-')) = self.source.get(self.cursor) {
+            negate ^= *sign == b'-';
+            self.cursor += 1;
+            self.whitespace();
+        }
+        let value = match self.source.get(self.cursor)? {
             b'(' => {
+                const MAX_NESTING: usize = 128;
+                (self.nesting < MAX_NESTING).then_some(())?;
                 self.cursor += 1;
+                self.nesting += 1;
                 let value = self.expression()?;
+                self.nesting -= 1;
                 self.whitespace();
                 (self.source.get(self.cursor) == Some(&b')')).then(|| {
                     self.cursor += 1;
@@ -751,7 +755,8 @@ impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
             byte if byte.is_ascii_digit() || *byte == b'.' => self.number(),
             byte if byte.is_ascii_alphabetic() || *byte == b'_' => self.identifier(),
             _ => None,
-        }
+        }?;
+        Some(if negate { value.negate() } else { value })
     }
 
     fn number(&mut self) -> Option<V> {
@@ -805,6 +810,7 @@ fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Opti
         source: expression.as_bytes(),
         cursor: 0,
         values,
+        nesting: 0,
     };
     let value = parser.expression()?;
     parser.whitespace();
@@ -819,6 +825,7 @@ fn evaluate_affine_expression(
         source: expression.as_bytes(),
         cursor: 0,
         values,
+        nesting: 0,
     };
     let value = parser.expression()?;
     parser.whitespace();
@@ -1433,14 +1440,13 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
         let angle_0 = (first.1 - center_z).atan2(first.0 - center_x);
         let parameter_0 = first.2;
         let wrapped_distance = |left: f64, right: f64| {
-            let mut difference = left - right;
-            while difference > std::f64::consts::PI {
-                difference -= std::f64::consts::TAU;
-            }
-            while difference < -std::f64::consts::PI {
-                difference += std::f64::consts::TAU;
-            }
-            difference.abs()
+            let difference = left - right;
+            difference
+                .is_finite()
+                .then(|| difference.rem_euclid(std::f64::consts::TAU))
+                .map_or(f64::INFINITY, |wrapped| {
+                    wrapped.min(std::f64::consts::TAU - wrapped)
+                })
         };
         let sign_matches = |sign: f64| {
             points.iter().all(|point| {

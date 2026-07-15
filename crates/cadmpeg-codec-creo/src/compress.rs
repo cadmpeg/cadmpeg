@@ -125,11 +125,18 @@ impl<'a> CodeReader<'a> {
             if self.cursor >= self.data.len() {
                 return None;
             }
-            let end = (self.cursor + self.width).min(self.data.len());
+            let end = self.cursor.saturating_add(self.width).min(self.data.len());
             self.block = &self.data[self.cursor..end];
             self.cursor = end;
             self.bit_offset = 0;
-            self.start_limit = self.block.len() * 8 - (self.width - 1);
+            self.start_limit = self
+                .block
+                .len()
+                .checked_mul(8)?
+                .checked_sub(self.width - 1)?;
+            if self.start_limit == 0 {
+                return None;
+            }
         }
         let mut code = 0u16;
         for bit in 0..self.width {
@@ -158,6 +165,11 @@ mod tests {
     fn rejects_invalid_header_flags() {
         assert_eq!(decode(&[0x1f, 0x9d, 0x08], 0), None);
         assert_eq!(decode(&[0x1f, 0x9d, 0x30], 0), None);
+    }
+
+    #[test]
+    fn rejects_truncated_code_block() {
+        assert_eq!(decode(&[0x1f, 0x9d, 0x09, 0x00], 1), None);
     }
 
     #[test]

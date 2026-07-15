@@ -451,6 +451,9 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<Section> {
         ) else {
             continue;
         };
+        if row_width == 0 {
+            continue;
+        }
         let rows_start = line_end + 1;
         for index in 0..count {
             let start = rows_start.saturating_add(index.saturating_mul(row_width));

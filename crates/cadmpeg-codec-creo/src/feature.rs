@@ -3376,8 +3376,10 @@ fn positional_relation_rows(
     end: usize,
     row_count: u32,
 ) -> Option<Vec<FeatureRelation>> {
+    (cursor <= end && end <= payload.len()).then_some(())?;
     let mut rows = Vec::new();
     for _ in 0..row_count {
+        (cursor <= end).then_some(())?;
         let row_end = payload[cursor..end].iter().position(|byte| *byte == 0xe2)? + cursor;
         let (relation_id, after_id) = psb::compact_int(payload, cursor);
         (after_id > cursor && after_id < row_end).then_some(())?;
@@ -3876,6 +3878,9 @@ fn saved_positional_generated_entities(
             continue;
         }
         let header_end = after_id.saturating_add(24).min(end);
+        if after_id > header_end {
+            continue;
+        }
         if payload[after_id..header_end].contains(&0xe2) {
             starts.push(row_start);
         }
@@ -3897,6 +3902,9 @@ fn saved_positional_generated_entities(
             FeatureSegmentKind::Arc => 12,
             FeatureSegmentKind::Point => continue,
         };
+        if after_id > row_end {
+            continue;
+        }
         let Some(header_size) = payload[after_id..row_end]
             .iter()
             .position(|byte| *byte == 0xe2)
@@ -4382,6 +4390,9 @@ pub fn choice_fields(choices: &[FeatureChoice]) -> Vec<FeatureChoiceField> {
             let end = headers
                 .get(index + 1)
                 .map_or(choice.payload.len(), |hit| hit.0);
+            if value_start > end {
+                continue;
+            }
             fields.push(FeatureChoiceField {
                 feature_id: choice.feature_id,
                 choice_label: choice.label.clone(),

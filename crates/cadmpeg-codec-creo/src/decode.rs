@@ -7093,6 +7093,11 @@ fn transfer_resolved_extrusion_breps(
             };
             result
         };
+        if profiles.iter().flatten().any(|(geometry, _, start, end)| {
+            matches!(geometry, SketchGeometry::Line { .. }) && start == end
+        }) {
+            continue;
+        }
         let forward_caps = outer_area > 0.0;
 
         let prefix = format!("creo:feature:extrusion#{feature_id}");
@@ -7188,10 +7193,11 @@ fn transfer_resolved_extrusion_breps(
                         SketchGeometry::Line { .. } => {
                             let placed_start = section_point_in_model(transform, *start);
                             let placed_end = section_point_in_model(transform, *end);
-                            let direction = normalized(std::array::from_fn(|axis| {
+                            let Some(direction) = normalized(std::array::from_fn(|axis| {
                                 placed_end[axis] - placed_start[axis]
-                            }))
-                            .expect("closed line segment is nondegenerate");
+                            })) else {
+                                continue;
+                            };
                             CurveGeometry::Line {
                                 origin: Point3::new(
                                     placed_start[0] + offset * transform.normal[0],
