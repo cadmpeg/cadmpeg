@@ -3906,7 +3906,8 @@ fn decode_var_blend_spl_sur(
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::{
-        LoftBridgeToken, VariableBlendChamfer, VariableBlendSingleRadiusTail,
+        LoftBridgeToken, VariableBlendChamfer, VariableBlendChamferKind,
+        VariableBlendSingleRadiusTail,
     };
     let names: [&[u8]; 4] = [
         b"var_blend_spl_sur",
@@ -3964,7 +3965,10 @@ fn decode_var_blend_spl_sur(
         && read_int(span, position + 1, int_width) == Some(3)
     {
         Some(Box::new(VariableBlendChamfer {
-            variable_chamfer: take_tagged_int(span, &mut position, 0x15, int_width)?,
+            kind: match take_tagged_int(span, &mut position, 0x15, int_width)? {
+                3 => VariableBlendChamferKind::Rounded,
+                _ => return None,
+            },
             chamfer_type: take_tagged_int(span, &mut position, 0x15, int_width)?,
             value: decode_variable_blend_value(span, &mut position, int_width, true, 0)?,
         }))

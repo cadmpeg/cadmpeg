@@ -1293,11 +1293,19 @@ pub struct VariableBlendSingleRadiusTail {
     pub parameters: [f64; 2],
 }
 
+/// Variable-blend chamfer form selected by the two-radii branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableBlendChamferKind {
+    /// A rounded transition controlled by a third blend-value law.
+    Rounded,
+}
+
 /// Optional rounded-chamfer branch following two radius laws.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VariableBlendChamfer {
-    /// Native variable-chamfer enum.
-    pub variable_chamfer: i64,
+    /// Variable-chamfer form.
+    pub kind: VariableBlendChamferKind,
     /// Native chamfer-type enum.
     pub chamfer_type: i64,
     /// Chamfer blend-value payload.

@@ -3793,7 +3793,26 @@ fn append_generated_variable_blend_side(bytes: &mut Vec<u8>, label: &str, x: f64
     t_ident(bytes, "nullbs");
 }
 
+fn append_generated_variable_blend_value(
+    bytes: &mut Vec<u8>,
+    parameters: [f64; 2],
+    radii: [f64; 2],
+) {
+    push_u8_string(bytes, "two_ends");
+    bytes.push(0x0a);
+    t_long(bytes, 7);
+    bytes.push(0x15);
+    bytes.extend_from_slice(&3i64.to_le_bytes());
+    for value in parameters.into_iter().chain(radii) {
+        t_dbl(bytes, value);
+    }
+}
+
 fn synthetic_variable_blend_smbh(name: &str) -> Vec<u8> {
+    synthetic_variable_blend_smbh_with_branch(name, false)
+}
+
+fn synthetic_variable_blend_smbh_with_branch(name: &str, rounded_chamfer: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -3813,14 +3832,15 @@ fn synthetic_variable_blend_smbh(name: &str) -> Vec<u8> {
     t_dbl(&mut surface, -0.2);
     t_dbl(&mut surface, 0.4);
     surface.push(0x15);
-    surface.extend_from_slice(&0i64.to_le_bytes());
-    push_u8_string(&mut surface, "two_ends");
-    surface.push(0x0a);
-    t_long(&mut surface, 7);
-    surface.push(0x15);
-    surface.extend_from_slice(&3i64.to_le_bytes());
-    for value in [0.25, 0.75, 1.5, 2.5] {
-        t_dbl(&mut surface, value);
+    surface.extend_from_slice(&i64::from(rounded_chamfer).to_le_bytes());
+    append_generated_variable_blend_value(&mut surface, [0.25, 0.75], [1.5, 2.5]);
+    if rounded_chamfer {
+        append_generated_variable_blend_value(&mut surface, [0.1, 0.9], [3.5, 4.5]);
+        surface.push(0x15);
+        surface.extend_from_slice(&3i64.to_le_bytes());
+        surface.push(0x15);
+        surface.extend_from_slice(&2i64.to_le_bytes());
+        append_generated_variable_blend_value(&mut surface, [0.0, 1.0], [5.5, 6.5]);
     }
     for value in [-1.0, 2.0, -3.0, 4.0] {
         t_dbl(&mut surface, value);
@@ -15036,6 +15056,70 @@ fn generated_variable_blend_rejects_cross_branch_radius_payloads() {
     assert!(error
         .to_string()
         .contains("two-radii variable blend carries a single-radius tail"));
+}
+
+#[test]
+fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, VariableBlendRadiusKind, VariableBlendValuePayload,
+    };
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh_with_branch(
+                "var_blend_spl_sur",
+                true,
+            ))),
+            &DecodeOptions::default(),
+        )
+        .expect("two-radii variable-blend decode");
+    let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected variable blend")
+    };
+    assert_eq!(construction.radius_kind, VariableBlendRadiusKind::TwoRadii);
+    assert!(matches!(
+        construction
+            .second_value
+            .as_ref()
+            .map(|value| &value.payload),
+        Some(VariableBlendValuePayload::TwoEnds {
+            parameters: [0.1, 0.9],
+            radii: [35.0, 45.0]
+        })
+    ));
+    let chamfer = construction.chamfer.as_ref().expect("rounded chamfer");
+    assert_eq!(
+        chamfer.kind,
+        cadmpeg_ir::geometry::VariableBlendChamferKind::Rounded
+    );
+    assert_eq!(chamfer.chamfer_type, 2);
+    assert!(matches!(
+        &chamfer.value.payload,
+        VariableBlendValuePayload::TwoEnds {
+            parameters: [0.0, 1.0],
+            radii: [55.0, 65.0]
+        }
+    ));
+    assert!(construction.single_radius_tail.is_none());
+
+    let expected = construction.clone();
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("two-radii variable-blend source-less encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("two-radii variable-blend round trip");
+    assert!(matches!(
+        &round_trip.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::VariableBlend { construction }
+            if construction == &expected
+    ));
 }
 
 #[test]

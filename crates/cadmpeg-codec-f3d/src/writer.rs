@@ -8218,7 +8218,12 @@ fn encode_native_variable_blend(
         })?;
         native_variable_blend_value(bytes, second, 0)?;
         if let Some(chamfer) = &construction.chamfer {
-            native_enum(bytes, chamfer.variable_chamfer);
+            native_enum(
+                bytes,
+                match chamfer.kind {
+                    cadmpeg_ir::geometry::VariableBlendChamferKind::Rounded => 3,
+                },
+            );
             native_enum(bytes, chamfer.chamfer_type);
             native_variable_blend_value(bytes, &chamfer.value, 0)?;
         }
