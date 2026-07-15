@@ -45,6 +45,7 @@ pub(crate) mod composite;
 pub(crate) mod conics;
 pub(crate) mod copious;
 pub(crate) mod csg;
+pub(crate) mod curve_conversion;
 pub(crate) mod drawing;
 pub(crate) mod evaluation;
 pub(crate) mod geometry;

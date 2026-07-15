@@ -1084,6 +1084,17 @@ fn rational_nurbs_curve_file() -> Vec<u8> {
     bytes
 }
 
+fn equal_weight_rational_nurbs_curve_file() -> Vec<u8> {
+    let mut bytes = rational_nurbs_curve_file();
+    let unequal = b",1,0.5,1,";
+    let start = bytes
+        .windows(unequal.len())
+        .position(|window| window == unequal)
+        .unwrap();
+    bytes[start..start + unequal.len()].copy_from_slice(b",1,1.0,1,");
+    bytes
+}
+
 fn nurbs_surface_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let parameters =
@@ -7082,6 +7093,23 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
     assert!(result.report.losses.is_empty());
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_preserves_a_rational_declaration_with_equal_weights() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(equal_weight_rational_nurbs_curve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir.model.curves[0].geometry
+    else {
+        panic!("expected a NURBS carrier");
+    };
+    assert_eq!(nurbs.weights, Some(vec![1.0, 1.0, 1.0]));
+    assert!(result.report.losses.is_empty());
 }
 
 #[test]

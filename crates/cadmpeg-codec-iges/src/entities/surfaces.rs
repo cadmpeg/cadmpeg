@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Analytic and free-form surface projection.
 
+use super::curve_conversion::circular_arc_nurbs;
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
@@ -97,6 +98,15 @@ fn bounded_nurbs(ir: &CadIr, sequence: u32) -> Option<(NurbsCurve, [f64; 2])> {
             },
             [0.0, 1.0],
         )),
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => Some((
+            circular_arc_nurbs(*center, *axis, *ref_direction, *radius, interval)?,
+            interval,
+        )),
         _ => None,
     }
 }
@@ -143,9 +153,12 @@ struct AngularBasis {
 
 fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
     let sweep = end - start;
-    if !sweep.is_finite() || !(0.0..=std::f64::consts::TAU).contains(&sweep) || sweep == 0.0 {
+    let tolerance = std::f64::consts::TAU * 1.0e-12;
+    if !sweep.is_finite() || sweep <= 0.0 || sweep > std::f64::consts::TAU + tolerance {
         return None;
     }
+    let sweep = sweep.min(std::f64::consts::TAU);
+    let end = start + sweep;
     let segment_count = (sweep / std::f64::consts::FRAC_PI_2).ceil() as usize;
     let segment_angle = sweep / segment_count as f64;
     let mut knots = vec![start; 3];
@@ -260,6 +273,20 @@ fn offset_analytic(
         Some((solved, distance))
     } else {
         offset_analytic(geometry, scale(indicator, -1.0), -distance)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::angular_basis;
+
+    #[test]
+    fn angular_basis_canonicalizes_a_full_sweep_with_decimal_roundoff() {
+        let basis =
+            angular_basis(0.0, std::f64::consts::TAU + std::f64::consts::TAU * 5.0e-13).unwrap();
+
+        assert_eq!(basis.controls.len(), 9);
+        assert_eq!(basis.knots.last(), Some(&std::f64::consts::TAU));
     }
 }
 
@@ -981,14 +1008,12 @@ pub(super) fn project(
             ));
             continue;
         }
-        let polynomial = native_weights
+        let equal_weights = native_weights
             .first()
             .is_some_and(|first| native_weights.iter().all(|weight| weight == first));
-        if (flags[2] == Some(1)) != polynomial {
-            losses.push(entity_loss(
-                entry,
-                "surface polynomial flag does not agree with its weights",
-            ));
+        let polynomial = flags[2] == Some(1);
+        if polynomial && !equal_weights {
+            losses.push(entity_loss(entry, "polynomial surface has unequal weights"));
             continue;
         }
         let Some(native_poles) = collect_numbers(pole_start, pole_value_count) else {

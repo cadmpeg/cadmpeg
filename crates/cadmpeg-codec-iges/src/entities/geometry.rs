@@ -683,14 +683,12 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "weights are not strictly positive"));
             continue;
         }
-        let polynomial = native_weights
+        let equal_weights = native_weights
             .first()
             .is_some_and(|first| native_weights.iter().all(|weight| weight == first));
-        if (flags[2] == Some(1)) != polynomial {
-            losses.push(entity_loss(
-                entry,
-                "polynomial flag does not agree with the weight vector",
-            ));
+        let polynomial = flags[2] == Some(1);
+        if polynomial && !equal_weights {
+            losses.push(entity_loss(entry, "polynomial spline has unequal weights"));
             continue;
         }
         let Some(native_poles) = collect_numbers(pole_start, pole_value_count) else {
