@@ -719,6 +719,8 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.changed_candidate_faces.clear();
         operand.preceding_boundary_edge_slots.clear();
         operand.changed_boundary_edge_slots.clear();
+        operand.deleted_boundary_edge_slots.clear();
+        operand.updated_boundary_edge_slots.clear();
         operand.changed_boundary_edge_contexts.clear();
         operand.recipe_reference_contexts.clear();
         operand.recipe_selectors.clear();
@@ -777,6 +779,14 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .copied()
             .filter(|edge| changed_edges.contains(edge))
             .collect();
+        operand.deleted_boundary_edge_slots = boundary_edges_in_changes(
+            &operand.preceding_boundary_edge_slots,
+            &transition.topology.edges.deleted,
+        );
+        operand.updated_boundary_edge_slots = boundary_edges_in_changes(
+            &operand.preceding_boundary_edge_slots,
+            &transition.topology.edges.updated,
+        );
         operand.changed_boundary_edge_contexts = operand
             .changed_boundary_edge_slots
             .iter()
@@ -805,6 +815,14 @@ pub(crate) fn bind_edge_operand_history_candidates(
             &operand.changed_boundary_edge_contexts,
         );
     }
+}
+
+fn boundary_edges_in_changes(boundary_edges: &[i64], changes: &[i64]) -> Vec<i64> {
+    boundary_edges
+        .iter()
+        .copied()
+        .filter(|edge| changes.contains(edge))
+        .collect()
 }
 
 fn recipe_selector_candidates(
@@ -1698,6 +1716,12 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn boundary_edge_change_partition_preserves_boundary_order() {
+        assert_eq!(boundary_edges_in_changes(&[8, 3, 5, 2], &[2, 8]), [8, 2]);
+        assert!(boundary_edges_in_changes(&[8, 3], &[1, 2]).is_empty());
+    }
 
     #[test]
     fn historical_topology_retains_ordered_ownership_and_incidence() {

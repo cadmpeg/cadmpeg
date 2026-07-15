@@ -1086,6 +1086,13 @@ pub struct DesignEdgeOperand {
     /// Preceding boundary-edge slots deleted or updated by the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed_boundary_edge_slots: Vec<i64>,
+    /// Preceding boundary-edge slots deleted by the owning feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleted_boundary_edge_slots: Vec<i64>,
+    /// Preceding boundary-edge slots assigned a different record revision by
+    /// the owning feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub updated_boundary_edge_slots: Vec<i64>,
     /// Ordered incident-loop topology for every changed boundary edge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,

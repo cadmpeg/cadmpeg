@@ -7017,6 +7017,8 @@ fn parse_edge_operand(
         changed_candidate_faces: Vec::new(),
         preceding_boundary_edge_slots: Vec::new(),
         changed_boundary_edge_slots: Vec::new(),
+        deleted_boundary_edge_slots: Vec::new(),
+        updated_boundary_edge_slots: Vec::new(),
         changed_boundary_edge_contexts: Vec::new(),
         recipe_reference_contexts: Vec::new(),
         recipe_selectors: Vec::new(),
@@ -13905,7 +13907,7 @@ mod relation_tests {
             paired_class_tag: "259".into(),
             paired_byte_offset: 1200 + u64::from(ordinal) * 200,
         };
-        let mut groups = [group(100, 0, vec![200]), group(101, 1, vec![201, 202])];
+        let mut operand_groups = [group(100, 0, vec![200]), group(101, 1, vec![201, 202])];
         let parameter = |owner_index, record_index, source_kind: &str, unit, value| {
             let mut parameter = parse_design_parameter(&parameter_record(
                 Some(owner_index),
@@ -13944,7 +13946,7 @@ mod relation_tests {
 
         let assignments = decode_fillet_radius_groups(
             std::slice::from_ref(&scope),
-            &groups,
+            &operand_groups,
             &owners,
             &parameters,
         );
@@ -13961,7 +13963,7 @@ mod relation_tests {
             assignments[1].tangency_weight_parameter_record_index,
             Some(41)
         );
-        groups[0]
+        operand_groups[0]
             .lost_edge_references
             .push("f3d:native:lost-edge-reference#1".into());
 
@@ -13969,7 +13971,7 @@ mod relation_tests {
             &parameters,
             &owners,
             std::slice::from_ref(&scope),
-            &groups,
+            &operand_groups,
             &assignments,
             &[],
             &[],
@@ -13997,7 +13999,7 @@ mod relation_tests {
                     radius: cadmpeg_ir::features::Length(3.0),
                 },
                 tangency_weight: Some(0.75),
-            } if selection == &assignments[1].id
+            } if selection == &operand_groups[1].id
         ));
     }
 
