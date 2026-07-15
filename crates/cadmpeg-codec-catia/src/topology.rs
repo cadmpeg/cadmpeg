@@ -4628,19 +4628,6 @@ impl MeshSelectionSearch<'_> {
         let after = (0..node_count)
             .filter(|&node| possible.find(node) == node)
             .count();
-        let mut possible_domains = HashMap::<usize, HashSet<usize>>::new();
-        let mut possible_root_counts = HashMap::<usize, usize>::new();
-        for node in 0..node_count {
-            if quotient.union.find(node) != node {
-                continue;
-            }
-            let component = possible.find(node);
-            possible_domains
-                .entry(component)
-                .or_default()
-                .extend(quotient.domains[node].iter());
-            *possible_root_counts.entry(component).or_default() += 1;
-        }
         let point_count = if self.vertex_points.is_empty() {
             quotient
                 .domains
@@ -4651,6 +4638,25 @@ impl MeshSelectionSearch<'_> {
         } else {
             self.vertex_points.len()
         };
+        let mut possible_domains = HashMap::<usize, HashSet<usize>>::new();
+        let mut universal_components = HashSet::new();
+        let mut possible_root_counts = HashMap::<usize, usize>::new();
+        for node in 0..node_count {
+            if quotient.union.find(node) != node {
+                continue;
+            }
+            let component = possible.find(node);
+            if quotient.domains[node].len() == point_count {
+                universal_components.insert(component);
+                possible_domains.remove(&component);
+            } else if !universal_components.contains(&component) {
+                possible_domains
+                    .entry(component)
+                    .or_default()
+                    .extend(quotient.domains[node].iter());
+            }
+            *possible_root_counts.entry(component).or_default() += 1;
+        }
         let mut component_merge_capacity = HashMap::<usize, usize>::new();
         let mut independent_capacity = 0usize;
         for (face, selected) in self.selected.iter().enumerate() {
@@ -4695,20 +4701,30 @@ impl MeshSelectionSearch<'_> {
         if required_root_count > point_count {
             return None;
         }
+        let required_count = |component: &usize| {
+            possible_root_counts[component]
+                .saturating_sub(
+                    component_merge_capacity
+                        .get(component)
+                        .copied()
+                        .unwrap_or(0),
+                )
+                .max(1)
+        };
+        let universal_required = universal_components
+            .iter()
+            .map(required_count)
+            .fold(0usize, usize::saturating_add);
         let mut domains = possible_domains
             .into_iter()
             .flat_map(|(component, domain)| {
-                let required = possible_root_counts[&component]
-                    .saturating_sub(
-                        component_merge_capacity
-                            .get(&component)
-                            .copied()
-                            .unwrap_or(0),
-                    )
-                    .max(1);
+                let required = required_count(&component);
                 std::iter::repeat_n(domain, required)
             })
             .collect::<Vec<_>>();
+        if universal_required > point_count.saturating_sub(domains.len()) {
+            return None;
+        }
         domains.sort_unstable_by_key(HashSet::len);
         let mut point_owner = vec![None; point_count];
         for component in 0..domains.len() {
@@ -5193,6 +5209,15 @@ impl MeshSelectionSearch<'_> {
     }
 
     fn search_from(&mut self, quotient: &MeshQuotient, changed_edges: Option<&HashSet<usize>>) {
+        self.search_from_state(quotient, changed_edges, false);
+    }
+
+    fn search_from_state(
+        &mut self,
+        quotient: &MeshQuotient,
+        changed_edges: Option<&HashSet<usize>>,
+        prepared: bool,
+    ) {
         const MAX_SELECTION_STATES: usize = 512;
 
         if self.ambiguous
@@ -5202,26 +5227,29 @@ impl MeshSelectionSearch<'_> {
             return;
         }
         let mut measured = quotient.clone();
-        if !self.propagate_forced_face_equations_from(&mut measured, changed_edges) {
-            return;
-        }
-        let root_count = measured.root_count();
-        if root_count < self.vertex_points.len() {
-            return;
-        }
-        let Some(remaining_merges) = self.remaining_equation_merge_capacity(&mut measured) else {
-            return;
-        };
-        if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
-            return;
-        }
-        if root_count == self.vertex_points.len()
-            && !measured.point_assignment_exists(self.vertex_points.len(), self.edge_candidates)
-        {
-            return;
-        }
-        if !self.fixed_remaining_faces_are_orientable() {
-            return;
+        if !prepared {
+            if !self.propagate_forced_face_equations_from(&mut measured, changed_edges) {
+                return;
+            }
+            let root_count = measured.root_count();
+            if root_count < self.vertex_points.len() {
+                return;
+            }
+            let Some(remaining_merges) = self.remaining_equation_merge_capacity(&mut measured)
+            else {
+                return;
+            };
+            if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
+                return;
+            }
+            if root_count == self.vertex_points.len()
+                && !measured.point_assignment_exists(self.vertex_points.len(), self.edge_candidates)
+            {
+                return;
+            }
+            if !self.fixed_remaining_faces_are_orientable() {
+                return;
+            }
         }
         let selected_edges = self
             .selected
@@ -5436,7 +5464,9 @@ impl MeshSelectionSearch<'_> {
                         }
                         self.states += 1;
                     }
-                    self.search_from(&next_quotient, None);
+                    // `prepare_selected_branch` has already applied the recursive
+                    // entry preflight to this quotient.
+                    self.search_from_state(&next_quotient, None, true);
                 }
             }
             self.selected[face] = None;
