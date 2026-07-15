@@ -184,6 +184,8 @@ The inflated content of a compressed segment uses the same element-length, objec
 
 Every element in a type-31 segment is a string property atom with object-type identifier `6e10dd10-c82a-d111-9b6b-0080c7bb5997`, base type zero, and body `01 00 00 00 00 40 01 00, code_unit_count:u32 LE, value[code_unit_count]:u16 LE`. The body ends after the declared UTF-16 code units. Each atom retains its compressed-element identity, object identifier, exact code units, decoded string, and physical envelope offset. A different object type or base type, invalid UTF-16, count mismatch, or trailing body byte rejects all type-31 string property atoms atomically.
 
+Every element in a type-1 logical scene-graph segment has base type zero and begins with common node data `version:u16 LE, flags:u32 LE, attribute_count:u32 LE, attribute_object_ids[attribute_count]:u32 LE`. Family-specific node data begins immediately after the ordered attribute identifiers. The common node record retains its compressed-element identity, exact object-type identifier, node object identifier, version, flags, ordered attribute references, and the family-data byte length and hash. A truncated count or reference lane, or nonzero element base type, rejects all type-1 common node records atomically.
+
 `/Root/images/preview` is a JPEG marker stream beginning with SOI `ff d8`.
 The first SOF segment supplies sample precision, non-zero big-endian height and
 width, and a non-zero component count. Its payload length is exactly

@@ -6316,6 +6316,8 @@ fn attach_native_object_model(
         );
     let display_jt_string_property_atoms =
         crate::native::display_jt_string_property_atoms(&scan.container, &display_jt_segments);
+    let display_jt_base_node_data =
+        crate::native::display_jt_base_node_data(&scan.container, &display_jt_segments);
     let feature_datum_csys_constructions =
         crate::native::feature_datum_csys_constructions(&scan.container);
     let feature_datum_csys_payloads = crate::native::feature_datum_csys_payloads(
@@ -6719,6 +6721,12 @@ fn attach_native_object_model(
             .note(&atom.id, annotation_stream, atom.source_offset)
             .tag("DISPLAY_JT_STRING_PROPERTY_ATOM");
         annotations.exactness(&atom.id, Exactness::ByteExact);
+    }
+    for node in &display_jt_base_node_data {
+        annotations
+            .note(&node.id, annotation_stream, node.source_offset)
+            .tag("DISPLAY_JT_BASE_NODE_DATA");
+        annotations.exactness(&node.id, Exactness::ByteExact);
     }
     for row in &segment_index_rows {
         annotations
@@ -7479,6 +7487,9 @@ fn attach_native_object_model(
             "display_jt_string_property_atoms",
             &display_jt_string_property_atoms,
         )?;
+    }
+    if !display_jt_base_node_data.is_empty() {
+        namespace.set_arena("display_jt_base_node_data", &display_jt_base_node_data)?;
     }
     if !feature_datum_csys_constructions.is_empty() {
         namespace.set_arena(

@@ -210,6 +210,31 @@ pub struct DisplayJtStringPropertyAtom {
     pub source_offset: u64,
 }
 
+/// Common node-data header carried by one type-1 JT element.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtBaseNodeData {
+    /// Globally unique node-data identity.
+    pub id: String,
+    /// Owning compressed element.
+    pub element: String,
+    /// Exact 16-byte object-type identifier of the owning element.
+    pub object_type_id: Vec<u8>,
+    /// Serialized node object identifier.
+    pub object_id: u32,
+    /// Common node-data version.
+    pub version: u16,
+    /// Serialized node flags.
+    pub flags: u32,
+    /// Ordered attribute object identifiers.
+    pub attribute_object_ids: Vec<u32>,
+    /// Byte length after the common node-data header.
+    pub family_data_byte_len: u32,
+    /// SHA-256 of the bytes after the common node-data header.
+    pub family_data_sha256: String,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
 struct ParsedJtElement<'a> {
     offset: usize,
     object_type_id: &'a [u8],
@@ -270,6 +295,20 @@ pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<(Vec<u16
         .collect::<Vec<_>>();
     let value = String::from_utf16(&code_units).ok()?;
     Some((code_units, value))
+}
+
+pub(crate) fn parse_jt_base_node_body(body: &[u8]) -> Option<(u16, u32, Vec<u32>, &[u8])> {
+    let version = u16::from_le_bytes(body.get(..2)?.try_into().ok()?);
+    let flags = u32::from_le_bytes(body.get(2..6)?.try_into().ok()?);
+    let attribute_count = u32::from_le_bytes(body.get(6..10)?.try_into().ok()?);
+    let attribute_count = usize::try_from(attribute_count).ok()?;
+    let header_end = 10usize.checked_add(attribute_count.checked_mul(4)?)?;
+    let attributes = body.get(10..header_end)?;
+    let attribute_object_ids = attributes
+        .chunks_exact(4)
+        .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
+        .collect();
+    Some((version, flags, attribute_object_ids, &body[header_end..]))
 }
 
 /// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
@@ -759,6 +798,64 @@ pub fn display_jt_string_property_atoms(
         }
     }
     atoms
+}
+
+/// Decode the common node-data header from every type-1 segment element.
+pub fn display_jt_base_node_data(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+) -> Vec<DisplayJtBaseNodeData> {
+    let mut nodes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        if segment.compression.is_none() {
+            return Vec::new();
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_base_type != 0 {
+                return Vec::new();
+            }
+            let Some((version, flags, attribute_object_ids, family_data)) =
+                parse_jt_base_node_body(element.body)
+            else {
+                return Vec::new();
+            };
+            nodes.push(DisplayJtBaseNodeData {
+                id: format!("{}-base-node-{ordinal}", segment.id),
+                element: format!("{}-inflated-element-{ordinal}", segment.id),
+                object_type_id: element.object_type_id.to_vec(),
+                object_id: element.object_id,
+                version,
+                flags,
+                attribute_object_ids,
+                family_data_byte_len: family_data.len() as u32,
+                family_data_sha256: sha256_hex(family_data),
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    nodes
 }
 
 /// Complete typed source record for one Parasolid offset surface.

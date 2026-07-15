@@ -197,6 +197,26 @@ fn display_jt_string_property_body_requires_exact_utf16_frame() {
     assert!(crate::native::parse_jt_string_property_atom_body(&body).is_none());
 }
 
+#[test]
+fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
+    let mut body = Vec::new();
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&0x20_u32.to_le_bytes());
+    body.extend_from_slice(&2_u32.to_le_bytes());
+    body.extend_from_slice(&7_u32.to_le_bytes());
+    body.extend_from_slice(&9_u32.to_le_bytes());
+    body.extend_from_slice(&[4, 3, 2, 1]);
+    let (version, flags, attributes, family) =
+        crate::native::parse_jt_base_node_body(&body).unwrap();
+    assert_eq!(version, 1);
+    assert_eq!(flags, 0x20);
+    assert_eq!(attributes, [7, 9]);
+    assert_eq!(family, [4, 3, 2, 1]);
+
+    body.truncate(17);
+    assert!(crate::native::parse_jt_base_node_body(&body).is_none());
+}
+
 fn be_f64(v: f64) -> [u8; 8] {
     v.to_be_bytes()
 }
