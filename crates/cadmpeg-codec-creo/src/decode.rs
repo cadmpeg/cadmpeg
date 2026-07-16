@@ -7756,17 +7756,16 @@ fn section_dimension_constraints(
                 .owner_feature_id
                 .zip(definition.dimensions.as_ref())
                 .and_then(|(owner, dimensions)| {
-                    let dimension = dimensions
-                        .rows
-                        .get(usize::try_from(relation.dimension_id).ok()?)?;
-                    dimension.value?;
-                    Some((owner, dimension))
+                    resolved_feature_dimension_parameter(
+                        definition.id,
+                        owner,
+                        dimensions,
+                        usize::try_from(relation.dimension_id).ok()?,
+                    )
                 });
-            let parameter = dimension.map(|(owner, dimension)| {
-                feature_dimension_parameter_id(definition.id, owner, dimension.external_id)
-            });
+            let parameter = dimension.as_ref().map(|(_, parameter)| parameter.clone());
             let typed = (|| {
-                let (_, dimension) = dimension?;
+                let (dimension, _) = dimension.as_ref()?;
                 if dimension.value_unit != crate::feature::DimensionUnit::Millimeters {
                     return None;
                 }
@@ -7780,10 +7779,16 @@ fn section_dimension_constraints(
                     let [Some(radius_id), Some(0), Some(0), Some(0)] = vectors[0] else {
                         return None;
                     };
-                    let segment = segments.iter().find(|segment| {
-                        segment.kind == crate::feature::FeatureSegmentKind::Arc
-                            && segment.radius_ref == Some(radius_id)
-                    })?;
+                    let matching = segments
+                        .iter()
+                        .filter(|segment| {
+                            segment.kind == crate::feature::FeatureSegmentKind::Arc
+                                && segment.radius_ref == Some(radius_id)
+                        })
+                        .collect::<Vec<_>>();
+                    let [segment] = matching.as_slice() else {
+                        return None;
+                    };
                     return Some(SketchConstraintDefinition::Radius {
                         entity: SketchEntityId(format!(
                             "creo:featdefs:sketch_entity#{}:{}",
@@ -7798,10 +7803,14 @@ fn section_dimension_constraints(
                 if let Some(vectors) = relation.operand_vectors {
                     if section_linear_distance_vectors(vectors) {
                         if let [Some(first_id), Some(second_id), _, _] = vectors[0] {
-                            if let Some(measured) = segments.iter().find(|segment| {
-                                segment.point_ids == [first_id, second_id]
-                                    || segment.point_ids == [second_id, first_id]
-                            }) {
+                            let matching = segments
+                                .iter()
+                                .filter(|segment| {
+                                    segment.point_ids == [first_id, second_id]
+                                        || segment.point_ids == [second_id, first_id]
+                                })
+                                .collect::<Vec<_>>();
+                            if let [measured] = matching.as_slice() {
                                 if let (Some(first), Some(second)) = (
                                     section_point_locus(definition.id, segments, first_id),
                                     section_point_locus(definition.id, segments, second_id),
@@ -9673,6 +9682,32 @@ fn feature_dimension_parameter_id(
     ))
 }
 
+fn resolved_feature_dimension_parameter(
+    definition_id: u32,
+    owner_feature_id: u32,
+    table: &crate::feature::FeatureDimensionTable,
+    ordinal: usize,
+) -> Option<(&crate::feature::FeatureDimension, ParameterId)> {
+    let dimension = table.rows.get(ordinal)?;
+    dimension.value?;
+    (table
+        .rows
+        .iter()
+        .filter(|candidate| candidate.external_id == dimension.external_id)
+        .count()
+        == 1)
+        .then(|| {
+            (
+                dimension,
+                feature_dimension_parameter_id(
+                    definition_id,
+                    owner_feature_id,
+                    dimension.external_id,
+                ),
+            )
+        })
+}
+
 fn transfer_feature_dimensions(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -9695,15 +9730,18 @@ fn transfer_feature_dimensions(
         let Some(table) = &definition.dimensions else {
             continue;
         };
-        for (ordinal, dimension) in table.rows.iter().enumerate() {
-            let Some(value) = dimension.value else {
-                continue;
-            };
-            let id = feature_dimension_parameter_id(
+        for ordinal in 0..table.rows.len() {
+            let Some((dimension, id)) = resolved_feature_dimension_parameter(
                 definition.id,
                 owner_feature_id,
-                dimension.external_id,
-            );
+                table,
+                ordinal,
+            ) else {
+                continue;
+            };
+            let value = dimension
+                .value
+                .expect("resolved feature dimension has a defined value");
             annotate(
                 annotations,
                 &id.0,
@@ -13406,6 +13444,37 @@ mod resolved_sketch_tests {
             feature_dimension_parameter_id(917, 40, 3).0,
             "creo:featdefs:parameter#917:40:3"
         );
+        let dimension = crate::feature::FeatureDimension {
+            dimension_type: 2,
+            value: Some(5.0),
+            value_unit: crate::feature::DimensionUnit::Millimeters,
+            direction_byte: 0,
+            auxiliary_value: None,
+            external_id: 3,
+            offset: 10,
+        };
+        let mut table = crate::feature::FeatureDimensionTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![dimension.clone()],
+            offset: 9,
+        };
+        assert_eq!(
+            resolved_feature_dimension_parameter(917, 40, &table, 0),
+            Some((
+                &dimension,
+                ParameterId("creo:featdefs:parameter#917:40:3".to_string())
+            ))
+        );
+        table.rows.push(dimension);
+        assert_eq!(
+            resolved_feature_dimension_parameter(917, 40, &table, 0),
+            None
+        );
+        assert_eq!(
+            resolved_feature_dimension_parameter(917, 40, &table, 1),
+            None
+        );
     }
 
     #[test]
@@ -14062,6 +14131,31 @@ mod resolved_sketch_tests {
                 parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
         );
+        let mut duplicate_measured_segment = distance_definition.clone();
+        let duplicate = duplicate_measured_segment
+            .segments
+            .as_ref()
+            .expect("segments")
+            .rows[0]
+            .clone();
+        duplicate_measured_segment
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(duplicate);
+        assert!(matches!(
+            section_dimension_constraints(
+                &duplicate_measured_segment,
+                &SketchId("sketch".into())
+            )[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native {
+                ref native_kind,
+                ..
+            } if native_kind == "creo:relation:0"
+        ));
         let mut angular_distance = distance_definition.clone();
         angular_distance
             .dimensions
@@ -14078,6 +14172,34 @@ mod resolved_sketch_tests {
                 ..
             } if native_kind == "creo:relation:0"
         ));
+        let mut duplicate_dimension = distance_definition.clone();
+        let duplicate = duplicate_dimension
+            .dimensions
+            .as_ref()
+            .expect("dimensions")
+            .rows[0]
+            .clone();
+        duplicate_dimension
+            .dimensions
+            .as_mut()
+            .expect("dimensions")
+            .rows
+            .push(duplicate);
+        assert_eq!(
+            section_dimension_constraints(&duplicate_dimension, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native {
+                native_kind: "creo:relation:0".to_string(),
+                entities: Vec::new(),
+                parameter: None,
+                operands: vec![SketchNativeOperand {
+                    native_kind: "relat_ptr".to_string(),
+                    object_index: 8,
+                    native_ref: Some("creo:featdefs:sketch#917".to_string()),
+                }],
+            }
+        );
         let mut radius_definition = definition.clone();
         radius_definition.segments.as_mut().expect("segments").rows[1].radius_ref = Some(101);
         let radius_relation = &mut radius_definition
@@ -14102,6 +14224,28 @@ mod resolved_sketch_tests {
                 parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
         );
+        let duplicate = radius_definition.segments.as_ref().expect("segments").rows[1].clone();
+        radius_definition
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(duplicate);
+        assert!(matches!(
+            section_dimension_constraints(&radius_definition, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native {
+                ref native_kind,
+                ..
+            } if native_kind == "creo:relation:14"
+        ));
+        radius_definition
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .pop();
         radius_definition
             .dimensions
             .as_mut()

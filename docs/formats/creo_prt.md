@@ -776,17 +776,18 @@ selects the section `u` difference and `verhor=0` selects the section `v`
 difference. Sign `1` defines `second-first=+value`; sign `f6` defines
 `second-first=-value`; sign zero stores only the unsigned magnitude.
 The two point identifiers denote endpoint loci shared by every incident
-`segtab` entity. The selected `dimtab_ptr` row is the driving parameter for the
-horizontal or vertical distance constraint independently of whether both
-endpoint coordinates are evaluated.
+`segtab` entity. Exactly one segment spanning the pair is required to refine the
+relation to a horizontal or vertical distance constraint. The selected
+`dimtab_ptr` row is the driving parameter independently of whether both endpoint
+coordinates are evaluated.
 
 A type-14 relation with `a=[radius_id,0,0,0]`, `b=[0,0,0,0]`,
 `c=[15,0,0,0]`, and sign `1` binds the selected dimension value to the
 type-three `var_arr` radius with that key. An arc's `radius` field selects the
 same radius key. The solved center point and positive radius define its
 unbounded circular carrier before both arc endpoints are available.
-The selected dimension is the neutral radius constraint parameter of the arc
-whose `radius` field names that key when the selected dimension type is linear.
+The selected dimension is the neutral radius constraint parameter when exactly
+one arc's `radius` field names that key and the selected dimension type is linear.
 A non-linear or schema-defined selected dimension does not define a neutral
 radius constraint.
 
@@ -808,7 +809,9 @@ first endpoint angle advanced by full turns until it exceeds the start. Its neut
 `type`, `value`, `direct`, `aux_value`, and `ext_id`; type `0x0a` is an angular
 dimension whose `value` is in radians. Types `0x01`, `0x02`, `0x03`, `0x04`,
 and `0x05` are linear dimensions whose values use model millimeters. `ext_id` is the dimension identity
-within the owning feature definition. Neutral parameter identity includes the
+within the owning feature definition. A neutral parameter and any constraint
+that selects it require exactly one `dimtab_ptr` row with that `ext_id`;
+duplicate identities remain native dimensions. Neutral parameter identity includes the
 feature-definition identifier, owning model-feature identifier, and `ext_id`;
 different definitions may reuse the same local `ext_id`. In positional dimension rows, a bare
 `18` in the `aux_value` slot encodes zero and does not consume the following
