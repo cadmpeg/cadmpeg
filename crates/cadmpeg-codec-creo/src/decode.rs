@@ -51,6 +51,17 @@ use serde::Serialize;
 use crate::container::{self, role, ContainerScan};
 use crate::topology::HalfEdgeId;
 
+fn unique_feature_definition(
+    definitions: &[crate::feature::FeatureDefinition],
+    definition_id: u32,
+) -> Option<&crate::feature::FeatureDefinition> {
+    let mut matches = definitions
+        .iter()
+        .filter(|definition| definition.id == definition_id);
+    let definition = matches.next()?;
+    matches.next().is_none().then_some(definition)
+}
+
 #[derive(Serialize)]
 struct CreoSketchRecord {
     id: String,
@@ -5374,10 +5385,8 @@ fn transfer_saved_spline_curves(
 ) -> usize {
     let mut transferred = 0;
     for transform in &scan.feature_section_transforms {
-        let Some(definition) = scan
-            .feature_definitions
-            .iter()
-            .find(|definition| definition.id == transform.definition_id)
+        let Some(definition) =
+            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
         else {
             continue;
         };
@@ -5574,10 +5583,8 @@ fn transfer_feature_extrusion_surfaces(
 ) -> usize {
     let mut transferred = 0;
     for transform in &scan.feature_section_transforms {
-        let Some(definition) = scan
-            .feature_definitions
-            .iter()
-            .find(|definition| definition.id == transform.definition_id)
+        let Some(definition) =
+            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
         else {
             continue;
         };
@@ -6631,10 +6638,8 @@ fn transfer_resolved_revolution_breps(
         {
             continue;
         }
-        let Some(definition) = scan
-            .feature_definitions
-            .iter()
-            .find(|definition| definition.id == transform.definition_id)
+        let Some(definition) =
+            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
         else {
             continue;
         };
@@ -8582,10 +8587,8 @@ fn transfer_resolved_sketches(
         {
             continue;
         }
-        let Some(definition) = scan
-            .feature_definitions
-            .iter()
-            .find(|definition| definition.id == transform.definition_id)
+        let Some(definition) =
+            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
         else {
             continue;
         };
@@ -9353,10 +9356,8 @@ fn transfer_resolved_revolution_surfaces(
         {
             continue;
         }
-        let Some(definition) = scan
-            .feature_definitions
-            .iter()
-            .find(|definition| definition.id == transform.definition_id)
+        let Some(definition) =
+            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
         else {
             continue;
         };
@@ -9679,10 +9680,8 @@ fn transfer_resolved_revolution_vertex_orbit_curves(
         if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve) {
             continue;
         }
-        let Some(definition) = scan
-            .feature_definitions
-            .iter()
-            .find(|definition| definition.id == transform.definition_id)
+        let Some(definition) =
+            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
         else {
             continue;
         };
@@ -10166,11 +10165,12 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
             );
         }
     }
-    if let Some(definition) = scan
+    let owned_definitions = scan
         .feature_definitions
         .iter()
-        .find(|definition| definition.owner_feature_id == Some(feature_id))
-    {
+        .filter(|definition| definition.owner_feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    if let [definition] = owned_definitions.as_slice() {
         parameters.insert(
             "sketch_segment_count".to_string(),
             definition
@@ -10887,11 +10887,9 @@ fn schema_feature_definition(
                         ProfileRef::Sketch(sketch_id)
                     }
                 });
-            let axis = scan
-                .feature_definitions
-                .iter()
-                .find(|definition| definition.id == transform.definition_id)
-                .and_then(|definition| resolved_revolution_axis(definition, transform));
+            let axis =
+                unique_feature_definition(&scan.feature_definitions, transform.definition_id)
+                    .and_then(|definition| resolved_revolution_axis(definition, transform));
             (profile, axis)
         } else {
             (None, None)
@@ -12872,6 +12870,12 @@ mod resolved_sketch_tests {
                 end: cadmpeg_ir::math::Point2::new(2.0, 8.0),
             })
         );
+        assert_eq!(
+            unique_feature_definition(std::slice::from_ref(&definition), definition.id)
+                .map(|matched| matched.offset),
+            Some(0)
+        );
+        assert!(unique_feature_definition(&[definition.clone(), definition], 5).is_none());
     }
 
     #[test]

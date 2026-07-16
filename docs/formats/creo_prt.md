@@ -921,6 +921,11 @@ containing the section's `sketch_plane_entity_id` identifies the owning
 modeling feature. The definition and feature identifiers are not
 interchangeable.
 
+A definition identifier selects geometry, placement, and operation semantics
+only when exactly one bounded feature-definition record carries that identifier.
+Repeated identifiers are ambiguous and do not join to a section transform or
+feature operation.
+
 An instantiated positional definition begins at
 `e0 01 feat_id 00 <canonical-reference> e0 00 ref_model_info 00`. The reference
 is its owning modeling feature identifier. This boundary ends the preceding

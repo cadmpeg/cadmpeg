@@ -257,11 +257,15 @@ fn feature_generated_plane_equation(
     transforms: &[FeatureSectionTransform],
     sources: &PlacementSources<'_>,
 ) -> Option<([f64; 3], f64)> {
-    let feature_id = sources
+    let surface_rows = sources
         .surface_rows
         .iter()
-        .find(|row| row.id == id && row.kind == SurfaceKind::Plane)?
-        .feature_id;
+        .filter(|row| row.id == id && row.kind == SurfaceKind::Plane)
+        .collect::<Vec<_>>();
+    let [surface_row] = surface_rows.as_slice() else {
+        return None;
+    };
+    let feature_id = surface_row.feature_id;
     let transforms = transforms
         .iter()
         .filter(|transform| transform.feature_id == Some(feature_id))
@@ -269,9 +273,13 @@ fn feature_generated_plane_equation(
     let [transform] = transforms.as_slice() else {
         return None;
     };
-    let definition = definitions
+    let definitions = definitions
         .iter()
-        .find(|definition| definition.id == transform.definition_id)?;
+        .filter(|definition| definition.id == transform.definition_id)
+        .collect::<Vec<_>>();
+    let [definition] = definitions.as_slice() else {
+        return None;
+    };
     let segments = definition.segments.as_ref()?;
     let segments = segments
         .rows
@@ -283,10 +291,14 @@ fn feature_generated_plane_equation(
     };
     let variables = definition.variables.as_ref()?;
     let point = |point_id| {
-        let point = variables
+        let points = variables
             .points
             .iter()
-            .find(|point| point.point_id == point_id)?;
+            .filter(|point| point.point_id == point_id)
+            .collect::<Vec<_>>();
+        let [point] = points.as_slice() else {
+            return None;
+        };
         Some([point.u?, point.v?])
     };
     let start = point(segment.point_ids[0])?;
@@ -1119,14 +1131,14 @@ mod tests {
         };
 
         let transforms = resolve(
-            &[source, dependent],
+            &[source.clone(), dependent.clone()],
             &PlacementSources {
                 datums: &[
                     datum(2, [1.0, 0.0, 0.0], 0.0),
                     datum(4, [0.0, 0.0, 1.0], 0.0),
                     datum(799, [0.0, 1.0, 0.0], 1.0),
                 ],
-                surface_rows: &[generated_plane],
+                surface_rows: &[generated_plane.clone()],
                 model_planes: &[],
                 outline_planes: &[],
                 plane_envelopes: &[],
@@ -1143,6 +1155,30 @@ mod tests {
         assert_eq!(transforms[1].u_axis, [1.0, 0.0, 0.0]);
         assert_eq!(transforms[1].v_axis, [0.0, 0.0, -1.0]);
         assert_eq!(transforms[1].normal, [0.0, 1.0, 0.0]);
+
+        let duplicate_plane = SurfaceRow {
+            offset: 51,
+            ..generated_plane
+        };
+        let ambiguous = resolve(
+            &[source, dependent],
+            &PlacementSources {
+                datums: &[
+                    datum(2, [1.0, 0.0, 0.0], 0.0),
+                    datum(4, [0.0, 0.0, 1.0], 0.0),
+                    datum(799, [0.0, 1.0, 0.0], 1.0),
+                ],
+                surface_rows: &[generated_plane, duplicate_plane],
+                model_planes: &[],
+                outline_planes: &[],
+                plane_envelopes: &[],
+                geometry_tables: &[],
+                affected_ids: &[],
+            },
+            &[],
+        );
+        assert_eq!(ambiguous.len(), 1);
+        assert_eq!(ambiguous[0].definition_id, 917);
     }
 
     #[test]
