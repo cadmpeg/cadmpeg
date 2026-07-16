@@ -1433,6 +1433,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 if nonpositive(*major_radius) || nonpositive(*minor_radius) {
                     bounds_err(findings, &c.id.0, "ellipse radius is not positive");
+                } else if major_radius < minor_radius {
+                    bounds_err(
+                        findings,
+                        &c.id.0,
+                        "ellipse major radius is smaller than its minor radius",
+                    );
                 }
             }
             CurveGeometry::Parabola {

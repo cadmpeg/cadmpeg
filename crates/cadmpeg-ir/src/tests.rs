@@ -1949,6 +1949,29 @@ fn periodic_curve_parameter_domain_is_checked() {
 }
 
 #[test]
+fn ellipse_radius_order_is_checked() {
+    let mut ir = unit_cube();
+    let curve_id = ir.model.edges[0].curve.clone().unwrap();
+    ir.model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry = CurveGeometry::Ellipse {
+        center: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        major_direction: Vector3::new(1.0, 0.0, 0.0),
+        major_radius: 1.0,
+        minor_radius: 2.0,
+    };
+
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::Bounds
+            && finding.message == "ellipse major radius is smaller than its minor radius"
+    }));
+}
+
+#[test]
 fn document_and_entity_tolerances_are_checked() {
     let mut ir = unit_cube();
     ir.tolerances.angular = f64::NAN;

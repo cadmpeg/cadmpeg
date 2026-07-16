@@ -5463,6 +5463,32 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
 }
 
 #[test]
+fn semantic_writer_rejects_noncanonical_ellipse_radius_order() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&closed_cylinder_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.model.curves[0].geometry = cadmpeg_ir::geometry::CurveGeometry::Ellipse {
+        center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        major_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        major_radius: 1.0,
+        minor_radius: 2.0,
+    };
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::Malformed(message)
+            if message.contains("ellipse major radius is smaller than its minor radius")
+    ));
+}
+
+#[test]
 fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() {
     let decoded = SldprtCodec
         .decode(
