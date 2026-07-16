@@ -5568,6 +5568,54 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
     }
 }
 
+fn mesh_assignment_endpoint_cycles_viable(
+    assignment: &MeshFaceBoundaryAssignment,
+    edge_candidates: &[Vec<[usize; 2]>],
+) -> bool {
+    const MAX_LOCAL_ENDPOINT_STATES: usize = 65_536;
+
+    assignment.boundaries.iter().all(|boundary| {
+        if boundary.is_empty() {
+            return false;
+        }
+        if boundary
+            .iter()
+            .any(|use_| edge_candidates.get(use_.edge).is_none_or(Vec::is_empty))
+        {
+            return true;
+        }
+        let mut states = HashSet::new();
+        for &[left, right] in &edge_candidates[boundary[0].edge] {
+            states.insert((left, right));
+            states.insert((right, left));
+            if states.len() > MAX_LOCAL_ENDPOINT_STATES {
+                return true;
+            }
+        }
+        for use_ in &boundary[1..] {
+            let mut next = HashSet::new();
+            for &(start, current) in &states {
+                for &[left, right] in &edge_candidates[use_.edge] {
+                    if left == current {
+                        next.insert((start, right));
+                    }
+                    if right == current {
+                        next.insert((start, left));
+                    }
+                    if next.len() > MAX_LOCAL_ENDPOINT_STATES {
+                        return true;
+                    }
+                }
+            }
+            states = next;
+            if states.is_empty() {
+                return false;
+            }
+        }
+        states.into_iter().any(|(start, current)| start == current)
+    })
+}
+
 fn uses_canonical_edge_direction_gauge(
     boundaries: &[Vec<MeshBoundaryEdgeCandidate>],
     directions: &[Vec<bool>],
@@ -6717,7 +6765,10 @@ pub fn parse_standard_mesh_endpoint_candidates(
         return None;
     }
     for face in &mut assignments {
-        face.retain(|assignment| quotient.assignment_has_option(assignment, edge_candidates));
+        face.retain(|assignment| {
+            mesh_assignment_endpoint_cycles_viable(assignment, edge_candidates)
+                && quotient.assignment_has_option(assignment, edge_candidates)
+        });
         if face.is_empty() {
             return None;
         }
@@ -7413,12 +7464,13 @@ mod motif_tests {
     use super::{
         bind_edge_port_candidates, canonicalize_mesh_vertex_labels, complete_duplicate_face_slots,
         deduplicate_mesh_quotient_assignments, face_endpoint_candidates_close,
-        mesh_assignment_can_merge, mesh_candidates_equivalent, mesh_edge_points_compatible,
-        motif_port_points, parse_edge_tables_at, parse_edge_tables_scoped_at,
-        parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, possible_face_choices,
-        possible_face_equations, propagate_edge_port_points, prune_edge_candidates_by_port_domains,
-        reconstruct_incidence, reconstruct_incidence_candidates, resolve_edge_faces_from_runs,
-        standard_face_count, unique_coordinate_bijection, unique_duplicate_face_assignment,
+        mesh_assignment_can_merge, mesh_assignment_endpoint_cycles_viable,
+        mesh_candidates_equivalent, mesh_edge_points_compatible, motif_port_points,
+        parse_edge_tables_at, parse_edge_tables_scoped_at, parse_fbb_edge_tables_width,
+        parse_trim_chain, parse_trim_record, possible_face_choices, possible_face_equations,
+        propagate_edge_port_points, prune_edge_candidates_by_port_domains, reconstruct_incidence,
+        reconstruct_incidence_candidates, resolve_edge_faces_from_runs, standard_face_count,
+        unique_coordinate_bijection, unique_duplicate_face_assignment,
         uses_canonical_edge_direction_gauge, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
         FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun, MeshFaceBoundaryAssignment,
         MeshQuotient, MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER,
@@ -9091,6 +9143,53 @@ mod motif_tests {
         .expect("unique face-closing slot assignment");
 
         assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
+    }
+
+    #[test]
+    fn mesh_assignment_endpoint_cycles_reject_crossed_edge_order() {
+        let use_ = |edge| MeshBoundaryEdgeCandidate {
+            edge,
+            start: 0,
+            end: 0,
+            reversed: None,
+        };
+        let assignment = |edges: &[usize]| MeshFaceBoundaryAssignment {
+            boundaries: vec![edges.iter().copied().map(use_).collect()],
+        };
+        let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]];
+
+        assert!(mesh_assignment_endpoint_cycles_viable(
+            &assignment(&[0, 1, 2, 3]),
+            &candidates,
+        ));
+        assert!(!mesh_assignment_endpoint_cycles_viable(
+            &assignment(&[0, 2, 1, 3]),
+            &candidates,
+        ));
+    }
+
+    #[test]
+    fn mesh_assignment_endpoint_cycles_preserve_unconstrained_boundaries() {
+        let assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 0,
+                    reversed: None,
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 0,
+                    end: 0,
+                    reversed: None,
+                },
+            ]],
+        };
+        assert!(mesh_assignment_endpoint_cycles_viable(
+            &assignment,
+            &[vec![[0, 1]], Vec::new()],
+        ));
     }
 
     #[test]
