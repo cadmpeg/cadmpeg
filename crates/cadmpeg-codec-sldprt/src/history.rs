@@ -717,9 +717,24 @@ impl<'a> ParameterExpressionParser<'a> {
     }
 
     fn parse(mut self) -> Option<ParameterValue> {
-        let value = self.sum()?;
+        self.skip_space();
+        self.take('=');
+        let value = self.comparison()?;
         self.skip_space();
         (self.offset == self.input.len()).then_some(value)
+    }
+
+    fn comparison(&mut self) -> Option<ParameterValue> {
+        let left = self.sum()?;
+        self.skip_space();
+        let operator = ["<=", ">=", "<>", "=", "<", ">"]
+            .into_iter()
+            .find(|operator| self.input[self.offset..].starts_with(operator));
+        let Some(operator) = operator else {
+            return Some(left);
+        };
+        self.offset += operator.len();
+        compare_parameter_values(&left, &self.sum()?, operator).map(ParameterValue::Boolean)
     }
 
     fn sum(&mut self) -> Option<ParameterValue> {
@@ -766,7 +781,7 @@ impl<'a> ParameterExpressionParser<'a> {
     fn primary(&mut self) -> Option<ParameterValue> {
         self.skip_space();
         if self.take('(') {
-            let value = self.sum()?;
+            let value = self.comparison()?;
             self.skip_space();
             return self.take(')').then_some(value);
         }
@@ -774,7 +789,25 @@ impl<'a> ParameterExpressionParser<'a> {
         if !quoted {
             self.skip_space();
             if self.take('(') {
-                let argument = self.sum()?;
+                if token.eq_ignore_ascii_case("iif") {
+                    let condition = self.comparison()?;
+                    self.skip_space();
+                    if !self.take(',') {
+                        return None;
+                    }
+                    let when_true = self.comparison()?;
+                    self.skip_space();
+                    if !self.take(',') {
+                        return None;
+                    }
+                    let when_false = self.comparison()?;
+                    self.skip_space();
+                    if !self.take(')') {
+                        return None;
+                    }
+                    return conditional_parameter_value(&condition, when_true, when_false);
+                }
+                let argument = self.comparison()?;
                 self.skip_space();
                 return self
                     .take(')')
@@ -784,7 +817,7 @@ impl<'a> ParameterExpressionParser<'a> {
                 return Some(ParameterValue::Real(std::f64::consts::PI));
             }
         }
-        parse_parameter_literal(&token).or_else(|| {
+        parse_parameter_expression_literal(&token).or_else(|| {
             self.aliases
                 .get(&token)
                 .and_then(Clone::clone)
@@ -823,7 +856,7 @@ impl<'a> ParameterExpressionParser<'a> {
             let exponent_sign = numeric
                 && matches!(character, '+' | '-')
                 && self.input[start..self.offset].ends_with(['e', 'E']);
-            if character.is_whitespace() || (!exponent_sign && "+-*/^()".contains(character)) {
+            if character.is_whitespace() || (!exponent_sign && "+-*/^(),=<>".contains(character)) {
                 break;
             }
             self.offset += character.len_utf8();
@@ -856,6 +889,25 @@ impl<'a> ParameterExpressionParser<'a> {
             character
         })
     }
+}
+
+fn parse_parameter_expression_literal(token: &str) -> Option<ParameterValue> {
+    if token.eq_ignore_ascii_case("true") {
+        return Some(ParameterValue::Boolean(true));
+    }
+    if token.eq_ignore_ascii_case("false") {
+        return Some(ParameterValue::Boolean(false));
+    }
+    if let Some(value) = parse_length_mm(token) {
+        return Some(ParameterValue::Length(Length(value)));
+    }
+    if let Some(value) = parse_angle_rad(token) {
+        return Some(ParameterValue::Angle(Angle(value)));
+    }
+    if let Ok(value) = token.trim().parse::<i64>() {
+        return Some(ParameterValue::Integer(value));
+    }
+    token.trim().parse::<f64>().ok().map(ParameterValue::Real)
 }
 
 fn negate_parameter_value(value: &ParameterValue) -> Option<ParameterValue> {
@@ -893,6 +945,71 @@ fn add_parameter_values(
             real_parameter_value(&left)? + sign * real_parameter_value(&right)?,
         ),
     })
+}
+
+fn compare_parameter_values(
+    left: &ParameterValue,
+    right: &ParameterValue,
+    operator: &str,
+) -> Option<bool> {
+    if matches!(
+        (left, right),
+        (ParameterValue::Boolean(_), ParameterValue::Boolean(_))
+    ) && !matches!(operator, "=" | "<>")
+    {
+        return None;
+    }
+    let ordering = match (left, right) {
+        (ParameterValue::Length(Length(left)), ParameterValue::Length(Length(right)))
+        | (ParameterValue::Angle(Angle(left)), ParameterValue::Angle(Angle(right)))
+        | (ParameterValue::Real(left), ParameterValue::Real(right)) => left.partial_cmp(right)?,
+        (ParameterValue::Integer(left), ParameterValue::Integer(right)) => left.cmp(right),
+        (ParameterValue::Real(left), ParameterValue::Integer(right)) => {
+            left.partial_cmp(&(*right as f64))?
+        }
+        (ParameterValue::Integer(left), ParameterValue::Real(right)) => {
+            (*left as f64).partial_cmp(right)?
+        }
+        (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => left.cmp(right),
+        _ => return None,
+    };
+    Some(match operator {
+        "=" => ordering.is_eq(),
+        "<>" => !ordering.is_eq(),
+        "<" => ordering.is_lt(),
+        ">" => ordering.is_gt(),
+        "<=" => !ordering.is_gt(),
+        ">=" => !ordering.is_lt(),
+        _ => return None,
+    })
+}
+
+fn conditional_parameter_value(
+    condition: &ParameterValue,
+    when_true: ParameterValue,
+    when_false: ParameterValue,
+) -> Option<ParameterValue> {
+    let ParameterValue::Boolean(condition) = condition else {
+        return None;
+    };
+    match (&when_true, &when_false) {
+        (ParameterValue::Length(_), ParameterValue::Length(_))
+        | (ParameterValue::Angle(_), ParameterValue::Angle(_))
+        | (ParameterValue::Real(_), ParameterValue::Real(_))
+        | (ParameterValue::Integer(_), ParameterValue::Integer(_))
+        | (ParameterValue::Boolean(_), ParameterValue::Boolean(_)) => {
+            Some(if *condition { when_true } else { when_false })
+        }
+        (ParameterValue::Real(_), ParameterValue::Integer(_))
+        | (ParameterValue::Integer(_), ParameterValue::Real(_)) => {
+            Some(ParameterValue::Real(real_parameter_value(if *condition {
+                &when_true
+            } else {
+                &when_false
+            })?))
+        }
+        _ => None,
+    }
 }
 
 fn multiply_parameter_values(

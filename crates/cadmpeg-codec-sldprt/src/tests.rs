@@ -8449,7 +8449,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Width">4mm</Dimension><Dimension Name="Copies">3</Dimension><Dimension Name="Double width">Width * 2</Dimension><Dimension Name="Per copy">&quot;Double width&quot; / Copies</Dimension><Dimension Name="Forward">Later + 1mm</Dimension><Dimension Name="Later">2mm</Dimension><Dimension Name="Scientific">1e-3 * Width</Dimension><Dimension Name="Power">2^3^2</Dimension><Dimension Name="Sine">sin(30deg)</Dimension><Dimension Name="Inverse sine">arcsin(0.5)</Dimension><Dimension Name="Absolute">abs(-2mm)</Dimension><Dimension Name="Root">sqr(9)</Dimension><Dimension Name="Pi">pi</Dimension><Dimension Name="Invalid">Width + Copies</Dimension><Dimension Name="Invalid area">Width^2</Dimension></Feature></Keywords>"#,
+        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Width">4mm</Dimension><Dimension Name="Copies">3</Dimension><Dimension Name="Double width">Width * 2</Dimension><Dimension Name="Per copy">&quot;Double width&quot; / Copies</Dimension><Dimension Name="Forward">Later + 1mm</Dimension><Dimension Name="Later">2mm</Dimension><Dimension Name="Scientific">1e-3 * Width</Dimension><Dimension Name="Power">2^3^2</Dimension><Dimension Name="Sine">sin(30deg)</Dimension><Dimension Name="Inverse sine">arcsin(0.5)</Dimension><Dimension Name="Absolute">abs(-2mm)</Dimension><Dimension Name="Root">sqr(9)</Dimension><Dimension Name="Pi">pi</Dimension><Dimension Name="Conditional">iif(Width >= 4mm, Width * 2, 1mm)</Dimension><Dimension Name="Leading equals">=iif(Copies&lt;&gt;3, 1, 2)</Dimension><Dimension Name="Comparison">Width = 4mm</Dimension><Dimension Name="Invalid">Width + Copies</Dimension><Dimension Name="Invalid area">Width^2</Dimension><Dimension Name="Invalid branches">iif(true, Width, Copies)</Dimension></Feature></Keywords>"#,
     ));
 
     let decoded = SldprtCodec
@@ -8493,8 +8493,15 @@ fn decode_evaluates_parameter_dependency_expressions() {
         values["Pi"],
         Some(ParameterValue::Real(std::f64::consts::PI))
     );
+    assert_eq!(
+        values["Conditional"],
+        Some(ParameterValue::Length(Length(8.0)))
+    );
+    assert_eq!(values["Leading equals"], Some(ParameterValue::Integer(2)));
+    assert_eq!(values["Comparison"], Some(ParameterValue::Boolean(true)));
     assert_eq!(values["Invalid"], None);
     assert_eq!(values["Invalid area"], None);
+    assert_eq!(values["Invalid branches"], None);
 }
 
 #[test]
