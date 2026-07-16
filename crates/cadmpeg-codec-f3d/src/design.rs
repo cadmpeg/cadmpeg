@@ -3215,11 +3215,18 @@ fn historical_member_points(
     let entity_ref = member
         .historical_entity_ref
         .or_else(|| i64::try_from(member.local_id).ok())?;
-    let mut positions = Vec::new();
+    let mut states = HashMap::new();
     for state in histories.iter().flat_map(|history| &history.states) {
-        if !member.historical_state_ids.contains(&state.state_id) {
+        states
+            .entry(state.state_id)
+            .and_modify(|state| *state = None)
+            .or_insert(Some(state));
+    }
+    let mut positions = Vec::new();
+    for state_id in &member.historical_state_ids {
+        let Some(Some(state)) = states.get(state_id) else {
             continue;
-        }
+        };
         let Some(topology) = state.topology.as_ref() else {
             continue;
         };

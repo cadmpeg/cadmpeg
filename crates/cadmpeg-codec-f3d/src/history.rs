@@ -1686,9 +1686,14 @@ pub(crate) fn historical_identity_kind(
     local_id: u64,
 ) -> Option<(AsmHistoricalEntityKind, Vec<i64>)> {
     let entity_ref = i64::try_from(local_id).ok()?;
+    let ambiguous_states = ambiguous_history_state_ids(histories);
     let mut kinds = HashSet::new();
     let mut states = Vec::new();
-    for state in histories.iter().flat_map(|history| &history.states) {
+    for state in histories
+        .iter()
+        .flat_map(|history| &history.states)
+        .filter(|state| !ambiguous_states.contains(&state.state_id))
+    {
         let Some(topology) = &state.topology else {
             continue;
         };
@@ -1728,9 +1733,14 @@ pub(crate) fn historical_selection_identity_kind(
     local_id: u64,
 ) -> Option<(AsmHistoricalEntityKind, i64, Vec<i64>)> {
     let record_ref = i64::try_from(local_id).ok()?;
+    let ambiguous_states = ambiguous_history_state_ids(histories);
     let mut entity_refs = HashSet::new();
     let mut states = Vec::new();
-    for state in histories.iter().flat_map(|history| &history.states) {
+    for state in histories
+        .iter()
+        .flat_map(|history| &history.states)
+        .filter(|state| !ambiguous_states.contains(&state.state_id))
+    {
         for version in &state.entity_versions {
             if version.record_ref == record_ref {
                 entity_refs.insert(version.entity_ref);
@@ -1752,6 +1762,17 @@ pub(crate) fn historical_selection_identity_kind(
     let entity_ref = u64::try_from(entity_ref).ok()?;
     let (kind, _) = historical_identity_kind(histories, entity_ref)?;
     Some((kind, i64::try_from(entity_ref).ok()?, states))
+}
+
+fn ambiguous_history_state_ids(histories: &[AsmHistory]) -> HashSet<i64> {
+    let mut unique = HashSet::new();
+    let mut ambiguous = HashSet::new();
+    for state in histories.iter().flat_map(|history| &history.states) {
+        if !unique.insert(state.state_id) {
+            ambiguous.insert(state.state_id);
+        }
+    }
+    ambiguous
 }
 
 pub(crate) fn bind_extrude_selection_history(
@@ -3056,6 +3077,35 @@ mod tests {
         }];
         assert_eq!(
             historical_selection_identity_kind(std::slice::from_ref(&revision_history), 42),
+            None
+        );
+        let duplicate_state_history = AsmHistory {
+            id: "duplicate-state-history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            states: vec![state(
+                3,
+                AsmHistoricalTopology {
+                    vertices: vec![42],
+                    ..AsmHistoricalTopology::default()
+                },
+            )],
+        };
+        assert_eq!(
+            historical_identity_kind(&[history.clone(), duplicate_state_history.clone()], 42),
+            Some((AsmHistoricalEntityKind::Edge, vec![5]))
+        );
+        let mut duplicate_revision_history = duplicate_state_history;
+        duplicate_revision_history.states[0].entity_versions = vec![AsmEntityVersion {
+            entity_ref: 42,
+            record_ref: 700,
+        }];
+        assert_eq!(
+            historical_selection_identity_kind(
+                &[revision_history.clone(), duplicate_revision_history],
+                700,
+            ),
             None
         );
         let ambiguous = AsmHistory {
