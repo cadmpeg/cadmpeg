@@ -1978,6 +1978,8 @@ fn sketch_constraint_native_ref_must_resolve() {
                 parameter: None,
                 operands: vec![crate::sketches::SketchNativeOperand {
                     native_kind: "test".into(),
+                    native_field: None,
+                    native_role: None,
                     object_index: 0,
                     native_ref: Some("native:missing-operand#0".into()),
                 }],
@@ -1994,6 +1996,15 @@ fn sketch_constraint_native_ref_must_resolve() {
         finding.check == Check::NativeLinks
             && finding.entity.as_deref() == Some(id.0.as_str())
             && finding.message.contains("native:missing-operand#0")
+    }));
+    let crate::sketches::SketchConstraintDefinition::Native { operands, .. } =
+        &mut ir.model.sketch_constraints[0].definition
+    else {
+        unreachable!("test constraint is native")
+    };
+    operands[0].native_role = Some(7);
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::Counts && finding.entity.as_deref() == Some(id.0.as_str())
     }));
 }
 

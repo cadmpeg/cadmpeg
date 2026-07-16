@@ -196,8 +196,14 @@ pub enum SketchLocus {
 /// One ordered operand retained from a native sketch relation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchNativeOperand {
-    /// Source-native operand field and family.
+    /// Source-native operand family.
     pub native_kind: String,
+    /// Source-native field containing this operand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_field: Option<String>,
+    /// Source-native role code, when the field carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_role: Option<u32>,
     /// Source-native object index.
     pub object_index: u32,
     /// Resolved source-native operand record.

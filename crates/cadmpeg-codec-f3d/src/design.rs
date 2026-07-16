@@ -3892,7 +3892,9 @@ pub fn project_sketch_constraints(
             ("record", None)
         };
         SketchNativeOperand {
-            native_kind: format!("{field}_{family}"),
+            native_kind: family.into(),
+            native_field: Some(field.into()),
+            native_role: None,
             object_index: record_index,
             native_ref: native_ref
                 .filter(|_| !projected.contains_key(&(scope, record_index)))
@@ -4072,37 +4074,39 @@ pub fn project_dimension_constraints(
             .flatten()
             .and_then(|owner| sketches.get(&(scope, owner)).cloned())
     };
-    let native_operands = |scope: &str, indices: &[u32]| {
-        indices
-            .iter()
-            .filter(|record_index| !projected.contains_key(&(scope, **record_index)))
-            .map(|record_index| {
-                let (native_kind, _, native_ref) = native_geometry
-                    .get(&(scope, *record_index))
-                    .copied()
-                    .unwrap_or(("record", None, ""));
-                SketchNativeOperand {
-                    native_kind: native_kind.into(),
-                    object_index: *record_index,
-                    native_ref: (!native_ref.is_empty()).then(|| native_ref.to_owned()),
-                }
-            })
-            .collect::<Vec<_>>()
+    let native_operand = |scope: &str, field: &str, role: Option<u32>, record_index: u32| {
+        let (native_kind, _, native_ref) = native_geometry
+            .get(&(scope, record_index))
+            .copied()
+            .unwrap_or(("record", None, ""));
+        SketchNativeOperand {
+            native_kind: native_kind.into(),
+            native_field: Some(field.into()),
+            native_role: role,
+            object_index: record_index,
+            native_ref: (!native_ref.is_empty() && !projected.contains_key(&(scope, record_index)))
+                .then(|| native_ref.to_owned()),
+        }
     };
-    let native_definition =
-        |scope: &str, source_kind: &str, indices: &[u32], parameter| Definition::Native {
-            native_kind: source_kind.to_owned(),
-            entities: indices
-                .iter()
-                .filter_map(|record_index| {
-                    projected
-                        .get(&(scope, *record_index))
-                        .map(|entity| entity.id.clone())
-                })
-                .collect(),
-            parameter: Some(parameter),
-            operands: native_operands(scope, indices),
-        };
+    let native_definition = |scope: &str,
+                             source_kind: &str,
+                             operands: &[(&str, Option<u32>, u32)],
+                             parameter| Definition::Native {
+        native_kind: source_kind.to_owned(),
+        entities: operands
+            .iter()
+            .filter_map(|(_, _, record_index)| {
+                projected
+                    .get(&(scope, *record_index))
+                    .map(|entity| entity.id.clone())
+            })
+            .collect(),
+        parameter: Some(parameter),
+        operands: operands
+            .iter()
+            .map(|(field, role, record_index)| native_operand(scope, field, *role, *record_index))
+            .collect(),
+    };
     let exact_definition = |scope: &str,
                             source_kind: &str,
                             indices: &[u32],
@@ -4354,7 +4358,15 @@ pub fn project_dimension_constraints(
                 parameter_id.clone(),
             )
             .unwrap_or_else(|| {
-                native_definition(scope, &parameter.source_kind, &indices, parameter_id)
+                native_definition(
+                    scope,
+                    &parameter.source_kind,
+                    &[
+                        ("first_locus", Some(pair.first_role), indices[0]),
+                        ("second_locus", Some(pair.second_role), indices[1]),
+                    ],
+                    parameter_id,
+                )
             });
             Some(SketchConstraint {
                 id: constraint_id,
@@ -4369,15 +4381,22 @@ pub fn project_dimension_constraints(
                 return None;
             }
             let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
-            let indices = group
-                .loci
-                .iter()
-                .map(|locus| locus.geometry_record_index)
-                .collect::<Vec<_>>();
             let sketch = sketches.get(&(scope, group.owner_reference))?.clone();
             let definition = exact_group_definition(scope, group, parameter, parameter_id.clone())
                 .unwrap_or_else(|| {
-                    native_definition(scope, &parameter.source_kind, &indices, parameter_id)
+                    let mut operands = group
+                        .loci
+                        .iter()
+                        .map(|locus| ("locus", Some(locus.role), locus.geometry_record_index))
+                        .collect::<Vec<_>>();
+                    operands.push(("owner", Some(group.owner_role), group.owner_reference));
+                    operands.extend(
+                        group
+                            .return_members
+                            .iter()
+                            .map(|record_index| ("return", None, *record_index)),
+                    );
+                    native_definition(scope, &parameter.source_kind, &operands, parameter_id)
                 });
             Some(SketchConstraint {
                 id: neutral_sketch_constraint_id(&group.id, group.record_index),
@@ -4414,12 +4433,21 @@ pub fn project_dimension_constraints(
                     });
                 }
             }
-            let mut operands = vec![SketchNativeOperand {
-                native_kind: "null_locus".into(),
-                object_index: 0,
-                native_ref: None,
-            }];
-            operands.extend(native_operands(scope, &indices));
+            let operands = vec![
+                SketchNativeOperand {
+                    native_kind: "null_locus".into(),
+                    native_field: Some("locus".into()),
+                    native_role: Some(pair.null_role),
+                    object_index: 0,
+                    native_ref: None,
+                },
+                native_operand(
+                    scope,
+                    "locus",
+                    Some(pair.geometry_role),
+                    pair.geometry_record_index,
+                ),
+            ];
             Some(SketchConstraint {
                 id: constraint_id,
                 sketch,
@@ -4508,6 +4536,8 @@ pub fn project_dimension_constraints(
                         .into_iter()
                         .map(|record| SketchNativeOperand {
                             native_kind: "construction_recipe".into(),
+                            native_field: Some("recipe".into()),
+                            native_role: None,
                             object_index: record.record_index,
                             native_ref: Some(record.id.clone()),
                         })
@@ -14776,12 +14806,12 @@ mod relation_tests {
             } if native_kind == "horizontal"
                 && entities.len() == 3
                 && entities.iter().all(|entity| entity == &entities[0])
-                && operands.iter().map(|operand| (operand.native_kind.as_str(), operand.object_index)).collect::<Vec<_>>()
+                && operands.iter().map(|operand| (operand.native_field.as_deref(), operand.native_kind.as_str(), operand.object_index)).collect::<Vec<_>>()
                     == [
-                        ("member_point", 175),
-                        ("auxiliary_record", 999),
-                        ("return_point", 175),
-                        ("return_point", 175),
+                        (Some("member"), "point", 175),
+                        (Some("auxiliary"), "record", 999),
+                        (Some("return"), "point", 175),
+                        (Some("return"), "point", 175),
                     ]
         ));
         assert!(matches!(
@@ -15459,11 +15489,11 @@ mod relation_tests {
             opaque_index_offset: 65,
             first_geometry_record_index: 40,
             first_geometry_reference_offset: 70,
-            first_role: 0,
+            first_role: 7,
             first_role_offset: 80,
             second_geometry_record_index: 41,
             second_geometry_reference_offset: 85,
-            second_role: 0,
+            second_role: 8,
             second_role_offset: 95,
             paired_class_tag: "273".into(),
             paired_byte_offset: 130,
@@ -15565,7 +15595,40 @@ mod relation_tests {
         assert_eq!(duplicate.len(), 1);
         assert!(matches!(
             duplicate[0].definition,
-            SketchConstraintDefinition::Native { .. }
+            SketchConstraintDefinition::Native { ref operands, .. }
+                if operands.iter().map(|operand| (operand.native_field.as_deref(), operand.native_role, operand.object_index)).collect::<Vec<_>>()
+                    == [
+                        (Some("first_locus"), Some(7), 40),
+                        (Some("second_locus"), Some(8), 40),
+                    ]
+        ));
+
+        let mut group_owner = owner;
+        group_owner.companion_record_index = group.companion_record_index;
+        let grouped = project_dimension_constraints(
+            std::slice::from_ref(&placement),
+            std::slice::from_ref(&zero_parameter),
+            std::slice::from_ref(&group_owner),
+            &[],
+            std::slice::from_ref(&group),
+            &[],
+            &[],
+            &[],
+            &points,
+            &[],
+            &entities,
+        );
+        assert!(matches!(
+            grouped.as_slice(),
+            [cadmpeg_ir::sketches::SketchConstraint {
+                definition: SketchConstraintDefinition::Native { operands, .. },
+                ..
+            }] if operands.iter().map(|operand| (operand.native_field.as_deref(), operand.native_role, operand.object_index)).collect::<Vec<_>>()
+                == [
+                    (Some("locus"), Some(0), 40),
+                    (Some("owner"), Some(0), 100),
+                    (Some("return"), None, 40),
+                ]
         ));
     }
 

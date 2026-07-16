@@ -240,7 +240,18 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 entities,
                 operands,
                 ..
-            } => !native_kind.is_empty() && (!entities.is_empty() || !operands.is_empty()),
+            } => {
+                !native_kind.is_empty()
+                    && (!entities.is_empty() || !operands.is_empty())
+                    && operands.iter().all(|operand| {
+                        !operand.native_kind.is_empty()
+                            && operand
+                                .native_field
+                                .as_ref()
+                                .is_none_or(|field| !field.is_empty())
+                            && (operand.native_role.is_none() || operand.native_field.is_some())
+                    })
+            }
             _ => true,
         };
         if !valid {
