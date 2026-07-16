@@ -407,8 +407,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if let Constraint::Coradial { first, second } = &constraint.definition {
             let circular = |entity| match geometry.get(entity) {
-                Some(SketchGeometry::Circle { center, radius })
-                | Some(SketchGeometry::Arc { center, radius, .. }) => Some((*center, radius.0)),
+                Some(
+                    SketchGeometry::Circle { center, radius }
+                    | SketchGeometry::Arc { center, radius, .. },
+                ) => Some((*center, radius.0)),
                 _ => None,
             };
             match (circular(first), circular(second)) {

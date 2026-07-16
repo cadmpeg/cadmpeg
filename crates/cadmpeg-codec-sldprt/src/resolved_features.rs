@@ -8480,7 +8480,9 @@ fn typed_marker_relation_definition_in_sketch(
                         ..
                     },
                 ..
-            }) = sketch_entities.iter().find(|candidate| candidate.id == entity)
+            }) = sketch_entities
+                .iter()
+                .find(|candidate| candidate.id == entity)
             else {
                 return Some(native());
             };
@@ -8910,11 +8912,13 @@ fn binary_relation_matches_evaluated_geometry(
         Coradial => centered_geometry(first)
             .zip(circular_radius(first))
             .zip(centered_geometry(second).zip(circular_radius(second)))
-            .is_some_and(|((first_center, first_radius), (second_center, second_radius))| {
-                same_dimension_length(first_center.u, second_center.u)
-                    && same_dimension_length(first_center.v, second_center.v)
-                    && same_dimension_length(first_radius, second_radius)
-            }),
+            .is_some_and(
+                |((first_center, first_radius), (second_center, second_radius))| {
+                    same_dimension_length(first_center.u, second_center.u)
+                        && same_dimension_length(first_center.v, second_center.v)
+                        && same_dimension_length(first_radius, second_radius)
+                },
+            ),
         Equal => equal_geometry_size(first, second),
         Tangent => tangent_geometry(first, second),
         _ => false,
@@ -11695,10 +11699,7 @@ fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLocus)> {
                             + major_angle.0.cos() * minor_radius.0 * parameter.sin(),
                     )
                 };
-                loci.push(locus(
-                    point(start.0),
-                    SketchLocus::Start(entity.id.clone()),
-                ));
+                loci.push(locus(point(start.0), SketchLocus::Start(entity.id.clone())));
                 loci.push(locus(point(end.0), SketchLocus::End(entity.id.clone())));
             }
             loci

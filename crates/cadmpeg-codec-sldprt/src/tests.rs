@@ -455,7 +455,12 @@ fn circle_carrier(attr: u16, center: [f64; 3], axis: [f64; 3], radius: f64) -> V
     } else {
         [1.0, 0.0, 0.0]
     };
-    for value in center.into_iter().chain(axis).chain(reference).chain([radius]) {
+    for value in center
+        .into_iter()
+        .chain(axis)
+        .chain(reference)
+        .chain([radius])
+    {
         bef64(&mut b, value);
     }
     b
