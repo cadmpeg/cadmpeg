@@ -1603,3 +1603,14 @@ A compressed diameter form omits the explicit center; its endpoint distance is
 twice the radius, their midpoint is the center, and their shared model Z value
 selects the model-Z plane. The first endpoint defines the reference direction.
 The later parameter fields do not alter this carrier equation.
+
+The named entity in `ent_list(conic)` declares compact `id`, `type`, and
+`flip` fields; model-coordinate arrays `end1 f8 03` and `end2 f8 03`; scalar
+fields `t0`, `t1`, `c1`, and `c2`; and a twelve-slot
+`local_sys f9 04 03` body. The endpoint arrays use the model-reference
+coordinate lane. Within the local-system body, `18 e5` expands to the three
+slots `[0, 1, 0]`; other slots use the same coordinate lane, including an `18`
+standalone-zero slot before another complete coordinate. The conic record
+standalone-zero slot before another complete coordinate; a terminal `18` is
+also a zero local-system slot. The conic record retains its coefficients and parameter fields without assigning ellipse,
+parabola, or hyperbola semantics until the coefficient equation is resolved.

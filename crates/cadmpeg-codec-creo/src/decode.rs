@@ -595,6 +595,20 @@ struct CreoReferenceCircleRecord {
     offset: usize,
 }
 
+#[derive(Serialize)]
+struct CreoReferenceConicRecord {
+    id: String,
+    entity_id: u32,
+    type_id: u32,
+    flip: u32,
+    endpoints: [[f64; 3]; 2],
+    parameter_interval: [Option<f64>; 2],
+    coefficients: [f64; 2],
+    local_system: Option<[f64; 12]>,
+    body: Vec<u8>,
+    offset: usize,
+}
+
 fn expanded_section_records(scan: &ContainerScan) -> Vec<CreoExpandedSectionRecord> {
     scan.expanded_sections
         .iter()
@@ -19320,6 +19334,37 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("reference_circles", &records)?;
+    }
+    if !scan.reference_conics.is_empty() {
+        let records = scan
+            .reference_conics
+            .iter()
+            .map(|conic| CreoReferenceConicRecord {
+                id: format!("creo:mdl_ref_info:conic_record#{}", conic.offset),
+                entity_id: conic.entity_id,
+                type_id: conic.type_id,
+                flip: conic.flip,
+                endpoints: [conic.start, conic.end],
+                parameter_interval: [conic.parameter_start, conic.parameter_end],
+                coefficients: [conic.coefficient_1, conic.coefficient_2],
+                local_system: conic.local_system,
+                body: conic.body.clone(),
+                offset: conic.offset,
+            })
+            .collect::<Vec<_>>();
+        for record in &records {
+            annotate(
+                &mut annotations,
+                &record.id,
+                "MdlRefInfo",
+                record.offset as u64,
+                "reference_conic_record",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("reference_conics", &records)?;
     }
     for line in &scan.reference_lines {
         let direction = std::array::from_fn(|axis| line.end[axis] - line.start[axis]);

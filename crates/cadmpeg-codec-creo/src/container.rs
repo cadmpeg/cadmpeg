@@ -30,7 +30,7 @@ use crate::feature::{
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
 use crate::psb;
-use crate::reference::{self, ReferenceCircle, ReferenceLine};
+use crate::reference::{self, ReferenceCircle, ReferenceConic, ReferenceLine};
 use crate::surface::{
     self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceParameterRecord,
     SurfacePrototype, SurfacePrototypeRecord, SurfaceRow, TabulatedCylinderCurveReplay,
@@ -200,6 +200,8 @@ pub struct ContainerScan {
     pub reference_lines: Vec<ReferenceLine>,
     /// Complete model-Z circular entities from `MdlRefInfo` rows.
     pub reference_circles: Vec<ReferenceCircle>,
+    /// Named conic entities from `MdlRefInfo` with complete defining fields.
+    pub reference_conics: Vec<ReferenceConic>,
     /// Identified layout family.
     pub layout: Layout,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
@@ -1578,6 +1580,22 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
                 })
         })
         .collect();
+    let reference_conics = sections
+        .iter()
+        .filter(|section| section.name == "MdlRefInfo")
+        .flat_map(|section| {
+            let end = section
+                .offset
+                .saturating_add(section.length)
+                .min(data.len());
+            reference::named_conics(&data[section.offset..end])
+                .into_iter()
+                .map(move |mut conic| {
+                    conic.offset += section.offset;
+                    conic
+                })
+        })
+        .collect();
     let layout = identify_layout(&sections);
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
@@ -1732,6 +1750,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         primitive_triangle_strips,
         reference_lines,
         reference_circles,
+        reference_conics,
         layout,
         census,
         principal_unit,

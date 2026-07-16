@@ -44,6 +44,35 @@ pub struct ReferenceCircle {
     pub offset: usize,
 }
 
+/// One named model-reference conic record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReferenceConic {
+    /// Entity identifier in the conic list.
+    pub entity_id: u32,
+    /// Stored conic type discriminator.
+    pub type_id: u32,
+    /// Stored orientation selector.
+    pub flip: u32,
+    /// First stored endpoint in model coordinates.
+    pub start: [f64; 3],
+    /// Second stored endpoint in model coordinates.
+    pub end: [f64; 3],
+    /// First stored conic parameter, when its scalar form is defined.
+    pub parameter_start: Option<f64>,
+    /// Second stored conic parameter, when its scalar form is defined.
+    pub parameter_end: Option<f64>,
+    /// First stored conic coefficient.
+    pub coefficient_1: f64,
+    /// Second stored conic coefficient.
+    pub coefficient_2: f64,
+    /// Twelve decoded local-system slots, when the body is complete.
+    pub local_system: Option<[f64; 12]>,
+    /// Exact bytes from the `id` value through the local-system body.
+    pub body: Vec<u8>,
+    /// Byte offset of the named conic list record.
+    pub offset: usize,
+}
+
 fn coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
     if data.get(offset) == Some(&0x18)
         && scalar::decode_model_reference_coordinate(data, offset + 1, cache).is_some()
@@ -79,6 +108,168 @@ fn scalar_suffix(row: &[u8], count: usize, cache: &ScalarCache) -> Option<Vec<f6
         })
         .min_by_key(|(start, _)| *start)
         .map(|(_, values)| values)
+}
+
+fn find_in(data: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
+    (start <= end && end <= data.len()).then_some(())?;
+    data[start..end]
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .map(|relative| start + relative)
+}
+
+fn named_coordinate(
+    data: &[u8],
+    label: &[u8],
+    start: usize,
+    end: usize,
+    cache: &ScalarCache,
+) -> Option<f64> {
+    let label_offset = find_in(data, label, start, end)?;
+    coordinate(data, label_offset + label.len(), cache).map(|(value, _)| value)
+}
+
+fn named_point(
+    data: &[u8],
+    label: &[u8],
+    start: usize,
+    end: usize,
+    cache: &ScalarCache,
+) -> Option<[f64; 3]> {
+    let label_offset = find_in(data, label, start, end)?;
+    let opener = label_offset + label.len();
+    (data.get(opener) == Some(&crate::psb::token::ARRAY_OPEN)).then_some(())?;
+    let (count, mut cursor) = crate::psb::compact_int(data, opener + 1);
+    (count == 3 && cursor > opener + 1).then_some(())?;
+    let mut values = [0.0; 3];
+    for value in &mut values {
+        let (decoded, next) = coordinate(data, cursor, cache)?;
+        *value = decoded;
+        cursor = next;
+    }
+    values
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(values)
+}
+
+fn conic_local_system(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
+    if let Some(slots) = scalar::decode_curve_expression_local_system_slots(body, cache) {
+        return Some(slots);
+    }
+    let mut values = Vec::with_capacity(12);
+    let mut cursor = 0;
+    while cursor < body.len() && values.len() < 12 {
+        if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
+            values.extend([0.0, 1.0, 0.0]);
+            cursor += 2;
+            continue;
+        }
+        if body.get(cursor) == Some(&0x18) && cursor + 1 == body.len() {
+            values.push(0.0);
+            cursor += 1;
+            continue;
+        }
+        let (value, next) = coordinate(body, cursor, cache)?;
+        values.push(value);
+        cursor = next;
+    }
+    (cursor == body.len() && values.len() == 12 && values.iter().all(|value| value.is_finite()))
+        .then(|| values.try_into().expect("twelve bounded conic frame slots"))
+}
+
+/// Decode the named entity that establishes each `ent_list(conic)` schema.
+///
+/// The coefficients and parameter fields remain stored conic semantics; this
+/// function does not classify the record as an ellipse, parabola, or
+/// hyperbola.
+pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
+    const LIST: &[u8] = b"ent_list(conic)\0";
+    const NEXT_LIST: &[u8] = b"\xe0\x00ent_list(";
+    const LOCAL_SYSTEM: &[u8] = b"\xe0\x02local_sys\0\xf9\x04\x03";
+    let cache = ScalarCache::from_section(payload);
+    let mut result = Vec::new();
+    let mut search = 0;
+    while let Some(offset) = find_in(payload, LIST, search, payload.len()) {
+        let fields_start = offset + LIST.len();
+        let block_end =
+            find_in(payload, NEXT_LIST, fields_start, payload.len()).unwrap_or(payload.len());
+        const ID: &[u8] = b"\xe0\x01id\0";
+        const TYPE: &[u8] = b"\xe0\x01type\0";
+        const FLIP: &[u8] = b"\xe0\x01flip\0";
+        let Some(id_label) = find_in(payload, ID, fields_start, block_end) else {
+            search = block_end.max(fields_start);
+            continue;
+        };
+        let (entity_id, after_id) = crate::psb::compact_int(payload, id_label + ID.len());
+        let Some(type_label) = find_in(payload, TYPE, after_id, block_end) else {
+            search = block_end.max(fields_start);
+            continue;
+        };
+        let (type_id, after_type) = crate::psb::compact_int(payload, type_label + TYPE.len());
+        let Some(flip_label) = find_in(payload, FLIP, after_type, block_end) else {
+            search = block_end.max(fields_start);
+            continue;
+        };
+        let (flip, after_flip) = crate::psb::compact_int(payload, flip_label + FLIP.len());
+        let Some(local_label) = find_in(payload, LOCAL_SYSTEM, after_flip, block_end) else {
+            search = block_end.max(fields_start);
+            continue;
+        };
+        let local_start = local_label + LOCAL_SYSTEM.len();
+        let local_end = find_in(
+            payload,
+            &[0xf2, crate::psb::token::ENTITY_REF],
+            local_start,
+            block_end,
+        )
+        .unwrap_or(block_end);
+        let start = named_point(payload, b"\xe0\x02end1\0", after_flip, local_label, &cache);
+        let end = named_point(payload, b"\xe0\x02end2\0", after_flip, local_label, &cache);
+        let coefficient_1 =
+            named_coordinate(payload, b"\xe0\x02c1\0", after_flip, local_label, &cache);
+        let coefficient_2 =
+            named_coordinate(payload, b"\xe0\x02c2\0", after_flip, local_label, &cache);
+        let (Some(start), Some(end), Some(coefficient_1), Some(coefficient_2)) =
+            (start, end, coefficient_1, coefficient_2)
+        else {
+            search = block_end.max(fields_start);
+            continue;
+        };
+        if !coefficient_1.is_finite() || !coefficient_2.is_finite() {
+            search = block_end.max(fields_start);
+            continue;
+        }
+        result.push(ReferenceConic {
+            entity_id,
+            type_id,
+            flip,
+            start,
+            end,
+            parameter_start: named_coordinate(
+                payload,
+                b"\xe0\x02t0\0",
+                after_flip,
+                local_label,
+                &cache,
+            ),
+            parameter_end: named_coordinate(
+                payload,
+                b"\xe0\x02t1\0",
+                after_flip,
+                local_label,
+                &cache,
+            ),
+            coefficient_1,
+            coefficient_2,
+            local_system: conic_local_system(&payload[local_start..local_end], &cache),
+            body: payload[id_label + ID.len()..local_end].to_vec(),
+            offset,
+        });
+        search = block_end.max(fields_start);
+    }
+    result.sort_by_key(|conic| conic.offset);
+    result
 }
 
 /// Decode every complete positional `entity(line)` row.
@@ -420,6 +611,39 @@ mod tests {
         assert_eq!(line.start[0], 0.0);
         assert_eq!(line.end[0], 0.0);
         assert_ne!(line.start, line.end);
+    }
+
+    #[test]
+    fn decodes_named_conic_fields_without_classifying_the_conic() {
+        let local_body = b"\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6";
+        assert!(conic_local_system(local_body, &ScalarCache::from_section(local_body)).is_some());
+        let payload = b"ent_list(conic)\0\
+            \xe0\x01id\0\x2a\xe0\x01type\0\x1e\
+            \xe0\x00gen_info\0\xe2\xf7\x13\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\
+            \xe0\x01flip\0\x01\
+            \xe0\x02end1\0\xf8\x03\xe4\x0f\x0f\
+            \xe0\x02end2\0\xf8\x03\x43\xf0\x00\x0f\x0f\
+            \xe0\x02t0\0\x0f\xe0\x02t1\0\xe4\
+            \xe0\x02c1\0\x43\xf0\x00\xe0\x02c2\0\xe4\
+            \xe0\x02local_sys\0\xf9\x04\x03\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6\
+            \xf2\xf7\x0e\xe3";
+
+        let decoded = named_conics(payload);
+        let [conic] = decoded.as_slice() else {
+            panic!("one conic");
+        };
+        assert_eq!(conic.entity_id, 42);
+        assert_eq!(conic.type_id, 30);
+        assert_eq!(conic.flip, 1);
+        assert_eq!(conic.start, [1.0, 0.0, 0.0]);
+        assert_eq!(conic.end, [-1.0, 0.0, 0.0]);
+        assert_eq!(conic.parameter_start, Some(0.0));
+        assert_eq!(conic.parameter_end, Some(1.0));
+        assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
+        assert_eq!(
+            conic.local_system,
+            Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        );
     }
 
     #[test]
