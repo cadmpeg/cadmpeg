@@ -530,6 +530,12 @@ contain the same point.
 | DEPDB one-sided suffix | `[0, X1, F1, 0]`; `127` terminates `X1`                        |
 | Row terminators        | `e1 e3` or `e1 f5 05 f6 e3`                                    |
 
+When the byte following either row terminator begins a valid positional prefix,
+that boundary prefix is authoritative; prefix-like byte sequences inside its
+bounded parameter body do not introduce competing row starts. A segment that
+contains a named preamble instead uses its unique valid prefix before the
+terminal topology suffix.
+
 A DEPDB cross-section curve count includes one labeled prototype followed by
 `count - 1` positional rows. Each positional row has one fixed prefix and one
 uniquely bounded `[0, X1, F1, 0]` suffix. The bytes between them are the row's
@@ -595,7 +601,12 @@ curve parameter body as maximal opaque spans. The coordinate-token and opaque
 span sets partition the complete retained body. Scalar order does not assign
 point or parameter roles.
 
-Within the `fc 05` scalar lane, `8b <tail6>` reconstructs the IEEE-754 bytes `40 00 <tail6>` and consumes seven stored bytes. This lane-specific interpretation takes precedence over the context-independent `8b` scalar form.
+Within the `fc 05` scalar lane, the positive DICT prefixes `71`, `74`, `76`,
+`81`, `8b`, `90`, `91`, `a1`, `a2`, and `b7` each consume six payload bytes
+and reconstruct the two high IEEE-754 bytes from the prefix. In particular,
+`8b <tail6>` reconstructs `40 00 <tail6>` and `71 <tail6>` reconstructs `3f e6
+<tail6>`. These lane-specific interpretations take precedence over wider
+context-independent forms of the same prefix.
 
 An `fc 05` cap pair belongs to one cylinder when each curve suffix binds one
 side to the same `geom_type = 24` face and the other side to a `geom_type = 22`

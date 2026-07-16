@@ -1050,7 +1050,12 @@ fn row_terminator(payload: &[u8], start: usize, end: usize) -> Option<(usize, us
     }
 }
 
-fn framed_segment(payload: &[u8], start: usize, end: usize) -> Option<FramedRow> {
+fn framed_segment(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    boundary_anchored: bool,
+) -> Option<FramedRow> {
     let segment = payload.get(start..end)?;
     let mut prefixes = (0..segment.len())
         .filter_map(|row_start| {
@@ -1069,6 +1074,14 @@ fn framed_segment(payload: &[u8], start: usize, end: usize) -> Option<FramedRow>
         let Some((suffix_start, _)) = topology_suffix(&segment[..row_end]) else {
             continue;
         };
+        if boundary_anchored
+            && topology_prefix_fields(segment, 0).is_some_and(|prefix| prefix.end <= suffix_start)
+        {
+            return Some(FramedRow {
+                start,
+                end: start + row_end,
+            });
+        }
         let eligible = prefixes.partition_point(|(_, prefix_end)| *prefix_end <= suffix_start);
         if eligible == 1 {
             return Some(FramedRow {
@@ -1100,11 +1113,13 @@ fn framed_rows(payload: &[u8]) -> Vec<FramedRow> {
             continue;
         };
         let mut cursor = label + b"topol_ref_data\0".len();
+        let mut boundary_anchored = false;
         while let Some((terminator, length)) = row_terminator(payload, cursor, namespace_end) {
-            if let Some(row) = framed_segment(payload, cursor, terminator) {
+            if let Some(row) = framed_segment(payload, cursor, terminator, boundary_anchored) {
                 result.push(row);
             }
             cursor = terminator + length;
+            boundary_anchored = true;
         }
     }
     result.sort_by_key(|row| row.start);
@@ -1364,12 +1379,8 @@ fn fc05_scalar(body: &[u8], offset: usize) -> Option<(f64, usize)> {
     if prefix == 0x18 {
         return Some((0.0, offset + 1));
     }
-    if prefix == 0x8b {
-        let tail = body.get(offset + 1..offset + 7)?;
-        let mut raw = [0; 8];
-        raw[..2].copy_from_slice(&[0x40, 0x00]);
-        raw[2..].copy_from_slice(tail);
-        return Some((f64::from_be_bytes(raw), offset + 7));
+    if let Some(decoded) = scalar::decode_positive_dict(body, offset) {
+        return Some(decoded);
     }
     if let Some(decoded) = scalar::decode(body, offset) {
         return Some(decoded);
@@ -1954,6 +1965,24 @@ mod tests {
     }
 
     #[test]
+    fn row_boundary_outweighs_prefix_like_bytes_inside_a_dense_body() {
+        let payload = [
+            b't', b'o', b'p', b'o', b'l', b'_', b'r', b'e', b'f', b'_', b'd', b'a', b't', b'a', 0,
+            0xff, 0xe1, 0xe3, // named prototype segment
+            7, 8, 4, 1, 0xf6, // row prefix
+            0xfc, 5, 9, 8, 4, 1, 0xf6, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, // dense body with a false prefix
+            10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3,
+        ];
+
+        assert_eq!(topology_rows(&payload).len(), 1);
+        assert_eq!(
+            parameter_records(&payload)[0].body[0..7],
+            [0xfc, 5, 9, 8, 4, 1, 0xf6]
+        );
+    }
+
+    #[test]
     fn decodes_complete_depdb_one_sided_curve_array() {
         let payload = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xe4\xff\0\x09\x0a\0\xe1\xe0next_record\0";
 
@@ -2052,6 +2081,14 @@ mod tests {
             fc05_scalar(&bytes, 0),
             Some((
                 f64::from_be_bytes([0x40, 0x00, 0x13, 0x11, 0x71, 0x7e, 0xcd, 0xf4]),
+                7
+            ))
+        );
+        let lower = [0x71, 0x68, 0xf7, 0x91, 0x89, 0x97, 0x45, 0x2d];
+        assert_eq!(
+            fc05_scalar(&lower, 0),
+            Some((
+                f64::from_be_bytes([0x3f, 0xe6, 0x68, 0xf7, 0x91, 0x89, 0x97, 0x45]),
                 7
             ))
         );
