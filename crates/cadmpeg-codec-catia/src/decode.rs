@@ -5158,6 +5158,18 @@ fn attach_standard_topology(
     }) {
         return false;
     }
+    let Some(body_arena_indices) = (0..body_kinds.len())
+        .map(|body_index| {
+            let id = BodyId(format!("catia:standard:body#{body_index}"));
+            ir.model.bodies.iter().position(|body| body.id == id)
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    for (&arena_index, &kind) in body_arena_indices.iter().zip(&body_kinds) {
+        ir.model.bodies[arena_index].kind = kind;
+    }
 
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(&edge_vertices).enumerate()
     {
@@ -5308,13 +5320,6 @@ fn attach_standard_topology(
             let next = uses[(position + 1) % uses.len()];
             ir.model.coedges[*current].radial_next = ir.model.coedges[next].id.clone();
         }
-    }
-    for (body_index, kind) in body_kinds.into_iter().enumerate() {
-        let id = BodyId(format!("catia:standard:body#{body_index}"));
-        let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == id) else {
-            return false;
-        };
-        body.kind = kind;
     }
     true
 }
