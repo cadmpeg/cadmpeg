@@ -800,18 +800,22 @@ pub struct FeatureOrderTable {
 impl FeatureOrderTable {
     /// Resolve a generated-entity position to its section entity identifier.
     pub fn external_id(&self, internal_id: u32) -> Option<u32> {
-        self.rows
+        let mut matches = self
+            .rows
             .iter()
-            .find(|row| row.internal_id == internal_id)
-            .map(|row| row.external_id)
+            .filter(|row| row.internal_id == internal_id);
+        let row = matches.next()?;
+        matches.next().is_none().then_some(row.external_id)
     }
 
     /// Resolve a section entity identifier to its generated-entity position.
     pub fn internal_id(&self, external_id: u32) -> Option<u32> {
-        self.rows
+        let mut matches = self
+            .rows
             .iter()
-            .find(|row| row.external_id == external_id)
-            .map(|row| row.internal_id)
+            .filter(|row| row.external_id == external_id);
+        let row = matches.next()?;
+        matches.next().is_none().then_some(row.internal_id)
     }
 }
 
@@ -6481,6 +6485,25 @@ mod tests {
         assert_eq!(order.rows[0].internal_id, 2);
         assert_eq!(order.rows[0].bitmask, 1);
         assert_eq!(order.rows[1].external_id, 11);
+        assert_eq!(order.internal_id(10), Some(2));
+        assert_eq!(order.external_id(2), Some(10));
+
+        let mut duplicate_external = order.clone();
+        duplicate_external.rows.push(FeatureOrderRow {
+            external_id: 10,
+            internal_id: 4,
+            bitmask: 0,
+            offset: 20,
+        });
+        assert_eq!(duplicate_external.internal_id(10), None);
+        let mut duplicate_internal = order;
+        duplicate_internal.rows.push(FeatureOrderRow {
+            external_id: 12,
+            internal_id: 2,
+            bitmask: 0,
+            offset: 21,
+        });
+        assert_eq!(duplicate_internal.external_id(2), None);
     }
 
     #[test]

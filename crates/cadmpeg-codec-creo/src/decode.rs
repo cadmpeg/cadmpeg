@@ -7891,12 +7891,7 @@ fn section_skamp_locus(
         "creo:featdefs:sketch_entity#{}:{}",
         definition.id, item.entity_id
     ));
-    if let Some(segment) = definition
-        .segments
-        .iter()
-        .flat_map(|segments| &segments.rows)
-        .find(|segment| segment.external_id == item.entity_id)
-    {
+    if let Some(segment) = unique_section_skamp_segment(definition, item.entity_id) {
         return match (segment.kind, item.sense) {
             (_, 0) => Some(SketchLocus::Entity(entity)),
             (crate::feature::FeatureSegmentKind::Arc, 2) => Some(SketchLocus::End(entity)),
@@ -7907,29 +7902,15 @@ fn section_skamp_locus(
             _ => None,
         };
     }
-    let internal_id = definition
-        .order_table
-        .as_ref()?
-        .rows
+    if definition
+        .segments
         .iter()
-        .find(|row| row.external_id == item.entity_id)?
-        .internal_id;
-    let saved = definition
-        .saved_section
-        .as_ref()?
-        .entities
-        .iter()
-        .find(|saved| match saved {
-            crate::feature::FeatureSavedEntity::Line(line) => line.entity_id == internal_id,
-            crate::feature::FeatureSavedEntity::Arc(arc) => arc.entity_id == internal_id,
-            crate::feature::FeatureSavedEntity::Circle(circle) => circle.entity_id == internal_id,
-            crate::feature::FeatureSavedEntity::Spline(spline) => {
-                spline.entity_id == Some(internal_id)
-            }
-            crate::feature::FeatureSavedEntity::Dummy(dummy) => {
-                dummy.entity_id == Some(internal_id)
-            }
-        })?;
+        .flat_map(|segments| &segments.rows)
+        .any(|segment| segment.external_id == item.entity_id)
+    {
+        return None;
+    }
+    let saved = section_saved_entity(definition, item.entity_id)?;
     match (saved, item.sense) {
         (_, 0) => Some(SketchLocus::Entity(entity)),
         (crate::feature::FeatureSavedEntity::Line(_), 2) => Some(SketchLocus::Start(entity)),
@@ -8015,25 +7996,24 @@ fn section_skamp_is_line(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
-    definition
+    let has_segment = definition
         .segments
         .iter()
         .flat_map(|table| &table.rows)
-        .find(|segment| segment.external_id == item.entity_id)
-        .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
-        || section_saved_entity(definition, item.entity_id)
-            .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Line(_)))
+        .any(|segment| segment.external_id == item.entity_id);
+    if has_segment {
+        return unique_section_skamp_segment(definition, item.entity_id)
+            .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line);
+    }
+    section_saved_entity(definition, item.entity_id)
+        .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Line(_)))
 }
 
 fn section_skamp_is_point(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
-    definition
-        .segments
-        .iter()
-        .flat_map(|table| &table.rows)
-        .find(|segment| segment.external_id == item.entity_id)
+    unique_section_skamp_segment(definition, item.entity_id)
         .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point)
 }
 
@@ -8042,12 +8022,12 @@ fn section_saved_entity(
     external_id: u32,
 ) -> Option<&crate::feature::FeatureSavedEntity> {
     let internal_id = definition.order_table.as_ref()?.internal_id(external_id)?;
-    definition
+    let mut matches = definition
         .saved_section
         .as_ref()?
         .entities
         .iter()
-        .find(|entity| match entity {
+        .filter(|entity| match entity {
             crate::feature::FeatureSavedEntity::Line(line) => line.entity_id == internal_id,
             crate::feature::FeatureSavedEntity::Arc(arc) => arc.entity_id == internal_id,
             crate::feature::FeatureSavedEntity::Circle(circle) => circle.entity_id == internal_id,
@@ -8057,7 +8037,9 @@ fn section_saved_entity(
             crate::feature::FeatureSavedEntity::Dummy(dummy) => {
                 dummy.entity_id == Some(internal_id)
             }
-        })
+        });
+    let entity = matches.next()?;
+    matches.next().is_none().then_some(entity)
 }
 
 fn section_skamp_circular_entity(
@@ -8067,34 +8049,23 @@ fn section_skamp_circular_entity(
     if item.sense != 0 {
         return None;
     }
-    let circular = definition
+    let has_segment = definition
         .segments
         .iter()
         .flat_map(|segments| &segments.rows)
-        .find(|segment| segment.external_id == item.entity_id)
-        .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
-        || definition
-            .order_table
-            .iter()
-            .flat_map(|table| &table.rows)
-            .find(|row| row.external_id == item.entity_id)
-            .and_then(|row| {
-                definition
-                    .saved_section
-                    .as_ref()?
-                    .entities
-                    .iter()
-                    .find(|entity| match entity {
-                        crate::feature::FeatureSavedEntity::Arc(arc) => {
-                            arc.entity_id == row.internal_id
-                        }
-                        crate::feature::FeatureSavedEntity::Circle(circle) => {
-                            circle.entity_id == row.internal_id
-                        }
-                        _ => false,
-                    })
-            })
-            .is_some();
+        .any(|segment| segment.external_id == item.entity_id);
+    let circular = if has_segment {
+        unique_section_skamp_segment(definition, item.entity_id)
+            .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
+    } else {
+        section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
+            matches!(
+                entity,
+                crate::feature::FeatureSavedEntity::Arc(_)
+                    | crate::feature::FeatureSavedEntity::Circle(_)
+            )
+        })
+    };
     circular.then(|| {
         SketchEntityId(format!(
             "creo:featdefs:sketch_entity#{}:{}",
@@ -13904,6 +13875,23 @@ mod resolved_sketch_tests {
             .sense = 2;
         assert!(matches!(
             section_skamp_constraints(&locus_orientation, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native {
+                ref native_kind,
+                ..
+            } if native_kind == "creo:skamp:1"
+        ));
+        let mut duplicate_entity = definition.clone();
+        let duplicate_line = duplicate_entity.segments.as_ref().expect("segments").rows[0].clone();
+        duplicate_entity
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(duplicate_line);
+        assert!(matches!(
+            section_skamp_constraints(&duplicate_entity, &SketchId("sketch".into()))[0]
                 .0
                 .definition,
             SketchConstraintDefinition::Native {

@@ -1367,7 +1367,7 @@ section `u` axis, and the intersection of the two plane equations defines the
 section origin. Parallel support planes and non-plane references do not define
 the section axis.
 
-`order_table` entries are `ext_id`, `int_id`, and orientation-flag tuples. `ext_id` references a section entity and `int_id` is the section's internal ordering index. A class-200 feature-generated-table entry stores the same `ext_id` as its source identifier and stores the generated surface identifier as its leading entity identifier. This explicit equality joins line, arc, and spline section entities to their generated carriers; table position and family order do not define the join.
+`order_table` entries are `ext_id`, `int_id`, and orientation-flag tuples. `ext_id` references a section entity and `int_id` is the section's internal ordering index. A semantic join requires exactly one row for the selected `ext_id` and exactly one row for the selected `int_id`; duplicate keys do not select a first row. A class-200 feature-generated-table entry stores the same `ext_id` as its source identifier and stores the generated surface identifier as its leading entity identifier. This explicit equality joins line, arc, and spline section entities to their generated carriers; table position and family order do not define the join.
 
 For a linear section sweep with a resolved model-space section frame, a complete
 saved line joined through this chain generates a plane parallel to the sweep
