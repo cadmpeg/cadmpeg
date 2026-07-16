@@ -335,6 +335,13 @@ pub enum SketchConstraintDefinition {
         /// Second centered entity.
         second: SketchEntityId,
     },
+    /// Two circular entities share a center and radius.
+    Coradial {
+        /// First circular entity.
+        first: SketchEntityId,
+        /// Second circular entity.
+        second: SketchEntityId,
+    },
     /// Two line entities lie on one infinite line.
     Collinear {
         /// First line.

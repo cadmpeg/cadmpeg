@@ -365,6 +365,41 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 ),
             }
         }
+        if let Constraint::Coradial { first, second } = &constraint.definition {
+            let circular = |entity| match geometry.get(entity) {
+                Some(SketchGeometry::Circle { center, radius })
+                | Some(SketchGeometry::Arc { center, radius, .. }) => Some((*center, radius.0)),
+                _ => None,
+            };
+            match (circular(first), circular(second)) {
+                (Some((first_center, first_radius)), Some((second_center, second_radius))) => {
+                    let scale = 1.0
+                        + first_radius
+                            .abs()
+                            .max(second_radius.abs())
+                            .max(first_center.u.abs())
+                            .max(first_center.v.abs())
+                            .max(second_center.u.abs())
+                            .max(second_center.v.abs());
+                    if distance2(first_center, second_center) > 1.0e-9 * scale
+                        || (first_radius - second_radius).abs() > 1.0e-9 * scale
+                    {
+                        finding(
+                            findings,
+                            Check::GeometricConsistency,
+                            &constraint.id.0,
+                            "sketch coradial constraint does not match solved geometry",
+                        );
+                    }
+                }
+                (None, _) | (_, None) => finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    &constraint.id.0,
+                    "sketch coradial constraint references non-circular geometry",
+                ),
+            }
+        }
         for locus in constraint_loci(&constraint.definition) {
             let Some(entity_geometry) = geometry.get(locus_entity(locus)) else {
                 continue;

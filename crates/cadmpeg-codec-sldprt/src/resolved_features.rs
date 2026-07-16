@@ -8257,8 +8257,8 @@ fn typed_marker_relation_definition_in_sketch(
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
         ArcAngle180, ArcAngle270, ArcAngle90, AtIntersection, Coincident, Collinear, Concentric,
-        Equal, Fixed, Horizontal, HorizontalPoints, Midpoint, Parallel, Perpendicular, Symmetric,
-        Tangent, Vertical, VerticalPoints,
+        Coradial, Equal, Fixed, Horizontal, HorizontalPoints, Midpoint, Parallel, Perpendicular,
+        Symmetric, Tangent, Vertical, VerticalPoints,
     };
     let kind = match marker.kind {
         SketchInputKind::Relation(kind) => Some(kind),
@@ -8456,7 +8456,7 @@ fn typed_marker_relation_definition_in_sketch(
                 angle: cadmpeg_ir::features::Angle(angle),
             }
         }
-        Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric => {
+        Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric | Coradial => {
             let owner_entities =
                 relation_owner_curve_entities(marker, markers_by_id, loci_by_marker);
             let forward_entities = marker
@@ -8520,6 +8520,10 @@ fn typed_marker_relation_definition_in_sketch(
                     second: second.clone(),
                 },
                 Concentric => SketchConstraintDefinition::Concentric {
+                    first: first.clone(),
+                    second: second.clone(),
+                },
+                Coradial => SketchConstraintDefinition::Coradial {
                     first: first.clone(),
                     second: second.clone(),
                 },
@@ -8846,7 +8850,7 @@ fn binary_relation_matches_evaluated_geometry(
     second: &SketchEntity,
 ) -> bool {
     use crate::records::SketchRelationKind::{
-        Collinear, Concentric, Equal, Parallel, Perpendicular, Tangent,
+        Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
     };
     match kind {
         Parallel => line_relation_value(first, second, |cross, _dot, lengths| {
@@ -8861,6 +8865,14 @@ fn binary_relation_matches_evaluated_geometry(
             .zip(centered_geometry(second))
             .is_some_and(|(first, second)| {
                 same_dimension_length(first.u, second.u) && same_dimension_length(first.v, second.v)
+            }),
+        Coradial => centered_geometry(first)
+            .zip(circular_radius(first))
+            .zip(centered_geometry(second).zip(circular_radius(second)))
+            .is_some_and(|((first_center, first_radius), (second_center, second_radius))| {
+                same_dimension_length(first_center.u, second_center.u)
+                    && same_dimension_length(first_center.v, second_center.v)
+                    && same_dimension_length(first_radius, second_radius)
             }),
         Equal => equal_geometry_size(first, second),
         Tangent => tangent_geometry(first, second),
@@ -12433,7 +12445,9 @@ mod profile_join_tests {
 
     #[test]
     fn binary_relations_require_matching_evaluated_geometry() {
-        use SketchRelationKind::{Collinear, Concentric, Equal, Parallel, Perpendicular, Tangent};
+        use SketchRelationKind::{
+            Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
+        };
         let sketch = SketchId("sketch".into());
         let entity = |id: &str, geometry| SketchEntity {
             id: SketchEntityId(id.into()),
@@ -12484,6 +12498,7 @@ mod profile_join_tests {
         let first_circle = circle("first-circle", 0.0, 2.0, 2.0);
         let equal_circle = circle("equal-circle", 4.0, 2.0, 2.0);
         let concentric_circle = circle("concentric-circle", 0.0, 2.0, 1.0);
+        let coradial_circle = circle("coradial-circle", 0.0, 2.0, 2.0);
         let unrelated_circle = circle("unrelated-circle", 8.0, 8.0, 3.0);
 
         for (kind, first, second) in [
@@ -12492,6 +12507,7 @@ mod profile_join_tests {
             (Collinear, &horizontal, &collinear),
             (Equal, &first_circle, &equal_circle),
             (Concentric, &first_circle, &concentric_circle),
+            (Coradial, &first_circle, &coradial_circle),
             (Tangent, &horizontal, &first_circle),
             (Tangent, &first_circle, &equal_circle),
         ] {
@@ -12506,6 +12522,7 @@ mod profile_join_tests {
             Equal,
             Concentric,
             Tangent,
+            Coradial,
         ] {
             assert!(!binary_relation_matches_evaluated_geometry(
                 kind,
@@ -16871,6 +16888,9 @@ fn binary_marker_relation(
         SketchConstraintDefinition::Concentric { first, second } => {
             (SketchRelationKind::Concentric, first, second)
         }
+        SketchConstraintDefinition::Coradial { first, second } => {
+            (SketchRelationKind::Coradial, first, second)
+        }
         SketchConstraintDefinition::Tangent { first, second } => {
             (SketchRelationKind::Tangent, first, second)
         }
@@ -16901,7 +16921,9 @@ fn validate_solved_binary_relation(
     first: &SketchEntity,
     second: &SketchEntity,
 ) -> Result<(), cadmpeg_ir::codec::CodecError> {
-    use SketchRelationKind::{Collinear, Concentric, Equal, Parallel, Perpendicular, Tangent};
+    use SketchRelationKind::{
+        Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
+    };
     let solved = match kind {
         Parallel | Perpendicular | Collinear => {
             let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
@@ -16957,6 +16979,23 @@ fn validate_solved_binary_relation(
             _ => {
                 return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
                     "sketch constraint {} requires two centered entities",
+                    constraint.id.0
+                )));
+            }
+        },
+        Coradial => match (
+            circular_center_radius(&first.geometry),
+            circular_center_radius(&second.geometry),
+        ) {
+            (Some((first_center, first_radius)), Some((second_center, second_radius))) => {
+                same_point2(first_center, second_center)
+                    && (first_radius - second_radius).abs()
+                        <= SKETCH_POINT_TOLERANCE
+                            * (1.0 + first_radius.abs().max(second_radius.abs()))
+            }
+            _ => {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "sketch constraint {} requires two circular entities",
                     constraint.id.0
                 )));
             }

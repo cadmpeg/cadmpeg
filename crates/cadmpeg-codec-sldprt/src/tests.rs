@@ -2628,6 +2628,10 @@ fn encoder_writes_source_less_curved_sketches() {
             start_angle: Angle(std::f64::consts::PI),
             end_angle: Angle(std::f64::consts::TAU),
         },
+        SketchGeometry::Circle {
+            center: Point2::new(8.0, 0.0),
+            radius: Length(2.0),
+        },
     ];
     let entity_ids = geometries
         .into_iter()
@@ -2674,6 +2678,7 @@ fn encoder_writes_source_less_curved_sketches() {
             profile(&[19, 21]),
             profile(&[3]),
             profile(&[4]),
+            profile(&[22]),
         ],
         native_ref: None,
     });
@@ -2809,6 +2814,13 @@ fn encoder_writes_source_less_curved_sketches() {
             },
         ),
         (
+            "coradial",
+            SketchConstraintDefinition::Coradial {
+                first: entity_ids[1].clone(),
+                second: entity_ids[22].clone(),
+            },
+        ),
+        (
             "dimension-angle",
             SketchConstraintDefinition::Angle {
                 first: entity_ids[5].clone(),
@@ -2940,7 +2952,16 @@ fn encoder_writes_source_less_curved_sketches() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketch_entities.len(), 26);
+    assert_eq!(decoded.ir.model.sketch_entities.len(), 27);
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::Coradial { .. }
+        )));
     assert!(decoded
         .ir
         .model
@@ -3157,7 +3178,7 @@ fn encoder_writes_source_less_curved_sketches() {
             .iter()
             .filter(|entity| matches!(entity.geometry, SketchGeometry::Circle { .. }))
             .count(),
-        2
+        3
     );
     assert_eq!(
         decoded

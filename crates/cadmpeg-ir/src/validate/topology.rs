@@ -1159,6 +1159,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             | Definition::Tangent { first, second }
             | Definition::Equal { first, second }
             | Definition::Concentric { first, second }
+            | Definition::Coradial { first, second }
             | Definition::Collinear { first, second } => {
                 (vec![first.clone(), second.clone()], None)
             }
