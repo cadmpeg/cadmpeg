@@ -31,6 +31,17 @@ const INPUT_CAP: u64 = 256 * 1024 * 1024;
 /// retained outside the `ExpandWriter` (§10 Phase 1B gate 2).
 const EXPAND_CHUNK: usize = 16 * 1024;
 
+/// Allocation charged per admitted archive entry (§10 Phase 1A).
+///
+/// A conservative constant covering the fixed heap footprint each entry adds:
+/// the runtime space-graph record, the payload lookup-map node, and the
+/// [`ContainerEntry`](cadmpeg_ir::codec::ContainerEntry) summary row. The
+/// platform graph and map layouts are not visible to the codec, so this rounds
+/// up rather than measuring; its purpose is to make the entry count consume the
+/// input-proportional allocation budget so a directory packed with minimal
+/// records cannot grow the graph without a matching charge.
+const PER_ENTRY_GRAPH_BYTES: u64 = 256;
+
 /// Codec-defined role labels for [`ContainerEntry::role`].
 pub mod role {
     /// The authoritative final-model ASM BREP stream.
@@ -266,6 +277,19 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 
     let mut archive = zip::ZipArchive::new(Cursor::new(source_image))
         .map_err(|e| CodecError::Malformed(format!("not a readable ZIP: {e}")))?;
+
+    // Each entry the directory walk admits pushes a runtime space-graph record,
+    // a payload-map node, and a summary row — growth proportional to the ZIP
+    // central directory's entry count, which the input does not bound
+    // byte-for-byte. Charge that fixed per-entry footprint against the
+    // input-proportional allocation budget up front so a directory packed with
+    // minimal records is bounded by policy, not only by `INPUT_CAP`.
+    let entry_count = archive.len() as u64;
+    ctx.charge_alloc(
+        entry_count.saturating_mul(PER_ENTRY_GRAPH_BYTES),
+        "f3d_container_entries",
+        Some(root.location()),
+    )?;
 
     let mut entries = Vec::with_capacity(archive.len());
     let mut breps = Vec::new();

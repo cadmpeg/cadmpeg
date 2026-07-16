@@ -191,6 +191,31 @@ impl<'a> DecodeContext<'a> {
         )
     }
 
+    /// Charges the allocation budget for auxiliary heap growth that does not
+    /// flow through [`DecodeContext::exact_vec`] or [`DecodeContext::begin_expand`].
+    ///
+    /// Charge point: per-element runtime graph and summary metadata whose count
+    /// tracks an untrusted container directory — a ZIP central directory's entry
+    /// count, for one. Each admitted entry pushes a space-graph record, a payload
+    /// lookup-map node, and a summary row; that growth is proportional to a count
+    /// the input does not bound byte-for-byte, so it is charged here against the
+    /// input-proportional allocation allowance rather than left to a codec-local
+    /// size ceiling.
+    pub fn charge_alloc(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+        location: Option<SourceLocation>,
+    ) -> Result<(), CodecError> {
+        self.charge(
+            ResourceDimension::AllocBytes,
+            LimitScope::Global,
+            bytes,
+            operation,
+            location,
+        )
+    }
+
     /// Charges a counter dimension, fusing the context on refusal.
     fn charge(
         &self,
