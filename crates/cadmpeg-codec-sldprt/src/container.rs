@@ -383,6 +383,16 @@ fn admit_block(
         .map(|(_, stream)| stream)
         .collect::<Vec<_>>();
     let ps_stream = ps_streams.first().cloned();
+    // `ps_stream` clones the first stream's bytes a second time (retained in
+    // `Block::ps_stream` for the active-B-rep selection path). Charge the clone
+    // so this duplicate is bounded like the `ps_streams` copies it mirrors.
+    if let Some(first) = &ps_stream {
+        ctx.charge_alloc(
+            first.len() as u64,
+            "sldprt_parasolid_stream_bytes",
+            Some(root.location()),
+        )?;
+    }
     // The scan retains an owned copy of the decompressed payload for the IR and
     // writer paths (`Block::payload`), a duplicate of the arena-resident space
     // that the `decompressed_bytes` charge does not cover. Charge it against the
@@ -451,6 +461,15 @@ fn collect_parasolid_streams(
         ctx.charge_alloc(
             PER_BLOCK_GRAPH_BYTES,
             "sldprt_parasolid_stream",
+            Some(block.location()),
+        )?;
+        // `direct_streams_with_offsets` returns an owned copy of each stream's
+        // bytes, retained in `Block::ps_streams` alongside the arena-resident
+        // block space the `decompressed_bytes` charge already covers. Charge the
+        // retained copy against the allocation budget so its bytes are bounded.
+        ctx.charge_alloc(
+            stream.len() as u64,
+            "sldprt_parasolid_stream_bytes",
             Some(block.location()),
         )?;
         ctx.register_slice(
@@ -525,6 +544,15 @@ fn inflate_wrapped_stream(
     ctx.charge_alloc(
         PER_BLOCK_GRAPH_BYTES,
         "sldprt_parasolid_stream",
+        Some(block.location()),
+    )?;
+    // The `Transform` space charged its bytes as `decompressed_bytes`; the owned
+    // `inflated` Vec returned here is a second copy retained in
+    // `Block::ps_streams`. Charge it against the allocation budget so the
+    // retained copy is bounded, matching the direct-stream path.
+    ctx.charge_alloc(
+        inflated.len() as u64,
+        "sldprt_parasolid_stream_bytes",
         Some(block.location()),
     )?;
     if let Err(e) = writer.finalize() {
