@@ -1462,6 +1462,66 @@ mod history_reference_tests {
         assert!(projected[2].dependencies.is_empty());
         assert_eq!(incomplete_history_reference_features(&[history]), 4);
     }
+
+    #[test]
+    fn assigning_configuration_index_does_not_capture_global_input_lane() {
+        let native_configuration = Configuration {
+            id: "native-configuration".into(),
+            parent: "history".into(),
+            ordinal: 0,
+            source_index: None,
+            name: "Default".into(),
+            material: None,
+            properties: BTreeMap::new(),
+        };
+        let mut native = Some(crate::native::SldprtNative {
+            feature_histories: vec![FeatureHistory {
+                id: "history".into(),
+                part_name: None,
+                properties: BTreeMap::new(),
+                content: Vec::new(),
+                configurations: vec![native_configuration],
+                features: Vec::new(),
+            }],
+            feature_input_lanes: vec![crate::records::FeatureInputLane {
+                id: "global-lane".into(),
+                configuration: None,
+                native_payload: Vec::new(),
+                classes: Vec::new(),
+                names: Vec::new(),
+                scalars: Vec::new(),
+                relation_bindings: Vec::new(),
+                relation_instances: Vec::new(),
+                body_selections: Vec::new(),
+                edge_selections: Vec::new(),
+                surface_selections: Vec::new(),
+                references: Vec::new(),
+                sketch_entities: Vec::new(),
+            }],
+            ..crate::native::SldprtNative::default()
+        });
+        sync_neutral_configurations(
+            &[DesignConfiguration {
+                id: ConfigurationId("configuration".into()),
+                ordinal: 0,
+                active: true,
+                source_index: Some(0),
+                name: "Default".into(),
+                material: None,
+                properties: BTreeMap::new(),
+                bodies: Vec::new(),
+                native_ref: Some("native-configuration".into()),
+            }],
+            &mut native,
+        );
+
+        let native = native.unwrap();
+        assert_eq!(
+            native.feature_histories[0].configurations[0].source_index,
+            Some(0)
+        );
+        assert_eq!(native.feature_input_lanes[0].configuration, None);
+    }
 }
 
 /// Bind a uniquely identified native sketch history node to solved sketch geometry.
@@ -5095,11 +5155,12 @@ fn sync_neutral_configurations(
             existing.name.clone_from(&configuration.name);
             existing.material.clone_from(&configuration.material);
             existing.properties.clone_from(&configuration.properties);
-            if previous_index != configuration.source_index {
+            if let Some(previous_index) =
+                previous_index.filter(|previous| Some(*previous) != configuration.source_index)
+            {
+                let previous_index = previous_index.to_string();
                 for lane in &mut native.feature_input_lanes {
-                    if lane.configuration.as_deref()
-                        == previous_index.as_ref().map(ToString::to_string).as_deref()
-                    {
+                    if lane.configuration.as_deref() == Some(previous_index.as_str()) {
                         lane.configuration =
                             configuration.source_index.map(|index| index.to_string());
                     }

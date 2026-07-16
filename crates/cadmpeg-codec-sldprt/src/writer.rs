@@ -29,7 +29,6 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             SldprtNative::load(namespace).map_err(Into::into)
         })
         .transpose()?;
-    let retained_partition = retained_partition(ir);
     let mut normalized = ir.clone();
     sort_arenas(&mut normalized);
     let validation = cadmpeg_ir::validate::validate(&normalized, Vec::new());
@@ -43,6 +42,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
     }
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
+    assign_configuration_indices(&mut normalized.model.configurations)?;
     let feature_name_changes = crate::history::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
         && crate::history::native_parameters_match_source(&normalized, native.as_ref());
@@ -59,6 +59,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         feature_parameter_changes_authorized,
     )?;
     crate::history::prepare_configurations_for_write(ir, &mut native)?;
+    let retained_partition = retained_partition(ir);
     let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
     if !validation.is_ok() {
         let detail = validation
@@ -186,6 +187,31 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
     }
     for entry in section_directory_entries(ir, &sections, &type_ids)? {
         writer.write_all(&entry)?;
+    }
+    Ok(())
+}
+
+fn assign_configuration_indices(
+    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+) -> Result<(), CodecError> {
+    let mut used = HashSet::new();
+    for configuration in configurations.iter() {
+        if let Some(index) = configuration.source_index {
+            if !used.insert(index) {
+                return Err(CodecError::Malformed(format!(
+                    "duplicate SLDPRT configuration source index {index}"
+                )));
+            }
+        }
+    }
+    let mut positions = (0..configurations.len()).collect::<Vec<_>>();
+    positions.sort_by_key(|position| configurations[*position].ordinal);
+    let mut next = 0;
+    for position in positions {
+        if configurations[position].source_index.is_none() {
+            configurations[position].source_index =
+                Some(reserve_configuration_index(&mut used, &mut next)?);
+        }
     }
     Ok(())
 }
@@ -500,29 +526,16 @@ fn configuration_partitions(
     }
     let mut configurations = ir.model.configurations.iter().collect::<Vec<_>>();
     configurations.sort_by_key(|configuration| configuration.ordinal);
-    let mut used = HashSet::new();
-    for configuration in &configurations {
-        if let Some(index) = configuration.source_index {
-            if !used.insert(index) {
-                return Err(CodecError::Malformed(format!(
-                    "duplicate SLDPRT configuration source index {index}"
-                )));
-            }
-        }
-    }
-    let mut next = 0u32;
-    let mut assigned = Vec::with_capacity(configurations.len());
-    for configuration in configurations {
-        let index = match configuration.source_index {
-            Some(index) => index,
-            None => reserve_configuration_index(&mut used, &mut next)?,
-        };
-        assigned.push((index, configuration));
-    }
-    assigned
+    configurations
         .into_iter()
-        .filter(|(_, configuration)| !configuration.bodies.is_empty())
-        .map(|(index, configuration)| {
+        .filter(|configuration| !configuration.bodies.is_empty())
+        .map(|configuration| {
+            let index = configuration.source_index.ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT configuration {} has no assigned source index",
+                    configuration.id.0
+                ))
+            })?;
             let subset = body_subset(ir, &configuration.bodies)?;
             let schema_32001 = subset
                 .model

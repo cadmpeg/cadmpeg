@@ -4736,6 +4736,61 @@ fn semantic_writer_remaps_configuration_scoped_sections() {
 }
 
 #[test]
+fn semantic_writer_allocates_one_index_for_unassigned_configuration_sections() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks><swModel swConfigurationName="Default"/></swSolidWorks>"#,
+    ));
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-3-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-3-ResolvedFeatures",
+        &resolved_features_payload(&[0]),
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    decoded.ir.model.configurations[0].source_index = None;
+
+    let mut written = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut written)
+        .unwrap();
+    let scan = container::scan_bytes(&written);
+    assert!(scan
+        .blocks
+        .iter()
+        .any(|block| block.section.as_deref() == Some("Contents/Config-0-Partition")));
+    assert!(scan
+        .blocks
+        .iter()
+        .any(|block| { block.section.as_deref() == Some("Contents/Config-0-ResolvedFeatures") }));
+    assert!(!scan.blocks.iter().any(|block| {
+        matches!(
+            block.section.as_deref(),
+            Some("Contents/ResolvedFeatures")
+                | Some("Contents/Config-3-Partition")
+                | Some("Contents/Config-3-ResolvedFeatures")
+        )
+    }));
+    let round_trip = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir.model.configurations[0].source_index, Some(0));
+}
+
+#[test]
 fn semantic_writer_rejects_duplicate_configuration_source_indices() {
     let mut decoded = SldprtCodec
         .decode(
