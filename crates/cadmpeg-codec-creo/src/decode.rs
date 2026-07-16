@@ -17392,9 +17392,61 @@ fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation> {
         .then_some(first)
 }
 
+#[derive(Clone, Copy)]
+struct PlaneCandidate {
+    equation: PlaneEquation,
+    u_axis: Option<[f64; 3]>,
+    offset: usize,
+}
+
+fn agreed_plane_surface(candidates: &[PlaneCandidate]) -> Option<(PlaneEquation, [f64; 3], usize)> {
+    agreed_plane(
+        &candidates
+            .iter()
+            .map(|candidate| candidate.equation)
+            .collect::<Vec<_>>(),
+    )?;
+    let charts = candidates
+        .iter()
+        .map(|candidate| {
+            let normal = normalized(candidate.equation.normal)?;
+            let u_axis = normalized(candidate.u_axis?)?;
+            (dot(normal, u_axis).abs() <= 1e-9).then_some((
+                normal,
+                u_axis,
+                candidate.offset,
+                candidate.equation.origin,
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let representative = charts.iter().min_by_key(|(_, _, offset, _)| *offset)?;
+    charts
+        .iter()
+        .all(|(normal, u_axis, _, _)| {
+            representative
+                .0
+                .iter()
+                .zip(normal)
+                .all(|(left, right)| (left - right).abs() <= 1e-9)
+                && representative
+                    .1
+                    .iter()
+                    .zip(u_axis)
+                    .all(|(left, right)| (left - right).abs() <= 1e-9)
+        })
+        .then_some((
+            PlaneEquation {
+                origin: representative.3,
+                normal: representative.0,
+            },
+            representative.1,
+            representative.2,
+        ))
+}
+
 #[cfg(test)]
 mod plane_reconciliation_tests {
-    use super::{agreed_plane, dot, PlaneEquation};
+    use super::{agreed_plane, agreed_plane_surface, dot, PlaneCandidate, PlaneEquation};
 
     #[test]
     fn reconciles_equivalent_plane_frames_and_rejects_conflicts() {
@@ -17416,10 +17468,33 @@ mod plane_reconciliation_tests {
         };
         assert!(agreed_plane(&[first, conflicting]).is_none());
     }
+
+    #[test]
+    fn plane_surface_reconciliation_requires_one_chart_direction() {
+        let plane = PlaneEquation {
+            origin: [0.0, 0.0, 3.0],
+            normal: [0.0, 0.0, 1.0],
+        };
+        let candidate = |u_axis, offset| PlaneCandidate {
+            equation: plane,
+            u_axis: Some(u_axis),
+            offset,
+        };
+        assert!(agreed_plane_surface(&[
+            candidate([1.0, 0.0, 0.0], 20),
+            candidate([2.0, 0.0, 0.0], 10),
+        ])
+        .is_some_and(|(_, u_axis, offset)| u_axis == [1.0, 0.0, 0.0] && offset == 10));
+        assert!(agreed_plane_surface(&[
+            candidate([1.0, 0.0, 0.0], 10),
+            candidate([0.0, 1.0, 0.0], 20),
+        ])
+        .is_none());
+    }
 }
 
-fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
-    let mut candidates = BTreeMap::<u32, Vec<PlaneEquation>>::new();
+fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> {
+    let mut candidates = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     for frame in &scan.plane_local_systems {
         let (Some(origin), Some(normal)) = (frame.origin, frame.normal) else {
             continue;
@@ -17428,16 +17503,24 @@ fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
             candidates
                 .entry(frame.surface_id)
                 .or_default()
-                .push(PlaneEquation { origin, normal });
+                .push(PlaneCandidate {
+                    equation: PlaneEquation { origin, normal },
+                    u_axis: frame.u_axis,
+                    offset: frame.offset,
+                });
         }
     }
-    for plane in &scan.outline_planes {
+    for outline in &scan.outline_planes {
         candidates
-            .entry(plane.surface_id)
+            .entry(outline.surface_id)
             .or_default()
-            .push(PlaneEquation {
-                origin: plane.origin,
-                normal: plane.normal,
+            .push(PlaneCandidate {
+                equation: PlaneEquation {
+                    origin: outline.origin,
+                    normal: outline.normal,
+                },
+                u_axis: Some(outline.u_axis),
+                offset: outline.offset,
             });
     }
     candidates
@@ -17450,7 +17533,30 @@ fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
                 .count()
                 < 2
         })
-        .filter_map(|(id, candidates)| agreed_plane(&candidates).map(|plane| (id, plane)))
+        .collect()
+}
+
+fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
+    plane_candidates(scan)
+        .into_iter()
+        .filter_map(|(id, candidates)| {
+            agreed_plane(
+                &candidates
+                    .iter()
+                    .map(|candidate| candidate.equation)
+                    .collect::<Vec<_>>(),
+            )
+            .map(|plane| (id, plane))
+        })
+        .collect()
+}
+
+fn placed_plane_surfaces(scan: &ContainerScan) -> BTreeMap<u32, (PlaneEquation, [f64; 3], usize)> {
+    plane_candidates(scan)
+        .into_iter()
+        .filter_map(|(id, candidates)| {
+            agreed_plane_surface(&candidates).map(|surface| (id, surface))
+        })
         .collect()
 }
 
@@ -20856,52 +20962,26 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             }),
         });
     }
-    for frame in &scan.plane_local_systems {
-        let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
-        else {
-            continue;
-        };
-        if is_axis_aligned(normal) {
-            continue;
-        }
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", frame.surface_id));
-        annotate(
-            &mut annotations,
-            &id,
-            "VisibGeom",
-            frame.offset as u64,
-            "plane_local_system",
-            Exactness::Derived,
-        );
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                normal: Vector3::new(normal[0], normal[1], normal[2]),
-                u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
-            },
-            source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
-                object_id: format!("VisibGeom:{}", frame.surface_id),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
-    }
-    for plane in &scan.outline_planes {
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", plane.surface_id));
+    for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(scan) {
+        let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
+        let tag = if scan
+            .outline_planes
+            .iter()
+            .any(|outline| outline.surface_id == surface_id && outline.offset == offset)
+        {
+            "plane_outline_held_coordinate"
+        } else {
+            "plane_local_system"
+        };
         annotate(
             &mut annotations,
             &id,
             "VisibGeom",
-            plane.offset as u64,
-            "plane_outline_held_coordinate",
+            offset as u64,
+            tag,
             Exactness::Derived,
         );
         ir.model.surfaces.push(Surface {
@@ -20909,11 +20989,11 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
                 normal: Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
-                u_axis: Vector3::new(plane.u_axis[0], plane.u_axis[1], plane.u_axis[2]),
+                u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
             },
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
-                object_id: format!("VisibGeom:{}", plane.surface_id),
+                object_id: format!("VisibGeom:{surface_id}"),
                 name: None,
                 color: None,
                 visible: None,
