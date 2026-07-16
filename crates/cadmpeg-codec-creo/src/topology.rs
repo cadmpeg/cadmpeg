@@ -9,7 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::curve::CurveTopologyRow;
 
-fn uniquely_identified_rows(rows: &[CurveTopologyRow]) -> Vec<&CurveTopologyRow> {
+/// Return rows whose native curve identifier occurs exactly once.
+pub(crate) fn uniquely_identified_rows(rows: &[CurveTopologyRow]) -> Vec<&CurveTopologyRow> {
     let mut counts = BTreeMap::<u32, usize>::new();
     for row in rows {
         *counts.entry(row.id).or_default() += 1;

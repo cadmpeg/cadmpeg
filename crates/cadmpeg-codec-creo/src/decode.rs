@@ -19833,7 +19833,7 @@ fn transfer_carrier_intersection_curves(
         .iter()
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
-    for row in &scan.curve_topology_rows {
+    for row in crate::topology::uniquely_identified_rows(&scan.curve_topology_rows) {
         let (Some(first), Some(second)) = (
             carriers.get(&row.faces[0]).copied(),
             carriers.get(&row.faces[1]).copied(),
