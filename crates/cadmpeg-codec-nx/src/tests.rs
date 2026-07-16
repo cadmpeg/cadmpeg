@@ -938,6 +938,48 @@ fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
 }
 
 #[test]
+fn nx_formula_dependencies_resolve_within_the_expression_table() {
+    let expression = |id: &str, table: &str, name: &str, text: &str| crate::native::Expression {
+        id: format!("nx:test:expression#{id}"),
+        object_id: None,
+        record: None,
+        declaration: None,
+        name: name.into(),
+        parameter_index: None,
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: text.into(),
+        value: None,
+        source_entry: "/Root/UG_PART/UG_PART".into(),
+        source_table: table.into(),
+        source_offset: 0,
+    };
+    let expressions = [
+        expression("a-p2", "table-a", "p2", "5"),
+        expression("a-p3", "table-a", "p3", "p2 * 2"),
+        expression("b-p2", "table-b", "p2", "7"),
+        expression("b-p3", "table-b", "p3", "p2 * 2"),
+    ];
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+
+    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+
+    assert_eq!(ir.model.features.len(), 2);
+    assert_eq!(ir.model.parameters[1].owner, ir.model.parameters[0].owner);
+    assert_eq!(
+        ir.model.parameters[1].dependencies,
+        [ir.model.parameters[0].id.clone()]
+    );
+    assert_eq!(ir.model.parameters[3].owner, ir.model.parameters[2].owner);
+    assert_eq!(
+        ir.model.parameters[3].dependencies,
+        [ir.model.parameters[2].id.clone()]
+    );
+    assert_ne!(ir.model.parameters[1].owner, ir.model.parameters[3].owner);
+}
+
+#[test]
 fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
     use crate::native::{feature_parameter_uses, FeatureParameterBinding};
 

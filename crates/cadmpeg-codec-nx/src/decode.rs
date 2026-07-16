@@ -10293,13 +10293,18 @@ pub(crate) fn attach_expression_parameters(
         .iter()
         .map(|declaration| (declaration.id.as_str(), declaration))
         .collect::<BTreeMap<_, _>>();
-    let mut sections = BTreeMap::<String, Vec<&crate::native::Expression>>::new();
+    let mut tables = BTreeMap::<String, Vec<&crate::native::Expression>>::new();
     for expression in expressions {
-        let Some((section, _)) = expression.id.split_once(":expression#") else {
-            continue;
+        let table = if expression.source_table.is_empty() {
+            let Some((section, _)) = expression.id.split_once(":expression#") else {
+                continue;
+            };
+            section
+        } else {
+            expression.source_table.as_str()
         };
-        sections
-            .entry(section.to_string())
+        tables
+            .entry(table.to_string())
             .or_default()
             .push(expression);
     }
@@ -10321,8 +10326,11 @@ pub(crate) fn attach_expression_parameters(
         });
     }
     let base_ordinal = ir.model.features.len() as u64;
-    for (section_ordinal, (section, expressions)) in sections.into_iter().enumerate() {
-        let feature_id = FeatureId(format!("{section}:feature#equations"));
+    for (table_ordinal, (table, expressions)) in tables.into_iter().enumerate() {
+        let feature_id = FeatureId(table.split_once(":expression-table#").map_or_else(
+            || format!("{table}:feature#equations"),
+            |(scope, key)| format!("{scope}:feature#equations-{key}"),
+        ));
         let first_offset = expressions
             .iter()
             .map(|expression| expression.source_offset)
@@ -10334,7 +10342,7 @@ pub(crate) fn attach_expression_parameters(
         annotations.exactness(&feature_id, Exactness::Derived);
         ir.model.features.push(Feature {
             id: feature_id.clone(),
-            ordinal: base_ordinal + section_ordinal as u64,
+            ordinal: base_ordinal + table_ordinal as u64,
             name: Some("NX expressions".to_string()),
             suppressed: false,
             parent: None,
