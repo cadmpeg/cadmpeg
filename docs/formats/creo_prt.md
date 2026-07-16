@@ -594,6 +594,12 @@ the `fc 05` prefix followed by the single-byte `ff` body terminator. A body
 without the terminator can end immediately after the final group. Other
 unclaimed trailing bytes invalidate the analytic circle carrier.
 
+An unrecognized parameter token inside an otherwise complete point group does
+not alter the point coordinates or held ordinate. The following eight-byte
+world-coordinate opener bounds that token within at most eight bytes. Such a
+record can establish its exact center and radius from the point equation, but
+does not establish parameter sense or the parameter-zero radial direction.
+
 Recognized eight-byte `46` and `2d` world-coordinate tokens in an `fc` body
 retain their decoded millimeter value, exact bytes, body-relative offset, and
 token length. Bytes between recognized tokens remain owned by the enclosing

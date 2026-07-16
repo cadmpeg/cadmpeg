@@ -1415,8 +1415,19 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
             let Some((z, next)) = fc05_scalar(&record.body, next) else {
                 break;
             };
-            let Some((parameter, next)) = fc05_scalar(&record.body, next) else {
+            let parameter_start = next;
+            let Some((decoded_parameter, decoded_next)) = fc05_scalar(&record.body, next) else {
                 break;
+            };
+            let (parameter, next) = if matches!(record.body.get(decoded_next), Some(0x46 | 0x2d)) {
+                (Some(decoded_parameter), decoded_next)
+            } else {
+                let following = (parameter_start + 1..(parameter_start + 9).min(record.body.len()))
+                    .find(|offset| matches!(record.body[*offset], 0x46 | 0x2d));
+                let Some(following) = following else {
+                    break;
+                };
+                (None, following)
             };
             let Some((ordinate, next)) = fc05_scalar(&record.body, next) else {
                 break;
@@ -1476,8 +1487,11 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
         };
         let sign_matches = |sign: f64| {
             points.iter().all(|point| {
+                let (Some(parameter), Some(parameter_0)) = (point.2, parameter_0) else {
+                    return false;
+                };
                 let angle = (point.1 - center_z).atan2(point.0 - center_x);
-                let expected = angle_0 + sign * (point.2 - parameter_0);
+                let expected = angle_0 + sign * (parameter - parameter_0);
                 wrapped_distance(angle, expected) <= 1e-6
             })
         };
@@ -1489,10 +1503,11 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
             (false, true) => Some(-1),
             _ => None,
         };
-        let reference_direction_row_frame = parameter_sign.map(|sign| {
-            let reference_angle = angle_0 - f64::from(sign) * parameter_0;
-            [reference_angle.cos(), reference_angle.sin()]
-        });
+        let reference_direction_row_frame =
+            parameter_sign.zip(parameter_0).map(|(sign, parameter_0)| {
+                let reference_angle = angle_0 - f64::from(sign) * parameter_0;
+                [reference_angle.cos(), reference_angle.sin()]
+            });
         circles.push(Fc05Circle {
             curve_id: record.curve_id,
             center_row_frame: [center_x, center_z],

@@ -3838,6 +3838,17 @@ fn scan_validates_fc05_circle_from_record_points() {
         .expect("unique parameter-zero direction");
     assert!((direction[0] - (-2.0_f64).cos()).abs() < 1e-12);
     assert!((direction[1] - (-2.0_f64).sin()).abs() < 1e-12);
+    let mut unknown_parameter = scan.curve_parameters[0].clone();
+    unknown_parameter.body.splice(114..122, [0x39, 0x29, 0x00]);
+    let carriers = crate::curve::fc05_circles(&[unknown_parameter]);
+    let [carrier] = carriers.as_slice() else {
+        panic!("circle geometry is independent of an unresolved parameter token");
+    };
+    assert_eq!(carrier.center_row_frame, [3.0, 3.0]);
+    assert_eq!(carrier.radius_mm, 1.0);
+    assert!(!carrier.angle_parameter_consistent);
+    assert_eq!(carrier.parameter_sign, None);
+    assert_eq!(carrier.reference_direction_row_frame, None);
     let mut trailing = scan.curve_parameters[0].clone();
     trailing.body.push(0xfe);
     assert!(crate::curve::fc05_circles(&[trailing]).is_empty());
