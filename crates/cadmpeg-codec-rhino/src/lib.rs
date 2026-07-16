@@ -101,11 +101,10 @@ impl Codec for RhinoCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let mut reader = std::io::Cursor::new(root.window());
-        container::inspect(&mut reader)
+        container::inspect(ctx, root)
     }
 
     fn decode_impl(
@@ -113,8 +112,7 @@ impl Codec for RhinoCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        let mut reader = std::io::Cursor::new(root.window());
-        container::decode(&mut reader, ctx.container_only())
+        container::decode(ctx, root, ctx.container_only())
     }
 }
 

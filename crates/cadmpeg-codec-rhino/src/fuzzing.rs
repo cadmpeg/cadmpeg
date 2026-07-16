@@ -32,7 +32,7 @@ fn uuid(mut canonical: [u8; 16]) -> Uuid {
 
 /// Exercises header, table, record, and EOF framing.
 pub fn container(data: &[u8]) {
-    let _ = crate::container::scan(data.to_vec());
+    let _ = crate::container::scan(data);
 }
 
 /// Exercises chunk framing at sequential and arbitrary bounded offsets.

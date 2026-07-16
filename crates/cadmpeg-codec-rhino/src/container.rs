@@ -2,9 +2,9 @@
 //! Bounded Rhino 3DM container scanning and summary construction.
 
 use std::collections::BTreeMap;
-use std::io::{Read, SeekFrom};
 
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, ProfileVersions, Severity};
 use cadmpeg_ir::units::Units;
@@ -21,10 +21,17 @@ use crate::wire::Uuid;
 
 /// Maximum input accepted by the Rhino container scanner.
 ///
-/// The cap limits the one required in-memory input copy and is checked before
-/// converting the stream length to allocation-sized offsets.
+/// Limit classification (§10 Phase 1): deployment ceiling. The platform's
+/// `max_input_bytes` policy limit is enforced first by `read_root`; this
+/// tighter codec-local cap bounds the addressable offset space the chunk walker
+/// indexes and is retained as dual enforcement behind the policy limit until
+/// per-profile evidence justifies migrating it wholesale.
 pub(crate) const INPUT_CAP: u64 = 256 * 1024 * 1024;
 /// Maximum direct table records retained or described in one document.
+///
+/// Limit classification (§10 Phase 1): algorithm limit. Bounds record-descriptor
+/// amplification from an attacker-controlled table body independently of the
+/// global `alloc_bytes` budget; kept as defense in depth.
 pub(crate) const TABLE_RECORD_CAP: usize = 1 << 20;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
@@ -120,10 +127,14 @@ pub(crate) struct Table {
 }
 
 /// The result of scanning a complete supported container.
+///
+/// `data` borrows the session root view's window rather than copying it: the
+/// bytes already live in the decode arena, so scanning consumes the root view
+/// directly with no second buffer (§4.0, §10 Phase 1A).
 #[derive(Debug, Clone)]
-pub(crate) struct Scan {
-    /// Complete input bytes.
-    pub(crate) data: Vec<u8>,
+pub(crate) struct Scan<'a> {
+    /// Complete input bytes, borrowed from the session root view.
+    pub(crate) data: &'a [u8],
     /// Parsed archive version.
     pub(crate) archive: ArchiveVersion,
     /// Comment chunk descriptor.
@@ -144,25 +155,31 @@ pub(crate) struct Scan {
     pub(crate) metadata: crate::settings::DocumentMetadata,
 }
 
-impl Scan {
+impl Scan<'_> {
     fn version_note(&self) -> String {
         format!("archive version {}", self.archive.value())
     }
 }
 
-/// Read the complete input while enforcing [`INPUT_CAP`].
-pub(crate) fn read_input(reader: &mut dyn ReadSeek) -> Result<Vec<u8>, CodecError> {
-    reader.seek(SeekFrom::Start(0))?;
-    let mut data = Vec::new();
-    let mut limited = reader.take(INPUT_CAP.saturating_add(1));
-    limited.read_to_end(&mut data)?;
-    let size = u64::try_from(data.len())
-        .map_err(|_| CodecError::Malformed("input size cannot fit in u64".to_string()))?;
-    if size > INPUT_CAP {
+/// Borrow the session root bytes, enforcing the codec-local input ceiling and
+/// charging the file-wide container scan as work.
+///
+/// `read_root` already enforced the platform `max_input_bytes` policy limit;
+/// the tighter [`INPUT_CAP`] stays as dual enforcement (§10 Phase 1). The chunk
+/// walk both `inspect` and `decode` run is linear in the input, so its bytes are
+/// charged as work here, once, before scanning begins.
+fn acquire<'a>(ctx: &DecodeContext<'_>, root: View<'a>) -> Result<&'a [u8], CodecError> {
+    let data = root.window();
+    if data.len() as u64 > INPUT_CAP {
         return Err(CodecError::Malformed(format!(
             "input exceeds Rhino size cap of {INPUT_CAP} bytes"
         )));
     }
+    ctx.charge_work(
+        data.len() as u64,
+        "rhino_container_scan",
+        Some(root.location()),
+    )?;
     Ok(data)
 }
 
@@ -326,21 +343,21 @@ fn known_record(record: u32) -> bool {
 }
 
 /// Scan a V3/V4 or V5–V8 Rhino container.
-pub(crate) fn scan(data: Vec<u8>) -> Result<Scan, CodecError> {
+pub(crate) fn scan(data: &[u8]) -> Result<Scan<'_>, CodecError> {
     scan_with_record_limit(data, TABLE_RECORD_CAP)
 }
 
-fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, CodecError> {
-    let header = parse_header(&data).map_err(|error| malformed(&error))?;
+fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, CodecError> {
+    let header = parse_header(data).map_err(|error| malformed(&error))?;
     let archive = header.archive_version;
-    let comment = parse_record(&data, 32, data.len(), archive)?;
+    let comment = parse_record(data, 32, data.len(), archive)?;
     if comment.typecode != TCODE_COMMENT || comment.short {
         return Err(CodecError::Malformed(
             "first post-header chunk is not a long comment".to_string(),
         ));
     }
     let mut warnings = Vec::new();
-    if let Some(note) = checksum_warning(&data, comment.typecode, 32, data.len(), archive)? {
+    if let Some(note) = checksum_warning(data, comment.typecode, 32, data.len(), archive)? {
         warnings.push(note);
     }
     let mut tables = Vec::new();
@@ -355,7 +372,7 @@ fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, Co
     let mut history = Vec::new();
     let mut record_count = 0_usize;
     while offset < data.len() {
-        let chunk = chunk_at(&data, offset, data.len(), archive, false)
+        let chunk = chunk_at(data, offset, data.len(), archive, false)
             .map_err(|error| malformed(&error))?;
         if chunk.typecode == TCODE_ENDOFFILE {
             if !saw_properties || !saw_settings || !saw_objects {
@@ -363,8 +380,8 @@ fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, Co
                     "properties, settings, and object tables are required".to_string(),
                 ));
             }
-            parse_eof(&data, offset, archive).map_err(|error| malformed(&error))?;
-            let metadata = crate::settings::parse_metadata(&data, archive, &tables, &mut warnings);
+            parse_eof(data, offset, archive).map_err(|error| malformed(&error))?;
+            let metadata = crate::settings::parse_metadata(data, archive, &tables, &mut warnings);
             resolve_identities(&mut all_objects, &metadata, &mut warnings);
             return Ok(Scan {
                 data,
@@ -416,7 +433,7 @@ fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, Co
         let mut child_offset = chunk.body.start;
         let mut terminated = false;
         while child_offset < chunk.body.end {
-            let child = chunk_at(&data, child_offset, chunk.body.end, archive, false)
+            let child = chunk_at(data, child_offset, chunk.body.end, archive, false)
                 .map_err(|error| malformed(&error))?;
             if child.typecode == TCODE_ENDOFTABLE {
                 if !child.short || child.value != 0 {
@@ -478,19 +495,15 @@ fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, Co
                         .as_ref()
                         .is_some_and(|range| data[range.clone()].iter().all(|byte| *byte == 0));
             if !zero_nested_container_crc {
-                if let Some(note) = checksum_warning(
-                    &data,
-                    record.typecode,
-                    child_offset,
-                    chunk.body.end,
-                    archive,
-                )? {
+                if let Some(note) =
+                    checksum_warning(data, record.typecode, child_offset, chunk.body.end, archive)?
+                {
                     warnings.push(note);
                 }
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
-                let descriptor = match parse_object_record(&data, &record, archive, &mut warnings) {
+                let descriptor = match parse_object_record(data, &record, archive, &mut warnings) {
                     Ok(descriptor) => descriptor,
                     Err(error) => {
                         warnings.push(format!(
@@ -514,15 +527,15 @@ fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, Co
             )));
         }
         if let Some(note) =
-            checksum_warning(&data, chunk.typecode, offset, chunk.next_offset, archive)?
+            checksum_warning(data, chunk.typecode, offset, chunk.next_offset, archive)?
         {
             warnings.push(note);
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
-            definitions = parse_definitions(&data, &records, archive);
+            definitions = parse_definitions(data, &records, archive);
         }
         if table_base(chunk.typecode) == TCODE_HISTORY {
-            history = crate::history::parse_records(&data, &records, archive, &mut warnings);
+            history = crate::history::parse_records(data, &records, archive, &mut warnings);
         }
         tables.push(Table {
             typecode: chunk.typecode,
@@ -539,16 +552,27 @@ fn scan_with_record_limit(data: Vec<u8>, record_limit: usize) -> Result<Scan, Co
     ))
 }
 
+/// Scans an owned buffer, leaking it so the borrowed [`Scan`] is `'static`.
+///
+/// Test-only. Production decode borrows the arena-backed root view; unit tests
+/// construct throwaway buffers, and leaking each keeps their `Scan` free of a
+/// borrow the test must thread. The leak is bounded by the fixture count in a
+/// short-lived test process.
+#[cfg(test)]
+pub(crate) fn scan_owned(data: Vec<u8>) -> Result<Scan<'static>, CodecError> {
+    scan_with_record_limit(Box::leak(data.into_boxed_slice()), TABLE_RECORD_CAP)
+}
+
 #[cfg(test)]
 pub(crate) fn scan_with_test_record_limit(
     data: Vec<u8>,
     record_limit: usize,
-) -> Result<Scan, CodecError> {
-    scan_with_record_limit(data, record_limit)
+) -> Result<Scan<'static>, CodecError> {
+    scan_with_record_limit(Box::leak(data.into_boxed_slice()), record_limit)
 }
 
 /// Build the format-neutral container summary.
-pub(crate) fn summarize(scan: &Scan) -> ContainerSummary {
+pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     let mut entries = Vec::with_capacity(scan.tables.len());
     for table in &scan.tables {
         let mut attributes = BTreeMap::new();
@@ -605,7 +629,7 @@ pub(crate) fn summarize(scan: &Scan) -> ContainerSummary {
     }
 }
 
-fn source_meta(scan: &Scan) -> SourceMeta {
+fn source_meta(scan: &Scan<'_>) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "archive_version".to_string(),
@@ -629,7 +653,7 @@ fn source_meta(scan: &Scan) -> SourceMeta {
 }
 
 /// Build an empty current-version IR and a container-only report.
-pub(crate) fn container_only_result(scan: &Scan) -> cadmpeg_ir::codec::DecodeResult {
+pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::DecodeResult {
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(source_meta(scan));
     let mut notes = vec![scan.version_note()];
@@ -691,9 +715,15 @@ pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
 }
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
-pub(crate) fn inspect(reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-    let data = read_input(reader)?;
-    let header = parse_header(&data).map_err(|error| malformed(&error))?;
+///
+/// Consumes the session root view directly (§10 Phase 1A); `acquire` charges the
+/// scan as work and enforces the codec input ceiling.
+pub(crate) fn inspect(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+) -> Result<ContainerSummary, CodecError> {
+    let data = acquire(ctx, root)?;
+    let header = parse_header(data).map_err(|error| malformed(&error))?;
     if header_only(header.archive_version) {
         return Ok(ContainerSummary {
             format: "rhino".to_string(),
@@ -709,12 +739,16 @@ pub(crate) fn inspect(reader: &mut dyn ReadSeek) -> Result<ContainerSummary, Cod
 }
 
 /// Decode a Rhino stream according to the currently supported container depth.
+///
+/// Consumes the session root view directly (§10 Phase 1A); `inspect` and
+/// `decode` share the same `acquire`/`scan` container policy.
 pub(crate) fn decode(
-    reader: &mut dyn ReadSeek,
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
     container_only: bool,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, CodecError> {
-    let data = read_input(reader)?;
-    let header = parse_header(&data).map_err(|error| malformed(&error))?;
+    let data = acquire(ctx, root)?;
+    let header = parse_header(data).map_err(|error| malformed(&error))?;
     if header_only(header.archive_version) {
         return Err(CodecError::NotImplemented(format!(
             "Rhino archive version {} decode is not implemented",

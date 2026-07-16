@@ -168,7 +168,7 @@ impl ExpansionBudget {
 /// Mutable decode state shared by metadata and geometry phases.
 #[derive(Clone)]
 pub(crate) struct DecodeContext<'a> {
-    scan: &'a Scan,
+    scan: &'a Scan<'a>,
     ir: CadIr,
     unknowns: Vec<UnknownRecord>,
     statuses: Vec<GeometryStatus>,
@@ -190,7 +190,7 @@ pub(crate) struct DecodeContext<'a> {
 
 impl<'a> DecodeContext<'a> {
     /// Starts a transaction from a completed Rhino scan.
-    pub(crate) fn new(scan: &'a Scan) -> Self {
+    pub(crate) fn new(scan: &'a Scan<'a>) -> Self {
         let mut object_candidates = BTreeMap::new();
         for (source_order, object) in scan.objects.iter().enumerate() {
             if let Some(identity) = &object.identity {
@@ -472,7 +472,7 @@ impl<'a> DecodeContext<'a> {
                 let key = self.object_key(identity, source_order);
                 let budget_checkpoint = self.mesh_budget;
                 let decoded = crate::mesh::decode(
-                    &self.scan.data,
+                    self.scan.data,
                     object.class_data_range.clone(),
                     self.archive(),
                     crate::mesh::MeshDecodeOptions {
@@ -512,7 +512,7 @@ impl<'a> DecodeContext<'a> {
                 continue;
             }
             let decoded = crate::curves::decode(
-                &self.scan.data,
+                self.scan.data,
                 object.class_uuid,
                 object.class_data_range.clone(),
                 scale,
@@ -597,7 +597,7 @@ impl<'a> DecodeContext<'a> {
             };
             let key = self.object_key(identity, source_order);
             match crate::dimensions::decode(
-                &self.scan.data,
+                self.scan.data,
                 object.class_uuid,
                 object.class_data_range.clone(),
                 scale,
@@ -605,7 +605,7 @@ impl<'a> DecodeContext<'a> {
             ) {
                 Ok(mut dimension) => {
                     if let Err(error) = crate::dimensions::apply_userdata(
-                        &self.scan.data,
+                        self.scan.data,
                         &object.userdata,
                         self.archive(),
                         &mut dimension,
@@ -665,7 +665,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let mut hatch = match crate::hatch::decode(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -800,7 +800,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let polyedge = match crate::polyedge::decode(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             self.archive(),
         ) {
@@ -866,7 +866,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let detail = match crate::detail::decode(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -965,7 +965,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let cage = match crate::cage::decode(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -1091,7 +1091,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let morph = match crate::morph::decode(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -1154,7 +1154,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let construction = match crate::curve_on_surface::decode(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -1388,7 +1388,7 @@ impl<'a> DecodeContext<'a> {
             .as_ref()
             .ok_or_else(|| "reference identity is unavailable".to_string())?;
         let reference =
-            crate::instances::parse_reference(&self.scan.data, object.class_data_range.clone())
+            crate::instances::parse_reference(self.scan.data, object.class_data_range.clone())
                 .map_err(|error| error.to_string())?;
         if self
             .scan
@@ -1601,7 +1601,7 @@ impl<'a> DecodeContext<'a> {
         let key = self.object_key(identity, source_order);
         let id: cadmpeg_ir::ids::SubdId = format!("rhino:object:subd#{key}").into();
         match crate::subd::decode(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             self.archive(),
             scale,
@@ -1701,7 +1701,7 @@ impl<'a> DecodeContext<'a> {
         };
         let budget_checkpoint = self.mesh_budget;
         let decoded = crate::extrusion::decode(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             self.archive(),
             self.scan.metadata.properties.writer_version,
@@ -2474,7 +2474,7 @@ impl<'a> DecodeContext<'a> {
 
     fn decode_brep(&mut self, source_order: usize, object: &ObjectDescriptor) {
         let parsed = crate::brep::parse(
-            &self.scan.data,
+            self.scan.data,
             object.class_data_range.clone(),
             self.archive(),
             self.scan.metadata.properties.writer_version,
@@ -2529,7 +2529,7 @@ impl<'a> DecodeContext<'a> {
         let unknown = self.unknowns[source_order].id.clone();
         let budget_checkpoint = self.mesh_budget;
         let transfer = BrepTransferInput {
-            data: &self.scan.data,
+            data: self.scan.data,
             archive: self.archive(),
             writer_version: self.scan.metadata.properties.writer_version,
             raw: &raw,
@@ -4468,13 +4468,13 @@ fn loss_provenance(class: &str, outcome: &ClassOutcome) -> LossProvenance {
 }
 
 /// Builds the metadata-only Rhino decode transaction.
-pub(crate) fn decode(scan: &Scan) -> DecodeResult {
+pub(crate) fn decode(scan: &Scan<'_>) -> DecodeResult {
     let mut context = DecodeContext::new(scan);
     context.decode_geometry();
     context.decode_dimensions();
     let geometry_context = context.unit_scale().map(|scale| {
         (
-            scan.data.as_slice(),
+            scan.data,
             scan.archive,
             scan.metadata.properties.writer_version,
             scale,
@@ -4484,7 +4484,7 @@ pub(crate) fn decode(scan: &Scan) -> DecodeResult {
     context.commit()
 }
 
-fn build_ir(scan: &Scan) -> CadIr {
+fn build_ir(scan: &Scan<'_>) -> CadIr {
     let units = Units::default();
     let mut ir = CadIr::empty(units);
     ir.source = Some(source_meta(scan));
@@ -4497,7 +4497,7 @@ fn build_ir(scan: &Scan) -> CadIr {
     ir
 }
 
-fn source_meta(scan: &Scan) -> SourceMeta {
+fn source_meta(scan: &Scan<'_>) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "archive_version".to_string(),

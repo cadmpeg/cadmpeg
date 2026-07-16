@@ -2161,7 +2161,7 @@ fn parse_text_style(
 }
 
 /// Installs built-in appearance, group membership, and light semantics.
-pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let scale = scan
         .metadata
         .settings
@@ -2192,39 +2192,39 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
         let table_type = table.typecode & !0x0000_8000;
         for record in &table.records {
             if table_type == GROUP_TABLE {
-                if let Ok(range) = class_data(&scan.data, record, scan.archive, GROUP) {
-                    if let Ok(group) = parse_group(&scan.data, range, record.range.start) {
+                if let Ok(range) = class_data(scan.data, record, scan.archive, GROUP) {
+                    if let Ok(group) = parse_group(scan.data, range, record.range.start) {
                         groups.push(group);
                     }
                 }
             } else if table_type == MATERIAL_TABLE {
-                if let Ok(range) = class_data(&scan.data, record, scan.archive, MATERIAL) {
+                if let Ok(range) = class_data(scan.data, record, scan.archive, MATERIAL) {
                     if let Ok(material) =
-                        parse_material(&scan.data, range, scan.archive, record.range.start)
+                        parse_material(scan.data, range, scan.archive, record.range.start)
                     {
                         materials.push(material);
                     }
                 }
             } else if table_type == LIGHT_TABLE {
-                if let Ok(range) = class_data(&scan.data, record, scan.archive, LIGHT) {
+                if let Ok(range) = class_data(scan.data, record, scan.archive, LIGHT) {
                     if let Ok(light) =
-                        parse_light(&scan.data, range, scale, record.range.start, None)
+                        parse_light(scan.data, range, scale, record.range.start, None)
                     {
                         push_light(&mut lights, &mut light_indexes, light);
                     }
                 }
             } else if table_type == LINETYPE_TABLE {
-                if let Ok(range) = class_data(&scan.data, record, scan.archive, LINETYPE) {
+                if let Ok(range) = class_data(scan.data, record, scan.archive, LINETYPE) {
                     if let Ok(value) =
-                        parse_linetype(&scan.data, range, scan.archive, scale, record.range.start)
+                        parse_linetype(scan.data, range, scan.archive, scale, record.range.start)
                     {
                         linetypes.push(value);
                     }
                 }
             } else if table_type == HATCH_PATTERN_TABLE {
-                if let Ok(range) = class_data(&scan.data, record, scan.archive, HATCH_PATTERN) {
+                if let Ok(range) = class_data(scan.data, record, scan.archive, HATCH_PATTERN) {
                     if let Ok(value) = parse_hatch_pattern(
-                        &scan.data,
+                        scan.data,
                         range,
                         scan.archive,
                         scale,
@@ -2234,9 +2234,9 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                     }
                 }
             } else if table_type == DIMSTYLE_TABLE {
-                if let Ok(range) = class_data(&scan.data, record, scan.archive, DIMSTYLE) {
+                if let Ok(range) = class_data(scan.data, record, scan.archive, DIMSTYLE) {
                     if let Ok(value) = parse_dimension_style(
-                        &scan.data,
+                        scan.data,
                         range,
                         scan.archive,
                         scale,
@@ -2246,21 +2246,21 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                     }
                 }
             } else if table_type == BITMAP_TABLE {
-                if let Ok(range) = class_data(&scan.data, record, scan.archive, EMBEDDED_BITMAP) {
+                if let Ok(range) = class_data(scan.data, record, scan.archive, EMBEDDED_BITMAP) {
                     if let Ok(value) =
-                        parse_embedded_image(&scan.data, range, scan.archive, record.range.start)
+                        parse_embedded_image(scan.data, range, scan.archive, record.range.start)
                     {
                         images.push(value);
                     }
                 } else if let Ok(class) = parse_class_wrapper(
-                    &scan.data,
+                    scan.data,
                     record.body.clone(),
                     scan.archive,
                     &mut Vec::new(),
                 ) {
                     if matches!(class.class_uuid, WINDOWS_BITMAP | WINDOWS_BITMAP_EX) {
                         if let Ok(value) = parse_windows_bitmap(
-                            &scan.data,
+                            scan.data,
                             class.class_data_range,
                             class.class_uuid,
                             record.range.start,
@@ -2270,17 +2270,17 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                     }
                 }
             } else if table_type == TEXTURE_MAPPING_TABLE {
-                if let Ok(range) = class_data(&scan.data, record, scan.archive, TEXTURE_MAPPING) {
+                if let Ok(range) = class_data(scan.data, record, scan.archive, TEXTURE_MAPPING) {
                     if let Ok(value) =
-                        parse_texture_mapping(&scan.data, range, scan.archive, record.range.start)
+                        parse_texture_mapping(scan.data, range, scan.archive, record.range.start)
                     {
                         texture_mappings.push(value);
                     }
                 }
             } else if table_type == FONT_TABLE {
-                if let Ok(range) = class_data(&scan.data, record, scan.archive, TEXT_STYLE) {
+                if let Ok(range) = class_data(scan.data, record, scan.archive, TEXT_STYLE) {
                     if let Ok(value) =
-                        parse_text_style(&scan.data, range, scan.archive, record.range.start)
+                        parse_text_style(scan.data, range, scan.archive, record.range.start)
                     {
                         text_styles.push(value);
                     }
@@ -2301,7 +2301,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
         if object.class_uuid == LIGHT {
             let link = format!("rhino:object:record#{source_order:06}");
             if let Ok(light) = parse_light(
-                &scan.data,
+                scan.data,
                 object.class_data_range.clone(),
                 scale,
                 object.range.start,
@@ -2364,7 +2364,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                 section_fill_rule: attributes.section_fill_rule,
                 clipping_plane_label_style: attributes.clipping_plane_label_style,
                 rendering_materials: rendering_materials(
-                    &scan.data,
+                    scan.data,
                     attributes.rendering_range.clone(),
                     scan.archive,
                 ),
@@ -2410,7 +2410,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                 .map(|id| id.to_string()),
             clipping_planes_enabled: layer.no_clipping_planes.map(|value| !value),
             rendering_materials: rendering_materials(
-                &scan.data,
+                scan.data,
                 layer.rendering_range.clone(),
                 scan.archive,
             ),

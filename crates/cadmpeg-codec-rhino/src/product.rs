@@ -142,7 +142,7 @@ fn external_record(
 }
 
 /// Installs the source product graph without requiring occurrence expansion.
-pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let mut object_records = BTreeMap::<Uuid, Vec<(usize, String)>>::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
         if let Some(identity) = &object.identity {
@@ -224,7 +224,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
             continue;
         }
         let Ok(reference) =
-            crate::instances::parse_reference(&scan.data, object.class_data_range.clone())
+            crate::instances::parse_reference(scan.data, object.class_data_range.clone())
         else {
             continue;
         };

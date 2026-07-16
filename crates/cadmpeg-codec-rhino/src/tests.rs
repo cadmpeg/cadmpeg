@@ -985,7 +985,7 @@ fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
         ArchiveVersion::V5,
         &v5_definition_payload(ArchiveVersion::V5, 6, definition_id, &[member_id], true),
     );
-    let scan = super::container::scan(document_with_definitions(
+    let scan = super::container::scan_owned(document_with_definitions(
         "50",
         ArchiveVersion::V5,
         &[v5],
@@ -1005,7 +1005,7 @@ fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
         ArchiveVersion::V6,
         &v5_definition_payload(ArchiveVersion::V6, 7, definition_id, &[member_id], true),
     );
-    let scan = super::container::scan(document_with_definitions(
+    let scan = super::container::scan_owned(document_with_definitions(
         "60",
         ArchiveVersion::V6,
         &[v6],
@@ -1041,7 +1041,7 @@ fn parses_source_shaped_v6_v7_v8_static_and_linked_definitions() {
             archive,
             &v6_definition_payload(archive, [0x72; 16], &[], 0, false, false),
         );
-        let scan = super::container::scan(document_with_definitions(
+        let scan = super::container::scan_owned(document_with_definitions(
             version,
             archive,
             &[static_record, linked_record, embedded_record, unset_record],
@@ -1109,7 +1109,7 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
         ordinary_member,
     ]
     .map(|_| object_record_with_payload(archive, 1, POINT_CLASS, &point_payload([1.0, 0.0, 0.0])));
-    let mut scan = super::container::scan(document_with_definitions(
+    let mut scan = super::container::scan_owned(document_with_definitions(
         "70",
         archive,
         &[first, second, malformed, later],
@@ -1322,7 +1322,7 @@ fn scan_retains_history_record_source_boundaries() {
         ],
     );
 
-    let scan = super::container::scan(bytes).expect("history table");
+    let scan = super::container::scan_owned(bytes).expect("history table");
     let history = scan
         .tables
         .iter()
@@ -1414,7 +1414,7 @@ fn scan_decodes_history_identity_dependencies_and_typed_values() {
         ],
     );
 
-    let scan = super::container::scan(bytes).expect("typed history record");
+    let scan = super::container::scan_owned(bytes).expect("typed history record");
     let history = &scan.history[0];
     assert_eq!(
         history.id.to_string(),
@@ -1503,7 +1503,7 @@ fn object_trailer_accepts_bounded_unknown_child_without_history() {
             table(archive, 0x1000_0013, &[object]),
         ],
     );
-    let scan = super::container::scan(bytes).expect("bounded unknown trailer");
+    let scan = super::container::scan_owned(bytes).expect("bounded unknown trailer");
     assert_eq!(scan.objects[0].unknown_trailer.len(), 1);
 }
 
@@ -1697,7 +1697,7 @@ fn malformed_bounded_object_is_retained_and_later_point_decodes() {
                 table(archive, 0x1000_0013, &[malformed, point]),
             ],
         );
-        let mut scan = super::container::scan(bytes).expect("bounded object recovery");
+        let mut scan = super::container::scan_owned(bytes).expect("bounded object recovery");
         assert!(scan.objects[0].framing_degraded);
         set_test_units(&mut scan, 1.0);
         let result = super::decode::decode(&scan);
@@ -1780,7 +1780,7 @@ fn object_warning_lists_do_not_inherit_global_warnings() {
             table(archive, 0x1000_0013, &[first, second]),
         ],
     );
-    let scan = super::container::scan(bytes).unwrap();
+    let scan = super::container::scan_owned(bytes).unwrap();
     assert!(scan.objects[0].checksum_warnings.is_empty());
     assert!(scan.objects[1].checksum_warnings.is_empty());
     assert_eq!(
@@ -2224,7 +2224,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             table(archive, 0x1000_0013, &[object]),
         ],
     );
-    let scan = super::container::scan(bytes).unwrap();
+    let scan = super::container::scan_owned(bytes).unwrap();
     let mut context = super::decode::DecodeContext::new(&scan);
     assert!(context.object(0).is_some());
     assert!(context.unknown(0).is_some());
@@ -2300,7 +2300,7 @@ fn rejected_candidate_detaches_payload_clone_and_preserves_live_bytes() {
             table(archive, 0x1000_0013, &[object]),
         ],
     );
-    let scan = super::container::scan(bytes).unwrap();
+    let scan = super::container::scan_owned(bytes).unwrap();
     let mut context = super::decode::DecodeContext::new(&scan);
     let original = context.unknown(0).unwrap().data.clone().unwrap();
     let (payloads_detached, findings) = context.reject_duplicate_unknown_candidate();
@@ -2313,7 +2313,7 @@ fn rejected_candidate_detaches_payload_clone_and_preserves_live_bytes() {
     assert_eq!(context.unknown_count(), 1);
 }
 
-fn set_test_units(scan: &mut super::container::Scan, scale: f64) {
+fn set_test_units(scan: &mut super::container::Scan<'_>, scale: f64) {
     scan.metadata.settings.units = Some(settings::UnitsAndTolerances {
         version: 1,
         unit_value: 2,
@@ -2483,7 +2483,7 @@ fn static_definition(id: [u8; 16], members: &[[u8; 16]]) -> super::instances::In
 }
 
 fn set_identity(
-    scan: &mut super::container::Scan,
+    scan: &mut super::container::Scan<'_>,
     source_order: usize,
     object_id: [u8; 16],
     source_key: &str,
@@ -2510,7 +2510,7 @@ fn set_identity(
     });
 }
 
-fn scan_with_objects(objects: &[Vec<u8>]) -> super::container::Scan {
+fn scan_with_objects(objects: &[Vec<u8>]) -> super::container::Scan<'static> {
     let archive = ArchiveVersion::V5;
     let bytes = minimal_document(
         "50",
@@ -2520,13 +2520,13 @@ fn scan_with_objects(objects: &[Vec<u8>]) -> super::container::Scan {
             table(archive, 0x1000_0013, objects),
         ],
     );
-    let mut scan = super::container::scan(bytes).unwrap();
+    let mut scan = super::container::scan_owned(bytes).unwrap();
     set_test_units(&mut scan, 1.0);
     scan
 }
 
 fn install_definitions(
-    scan: &mut super::container::Scan,
+    scan: &mut super::container::Scan<'_>,
     definitions: Vec<super::instances::InstanceDefinition>,
 ) {
     scan.definitions.definitions = definitions;
@@ -3134,7 +3134,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
             table(archive, 0x1000_0013, &[object]),
         ],
     );
-    let mut scan = super::container::scan(bytes).unwrap();
+    let mut scan = super::container::scan_owned(bytes).unwrap();
     set_test_units(&mut scan, 25.4);
     let result = super::decode::decode(&scan);
     assert_eq!(result.ir.model.subds.len(), 1);
@@ -3180,7 +3180,7 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
             table(archive, 0x1000_0013, &[malformed, empty]),
         ],
     );
-    let mut scan = super::container::scan(bytes).unwrap();
+    let mut scan = super::container::scan_owned(bytes).unwrap();
     set_test_units(&mut scan, 1.0);
     let result = super::decode::decode(&scan);
     assert!(result.ir.model.subds.is_empty());
@@ -3210,7 +3210,7 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
             table(archive, 0x1000_0013, &[object]),
         ],
     );
-    let mut scan = super::container::scan(bytes).unwrap();
+    let mut scan = super::container::scan_owned(bytes).unwrap();
     scan.objects[0].attributes_degraded = true;
     let mut context = super::decode::DecodeContext::new(&scan);
     assert!(context.mark_decoded(0));
@@ -3268,7 +3268,7 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
             table(archive, 0x1000_0013, &[object]),
         ],
     );
-    let scan = super::container::scan(bytes).unwrap();
+    let scan = super::container::scan_owned(bytes).unwrap();
     let offset = scan.objects[0].range.start as u64;
     let class = scan.objects[0].class_uuid.to_string();
     let result = super::decode::decode(&scan);

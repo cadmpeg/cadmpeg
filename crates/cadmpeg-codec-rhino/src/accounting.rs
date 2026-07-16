@@ -65,8 +65,8 @@ fn retained(data: &[u8], record: &Record, id: String) -> OpaqueRecord {
 
 /// Installs a complete partition of the source archive and preserves every
 /// direct non-object table record under a stable source identity.
-pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
-    let data = &scan.data;
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
+    let data = scan.data;
     let mut spans = Vec::new();
     let mut opaque = Vec::new();
     let object_orders = scan

@@ -239,7 +239,7 @@ fn decode_dot(
 }
 
 /// Projects every supported general annotation into stable native records.
-pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let Some(scale) = scan
         .metadata
         .settings
@@ -264,7 +264,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
         if matches!(object.class_uuid, TEXT | LEADER) {
             let leader = object.class_uuid == LEADER;
             let Ok((value, points)) = decode_annotation(
-                &scan.data,
+                scan.data,
                 object.class_data_range.clone(),
                 scan.archive,
                 scale,
@@ -304,7 +304,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
         } else if matches!(object.class_uuid, LEGACY_TEXT | LEGACY_LEADER) {
             let leader = object.class_uuid == LEGACY_LEADER;
             let Ok(value) = decode_legacy_annotation(
-                &scan.data,
+                scan.data,
                 object.class_data_range.clone(),
                 scan.archive,
                 scale,
@@ -341,7 +341,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                 links: vec![link],
             });
         } else if object.class_uuid == TEXT_DOT {
-            let Ok(mut value) = decode_dot(&scan.data, object.class_data_range.clone(), scale)
+            let Ok(mut value) = decode_dot(scan.data, object.class_data_range.clone(), scale)
             else {
                 continue;
             };

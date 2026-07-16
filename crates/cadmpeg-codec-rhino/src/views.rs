@@ -940,7 +940,7 @@ fn parse_named_cplanes(
 }
 
 /// Installs saved and active view records with complete child accounting.
-pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let scale = scan
         .metadata
         .settings
@@ -956,21 +956,15 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
         }
         for record in &table.records {
             if record.typecode == NAMED_CPLANES {
-                if let Ok(values) = parse_named_cplanes(&scan.data, record, scan.archive, scale) {
+                if let Ok(values) = parse_named_cplanes(scan.data, record, scan.archive, scale) {
                     cplanes.extend(values);
                 }
             }
             if record.typecode == NAMED_VIEWS {
-                views.extend(parse_list(&scan.data, record, scan.archive, scale, "named"));
+                views.extend(parse_list(scan.data, record, scan.archive, scale, "named"));
             }
             if record.typecode == ACTIVE_VIEWS {
-                views.extend(parse_list(
-                    &scan.data,
-                    record,
-                    scan.archive,
-                    scale,
-                    "active",
-                ));
+                views.extend(parse_list(scan.data, record, scan.archive, scale, "active"));
             }
         }
     }

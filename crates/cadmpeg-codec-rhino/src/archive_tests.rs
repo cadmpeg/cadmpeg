@@ -120,7 +120,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let large = object_record(1, [0; 16], &[0x55; 64]);
     let point = object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
     let bytes = archive(&[large.clone(), point.clone()]);
-    let scan = super::container::scan(bytes).expect("complete archive scan");
+    let scan = super::container::scan_owned(bytes).expect("complete archive scan");
     let mut context = super::decode::DecodeContext::new(&scan);
     context.set_retention_limits(point.len(), point.len());
     let result = context.commit();
@@ -150,7 +150,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     );
 
     let two_points = archive(&[point.clone(), point.clone()]);
-    let scan = super::container::scan(two_points).expect("complete archive scan");
+    let scan = super::container::scan_owned(two_points).expect("complete archive scan");
     let mut context = super::decode::DecodeContext::new(&scan);
     context.set_retention_limits(point.len(), point.len());
     let result = context.commit();
