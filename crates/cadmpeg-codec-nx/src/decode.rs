@@ -9540,6 +9540,23 @@ fn attach_feature_operations(
         simple_hole_construction_groups,
         &hole_outputs,
     );
+    let hole_package_operations = labels
+        .iter()
+        .filter(|label| label.value == "HOLE PACKAGE")
+        .map(|label| label.id.clone())
+        .collect::<Vec<_>>();
+    let hole_package_outputs = hole_package_operations
+        .iter()
+        .filter_map(|operation| {
+            let object_index = body_references.get(operation.as_str())?;
+            Some((
+                operation.clone(),
+                feature_body_outputs(*object_index, &bodies_by_object_index),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let hole_package_diameters =
+        hole_diameters_for_operations(ir, &hole_package_operations, &hole_package_outputs);
     let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
@@ -10091,7 +10108,10 @@ fn attach_feature_operations(
                             &operation_payload_strings,
                             block_dimension_values,
                             block_placement,
-                            simple_hole_diameters.get(label.id.as_str()).copied(),
+                            simple_hole_diameters
+                                .get(label.id.as_str())
+                                .or_else(|| hole_package_diameters.get(label.id.as_str()))
+                                .copied(),
                             simple_hole_chamfers.get(label.id.as_str()).copied(),
                             native_parameters,
                         )
@@ -10645,7 +10665,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
                 countersink_angle: None,
             },
             exit_kind: None,
-            diameter: None,
+            diameter: hole_diameter,
             extent: None,
         },
         "RIB" => FeatureDefinition::Rib {
@@ -10746,15 +10766,30 @@ pub(crate) fn simple_hole_diameters(
         _ => return BTreeMap::new(),
     };
 
+    hole_diameters_for_operations(ir, &operations, outputs)
+}
+
+/// Derive one diameter per operation when the complete operation set and its
+/// exact output-body topology form a uniform through-bore bijection in every
+/// body partition.
+pub(crate) fn hole_diameters_for_operations(
+    ir: &CadIr,
+    operations: &[String],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+) -> BTreeMap<String, Length> {
+    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    {
+        return BTreeMap::new();
+    }
     let mut operations_by_body = BTreeMap::<BodyId, Vec<String>>::new();
     for operation in operations {
-        let Some([body]) = outputs.get(&operation).map(Vec::as_slice) else {
+        let Some([body]) = outputs.get(operation).map(Vec::as_slice) else {
             return BTreeMap::new();
         };
         operations_by_body
             .entry(body.clone())
             .or_default()
-            .push(operation);
+            .push(operation.clone());
     }
 
     let surfaces = ir

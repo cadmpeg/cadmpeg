@@ -2546,6 +2546,20 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         }
     ));
     assert!(matches!(
+        crate::decode::non_boolean_feature_definition(
+            "HOLE PACKAGE",
+            &[],
+            None,
+            None,
+            Some(cadmpeg_ir::features::Length(8.0)),
+        ),
+        FeatureDefinition::Hole {
+            diameter: Some(cadmpeg_ir::features::Length(8.0)),
+            kind: HoleKind::Unresolved { form: None, .. },
+            ..
+        }
+    ));
+    assert!(matches!(
         crate::decode::non_boolean_feature_definition("RIB", &[], None, None, None),
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
@@ -2872,6 +2886,19 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
             ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
         ])
     );
+    assert_eq!(
+        crate::decode::hole_diameters_for_operations(&ir, &operations, &outputs),
+        std::collections::BTreeMap::from([
+            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
+            ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+        ])
+    );
+    assert!(crate::decode::hole_diameters_for_operations(
+        &ir,
+        &[operations[0].clone(), operations[0].clone()],
+        &outputs,
+    )
+    .is_empty());
     let mut shared_carrier = ir.clone();
     shared_carrier.model.faces.push(Face {
         id: FaceId("unowned-shared-cylinder-face".into()),
@@ -2940,6 +2967,13 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
             std::slice::from_ref(&group),
             &distinct_outputs,
         ),
+        std::collections::BTreeMap::from([
+            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
+            ("hole-b".into(), cadmpeg_ir::features::Length(6.0)),
+        ])
+    );
+    assert_eq!(
+        crate::decode::hole_diameters_for_operations(&distinct, &operations, &distinct_outputs,),
         std::collections::BTreeMap::from([
             ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
             ("hole-b".into(), cadmpeg_ir::features::Length(6.0)),
