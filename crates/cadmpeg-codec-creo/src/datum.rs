@@ -1,5 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard model-space datum planes stored in `ActDatums`.
+//!
+//! Migrated per doc section 10 Phase 2: a context-independent primitive decoder
+//! over a caller-owned slice. Every read is a bounds-checked `get`. [`planes`]
+//! accumulates one candidate per byte position while walking
+//! `0..payload.len()`, and [`scalars`] fills a fixed-width row (`count` is a
+//! caller-supplied literal, never an untrusted `compact_int`), so neither
+//! output length is bounded by an attacker-controlled count. No disallowed
+//! accumulation method is reachable, so the module graduates with the deny lint
+//! and no `req_*`/`BoundedCount` obligation, on the same basis as `psb.rs` and
+//! `scalar.rs`.
+#![deny(clippy::disallowed_methods)]
 
 use crate::scalar;
 
@@ -117,7 +128,11 @@ fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 }
 
 fn scalars(data: &[u8], mut offset: usize, count: usize) -> Option<Vec<f64>> {
-    let mut values = Vec::with_capacity(count);
+    // `count` is a fixed caller-supplied width (10 at the single call site), not
+    // an untrusted `compact_int`; the loop pushes exactly `count` times. A plain
+    // `Vec::new` + `push` keeps the module clear of disallowed methods without a
+    // `BoundedCount` proof, since the bound is a compile-time constant.
+    let mut values = Vec::new();
     while values.len() < count {
         let head = *data.get(offset)?;
         if head == 0x18 || head == 0x0f {

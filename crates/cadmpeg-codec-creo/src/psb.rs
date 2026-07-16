@@ -5,6 +5,14 @@
 //! grammar. [`compact_int`], [`reference_id`], and [`short_form_float`] decode
 //! primitive values. Unknown and truncated input remains explicit in the token
 //! stream.
+//!
+//! Migrated per doc section 10 Phase 2: a pure primitive decoder over a
+//! caller-owned slice. Every read is a bounds-checked `get`, all offset
+//! arithmetic is `checked_*` or saturating, and [`tokens`] accumulates one
+//! entry per structural form while walking `while offset < data.len()`, so its
+//! output length is bounded by input bytes, never by an untrusted count. No
+//! disallowed accumulation method is reachable.
+#![deny(clippy::disallowed_methods)]
 
 /// Structural token bytes ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#22-structural-tokens)).
 pub mod token {

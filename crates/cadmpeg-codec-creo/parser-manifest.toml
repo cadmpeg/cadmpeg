@@ -1,0 +1,204 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Per-module migration manifest for the Creo PSB decoder (doc section 8.6 /
+# 10 Phase 2). One `[[module]]` entry per module that reads untrusted bytes.
+# `status` is `migrated` or `legacy`. A `migrated` module satisfies the full
+# section 10 checklist: `View`/fixed-size arrays for hostile reads, `req_*`
+# mirrors for committed required reads, `BoundedCount`/`read_counted`/
+# `exact_vec` for count-framed collections, `grow_vec` for accumulators,
+# `alloc_unfloored` plus a codec-local cap for zero-floor production,
+# `DepthGuard` on recursion, work charged per a stated cost model, and
+# module-level `#[deny(clippy::disallowed_methods)]`. A `legacy` module states
+# in `cost_model` why it is not yet migrated and names its high-risk sites.
+# `window_egress` lists audited `View::window()` sites (section 8.8 ratchet);
+# `ledger_level` is the section 6.1 record-accounting level (0 in Phase 2).
+#
+# Order: count-framed loops first, then irregular marker probes and graph
+# traversals (doc section 10). The three graduated modules (`psb.rs`,
+# `scalar.rs`, `datum.rs`) are the context-independent primitive decoders whose
+# outputs are bounded by input bytes or a compile-time constant, never by an
+# untrusted count. Every remaining count-framed structural reader still routes
+# untrusted `compact_int` counts through raw `&[u8]` slices and stays `legacy`
+# until it threads `DecodeContext`/`View` and the `BoundedCount`/`read_counted`
+# API.
+
+# ===========================================================================
+# Migrated — context-independent primitive decoders.
+# ===========================================================================
+
+# Pure primitive decoder over a caller-owned slice. `tokens` accumulates one
+# entry per structural form while walking `while offset < data.len()`, so its
+# output length is bounded by input bytes, never by an untrusted count; every
+# read is a bounds-checked `get`. No disallowed accumulation method is
+# reachable, so it graduates with the deny lint and no `req_*`/`BoundedCount`
+# obligation, mirroring the platform `read.rs`/`le.rs` primitives.
+[[module]]
+path = "crates/cadmpeg-codec-creo/src/psb.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["creo_psb_tokens", "creo_compact_int", "creo_short_form_float"]
+charges = []
+cost_model = "no budget charge; bounds-checked slice reads, token accumulation proportional to the validated input length"
+window_egress = []
+ledger_level = 0
+
+# Pure primitive decoder. `ScalarCache::from_section` grows one entry per
+# distinct `0x46` token found while scanning `0..section.len()`, bounded by
+# input bytes; `decode`/`decode_in_lane` are bounds-checked `Option` probes
+# over a caller-owned slice with no untrusted-count allocation. Graduates with
+# the deny lint on the same basis as `psb.rs`.
+[[module]]
+path = "crates/cadmpeg-codec-creo/src/scalar.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["creo_scalar"]
+charges = []
+cost_model = "no budget charge; bounds-checked slice reads, cache accumulation proportional to the validated section length"
+window_egress = []
+ledger_level = 0
+
+# ===========================================================================
+# Legacy — count-framed structural readers (migrate first, doc section 10).
+# ===========================================================================
+
+# ===========================================================================
+# Migrated — context-independent datum-plane decoder.
+# ===========================================================================
+
+# Datum-plane rows. Re-audited against the current source: `planes` accumulates
+# one candidate per byte position while walking `0..payload.len()` with
+# `Vec::new` + `push`, bounded by input bytes; the only `with_capacity` site
+# (`scalars`, formerly `datum.rs:120`) is sized by a fixed caller-supplied
+# literal (`count == 10`), never an untrusted `compact_int`. There is no
+# `read_plane_values` and no attacker-controlled count in this module. Replacing
+# the fixed-width `with_capacity` with `Vec::new` + `push` clears the last
+# disallowed method, so the module graduates with the deny lint on the same
+# basis as `psb.rs`/`scalar.rs`, with no `req_*`/`BoundedCount` obligation.
+[[module]]
+path = "crates/cadmpeg-codec-creo/src/datum.rs"
+status = "migrated"
+input_spaces = ["psb_section"]
+fuzz_targets = ["creo_datum", "decode_pipeline_mutated"]
+charges = []
+cost_model = "no budget charge; bounds-checked slice reads, candidate accumulation proportional to the validated payload length, fixed-width row fill bounded by a compile-time constant"
+window_egress = []
+ledger_level = 0
+
+# Surface prototype rows. `scalar_slots` sizes `Vec::with_capacity(count)` then
+# `slots.resize(count, None)` (`surface.rs:612`/`surface.rs:622`); `resize` is a
+# disallowed method, but the count is NOT unbounded: it is `dimensions * count`
+# where both are single `u8` fields (`surface.rs:419`-`420`), so the fill is
+# capped at 255*255 = 65025 `Option<f64>` slots (~1 MiB) per record.
+# `named_surface_value` runs `for _ in 0..count` fills (`surface.rs:404`) and the
+# `ContiguousEntityReferences` expansion `(start_id..end_id).collect()`
+# (`surface.rs:397`) over a `compact_int` count; `psb::compact_int` is a two-byte
+# varint capped at 16383 (`psb.rs`), so those collect at most 16383 `u32`
+# (~64 KiB) per record, and each record consumes input bytes. Migration
+# obligation is the ratchet, not a DoS: remove the `resize`/`with_capacity`
+# disallowed methods (bounded push loop or `exact_vec` via `View::counted`),
+# charge `alloc_bytes` for the per-record slot fill, and thread `View`/`req_*`.
+# Legacy until then.
+[[module]]
+path = "crates/cadmpeg-codec-creo/src/surface.rs"
+status = "legacy"
+input_spaces = ["psb_section"]
+fuzz_targets = ["creo_surface_rows", "decode_pipeline_mutated"]
+charges = []
+cost_model = "bounded but uncharged: with_capacity + resize at surface.rs:612/622 sized by two u8 fields (<=65025 slots); compact_int-count fills/collect at surface.rs:397/404 capped at 16383 (varint ceiling); no alloc_bytes charge, disallowed methods not yet removed"
+window_egress = []
+ledger_level = 0
+
+# Feature records — the largest count-framed surface. Several `Vec::with_capacity`
+# + `for _ in 0..count` fills (`feature.rs:871`/`886` slot and value arrays,
+# `feature.rs:2188`/`2497` id and entry arrays) and declared-count key/value loops
+# (`feature.rs:980`/`1099`/`1252`/`1383`). Every count is bounded small: the slot
+# counts at 871 derive from two `u8` fields (`feature.rs:2015`, `payload[1] *
+# payload[2]`, <=65025) or a literal 12 (`feature.rs:2369`), and the id/entry/loop
+# counts come from `psb::compact_int`, a two-byte varint capped at 16383. No fill
+# is attacker-unbounded, but none proves the count through `View::counted` or
+# charges `alloc_bytes`, and the `with_capacity` sites are disallowed methods.
+# Largest ratchet surface; migrate the fills to `exact_vec`/`read_counted` with a
+# per-collection `BoundedCount` and charge the per-record allocation. Legacy until
+# then.
+[[module]]
+path = "crates/cadmpeg-codec-creo/src/feature.rs"
+status = "legacy"
+input_spaces = ["psb_section"]
+fuzz_targets = ["decode_pipeline_mutated"]
+charges = []
+cost_model = "bounded but uncharged: with_capacity + 0..count fills at feature.rs:871/886/2188/2497 and declared-count loops at 980/1099/1252/1383; counts capped by two u8 fields (<=65025) or the compact_int varint ceiling (16383); no BoundedCount, no alloc_bytes charge, disallowed methods not yet removed"
+window_egress = []
+ledger_level = 0
+
+# Container scan and namespace-count headers. `read_array_count` sums `compact_int`
+# counts into a `u32` (`container.rs:388`, no allocation), and the `parent_feats`
+# reference collection runs `for _ in 0..count` over ids from a `compact_int` count
+# into a `Vec::new`+push accumulator (`container.rs:702`); count is capped at 16383
+# by the varint and the loop also breaks on no-progress, so it is bounded by input
+# bytes and uses no disallowed method — only the `work` charge is missing.
+# `Vec::with_capacity(hits.len())` (`container.rs:332`) is a disallowed method
+# bounded by the completed scan, not by an untrusted count. `scan_view` calls
+# `View::window()` once (`container.rs:923`) to hand raw container bytes to the
+# section splitter — the audited raw-byte egress named below. Legacy until the
+# accumulator charges `work`/`alloc`, the `with_capacity` is removed, and the
+# section split consumes `View` instead of the raw window.
+[[module]]
+path = "crates/cadmpeg-codec-creo/src/container.rs"
+status = "legacy"
+input_spaces = ["root", "psb_section"]
+fuzz_targets = ["creo_container", "creo_container_scan"]
+charges = []
+cost_model = "bounded but uncharged: Vec::new+push id collection at container.rs:702 capped by the compact_int varint (16383) and by no-progress break; with_capacity(hits.len()) at 332 bounded by scan; no BoundedCount, no work/alloc charge, one audited window egress"
+window_egress = ["container.rs:923 (scan_view hands root bytes to the section splitter)"]
+ledger_level = 0
+
+# Curve prototype rows. Row walks are bounded by section extents
+# (`curve.rs:267` `0..close`) and `Vec::with_capacity(8)` (`curve.rs:623`) is a
+# fixed prototype width, but the row decoders still read untrusted `compact_int`
+# ids/counts over raw `&[u8]` and predate `View`/`req_*`. Legacy until the row
+# grammar consumes `View` with `req_*` for committed reads.
+[[module]]
+path = "crates/cadmpeg-codec-creo/src/curve.rs"
+status = "legacy"
+input_spaces = ["psb_section"]
+fuzz_targets = ["creo_curve_prototypes", "decode_pipeline_mutated"]
+charges = []
+cost_model = "unbudgeted: bounded 0..close row walks and fixed-width with_capacity(8), but untrusted compact_int reads over raw &[u8] without View/req_* or work charge"
+window_egress = []
+ledger_level = 0
+
+# ===========================================================================
+# Legacy — graph traversal and orchestration (migrate after count-framed).
+# ===========================================================================
+
+# Topology edge graph. `edges` builds two directed sides per row
+# (`topology.rs:201` `with_capacity(rows.len() * 2)`, `topology.rs:203`
+# `for side in 0..2`); allocation is bounded by the already-decoded row count,
+# but the traversal charges no `work` per node/edge and predates `View`.
+# Migration charges nodes + edges and threads `DecodeContext`. Legacy until
+# then.
+[[module]]
+path = "crates/cadmpeg-codec-creo/src/topology.rs"
+status = "legacy"
+input_spaces = ["psb_section"]
+fuzz_targets = ["decode_pipeline_mutated"]
+charges = []
+cost_model = "unbudgeted: edge graph sized from the decoded row count at topology.rs:201, no per-node/edge work charge"
+window_egress = []
+ledger_level = 0
+
+# Decode orchestration. `decode` receives the migrated `DecodeContext`/`View`
+# from `lib.rs` and drives the section readers above, but its record assembly
+# (`decode.rs:184` `0..planes.len()` merge, geometry-section preservation) does
+# not yet charge `work` per record or thread `View` into the leaf readers.
+# Legacy until the leaf modules graduate and the orchestration charges per
+# committed record.
+[[module]]
+path = "crates/cadmpeg-codec-creo/src/decode.rs"
+status = "legacy"
+input_spaces = ["root", "psb_section", "datum_derived"]
+fuzz_targets = ["decode_pipeline_mutated"]
+charges = []
+cost_model = "unbudgeted orchestration: bounded 0..planes.len() merge at decode.rs:184, no per-record work charge; delegates to legacy leaf readers"
+window_egress = []
+ledger_level = 0

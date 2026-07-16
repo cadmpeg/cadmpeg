@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! PSB scalar forms with context-independent IEEE-754 mappings.
+//!
+//! Migrated per doc section 10 Phase 2: a pure primitive decoder over a
+//! caller-owned slice. Every read is a bounds-checked `get`; the only
+//! accumulator ([`ScalarCache::from_section`]) grows one entry per distinct
+//! `0x46` token found while scanning `0..section.len()`, so its length is
+//! bounded by input bytes, never by an untrusted count. No disallowed
+//! accumulation method is reachable.
+#![deny(clippy::disallowed_methods)]
 
 use crate::psb::{compact_int, short_form_float};
 
