@@ -150,6 +150,8 @@ fn report_unresolved_configuration_rules(
 struct DesignProjectionGaps {
     native_features: usize,
     native_constraints: usize,
+    unprojected_sketch_relations: usize,
+    unprojected_dimensions: usize,
     profile_selections: usize,
     face_selections: usize,
     native_edge_selections: usize,
@@ -157,17 +159,65 @@ struct DesignProjectionGaps {
     unresolved_edge_selections: usize,
 }
 
-fn design_projection_gaps<'a>(
-    ir: &CadIr,
-    source_lost_edge_reference_ids: impl IntoIterator<Item = &'a str>,
-) -> DesignProjectionGaps {
+fn constraint_parameter(
+    definition: &cadmpeg_ir::sketches::SketchConstraintDefinition,
+) -> Option<&cadmpeg_ir::features::ParameterId> {
+    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+
+    match definition {
+        Definition::Offset { parameter, .. } | Definition::Native { parameter, .. } => {
+            parameter.as_ref()
+        }
+        Definition::Distance { parameter, .. }
+        | Definition::DistanceLoci { parameter, .. }
+        | Definition::HorizontalDistance { parameter, .. }
+        | Definition::VerticalDistance { parameter, .. }
+        | Definition::RepeatedDistance { parameter, .. }
+        | Definition::Angle { parameter, .. }
+        | Definition::AngleToAxis { parameter, .. }
+        | Definition::Radius { parameter, .. }
+        | Definition::Diameter { parameter, .. } => Some(parameter),
+        Definition::Coincident { .. }
+        | Definition::Polygon { .. }
+        | Definition::CoincidentLoci { .. }
+        | Definition::Midpoint { .. }
+        | Definition::Concentric { .. }
+        | Definition::Collinear { .. }
+        | Definition::Symmetric { .. }
+        | Definition::Horizontal { .. }
+        | Definition::Vertical { .. }
+        | Definition::Parallel { .. }
+        | Definition::Perpendicular { .. }
+        | Definition::Tangent { .. }
+        | Definition::Curvature { .. }
+        | Definition::Equal { .. }
+        | Definition::Fixed { .. } => None,
+    }
+}
+
+fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGaps {
     use cadmpeg_ir::features::{EdgeSelection, Extent, ExtrudeStart, FaceSelection};
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
     use std::collections::HashSet;
 
-    let source_lost_edge_reference_ids = source_lost_edge_reference_ids
-        .into_iter()
+    let source_lost_edge_reference_ids = native
+        .lost_edge_references
+        .iter()
+        .map(|reference| reference.id.as_str())
+        .collect::<HashSet<_>>();
+    let projected_constraint_refs = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| constraint.native_ref.as_deref())
+        .collect::<HashSet<_>>();
+    let projected_dimension_parameters = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| constraint_parameter(&constraint.definition))
+        .cloned()
         .collect::<HashSet<_>>();
 
     let mut gaps = DesignProjectionGaps {
@@ -180,6 +230,20 @@ fn design_projection_gaps<'a>(
                     constraint.definition,
                     SketchConstraintDefinition::Native { .. }
                 )
+            })
+            .count(),
+        unprojected_sketch_relations: native
+            .sketch_relations
+            .iter()
+            .filter(|relation| !projected_constraint_refs.contains(relation.id.as_str()))
+            .count(),
+        unprojected_dimensions: native
+            .design_parameters
+            .iter()
+            .filter(|parameter| {
+                parameter.kind == crate::records::DesignParameterKind::Dimension
+                    && !projected_dimension_parameters
+                        .contains(&crate::design::neutral_parameter_id(parameter))
             })
             .count(),
         ..DesignProjectionGaps::default()
@@ -248,13 +312,7 @@ fn design_projection_gaps<'a>(
 }
 
 fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: &F3dNative) {
-    let gaps = design_projection_gaps(
-        ir,
-        native
-            .lost_edge_references
-            .iter()
-            .map(|reference| reference.id.as_str()),
-    );
+    let gaps = design_projection_gaps(ir, native);
     let mut push = |count: usize, message: String| {
         if count != 0 {
             report.losses.push(LossNote {
@@ -277,6 +335,20 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} sketch constraint(s) retain native operands because no unique neutral relation was resolved.",
             gaps.native_constraints
+        ),
+    );
+    push(
+        gaps.unprojected_sketch_relations,
+        format!(
+            "{} decoded sketch relation(s) have no neutral constraint because their owning Sketch placement was not resolved.",
+            gaps.unprojected_sketch_relations
+        ),
+    );
+    push(
+        gaps.unprojected_dimensions,
+        format!(
+            "{} Design dimension parameter(s) have no parameter-backed neutral or native sketch constraint.",
+            gaps.unprojected_dimensions
         ),
     );
     push(
@@ -1940,7 +2012,8 @@ mod tests {
     use crate::native::F3dNative;
     use crate::records::{
         DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignParameter,
-        DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+        DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, LostEdgeReference,
+        SketchRelation,
     };
 
     #[test]
@@ -2046,11 +2119,69 @@ mod tests {
             .expect("native feature"),
         );
 
+        let mut native = F3dNative::default();
+        native.lost_edge_references.push(LostEdgeReference {
+            id: "f3d:test:lost-edge-reference#2".into(),
+            record_byte_offset: 0,
+            class_tag_offset: 0,
+            class_tag: "000".into(),
+            record_index: 0,
+            record_index_offset: 0,
+            byte_offset: 0,
+            next_byte_offset: 1,
+            next_class_tag: "001".into(),
+            next_record_index: 1,
+        });
+        native.sketch_relations.push(SketchRelation {
+            id: "native:unprojected-relation".into(),
+            record_index: 1,
+            class_tag: "000".into(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: "0_1".into(),
+            auxiliary_references: Vec::new(),
+            auxiliary_reference_offsets: Vec::new(),
+            members: Vec::new(),
+            resolved_members: Vec::new(),
+            member_offsets: Vec::new(),
+            owner_reference_offset: 0,
+            state: 0,
+            constraint_kinds: Vec::new(),
+            unknown_constraint_bits: 0,
+            return_members: Vec::new(),
+            resolved_return_members: Vec::new(),
+            return_member_offsets: Vec::new(),
+            raw_bytes: Vec::new(),
+        });
+        native.design_parameters.push(DesignParameter {
+            id: "f3d:test:design-parameter#2".into(),
+            byte_offset: 0,
+            class_tag: "000".into(),
+            record_index: 2,
+            prefix_value: 0,
+            prefix_value_offset: 0,
+            source_ordinal: 2,
+            owner_record_index: Some(3),
+            expression: "1 mm".into(),
+            expression_offset: 0,
+            source_kind: "Linear Dimension-2".into(),
+            source_kind_offset: 0,
+            kind: DesignParameterKind::Dimension,
+            unit: Some("mm".into()),
+            unit_offset: Some(0),
+            name: "d2".into(),
+            name_offset: 0,
+            evaluated_value: 0.1,
+            evaluated_value_offset: 0,
+        });
         assert_eq!(
-            design_projection_gaps(&ir, ["f3d:test:lost-edge-reference#2"]),
+            design_projection_gaps(&ir, &native),
             DesignProjectionGaps {
                 native_features: 1,
                 native_constraints: 1,
+                unprojected_sketch_relations: 1,
+                unprojected_dimensions: 1,
                 profile_selections: 1,
                 face_selections: 1,
                 native_edge_selections: 2,

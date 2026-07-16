@@ -2527,7 +2527,9 @@ fn neutral_feature_id_parts(
     ))
 }
 
-fn neutral_parameter_id(parameter: &DesignParameter) -> cadmpeg_ir::features::ParameterId {
+pub(crate) fn neutral_parameter_id(
+    parameter: &DesignParameter,
+) -> cadmpeg_ir::features::ParameterId {
     neutral_parameter_id_parts(
         native_stream(&parameter.id).unwrap_or("f3d:design"),
         parameter.source_ordinal,
