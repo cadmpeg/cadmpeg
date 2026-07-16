@@ -7,9 +7,12 @@
 # boundary named in that module's `parser-manifest.toml` window_egress list.
 #
 # The `tests/window_egress_ratchet.rs` test counts `.window()` occurrences in
-# each crate's `src` tree and fails if a crate exceeds its ceiling. Lowering a
-# count means lowering the number here in the same commit; raising one is a
-# ratchet violation and must be justified by a manifest window_egress entry.
+# each crate's `src` and `fuzz_targets` trees and fails if a crate exceeds its
+# ceiling. Lowering a count means lowering the number here in the same commit;
+# raising one is a ratchet violation and must be justified by a manifest
+# window_egress entry. Every crate directory under `crates/` must appear below:
+# the test fails any crate with no ceiling, so new crates cannot escape by
+# omission.
 [crates]
 cadmpeg = 0
 cadmpeg-ir = 8
@@ -21,3 +24,4 @@ cadmpeg-codec-nx = 3
 cadmpeg-codec-rhino = 5
 cadmpeg-step = 0
 cadmpeg-harness = 0
+cadmpeg-fuzz = 0
