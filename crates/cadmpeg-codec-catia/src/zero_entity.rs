@@ -252,44 +252,270 @@ pub(crate) fn support_curve_with_range(
         .find(|run| run.carrier_ordinal == support.owner_carrier_ordinal)?;
     let surface = run.geometry.as_ref()?;
     let curve = lift_pcurve(pcurve, surface)?;
-    let range = direct_support_curve_range(pcurve, surface, &curve);
-    Some((curve, range))
+    let source_range = pcurve_parameter_range(pcurve, support.uv_endpoints)?;
+    let reversed = *topology
+        .loops
+        .get(occurrence.loop_index)?
+        .reversed
+        .get(occurrence.member_index)?;
+    orient_direct_support_curve(pcurve, surface, curve, source_range, reversed)
 }
 
-fn direct_support_curve_range(
+fn orient_direct_support_curve(
     pcurve: &PcurveGeometry,
     surface: &SurfaceGeometry,
-    curve: &CurveGeometry,
-) -> Option<[f64; 2]> {
-    let source_range = support_parameter_range_geometry(pcurve)?;
+    mut curve: CurveGeometry,
+    source_range: [f64; 2],
+    reversed: bool,
+) -> Option<(CurveGeometry, Option<[f64; 2]>)> {
     let uv = source_range.map(|parameter| cadmpeg_ir::eval::pcurve_uv(pcurve, parameter));
     let [Some(start_uv), Some(end_uv)] = uv else {
         return None;
     };
-    match (surface, curve) {
-        (SurfaceGeometry::Plane { .. }, CurveGeometry::Nurbs(_)) => Some(source_range),
-        (SurfaceGeometry::Nurbs(_), CurveGeometry::Nurbs(_)) => {
+    let mut uv = [start_uv, end_uv];
+    if reversed {
+        uv.swap(0, 1);
+    }
+    let range = match (surface, &mut curve) {
+        (SurfaceGeometry::Plane { .. }, CurveGeometry::Nurbs(curve)) => {
+            if reversed {
+                reverse_nurbs_curve(curve)?;
+            }
+            Some(source_range)
+        }
+        (SurfaceGeometry::Nurbs(_), CurveGeometry::Nurbs(curve)) => {
             let PcurveGeometry::Nurbs { control_points, .. } = pcurve else {
                 return None;
             };
             if constant_coordinate(control_points, |point| point.u).is_some() {
-                Some([start_uv.v, end_uv.v])
+                orient_nurbs_interval(curve, [uv[0].v, uv[1].v])
             } else if constant_coordinate(control_points, |point| point.v).is_some() {
-                Some([start_uv.u, end_uv.u])
+                orient_nurbs_interval(curve, [uv[0].u, uv[1].u])
             } else {
                 None
             }
         }
+        (
+            SurfaceGeometry::Cylinder { .. }
+            | SurfaceGeometry::Cone { .. }
+            | SurfaceGeometry::Torus { .. },
+            CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. },
+        ) => orient_conic_interval(pcurve, surface, &uv, &mut curve),
         (_, CurveGeometry::Line { origin, direction }) => {
-            let points =
-                [start_uv, end_uv].map(|uv| cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v));
+            let points = uv.map(|uv| cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v));
             let [Some(start), Some(end)] = points else {
                 return None;
             };
-            Some([start, end].map(|point| dot(point_vector(*origin, point), *direction)))
+            let delta = point_vector(start, end);
+            let length = delta.norm();
+            if !length.is_finite() || length <= f64::EPSILON {
+                return None;
+            }
+            *origin = start;
+            *direction = scale(delta, length.recip());
+            Some([0.0, length])
+        }
+        _ => None,
+    };
+    Some((curve, range))
+}
+
+fn orient_conic_interval(
+    pcurve: &PcurveGeometry,
+    surface: &SurfaceGeometry,
+    uv: &[Point2; 2],
+    curve: &mut CurveGeometry,
+) -> Option<[f64; 2]> {
+    let PcurveGeometry::Nurbs { control_points, .. } = pcurve else {
+        return None;
+    };
+    let span = match surface {
+        SurfaceGeometry::Cylinder { .. } => {
+            constant_coordinate(control_points, |point| point.v)?;
+            monotone_coordinate(control_points, |point| point.u)?;
+            uv[1].u - uv[0].u
+        }
+        SurfaceGeometry::Cone { ratio, .. } => {
+            constant_coordinate(control_points, |point| point.v)?;
+            monotone_coordinate(control_points, |point| point.u)?;
+            (uv[1].u - uv[0].u) * ratio.signum()
+        }
+        SurfaceGeometry::Torus { .. } => {
+            if constant_coordinate(control_points, |point| point.u).is_some() {
+                monotone_coordinate(control_points, |point| point.v)?;
+                uv[1].v - uv[0].v
+            } else {
+                constant_coordinate(control_points, |point| point.v)?;
+                monotone_coordinate(control_points, |point| point.u)?;
+                uv[1].u - uv[0].u
+            }
+        }
+        _ => return None,
+    };
+    if !span.is_finite() || span.abs() <= 1e-12 || span.abs() > std::f64::consts::TAU + 1e-9 {
+        return None;
+    }
+    let start_point = cadmpeg_ir::eval::surface_point(surface, uv[0].u, uv[0].v)?;
+    let end_point = cadmpeg_ir::eval::surface_point(surface, uv[1].u, uv[1].v)?;
+    let start = conic_parameter(curve, start_point)?;
+    if span < 0.0 {
+        reverse_conic_axis(curve)?;
+    }
+    let start = if span < 0.0 { -start } else { start };
+    let sweep = span.abs();
+    let range = canonical_periodic_interval([start, start + sweep])?;
+    let expected_end = conic_point(curve, range[1])?;
+    (point_distance(
+        [expected_end.x, expected_end.y, expected_end.z],
+        [end_point.x, end_point.y, end_point.z],
+    ) <= 1e-9 * (1.0 + conic_scale(curve)?))
+    .then_some(range)
+}
+
+fn monotone_coordinate(points: &[Point2], coordinate: impl Fn(&Point2) -> f64) -> Option<()> {
+    let mut direction = 0.0;
+    for pair in points.windows(2) {
+        let delta = coordinate(&pair[1]) - coordinate(&pair[0]);
+        if delta.abs() <= 1e-12 {
+            continue;
+        }
+        if direction != 0.0 && delta.signum() != direction {
+            return None;
+        }
+        direction = delta.signum();
+    }
+    (direction != 0.0).then_some(())
+}
+
+fn conic_parameter(curve: &CurveGeometry, point: Point3) -> Option<f64> {
+    let (center, axis, reference, major, minor) = match curve {
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => (*center, *axis, *ref_direction, *radius, *radius),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => (
+            *center,
+            *axis,
+            *major_direction,
+            *major_radius,
+            *minor_radius,
+        ),
+        _ => return None,
+    };
+    let offset = point_vector(center, point);
+    let tangent = cross(axis, reference);
+    Some((dot(offset, tangent) / minor).atan2(dot(offset, reference) / major))
+}
+
+fn reverse_conic_axis(curve: &mut CurveGeometry) -> Option<()> {
+    match curve {
+        CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => {
+            *axis = scale(*axis, -1.0);
+            Some(())
         }
         _ => None,
     }
+}
+
+fn conic_point(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
+    let (center, axis, reference, major, minor) = match curve {
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => (*center, *axis, *ref_direction, *radius, *radius),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => (
+            *center,
+            *axis,
+            *major_direction,
+            *major_radius,
+            *minor_radius,
+        ),
+        _ => return None,
+    };
+    Some(offset(
+        center,
+        reference,
+        major * parameter.cos(),
+        cross(axis, reference),
+        minor * parameter.sin(),
+    ))
+}
+
+fn conic_scale(curve: &CurveGeometry) -> Option<f64> {
+    match curve {
+        CurveGeometry::Circle { radius, .. } => Some(*radius),
+        CurveGeometry::Ellipse {
+            major_radius,
+            minor_radius,
+            ..
+        } => Some((*major_radius).max(*minor_radius)),
+        _ => None,
+    }
+}
+
+fn canonical_periodic_interval(range: [f64; 2]) -> Option<[f64; 2]> {
+    let sweep = range[1] - range[0];
+    if !sweep.is_finite() || sweep <= 0.0 || sweep > std::f64::consts::TAU + 1e-9 {
+        return None;
+    }
+    let start = range[0].rem_euclid(std::f64::consts::TAU);
+    Some([start, start + sweep])
+}
+
+fn orient_nurbs_interval(curve: &mut NurbsCurve, range: [f64; 2]) -> Option<[f64; 2]> {
+    if range[0] < range[1] {
+        return Some(range);
+    }
+    if range[0] <= range[1] {
+        return None;
+    }
+    let domain = nurbs_curve_domain(curve)?;
+    reverse_nurbs_curve(curve)?;
+    Some([
+        domain[0] + domain[1] - range[0],
+        domain[0] + domain[1] - range[1],
+    ])
+}
+
+fn nurbs_curve_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
+    let degree = usize::try_from(curve.degree).ok()?;
+    Some([
+        *curve.knots.get(degree)?,
+        *curve
+            .knots
+            .get(curve.knots.len().checked_sub(degree + 1)?)?,
+    ])
+}
+
+fn reverse_nurbs_curve(curve: &mut NurbsCurve) -> Option<()> {
+    let [start, end] = nurbs_curve_domain(curve)?;
+    curve.control_points.reverse();
+    if let Some(weights) = &mut curve.weights {
+        weights.reverse();
+    }
+    curve.knots = curve
+        .knots
+        .iter()
+        .rev()
+        .map(|knot| start + end - knot)
+        .collect();
+    Some(())
 }
 
 /// Reconstruct a physical curve carried by two complete radial pcurves.
@@ -673,18 +899,45 @@ fn subdivide_parametric_curve(
 }
 
 fn support_parameter_range(support: &ZeroSupport) -> Option<[f64; 2]> {
-    support_parameter_range_geometry(support.pcurve.as_ref()?)
+    pcurve_parameter_range(support.pcurve.as_ref()?, support.uv_endpoints)
 }
 
-fn support_parameter_range_geometry(pcurve: &PcurveGeometry) -> Option<[f64; 2]> {
-    let PcurveGeometry::Nurbs { degree, knots, .. } = pcurve else {
-        return None;
-    };
-    let degree = usize::try_from(*degree).ok()?;
-    Some([
-        *knots.get(degree)?,
-        *knots.get(knots.len().checked_sub(degree + 1)?)?,
-    ])
+pub(crate) fn pcurve_parameter_range(
+    pcurve: &PcurveGeometry,
+    uv_endpoints: Option<[[f64; 2]; 2]>,
+) -> Option<[f64; 2]> {
+    match pcurve {
+        PcurveGeometry::Nurbs { degree, knots, .. } => {
+            let degree = usize::try_from(*degree).ok()?;
+            Some([
+                *knots.get(degree)?,
+                *knots.get(knots.len().checked_sub(degree + 1)?)?,
+            ])
+        }
+        PcurveGeometry::Line { origin, direction } => {
+            let endpoints = uv_endpoints?;
+            let denominator = direction.u.mul_add(direction.u, direction.v * direction.v);
+            if !denominator.is_finite() || denominator == 0.0 {
+                return None;
+            }
+            let mut range = [0.0; 2];
+            for (parameter, endpoint) in range.iter_mut().zip(endpoints) {
+                let delta = [endpoint[0] - origin.u, endpoint[1] - origin.v];
+                *parameter = delta[0].mul_add(direction.u, delta[1] * direction.v) / denominator;
+                let residual = (origin.u + *parameter * direction.u - endpoint[0])
+                    .hypot(origin.v + *parameter * direction.v - endpoint[1]);
+                let scale = 1.0f64
+                    .max(endpoint[0].abs())
+                    .max(endpoint[1].abs())
+                    .max(origin.u.abs())
+                    .max(origin.v.abs());
+                if !parameter.is_finite() || residual > 1e-10 * scale {
+                    return None;
+                }
+            }
+            Some(range)
+        }
+    }
 }
 
 fn support_point(
@@ -941,6 +1194,23 @@ fn lift_parameter_line(
     direction: Point2,
     surface: &SurfaceGeometry,
 ) -> Option<CurveGeometry> {
+    if let SurfaceGeometry::Plane {
+        origin: plane_origin,
+        normal,
+        u_axis,
+    } = surface
+    {
+        let v_axis = cross(*normal, *u_axis);
+        let model_direction = Vector3::new(
+            u_axis.x * direction.u + v_axis.x * direction.v,
+            u_axis.y * direction.u + v_axis.y * direction.v,
+            u_axis.z * direction.u + v_axis.z * direction.v,
+        );
+        return Some(CurveGeometry::Line {
+            origin: offset(*plane_origin, *u_axis, origin.u, v_axis, origin.v),
+            direction: normalize(model_direction)?,
+        });
+    }
     let controls = [
         origin,
         Point2::new(origin.u + direction.u, origin.v + direction.v),
@@ -2051,9 +2321,34 @@ mod occurrence_tests {
         assert_eq!(curve.control_points[1], Point3::new(11.0, 22.0, 30.0));
         assert_eq!(curve.weights, Some(vec![1.0, 0.5, 1.0]));
         assert_eq!(
-            direct_support_curve_range(&pcurve, &plane, &geometry),
-            Some([0.0, 1.0])
+            orient_direct_support_curve(&pcurve, &plane, geometry, [0.0, 1.0], false)
+                .expect("oriented plane lift")
+                .1,
+            Some([0.0, 1.0]),
         );
+    }
+
+    #[test]
+    fn plane_line_support_uses_its_complete_native_interval() {
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(10.0, 20.0, 30.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(2.0, -1.0),
+            direction: Point2::new(3.0, 4.0),
+        };
+        let curve = lift_pcurve(&pcurve, &plane).expect("lifted plane line");
+        let (curve, range) =
+            orient_direct_support_curve(&pcurve, &plane, curve, [1.0, -2.0], false)
+                .expect("oriented complete plane line");
+        assert_eq!(range, Some([0.0, 15.0]));
+        let CurveGeometry::Line { origin, direction } = curve else {
+            panic!("expected exact line carrier");
+        };
+        assert_eq!(origin, Point3::new(15.0, 23.0, 30.0));
+        assert_eq!(direction, Vector3::new(-0.6, -0.8, 0.0));
     }
 
     #[test]
@@ -2085,10 +2380,21 @@ mod occurrence_tests {
         assert_eq!(*center, Point3::new(1.0, 2.0, 7.0));
         assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
         assert_eq!(*radius, 2.0);
+        let (oriented, range) =
+            orient_direct_support_curve(&pcurve, &cylinder, geometry, [0.0, 1.0], false)
+                .expect("oriented circle lift");
+        assert_eq!(range, Some([0.0, 1.0]));
+        let (reversed, range) =
+            orient_direct_support_curve(&pcurve, &cylinder, oriented, [0.0, 1.0], true)
+                .expect("reversed circle lift");
         assert_eq!(
-            direct_support_curve_range(&pcurve, &cylinder, &geometry),
-            None
+            range,
+            Some([std::f64::consts::TAU - 1.0, std::f64::consts::TAU])
         );
+        assert!(matches!(
+            reversed,
+            CurveGeometry::Circle { axis, .. } if axis == Vector3::new(0.0, 0.0, -1.0)
+        ));
 
         let generator = PcurveGeometry::Nurbs {
             degree: 1,
@@ -2098,9 +2404,84 @@ mod occurrence_tests {
             periodic: false,
         };
         let line = lift_pcurve(&generator, &cylinder).expect("lifted generator");
+        let (line, range) =
+            orient_direct_support_curve(&generator, &cylinder, line, [0.0, 1.0], false)
+                .expect("oriented generator");
+        assert_eq!(range, Some([0.0, 5.0]));
+        let CurveGeometry::Line { origin, direction } = line else {
+            panic!("expected oriented generator line");
+        };
+        assert!(
+            point_distance(
+                [origin.x, origin.y, origin.z],
+                [1.0 + 2.0 * 0.5_f64.cos(), 2.0 + 2.0 * 0.5_f64.sin(), 1.0,]
+            ) < 1e-12
+        );
+        assert!(direction.x.abs() < 1e-12 && direction.y.abs() < 1e-12);
+        assert!((direction.z - 1.0).abs() < 1e-12);
+
+        let line = lift_pcurve(&generator, &cylinder).expect("lifted generator");
+        let (line, range) =
+            orient_direct_support_curve(&generator, &cylinder, line, [0.0, 1.0], true)
+                .expect("reversed generator");
+        assert_eq!(range, Some([0.0, 5.0]));
+        let CurveGeometry::Line { origin, direction } = line else {
+            panic!("expected reversed generator line");
+        };
+        assert!(
+            point_distance(
+                [origin.x, origin.y, origin.z],
+                [1.0 + 2.0 * 0.5_f64.cos(), 2.0 + 2.0 * 0.5_f64.sin(), 6.0,]
+            ) < 1e-12
+        );
+        assert!(direction.x.abs() < 1e-12 && direction.y.abs() < 1e-12);
+        assert!((direction.z + 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn conic_support_range_tracks_signed_chart_direction_and_rejects_turnbacks() {
+        let cone = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 4.0,
+            ratio: -0.5,
+            half_angle: 0.25,
+        };
+        let latitude = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, 2.0), Point2::new(1.0, 2.0)],
+            weights: None,
+            periodic: false,
+        };
+        let ellipse = lift_pcurve(&latitude, &cone).expect("lifted cone latitude");
+        let (ellipse, range) =
+            orient_direct_support_curve(&latitude, &cone, ellipse, [0.0, 1.0], false)
+                .expect("oriented cone latitude");
+        assert_eq!(range, Some([0.0, 1.0]));
+        assert!(matches!(
+            ellipse,
+            CurveGeometry::Ellipse { axis, .. } if axis == Vector3::new(0.0, 0.0, -1.0)
+        ));
+
+        let turning = PcurveGeometry::Nurbs {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point2::new(0.0, 2.0),
+                Point2::new(1.0, 2.0),
+                Point2::new(0.5, 2.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        let ellipse = lift_pcurve(&turning, &cone).expect("lifted turning latitude");
         assert_eq!(
-            direct_support_curve_range(&generator, &cylinder, &line),
-            Some([-2.0, 3.0])
+            orient_direct_support_curve(&turning, &cone, ellipse, [0.0, 1.0], false)
+                .expect("untrimmed turning latitude")
+                .1,
+            None,
         );
     }
 
