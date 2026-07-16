@@ -1716,14 +1716,32 @@ pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
 
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
+    if let Some((edge_rows, _, _)) = parse_edge_tables_scoped_at(bytes, after_faces) {
+        return edge_rows
+            .iter()
+            .enumerate()
+            .map(|(edge, row)| {
+                row.handles.first().zip(row.handles.last())?;
+                let start = edge.checked_mul(2)?;
+                Some([u32::try_from(start).ok()?, u32::try_from(start + 1).ok()?])
+            })
+            .collect();
+    }
+    let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
+    let mut identity_by_handle = HashMap::new();
     edge_rows
         .iter()
-        .enumerate()
-        .map(|(edge, row)| {
-            row.handles.first().zip(row.handles.last())?;
-            let start = edge.checked_mul(2)?;
-            Some([u32::try_from(start).ok()?, u32::try_from(start + 1).ok()?])
+        .zip(scopes)
+        .map(|(row, scope)| {
+            let mut pair = [0; 2];
+            for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
+                .into_iter()
+                .enumerate()
+            {
+                let next = u32::try_from(identity_by_handle.len()).ok()?;
+                pair[port] = *identity_by_handle.entry((scope, handle)).or_insert(next);
+            }
+            Some(pair)
         })
         .collect()
 }
@@ -4460,7 +4478,7 @@ fn incidence_cycles(
 #[must_use]
 pub fn parse_fbb(bytes: &[u8]) -> Option<StandardTopology> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, vertex_header, handle_width) = parse_fbb_edge_tables(bytes, after_faces)?;
+    let (edge_rows, _, vertex_header, handle_width) = parse_fbb_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
     reconstruct(edge_rows, vertex_points, &trims)
@@ -6921,6 +6939,9 @@ impl MeshSelectionSearch<'_> {
         }
         let remaining_merges = self.remaining_equation_merge_capacity(&mut measured)?;
         if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
+            if root_count.saturating_sub(self.vertex_points.len()) > 2 {
+                return None;
+            }
             measured.close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)?;
         }
         if root_count == self.vertex_points.len()
@@ -6968,9 +6989,10 @@ impl MeshSelectionSearch<'_> {
                 return;
             };
             if root_count.saturating_sub(remaining_merges) > self.vertex_points.len()
-                && measured
-                    .close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)
-                    .is_none()
+                && (root_count.saturating_sub(self.vertex_points.len()) > 2
+                    || measured
+                        .close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)
+                        .is_none())
             {
                 return;
             }
@@ -7533,7 +7555,10 @@ where
     solution
 }
 
-fn parse_fbb_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize, usize)> {
+fn parse_fbb_edge_tables(
+    bytes: &[u8],
+    position: usize,
+) -> Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)> {
     [3, 2, 1]
         .into_iter()
         .find_map(|handle_width| parse_fbb_edge_tables_width(bytes, position, handle_width))
@@ -7543,8 +7568,9 @@ fn parse_fbb_edge_tables_width(
     bytes: &[u8],
     mut position: usize,
     handle_width: usize,
-) -> Option<(Vec<EdgeRow>, usize, usize)> {
+) -> Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)> {
     let mut rows = Vec::new();
+    let mut scopes = Vec::new();
     let mut table_count = 0;
     let mut delimiter_family = None;
     loop {
@@ -7582,6 +7608,7 @@ fn parse_fbb_edge_tables_width(
                 handles,
                 boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
             });
+            scopes.push(table_count);
         }
         table_count += 1;
         let delimiter = bytes.get(position..position + EDGE_DELIMITER.len())?;
@@ -7608,7 +7635,7 @@ fn parse_fbb_edge_tables_width(
             break;
         }
     }
-    (table_count == 2).then_some((rows, position, handle_width))
+    (table_count == 2).then_some((rows, scopes, position, handle_width))
 }
 
 fn largest_fbb_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
@@ -7648,8 +7675,8 @@ fn parse_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usi
         return Some(result);
     }
     parse_fbb_edge_tables(bytes, position)
-        .filter(|(_, vertex_header, _)| parse_vertex_table(bytes, *vertex_header).is_some())
-        .map(|(rows, vertex_header, _)| (rows, vertex_header))
+        .filter(|(_, _, vertex_header, _)| parse_vertex_table(bytes, *vertex_header).is_some())
+        .map(|(rows, _, vertex_header, _)| (rows, vertex_header))
 }
 
 fn parse_edge_tables_at(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {

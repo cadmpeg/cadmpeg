@@ -508,6 +508,15 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
     assert_eq!(topology.logical_vertex_count(), 8);
     assert_eq!(topology.vertex_points().len(), 4);
+    let table_ports =
+        crate::topology::standard_edge_port_identities(&bytes).expect("scoped FBB ports");
+    assert_eq!(table_ports[0][1], table_ports[1][0]);
+    assert_eq!(table_ports[1][1], table_ports[2][0]);
+    assert_eq!(table_ports[2][1], table_ports[3][0]);
+    assert_ne!(table_ports[3][1], table_ports[4][0]);
+    assert_eq!(table_ports[4][1], table_ports[5][0]);
+    assert_eq!(table_ports[5][1], table_ports[6][0]);
+    assert_eq!(table_ports[6][1], table_ports[7][0]);
     let native_ports = [
         [100, 101],
         [101, 102],
