@@ -92,6 +92,39 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     };
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
 
+    let feature_names = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            feature
+                .name
+                .as_ref()
+                .map(|name| (feature.id.clone(), name.clone()))
+        })
+        .collect();
+    let incomplete_parameters = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.value.is_none())
+        .count();
+    let unresolved_parameter_references =
+        crate::history::parameters_with_unresolved_quoted_references(
+            &ir.model.parameters,
+            &feature_names,
+        );
+    if incomplete_parameters > 0 || unresolved_parameter_references > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved or ambiguous quoted references."
+            ),
+            provenance: None,
+        });
+    }
+
     let native_constraints = ir
         .model
         .sketch_constraints
@@ -1652,8 +1685,8 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 mod design_loss_tests {
     use super::append_design_losses;
     use cadmpeg_ir::features::{
-        Angle, BodySelection, BooleanOp, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        Length,
+        Angle, BodySelection, BooleanOp, DesignParameter, FaceSelection, Feature,
+        FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::report::DecodeReport;
@@ -1753,6 +1786,69 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "1 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn incomplete_parameter_semantics_are_reported_as_design_losses() {
+        let mut ir = CadIr::empty(Units::default());
+        let owner = FeatureId("owner".into());
+        ir.model.features.push(Feature {
+            id: owner.clone(),
+            ordinal: 0,
+            name: Some("Boss-Extrude1".into()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+            },
+            native_ref: None,
+        });
+        ir.model.parameters.push(DesignParameter {
+            id: ParameterId("base-parameter".into()),
+            owner: owner.clone(),
+            ordinal: 0,
+            name: "D0".into(),
+            expression: "1mm".into(),
+            display: None,
+            value: Some(cadmpeg_ir::features::ParameterValue::Length(Length(1.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        ir.model.parameters.push(DesignParameter {
+            id: ParameterId("parameter".into()),
+            owner,
+            ordinal: 1,
+            name: "D1".into(),
+            expression: "\"D0@Boss-Extrude1\" + \"Missing@Sketch1\"".into(),
+            display: None,
+            value: None,
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "1 parameter(s) lack an evaluated scalar; 1 parameter expression(s) contain unresolved or ambiguous quoted references."
         }));
     }
 }

@@ -552,25 +552,7 @@ fn populate_parameter_dependencies(
     parameters: &mut [DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
 ) {
-    let mut aliases = HashMap::<String, Option<ParameterId>>::new();
-    for parameter in parameters.iter() {
-        let mut parameter_aliases = vec![parameter.id.0.clone(), parameter.name.clone()];
-        if let Some(equation_id) = parameter.properties.get("EquationId") {
-            parameter_aliases.push(equation_id.clone());
-        }
-        if let Some(owner_name) = feature_names.get(&parameter.owner) {
-            parameter_aliases.push(format!("{}@{owner_name}", parameter.name));
-            if let Some(equation_id) = parameter.properties.get("EquationId") {
-                parameter_aliases.push(format!("{equation_id}@{owner_name}"));
-            }
-        }
-        for alias in parameter_aliases {
-            aliases
-                .entry(alias)
-                .and_modify(|candidate| *candidate = None)
-                .or_insert_with(|| Some(parameter.id.clone()));
-        }
-    }
+    let aliases = parameter_aliases(parameters, feature_names);
     for parameter in parameters.iter_mut() {
         let mut seen = std::collections::HashSet::new();
         parameter.dependencies = expression_identifiers(&parameter.expression)
@@ -578,6 +560,53 @@ fn populate_parameter_dependencies(
             .filter(|dependency| dependency != &parameter.id && seen.insert(dependency.clone()))
             .collect();
     }
+}
+
+fn parameter_aliases(
+    parameters: &[DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+) -> HashMap<String, Option<ParameterId>> {
+    let mut aliases = HashMap::<String, Option<ParameterId>>::new();
+    for parameter in parameters {
+        let mut names = vec![parameter.id.0.clone(), parameter.name.clone()];
+        if let Some(equation_id) = parameter.properties.get("EquationId") {
+            names.push(equation_id.clone());
+        }
+        if let Some(owner_name) = feature_names.get(&parameter.owner) {
+            names.push(format!("{}@{owner_name}", parameter.name));
+            if let Some(equation_id) = parameter.properties.get("EquationId") {
+                names.push(format!("{equation_id}@{owner_name}"));
+            }
+        }
+        for alias in names {
+            aliases
+                .entry(alias)
+                .and_modify(|candidate| *candidate = None)
+                .or_insert_with(|| Some(parameter.id.clone()));
+        }
+    }
+    aliases
+}
+
+pub(crate) fn parameters_with_unresolved_quoted_references(
+    parameters: &[DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+) -> usize {
+    let aliases = parameter_aliases(parameters, feature_names);
+    parameters
+        .iter()
+        .filter(|parameter| {
+            expression_identifier_tokens(&parameter.expression)
+                .into_iter()
+                .filter(|identifier| identifier.quoted)
+                .any(|identifier| {
+                    aliases
+                        .get(&identifier.value)
+                        .and_then(Clone::clone)
+                        .is_none_or(|dependency| dependency == parameter.id)
+                })
+        })
+        .count()
 }
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
