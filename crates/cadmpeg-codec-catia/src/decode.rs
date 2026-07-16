@@ -585,6 +585,9 @@ fn transfer_zero_entity_topology(
         let intersection_range = intersection
             .as_ref()
             .map(|intersection| intersection.parameter_range);
+        let intersection_tolerance = intersection
+            .as_ref()
+            .map(|intersection| intersection.fit_tolerance);
         let geometry = direct_geometry.or_else(|| {
             intersection
                 .as_ref()
@@ -597,7 +600,11 @@ fn transfer_zero_entity_topology(
                 &curve_id,
                 "zero_entity_a9_03",
                 0,
-                "support_pcurve_lift",
+                if intersection.is_some() {
+                    "radial_surface_intersection_cache"
+                } else {
+                    "support_pcurve_lift"
+                },
                 Exactness::Derived,
             );
             annotations.derived(&curve_id, "geometry");
@@ -664,13 +671,16 @@ fn transfer_zero_entity_topology(
         if intersection_range.is_some() {
             annotations.derived(&id, "param_range");
         }
+        if intersection_tolerance.is_some() {
+            annotations.derived(&id, "tolerance");
+        }
         ir.model.edges.push(Edge {
             id,
             curve,
             start: VertexId(format!("catia:zero-entity:v#{}", pair[0])),
             end: VertexId(format!("catia:zero-entity:v#{}", pair[1])),
             param_range: intersection_range,
-            tolerance: None,
+            tolerance: intersection_tolerance,
         });
     }
 
