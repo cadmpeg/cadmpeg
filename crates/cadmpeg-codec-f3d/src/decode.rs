@@ -162,6 +162,7 @@ struct DesignProjectionGaps {
     native_features: usize,
     unprojected_feature_scopes: usize,
     unprojected_parameters: usize,
+    untyped_parameter_units: usize,
     unresolved_expression_dependencies: usize,
     unprojected_history_dependencies: usize,
     ambiguous_history_dependencies: usize,
@@ -320,6 +321,9 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .iter()
             .filter(|parameter| !projected_parameter_refs.contains(parameter.id.as_str()))
             .count(),
+        untyped_parameter_units: crate::design::untyped_parameter_unit_count(
+            &native.design_parameters,
+        ),
         unresolved_expression_dependencies:
             crate::design::unresolved_parameter_expression_dependency_count(
                 &native.design_parameters,
@@ -461,6 +465,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} decoded Design parameter(s) have no neutral parameter.",
             gaps.unprojected_parameters
+        ),
+    );
+    push(
+        gaps.untyped_parameter_units,
+        format!(
+            "{} decoded Design parameter(s) retain unit tokens without a settled neutral quantity kind.",
+            gaps.untyped_parameter_units
         ),
     );
     push(
@@ -2385,7 +2396,7 @@ mod tests {
             source_kind: "Linear Dimension-2".into(),
             source_kind_offset: 0,
             kind: DesignParameterKind::Dimension,
-            unit: Some("mm".into()),
+            unit: Some("native-unit".into()),
             unit_offset: Some(0),
             name: "d2".into(),
             name_offset: 0,
@@ -2430,6 +2441,7 @@ mod tests {
                 native_features: 1,
                 unprojected_feature_scopes: 1,
                 unprojected_parameters: 1,
+                untyped_parameter_units: 1,
                 unresolved_expression_dependencies: 0,
                 unprojected_history_dependencies: 0,
                 ambiguous_history_dependencies: 0,

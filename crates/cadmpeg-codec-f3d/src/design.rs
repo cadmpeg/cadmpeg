@@ -1067,6 +1067,19 @@ fn design_angle_unit(unit: &str) -> bool {
     matches!(unit, "deg" | "rad")
 }
 
+/// Count parameters whose unit token has no settled neutral quantity kind.
+pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> usize {
+    parameters
+        .iter()
+        .filter(|parameter| {
+            parameter
+                .unit
+                .as_deref()
+                .is_some_and(|unit| !design_length_unit(unit) && !design_angle_unit(unit))
+        })
+        .count()
+}
+
 fn project_chamfer(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
@@ -11720,7 +11733,8 @@ mod relation_tests {
         resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
         unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
         unresolved_configuration_rule_count, unresolved_configuration_suppressed_feature_count,
-        unresolved_parameter_expression_dependency_count, validate_configuration_payload,
+        unresolved_parameter_expression_dependency_count, untyped_parameter_unit_count,
+        validate_configuration_payload,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConfiguration, DesignConfigurationKind,
@@ -16702,6 +16716,7 @@ mod relation_tests {
                 .map(String::as_str),
             Some("2.75")
         );
+        assert_eq!(untyped_parameter_unit_count(&native), 1);
     }
 
     #[test]
