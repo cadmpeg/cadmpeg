@@ -18,6 +18,7 @@ This document records unresolved NX `.prt` byte semantics.
 - The semantic role of the trailing byte in each OM type declaration is unspecified.
 - The semantic roles of bytes in each bounded OM field-registry suffix are unspecified.
 - Feature-history object-index relations not covered by primary-body writers, Boolean tool consumption, and segment body-image bindings are unspecified.
+- Body membership and per-body state for inactive arrangements are unspecified.
 - The semantic roles of the extrusion terminal discriminator lane's type indices, fixed counted values, flags, and trailing indices are unspecified.
 - The relationship between plain cached-body streams and their owning features is unspecified.
 - The associated `RMFastLoad` per-class entity record layout outside its object-id membership table is unspecified.

@@ -1287,7 +1287,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         let mut seen = HashSet::new();
-        for body in &configuration.bodies {
+        for body in configuration.bodies.resolved().into_iter().flatten() {
             if !ids.bodies.contains(&body.0) {
                 ref_error(findings, &configuration.id.0, "configuration body", &body.0);
             }

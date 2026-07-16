@@ -942,7 +942,7 @@ fn tessellation_counts_must_be_consistent() {
 
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
-    use crate::features::{ConfigurationId, DesignConfiguration};
+    use crate::features::{ConfigurationBodies, ConfigurationId, DesignConfiguration};
     use crate::ids::BodyId;
     use std::collections::BTreeMap;
 
@@ -957,18 +957,21 @@ fn configuration_body_membership_round_trips_and_validates() {
         name: "Default".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: vec![body.clone()],
+        bodies: ConfigurationBodies::Resolved(vec![body.clone()]),
         native_ref: None,
     });
     ir.finalize();
     assert!(validate(&ir, Vec::new()).is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
-    assert_eq!(round_trip.model.configurations[0].bodies, vec![body]);
+    assert_eq!(
+        round_trip.model.configurations[0].bodies.resolved(),
+        Some([body].as_slice())
+    );
 
-    ir.model.configurations[0].bodies = vec![
+    ir.model.configurations[0].bodies = ConfigurationBodies::Resolved(vec![
         BodyId("synthetic:test:body#missing".into()),
         BodyId("synthetic:test:body#missing".into()),
-    ];
+    ]);
     let report = validate(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
@@ -987,7 +990,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         name: "Alternate".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Vec::new(),
+        bodies: ConfigurationBodies::Resolved(Vec::new()),
         native_ref: None,
     });
     ir.model.configurations[0].active = true;

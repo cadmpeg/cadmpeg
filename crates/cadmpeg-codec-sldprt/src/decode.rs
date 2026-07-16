@@ -973,7 +973,7 @@ fn assign_configuration_bodies(
         for (position, (source_index, bodies)) in configurations.into_iter().zip(partitions) {
             let configuration = &mut ir.model.configurations[position];
             configuration.source_index = Some(source_index);
-            configuration.bodies = bodies;
+            configuration.bodies = cadmpeg_ir::features::ConfigurationBodies::Resolved(bodies);
         }
         return;
     }
@@ -983,7 +983,7 @@ fn assign_configuration_bodies(
                 || configuration.source_index.is_none() && configuration.ordinal == source_index
         }) {
             configuration.source_index = Some(source_index);
-            configuration.bodies = bodies;
+            configuration.bodies = cadmpeg_ir::features::ConfigurationBodies::Resolved(bodies);
             continue;
         }
         let ordinal = ir
@@ -1005,9 +1005,14 @@ fn assign_configuration_bodies(
                 name: format!("Config-{source_index}"),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
-                bodies,
+                bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(bodies),
                 native_ref: None,
             });
+    }
+    for configuration in &mut ir.model.configurations {
+        if configuration.bodies.is_unresolved() {
+            configuration.bodies = cadmpeg_ir::features::ConfigurationBodies::Resolved(Vec::new());
+        }
     }
 }
 

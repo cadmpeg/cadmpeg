@@ -20,10 +20,10 @@ use cadmpeg_ir::eval::{
     pcurve_uv, surface_point,
 };
 use cadmpeg_ir::features::{
-    Angle, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec, ConfigurationId,
-    DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceSelection, Feature,
-    FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
-    Length, ParameterId, ParameterValue, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
+    Angle, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec, ConfigurationBodies,
+    ConfigurationId, DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceSelection,
+    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleForm,
+    HoleKind, Length, ParameterId, ParameterValue, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
     RibConstruction, RibDraft, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
@@ -8135,10 +8135,12 @@ fn attach_native_object_model(
             let active_attribute_use = configuration_attribute_uses
                 .iter()
                 .find(|relation| relation.configuration == configuration.id);
-            let bodies: Vec<BodyId> = if active_attribute_use.is_some() {
-                ir.model.bodies.iter().map(|body| body.id.clone()).collect()
+            let bodies = if active_attribute_use.is_some() {
+                ConfigurationBodies::Resolved(
+                    ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+                )
             } else {
-                Vec::new()
+                ConfigurationBodies::Unresolved
             };
             annotations
                 .note(&id.0, annotation_stream, configuration.source_offset)
@@ -8148,7 +8150,7 @@ fn attach_native_object_model(
             annotations.derived(&id.0, "source_index");
             annotations.derived(&id.0, "name");
             annotations.derived(&id.0, "native_ref");
-            if !bodies.is_empty() {
+            if bodies.resolved().is_some_and(|bodies| !bodies.is_empty()) {
                 annotations.derived(&id.0, "bodies");
             }
             ir.model.configurations.push(DesignConfiguration {

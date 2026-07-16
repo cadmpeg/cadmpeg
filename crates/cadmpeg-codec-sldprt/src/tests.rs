@@ -3104,7 +3104,7 @@ fn encoder_writes_source_less_datum_features() {
 
 #[test]
 fn encoder_writes_source_less_neutral_configurations() {
-    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
+    use cadmpeg_ir::features::{ConfigurationBodies, ConfigurationId, DesignConfiguration};
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -3122,7 +3122,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Metric".into(),
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
-        bodies: vec![ir.model.bodies[0].id.clone()],
+        bodies: ConfigurationBodies::Resolved(vec![ir.model.bodies[0].id.clone()]),
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
@@ -3133,7 +3133,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Empty".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Vec::new(),
+        bodies: ConfigurationBodies::Resolved(Vec::new()),
         native_ref: None,
     });
     ir.finalize();
@@ -3176,16 +3176,29 @@ fn encoder_writes_source_less_neutral_configurations() {
     assert_eq!(configuration.properties["Finish"], "Ground");
     assert!(configuration.active);
     assert_eq!(
-        configuration.bodies,
-        decoded
-            .ir
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>()
+        configuration.bodies.resolved(),
+        Some(
+            decoded
+                .ir
+                .model
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>()
+                .as_slice()
+        )
     );
-    assert!(decoded.ir.model.configurations[1].bodies.is_empty());
+    assert_eq!(
+        decoded.ir.model.configurations[1].bodies.resolved(),
+        Some(&[][..])
+    );
+
+    let mut unresolved = decoded.ir.clone();
+    unresolved.model.configurations[1].bodies = ConfigurationBodies::Unresolved;
+    let error = SldprtCodec
+        .write_preserved(&unresolved, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("has unresolved body membership"));
 
     let mut inactive = decoded.ir;
     inactive
@@ -3307,7 +3320,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             name: format!("Config {index}"),
             material: None,
             properties: BTreeMap::new(),
-            bodies: vec![body.clone()],
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![body.clone()]),
             native_ref: None,
         })
         .collect();
@@ -3337,12 +3350,26 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.bodies.len(), 2);
-    assert_eq!(decoded.ir.model.configurations[0].bodies.len(), 1);
-    assert_eq!(decoded.ir.model.configurations[1].bodies.len(), 1);
+    assert_eq!(
+        decoded.ir.model.configurations[0]
+            .bodies
+            .resolved()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        decoded.ir.model.configurations[1]
+            .bodies
+            .resolved()
+            .unwrap()
+            .len(),
+        1
+    );
     assert!(decoded.ir.model.configurations[1].active);
     assert_ne!(
-        decoded.ir.model.configurations[0].bodies,
-        decoded.ir.model.configurations[1].bodies
+        decoded.ir.model.configurations[0].bodies.resolved(),
+        decoded.ir.model.configurations[1].bodies.resolved()
     );
     let mesh_x = decoded
         .ir
@@ -3369,14 +3396,17 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
     assert_eq!(decoded.ir.model.configurations.len(), 1);
     assert!(decoded.ir.model.configurations[0].active);
     assert_eq!(
-        decoded.ir.model.configurations[0].bodies,
-        decoded
-            .ir
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>()
+        decoded.ir.model.configurations[0].bodies.resolved(),
+        Some(
+            decoded
+                .ir
+                .model
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>()
+                .as_slice()
+        )
     );
     let mut written = Vec::new();
     SldprtCodec
@@ -3386,14 +3416,17 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir.model.configurations[0].bodies,
-        round_trip
-            .ir
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>()
+        round_trip.ir.model.configurations[0].bodies.resolved(),
+        Some(
+            round_trip
+                .ir
+                .model
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>()
+                .as_slice()
+        )
     );
 }
 
@@ -3419,14 +3452,17 @@ fn decode_synthesizes_sparse_partition_configuration() {
     assert!(configuration.active);
     assert_eq!(configuration.name, "Config-3");
     assert_eq!(
-        configuration.bodies,
-        decoded
-            .ir
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>()
+        configuration.bodies.resolved(),
+        Some(
+            decoded
+                .ir
+                .model
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>()
+                .as_slice()
+        )
     );
 
     let mut edited = decoded.ir;

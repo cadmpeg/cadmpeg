@@ -433,11 +433,24 @@ fn configuration_partitions(
     ir: &CadIr,
     length_scale: f64,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+    if let Some(configuration) = ir
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.bodies.is_unresolved())
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT configuration {} has unresolved body membership",
+            configuration.id.0
+        )));
+    }
     let configured = ir
         .model
         .configurations
         .iter()
-        .flat_map(|configuration| configuration.bodies.iter().cloned())
+        .filter_map(|configuration| configuration.bodies.resolved())
+        .flatten()
+        .cloned()
         .collect::<HashSet<_>>();
     if let Some(body) = ir
         .model
@@ -473,9 +486,12 @@ fn configuration_partitions(
     }
     assigned
         .into_iter()
-        .filter(|(_, configuration)| !configuration.bodies.is_empty())
-        .map(|(index, configuration)| {
-            let subset = body_subset(ir, &configuration.bodies)?;
+        .filter_map(|(index, configuration)| {
+            let bodies = configuration.bodies.resolved()?;
+            (!bodies.is_empty()).then_some((index, bodies))
+        })
+        .map(|(index, bodies)| {
+            let subset = body_subset(ir, bodies)?;
             let schema_32001 = subset
                 .model
                 .bodies

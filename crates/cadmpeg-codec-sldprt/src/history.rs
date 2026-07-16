@@ -8,13 +8,13 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
-    ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
-    FaceMotion, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
-    FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length, ParameterId,
-    ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
-    RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
-    ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode,
-    TrimRegion, VariableRadius, WrapMode,
+    ConfigurationBodies, ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay,
+    EdgeSelection, Extent, FaceMotion, FaceSelection, FeatureDefinition, FeatureId,
+    FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length,
+    ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm,
+    RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide,
+    RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension,
+    SweepMode, TrimRegion, VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -434,7 +434,7 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
             name: configuration.name.clone(),
             material: configuration.material.clone(),
             properties: configuration.properties.clone(),
-            bodies: Vec::new(),
+            bodies: ConfigurationBodies::Unresolved,
             native_ref: Some(configuration.id.clone()),
         })
         .collect()

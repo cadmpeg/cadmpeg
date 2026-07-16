@@ -41,6 +41,32 @@ impl<S: Into<String>> From<S> for FeatureId {
 #[serde(transparent)]
 pub struct ConfigurationId(pub String);
 
+/// Resolution state of one configuration's complete body membership.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ConfigurationBodies {
+    /// Complete ordered body membership.
+    Resolved(Vec<BodyId>),
+    /// Source configuration exists but its body membership is not established.
+    #[default]
+    Unresolved,
+}
+
+impl ConfigurationBodies {
+    /// Return the complete body membership when resolved.
+    pub fn resolved(&self) -> Option<&[BodyId]> {
+        match self {
+            Self::Resolved(bodies) => Some(bodies),
+            Self::Unresolved => None,
+        }
+    }
+
+    /// Whether body membership remains unresolved.
+    pub fn is_unresolved(&self) -> bool {
+        matches!(self, Self::Unresolved)
+    }
+}
+
 /// A named parametric model variant.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignConfiguration {
@@ -63,9 +89,9 @@ pub struct DesignConfiguration {
     /// Configuration-local named values not otherwise represented.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
-    /// Bodies present when this configuration is active.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bodies: Vec<BodyId>,
+    /// Complete bodies present when this configuration is active, or unresolved membership.
+    #[serde(default, skip_serializing_if = "ConfigurationBodies::is_unresolved")]
+    pub bodies: ConfigurationBodies,
     /// Identifier of the full-fidelity record in a native namespace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,

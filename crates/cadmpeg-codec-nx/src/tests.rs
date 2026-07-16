@@ -10732,19 +10732,22 @@ fn decode_retains_nx_arrangement_configurations() {
     assert_eq!(result.ir.model.configurations[0].name, "Model");
     assert!(result.ir.model.configurations[0].active);
     assert_eq!(
-        result.ir.model.configurations[0].bodies,
-        result
-            .ir
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>()
+        result.ir.model.configurations[0].bodies.resolved(),
+        Some(
+            result
+                .ir
+                .model
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>()
+                .as_slice()
+        )
     );
     assert_eq!(result.ir.model.configurations[1].ordinal, 1);
     assert_eq!(result.ir.model.configurations[1].name, "Exploded");
     assert!(!result.ir.model.configurations[1].active);
-    assert!(result.ir.model.configurations[1].bodies.is_empty());
+    assert!(result.ir.model.configurations[1].bodies.is_unresolved());
     let uses = result
         .ir
         .native
@@ -10794,7 +10797,7 @@ fn nx_neutral_active_configuration_requires_the_exact_attribute_join() {
             .model
             .configurations
             .iter()
-            .all(|configuration| !configuration.active && configuration.bodies.is_empty()));
+            .all(|configuration| !configuration.active && configuration.bodies.is_unresolved()));
     }
 }
 
