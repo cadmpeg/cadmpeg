@@ -847,7 +847,9 @@ A source-native feature definition retains every resolved parameter use as `para
 
 The `SIMPLE HOLE` payload template is underscore-delimited. `Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer` identifies a general simple hole extending through all material, with chamfer treatments at its entry and exit. The six tokens form one atomic template; missing, reordered, or unknown tokens do not produce a typed hole template. Neutral projection retains through-all extent and the typed native template retains both chamfer tokens.
 
-The operation labels `HOLE PACKAGE`, `RIB`, `CHAMFER`, and `THICKEN_SHEET` identify their corresponding construction families. Neutral projection preserves the family as a hole, rib, edge chamfer, or face-thickening operation. Undeclared operands, dimensions, sidedness, draft, and Boolean state remain explicitly unresolved.
+The operation labels `HOLE PACKAGE`, `RIB`, `CHAMFER`, and `THICKEN_SHEET` identify their corresponding construction families. Neutral projection preserves the family as a hole, rib, edge chamfer, or face-thickening operation. Undeclared operands, sidedness, draft, Boolean state, and dimensions outside the rules below remain unresolved.
+
+A `THICKEN_SHEET` operation with exactly one output body has a resolved thickness when that body's complete topology owns one or more `OFFSET_SURF` carriers and every owned carrier has the same bit-exact finite nonzero signed distance. The absolute distance is the thickness. Distinct owned signed distances, including opposite signs of equal magnitude, leave the thickness unresolved. The selected support surfaces retain their native identities; the thickening side remains unresolved.
 
 The operation labels `Pattern Feature` and `Pattern Geometry` identify repetition constructions. Neutral projection preserves an unresolved pattern with an unresolved seed selection until its input records supply the pattern form, transform, and seeds.
 

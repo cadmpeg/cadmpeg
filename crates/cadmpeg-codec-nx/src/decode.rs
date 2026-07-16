@@ -10023,6 +10023,17 @@ fn attach_feature_operations(
                 );
             }
         }
+        let thicken_projection = (label.value == "THICKEN_SHEET")
+            .then(|| thicken_feature_definition(ir, &outputs))
+            .flatten();
+        if let Some((_, supports)) = &thicken_projection {
+            for (support_ordinal, support) in supports.iter().enumerate() {
+                source_properties.insert(
+                    format!("thicken_support_surface.{support_ordinal}"),
+                    support.0.clone(),
+                );
+            }
+        }
         let blend_projection = (label.value == "BLEND")
             .then(|| blend_feature_definition(ir, &outputs))
             .flatten();
@@ -10072,6 +10083,7 @@ fn attach_feature_operations(
                     .or(sew_projection)
                     .or(extrude_projection)
                     .or_else(|| blend_projection.map(|(definition, _)| definition))
+                    .or_else(|| thicken_projection.map(|(definition, _)| definition))
                     .or_else(|| offset_projection.map(|(definition, _)| definition))
                     .unwrap_or_else(|| {
                         non_boolean_feature_definition_with_parameters(
@@ -10295,6 +10307,20 @@ pub(crate) fn offset_surface_feature_definition(
     ir: &CadIr,
     outputs: &[BodyId],
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
+    let (body, distance, supports) = owned_offset_surface_data(ir, outputs)?;
+    Some((
+        FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Native(format!("{}:offset-support-surfaces", body.0)),
+            distance: Length(distance),
+        },
+        supports,
+    ))
+}
+
+fn owned_offset_surface_data<'a>(
+    ir: &CadIr,
+    outputs: &'a [BodyId],
+) -> Option<(&'a BodyId, f64, Vec<SurfaceId>)> {
     let [body] = outputs else {
         return None;
     };
@@ -10323,10 +10349,22 @@ pub(crate) fn offset_surface_feature_definition(
     }
     let distance = distance?;
     supports.sort();
+    Some((body, distance, supports))
+}
+
+pub(crate) fn thicken_feature_definition(
+    ir: &CadIr,
+    outputs: &[BodyId],
+) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
+    let (body, distance, supports) = owned_offset_surface_data(ir, outputs)?;
+    if !distance.is_finite() || distance == 0.0 {
+        return None;
+    }
     Some((
-        FeatureDefinition::OffsetSurface {
-            faces: FaceSelection::Native(format!("{}:offset-support-surfaces", body.0)),
-            distance: Length(distance),
+        FeatureDefinition::Thicken {
+            faces: FaceSelection::Native(format!("{}:thicken-support-surfaces", body.0)),
+            thickness: Some(Length(distance.abs())),
+            side: None,
         },
         supports,
     ))
