@@ -704,6 +704,10 @@ pub fn project_parameter_design(
                 None => Some(ParameterValue::Real(parameter.evaluated_value)),
                 Some(unit) => {
                     properties.insert("unit".into(), unit.into());
+                    properties.insert(
+                        "evaluated_scalar".into(),
+                        parameter.evaluated_value.to_string(),
+                    );
                     None
                 }
             };
@@ -16169,6 +16173,19 @@ mod relation_tests {
             })
             .collect::<Vec<_>>();
         native.reverse();
+        let mut unclassified = parse_design_parameter(&parameter_record(
+            None,
+            "value",
+            "User Parameter",
+            Some("native-unit"),
+            "Unclassified",
+            2.75,
+        ))
+        .expect("generated unclassified-unit parameter");
+        unclassified.id = "f3d:native:parameter#7".into();
+        unclassified.record_index = 7;
+        unclassified.source_ordinal = 7;
+        native.push(unclassified);
 
         let (_, projected) = project_parameter_design(&native, &[], &[], &[], &[], &[], &[], &[]);
         for ordinal in 0..5 {
@@ -16189,6 +16206,22 @@ mod relation_tests {
                 Some(ParameterValue::Angle(Angle(1.25)))
             );
         }
+        let unclassified = projected
+            .iter()
+            .find(|parameter| parameter.name == "Unclassified")
+            .expect("unclassified-unit parameter");
+        assert_eq!(unclassified.value, None);
+        assert_eq!(
+            unclassified.properties.get("unit").map(String::as_str),
+            Some("native-unit")
+        );
+        assert_eq!(
+            unclassified
+                .properties
+                .get("evaluated_scalar")
+                .map(String::as_str),
+            Some("2.75")
+        );
     }
 
     #[test]
