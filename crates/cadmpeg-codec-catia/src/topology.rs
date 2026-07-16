@@ -4754,8 +4754,7 @@ impl MeshQuotient {
 
     fn merge_singleton_coordinate_roots(&mut self, edge_candidates: &[Vec<[usize; 2]>]) -> bool {
         loop {
-            let mut root_by_point = HashMap::new();
-            let mut merge = None;
+            let mut roots_by_point = HashMap::<usize, Vec<usize>>::new();
             for node in 0..self.union.len() {
                 let root = self.union.find(node);
                 if root != node || self.domains[root].len() != 1 {
@@ -4764,18 +4763,24 @@ impl MeshQuotient {
                 let Some(&point) = self.domains[root].iter().next() else {
                     return false;
                 };
-                if let Some(previous) = root_by_point.insert(point, root) {
-                    merge = Some((previous, root));
-                    break;
+                roots_by_point.entry(point).or_default().push(root);
+            }
+            let mut changed = false;
+            for roots in roots_by_point.into_values() {
+                let Some((&first, rest)) = roots.split_first() else {
+                    continue;
+                };
+                for &root in rest {
+                    if self.merge(first, root).is_none() {
+                        return false;
+                    }
+                    changed = true;
                 }
             }
-            let Some((left, right)) = merge else {
+            if !changed {
                 return true;
-            };
-            let Some(root) = self.merge(left, right) else {
-                return false;
-            };
-            if !self.propagate_component_edge_domains(root, edge_candidates) {
+            }
+            if !self.edge_domains_viable(edge_candidates) {
                 return false;
             }
         }
@@ -10016,6 +10021,20 @@ mod motif_tests {
         assert!(quotient.merge_singleton_coordinate_roots(&[Vec::new(), Vec::new()]));
         assert_eq!(quotient.root_count(), 3);
         assert_eq!(quotient.union.find(0), quotient.union.find(2));
+    }
+
+    #[test]
+    fn singleton_coordinate_root_merges_are_batched() {
+        const ROOT_COUNT: usize = 10_000;
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(ROOT_COUNT),
+            domains: vec![Arc::new(HashSet::from([0])); ROOT_COUNT],
+            members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
+        };
+        let candidates = vec![Vec::new(); ROOT_COUNT / 2];
+
+        assert!(quotient.merge_singleton_coordinate_roots(&candidates));
+        assert_eq!(quotient.root_count(), 1);
     }
 
     #[test]
