@@ -227,6 +227,34 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+    let model_body_ids = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| &body.id)
+        .collect::<std::collections::HashSet<_>>();
+    let incoherent_configuration_bodies = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| {
+            let mut bodies = std::collections::HashSet::new();
+            configuration
+                .bodies
+                .iter()
+                .any(|body| !bodies.insert(body) || !model_body_ids.contains(body))
+        })
+        .count();
+    if incoherent_configuration_bodies > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{incoherent_configuration_bodies} configuration record(s) contain missing or repeated body references."
+            ),
+            provenance: None,
+        });
+    }
 
     let feature_names = ir
         .model
@@ -2765,6 +2793,40 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "active configuration identity does not resolve to active geometry partition 3."
+        }));
+    }
+
+    #[test]
+    fn incoherent_configuration_bodies_are_reported() {
+        let mut ir = cadmpeg_ir::examples::unit_cube();
+        let body = ir.model.bodies[0].id.clone();
+        let configuration = |id: &str, ordinal, bodies| DesignConfiguration {
+            id: ConfigurationId(id.into()),
+            ordinal,
+            active: ordinal == 0,
+            source_index: Some(ordinal),
+            name: id.into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies,
+            native_ref: Some(format!("native:{id}")),
+        };
+        ir.model.configurations = vec![
+            configuration("duplicate", 0, vec![body.clone(), body]),
+            configuration("missing", 1, vec![BodyId("missing-body".into())]),
+        ];
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message == "2 configuration record(s) contain missing or repeated body references."
         }));
     }
 
