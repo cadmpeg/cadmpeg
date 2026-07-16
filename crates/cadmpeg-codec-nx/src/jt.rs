@@ -443,6 +443,26 @@ fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> Option<[f32; 3]> {
         .then_some(result)
 }
 
+/// Decode one JT compressed vertex-flag array.
+pub(crate) fn decode_vertex_flags(
+    bytes: &[u8],
+    expected_count: usize,
+) -> Option<(Vec<u32>, usize)> {
+    let count = usize::try_from(read_u32(bytes, 0)?).ok()?;
+    if count != expected_count {
+        return None;
+    }
+    let (values, byte_len) = decode_int32_cdp2(bytes.get(4..)?, 0)?;
+    if values.len() != count {
+        return None;
+    }
+    let values = values
+        .into_iter()
+        .map(|value| u32::try_from(value).ok().filter(|value| *value <= 1))
+        .collect::<Option<Vec<_>>>()?;
+    Some((values, 4usize.checked_add(byte_len)?))
+}
+
 pub(crate) fn dequantize_uniform(code: i32, range: [f32; 2], bits: u8) -> Option<f32> {
     if bits == 0
         || bits > 32

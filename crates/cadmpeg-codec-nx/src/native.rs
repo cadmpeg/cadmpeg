@@ -372,6 +372,21 @@ pub struct DisplayJtVertexTextureCoordinates {
     pub source_offset: u64,
 }
 
+/// One decoded JT 9 vertex-flag array.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtVertexFlags {
+    /// Globally unique flag-array identity.
+    pub id: String,
+    /// Owning compressed vertex-record header.
+    pub vertex_records_header: String,
+    /// Ordered zero-or-one flag values in vertex-attribute record order.
+    pub values: Vec<u32>,
+    /// Complete byte length of the count and compressed packet.
+    pub byte_len: u32,
+    /// Absolute source offset of the vertex-flag count.
+    pub source_offset: u64,
+}
+
 /// Complete JT 9 tri-strip shape node controlling one late-loaded mesh.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DisplayJtTriStripShapeNode {
@@ -2183,6 +2198,102 @@ pub fn display_jt_vertex_texture_coordinates(
             };
             source_offset = next;
         }
+    }
+    arrays
+}
+
+/// Decode every complete JT 9 vertex-flag array after all preceding vertex arrays.
+pub fn display_jt_vertex_flags(
+    container: &Container,
+    vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
+    coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
+    coordinates: &[DisplayJtVertexCoordinates],
+    normals: &[DisplayJtVertexNormals],
+    colors: &[DisplayJtVertexColors],
+    texture_coordinates: &[DisplayJtVertexTextureCoordinates],
+) -> Vec<DisplayJtVertexFlags> {
+    let mut arrays = Vec::new();
+    for vertex_header in vertex_headers {
+        if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x40 == 0 {
+            continue;
+        }
+        let Some(coordinate_header) = coordinate_headers
+            .iter()
+            .find(|header| header.element == vertex_header.element)
+        else {
+            return Vec::new();
+        };
+        let Some(coordinates) = coordinates
+            .iter()
+            .find(|coordinates| coordinates.header == coordinate_header.id)
+        else {
+            return Vec::new();
+        };
+        let Some(mut source_offset) = coordinates
+            .source_offset
+            .checked_add(u64::from(coordinates.byte_len))
+        else {
+            return Vec::new();
+        };
+        if vertex_header.vertex_bindings & 0x8 != 0 {
+            let Some(array) = normals
+                .iter()
+                .find(|array| array.vertex_records_header == vertex_header.id)
+            else {
+                return Vec::new();
+            };
+            let Some(next) = source_offset.checked_add(u64::from(array.byte_len)) else {
+                return Vec::new();
+            };
+            source_offset = next;
+        }
+        if vertex_header.vertex_bindings & 0x30 != 0 {
+            let Some(array) = colors
+                .iter()
+                .find(|array| array.vertex_records_header == vertex_header.id)
+            else {
+                return Vec::new();
+            };
+            let Some(next) = source_offset.checked_add(u64::from(array.byte_len)) else {
+                return Vec::new();
+            };
+            source_offset = next;
+        }
+        for channel in (0..8)
+            .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
+        {
+            let Some(array) = texture_coordinates.iter().find(|array| {
+                array.vertex_records_header == vertex_header.id
+                    && usize::from(array.channel) == channel
+            }) else {
+                return Vec::new();
+            };
+            let Some(next) = source_offset.checked_add(u64::from(array.byte_len)) else {
+                return Vec::new();
+            };
+            source_offset = next;
+        }
+        let Ok(start) = usize::try_from(source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container.data.get(start..) else {
+            return Vec::new();
+        };
+        let Some((values, byte_len)) =
+            crate::jt::decode_vertex_flags(bytes, vertex_header.vertex_attribute_count as usize)
+        else {
+            return Vec::new();
+        };
+        let Ok(byte_len) = u32::try_from(byte_len) else {
+            return Vec::new();
+        };
+        arrays.push(DisplayJtVertexFlags {
+            id: format!("{}-vertex-flags", vertex_header.element),
+            vertex_records_header: vertex_header.id.clone(),
+            values,
+            byte_len,
+            source_offset,
+        });
     }
     arrays
 }

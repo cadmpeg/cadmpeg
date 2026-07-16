@@ -600,7 +600,8 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         DisplayJtBaseNodeData, DisplayJtCompressedElement, DisplayJtCompressedVertexRecordsHeader,
         DisplayJtPolygonMesh, DisplayJtShapeLodBinding, DisplayJtShapeLodElement,
         DisplayJtTriStripShapeNode, DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader,
-        DisplayJtVertexCoordinates, DisplayJtVertexNormals, DisplayJtVertexTextureCoordinates,
+        DisplayJtVertexCoordinates, DisplayJtVertexFlags, DisplayJtVertexNormals,
+        DisplayJtVertexTextureCoordinates,
     };
 
     let mesh = DisplayJtPolygonMesh {
@@ -707,7 +708,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     let vertex_header = DisplayJtCompressedVertexRecordsHeader {
         id: "vertex-header".into(),
         element: "shape-element".into(),
-        vertex_bindings: 0x11a,
+        vertex_bindings: 0x15a,
         vertex_quantization_bits: 0,
         normal_quantization_factor: 0,
         texture_quantization_bits: 0,
@@ -747,6 +748,13 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         byte_len: 4,
         source_offset: 102,
     };
+    let vertex_flags = DisplayJtVertexFlags {
+        id: "flags".into(),
+        vertex_records_header: "vertex-header".into(),
+        values: vec![0, 1, 0],
+        byte_len: 4,
+        source_offset: 106,
+    };
 
     let tessellations =
         crate::decode::display_jt_tessellations(crate::decode::DisplayJtTessellationInputs {
@@ -755,6 +763,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
             normals: &[normals],
             colors: &[colors],
             texture_coordinates: &[texture_coordinates],
+            vertex_flags: &[vertex_flags],
             vertex_headers: &[vertex_header],
             coordinate_headers: &[header],
             shape_elements: &[shape_element],
@@ -776,7 +785,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         tessellations[0].0.source_object.as_ref().unwrap().object_id,
         "shape-node"
     );
-    assert_eq!(tessellations[0].0.channels.len(), 2);
+    assert_eq!(tessellations[0].0.channels.len(), 3);
     assert_eq!(tessellations[0].0.channels[0].kind, 0x4e58_0001);
     assert_eq!(tessellations[0].0.channels[0].item_size, 16);
     assert_eq!(tessellations[0].0.channels[0].flags, 1);
@@ -798,6 +807,18 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     assert_eq!(
         &tessellations[0].0.channels[1].data[16..24],
         &[0.0_f32.to_le_bytes(), 1.0_f32.to_le_bytes()].concat()
+    );
+    assert_eq!(tessellations[0].0.channels[2].kind, 0x4e58_0002);
+    assert_eq!(tessellations[0].0.channels[2].item_size, 4);
+    assert_eq!(tessellations[0].0.channels[2].count, 3);
+    assert_eq!(
+        tessellations[0].0.channels[2].data,
+        [
+            0_u32.to_le_bytes(),
+            1_u32.to_le_bytes(),
+            0_u32.to_le_bytes(),
+        ]
+        .concat()
     );
     assert_eq!(tessellations[0].1, 120);
 }
@@ -912,6 +933,41 @@ fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
     assert!((colors[1][1] - 1.0 / 6.0).abs() < 1e-6);
     assert!((colors[1][2] - 5.0 / 36.0).abs() < 1e-6);
     assert!((colors[1][3] - 1.0 / 6.0).abs() < 1e-6);
+}
+
+#[test]
+fn jt_vertex_flags_require_a_complete_binary_value_packet() {
+    let mut bits = vec![0];
+    let mut field = |value: u32, width: u8| {
+        bits.extend((0..width).rev().map(|shift| ((value >> shift) & 1) as u8));
+    };
+    field(1, 6);
+    field(2, 6);
+    field(0, 1);
+    field(1, 2);
+    field(0, 1);
+    field(1, 1);
+    field(0, 1);
+    let mut word = 0u32;
+    for bit in &bits {
+        word = (word << 1) | u32::from(*bit);
+    }
+    word <<= 32 - bits.len();
+    let mut packet = 3_u32.to_le_bytes().to_vec();
+    packet.push(1);
+    packet.extend_from_slice(&(bits.len() as u32).to_le_bytes());
+    packet.extend_from_slice(&word.to_le_bytes());
+    let mut array = 3_u32.to_le_bytes().to_vec();
+    array.extend_from_slice(&packet);
+
+    assert_eq!(
+        crate::jt::decode_vertex_flags(&array, 3),
+        Some((vec![0, 1, 0], array.len()))
+    );
+    assert!(crate::jt::decode_vertex_flags(&array, 2).is_none());
+    let last = array.len() - 1;
+    array[last] |= 1;
+    assert!(crate::jt::decode_vertex_flags(&array, 3).is_none());
 }
 
 #[test]

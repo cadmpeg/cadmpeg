@@ -55,6 +55,7 @@ use crate::topology::{Graph, Node};
 
 pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 const DISPLAY_JT_COLOR_CHANNEL: u32 = 0x4e58_0001;
+const DISPLAY_JT_VERTEX_FLAG_CHANNEL: u32 = 0x4e58_0002;
 const DISPLAY_JT_TEXTURE_CHANNEL_BASE: u32 = 0x4e58_0100;
 
 #[derive(Clone, Copy)]
@@ -64,6 +65,7 @@ pub(crate) struct DisplayJtTessellationInputs<'a> {
     pub(crate) normals: &'a [crate::native::DisplayJtVertexNormals],
     pub(crate) colors: &'a [crate::native::DisplayJtVertexColors],
     pub(crate) texture_coordinates: &'a [crate::native::DisplayJtVertexTextureCoordinates],
+    pub(crate) vertex_flags: &'a [crate::native::DisplayJtVertexFlags],
     pub(crate) vertex_headers: &'a [crate::native::DisplayJtCompressedVertexRecordsHeader],
     pub(crate) coordinate_headers: &'a [crate::native::DisplayJtVertexCoordinateArrayHeader],
     pub(crate) shape_elements: &'a [crate::native::DisplayJtShapeLodElement],
@@ -82,6 +84,7 @@ pub(crate) fn display_jt_tessellations(
         normals,
         colors,
         texture_coordinates,
+        vertex_flags,
         vertex_headers,
         coordinate_headers,
         shape_elements,
@@ -174,6 +177,16 @@ pub(crate) fn display_jt_tessellations(
                 })
             })
             .collect::<Option<Vec<_>>>()?;
+        let vertex_flag_array = (vertex_header.vertex_bindings & 0x40 != 0)
+            .then(|| {
+                vertex_flags
+                    .iter()
+                    .find(|flags| flags.vertex_records_header == vertex_header.id)
+            })
+            .flatten();
+        if vertex_header.vertex_bindings & 0x40 != 0 && vertex_flag_array.is_none() {
+            return None;
+        }
         let convert_point = |index: u32| {
             let point = coordinates.points_m.get(index as usize)?;
             Some(Point3::new(
@@ -182,8 +195,10 @@ pub(crate) fn display_jt_tessellations(
                 f64::from(point[2]) * 1000.0,
             ))
         };
-        let has_vertex_attributes =
-            normal_array.is_some() || color_array.is_some() || !texture_arrays.is_empty();
+        let has_vertex_attributes = normal_array.is_some()
+            || color_array.is_some()
+            || !texture_arrays.is_empty()
+            || vertex_flag_array.is_some();
         let (vertices, triangles, normal_vectors, channels) = if has_vertex_attributes {
             let mut vertices = Vec::with_capacity(rendered.len() * 3);
             let mut triangles = Vec::with_capacity(rendered.len());
@@ -207,6 +222,9 @@ pub(crate) fn display_jt_tessellations(
                 .iter()
                 .map(|count| Vec::with_capacity(rendered.len() * 3 * count * 4))
                 .collect::<Vec<_>>();
+            let mut vertex_flag_data = vertex_flag_array
+                .map(|_| Vec::with_capacity(rendered.len() * 3 * 4))
+                .unwrap_or_default();
             for (triangle, attributes) in rendered {
                 let base = u32::try_from(vertices.len()).ok()?;
                 for (coordinate, attribute) in triangle.into_iter().zip(attributes) {
@@ -229,6 +247,10 @@ pub(crate) fn display_jt_tessellations(
                         for component in array.values.get(attribute)? {
                             data.extend_from_slice(&component.to_le_bytes());
                         }
+                    }
+                    if let Some(array) = vertex_flag_array {
+                        vertex_flag_data
+                            .extend_from_slice(&array.values.get(attribute)?.to_le_bytes());
                     }
                 }
                 triangles.push([base, base.checked_add(1)?, base.checked_add(2)?]);
@@ -259,6 +281,15 @@ pub(crate) fn display_jt_tessellations(
                             << 8,
                     count,
                     data,
+                });
+            }
+            if vertex_flag_array.is_some() {
+                channels.push(TessellationChannel {
+                    item_size: 4,
+                    kind: DISPLAY_JT_VERTEX_FLAG_CHANNEL,
+                    flags: 0,
+                    count,
+                    data: vertex_flag_data,
                 });
             }
             (vertices, triangles, normal_vectors, channels)
@@ -6773,6 +6804,15 @@ fn attach_native_object_model(
             &display_jt_vertex_normals,
             &display_jt_vertex_colors,
         );
+    let display_jt_vertex_flags = crate::native::display_jt_vertex_flags(
+        &scan.container,
+        &display_jt_vertex_records_headers,
+        &display_jt_coordinate_array_headers,
+        &display_jt_vertex_coordinates,
+        &display_jt_vertex_normals,
+        &display_jt_vertex_colors,
+        &display_jt_vertex_texture_coordinates,
+    );
     let display_jt_polygon_meshes = crate::native::display_jt_polygon_meshes(
         &display_jt_topology_packet_sequences,
         &display_jt_coordinate_array_headers,
@@ -6812,6 +6852,7 @@ fn attach_native_object_model(
         normals: &display_jt_vertex_normals,
         colors: &display_jt_vertex_colors,
         texture_coordinates: &display_jt_vertex_texture_coordinates,
+        vertex_flags: &display_jt_vertex_flags,
         vertex_headers: &display_jt_vertex_records_headers,
         coordinate_headers: &display_jt_coordinate_array_headers,
         shape_elements: &display_jt_shape_lod_elements,
@@ -7274,6 +7315,12 @@ fn attach_native_object_model(
             )
             .tag("DISPLAY_JT_VERTEX_TEXTURE_COORDINATES");
         annotations.exactness(&texture_coordinates.id, Exactness::Derived);
+    }
+    for flags in &display_jt_vertex_flags {
+        annotations
+            .note(&flags.id, annotation_stream, flags.source_offset)
+            .tag("DISPLAY_JT_VERTEX_FLAGS");
+        annotations.exactness(&flags.id, Exactness::Derived);
     }
     for mesh in &display_jt_polygon_meshes {
         annotations
@@ -8118,6 +8165,9 @@ fn attach_native_object_model(
             "display_jt_vertex_texture_coordinates",
             &display_jt_vertex_texture_coordinates,
         )?;
+    }
+    if !display_jt_vertex_flags.is_empty() {
+        namespace.set_arena("display_jt_vertex_flags", &display_jt_vertex_flags)?;
     }
     if !display_jt_polygon_meshes.is_empty() {
         namespace.set_arena("display_jt_polygon_meshes", &display_jt_polygon_meshes)?;
