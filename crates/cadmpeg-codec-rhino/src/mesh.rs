@@ -1088,6 +1088,19 @@ mod tests {
         f(MeshExpand::new(&ctx, root))
     }
 
+    /// Like [`with_expand`], but under a caller-supplied `policy` and exposing
+    /// the platform context so a test can observe cumulative charging and the
+    /// fuse across several expansions that share it.
+    fn with_expand_policy<R>(
+        data: &[u8],
+        policy: DecodePolicy,
+        f: impl FnOnce(MeshExpand<'_>, &DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &policy).expect("root view");
+        f(MeshExpand::new(&ctx, root), &ctx)
+    }
+
     fn chunk(body: &[u8]) -> Vec<u8> {
         let mut result = 0x4000_8000_u32.to_le_bytes().to_vec();
         result.extend(((body.len() + 4) as i64).to_le_bytes());
@@ -1494,5 +1507,79 @@ mod tests {
         let bytes = [2_u8];
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         assert!(reader.bool().is_err());
+    }
+
+    // Gate item 11 (§10 Phase 1): nested and cumulative expansion tests.
+
+    #[test]
+    fn nested_compressed_buffer_inflates_from_a_child_window() {
+        // A compressed mesh buffer wrapped inside an outer anonymous chunk, read
+        // through a child reader positioned at the nested body — the same shape
+        // as the double-vertex sub-chunk. The expander must take its source from
+        // `root.child(nested_body)`, several levels below the root, and inflate
+        // it correctly.
+        let inner = buffer(&[9, 8, 7, 6], 1);
+        let bytes = chunk(&inner);
+        with_expand(&bytes, |expand| {
+            let outer =
+                chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false).expect("outer chunk");
+            let mut child =
+                BoundedReader::new(&bytes, outer.body.start, outer.body.end).expect("child reader");
+            let decoded = read_buffer(
+                expand,
+                &mut child,
+                4,
+                &mut Vec::new(),
+                "nested",
+                &mut 0,
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            )
+            .expect("nested buffer");
+            assert_eq!(decoded, Some(vec![9, 8, 7, 6]));
+        });
+    }
+
+    #[test]
+    fn cumulative_compressed_expansion_trips_the_platform_decompression_ceiling() {
+        // Two compressed buffers, each three bytes, decompressed under a shared
+        // platform context whose cumulative decompression ceiling is four bytes.
+        // The first expansion fits; the second pushes the cumulative total to six
+        // and is refused. The refusal fuses the context, so a swallowed
+        // `ResourceLimit` still aborts the decode at `finish`.
+        let first = buffer(&[1, 2, 3], 1);
+        let second = buffer(&[4, 5, 6], 1);
+        let mut data = first.clone();
+        data.extend_from_slice(&second);
+        let mut policy = DecodePolicy::desktop();
+        policy.limits.max_decompressed_bytes_total = 4;
+        with_expand_policy(&data, policy, |expand, ctx| {
+            let mut reader = BoundedReader::new(&data, 0, data.len()).expect("reader");
+            let decoded = read_buffer(
+                expand,
+                &mut reader,
+                3,
+                &mut Vec::new(),
+                "first",
+                &mut 0,
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            )
+            .expect("first expansion");
+            assert_eq!(decoded, Some(vec![1, 2, 3]));
+            assert!(!ctx.is_fused());
+            let refused = read_buffer(
+                expand,
+                &mut reader,
+                3,
+                &mut Vec::new(),
+                "second",
+                &mut 0,
+                &mut MeshBudget::new(),
+                ArchiveVersion::V8,
+            );
+            assert!(refused.is_err(), "cumulative expansion must be refused");
+            assert!(ctx.is_fused(), "the refusal must fuse the context");
+        });
     }
 }
