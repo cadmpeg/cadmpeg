@@ -2523,6 +2523,11 @@ fn decode_standard_retains_unresolved_roster_carrier_and_face() {
         decoded.ir.model.faces[1].surface,
         decoded.ir.model.surfaces[1].id
     );
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+            && loss.message.contains("1 unresolved surface carriers")
+    }));
 }
 
 #[test]
@@ -2557,8 +2562,10 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         .iter()
         .all(|edge| edge.curve.is_some()));
     assert!(!decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Topology
-            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+        matches!(
+            loss.category,
+            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+        ) && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
 }
 
@@ -5090,8 +5097,10 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.pcurves.len(), 3);
     assert!(result.report.losses.iter().all(|loss| {
-        loss.category != cadmpeg_ir::report::LossCategory::Topology
-            || loss.severity != cadmpeg_ir::report::Severity::Blocking
+        !matches!(
+            loss.category,
+            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+        ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);

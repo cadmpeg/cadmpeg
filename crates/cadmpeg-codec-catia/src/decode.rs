@@ -163,23 +163,8 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
                     .count()
             })
             .unwrap_or_default();
-        let unresolved_curves = ir
-            .model
-            .edges
-            .iter()
-            .filter(|edge| edge.curve.is_none())
-            .count();
-        let mut losses = (unresolved_curves != 0)
-            .then(|| LossNote {
-                category: LossCategory::Geometry,
-                severity: Severity::Blocking,
-                message: format!(
-                    "The zero-entity B-rep graph is reconstructed; {unresolved_curves} physical edge carriers remain unresolved."
-                ),
-                provenance: None,
-            })
-            .into_iter()
-            .collect::<Vec<_>>();
+        let mut losses = Vec::new();
+        insert_unresolved_carrier_loss(&ir, &mut losses);
         if unresolved_pcurves != 0 {
             losses.push(LossNote {
                 category: LossCategory::Topology,
@@ -923,7 +908,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     }
     link_payload_carriers(&mut ir, &mut annotations).ok()?;
     ir.annotations = annotations.build();
-    let losses = if topology_transferred {
+    let mut losses = if topology_transferred {
         Vec::new()
     } else {
         vec![LossNote {
@@ -934,6 +919,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             provenance: None,
         }]
     };
+    insert_unresolved_carrier_loss(&ir, &mut losses);
     Some((
         ir,
         DecodeReport {
@@ -4095,6 +4081,24 @@ fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
     (curves, surfaces)
 }
 
+fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNote>) {
+    let (unresolved_curves, unresolved_surfaces) = unresolved_carrier_counts(ir);
+    if unresolved_curves == 0 && unresolved_surfaces == 0 {
+        return;
+    }
+    losses.insert(
+        0,
+        LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Blocking,
+            message: format!(
+                "The transferred model retains {unresolved_curves} unresolved curve carriers and {unresolved_surfaces} unresolved surface carriers without exact procedural constructions."
+            ),
+            provenance: None,
+        },
+    );
+}
+
 fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let mut b5_graph = crate::b5::parse(&scan.data);
     let mut fallback_surfaces = b5_graph
@@ -4163,20 +4167,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
             provenance: None,
         }]
     };
-    let (unresolved_curves, unresolved_surfaces) = unresolved_carrier_counts(&ir);
-    if unresolved_curves != 0 || unresolved_surfaces != 0 {
-        losses.insert(
-            0,
-            LossNote {
-                category: LossCategory::Geometry,
-                severity: Severity::Blocking,
-                message: format!(
-                    "The transferred model retains {unresolved_curves} unresolved curve carriers and {unresolved_surfaces} unresolved surface carriers without exact procedural constructions."
-                ),
-                provenance: None,
-            },
-        );
-    }
+    insert_unresolved_carrier_loss(&ir, &mut losses);
     Some((
         ir,
         DecodeReport {
@@ -4699,8 +4690,8 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     ir.annotations = annotations.build();
 
     let report = build_geometry_report(
+        &ir,
         scan,
-        points.len(),
         &typed,
         plane_faces,
         analytic_record_count,
@@ -7177,8 +7168,8 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
 }
 
 fn build_geometry_report(
+    ir: &CadIr,
     scan: &ContainerScan,
-    vertex_count: usize,
     typed: &TypedCounts,
     plane_faces: usize,
     analytic_record_count: usize,
@@ -7191,10 +7182,11 @@ fn build_geometry_report(
         category: LossCategory::Geometry,
         severity: Severity::Info,
         message: format!(
-            "{vertex_count} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 \
+            "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 \
              LE, millimetres, identity world placement) and {} analytic surface carrier(s) were \
              decoded from `SurfacicReps` `00 33` records: {} plane, {} cylinder, {} cone, {} \
              sphere, {} torus.",
+            ir.model.vertices.len(),
             typed.total(),
             typed.plane,
             typed.cylinder,
@@ -7255,6 +7247,8 @@ fn build_geometry_report(
             provenance: None,
         });
     }
+
+    insert_unresolved_carrier_loss(ir, &mut losses);
 
     losses.push(LossNote {
         category: LossCategory::Attribute,
