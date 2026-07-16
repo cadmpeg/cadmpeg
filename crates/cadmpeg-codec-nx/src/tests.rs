@@ -599,8 +599,8 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     use crate::native::{
         DisplayJtBaseNodeData, DisplayJtCompressedElement, DisplayJtCompressedVertexRecordsHeader,
         DisplayJtPolygonMesh, DisplayJtShapeLodBinding, DisplayJtShapeLodElement,
-        DisplayJtTriStripShapeNode, DisplayJtVertexCoordinateArrayHeader,
-        DisplayJtVertexCoordinates, DisplayJtVertexNormals,
+        DisplayJtTriStripShapeNode, DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader,
+        DisplayJtVertexCoordinates, DisplayJtVertexNormals, DisplayJtVertexTextureCoordinates,
     };
 
     let mesh = DisplayJtPolygonMesh {
@@ -707,7 +707,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     let vertex_header = DisplayJtCompressedVertexRecordsHeader {
         id: "vertex-header".into(),
         element: "shape-element".into(),
-        vertex_bindings: 0xa,
+        vertex_bindings: 0x11a,
         vertex_quantization_bits: 0,
         normal_quantization_factor: 0,
         texture_quantization_bits: 0,
@@ -726,12 +726,35 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         byte_len: 4,
         source_offset: 94,
     };
+    let colors = DisplayJtVertexColors {
+        id: "colors".into(),
+        vertex_records_header: "vertex-header".into(),
+        colors: vec![
+            [1.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 0.5],
+            [0.0, 0.0, 1.0, 0.25],
+        ],
+        color_hash: 0,
+        byte_len: 4,
+        source_offset: 98,
+    };
+    let texture_coordinates = DisplayJtVertexTextureCoordinates {
+        id: "texture".into(),
+        vertex_records_header: "vertex-header".into(),
+        channel: 0,
+        values: vec![vec![0.0, 0.0], vec![1.0, 0.0], vec![0.0, 1.0]],
+        texture_coordinate_hash: 0,
+        byte_len: 4,
+        source_offset: 102,
+    };
 
     let tessellations =
         crate::decode::display_jt_tessellations(crate::decode::DisplayJtTessellationInputs {
             meshes: &[mesh],
             coordinates: &[coordinates],
             normals: &[normals],
+            colors: &[colors],
+            texture_coordinates: &[texture_coordinates],
             vertex_headers: &[vertex_header],
             coordinate_headers: &[header],
             shape_elements: &[shape_element],
@@ -752,6 +775,29 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     assert_eq!(
         tessellations[0].0.source_object.as_ref().unwrap().object_id,
         "shape-node"
+    );
+    assert_eq!(tessellations[0].0.channels.len(), 2);
+    assert_eq!(tessellations[0].0.channels[0].kind, 0x4e58_0001);
+    assert_eq!(tessellations[0].0.channels[0].item_size, 16);
+    assert_eq!(tessellations[0].0.channels[0].flags, 1);
+    assert_eq!(tessellations[0].0.channels[0].count, 3);
+    assert_eq!(
+        &tessellations[0].0.channels[0].data[16..32],
+        &[
+            0.0_f32.to_le_bytes(),
+            1.0_f32.to_le_bytes(),
+            0.0_f32.to_le_bytes(),
+            0.5_f32.to_le_bytes(),
+        ]
+        .concat()
+    );
+    assert_eq!(tessellations[0].0.channels[1].kind, 0x4e58_0100);
+    assert_eq!(tessellations[0].0.channels[1].item_size, 8);
+    assert_eq!(tessellations[0].0.channels[1].flags, 0x100);
+    assert_eq!(tessellations[0].0.channels[1].count, 3);
+    assert_eq!(
+        &tessellations[0].0.channels[1].data[16..24],
+        &[0.0_f32.to_le_bytes(), 1.0_f32.to_le_bytes()].concat()
     );
     assert_eq!(tessellations[0].1, 120);
 }

@@ -39,7 +39,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
-use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -54,12 +54,16 @@ use crate::parasolid::{self, Stream, StreamKind};
 use crate::topology::{Graph, Node};
 
 pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
+const DISPLAY_JT_COLOR_CHANNEL: u32 = 0x4e58_0001;
+const DISPLAY_JT_TEXTURE_CHANNEL_BASE: u32 = 0x4e58_0100;
 
 #[derive(Clone, Copy)]
 pub(crate) struct DisplayJtTessellationInputs<'a> {
     pub(crate) meshes: &'a [crate::native::DisplayJtPolygonMesh],
     pub(crate) coordinates: &'a [crate::native::DisplayJtVertexCoordinates],
     pub(crate) normals: &'a [crate::native::DisplayJtVertexNormals],
+    pub(crate) colors: &'a [crate::native::DisplayJtVertexColors],
+    pub(crate) texture_coordinates: &'a [crate::native::DisplayJtVertexTextureCoordinates],
     pub(crate) vertex_headers: &'a [crate::native::DisplayJtCompressedVertexRecordsHeader],
     pub(crate) coordinate_headers: &'a [crate::native::DisplayJtVertexCoordinateArrayHeader],
     pub(crate) shape_elements: &'a [crate::native::DisplayJtShapeLodElement],
@@ -76,6 +80,8 @@ pub(crate) fn display_jt_tessellations(
         meshes,
         coordinates,
         normals,
+        colors,
+        texture_coordinates,
         vertex_headers,
         coordinate_headers,
         shape_elements,
@@ -136,14 +142,38 @@ pub(crate) fn display_jt_tessellations(
         if rendered.is_empty() {
             return None;
         }
-        let normal_array = vertex_headers
+        let vertex_header = vertex_headers
             .iter()
-            .find(|header| header.element == shape_element.id)
-            .and_then(|vertex_header| {
+            .find(|header| header.element == shape_element.id)?;
+        let normal_array = (vertex_header.vertex_bindings & 0x8 != 0)
+            .then(|| {
                 normals
                     .iter()
                     .find(|normals| normals.vertex_records_header == vertex_header.id)
-            });
+            })
+            .flatten();
+        if vertex_header.vertex_bindings & 0x8 != 0 && normal_array.is_none() {
+            return None;
+        }
+        let color_array = (vertex_header.vertex_bindings & 0x30 != 0)
+            .then(|| {
+                colors
+                    .iter()
+                    .find(|colors| colors.vertex_records_header == vertex_header.id)
+            })
+            .flatten();
+        if vertex_header.vertex_bindings & 0x30 != 0 && color_array.is_none() {
+            return None;
+        }
+        let texture_arrays = (0..8_u8)
+            .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
+            .map(|channel| {
+                texture_coordinates.iter().find(|coordinates| {
+                    coordinates.vertex_records_header == vertex_header.id
+                        && coordinates.channel == channel
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
         let convert_point = |index: u32| {
             let point = coordinates.points_m.get(index as usize)?;
             Some(Point3::new(
@@ -152,30 +182,92 @@ pub(crate) fn display_jt_tessellations(
                 f64::from(point[2]) * 1000.0,
             ))
         };
-        let (vertices, triangles, normal_vectors) = if let Some(normal_array) = normal_array {
+        let has_vertex_attributes =
+            normal_array.is_some() || color_array.is_some() || !texture_arrays.is_empty();
+        let (vertices, triangles, normal_vectors, channels) = if has_vertex_attributes {
             let mut vertices = Vec::with_capacity(rendered.len() * 3);
             let mut triangles = Vec::with_capacity(rendered.len());
-            let mut normal_vectors = Vec::with_capacity(rendered.len() * 3);
+            let mut normal_vectors = normal_array
+                .map(|_| Vec::with_capacity(rendered.len() * 3))
+                .unwrap_or_default();
+            let mut color_data = color_array
+                .map(|_| Vec::with_capacity(rendered.len() * 3 * 16))
+                .unwrap_or_default();
+            let texture_component_counts = texture_arrays
+                .iter()
+                .map(|array| {
+                    let count = array.values.first()?.len();
+                    (1..=4)
+                        .contains(&count)
+                        .then_some(count)
+                        .filter(|count| array.values.iter().all(|value| value.len() == *count))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let mut texture_data = texture_component_counts
+                .iter()
+                .map(|count| Vec::with_capacity(rendered.len() * 3 * count * 4))
+                .collect::<Vec<_>>();
             for (triangle, attributes) in rendered {
                 let base = u32::try_from(vertices.len()).ok()?;
                 for (coordinate, attribute) in triangle.into_iter().zip(attributes) {
                     vertices.push(convert_point(coordinate)?);
-                    let normal = normal_array.normals.get(attribute? as usize)?;
-                    normal_vectors.push(Vector3::new(
-                        f64::from(normal[0]),
-                        f64::from(normal[1]),
-                        f64::from(normal[2]),
-                    ));
+                    let attribute = attribute? as usize;
+                    if let Some(normal_array) = normal_array {
+                        let normal = normal_array.normals.get(attribute)?;
+                        normal_vectors.push(Vector3::new(
+                            f64::from(normal[0]),
+                            f64::from(normal[1]),
+                            f64::from(normal[2]),
+                        ));
+                    }
+                    if let Some(color_array) = color_array {
+                        for component in color_array.colors.get(attribute)? {
+                            color_data.extend_from_slice(&component.to_le_bytes());
+                        }
+                    }
+                    for (array, data) in texture_arrays.iter().zip(&mut texture_data) {
+                        for component in array.values.get(attribute)? {
+                            data.extend_from_slice(&component.to_le_bytes());
+                        }
+                    }
                 }
                 triangles.push([base, base.checked_add(1)?, base.checked_add(2)?]);
             }
-            (vertices, triangles, normal_vectors)
+            let count = u32::try_from(vertices.len()).ok()?;
+            let mut channels = Vec::new();
+            if color_array.is_some() {
+                channels.push(TessellationChannel {
+                    item_size: 16,
+                    kind: DISPLAY_JT_COLOR_CHANNEL,
+                    flags: ((vertex_header.vertex_bindings >> 4) & 0x3) as u32,
+                    count,
+                    data: color_data,
+                });
+            }
+            for (((array, component_count), data), ordinal) in texture_arrays
+                .iter()
+                .zip(texture_component_counts)
+                .zip(texture_data)
+                .zip(0_u32..)
+            {
+                channels.push(TessellationChannel {
+                    item_size: u32::try_from(component_count.checked_mul(4)?).ok()?,
+                    kind: DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)?,
+                    flags: u32::from(array.channel)
+                        | (((vertex_header.vertex_bindings >> (8 + 4 * array.channel)) & 0xf)
+                            as u32)
+                            << 8,
+                    count,
+                    data,
+                });
+            }
+            (vertices, triangles, normal_vectors, channels)
         } else {
             let vertices = (0..coordinates.points_m.len())
                 .map(|index| convert_point(index as u32))
                 .collect::<Option<Vec<_>>>()?;
             let triangles = rendered.into_iter().map(|(triangle, _)| triangle).collect();
-            (vertices, triangles, Vec::new())
+            (vertices, triangles, Vec::new(), Vec::new())
         };
         tessellations.push((
             Tessellation {
@@ -197,7 +289,7 @@ pub(crate) fn display_jt_tessellations(
                 triangles,
                 strip_lengths: Vec::new(),
                 normals: normal_vectors,
-                channels: Vec::new(),
+                channels,
             },
             shape_node.source_offset,
         ));
@@ -6718,6 +6810,8 @@ fn attach_native_object_model(
         meshes: &display_jt_polygon_meshes,
         coordinates: &display_jt_vertex_coordinates,
         normals: &display_jt_vertex_normals,
+        colors: &display_jt_vertex_colors,
+        texture_coordinates: &display_jt_vertex_texture_coordinates,
         vertex_headers: &display_jt_vertex_records_headers,
         coordinate_headers: &display_jt_coordinate_array_headers,
         shape_elements: &display_jt_shape_lod_elements,
