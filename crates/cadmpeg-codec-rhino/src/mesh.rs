@@ -53,6 +53,21 @@ impl<'a> MeshExpand<'a> {
     pub(crate) fn data(self) -> &'a [u8] {
         self.root.window()
     }
+
+    /// Returns the threaded platform decode context. Leaf record decoders read
+    /// their count-framed bodies through this context so their allocation and
+    /// work charges accumulate against the caller's document-level budget
+    /// rather than a throwaway per-record context.
+    pub(crate) fn ctx(self) -> &'a DecodeContext<'a> {
+        self.ctx
+    }
+
+    /// Returns the session root view spanning the whole input. Leaf decoders
+    /// derive their record window with `root.child(start, end)` using the same
+    /// absolute offsets they pass to the legacy chunk framing.
+    pub(crate) fn root(self) -> View<'a> {
+        self.root
+    }
 }
 
 /// Maps a platform charge refusal onto the mesh decoder's local error type.

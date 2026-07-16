@@ -2,21 +2,25 @@
 //! Persistent polyedge-reference construction decoding.
 //!
 //! Migrated module (doc section 10 Phase 2). The record body and every child
-//! segment are read through a bounded [`View`] over a codec-local
-//! [`DecodeContext`]: the count-framed parameter table and the segment list are
-//! sized by [`View::counted`] physical-plausibility proofs and reserved through
-//! [`DecodeContext::exact_vec`], committed scalar reads use the `req_*` mirror,
-//! and per-element `work` is charged against the platform budget. The residual
-//! framing boundary is `chunk_at`/`parse_class_wrapper`, which return typed
-//! ranges (not byte slices) that locate each child record's window before the
-//! `View` takes over; there is no `View::window()` egress. The module carries
-//! the graduated `deny(clippy::disallowed_methods)`.
+//! segment are read through a bounded [`View`] over the caller's threaded
+//! platform [`DecodeContext`]: the count-framed parameter table and the segment
+//! list are sized by [`View::counted`] physical-plausibility proofs and
+//! reserved through [`DecodeContext::exact_vec`], committed scalar reads use the
+//! `req_*` mirror, and per-element `work` is charged against the document-level
+//! budget. Residual: each child segment record is located by the legacy
+//! `chunk_at`/`parse_class_wrapper`, which take the raw `&[u8]` file slice, and
+//! its class check runs on that raw slice before the child `View` takes over the
+//! body. That framing does not call `View::window()`, so it is not counted as
+//! window egress, but it is a raw `&[u8]` read outside the platform budget. The
+//! module carries the graduated `deny(clippy::disallowed_methods)`.
 #![deny(clippy::disallowed_methods)]
 
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_ir::decode::{DecodeContext, View};
+
+use crate::mesh::MeshExpand;
 
 use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::objects::parse_class_wrapper;
@@ -186,16 +190,17 @@ fn segment(
 }
 
 pub(crate) fn decode(
-    data: &[u8],
+    expand: MeshExpand<'_>,
     range: Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<PolyEdge, FramingError> {
-    // Read the record body through a bounded `View` on a codec-local context.
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &policy)
-        .map_err(|error| refused(range.start, &error))?;
-    let mut body = root
+    // Read the record body through a bounded `View` on the caller's threaded
+    // platform context so parameter/segment charges accumulate against the
+    // document-level budget.
+    let data = expand.data();
+    let ctx = expand.ctx();
+    let mut body = expand
+        .root()
         .child(range.start, range.end)
         .ok_or_else(|| malformed(range.start, "polyedge body out of range"))?;
 
@@ -263,7 +268,13 @@ pub(crate) fn decode(
             ));
         }
         segments
-            .push(segment(root, &ctx, data, class.class_data_range, archive)?)
+            .push(segment(
+                expand.root(),
+                ctx,
+                data,
+                class.class_data_range,
+                archive,
+            )?)
             .map_err(|error| refused(body.position(), &error))?;
         body.skip(wrapper.next_offset - start)
             .ok_or_else(|| malformed(body.position(), "polyedge segment overruns body"))?;
@@ -347,7 +358,10 @@ mod tests {
     #[test]
     fn decodes_persistent_polyedge_segment_construction() {
         let payload = polyedge_payload();
-        let decoded = decode(&payload, 0..payload.len(), ArchiveVersion::V8).unwrap();
+        let decoded = crate::decode::with_expand_bytes(&payload, |expand| {
+            decode(expand, 0..payload.len(), ArchiveVersion::V8)
+        })
+        .unwrap();
         assert_eq!(decoded.parameters, [0.0, 10.0]);
         assert_eq!(decoded.segments[0].component, [2, 17]);
         assert_eq!(decoded.segments[0].edge_domain, [0.0, 4.0]);
@@ -363,6 +377,11 @@ mod tests {
         // count-framed segment loop runs past the body's proven window.
         let mut payload = polyedge_payload();
         payload.truncate(payload.len() - 16);
-        assert!(decode(&payload, 0..payload.len(), ArchiveVersion::V8).is_err());
+        assert!(crate::decode::with_expand_bytes(&payload, |expand| decode(
+            expand,
+            0..payload.len(),
+            ArchiveVersion::V8
+        ))
+        .is_err());
     }
 }

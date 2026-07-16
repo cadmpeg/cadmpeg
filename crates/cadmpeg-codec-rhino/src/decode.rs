@@ -681,7 +681,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let mut hatch = match crate::hatch::decode(
-            self.scan.data,
+            self.expand,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -816,7 +816,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let polyedge = match crate::polyedge::decode(
-            self.scan.data,
+            self.expand,
             object.class_data_range.clone(),
             self.archive(),
         ) {
@@ -981,7 +981,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let cage = match crate::cage::decode(
-            self.scan.data,
+            self.expand,
             object.class_data_range.clone(),
             scale,
             self.archive(),
@@ -1107,7 +1107,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let morph = match crate::morph::decode(
-            self.scan.data,
+            self.expand,
             object.class_data_range.clone(),
             scale,
             self.archive(),

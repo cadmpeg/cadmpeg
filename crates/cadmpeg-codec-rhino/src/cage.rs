@@ -2,23 +2,26 @@
 //! NURBS cage payload decoding.
 //!
 //! Migrated module (doc section 10 Phase 2). The record body is read through a
-//! bounded [`View`] over a codec-local [`DecodeContext`]: the count-framed knot
+//! bounded [`View`] over the caller's threaded platform
+//! [`DecodeContext`](cadmpeg_ir::decode::DecodeContext): the count-framed knot
 //! and control-point loops are sized by [`View::counted`] proofs and reserved
-//! through [`DecodeContext::exact_vec`], committed scalar reads use the `req_*`
-//! mirror, and per-element work is charged against the platform budget. Only the
-//! outer chunk framing (`chunk_at`) still runs through the shared `chunks.rs`
-//! plumbing to locate this record's body window; every hostile-count read past
-//! that boundary is on the `View`. The module carries the graduated
-//! `deny(clippy::disallowed_methods)`.
+//! through [`exact_vec`](cadmpeg_ir::decode::DecodeContext::exact_vec),
+//! committed scalar reads use the `req_*` mirror, and per-element work is
+//! charged against the document-level budget carried by [`MeshExpand`]. Only
+//! the outer chunk framing (`chunk_at`) still runs through the shared
+//! `chunks.rs` plumbing to locate this record's body window; every
+//! hostile-count read past that boundary is on the `View`. The module carries
+//! the graduated `deny(clippy::disallowed_methods)`.
 #![deny(clippy::disallowed_methods)]
 
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_ir::decode::View;
 
 use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::curves::GeometryError;
+use crate::mesh::MeshExpand;
 use crate::wire::{scaled_coordinate, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -85,12 +88,12 @@ fn positive(view: &mut View<'_>, label: &str) -> Result<usize, GeometryError> {
 }
 
 pub(crate) fn decode(
-    data: &[u8],
+    expand: MeshExpand<'_>,
     range: Range<usize>,
     scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Cage, GeometryError> {
-    let (cage, next) = decode_at(data, range.start, range.end, scale, archive)?;
+    let (cage, next) = decode_at(expand, range.start, range.end, scale, archive)?;
     if next != range.end {
         return Err(malformed(range.start, "invalid NURBS cage framing"));
     }
@@ -98,25 +101,26 @@ pub(crate) fn decode(
 }
 
 pub(crate) fn decode_at(
-    data: &[u8],
+    expand: MeshExpand<'_>,
     offset: usize,
     end: usize,
     scale: f64,
     archive: ArchiveVersion,
 ) -> Result<(Cage, usize), GeometryError> {
+    let data = expand.data();
+    let ctx = expand.ctx();
     let chunk = chunk_at(data, offset, end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
         return Err(malformed(offset, "invalid NURBS cage framing"));
     }
 
-    // Read the record body through a bounded `View` on a codec-local context.
-    // Only this record's bytes are navigable; the count-framed loops below size
-    // themselves against `body`'s remaining window, not a trusted decoded count.
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &policy)
-        .map_err(|error| refused(chunk.body.start, &error))?;
-    let mut body = root
+    // Read the record body through a bounded `View` on the caller's threaded
+    // platform context so knot/control-point charges accumulate against the
+    // document-level budget. Only this record's bytes are navigable; the
+    // count-framed loops below size themselves against `body`'s remaining
+    // window, not a trusted decoded count.
+    let mut body = expand
+        .root()
         .child(chunk.body.start, chunk.body.end)
         .ok_or_else(|| malformed(chunk.body.start, "NURBS cage body out of range"))?;
 
@@ -338,7 +342,10 @@ mod tests {
     #[test]
     fn decodes_rational_cage_order_knots_and_u_v_w_control_order() {
         let bytes = crc_chunk(ANONYMOUS, &rational_cage_body());
-        let cage = decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8).unwrap();
+        let cage = crate::decode::with_expand_bytes(&bytes, |expand| {
+            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+        })
+        .unwrap();
         assert_eq!(cage.orders, [2, 2, 2]);
         assert_eq!(cage.counts, [2, 2, 2]);
         assert_eq!(cage.knots[2], [0.0, 3.0]);
@@ -353,6 +360,12 @@ mod tests {
         let mut body = rational_cage_body();
         body.truncate(body.len() - 32);
         let bytes = crc_chunk(ANONYMOUS, &body);
-        assert!(decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8).is_err());
+        assert!(crate::decode::with_expand_bytes(&bytes, |expand| decode(
+            expand,
+            0..bytes.len(),
+            10.0,
+            ArchiveVersion::V8
+        ))
+        .is_err());
     }
 }

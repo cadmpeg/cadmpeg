@@ -1043,10 +1043,12 @@ fn extended_geometry_json(
             "caps": extrusion.caps,
         })
     } else if value.class_id == crate::cage::CLASS {
-        cage_json(&crate::cage::decode(data, value.class_data_range.clone(), scale, archive).ok()?)
+        cage_json(
+            &crate::cage::decode(expand, value.class_data_range.clone(), scale, archive).ok()?,
+        )
     } else if value.class_id == crate::morph::CLASS {
         let morph =
-            crate::morph::decode(data, value.class_data_range.clone(), scale, archive).ok()?;
+            crate::morph::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
         let control = match &morph.control {
             crate::morph::Control::Curve { start, end } => serde_json::json!({
                 "kind": "curve",
@@ -1101,7 +1103,7 @@ fn extended_geometry_json(
         );
     } else if value.class_id == crate::hatch::CLASS {
         let hatch =
-            crate::hatch::decode(data, value.class_data_range.clone(), scale, archive).ok()?;
+            crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
         let mut plane = hatch.plane;
         for coordinate in &mut plane.origin.0 {
             *coordinate *= scale;
@@ -1157,7 +1159,7 @@ fn extended_geometry_json(
         return crate::dimensions::semantic_json(&dimension);
     } else if value.class_id == crate::polyedge::CURVE_CLASS {
         let polyedge =
-            crate::polyedge::decode(data, value.class_data_range.clone(), archive).ok()?;
+            crate::polyedge::decode(expand, value.class_data_range.clone(), archive).ok()?;
         return crate::polyedge::semantic_json(&polyedge);
     } else {
         return None;

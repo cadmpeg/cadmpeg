@@ -2,23 +2,30 @@
 //! Bounded hatch payload decoding.
 //!
 //! Migrated module (doc section 10 Phase 2). The record body is read through a
-//! bounded [`View`] over a codec-local [`DecodeContext`]: the plane, the pattern
+//! bounded [`View`] over the caller's threaded platform
+//! [`DecodeContext`](cadmpeg_ir::decode::DecodeContext): the plane, the pattern
 //! scalars, and each loop's header fields commit through the `req_*` mirror, the
 //! count-framed boundary-loop table is sized by a [`View::counted`]
 //! physical-plausibility proof (five-byte minimum loop header) under the
-//! `MAX_LOOPS` cap and reserved through [`DecodeContext::exact_vec`], the
-//! parse-warning accumulator grows through [`DecodeContext::grow_vec`], and
-//! per-element `work` is charged against the platform budget. Each loop's curve
-//! is located by `chunk_at`/`parse_class_wrapper`, which return typed ranges
-//! (not byte slices) that the still-legacy `curves::decode_2d` re-reads across a
-//! typed [`Range`]; there is no `View::window()` egress. The module carries the
-//! graduated `deny(clippy::disallowed_methods)`.
+//! `MAX_LOOPS` cap and reserved through
+//! [`exact_vec`](cadmpeg_ir::decode::DecodeContext::exact_vec), the
+//! parse-warning accumulator grows through
+//! [`grow_vec`](cadmpeg_ir::decode::DecodeContext::grow_vec), and
+//! per-element `work` is charged against the document-level budget. Residual:
+//! each loop's curve is located by the legacy `chunk_at`/`parse_class_wrapper`
+//! and re-read by the still-legacy `curves::decode_2d`, all of which take the
+//! raw `&[u8]` file slice and size their own accumulators off the platform
+//! budget. That delegation does not call `View::window()`, so it is not counted
+//! as window egress, but it is a raw `&[u8]` read rather than a typed-[`Range`]
+//! handoff. The module carries the graduated `deny(clippy::disallowed_methods)`.
 #![deny(clippy::disallowed_methods)]
 
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_ir::decode::View;
+
+use crate::mesh::MeshExpand;
 
 use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
@@ -135,19 +142,19 @@ fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
 }
 
 pub(crate) fn decode(
-    data: &[u8],
+    expand: MeshExpand<'_>,
     range: Range<usize>,
     _scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Hatch, GeometryError> {
-    // Read the record body through a bounded `View` on a codec-local context.
-    // The count-framed loop table below sizes itself against `body`'s remaining
-    // window, not a trusted decoded count.
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &policy)
-        .map_err(|error| refused(range.start, &error))?;
-    let mut body = root
+    // Read the record body through a bounded `View` on the caller's threaded
+    // platform context so loop-table charges accumulate against the
+    // document-level budget. The count-framed loop table below sizes itself
+    // against `body`'s remaining window, not a trusted decoded count.
+    let data = expand.data();
+    let ctx = expand.ctx();
+    let mut body = expand
+        .root()
         .child(range.start, range.end)
         .ok_or_else(|| structural(range.start, "hatch body out of range"))?;
 
@@ -329,7 +336,10 @@ mod tests {
     #[test]
     fn decodes_version_two_loop_geometry_and_pattern_state() {
         let payload = version_two_hatch_payload();
-        let hatch = decode(&payload, 0..payload.len(), 10.0, ArchiveVersion::V8).unwrap();
+        let hatch = crate::decode::with_expand_bytes(&payload, |expand| {
+            decode(expand, 0..payload.len(), 10.0, ArchiveVersion::V8)
+        })
+        .unwrap();
         assert_eq!(hatch.pattern_index, 7);
         assert_eq!(hatch.pattern_scale, 2.5);
         assert_eq!(hatch.pattern_rotation, 0.25);
@@ -348,6 +358,12 @@ mod tests {
         // the count-framed loop's child record runs past the body's proven window.
         let mut payload = version_two_hatch_payload();
         payload.truncate(payload.len() - 24);
-        assert!(decode(&payload, 0..payload.len(), 10.0, ArchiveVersion::V8).is_err());
+        assert!(crate::decode::with_expand_bytes(&payload, |expand| decode(
+            expand,
+            0..payload.len(),
+            10.0,
+            ArchiveVersion::V8
+        ))
+        .is_err());
     }
 }

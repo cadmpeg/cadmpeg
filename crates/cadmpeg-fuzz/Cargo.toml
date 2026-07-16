@@ -404,6 +404,27 @@ bench = false
 
 # Phase 2 migrated-leaf parser targets
 [[bin]]
+name = "rhino_cage"
+path = "fuzz_targets/rhino_cage.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rhino_hatch"
+path = "fuzz_targets/rhino_hatch.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rhino_polyedge"
+path = "fuzz_targets/rhino_polyedge.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "catia_value_block"
 path = "fuzz_targets/catia_value_block.rs"
 test = false
