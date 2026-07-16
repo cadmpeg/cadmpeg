@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecError, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecEntry, CodecError, Confidence, DecodeOptions};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::InspectOptions;
 use cadmpeg_ir::IR_VERSION;

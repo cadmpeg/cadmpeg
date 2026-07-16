@@ -8,13 +8,13 @@
 //! # Quick start
 //!
 //! [`CreoCodec`] implements [`cadmpeg_ir::codec::Codec`]. Use
-//! [`CreoCodec::inspect`] to enumerate sections and read container diagnostics:
+//! [`CodecEntry::inspect`](cadmpeg_ir::CodecEntry::inspect) to enumerate sections and read container diagnostics:
 //!
 //! ```no_run
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_creo::CreoCodec;
-//! use cadmpeg_ir::codec::Codec;
+//! use cadmpeg_ir::codec::{Codec, CodecEntry};
 //! use cadmpeg_ir::InspectOptions;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,7 +25,7 @@
 //! # }
 //! ```
 //!
-//! Use [`CreoCodec::decode`] for a [`cadmpeg_ir::document::CadIr`] document and
+//! Use [`CodecEntry::decode`](cadmpeg_ir::CodecEntry::decode) for a [`cadmpeg_ir::document::CadIr`] document and
 //! its [`cadmpeg_ir::report::DecodeReport`].
 //!
 //! # Format model

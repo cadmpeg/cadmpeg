@@ -5,10 +5,12 @@
 //! byte prefix, inspection summarizes a seekable container, and decoding
 //! produces a finalized [`CadIr`] plus a [`DecodeReport`].
 //!
-//! [`Codec::decode`] is a provided method that must not be overridden: it is
-//! the single enforcement point for root-input limits and session finalize
-//! checks. Sealing it structurally (a final wrapper type or a sealed
-//! entry-point trait) is a Phase 1 candidate.
+//! A codec implements only the required [`Codec`] methods. The public
+//! [`CodecEntry::inspect`] and [`CodecEntry::decode`] entry points are the
+//! single enforcement point for root-input limits and session finalize checks;
+//! they live on the sealed [`CodecEntry`] trait, blanket-implemented for every
+//! `Codec`, so a codec cannot override an entry point and drop the
+//! enforcement.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -182,8 +184,8 @@ pub trait Codec {
     /// geometry.
     ///
     /// Implemented by each codec; never called by the CLI or registry. The
-    /// provided [`Codec::inspect`] wrapper acquires the root under the
-    /// inspection's input limit and runs this under an internal context.
+    /// [`CodecEntry::inspect`] wrapper acquires the root under the inspection's
+    /// input limit and runs this under an internal context.
     fn inspect_impl(
         &self,
         ctx: &DecodeContext<'_>,
@@ -194,26 +196,66 @@ pub trait Codec {
     /// transfer.
     ///
     /// Implemented by each codec; never called by the CLI or registry. The
-    /// provided [`Codec::decode`] wrapper acquires the root and finalizes the
+    /// [`CodecEntry::decode`] wrapper acquires the root and finalizes the
     /// context around this call.
     fn decode_impl(
         &self,
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<DecodeResult, CodecError>;
+}
 
+mod sealed {
+    /// Confines [`CodecEntry`](super::CodecEntry) to a blanket implementation
+    /// over every [`Codec`](super::Codec): the bound cannot be named outside
+    /// this crate, so no codec can supply its own entry-point implementation.
+    pub trait Sealed {}
+    impl<C: super::Codec + ?Sized> Sealed for C {}
+}
+
+/// The public entry points for inspection and decoding, sealed against
+/// override.
+///
+/// [`Codec::inspect_impl`] and [`Codec::decode_impl`] are what a codec writes;
+/// these wrappers are the only public callers of them, enforcing the
+/// root-input limit and the session invariants once, for every codec. The
+/// trait is blanket-implemented for all `Codec` and sealed with a private
+/// supertrait, so a codec cannot override an entry point and silently drop the
+/// enforcement — the language would otherwise permit overriding a provided
+/// method. Callers reach these methods on any `Codec` (including
+/// `dyn Codec`) by bringing [`CodecEntry`] into scope.
+pub trait CodecEntry: Codec + sealed::Sealed {
     /// Inspect the source under its own input limit, enforcing the root-input
     /// bound so an inspection cannot become an amplification vector.
     ///
-    /// The public inspection path. It acquires the root buffer under
-    /// `options.limits.max_input_bytes` through an internal context, then runs
-    /// [`Codec::inspect_impl`]. Inspection commits no records and produces no
-    /// [`DecodeResult`], so there is no finalize step; the enforcement it adds
-    /// over a bare reader is the bounded root read.
+    /// Acquires the root buffer under `options.limits.max_input_bytes` through
+    /// an internal context, then runs [`Codec::inspect_impl`]. Inspection
+    /// commits no records and produces no [`DecodeResult`], so there is no
+    /// finalize step; the enforcement it adds over a bare reader is the bounded
+    /// root read.
+    fn inspect(
+        &self,
+        reader: &mut dyn ReadSeek,
+        options: &InspectOptions,
+    ) -> Result<ContainerSummary, CodecError>;
+
+    /// Decode the source, enforcing root-input limits and session invariants.
     ///
-    /// **Do not override this method.** The internal context — and the input
-    /// limit it applies — holds only because every inspection passes through
-    /// this wrapper.
+    /// Acquires the root buffer under the policy's input limit, records the
+    /// container-only request, runs [`Codec::decode_impl`], and finalizes the
+    /// context so a fused decode cannot return `Ok`.
+    ///
+    /// The root buffer is currently read whole into the arena while each
+    /// `decode_impl` re-reads it through its legacy `std::io` path — a
+    /// transitional double buffer that Phase 1 container migration removes.
+    fn decode(
+        &self,
+        reader: &mut dyn ReadSeek,
+        options: &DecodeOptions,
+    ) -> Result<DecodeResult, CodecError>;
+}
+
+impl<C: Codec + ?Sized> CodecEntry for C {
     fn inspect(
         &self,
         reader: &mut dyn ReadSeek,
@@ -228,21 +270,6 @@ pub trait Codec {
         self.inspect_impl(&ctx, root)
     }
 
-    /// Decode the source, enforcing root-input limits and session invariants.
-    ///
-    /// The only public decode path. It acquires the root buffer under the
-    /// policy's input limit, records the container-only request, runs
-    /// [`Codec::decode_impl`], and finalizes the context so a fused decode
-    /// cannot return `Ok`.
-    ///
-    /// **Do not override this method.** The session invariants — the root
-    /// input limit, the fused-context check, and ticket resolution — hold
-    /// only because every decode passes through this wrapper; an override
-    /// silently removes them for that codec.
-    ///
-    /// The root buffer is currently read whole into the arena while each
-    /// `decode_impl` re-reads it through its legacy `std::io` path — a
-    /// transitional double buffer that Phase 1 container migration removes.
     fn decode(
         &self,
         reader: &mut dyn ReadSeek,

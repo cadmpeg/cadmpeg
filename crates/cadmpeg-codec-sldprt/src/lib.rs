@@ -15,7 +15,7 @@
 //! use std::io::Cursor;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::{Codec, DecodeOptions};
+//! use cadmpeg_ir::{Codec, CodecEntry, DecodeOptions};
 //!
 //! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_ir::CodecError> {
 //! let decoded = SldprtCodec.decode(
@@ -36,7 +36,7 @@
 //! IR with blocking diagnostics. Set [`DecodeOptions::container_only`] to request
 //! that result without attempting geometry.
 //!
-//! [`Codec::inspect`] inventories the outer blocks, section directory, cache
+//! [`CodecEntry::inspect`] inventories the outer blocks, section directory, cache
 //! cells, payload families, and Parasolid schemas. It does not build model
 //! geometry.
 //!
@@ -61,7 +61,7 @@
 //! metadata and feature records, base colors, and sequential triangle-strip
 //! tessellation. It bakes right-handed rigid body transforms into geometry.
 //!
-//! [`Codec::inspect`]: cadmpeg_ir::Codec::inspect
+//! [`CodecEntry::inspect`]: cadmpeg_ir::CodecEntry::inspect
 //! [`CodecError::NotImplemented`]: cadmpeg_ir::CodecError::NotImplemented
 //! [`DecodeOptions::container_only`]: cadmpeg_ir::DecodeOptions::container_only
 

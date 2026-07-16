@@ -61,8 +61,8 @@ pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
 pub use codec::{
-    CadirEncoder, Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions,
-    DecodeResult, Encoder, ReadSeek,
+    CadirEncoder, Codec, CodecEntry, CodecError, Confidence, ContainerEntry, ContainerSummary,
+    DecodeOptions, DecodeResult, Encoder, ReadSeek,
 };
 pub use decode::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};

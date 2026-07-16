@@ -6,7 +6,7 @@
 
 use std::io::{Cursor, Read, Write};
 
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::InspectOptions;
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;

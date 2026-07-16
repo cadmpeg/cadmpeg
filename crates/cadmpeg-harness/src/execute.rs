@@ -9,7 +9,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::{Codec, CodecError, DecodeOptions, DecodeResult, InspectOptions};
+use cadmpeg_ir::{Codec, CodecEntry, CodecError, DecodeOptions, DecodeResult, InspectOptions};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{Operation, PolicyProfile, ResultClass};

@@ -14,7 +14,7 @@ use crate::records::{
     DesignMaterialAssignment, DesignObjectKind, LostEdgeReference, PersistentDesignLink,
     PersistentReferenceKind, SketchCurveGeometry, SketchCurveLink,
 };
-use cadmpeg_ir::codec::{Codec, CodecError, DecodeOptions};
+use cadmpeg_ir::codec::{CodecEntry, CodecError, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,

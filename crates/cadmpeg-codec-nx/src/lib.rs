@@ -15,7 +15,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_nx::NxCodec;
-//! use cadmpeg_ir::{Codec, DecodeOptions};
+//! use cadmpeg_ir::{Codec, CodecEntry, DecodeOptions};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.prt")?;
@@ -29,7 +29,7 @@
 //! # }
 //! ```
 //!
-//! [`NxCodec::inspect`] returns the SPLMSSTR directory and embedded-stream
+//! [`CodecEntry::inspect`](cadmpeg_ir::CodecEntry::inspect) returns the SPLMSSTR directory and embedded-stream
 //! classifications without decoding entities. `DecodeOptions::container_only`
 //! produces metadata IR and skips entity decode.
 //!

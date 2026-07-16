@@ -400,7 +400,7 @@ fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
 }
 
 /// Convert a scan into the generic container inventory returned by
-/// [`cadmpeg_ir::Codec::inspect`].
+/// [`cadmpeg_ir::CodecEntry::inspect`].
 pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let mut entries = Vec::new();
 

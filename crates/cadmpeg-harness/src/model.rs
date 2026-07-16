@@ -22,11 +22,11 @@ pub const ENVELOPE_VERSION: &str = "envelope-v1";
 pub enum Operation {
     /// [`Codec::detect`](cadmpeg_ir::Codec::detect) over a byte prefix.
     Detect,
-    /// [`Codec::inspect`](cadmpeg_ir::Codec::inspect) over a seekable reader.
+    /// [`CodecEntry::inspect`](cadmpeg_ir::CodecEntry::inspect) over a seekable reader.
     Inspect,
-    /// [`Codec::decode`](cadmpeg_ir::Codec::decode) with `container_only` set.
+    /// [`CodecEntry::decode`](cadmpeg_ir::CodecEntry::decode) with `container_only` set.
     ContainerOnly,
-    /// [`Codec::decode`](cadmpeg_ir::Codec::decode) driving full entity decode.
+    /// [`CodecEntry::decode`](cadmpeg_ir::CodecEntry::decode) driving full entity decode.
     FullDecode,
 }
 
