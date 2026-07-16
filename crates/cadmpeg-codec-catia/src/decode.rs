@@ -1275,23 +1275,87 @@ mod chart_tests {
         quintic_jet_pcurve, rational_pcurve_arc, resolve_standard_endpoint_pairs,
         reverse_e5_pcurve_geometry, standard_circle_endpoint_candidates,
         standard_circle_param_range, standard_native_edge_references, standard_pcurve_geometry,
-        unique_index_owners, unique_native_identity_points, zero_entity_pcurve_range,
+        unique_index_owners, unique_native_identity_points, unresolved_carrier_counts,
+        zero_entity_pcurve_range,
     };
     use crate::e5::{E5Edge, E5Face, E5Loop, E5Topology};
     use crate::geometry::{FreeformFaceBounds, StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
     use cadmpeg_ir::geometry::{
-        CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface,
-        SurfaceGeometry,
+        Curve, CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+        ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
+    use cadmpeg_ir::ids::{
+        CurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId, VertexId,
+    };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{BodyKind, Point, Vertex};
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::BTreeMap;
     use std::collections::HashMap;
+
+    #[test]
+    fn unresolved_carrier_accounting_requires_an_exact_construction() {
+        let mut ir = CadIr::empty(Units::default());
+        let curve_id = CurveId("curve-0".to_string());
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        let surface_id = SurfaceId("surface-0".to_string());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        let offset_id = SurfaceId("surface-1".to_string());
+        ir.model.surfaces.push(Surface {
+            id: offset_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
+
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: ProceduralCurveId("procedural-curve-0".to_string()),
+            curve: curve_id,
+            definition: ProceduralCurveDefinition::Unknown {
+                record: Some(UnknownId("record-0".to_string())),
+            },
+            cache_fit_tolerance: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId("procedural-surface-0".to_string()),
+            surface: surface_id.clone(),
+            definition: ProceduralSurfaceDefinition::Unknown {
+                record: Some(UnknownId("record-1".to_string())),
+            },
+            cache_fit_tolerance: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId("procedural-surface-1".to_string()),
+            surface: offset_id,
+            definition: ProceduralSurfaceDefinition::Offset {
+                support: surface_id,
+                distance: 2.0,
+                u_sense: 1,
+                v_sense: 1,
+                extension_flags: Vec::new(),
+            },
+            cache_fit_tolerance: None,
+        });
+        assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
+
+        ir.model.procedural_curves[0].definition = ProceduralCurveDefinition::Exact;
+        ir.model.procedural_surfaces[0].definition = ProceduralSurfaceDefinition::Exact {
+            parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
+            extension: 0,
+        };
+        assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
+    }
 
     #[test]
     fn index_ownership_requires_a_complete_partition() {
@@ -3941,6 +4005,96 @@ fn union_indices(parents: &mut [usize], left: usize, right: usize) {
     parents[left] = right;
 }
 
+fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
+    let mut resolved_curves = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| !matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+        .map(|curve| curve.id.clone())
+        .collect::<HashSet<_>>();
+    let mut resolved_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| !matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
+        .map(|surface| surface.id.clone())
+        .collect::<HashSet<_>>();
+    loop {
+        let mut changed = false;
+        for procedural in &ir.model.procedural_surfaces {
+            let resolved = match &procedural.definition {
+                ProceduralSurfaceDefinition::Exact { .. }
+                | ProceduralSurfaceDefinition::Helix { .. }
+                | ProceduralSurfaceDefinition::RollingBallJet { .. } => true,
+                ProceduralSurfaceDefinition::Offset { support, .. } => {
+                    resolved_surfaces.contains(support)
+                }
+                ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
+                    resolved_curves.contains(directrix)
+                }
+                _ => false,
+            };
+            if resolved {
+                changed |= resolved_surfaces.insert(procedural.surface.clone());
+            }
+        }
+        for procedural in &ir.model.procedural_curves {
+            let resolved = match &procedural.definition {
+                ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => true,
+                ProceduralCurveDefinition::Intersection { context, .. } => {
+                    context.sides.iter().all(|side| {
+                        side.surface
+                            .as_ref()
+                            .is_some_and(|surface| resolved_surfaces.contains(surface))
+                    })
+                }
+                ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
+                    let (has_side, all_resolved) = context
+                        .sides
+                        .iter()
+                        .filter_map(|side| side.surface.as_ref().zip(side.pcurve.as_ref()))
+                        .fold((false, true), |(_, all_resolved), (surface, _)| {
+                            (true, all_resolved && resolved_surfaces.contains(surface))
+                        });
+                    has_side && all_resolved
+                }
+                _ => false,
+            };
+            if resolved {
+                changed |= resolved_curves.insert(procedural.curve.clone());
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            matches!(curve.geometry, CurveGeometry::Unknown { .. })
+                && !resolved_curves.contains(&curve.id)
+        })
+        .count()
+        + ir.model
+            .edges
+            .iter()
+            .filter(|edge| edge.curve.is_none())
+            .count();
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| {
+            matches!(surface.geometry, SurfaceGeometry::Unknown { .. })
+                && !resolved_surfaces.contains(&surface.id)
+        })
+        .count();
+    (curves, surfaces)
+}
+
 fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let mut b5_graph = crate::b5::parse(&scan.data);
     let mut fallback_surfaces = b5_graph
@@ -3984,37 +4138,52 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
     append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
     link_payload_carriers(&mut ir, &mut annotations).ok()?;
     ir.annotations = annotations.build();
+    let mut losses = if topology_transferred && b5_complete {
+        vec![LossNote {
+            category: LossCategory::Topology,
+            severity: Severity::Warning,
+            message: "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved."
+                .to_string(),
+            provenance: None,
+        }]
+    } else if topology_transferred {
+        vec![LossNote {
+            category: LossCategory::Topology,
+            severity: Severity::Blocking,
+            message: "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant nodes and unresolved endpoint lifts remain outside the connected graph."
+                .to_string(),
+            provenance: None,
+        }]
+    } else {
+        vec![LossNote {
+            category: LossCategory::Topology,
+            severity: Severity::Blocking,
+            message: "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close."
+                .to_string(),
+            provenance: None,
+        }]
+    };
+    let (unresolved_curves, unresolved_surfaces) = unresolved_carrier_counts(&ir);
+    if unresolved_curves != 0 || unresolved_surfaces != 0 {
+        losses.insert(
+            0,
+            LossNote {
+                category: LossCategory::Geometry,
+                severity: Severity::Blocking,
+                message: format!(
+                    "The transferred model retains {unresolved_curves} unresolved curve carriers and {unresolved_surfaces} unresolved surface carriers without exact procedural constructions."
+                ),
+                provenance: None,
+            },
+        );
+    }
     Some((
         ir,
         DecodeReport {
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
-            losses: if topology_transferred && b5_complete {
-                vec![LossNote {
-                    category: LossCategory::Topology,
-                    severity: Severity::Warning,
-                    message: "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved."
-                        .to_string(),
-                    provenance: None,
-                }]
-            } else if topology_transferred {
-                vec![LossNote {
-                    category: LossCategory::Topology,
-                    severity: Severity::Blocking,
-                    message: "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant nodes and unresolved endpoint lifts remain outside the connected graph."
-                        .to_string(),
-                    provenance: None,
-                }]
-            } else {
-                vec![LossNote {
-                    category: LossCategory::Topology,
-                    severity: Severity::Blocking,
-                    message: "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close."
-                        .to_string(),
-                    provenance: None,
-                }]
-            },
+            losses,
             notes: container::summarize(scan).notes,
         },
     ))
