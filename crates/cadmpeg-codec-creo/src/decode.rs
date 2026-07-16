@@ -17349,27 +17349,101 @@ fn is_axis_aligned(vector: [f64; 3]) -> bool {
     vector.iter().filter(|value| value.abs() > 1e-9).count() == 1
 }
 
-fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
-    let mut planes = scan
-        .plane_local_systems
+fn canonical_plane(plane: PlaneEquation) -> Option<PlaneEquation> {
+    let mut normal = normalized(plane.normal)?;
+    let mut distance = dot(normal, plane.origin);
+    if !distance.is_finite() {
+        return None;
+    }
+    let sign = normal
         .iter()
-        .filter_map(|frame| {
-            let origin = frame.origin?;
-            let normal = frame.normal?;
-            (!is_axis_aligned(normal))
-                .then_some((frame.surface_id, PlaneEquation { origin, normal }))
+        .find(|coordinate| coordinate.abs() > 1e-12)?
+        .signum();
+    if sign < 0.0 {
+        normal = normal.map(|coordinate| -coordinate);
+        distance = -distance;
+    }
+    Some(PlaneEquation {
+        origin: normal.map(|coordinate| coordinate * distance),
+        normal,
+    })
+}
+
+fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation> {
+    let planes = candidates
+        .iter()
+        .copied()
+        .map(canonical_plane)
+        .collect::<Option<Vec<_>>>()?;
+    let first = *planes.first()?;
+    let first_distance = dot(first.normal, first.origin);
+    planes
+        .iter()
+        .all(|plane| {
+            let distance = dot(plane.normal, plane.origin);
+            let scale = first_distance.abs().max(distance.abs()).max(1.0);
+            first
+                .normal
+                .iter()
+                .zip(plane.normal)
+                .all(|(left, right)| (left - right).abs() <= 1e-9)
+                && (first_distance - distance).abs() <= 1e-9 * scale
         })
-        .collect::<BTreeMap<_, _>>();
+        .then_some(first)
+}
+
+#[cfg(test)]
+mod plane_reconciliation_tests {
+    use super::{agreed_plane, dot, PlaneEquation};
+
+    #[test]
+    fn reconciles_equivalent_plane_frames_and_rejects_conflicts() {
+        let first = PlaneEquation {
+            origin: [1.0, 2.0, 3.0],
+            normal: [0.0, 0.0, 2.0],
+        };
+        let equivalent = PlaneEquation {
+            origin: [-4.0, 9.0, 3.0],
+            normal: [0.0, 0.0, -1.0],
+        };
+        let agreed = agreed_plane(&[first, equivalent]).expect("equivalent planes agree");
+        assert_eq!(agreed.normal, [0.0, 0.0, 1.0]);
+        assert_eq!(dot(agreed.normal, agreed.origin), 3.0);
+
+        let conflicting = PlaneEquation {
+            origin: [0.0, 0.0, 4.0],
+            normal: [0.0, 0.0, 1.0],
+        };
+        assert!(agreed_plane(&[first, conflicting]).is_none());
+    }
+}
+
+fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
+    let mut candidates = BTreeMap::<u32, Vec<PlaneEquation>>::new();
+    for frame in &scan.plane_local_systems {
+        let (Some(origin), Some(normal)) = (frame.origin, frame.normal) else {
+            continue;
+        };
+        if !is_axis_aligned(normal) {
+            candidates
+                .entry(frame.surface_id)
+                .or_default()
+                .push(PlaneEquation { origin, normal });
+        }
+    }
     for plane in &scan.outline_planes {
-        planes.insert(
-            plane.surface_id,
-            PlaneEquation {
+        candidates
+            .entry(plane.surface_id)
+            .or_default()
+            .push(PlaneEquation {
                 origin: plane.origin,
                 normal: plane.normal,
-            },
-        );
+            });
     }
-    planes
+    candidates
+        .into_iter()
+        .filter_map(|(id, candidates)| agreed_plane(&candidates).map(|plane| (id, plane)))
+        .collect()
 }
 
 fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEquation> {
