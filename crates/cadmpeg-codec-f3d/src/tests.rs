@@ -6,8 +6,10 @@
 
 use std::io::{Cursor, Read, Write};
 
-use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
-use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_ir::codec::{Codec, CodecEntry, CodecError, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::decode::{
+    DecodeArena, DecodeContext, DecodeMode, DecodePolicy, ResourceDimension, ResourceLimits, View,
+};
 use cadmpeg_ir::InspectOptions;
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
@@ -8912,6 +8914,113 @@ fn smb_only_is_reported_as_construction_snapshot() {
             .iter()
             .any(|n| n.contains("construction snapshot")));
     });
+}
+
+/// Build an f3d whose one `.protein` asset is deflated at the top level and
+/// whose nested `AssetData` entries are themselves deflated, so decoding inflates
+/// the protein through the expander and then reads its nested archive over that
+/// inflated space — a nested source view, never a root-length argument.
+fn f3d_with_deflated_nested_protein(smbh: &[u8], guid: &str) -> Vec<u8> {
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    let properties = generated_instance_properties_for(guid);
+
+    let mut nested = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    nested
+        .start_file("AssetData/InstanceProperties.bin", deflated)
+        .unwrap();
+    nested.write_all(&properties).unwrap();
+    nested
+        .start_file("AssetData/DefinitionIteratorProperties.bin", deflated)
+        .unwrap();
+    nested
+        .write_all(&generated_definition_catalog_for(
+            generated_schema_from_paged(&properties),
+        ))
+        .unwrap();
+    let protein = nested.finish().unwrap().into_inner();
+
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
+        .unwrap();
+    zip.write_all(smbh).unwrap();
+    zip.start_file(
+        "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
+        deflated,
+    )
+    .unwrap();
+    zip.write_all(&protein).unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
+#[test]
+fn nested_protein_archive_inflates_through_a_nested_source_view() {
+    // The `.protein` entry is deflated, so it is inflated through `begin_expand`
+    // into its own Transform space; its nested archive is then read over that
+    // space and its deflated `InstanceProperties.bin` inflated through a second,
+    // nested `begin_expand` — bounded by the entry's own extent, never the root
+    // length (§10 Phase 1B nested source views). The decoded appearance is
+    // identical to the stored-protein path.
+    let guid = "11111111-2222-3333-4444-555555555555";
+    let f3d = f3d_with_deflated_nested_protein(&synthetic_geometry_smbh(), guid);
+    let result = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.model.appearances.len(), 1);
+    assert_eq!(
+        result.ir.model.appearances[0].visual_guid.as_deref(),
+        Some(guid)
+    );
+}
+
+#[test]
+fn compressed_entry_expansion_respects_the_decompression_ceiling() {
+    // A deflated entry whose inflated size exceeds the per-expand ceiling trips a
+    // `ResourceLimit` while the scan streams it through `begin_expand`, never a
+    // `Malformed` and never a panic: policy exhaustion is a resource outcome
+    // (§10 Phase 1 gate 9), and the expansion is bounded as it is produced,
+    // cumulatively (gate 11).
+    let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file(
+        "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+        deflated,
+    )
+    .unwrap();
+    zip.write_all(&vec![0x5a_u8; 64 * 1024]).unwrap();
+    let bytes = zip.finish().unwrap().into_inner();
+
+    let mut limits = ResourceLimits::desktop();
+    limits.max_decompressed_bytes_per_expand = 4096;
+    limits.max_decompressed_bytes_total = 4096;
+    let options = DecodeOptions {
+        container_only: false,
+        policy: DecodePolicy {
+            mode: DecodeMode::Salvage,
+            limits,
+        },
+    };
+    match F3dCodec.decode(&mut Cursor::new(bytes), &options) {
+        Err(CodecError::ResourceLimit(limit)) => {
+            assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
+        }
+        other => panic!("expected a DecompressedBytes ResourceLimit, got {other:?}"),
+    }
+}
+
+#[test]
+fn truncation_at_container_boundaries_never_panics() {
+    // Every prefix of a full archive must decode and inspect to `Ok` or a typed
+    // `Err`, never a panic, at container and entry boundaries alike (§10 Phase 1
+    // gate 8).
+    let full = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    for cut in 0..=full.len() {
+        let prefix = full[..cut].to_vec();
+        let _ = F3dCodec.decode(&mut Cursor::new(prefix.clone()), &DecodeOptions::default());
+        let _ = F3dCodec.inspect(&mut Cursor::new(prefix), &InspectOptions::default());
+    }
 }
 
 #[test]

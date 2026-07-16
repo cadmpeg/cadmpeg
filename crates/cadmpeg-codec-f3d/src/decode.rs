@@ -41,7 +41,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     // A framed stream with no geometry uses the metadata-only path.
     if let Some(active) = container::select_active_brep(&scan).cloned() {
         if let Some((mut brep, mut report)) = try_decode_brep(&scan, &active)? {
-            let decoded_materials = materials::decode_with_bodies(&scan, &brep.body_keys)?;
+            let decoded_materials = materials::decode_with_bodies(ctx, &scan, &brep.body_keys)?;
             let body_visibility = crate::design::decode_body_visibility(&scan, &active.name)?;
             let mut body_visibilities = Vec::new();
             for body in &mut brep.bodies {
@@ -175,7 +175,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     native.act_entities = act.entities;
     native.act_guids = act.guids;
     native.act_root_components = act.root_components;
-    let decoded_materials = materials::decode(&scan)?;
+    let decoded_materials = materials::decode(ctx, &scan)?;
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
     native.store(ir.native.namespace_mut("f3d"))?;

@@ -174,13 +174,18 @@ impl<'a> ContainerScan<'a> {
 }
 
 /// Admit one archive entry into the runtime space graph, returning a view over
-/// its payload. Stored entries alias the root as a `Slice`; compressed entries
-/// stream their inflated output through [`DecodeContext::begin_expand`] under an
-/// exact-size contract, so the ZIP central directory's declared uncompressed
-/// length is enforced per write and at finalize (§10 Phase 1B).
-fn admit_entry<'a>(
+/// its payload. Stored entries alias the `parent` space as a `Slice`; compressed
+/// entries stream their inflated output through [`DecodeContext::begin_expand`]
+/// under an exact-size contract, so the ZIP central directory's declared
+/// uncompressed length is enforced per write and at finalize (§10 Phase 1B).
+///
+/// `parent` is the address space the entry's compressed bytes live in: the root
+/// for a top-level entry, a nested `.protein` entry's own space for a nested
+/// one. The compressed source is always framed as a view of that parent — never
+/// a raw length — so a nested archive charges and bounds against its own extent.
+pub(crate) fn admit_entry<'a>(
     ctx: &DecodeContext<'a>,
-    root: View<'a>,
+    parent: View<'a>,
     file: &mut zip::read::ZipFile<'_, Cursor<&'a [u8]>>,
     name: &str,
 ) -> Result<View<'a>, CodecError> {
@@ -196,9 +201,9 @@ fn admit_entry<'a>(
 
     if compression == CompressionMethod::Stored {
         // A stored entry is uncompressed: its bytes are already accounted for in
-        // the root, so it registers as a Slice alias, never a copy.
+        // the parent space, so it registers as a Slice alias, never a copy.
         let (_space, view) = ctx.register_slice(
-            root,
+            parent,
             ByteRange {
                 start: data_start,
                 end: data_end,
@@ -209,10 +214,10 @@ fn admit_entry<'a>(
 
     // A compressed entry's inflated bytes are new content the decompression-bomb
     // ceilings must bound. Frame the compressed source as a nested view of the
-    // root — never a raw length — and route every inflated byte through the
+    // parent — never a raw length — and route every inflated byte through the
     // expander, whose exact-size contract enforces the declared length.
-    let source = child_range(root, data_start, data_end).ok_or_else(|| {
-        CodecError::Malformed(format!("entry {name} data range escapes the archive"))
+    let source = child_range(parent, data_start, data_end).ok_or_else(|| {
+        CodecError::Malformed(format!("entry {name} data range escapes its parent space"))
     })?;
     let mut writer = ctx.begin_expand(source, ExpandSpec::Exact(uncompressed_size))?;
     let mut chunk = [0u8; EXPAND_CHUNK];

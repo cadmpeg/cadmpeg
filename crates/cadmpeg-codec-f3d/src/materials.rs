@@ -14,12 +14,19 @@ use crate::records::DesignMaterialAssignment;
 use cadmpeg_ir::appearance::Appearance;
 use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::{DecodeContext, DerivedKind, View};
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
 use cadmpeg_ir::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, u64_at, utf16le_at};
 use cadmpeg_ir::topology::Color;
 
-use crate::container::{role, ContainerScan};
+use crate::container::{admit_entry, role, ContainerScan};
 
+/// Byte length of one `.protein` instance page.
+///
+/// Limit classification (§10 Phase 1): format validity. The paged instance
+/// container uses a fixed 0x88-byte page; a stream whose declared page size or
+/// total length disagrees is not this format and is rejected, so the constant
+/// stays permanently.
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
 
@@ -323,16 +330,20 @@ pub struct DecodedMaterials {
 /// The [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)
 /// `asm_body_key` join is skipped. Use [`decode_with_bodies`] when ASM body keys
 /// are available.
-pub fn decode(scan: &ContainerScan) -> Result<DecodedMaterials, CodecError> {
-    decode_with_bodies(scan, &std::collections::HashMap::new())
+pub fn decode<'a>(
+    ctx: &DecodeContext<'a>,
+    scan: &ContainerScan<'a>,
+) -> Result<DecodedMaterials, CodecError> {
+    decode_with_bodies(ctx, scan, &std::collections::HashMap::new())
 }
 
 /// Decode appearance assets and resolve body bindings through
 /// `body_keys` (`BodyId` to the ASM `Body.chunk[1]` value), closing the
 /// design-entity join backbone in
 /// [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
-pub fn decode_with_bodies<S: std::hash::BuildHasher>(
-    scan: &ContainerScan,
+pub fn decode_with_bodies<'a, S: std::hash::BuildHasher>(
+    ctx: &DecodeContext<'a>,
+    scan: &ContainerScan<'a>,
     body_keys: &std::collections::HashMap<BodyId, u64, S>,
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
@@ -341,15 +352,18 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
         .iter()
         .filter(|entry| entry.role == role::PROTEIN)
     {
-        let payload = scan.entry_bytes(&entry.name)?;
-        let Some(instance) = instance_properties(payload) else {
+        let Some(protein) = scan.entry_view(&entry.name) else {
             continue;
         };
-        let Some(logical) = dechunk(&instance) else {
+        let Some(instance) = nested_entry_view(ctx, protein, "AssetData/InstanceProperties.bin")?
+        else {
             continue;
         };
-        let catalog = definition_catalog(payload);
-        let mut appearances = decode_logical_records(&logical, &entry.name);
+        let Some(logical) = dechunk_space(ctx, instance)? else {
+            continue;
+        };
+        let catalog = definition_catalog(ctx, protein)?;
+        let mut appearances = decode_logical_records(logical.window(), &entry.name);
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
                 if let Some((schema, category)) = catalog.get(name) {
@@ -997,25 +1011,46 @@ fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize, 
         .collect()
 }
 
-fn instance_properties(protein: &[u8]) -> Option<Vec<u8>> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(protein)).ok()?;
+/// Admit the first nested `.protein` archive entry whose name ends with
+/// `suffix`, returning its payload view.
+///
+/// The nested archive is framed by a view of its own `.protein` entry — never a
+/// root-length argument — and each entry is admitted through the shared
+/// container path, so a stored nested entry aliases the `.protein` space as a
+/// `Slice` and a compressed one is charged and bounded by the platform expander
+/// (§10 Phase 1B). Malformed nested framing yields `Ok(None)`; a budget refusal
+/// during expansion propagates.
+fn nested_entry_view<'a>(
+    ctx: &DecodeContext<'a>,
+    protein: View<'a>,
+    suffix: &str,
+) -> Result<Option<View<'a>>, CodecError> {
+    let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(protein.window())) else {
+        return Ok(None);
+    };
     for index in 0..archive.len() {
-        let mut file = archive.by_index(index).ok()?;
-        if file.name().ends_with("AssetData/InstanceProperties.bin") {
-            let mut bytes = Vec::with_capacity(file.size() as usize);
-            file.read_to_end(&mut bytes).ok()?;
-            return Some(bytes);
+        let Ok(mut file) = archive.by_index(index) else {
+            return Ok(None);
+        };
+        if !file.name().ends_with(suffix) {
+            continue;
         }
+        let name = file.name().to_string();
+        return admit_entry(ctx, protein, &mut file, &name).map(Some);
     }
-    None
+    Ok(None)
 }
 
-fn definition_catalog(
-    protein: &[u8],
-) -> std::collections::HashMap<String, (String, Option<String>)> {
-    let Some(bytes) = nested_entry(protein, "AssetData/DefinitionIteratorProperties.bin") else {
-        return std::collections::HashMap::new();
+fn definition_catalog<'a>(
+    ctx: &DecodeContext<'a>,
+    protein: View<'a>,
+) -> Result<std::collections::HashMap<String, (String, Option<String>)>, CodecError> {
+    let Some(entry) =
+        nested_entry_view(ctx, protein, "AssetData/DefinitionIteratorProperties.bin")?
+    else {
+        return Ok(std::collections::HashMap::new());
     };
+    let bytes = entry.window();
     let marker = b"\x80\x00\x01\x00";
     let starts: Vec<usize> = bytes
         .windows(marker.len())
@@ -1027,6 +1062,10 @@ fn definition_catalog(
         let end = starts.get(index + 1).copied().unwrap_or(bytes.len());
         let mut strings = Vec::new();
         let mut position = *start + marker.len();
+        // Limit classification (§10 Phase 1): format validity. A catalog record
+        // carries at most eight length-prefixed strings, each 1..=200 bytes of
+        // printable ASCII; a run outside that shape is not a catalog string and
+        // is skipped. Both bounds are grammar facts and stay permanently.
         while position + 4 <= end && strings.len() < 8 {
             let length = u32::from_le_bytes(
                 bytes[position..position + 4]
@@ -1055,43 +1094,80 @@ fn definition_catalog(
             }
         }
     }
-    out
+    Ok(out)
 }
 
-fn nested_entry(protein: &[u8], suffix: &str) -> Option<Vec<u8>> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(protein)).ok()?;
-    for index in 0..archive.len() {
-        let mut file = archive.by_index(index).ok()?;
-        if file.name().ends_with(suffix) {
-            let mut bytes = Vec::with_capacity(file.size() as usize);
-            file.read_to_end(&mut bytes).ok()?;
-            return Some(bytes);
-        }
-    }
-    None
-}
-
-fn dechunk(bytes: &[u8]) -> Option<Vec<u8>> {
+/// Walk the paged `.protein` instance framing, returning each page body's
+/// `[start, end)` extent in the input, or `None` when the framing is not the
+/// expected shape. Both the decode-path reconstruction and the encode-path patch
+/// share this walk so the two cannot diverge.
+fn page_body_ranges(bytes: &[u8]) -> Option<Vec<(usize, usize)>> {
+    let declared_page = bytes
+        .get(0..4)
+        .and_then(|head| <[u8; 4]>::try_from(head).ok())
+        .map(|head| u32::from_le_bytes(head) as usize);
     if bytes.len() < 16 + PAGE_SIZE
-        || u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?) as usize != PAGE_SIZE
+        || declared_page != Some(PAGE_SIZE)
         || !(bytes.len() - 16).is_multiple_of(PAGE_SIZE)
     {
         return None;
     }
-    let mut out = Vec::new();
-    for page in bytes[16..].chunks_exact(PAGE_SIZE) {
-        if page.get(4..8) == Some(RECORD_MARKER) {
-            out.extend_from_slice(&page[4..]);
-        } else if page.get(4..8) == Some(b"\x80\x00\x00\x00") {
-            out.extend_from_slice(&page[8..]);
-        } else if page.get(0..4) == Some(b"\xff\xff\xff\xff") {
-            let used = u16::from_le_bytes(page.get(4..6)?.try_into().ok()?) as usize;
-            out.extend_from_slice(page.get(8..8 + used)?);
+    let mut ranges = Vec::new();
+    let mut page_start = 16;
+    while page_start + PAGE_SIZE <= bytes.len() {
+        let page = &bytes[page_start..page_start + PAGE_SIZE];
+        let extent = if page.get(4..8) == Some(RECORD_MARKER) {
+            (page_start + 4, page_start + PAGE_SIZE)
+        } else if page.get(4..8) == Some(b"\x80\x00\x00\x00".as_slice()) {
+            (page_start + 8, page_start + PAGE_SIZE)
+        } else if page.get(0..4) == Some(b"\xff\xff\xff\xff".as_slice()) {
+            let used = page
+                .get(4..6)
+                .and_then(|len| <[u8; 2]>::try_from(len).ok())
+                .map(|len| u16::from_le_bytes(len) as usize)
+                .filter(|used| 8 + used <= PAGE_SIZE)?;
+            (page_start + 8, page_start + 8 + used)
         } else {
             return None;
-        }
+        };
+        ranges.push(extent);
+        page_start += PAGE_SIZE;
+    }
+    Some(ranges)
+}
+
+/// Reassemble the paged `.protein` instance stream into its logical bytes, for
+/// the encode-path patch that has no decode context.
+fn dechunk(bytes: &[u8]) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    for (start, end) in page_body_ranges(bytes)? {
+        out.extend_from_slice(&bytes[start..end]);
     }
     Some(out)
+}
+
+/// Reassemble the paged `.protein` instance stream into its logical byte stream,
+/// registering it as a `Concat` derived space so the reconstruction is named in
+/// the runtime graph, its segments recorded as the exact page-body extents
+/// assembled (§10 Phase 1C). Returns `Ok(None)` when the framing is not the
+/// expected shape.
+fn dechunk_space<'a>(
+    ctx: &DecodeContext<'a>,
+    instance: View<'a>,
+) -> Result<Option<View<'a>>, CodecError> {
+    let Some(ranges) = page_body_ranges(instance.window()) else {
+        return Ok(None);
+    };
+    let mut segments = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges {
+        let Some(child) = instance.child(start, end) else {
+            return Ok(None);
+        };
+        segments.push(child);
+    }
+    let writer = ctx.begin_derived_space(&segments, DerivedKind::Concat)?;
+    let (_space, view) = writer.finalize()?;
+    Ok(Some(view))
 }
 
 fn decode_logical_records(bytes: &[u8], stream: &str) -> Vec<Appearance> {
