@@ -830,8 +830,10 @@ Type `0x03` has radius display semantics.
 
 A `segtab` line whose two endpoint identifiers each have complete type-1 and
 type-2 `var_arr` values is the bounded segment between those two `[u, v]`
-points. It is construction geometry when its `ext_id` is absent from
-`ent_tab`.
+points. A neutral ordinate requires exactly one `var_arr` row with the point
+key and coordinate type; duplicate key/type identities remain native rows and
+define no neutral ordinate. It is construction geometry when its `ext_id` is
+absent from `ent_tab`.
 Every `segtab` row remains a section design entity when its carrier coordinates
 are incomplete; incomplete coordinates affect evaluation, not entity identity
 or attached constraints.

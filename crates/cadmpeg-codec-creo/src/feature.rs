@@ -1534,11 +1534,22 @@ fn variable_table_from_rows(
     (!rows.is_empty()).then(|| {
         let mut coordinates = BTreeMap::<u32, (Option<f64>, Option<f64>)>::new();
         for row in &rows {
-            let point = coordinates.entry(row.key).or_insert((None, None));
-            match row.variable_type {
-                1 if row.value.is_some() => point.0 = row.value,
-                2 if row.value.is_some() => point.1 = row.value,
-                _ => {}
+            coordinates.entry(row.key).or_insert((None, None));
+        }
+        for (&point_id, point) in &mut coordinates {
+            let mut u_rows = rows
+                .iter()
+                .filter(|row| row.key == point_id && row.variable_type == 1);
+            let u = u_rows.next();
+            if u_rows.next().is_none() {
+                point.0 = u.and_then(|row| row.value);
+            }
+            let mut v_rows = rows
+                .iter()
+                .filter(|row| row.key == point_id && row.variable_type == 2);
+            let v = v_rows.next();
+            if v_rows.next().is_none() {
+                point.1 = v.and_then(|row| row.value);
             }
         }
         FeatureVariableTable {
@@ -6327,6 +6338,32 @@ mod tests {
         assert_eq!(variables.points[0].point_id, 7);
         assert_eq!(variables.points[0].u, Some(0.0));
         assert_eq!(variables.points[0].v, Some(0.0));
+    }
+
+    #[test]
+    fn variable_table_withholds_duplicate_coordinate_identities() {
+        let row = |variable_type, value, offset| FeatureVariableRow {
+            variable_type,
+            key: 7,
+            value: Some(value),
+            guess: None,
+            uvar_id: None,
+            dimension_driven: false,
+            offset,
+        };
+        let table = variable_table_from_rows(
+            3,
+            Some(119),
+            vec![row(1, 2.0, 10), row(1, 2.0, 20), row(2, 3.0, 30)],
+            5,
+        )
+        .expect("variable table");
+
+        assert_eq!(table.rows.len(), 3);
+        assert_eq!(table.points.len(), 1);
+        assert_eq!(table.points[0].point_id, 7);
+        assert_eq!(table.points[0].u, None);
+        assert_eq!(table.points[0].v, Some(3.0));
     }
 
     #[test]
