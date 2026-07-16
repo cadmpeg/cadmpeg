@@ -18497,7 +18497,7 @@ fn transfer_first_instance_prototype_surfaces(
     if scan.layout != crate::container::Layout::Nd {
         return 0;
     }
-    let mut transferred = 0;
+    let mut associations = Vec::new();
     for record in &scan.surface_prototype_records {
         let row_kind = match record.family {
             crate::surface::SurfacePrototypeFamily::Plane => crate::surface::SurfaceKind::Plane,
@@ -18513,25 +18513,32 @@ fn transfer_first_instance_prototype_surfaces(
         }) else {
             continue;
         };
-        let preceding = scan
+        let Some(row) = scan
             .surface_rows
             .iter()
             .filter(|row| row.offset >= section.offset && row.offset < record.offset)
-            .max_by_key(|row| row.offset);
-        let following = scan
-            .surface_rows
-            .iter()
-            .filter(|row| {
-                row.offset > record.offset
-                    && row.offset < section.offset.saturating_add(section.length)
-            })
-            .min_by_key(|row| row.offset);
-        let row = preceding
-            .filter(|row| row.kind == row_kind)
-            .or_else(|| following.filter(|row| row.kind == row_kind));
-        let Some(row) = row else {
+            .max_by_key(|row| row.offset)
+        else {
             continue;
         };
+        if row.kind != row_kind
+            || crate::surface::unique_surface_row(&scan.surface_rows, row.id)
+                .is_none_or(|unique| unique.offset != row.offset)
+        {
+            continue;
+        }
+        associations.push((record, row, section));
+    }
+    let mut association_counts = BTreeMap::<usize, usize>::new();
+    for (_, row, _) in &associations {
+        *association_counts.entry(row.offset).or_default() += 1;
+    }
+
+    let mut transferred = 0;
+    for (record, row, section) in associations {
+        if association_counts.get(&row.offset) != Some(&1) {
+            continue;
+        }
         let geometry = match record.family {
             crate::surface::SurfacePrototypeFamily::Plane => {
                 let Some((origin, axis, reference)) = prototype_local_frame(record) else {

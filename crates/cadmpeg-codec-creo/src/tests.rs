@@ -3816,6 +3816,49 @@ fn decode_places_first_plane_instance_from_named_prototype() {
 }
 
 #[test]
+fn decode_withholds_named_prototype_before_its_surface_row() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    push_named_analytic_prototype(&mut payload, "plane", &[]);
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+
+    assert!(result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
+}
+
+#[test]
+fn decode_withholds_competing_named_prototypes_for_one_surface_row() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    push_named_analytic_prototype(&mut payload, "plane", &[]);
+    push_named_analytic_prototype(&mut payload, "plane", &[]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+
+    assert!(result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
+}
+
+#[test]
 fn decode_places_first_interpolation_spline_instance_from_named_prototype() {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     payload.extend_from_slice(&[7, 0x28, 4, 0x01, 0, 0]);
