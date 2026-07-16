@@ -72,7 +72,205 @@ pub(crate) struct DisplayJtTessellationInputs<'a> {
     pub(crate) bindings: &'a [crate::native::DisplayJtShapeLodBinding],
     pub(crate) shape_nodes: &'a [crate::native::DisplayJtTriStripShapeNode],
     pub(crate) base_nodes: &'a [crate::native::DisplayJtBaseNodeData],
+    pub(crate) transforms: &'a [crate::native::DisplayJtGeometricTransformAttribute],
+    pub(crate) partition_nodes: &'a [crate::native::DisplayJtPartitionNode],
+    pub(crate) range_lod_nodes: &'a [crate::native::DisplayJtRangeLodNode],
     pub(crate) compressed_elements: &'a [crate::native::DisplayJtCompressedElement],
+}
+
+fn multiply_jt_matrices(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> Option<[[f64; 4]; 4]> {
+    let mut product = [[0.0; 4]; 4];
+    for (row, values) in product.iter_mut().enumerate() {
+        for (column, value) in values.iter_mut().enumerate() {
+            *value = (0..4)
+                .map(|inner| left[row][inner] * right[inner][column])
+                .sum();
+            if !value.is_finite() {
+                return None;
+            }
+        }
+    }
+    Some(product)
+}
+
+fn resolve_display_jt_node_transform(
+    object_id: u32,
+    by_object: &BTreeMap<u32, &crate::native::DisplayJtBaseNodeData>,
+    parents: &BTreeMap<u32, Vec<u32>>,
+    transforms: &[&crate::native::DisplayJtGeometricTransformAttribute],
+    visiting: &mut BTreeSet<u32>,
+) -> Option<([[f64; 4]; 4], bool)> {
+    if !visiting.insert(object_id) {
+        return None;
+    }
+    let parent_states = parents.get(&object_id).map_or_else(
+        || {
+            Some(vec![(
+                [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+                false,
+            )])
+        },
+        |ids| {
+            ids.iter()
+                .map(|id| {
+                    resolve_display_jt_node_transform(*id, by_object, parents, transforms, visiting)
+                })
+                .collect()
+        },
+    )?;
+    visiting.remove(&object_id);
+    let base = by_object.get(&object_id)?;
+    let mut results = Vec::new();
+    for (mut matrix, mut final_transform) in parent_states {
+        for attribute_id in &base.attribute_object_ids {
+            let mut matching = transforms
+                .iter()
+                .filter(|attribute| attribute.object_id == *attribute_id);
+            let attribute = matching.next()?;
+            if matching.next().is_some() {
+                return None;
+            }
+            if attribute.state_flags & 0x04 != 0 {
+                continue;
+            }
+            if final_transform && attribute.state_flags & 0x02 == 0 {
+                continue;
+            }
+            let local = attribute.matrix.map(|row| row.map(f64::from));
+            matrix = multiply_jt_matrices(local, matrix)?;
+            final_transform |= attribute.state_flags & 0x01 != 0;
+        }
+        results.push((matrix, final_transform));
+    }
+    let first = results.first()?.0;
+    results
+        .iter()
+        .all(|result| result.0 == first)
+        .then_some(results[0])
+}
+
+fn display_jt_node_transform(
+    scene_segment: &str,
+    shape_object_id: u32,
+    base_nodes: &[crate::native::DisplayJtBaseNodeData],
+    transforms: &[crate::native::DisplayJtGeometricTransformAttribute],
+    partition_nodes: &[crate::native::DisplayJtPartitionNode],
+    range_lod_nodes: &[crate::native::DisplayJtRangeLodNode],
+    compressed_elements: &[crate::native::DisplayJtCompressedElement],
+) -> Option<[[f64; 4]; 4]> {
+    let scoped = base_nodes
+        .iter()
+        .filter(|base| {
+            compressed_elements
+                .iter()
+                .find(|element| element.id == base.element)
+                .is_some_and(|element| element.segment == scene_segment)
+        })
+        .collect::<Vec<_>>();
+    let mut by_object = BTreeMap::new();
+    for base in &scoped {
+        if by_object.insert(base.object_id, *base).is_some() {
+            return None;
+        }
+    }
+    by_object.get(&shape_object_id)?;
+    let scoped_transforms = transforms
+        .iter()
+        .filter(|attribute| {
+            compressed_elements
+                .iter()
+                .find(|element| element.id == attribute.element)
+                .is_some_and(|element| element.segment == scene_segment)
+        })
+        .collect::<Vec<_>>();
+    let mut parents = BTreeMap::<u32, Vec<u32>>::new();
+    for (object_id, base) in &by_object {
+        let children = partition_nodes
+            .iter()
+            .find(|node| node.base_node == base.id)
+            .map(|node| node.child_object_ids.as_slice())
+            .or_else(|| {
+                range_lod_nodes
+                    .iter()
+                    .find(|node| node.base_node == base.id)
+                    .map(|node| node.child_object_ids.as_slice())
+            })
+            .unwrap_or_default();
+        for &child in children {
+            by_object.get(&child)?;
+            parents.entry(child).or_default().push(*object_id);
+        }
+    }
+    resolve_display_jt_node_transform(
+        shape_object_id,
+        &by_object,
+        &parents,
+        &scoped_transforms,
+        &mut BTreeSet::new(),
+    )
+    .map(|state| state.0)
+}
+
+fn transform_jt_point(matrix: [[f64; 4]; 4], point: [f32; 3]) -> Option<Point3> {
+    let point = point.map(f64::from);
+    let coordinate = |column| {
+        (matrix[3][column]
+            + (0..3)
+                .map(|row| point[row] * matrix[row][column])
+                .sum::<f64>())
+            * 1000.0
+    };
+    let point = Point3::new(coordinate(0), coordinate(1), coordinate(2));
+    [point.x, point.y, point.z]
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(point)
+}
+
+fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<Vector3> {
+    let a = matrix;
+    let determinant = a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
+        - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+        + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+    if !determinant.is_finite() || determinant == 0.0 {
+        return None;
+    }
+    let inverse = [
+        [
+            (a[1][1] * a[2][2] - a[1][2] * a[2][1]) / determinant,
+            (a[0][2] * a[2][1] - a[0][1] * a[2][2]) / determinant,
+            (a[0][1] * a[1][2] - a[0][2] * a[1][1]) / determinant,
+        ],
+        [
+            (a[1][2] * a[2][0] - a[1][0] * a[2][2]) / determinant,
+            (a[0][0] * a[2][2] - a[0][2] * a[2][0]) / determinant,
+            (a[0][2] * a[1][0] - a[0][0] * a[1][2]) / determinant,
+        ],
+        [
+            (a[1][0] * a[2][1] - a[1][1] * a[2][0]) / determinant,
+            (a[0][1] * a[2][0] - a[0][0] * a[2][1]) / determinant,
+            (a[0][0] * a[1][1] - a[0][1] * a[1][0]) / determinant,
+        ],
+    ];
+    let normal = normal.map(f64::from);
+    let transformed = Vector3::new(
+        (0..3).map(|index| normal[index] * inverse[0][index]).sum(),
+        (0..3).map(|index| normal[index] * inverse[1][index]).sum(),
+        (0..3).map(|index| normal[index] * inverse[2][index]).sum(),
+    );
+    let length = transformed.norm();
+    (length.is_finite() && length > 0.0).then(|| {
+        Vector3::new(
+            transformed.x / length,
+            transformed.y / length,
+            transformed.z / length,
+        )
+    })
 }
 
 pub(crate) fn display_jt_tessellations(
@@ -91,6 +289,9 @@ pub(crate) fn display_jt_tessellations(
         bindings,
         shape_nodes,
         base_nodes,
+        transforms,
+        partition_nodes,
+        range_lod_nodes,
         compressed_elements,
     } = inputs;
     let mut tessellations = Vec::new();
@@ -128,6 +329,15 @@ pub(crate) fn display_jt_tessellations(
         if matching_nodes.next().is_some() {
             return None;
         }
+        let transform = display_jt_node_transform(
+            &binding.scene_segment,
+            shape_node.object_id,
+            base_nodes,
+            transforms,
+            partition_nodes,
+            range_lod_nodes,
+            compressed_elements,
+        )?;
         let mut rendered = Vec::new();
         for ((polygon, attributes), &group) in mesh
             .polygons
@@ -189,11 +399,7 @@ pub(crate) fn display_jt_tessellations(
         }
         let convert_point = |index: u32| {
             let point = coordinates.points_m.get(index as usize)?;
-            Some(Point3::new(
-                f64::from(point[0]) * 1000.0,
-                f64::from(point[1]) * 1000.0,
-                f64::from(point[2]) * 1000.0,
-            ))
+            transform_jt_point(transform, *point)
         };
         let has_vertex_attributes = normal_array.is_some()
             || color_array.is_some()
@@ -232,11 +438,7 @@ pub(crate) fn display_jt_tessellations(
                     let attribute = attribute? as usize;
                     if let Some(normal_array) = normal_array {
                         let normal = normal_array.normals.get(attribute)?;
-                        normal_vectors.push(Vector3::new(
-                            f64::from(normal[0]),
-                            f64::from(normal[1]),
-                            f64::from(normal[2]),
-                        ));
+                        normal_vectors.push(transform_jt_normal(transform, *normal)?);
                     }
                     if let Some(color_array) = color_array {
                         for component in color_array.colors.get(attribute)? {
@@ -6865,6 +7067,9 @@ fn attach_native_object_model(
         bindings: &display_jt_shape_lod_bindings,
         shape_nodes: &display_jt_tri_strip_shape_nodes,
         base_nodes: &display_jt_base_node_data,
+        transforms: &display_jt_geometric_transform_attributes,
+        partition_nodes: &display_jt_partition_nodes,
+        range_lod_nodes: &display_jt_range_lod_nodes,
         compressed_elements: &display_jt_compressed_elements,
     })
     .unwrap_or_default();

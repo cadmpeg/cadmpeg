@@ -598,10 +598,10 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
 fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     use crate::native::{
         DisplayJtBaseNodeData, DisplayJtCompressedElement, DisplayJtCompressedVertexRecordsHeader,
-        DisplayJtPolygonMesh, DisplayJtShapeLodBinding, DisplayJtShapeLodElement,
-        DisplayJtTriStripShapeNode, DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader,
-        DisplayJtVertexCoordinates, DisplayJtVertexFlags, DisplayJtVertexNormals,
-        DisplayJtVertexTextureCoordinates,
+        DisplayJtGeometricTransformAttribute, DisplayJtPolygonMesh, DisplayJtShapeLodBinding,
+        DisplayJtShapeLodElement, DisplayJtTriStripShapeNode, DisplayJtVertexColors,
+        DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates, DisplayJtVertexFlags,
+        DisplayJtVertexNormals, DisplayJtVertexTextureCoordinates,
     };
 
     let mesh = DisplayJtPolygonMesh {
@@ -666,7 +666,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         object_id: 9,
         version: 1,
         flags: 0,
-        attribute_object_ids: Vec::new(),
+        attribute_object_ids: vec![10],
         family_data_byte_len: 0,
         family_data_sha256: "00".repeat(32),
         source_offset: 120,
@@ -683,6 +683,21 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         body_sha256: "00".repeat(32),
         inflated_offset: 0,
         source_offset: 120,
+    };
+    let transform = DisplayJtGeometricTransformAttribute {
+        id: "transform".into(),
+        element: "scene-element".into(),
+        object_id: 10,
+        state_flags: 0,
+        field_inhibit_flags: 0,
+        stored_values_mask: 0xffff,
+        matrix: [
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, 3.0, 0.0, 0.0],
+            [0.0, 0.0, 4.0, 0.0],
+            [0.01, 0.02, 0.03, 1.0],
+        ],
+        source_offset: 121,
     };
     let node = DisplayJtTriStripShapeNode {
         id: "shape-node".into(),
@@ -770,12 +785,15 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
             bindings: &[binding],
             shape_nodes: &[node],
             base_nodes: &[base],
+            transforms: &[transform],
+            partition_nodes: &[],
+            range_lod_nodes: &[],
             compressed_elements: &[compressed],
         })
         .expect("complete scene binding");
     assert_eq!(tessellations.len(), 1);
-    assert!((tessellations[0].0.vertices[1].x - 1.0).abs() < 1e-6);
-    assert!((tessellations[0].0.vertices[2].y - 2.0).abs() < 1e-6);
+    assert!((tessellations[0].0.vertices[1].x - 12.0).abs() < 1e-6);
+    assert!((tessellations[0].0.vertices[2].y - 26.0).abs() < 1e-6);
     assert_eq!(tessellations[0].0.triangles, vec![[0, 1, 2]]);
     assert_eq!(
         tessellations[0].0.normals[1],
