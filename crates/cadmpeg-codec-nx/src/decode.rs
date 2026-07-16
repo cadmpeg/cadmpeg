@@ -11222,16 +11222,41 @@ pub(crate) fn attach_expression_parameters(
             .push(parameter_use);
     }
     for uses in uses_by_expression.values_mut() {
-        uses.sort_by_key(|parameter_use| {
-            parameter_use
-                .operation_label
-                .rsplit_once('-')
-                .and_then(|(_, ordinal)| ordinal.parse::<u64>().ok())
-                .unwrap_or(u64::MAX)
+        uses.sort_by(|first, second| {
+            first
+                .source_offsets
+                .first()
+                .cmp(&second.source_offsets.first())
+                .then_with(|| first.id.cmp(&second.id))
         });
     }
+    let mut tables = tables.into_iter().collect::<Vec<_>>();
+    for (_, expressions) in &mut tables {
+        expressions.sort_by(|first, second| {
+            first
+                .source_offset
+                .cmp(&second.source_offset)
+                .then_with(|| first.id.cmp(&second.id))
+        });
+    }
+    tables.sort_by(|(first_table, first), (second_table, second)| {
+        first
+            .first()
+            .map(|expression| expression.source_offset)
+            .cmp(&second.first().map(|expression| expression.source_offset))
+            .then_with(|| first_table.cmp(second_table))
+    });
+    let tables = tables
+        .into_iter()
+        .map(|(table, mut expressions)| {
+            let dependency_order_valid = order_expression_dependencies(&mut expressions);
+            (table, expressions, dependency_order_valid)
+        })
+        .collect::<Vec<_>>();
     let base_ordinal = ir.model.features.len() as u64;
-    for (table_ordinal, (table, expressions)) in tables.into_iter().enumerate() {
+    for (table_ordinal, (table, expressions, dependency_order_valid)) in
+        tables.into_iter().enumerate()
+    {
         let feature_id = FeatureId(table.split_once(":expression-table#").map_or_else(
             || format!("{table}:feature#equations"),
             |(scope, key)| format!("{scope}:feature#equations-{key}"),
@@ -11282,15 +11307,19 @@ pub(crate) fn attach_expression_parameters(
             annotations.derived(&id.0, "ordinal");
             annotations.derived(&id.0, "value");
             annotations.derived(&id.0, "native_ref");
-            let mut seen_dependencies = BTreeSet::new();
-            let dependencies = crate::native::expression_parameter_names(&expression.expression)
-                .into_iter()
-                .filter_map(|name| {
-                    let candidates = parameter_ids.get(name)?;
-                    (candidates.len() == 1).then(|| candidates[0].clone())
-                })
-                .filter(|dependency| seen_dependencies.insert(dependency.clone()))
-                .collect::<Vec<_>>();
+            let dependencies = if dependency_order_valid {
+                let mut seen_dependencies = BTreeSet::new();
+                crate::native::expression_parameter_names(&expression.expression)
+                    .into_iter()
+                    .filter_map(|name| {
+                        let candidates = parameter_ids.get(name)?;
+                        (candidates.len() == 1).then(|| candidates[0].clone())
+                    })
+                    .filter(|dependency| seen_dependencies.insert(dependency.clone()))
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
             if !dependencies.is_empty() {
                 annotations.derived(&id.0, "dependencies");
             }
@@ -11346,6 +11375,46 @@ pub(crate) fn attach_expression_parameters(
             });
         }
     }
+}
+
+fn order_expression_dependencies(expressions: &mut Vec<&crate::native::Expression>) -> bool {
+    let mut indices_by_name = BTreeMap::<&str, Vec<usize>>::new();
+    for (index, expression) in expressions.iter().enumerate() {
+        indices_by_name
+            .entry(expression.name.as_str())
+            .or_default()
+            .push(index);
+    }
+    let dependencies = expressions
+        .iter()
+        .map(|expression| {
+            crate::native::expression_parameter_names(&expression.expression)
+                .into_iter()
+                .filter_map(|name| {
+                    let [index] = indices_by_name.get(name)?.as_slice() else {
+                        return None;
+                    };
+                    Some(*index)
+                })
+                .collect::<BTreeSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut emitted = BTreeSet::new();
+    let mut order = Vec::with_capacity(expressions.len());
+    while order.len() < expressions.len() {
+        let Some(index) = (0..expressions.len()).find(|index| {
+            !emitted.contains(index)
+                && dependencies[*index]
+                    .iter()
+                    .all(|dependency| emitted.contains(dependency))
+        }) else {
+            return false;
+        };
+        emitted.insert(index);
+        order.push(expressions[index]);
+    }
+    *expressions = order;
+    true
 }
 
 pub(crate) fn attach_block_dimension_parameter_consumers(

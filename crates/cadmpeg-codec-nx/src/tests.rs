@@ -1763,26 +1763,28 @@ fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
 
 #[test]
 fn nx_formula_dependencies_resolve_within_the_expression_table() {
-    let expression = |id: &str, table: &str, name: &str, text: &str| crate::native::Expression {
-        id: format!("nx:test:expression#{id}"),
-        object_id: None,
-        record: None,
-        declaration: None,
-        name: name.into(),
-        parameter_index: None,
-        qualifier: None,
-        unit: crate::native::ExpressionUnit::Millimeter,
-        expression: text.into(),
-        value: None,
-        source_entry: "/Root/UG_PART/UG_PART".into(),
-        source_table: table.into(),
-        source_offset: 0,
+    let expression = |id: &str, table: &str, name: &str, text: &str, source_offset: u64| {
+        crate::native::Expression {
+            id: format!("nx:test:expression#{id}"),
+            object_id: None,
+            record: None,
+            declaration: None,
+            name: name.into(),
+            parameter_index: None,
+            qualifier: None,
+            unit: crate::native::ExpressionUnit::Millimeter,
+            expression: text.into(),
+            value: None,
+            source_entry: "/Root/UG_PART/UG_PART".into(),
+            source_table: table.into(),
+            source_offset,
+        }
     };
     let expressions = [
-        expression("a-p2", "table-a", "p2", "5"),
-        expression("a-p3", "table-a", "p3", "p2 * 2"),
-        expression("b-p2", "table-b", "p2", "7"),
-        expression("b-p3", "table-b", "p3", "p2 * 2"),
+        expression("a-p3", "table-a", "p3", "p2 * 2", 40),
+        expression("b-p3", "table-b", "p3", "p2 * 2", 10),
+        expression("a-p2", "table-a", "p2", "5", 30),
+        expression("b-p2", "table-b", "p2", "7", 20),
     ];
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
@@ -1790,6 +1792,18 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
     crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
 
     assert_eq!(ir.model.features.len(), 2);
+    assert_eq!(ir.model.features[0].id.0, "table-b:feature#equations");
+    assert_eq!(ir.model.features[0].ordinal, 0);
+    assert_eq!(ir.model.features[1].id.0, "table-a:feature#equations");
+    assert_eq!(ir.model.features[1].ordinal, 1);
+    assert_eq!(
+        ir.model
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.name.as_str(), parameter.ordinal))
+            .collect::<Vec<_>>(),
+        [("p2", 0), ("p3", 1), ("p2", 0), ("p3", 1)]
+    );
     assert_eq!(ir.model.parameters[1].owner, ir.model.parameters[0].owner);
     assert_eq!(
         ir.model.parameters[1].dependencies,
@@ -1801,6 +1815,40 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
         [ir.model.parameters[2].id.clone()]
     );
     assert_ne!(ir.model.parameters[1].owner, ir.model.parameters[3].owner);
+}
+
+#[test]
+fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
+    let expression = |id: &str, name: &str, text: &str, source_offset| crate::native::Expression {
+        id: format!("nx:test:expression#{id}"),
+        object_id: None,
+        record: None,
+        declaration: None,
+        name: name.to_string(),
+        parameter_index: None,
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: text.to_string(),
+        value: None,
+        source_entry: "part".to_string(),
+        source_table: "table".to_string(),
+        source_offset,
+    };
+    let expressions = [
+        expression("p2", "p2", "p3 + 1", 10),
+        expression("p3", "p3", "p2 + 1", 20),
+    ];
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+
+    assert_eq!(ir.model.parameters[0].expression, "p3 + 1");
+    assert_eq!(ir.model.parameters[1].expression, "p2 + 1");
+    assert!(ir
+        .model
+        .parameters
+        .iter()
+        .all(|parameter| parameter.dependencies.is_empty()));
 }
 
 #[test]
@@ -1858,6 +1906,55 @@ fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
     assert_eq!(
         ir.model.parameters[0].properties["consumer.1"],
         "nx:feature-history:feature#1-3"
+    );
+}
+
+#[test]
+fn nx_parameter_consumers_follow_physical_use_order() {
+    let expression = crate::native::Expression {
+        id: "nx:test:expression#20".to_string(),
+        object_id: Some(20),
+        record: None,
+        declaration: None,
+        name: "p20".to_string(),
+        parameter_index: Some(20),
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: "5".to_string(),
+        value: Some(5.0),
+        source_entry: "part".to_string(),
+        source_table: "table".to_string(),
+        source_offset: 10,
+    };
+    let parameter_use =
+        |id: &str, operation: &str, source_offset| crate::native::FeatureParameterUse {
+            id: id.to_string(),
+            operation_label: operation.to_string(),
+            expression: expression.id.clone(),
+            bindings: vec![format!("binding-{id}")],
+            source_offsets: vec![source_offset],
+        };
+    let uses = [
+        parameter_use("later", "nx:feature-history:operation-label#0-1", 40),
+        parameter_use("earlier", "nx:feature-history:operation-label#9-8", 30),
+    ];
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    crate::decode::attach_expression_parameters(
+        &mut ir,
+        &[expression],
+        &[],
+        &uses,
+        &mut annotations,
+    );
+
+    assert_eq!(
+        ir.model.parameters[0].properties["parameter_use.0"],
+        "earlier"
+    );
+    assert_eq!(
+        ir.model.parameters[0].properties["parameter_use.1"],
+        "later"
     );
 }
 
