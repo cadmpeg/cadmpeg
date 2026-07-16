@@ -54,7 +54,7 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
     for pair in &native.design_dimension_locus_pairs {
         typed.insert((
             crate::design::native_stream(&pair.id).unwrap_or("f3d:design"),
-            pair.companion_record_index,
+            pair.governing_companion_record_index,
         ));
     }
     for group in &native.design_dimension_locus_groups {
@@ -66,7 +66,7 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
     for pair in &native.design_dimension_null_locus_pairs {
         typed.insert((
             crate::design::native_stream(&pair.id).unwrap_or("f3d:design"),
-            pair.companion_record_index,
+            pair.governing_companion_record_index,
         ));
     }
     for record in &native.design_dimension_recipe_records {
@@ -2103,9 +2103,9 @@ mod tests {
     };
     use crate::native::F3dNative;
     use crate::records::{
-        DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignParameter,
-        DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-        LostEdgeReference, SketchRelation,
+        DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
+        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+        DesignParameterScope, LostEdgeReference, SketchRelation,
     };
 
     #[test]
@@ -2393,7 +2393,7 @@ mod tests {
     }
 
     #[test]
-    fn payload_bearing_dimension_companion_requires_a_typed_dimension_frame() {
+    fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         let stream = "f3d:test/BulkStream.dat";
         let mut native = F3dNative::default();
         native.design_parameters.push(DesignParameter {
@@ -2472,7 +2472,7 @@ mod tests {
             .design_dimension_locus_pairs
             .push(DesignDimensionLocusPair {
                 id: format!("{stream}:design-dimension-locus-pair#278"),
-                companion_record_index: 30,
+                companion_record_index: 99,
                 governing_companion_record_index: 30,
                 byte_offset: 278,
                 class_tag: "423".into(),
@@ -2488,6 +2488,29 @@ mod tests {
                 second_geometry_reference_offset: 320,
                 second_role: 2,
                 second_role_offset: 330,
+                paired_class_tag: "259".into(),
+                paired_byte_offset: 378,
+            });
+        assert_eq!(unresolved_dimension_companion_count(&native), 0);
+
+        native.design_dimension_locus_pairs.clear();
+        native
+            .design_dimension_null_locus_pairs
+            .push(DesignDimensionNullLocusPair {
+                id: format!("{stream}:design-dimension-null-locus-pair#278"),
+                companion_record_index: 99,
+                governing_companion_record_index: 30,
+                byte_offset: 278,
+                class_tag: "423".into(),
+                record_index: 31,
+                frame_length: 100,
+                null_reference_offset: 300,
+                null_role: 14,
+                null_role_offset: 305,
+                geometry_record_index: 40,
+                geometry_reference_offset: 310,
+                geometry_role: 3,
+                geometry_role_offset: 320,
                 paired_class_tag: "259".into(),
                 paired_byte_offset: 378,
             });
