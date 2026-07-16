@@ -982,6 +982,11 @@ identifiers belong to the position before the next position begins. The first
 row can carry the field labels; positional rows omit them without changing the
 two positions.
 
+Repeated named affected-ID arrays for one feature and namespace are distinct
+stored states. They define a neutral edge selection, parent set, generated
+output set, or round support set only when their ordered identifier arrays are
+identical. Conflicting arrays remain native operation parameters.
+
 For a class-913 cylindrical slot fillet, the first two `geoms_affected`
 identifiers are the axial cap planes. The remaining identifiers are tangent
 support faces. The constant fillet radius is half the perpendicular gap between

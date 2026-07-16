@@ -10052,6 +10052,11 @@ fn transfer_feature_dimensions(
 }
 
 fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
+    let affected_geometry = agreed_feature_affected_ids(
+        &scan.feature_affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Geometry,
+    );
     let generated_surfaces = scan
         .surface_rows
         .iter()
@@ -10065,13 +10070,9 @@ fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> V
                 .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))),
         )
         .chain(
-            scan.feature_affected_ids
-                .iter()
-                .filter(|record| {
-                    record.feature_id == feature_id
-                        && record.kind == crate::feature::AffectedIdKind::Geometry
-                })
-                .flat_map(|record| &record.ids)
+            affected_geometry
+                .into_iter()
+                .flatten()
                 .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))),
         );
     let mut outputs = evaluated_sweep_output_bodies(ir, feature_id);
@@ -10189,8 +10190,9 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
             crate::feature::AffectedIdKind::Parents => "parent_feature_ids",
             crate::feature::AffectedIdKind::Contours => "contour_ids",
         };
-        parameters.insert(
-            name.to_string(),
+        insert_feature_parameter(
+            &mut parameters,
+            name,
             affected
                 .ids
                 .iter()
@@ -10417,22 +10419,13 @@ fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<
 }
 
 fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<IrFeatureId> {
-    scan.feature_affected_ids
-        .iter()
-        .filter(|record| {
-            record.feature_id == feature_id
-                && matches!(
-                    record.kind,
-                    crate::feature::AffectedIdKind::StrongParents
-                        | crate::feature::AffectedIdKind::Parents
-                )
-        })
-        .flat_map(|record| &record.ids)
+    agreed_feature_parent_ids(&scan.feature_affected_ids, feature_id)
+        .into_iter()
         .chain(
             scan.feature_operations
                 .iter()
                 .filter(|operation| operation.feature_id == feature_id)
-                .filter_map(|operation| operation.parent_feature_id.as_ref()),
+                .filter_map(|operation| operation.parent_feature_id),
         )
         .filter_map(|dependency| {
             let id = IrFeatureId(format!("creo:model:feature#{dependency}"));
@@ -10448,6 +10441,55 @@ fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Ve
             }
             dependencies
         })
+}
+
+fn agreed_feature_affected_ids(
+    records: &[crate::feature::FeatureAffectedIds],
+    feature_id: u32,
+    kind: crate::feature::AffectedIdKind,
+) -> Option<&[u32]> {
+    let mut matches = records
+        .iter()
+        .filter(|record| record.feature_id == feature_id && record.kind == kind);
+    let ids = matches.next()?.ids.as_slice();
+    matches
+        .all(|record| record.ids.as_slice() == ids)
+        .then_some(ids)
+}
+
+fn has_feature_affected_ids(
+    records: &[crate::feature::FeatureAffectedIds],
+    feature_id: u32,
+    kind: crate::feature::AffectedIdKind,
+) -> bool {
+    records
+        .iter()
+        .any(|record| record.feature_id == feature_id && record.kind == kind)
+}
+
+fn agreed_feature_parent_ids(
+    records: &[crate::feature::FeatureAffectedIds],
+    feature_id: u32,
+) -> Vec<u32> {
+    let mut emitted_kinds = Vec::new();
+    let mut ids = Vec::new();
+    for record in records.iter().filter(|record| {
+        record.feature_id == feature_id
+            && matches!(
+                record.kind,
+                crate::feature::AffectedIdKind::StrongParents
+                    | crate::feature::AffectedIdKind::Parents
+            )
+    }) {
+        if emitted_kinds.contains(&record.kind) {
+            continue;
+        }
+        emitted_kinds.push(record.kind);
+        if let Some(agreed) = agreed_feature_affected_ids(records, feature_id, record.kind) {
+            ids.extend_from_slice(agreed);
+        }
+    }
+    ids
 }
 
 fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
@@ -10466,23 +10508,12 @@ fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
         else {
             continue;
         };
-        let native_dependencies = scan
-            .feature_affected_ids
-            .iter()
-            .filter(|record| {
-                record.feature_id == feature_id
-                    && matches!(
-                        record.kind,
-                        crate::feature::AffectedIdKind::StrongParents
-                            | crate::feature::AffectedIdKind::Parents
-                    )
-            })
-            .flat_map(|record| &record.ids)
+        let native_dependencies = agreed_feature_parent_ids(&scan.feature_affected_ids, feature_id)
+            .into_iter()
             .chain(
-                scan.feature_operations
-                    .iter()
-                    .filter(|operation| operation.feature_id == feature_id)
-                    .filter_map(|operation| operation.parent_feature_id.as_ref()),
+                current_feature_operation(&scan.feature_operations, feature_id)
+                    .into_iter()
+                    .filter_map(|operation| operation.parent_feature_id),
             )
             .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
             .filter(|dependency| emitted.contains(dependency))
@@ -10583,14 +10614,11 @@ fn resolved_revolution_axis(
 }
 
 fn feature_edge_selection(scan: &ContainerScan, feature_id: u32) -> Option<EdgeSelection> {
-    if let Some(ids) = scan
-        .feature_affected_ids
-        .iter()
-        .find(|record| {
-            record.feature_id == feature_id && record.kind == crate::feature::AffectedIdKind::Edges
-        })
-        .map(|record| record.ids.as_slice())
-    {
+    if let Some(ids) = agreed_feature_affected_ids(
+        &scan.feature_affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Edges,
+    ) {
         if ids.is_empty() {
             return None;
         }
@@ -10598,6 +10626,13 @@ fn feature_edge_selection(scan: &ContainerScan, feature_id: u32) -> Option<EdgeS
             "creo:allfeatur:edgs_affected#{feature_id}:{}",
             ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
         )));
+    }
+    if has_feature_affected_ids(
+        &scan.feature_affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Edges,
+    ) {
+        return None;
     }
 
     let replay_edges = scan
@@ -10787,22 +10822,24 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
     if cylinder_radii.len() == cylinder_rows.len() {
         return unique_positive_length(&cylinder_radii);
     }
-    let named_records = scan
-        .feature_affected_ids
-        .iter()
-        .filter(|record| {
-            record.feature_id == feature_id
-                && record.kind == crate::feature::AffectedIdKind::Geometry
-        })
-        .collect::<Vec<_>>();
+    let named_ids = agreed_feature_affected_ids(
+        &scan.feature_affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Geometry,
+    );
+    let named_present = has_feature_affected_ids(
+        &scan.feature_affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Geometry,
+    );
     let replay_records = scan
         .feature_replay_affected_ids
         .iter()
         .filter(|record| record.feature_id == feature_id)
         .collect::<Vec<_>>();
-    let affected_ids = match (named_records.as_slice(), replay_records.as_slice()) {
-        ([record], _) => record.ids.as_slice(),
-        ([], [record]) => record.geometry_ids.as_slice(),
+    let affected_ids = match (named_ids, replay_records.as_slice()) {
+        (Some(ids), _) => ids,
+        (None, [record]) if !named_present => record.geometry_ids.as_slice(),
         _ => return None,
     };
     let support_ids = affected_ids.get(2..)?;
@@ -13029,6 +13066,28 @@ mod resolved_sketch_tests {
         );
         assert_eq!(
             unique_feature_revolution_extent_kind(&[extent(7, 40)], 6),
+            None
+        );
+        let affected = |ids: &[u32], offset| crate::feature::FeatureAffectedIds {
+            feature_id: 6,
+            kind: crate::feature::AffectedIdKind::Edges,
+            ids: ids.to_vec(),
+            offset,
+        };
+        assert_eq!(
+            agreed_feature_affected_ids(
+                &[affected(&[7, 8], 60), affected(&[7, 8], 70)],
+                6,
+                crate::feature::AffectedIdKind::Edges,
+            ),
+            Some(&[7, 8][..])
+        );
+        assert_eq!(
+            agreed_feature_affected_ids(
+                &[affected(&[7, 8], 60), affected(&[8, 7], 70)],
+                6,
+                crate::feature::AffectedIdKind::Edges,
+            ),
             None
         );
     }
@@ -19399,24 +19458,25 @@ fn transfer_constrained_slot_fillet_cylinders(
         .collect::<BTreeSet<_>>();
     let mut transferred = 0;
     for feature_id in round_feature_ids {
-        let named = scan
-            .feature_affected_ids
-            .iter()
-            .filter(|record| {
-                record.feature_id == feature_id
-                    && record.kind == crate::feature::AffectedIdKind::Geometry
-            })
-            .map(|record| record.ids.as_slice())
-            .collect::<Vec<_>>();
+        let named = agreed_feature_affected_ids(
+            &scan.feature_affected_ids,
+            feature_id,
+            crate::feature::AffectedIdKind::Geometry,
+        );
+        let named_present = has_feature_affected_ids(
+            &scan.feature_affected_ids,
+            feature_id,
+            crate::feature::AffectedIdKind::Geometry,
+        );
         let replay = scan
             .feature_replay_affected_ids
             .iter()
             .filter(|record| record.feature_id == feature_id)
             .map(|record| record.geometry_ids.as_slice())
             .collect::<Vec<_>>();
-        let affected = match (named.as_slice(), replay.as_slice()) {
-            ([ids], _) => *ids,
-            ([], [ids]) => *ids,
+        let affected = match (named, replay.as_slice()) {
+            (Some(ids), _) => ids,
+            (None, [ids]) if !named_present => *ids,
             _ => continue,
         };
         let Some((cap_ids, support_ids)) = affected.split_at_checked(2) else {
