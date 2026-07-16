@@ -3651,17 +3651,45 @@ impl PortCandidateSearch<'_> {
             oriented.push([pair[1], pair[0]]);
         }
         oriented.retain(|points| {
-            self.ports[edge].iter().zip(points).all(|(&port, point)| {
-                self.port_points
-                    .get(&port)
-                    .is_none_or(|stored| *stored == *point)
-                    && self
-                        .point_ports
-                        .get(point)
-                        .is_none_or(|stored| *stored == port)
-            })
+            (self.ports[edge][0] == self.ports[edge][1]) == (points[0] == points[1])
+                && self.ports[edge].iter().zip(points).all(|(&port, point)| {
+                    self.port_points
+                        .get(&port)
+                        .is_none_or(|stored| *stored == *point)
+                        && self
+                            .point_ports
+                            .get(point)
+                            .is_none_or(|stored| *stored == port)
+                })
         });
         oriented
+    }
+
+    fn assign(&mut self, edge: usize, points: [usize; 2]) -> Vec<(u32, usize)> {
+        let mut inserted = Vec::new();
+        for (&port, point) in self.ports[edge].iter().zip(points) {
+            if let std::collections::hash_map::Entry::Vacant(entry) = self.port_points.entry(port) {
+                entry.insert(point);
+                self.point_ports.insert(point, port);
+                inserted.push((port, point));
+            }
+        }
+        self.edge_pairs[edge] = Some(points);
+        inserted
+    }
+
+    fn unassign(&mut self, edge: usize, inserted: Vec<(u32, usize)>) {
+        self.edge_pairs[edge] = None;
+        for (port, point) in inserted {
+            self.port_points.remove(&port);
+            self.point_ports.remove(&point);
+        }
+    }
+
+    fn rollback(&mut self, propagated: Vec<(usize, Vec<(u32, usize)>)>) {
+        for (edge, inserted) in propagated.into_iter().rev() {
+            self.unassign(edge, inserted);
+        }
     }
 
     fn search(&mut self) {
@@ -3672,17 +3700,46 @@ impl PortCandidateSearch<'_> {
         if self.ambiguous || self.exhausted {
             return;
         }
-        let next = (0..self.ports.len())
-            .filter(|edge| self.edge_pairs[*edge].is_none())
-            .map(|edge| {
-                let count = self.candidates[edge]
+        let mut propagated = Vec::new();
+        let branch = loop {
+            let mut best = None;
+            let mut progress = false;
+            let mut incomplete = false;
+            for edge in 0..self.ports.len() {
+                if self.edge_pairs[edge].is_some() {
+                    continue;
+                }
+                incomplete = true;
+                let mut options = self.candidates[edge]
                     .iter()
-                    .map(|pair| self.compatible(edge, *pair).len())
-                    .sum::<usize>();
-                (count, edge)
-            })
-            .min();
-        let Some((count, edge)) = next else {
+                    .flat_map(|pair| self.compatible(edge, *pair));
+                let first = options.next();
+                let second = options.next();
+                if first.is_none() {
+                    self.rollback(propagated);
+                    return;
+                }
+                if second.is_some() {
+                    let count = 2 + options.count();
+                    if best.is_none_or(|(stored, _)| count < stored) {
+                        best = Some((count, edge));
+                    }
+                    continue;
+                }
+                let points = first.expect("one compatible endpoint assignment");
+                let inserted = self.assign(edge, points);
+                propagated.push((edge, inserted));
+                progress = true;
+            }
+            if !incomplete {
+                break None;
+            }
+            if progress {
+                continue;
+            }
+            break best.map(|(_, edge)| edge);
+        };
+        let Some(edge) = branch else {
             let candidate = self.edge_pairs.iter().copied().collect::<Option<Vec<_>>>();
             if let Some(candidate) = candidate {
                 let key = candidate
@@ -3704,39 +3761,22 @@ impl PortCandidateSearch<'_> {
                     Some(_) => {}
                 }
             }
+            self.rollback(propagated);
             return;
         };
-        if count == 0 {
-            return;
-        }
-        if count > 1 {
-            if self.states >= MAX_STATES {
-                self.exhausted = true;
-                return;
-            }
+        if self.states >= MAX_STATES {
+            self.exhausted = true;
+        } else {
             self.states += 1;
-        }
-        for candidate in 0..self.candidates[edge].len() {
-            for points in self.compatible(edge, self.candidates[edge][candidate]) {
-                let mut inserted = Vec::new();
-                for (&port, point) in self.ports[edge].iter().zip(points) {
-                    if let std::collections::hash_map::Entry::Vacant(entry) =
-                        self.port_points.entry(port)
-                    {
-                        entry.insert(point);
-                        self.point_ports.insert(point, port);
-                        inserted.push((port, point));
-                    }
-                }
-                self.edge_pairs[edge] = Some(points);
-                self.search();
-                self.edge_pairs[edge] = None;
-                for (port, point) in inserted {
-                    self.port_points.remove(&port);
-                    self.point_ports.remove(&point);
+            for candidate in 0..self.candidates[edge].len() {
+                for points in self.compatible(edge, self.candidates[edge][candidate]) {
+                    let inserted = self.assign(edge, points);
+                    self.search();
+                    self.unassign(edge, inserted);
                 }
             }
         }
+        self.rollback(propagated);
     }
 }
 
@@ -10350,6 +10390,22 @@ mod motif_tests {
     }
 
     #[test]
+    fn native_edge_identities_preserve_endpoint_equality() {
+        assert_eq!(
+            bind_edge_port_candidates(&[[10, 11]], &[vec![[0, 0]]]),
+            None
+        );
+        assert_eq!(
+            bind_edge_port_candidates(&[[10, 10]], &[vec![[0, 1]]]),
+            None
+        );
+        assert_eq!(
+            bind_edge_port_candidates(&[[10, 10]], &[vec![[0, 0]]]),
+            Some(vec![[0, 0]])
+        );
+    }
+
+    #[test]
     fn native_edge_identities_bind_independent_components_with_local_budgets() {
         const COMPONENT_COUNT: usize = 100;
         let ports = (0..COMPONENT_COUNT)
@@ -10374,7 +10430,7 @@ mod motif_tests {
 
     #[test]
     fn native_edge_identities_do_not_charge_forced_chain_depth() {
-        const EDGE_COUNT: usize = 1_200;
+        const EDGE_COUNT: usize = 10_000;
         let ports = (0..EDGE_COUNT)
             .map(|edge| {
                 let port = u32::try_from(edge).expect("bounded port identity");
