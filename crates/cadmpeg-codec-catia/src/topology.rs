@@ -227,6 +227,90 @@ fn unique_coordinate_bijection(
     domains: &[HashSet<usize>],
     points: &[[f64; 3]],
 ) -> Option<Vec<usize>> {
+    fn matching(
+        domains: &[Vec<usize>],
+        slots_by_class: &[Vec<usize>],
+        slot_classes: &[usize],
+        forced: Option<(usize, usize)>,
+    ) -> Option<Vec<usize>> {
+        let mut owner = vec![None; slot_classes.len()];
+        let mut order = (0..domains.len()).collect::<Vec<_>>();
+        order.sort_unstable_by_key(|vertex| {
+            let count = forced
+                .filter(|(forced_vertex, _)| forced_vertex == vertex)
+                .map_or_else(
+                    || {
+                        domains[*vertex]
+                            .iter()
+                            .map(|class| slots_by_class[*class].len())
+                            .sum()
+                    },
+                    |(_, class)| slots_by_class[class].len(),
+                );
+            (count, *vertex)
+        });
+        let mut seen_vertices = vec![0usize; domains.len()];
+        let mut seen_slots = vec![0usize; slot_classes.len()];
+        let mut incoming_slot = vec![None; domains.len()];
+        let mut via_vertex = vec![None; slot_classes.len()];
+        for (generation, start) in order.into_iter().enumerate() {
+            let generation = generation + 1;
+            let mut queue = VecDeque::from([start]);
+            seen_vertices[start] = generation;
+            incoming_slot[start] = None;
+            let mut free_slot = None;
+            while let Some(vertex) = queue.pop_front() {
+                let slots = match forced.filter(|(forced_vertex, _)| *forced_vertex == vertex) {
+                    Some((_, class)) => slots_by_class[class].clone(),
+                    None => domains[vertex]
+                        .iter()
+                        .flat_map(|class| slots_by_class[*class].iter().copied())
+                        .collect(),
+                };
+                for slot in slots {
+                    if seen_slots[slot] == generation {
+                        continue;
+                    }
+                    seen_slots[slot] = generation;
+                    via_vertex[slot] = Some(vertex);
+                    let Some(next) = owner[slot] else {
+                        free_slot = Some(slot);
+                        break;
+                    };
+                    if seen_vertices[next] != generation {
+                        seen_vertices[next] = generation;
+                        incoming_slot[next] = Some(slot);
+                        queue.push_back(next);
+                    }
+                }
+                if free_slot.is_some() {
+                    break;
+                }
+            }
+            let mut slot = free_slot?;
+            loop {
+                let vertex = via_vertex[slot]?;
+                owner[slot] = Some(vertex);
+                let Some(previous) = incoming_slot[vertex] else {
+                    break;
+                };
+                slot = previous;
+            }
+        }
+        let mut assignment = vec![None; domains.len()];
+        for (slot, vertex) in owner.into_iter().enumerate() {
+            assignment[vertex?] = Some(slot_classes[slot]);
+        }
+        assignment.into_iter().collect()
+    }
+
+    if domains.len() != points.len()
+        || domains
+            .iter()
+            .any(|domain| domain.is_empty() || domain.iter().any(|point| *point >= points.len()))
+    {
+        return None;
+    }
     let mut representatives = Vec::<usize>::new();
     let mut point_classes = Vec::with_capacity(points.len());
     for (point, position) in points.iter().enumerate() {
@@ -242,26 +326,44 @@ fn unique_coordinate_bijection(
     let class_domains = domains
         .iter()
         .map(|domain| {
-            domain
+            let mut classes = domain
                 .iter()
                 .map(|point| point_classes[*point])
-                .collect::<HashSet<_>>()
+                .collect::<Vec<_>>();
+            classes.sort_unstable();
+            classes.dedup();
+            classes
         })
         .collect::<Vec<_>>();
     let mut capacities = vec![0usize; representatives.len()];
     for class in &point_classes {
         capacities[*class] += 1;
     }
-    let mut solutions = Vec::new();
-    coordinate_bijections(
-        &class_domains,
-        &mut vec![None; domains.len()],
-        &mut capacities,
-        &mut solutions,
-    );
-    let [classes] = solutions.as_slice() else {
-        return None;
-    };
+    let mut slot_classes = Vec::with_capacity(points.len());
+    let mut slots_by_class = vec![Vec::new(); capacities.len()];
+    for (class, capacity) in capacities.into_iter().enumerate() {
+        for _ in 0..capacity {
+            let slot = slot_classes.len();
+            slot_classes.push(class);
+            slots_by_class[class].push(slot);
+        }
+    }
+    let classes = matching(&class_domains, &slots_by_class, &slot_classes, None)?;
+    for (vertex, domain) in class_domains.iter().enumerate() {
+        for &class in domain {
+            if class != classes[vertex]
+                && matching(
+                    &class_domains,
+                    &slots_by_class,
+                    &slot_classes,
+                    Some((vertex, class)),
+                )
+                .is_some()
+            {
+                return None;
+            }
+        }
+    }
     let mut available = vec![Vec::new(); representatives.len()];
     for (point, class) in point_classes.into_iter().enumerate() {
         available[class].push(point);
@@ -277,53 +379,6 @@ fn unique_coordinate_bijection(
             })
             .collect(),
     )
-}
-
-fn coordinate_bijections(
-    domains: &[HashSet<usize>],
-    assignment: &mut [Option<usize>],
-    capacities: &mut [usize],
-    solutions: &mut Vec<Vec<usize>>,
-) {
-    if solutions.len() > 1 {
-        return;
-    }
-    let next = assignment
-        .iter()
-        .enumerate()
-        .filter(|(_, value)| value.is_none())
-        .min_by_key(|(vertex, _)| {
-            domains[*vertex]
-                .iter()
-                .filter(|class| capacities[**class] != 0)
-                .count()
-        })
-        .map(|(vertex, _)| vertex);
-    let Some(vertex) = next else {
-        solutions.push(
-            assignment
-                .iter()
-                .map(|value| value.expect("complete assignment"))
-                .collect(),
-        );
-        return;
-    };
-    let mut candidates: Vec<usize> = domains[vertex]
-        .iter()
-        .filter(|class| capacities[**class] != 0)
-        .copied()
-        .collect();
-    candidates.sort_unstable();
-    for class in candidates {
-        assignment[vertex] = Some(class);
-        capacities[class] -= 1;
-        coordinate_bijections(domains, assignment, capacities, solutions);
-        capacities[class] += 1;
-        assignment[vertex] = None;
-        if solutions.len() > 1 {
-            return;
-        }
-    }
 }
 
 /// The boundary meaning of an edge-row handle sequence.
@@ -10345,6 +10400,43 @@ mod motif_tests {
         assert_eq!(
             unique_coordinate_bijection(&domains, &[[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]]),
             Some(vec![0, 1])
+        );
+    }
+
+    #[test]
+    fn forced_coordinate_bijection_has_no_recursive_depth_limit() {
+        const POINT_COUNT: usize = 10_000;
+        let domains = (0..POINT_COUNT)
+            .map(|point| HashSet::from([point]))
+            .collect::<Vec<_>>();
+        let points = (0..POINT_COUNT)
+            .map(|point| {
+                [
+                    f64::from(u32::try_from(point).expect("bounded point index")),
+                    0.0,
+                    0.0,
+                ]
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            unique_coordinate_bijection(&domains, &points),
+            Some((0..POINT_COUNT).collect())
+        );
+    }
+
+    #[test]
+    fn coordinate_bijection_respects_duplicate_class_capacity() {
+        let domains = [
+            HashSet::from([0, 2]),
+            HashSet::from([0, 1]),
+            HashSet::from([0, 1]),
+        ];
+        let points = [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
+
+        assert_eq!(
+            unique_coordinate_bijection(&domains, &points),
+            Some(vec![2, 0, 1])
         );
     }
 
