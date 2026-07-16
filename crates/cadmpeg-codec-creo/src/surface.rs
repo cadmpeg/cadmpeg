@@ -87,6 +87,13 @@ pub struct SurfaceRow {
     pub offset: usize,
 }
 
+/// Return the surface row for `id` only when the namespace contains one match.
+pub(crate) fn unique_surface_row(rows: &[SurfaceRow], id: u32) -> Option<&SurfaceRow> {
+    let mut matches = rows.iter().filter(|row| row.id == id);
+    let row = matches.next()?;
+    matches.next().is_none().then_some(row)
+}
+
 /// Named scalar parameters from one surface-family prototype.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfacePrototype {
@@ -2112,8 +2119,9 @@ mod tests {
             7, 0x22, 4, 0x01, 0, 0x80, 0x80, // plane id 7 -> 128
             0x80, 0x80, 0x24, 0x81, 0x01, 0xf6, 0x06, 7,
         ]; // cylinder id 128, feature 257, reversed -> 7
+        let decoded = rows(&payload);
         assert_eq!(
-            rows(&payload),
+            decoded,
             vec![
                 SurfaceRow {
                     id: 7,
@@ -2137,6 +2145,13 @@ mod tests {
                 },
             ]
         );
+        assert_eq!(
+            unique_surface_row(&decoded, 7).map(|row| row.offset),
+            Some(0)
+        );
+        let mut duplicate = decoded.clone();
+        duplicate.push(decoded[0].clone());
+        assert!(unique_surface_row(&duplicate, 7).is_none());
     }
 
     #[test]

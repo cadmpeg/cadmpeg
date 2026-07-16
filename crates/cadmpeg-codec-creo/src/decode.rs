@@ -2056,7 +2056,7 @@ fn surface_parameter_records(
     parameters
         .iter()
         .filter_map(|record| {
-            let row = rows.iter().find(|row| row.id == record.surface_id)?;
+            let row = crate::surface::unique_surface_row(rows, record.surface_id)?;
             let surface_family = surface_family(row.kind);
             let boundary = match record.boundary {
                 crate::surface::SurfaceBodyBoundary::CompoundClose => "compound_close",
@@ -4552,22 +4552,30 @@ fn feature_plane_equations(scan: &ContainerScan, feature_id: u32) -> Vec<([f64; 
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
         })
         .map(|row| row.id)
-        .collect::<Vec<_>>();
-    let id_set = ids.iter().copied().collect::<BTreeSet<_>>();
-    let outlines = scan
-        .outline_planes
-        .iter()
-        .filter(|plane| id_set.contains(&plane.surface_id))
-        .map(|plane| (plane.surface_id, (plane.origin, plane.normal)))
-        .collect::<BTreeMap<_, _>>();
+        .collect::<BTreeSet<_>>();
     ids.into_iter()
         .filter_map(|id| {
-            outlines.get(&id).copied().or_else(|| {
-                scan.plane_local_systems
-                    .iter()
-                    .find(|frame| frame.surface_id == id)
-                    .and_then(|frame| Some((frame.origin?, frame.normal?)))
-            })
+            crate::surface::unique_surface_row(&scan.surface_rows, id)?;
+            let outlines = scan
+                .outline_planes
+                .iter()
+                .filter(|plane| plane.surface_id == id)
+                .collect::<Vec<_>>();
+            match outlines.as_slice() {
+                [plane] => Some((plane.origin, plane.normal)),
+                [] => {
+                    let frames = scan
+                        .plane_local_systems
+                        .iter()
+                        .filter(|frame| frame.surface_id == id)
+                        .collect::<Vec<_>>();
+                    let [frame] = frames.as_slice() else {
+                        return None;
+                    };
+                    Some((frame.origin?, frame.normal?))
+                }
+                _ => None,
+            }
         })
         .collect()
 }
@@ -4578,11 +4586,20 @@ fn feature_outline_planes(scan: &ContainerScan, feature_id: u32) -> Vec<(u32, [f
         .filter(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
         })
-        .filter_map(|row| {
-            scan.outline_planes
+        .map(|row| row.id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|id| {
+            crate::surface::unique_surface_row(&scan.surface_rows, id)?;
+            let outlines = scan
+                .outline_planes
                 .iter()
-                .find(|plane| plane.surface_id == row.id)
-                .map(|plane| (row.id, plane.origin, plane.normal))
+                .filter(|plane| plane.surface_id == id)
+                .collect::<Vec<_>>();
+            let [plane] = outlines.as_slice() else {
+                return None;
+            };
+            Some((id, plane.origin, plane.normal))
         })
         .collect()
 }
@@ -11283,10 +11300,8 @@ fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleH
     }
     let cylinder_ids = [*first_cylinder, *second_cylinder];
     if cylinder_ids.iter().any(|id| {
-        !scan.surface_rows.iter().any(|row| {
-            row.id == *id
-                && row.feature_id == feature_id
-                && row.kind == crate::surface::SurfaceKind::Cylinder
+        !crate::surface::unique_surface_row(&scan.surface_rows, *id).is_some_and(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
     }) {
         return None;
@@ -11380,20 +11395,14 @@ fn single_cap_circular_sweep_geometry(
             .contains(&rowless_cap.entity_id)
         && table.non_surface_entity_ids.contains(&profile_id.entity_id))
     .then_some(())?;
-    scan.surface_rows
-        .iter()
-        .any(|row| {
-            row.id == cap_id.entity_id
-                && row.feature_id == feature_id
-                && row.kind == crate::surface::SurfaceKind::Plane
+    crate::surface::unique_surface_row(&scan.surface_rows, cap_id.entity_id)
+        .is_some_and(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
         })
         .then_some(())?;
-    scan.surface_rows
-        .iter()
-        .any(|row| {
-            row.id == cylinder_id.entity_id
-                && row.feature_id == feature_id
-                && row.kind == crate::surface::SurfaceKind::Cylinder
+    crate::surface::unique_surface_row(&scan.surface_rows, cylinder_id.entity_id)
+        .is_some_and(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
         .then_some(())?;
     let planes = feature_outline_planes(scan, feature_id)
@@ -11475,10 +11484,8 @@ fn circular_sweep_geometry(scan: &ContainerScan, feature_id: u32) -> Option<Circ
     };
     let cylinder_ids = [*first_cylinder, *second_cylinder];
     if cylinder_ids.iter().any(|id| {
-        !scan.surface_rows.iter().any(|row| {
-            row.id == *id
-                && row.feature_id == feature_id
-                && row.kind == crate::surface::SurfaceKind::Cylinder
+        !crate::surface::unique_surface_row(&scan.surface_rows, *id).is_some_and(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
     }) {
         return None;
@@ -16866,10 +16873,8 @@ fn rowless_round_face_orientations(
         if !available_surfaces.contains(&rowless_id) {
             continue;
         }
-        let Some(reversed) = rows
-            .iter()
-            .find(|row| row.id == sibling_id)
-            .map(|row| row.reversed)
+        let Some(reversed) =
+            crate::surface::unique_surface_row(rows, sibling_id).map(|row| row.reversed)
         else {
             continue;
         };
@@ -16882,7 +16887,12 @@ fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, b
     let mut orientations = scan
         .surface_rows
         .iter()
-        .map(|row| (row.id, row.reversed))
+        .map(|row| row.id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|id| {
+            crate::surface::unique_surface_row(&scan.surface_rows, id).map(|row| (id, row.reversed))
+        })
         .collect::<BTreeMap<_, _>>();
     let round_feature_ids = scan
         .feature_rows
@@ -17205,10 +17215,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                     }
                 })
                 .collect::<Vec<_>>();
-            let face_offset = scan
-                .surface_rows
-                .iter()
-                .find(|row| row.id == *face_id)
+            let face_offset = crate::surface::unique_surface_row(&scan.surface_rows, *face_id)
                 .map_or(0, |row| row.offset);
             let surface = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
             if !ir.model.surfaces.iter().any(|item| item.id == surface) {
@@ -19415,10 +19422,7 @@ fn transfer_hole_cylinders(
             continue;
         };
         for cylinder_id in hole.cylinder_ids {
-            let row = scan
-                .surface_rows
-                .iter()
-                .find(|row| row.id == cylinder_id)
+            let row = crate::surface::unique_surface_row(&scan.surface_rows, cylinder_id)
                 .expect("validated cylinder row");
             let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -19468,10 +19472,7 @@ fn transfer_circular_sweep_cylinders(
             continue;
         };
         for cylinder_id in sweep.cylinder_ids {
-            let row = scan
-                .surface_rows
-                .iter()
-                .find(|row| row.id == cylinder_id)
+            let row = crate::surface::unique_surface_row(&scan.surface_rows, cylinder_id)
                 .expect("validated cylinder row");
             let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -19527,10 +19528,7 @@ fn transfer_single_cap_circular_sweep_cylinders(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        let row = scan
-            .surface_rows
-            .iter()
-            .find(|row| row.id == cylinder_id)
+        let row = crate::surface::unique_surface_row(&scan.surface_rows, cylinder_id)
             .expect("validated single-cap cylinder row");
         annotate(
             annotations,
@@ -21150,9 +21148,7 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         scan.surface_parameters
             .iter()
             .filter(|record| {
-                scan.surface_rows
-                    .iter()
-                    .find(|row| row.id == record.surface_id)
+                crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
                     .is_some_and(|row| {
                         row.kind == crate::surface::SurfaceKind::Extrusion
                             && record.extrusion_direction(row.type_byte).is_some()

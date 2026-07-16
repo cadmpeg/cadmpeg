@@ -8,7 +8,8 @@ use crate::feature::{
     FeatureSegmentKind,
 };
 use crate::surface::{
-    OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceKind, SurfaceRow,
+    unique_surface_row, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
+    SurfaceKind, SurfaceRow,
 };
 
 /// A feature's right-handed section-to-model rigid frame.
@@ -73,20 +74,36 @@ fn plane_equation(
     model_planes: &[PlaneLocalSystem],
     outline_planes: &[OutlinePlane],
 ) -> Option<([f64; 3], f64)> {
-    datums
+    let datums = datums
         .iter()
-        .find(|datum| datum.id == id)
-        .map(|datum| (datum.normal, datum.offset))
-        .or_else(|| {
-            let plane = model_planes.iter().find(|plane| plane.surface_id == id)?;
-            let normal = plane.normal?;
-            let origin = plane.origin?;
-            Some((normal, dot(normal, origin)))
-        })
-        .or_else(|| {
-            let plane = outline_planes.iter().find(|plane| plane.surface_id == id)?;
-            Some((plane.normal, dot(plane.normal, plane.origin)))
-        })
+        .filter(|datum| datum.id == id)
+        .collect::<Vec<_>>();
+    if let [datum] = datums.as_slice() {
+        return Some((datum.normal, datum.offset));
+    }
+    if !datums.is_empty() {
+        return None;
+    }
+    let model_planes = model_planes
+        .iter()
+        .filter(|plane| plane.surface_id == id)
+        .collect::<Vec<_>>();
+    if let [plane] = model_planes.as_slice() {
+        let normal = plane.normal?;
+        let origin = plane.origin?;
+        return Some((normal, dot(normal, origin)));
+    }
+    if !model_planes.is_empty() {
+        return None;
+    }
+    let outline_planes = outline_planes
+        .iter()
+        .filter(|plane| plane.surface_id == id)
+        .collect::<Vec<_>>();
+    let [plane] = outline_planes.as_slice() else {
+        return None;
+    };
+    Some((plane.normal, dot(plane.normal, plane.origin)))
 }
 
 fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<([f64; 3], f64)> {
@@ -159,18 +176,18 @@ fn generated_datum_plane_equation(
         .filter(|id| **id == sketch_id)
         .count();
     (datum_ids == 1).then_some(())?;
-    let reference_feature = sources
+    let datums = sources
         .datums
         .iter()
-        .find(|datum| datum.id == reference_id)
-        .map(|datum| datum.feature_id)
-        .or_else(|| {
-            sources
-                .surface_rows
-                .iter()
-                .find(|row| row.id == reference_id && row.kind == SurfaceKind::Plane)
-                .map(|row| row.feature_id)
-        })?;
+        .filter(|datum| datum.id == reference_id)
+        .collect::<Vec<_>>();
+    let reference_feature = match datums.as_slice() {
+        [datum] => Some(datum.feature_id),
+        [] => unique_surface_row(sources.surface_rows, reference_id)
+            .filter(|row| row.kind == SurfaceKind::Plane)
+            .map(|row| row.feature_id),
+        _ => None,
+    }?;
     let candidates = sources
         .affected_ids
         .iter()

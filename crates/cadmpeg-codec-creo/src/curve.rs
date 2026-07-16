@@ -1297,7 +1297,9 @@ pub fn pcurve_endpoints(
                 && record.opaque_spans.is_empty()
         })
         .filter_map(|record| {
-            let topology = topology.iter().find(|row| row.id == record.curve_id)?;
+            let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
+            let topology = matching.next()?;
+            matching.next().is_none().then_some(())?;
             let values = &record.scalar_values;
             Some(PcurveEndpoints {
                 curve_id: record.curve_id,
