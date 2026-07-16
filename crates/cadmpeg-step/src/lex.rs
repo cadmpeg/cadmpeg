@@ -239,9 +239,16 @@ impl Lexer<'_> {
         }
         let raw = std::str::from_utf8(&self.input[start..self.at]).unwrap_or_default();
         if dot || exponent {
-            let normalized = raw.replace(['D', 'd'], "E");
-            normalized
-                .parse()
+            let parsed = if raw
+                .as_bytes()
+                .iter()
+                .any(|byte| matches!(byte, b'D' | b'd'))
+            {
+                raw.replace(['D', 'd'], "E").parse()
+            } else {
+                raw.parse()
+            };
+            parsed
                 .map(TokenKind::Real)
                 .map_err(|_| self.error(start, "invalid real"))
         } else {
