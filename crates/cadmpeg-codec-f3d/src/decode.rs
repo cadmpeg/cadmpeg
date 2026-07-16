@@ -433,6 +433,8 @@ pub fn decode(
                     &native.design_parameter_companions,
                     &native.design_parameter_scopes,
                     &native.design_record_headers,
+                    &native.design_dimension_locus_pairs,
+                    &native.design_dimension_locus_groups,
                     &native.sketch_points,
                     &native.sketch_curve_identities,
                 )?;
@@ -682,6 +684,8 @@ pub fn decode(
         &native.design_parameter_companions,
         &native.design_parameter_scopes,
         &native.design_record_headers,
+        &native.design_dimension_locus_pairs,
+        &native.design_dimension_locus_groups,
         &native.sketch_points,
         &native.sketch_curve_identities,
     )?;

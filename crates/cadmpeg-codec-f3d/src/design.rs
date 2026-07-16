@@ -6910,6 +6910,8 @@ pub fn decode_dimension_null_locus_pairs(
     companions: &[DesignParameterCompanion],
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
+    pairs: &[DesignDimensionLocusPair],
+    groups: &[DesignDimensionLocusGroup],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
 ) -> Result<Vec<DesignDimensionNullLocusPair>, CodecError> {
@@ -6939,10 +6941,26 @@ pub fn decode_dimension_null_locus_pairs(
             ))
         })
         .collect::<HashSet<_>>();
+    let typed_companions = pairs
+        .iter()
+        .filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.companion_record_index,
+            ))
+        })
+        .chain(groups.iter().filter_map(|group| {
+            Some((
+                native_stream(&group.id)?.to_owned(),
+                group.companion_record_index,
+            ))
+        }))
+        .collect::<HashSet<_>>();
     let mut out = Vec::new();
     for companion in companions.iter().filter(|companion| {
         native_stream(&companion.id).is_some_and(|scope| {
-            dimension_companions.contains(&(scope.to_owned(), companion.record_index))
+            let key = (scope.to_owned(), companion.record_index);
+            dimension_companions.contains(&key) && !typed_companions.contains(&key)
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
