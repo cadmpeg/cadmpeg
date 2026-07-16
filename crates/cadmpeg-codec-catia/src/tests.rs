@@ -4779,6 +4779,12 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
             },
         ]
     );
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+            && loss.message.contains("1 value block(s)")
+            && loss.message.contains("1 schema-selected value(s)")
+    }));
 }
 
 #[test]

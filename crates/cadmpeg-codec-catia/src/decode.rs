@@ -101,13 +101,19 @@ fn finish_decode(
         .iter()
         .map(|graph| graph.records.len())
         .sum::<usize>();
-    if object_record_count != 0 {
+    let value_selection_count = native
+        .value_blocks
+        .iter()
+        .map(|block| block.schema_selections.len())
+        .sum::<usize>();
+    if object_record_count != 0 || !native.value_blocks.is_empty() {
         report.losses.push(LossNote {
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s) and {object_record_count} object-graph field record(s), but no neutral features, parameters, sketches, or history dependencies were transferred.",
-                native.design_objects.len()
+                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s), but no neutral features, parameters, sketches, or history dependencies were transferred.",
+                native.design_objects.len(),
+                native.value_blocks.len()
             ),
             provenance: None,
         });
