@@ -5619,6 +5619,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn choice_fields_ignore_overlapping_headers() {
+        let choices = [FeatureChoice {
+            feature_id: 7,
+            label: "choice".into(),
+            type_byte: None,
+            payload: vec![psb::token::NAMED_RECORD, psb::token::NAMED_RECORD, b'a', 0],
+            payload_offset: 100,
+            offset: 90,
+        }];
+
+        let fields = choice_fields(&choices);
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].offset, 101);
+        assert_eq!(fields[0].name, "");
+    }
+
+    #[test]
     fn entity_graph_requires_the_solid_features_root() {
         let packed_lookalike = b"\xe0\x00SlV\xff\0\xf7\x01";
         assert_eq!(entity_graph(packed_lookalike), (Vec::new(), Vec::new()));

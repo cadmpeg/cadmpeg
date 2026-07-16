@@ -1891,6 +1891,13 @@ mod feature_row_definition_tests {
     use super::*;
 
     #[test]
+    fn zero_width_toc_has_no_rows() {
+        let data = b"#UGC_TOC 2 18446744073709551615 0#\n";
+
+        assert!(toc_sections(data, 0).is_empty());
+    }
+
+    #[test]
     fn embedded_section_definition_retains_separate_history_feature_owner() {
         let row = FeatureRow {
             feature_id: 42,

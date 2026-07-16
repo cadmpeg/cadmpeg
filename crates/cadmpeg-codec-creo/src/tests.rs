@@ -868,6 +868,36 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
 }
 
 #[test]
+fn decode_transfers_axis_aligned_plane_from_zero_outline() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[0x0f; 10]);
+    payload.push(0xe3);
+    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f]);
+    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
+    payload.push(0xe3);
+
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+
+    let [surface] = result.ir.model.surfaces.as_slice() else {
+        panic!("one plane");
+    };
+    assert_eq!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        }
+    );
+    assert!(result.report.geometry_transferred);
+}
+
+#[test]
 fn scan_decodes_standard_and_compact_plane_envelopes() {
     let mut payload = visibgeom_payload(2, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 8]);
