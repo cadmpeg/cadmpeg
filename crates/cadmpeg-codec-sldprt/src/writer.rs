@@ -43,10 +43,21 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
     }
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
+    let feature_name_changes = crate::history::feature_name_changes(&normalized, native.as_ref());
+    let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
+        && crate::history::native_parameters_match_source(&normalized, native.as_ref());
+    crate::history::apply_feature_name_changes(
+        &mut normalized.model.parameters,
+        &feature_name_changes,
+    );
     let ir = &normalized;
     crate::history::prepare_features_for_write(ir, &mut native)?;
     crate::resolved_features::prepare_sketches_for_write(ir, &mut native)?;
-    crate::history::prepare_parameters_for_write(ir, &mut native)?;
+    crate::history::prepare_parameters_for_write(
+        ir,
+        &mut native,
+        feature_parameter_changes_authorized,
+    )?;
     crate::history::prepare_configurations_for_write(ir, &mut native)?;
     let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
     if !validation.is_ok() {

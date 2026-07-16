@@ -8860,6 +8860,104 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
 }
 
 #[test]
+fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="Width" EquationId="D1@Sketch1">2mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="11"><Dimension Name="Result">D1@Sketch1 * 2</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let sketch = decoded
+        .ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .unwrap();
+    sketch.name = Some("Profile".into());
+    decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "Width")
+        .unwrap()
+        .name = "Gauge".into();
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(regenerated
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("Profile")));
+    let gauge = regenerated
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Gauge")
+        .unwrap();
+    assert_eq!(gauge.properties["EquationId"], "D1@Profile");
+    let result = regenerated
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Result")
+        .unwrap();
+    assert_eq!(result.expression, "D1@Profile * 2");
+    assert_eq!(result.dependencies, vec![gauge.id.clone()]);
+}
+
+#[test]
+fn feature_rename_rewrites_only_its_qualified_parameter_references() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="D1">2mm</Dimension></Feature><Feature Name="Sketch2" Type="Sketch" id="11"><Dimension Name="D1">3mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="12"><Dimension Name="Result">D1@Sketch1 + D1@Sketch2</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    decoded
+        .ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .unwrap()
+        .name = Some("Profile".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let result = regenerated
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Result")
+        .unwrap();
+    assert_eq!(result.expression, "D1@Profile + D1@Sketch2");
+    assert_eq!(result.dependencies.len(), 2);
+}
+
+#[test]
 fn semantic_writer_preserves_empty_dimensions() {
     use cadmpeg_ir::features::{Length, ParameterValue};
 

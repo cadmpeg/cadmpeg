@@ -4068,6 +4068,89 @@ fn hash_debug<T: std::fmt::Debug + ?Sized>(value: &T) -> String {
     out
 }
 
+/// Collect retained feature names changed by the neutral model.
+pub(crate) fn feature_name_changes(
+    ir: &cadmpeg_ir::CadIr,
+    native: Option<&crate::native::SldprtNative>,
+) -> HashMap<FeatureId, (String, String)> {
+    native.map_or_else(HashMap::new, |native| {
+        ir.model
+            .features
+            .iter()
+            .filter_map(|feature| {
+                let record = native
+                    .feature_histories
+                    .iter()
+                    .flat_map(|history| &history.features)
+                    .find(|record| feature.native_ref.as_deref() == Some(record.id.as_str()))?;
+                let new_name = feature.name.as_deref().unwrap_or_default();
+                (record.name != new_name).then(|| {
+                    (
+                        feature.id.clone(),
+                        (record.name.clone(), new_name.to_string()),
+                    )
+                })
+            })
+            .collect()
+    })
+}
+
+pub(crate) fn native_parameters_match_source(
+    ir: &cadmpeg_ir::CadIr,
+    native: Option<&crate::native::SldprtNative>,
+) -> bool {
+    native
+        .map(|native| native_parameter_hash(&native.feature_histories))
+        .zip(
+            ir.source
+                .as_ref()
+                .and_then(|source| source.attributes.get("sldprt_native_parameter_sha256")),
+        )
+        .is_some_and(|(current, baseline)| &current == baseline)
+}
+
+pub(crate) fn apply_feature_name_changes(
+    parameters: &mut [DesignParameter],
+    changes: &HashMap<FeatureId, (String, String)>,
+) {
+    let owners = parameters
+        .iter()
+        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
+        .collect::<HashMap<_, _>>();
+    for parameter in parameters {
+        if let Some((old_owner, new_owner)) = changes.get(&parameter.owner) {
+            if let Some(equation_id) = parameter.properties.get_mut("EquationId") {
+                if let Some(base) = equation_id.strip_suffix(&format!("@{old_owner}")) {
+                    *equation_id = format!("{base}@{new_owner}");
+                }
+            }
+        }
+        let dependency_changes = parameter
+            .dependencies
+            .iter()
+            .filter_map(|dependency| owners.get(dependency))
+            .filter_map(|owner| changes.get(owner))
+            .collect::<Vec<_>>();
+        let aliases = expression_identifier_tokens(&parameter.expression)
+            .identifiers
+            .into_iter()
+            .filter_map(|token| {
+                dependency_changes
+                    .iter()
+                    .find_map(|(old_owner, new_owner)| {
+                        token
+                            .value
+                            .strip_suffix(&format!("@{old_owner}"))
+                            .map(|base| (token.value.clone(), format!("{base}@{new_owner}")))
+                    })
+            })
+            .collect::<HashMap<_, _>>();
+        if let Some(rewritten) = rewrite_parameter_expression(&parameter.expression, &aliases) {
+            parameter.expression = rewritten;
+        }
+    }
+}
+
 /// Resolve neutral/native feature edit authority and update the write history.
 pub fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
@@ -4531,6 +4614,7 @@ pub fn prepare_configurations_for_write(
 pub fn prepare_parameters_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
+    feature_parameter_changes_authorized: bool,
 ) -> Result<(), CodecError> {
     let neutral_hash = parameter_hash(&ir.model.parameters);
     let native_hash = native
@@ -4557,8 +4641,12 @@ pub fn prepare_parameters_for_write(
         return sync_neutral_parameters(ir, native);
     }
     match (neutral_changed, native_changed) {
+        (false, true) if feature_parameter_changes_authorized => Ok(()),
         (false, _) => Ok(()),
         (true, true) => {
+            if feature_parameter_changes_authorized {
+                return sync_neutral_parameters(ir, native);
+            }
             let projected = native
                 .as_ref()
                 .map(|value| project_parameters(&value.feature_histories))
@@ -4593,7 +4681,18 @@ fn sync_neutral_parameters(
         .collect::<HashMap<_, _>>();
     if let Some(native) = native.as_ref() {
         let original = project_parameters(&native.feature_histories);
-        rewrite_renamed_parameter_references(&mut parameters, &original, &feature_names);
+        let original_feature_names = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .map(|feature| (neutral_feature_id(&feature.id), feature.name.clone()))
+            .collect::<HashMap<_, _>>();
+        rewrite_renamed_parameter_references(
+            &mut parameters,
+            &original,
+            &original_feature_names,
+            &feature_names,
+        );
     }
     let mut projected_dependencies = parameters.clone();
     populate_parameter_dependencies(&mut projected_dependencies, &feature_names);
@@ -4773,6 +4872,7 @@ fn sync_neutral_parameters(
 fn rewrite_renamed_parameter_references(
     parameters: &mut [DesignParameter],
     original: &[DesignParameter],
+    original_feature_names: &HashMap<FeatureId, String>,
     feature_names: &HashMap<FeatureId, String>,
 ) {
     let original = original
@@ -4789,11 +4889,16 @@ fn rewrite_renamed_parameter_references(
             continue;
         };
         let mut aliases = HashMap::new();
+        let previous_owner_name = original_feature_names.get(&parameter.owner);
+        let owner_name = feature_names.get(&parameter.owner);
         if previous.name != parameter.name {
             aliases.insert(previous.name.clone(), parameter.name.clone());
-            if let Some(owner_name) = feature_names.get(&parameter.owner) {
+        }
+        if previous.name != parameter.name || previous_owner_name != owner_name {
+            if let (Some(previous_owner_name), Some(owner_name)) = (previous_owner_name, owner_name)
+            {
                 aliases.insert(
-                    format!("{}@{owner_name}", previous.name),
+                    format!("{}@{previous_owner_name}", previous.name),
                     format!("{}@{owner_name}", parameter.name),
                 );
             }
@@ -4803,17 +4908,21 @@ fn rewrite_renamed_parameter_references(
                 .properties
                 .get("EquationId")
                 .unwrap_or(&parameter.name);
-            if previous_id != replacement {
+            if previous_id != replacement || previous_owner_name != owner_name {
                 aliases.insert(previous_id.clone(), replacement.clone());
-                if let Some(owner_name) = feature_names.get(&parameter.owner) {
+                if let (Some(previous_owner_name), Some(owner_name)) =
+                    (previous_owner_name, owner_name)
+                {
                     if !previous_id.contains('@') {
                         let qualified_replacement = if replacement.contains('@') {
                             replacement.clone()
                         } else {
                             format!("{replacement}@{owner_name}")
                         };
-                        aliases
-                            .insert(format!("{previous_id}@{owner_name}"), qualified_replacement);
+                        aliases.insert(
+                            format!("{previous_id}@{previous_owner_name}"),
+                            qualified_replacement,
+                        );
                     }
                 }
             }
@@ -4828,36 +4937,46 @@ fn rewrite_renamed_parameter_references(
             .iter()
             .filter_map(|dependency| replacements.get(dependency))
             .flat_map(|aliases| aliases.iter())
-            .map(|(alias, replacement)| (alias.as_str(), replacement.as_str()))
+            .map(|(alias, replacement)| (alias.clone(), replacement.clone()))
             .collect::<HashMap<_, _>>();
         if aliases.is_empty() {
             continue;
         }
-        let tokens = expression_identifier_tokens(&parameter.expression).identifiers;
-        let mut rewritten = String::with_capacity(parameter.expression.len());
-        let mut copied = 0;
-        for token in tokens {
-            if expression_identifier_is_syntax(&parameter.expression, &token) {
-                continue;
-            }
-            let Some(replacement) = aliases.get(token.value.as_str()) else {
-                continue;
-            };
-            rewritten.push_str(&parameter.expression[copied..token.start]);
-            if token.quoted || !unquoted_expression_identifier(replacement) {
-                rewritten.push('"');
-                rewritten.push_str(&replacement.replace('"', "\"\""));
-                rewritten.push('"');
-            } else {
-                rewritten.push_str(replacement);
-            }
-            copied = token.end;
-        }
-        if copied != 0 {
-            rewritten.push_str(&parameter.expression[copied..]);
+        if let Some(rewritten) = rewrite_parameter_expression(&parameter.expression, &aliases) {
             parameter.expression = rewritten;
         }
     }
+}
+
+fn rewrite_parameter_expression(
+    expression: &str,
+    aliases: &HashMap<String, String>,
+) -> Option<String> {
+    let tokens = expression_identifier_tokens(expression).identifiers;
+    let mut rewritten = String::with_capacity(expression.len());
+    let mut copied = 0;
+    for token in tokens {
+        if expression_identifier_is_syntax(expression, &token) {
+            continue;
+        }
+        let Some(replacement) = aliases.get(&token.value) else {
+            continue;
+        };
+        rewritten.push_str(&expression[copied..token.start]);
+        if token.quoted || !unquoted_expression_identifier(replacement) {
+            rewritten.push('"');
+            rewritten.push_str(&replacement.replace('"', "\"\""));
+            rewritten.push('"');
+        } else {
+            rewritten.push_str(replacement);
+        }
+        copied = token.end;
+    }
+    if copied == 0 {
+        return None;
+    }
+    rewritten.push_str(&expression[copied..]);
+    Some(rewritten)
 }
 
 fn unquoted_expression_identifier(value: &str) -> bool {
