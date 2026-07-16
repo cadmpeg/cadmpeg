@@ -2382,6 +2382,61 @@ fn curve_expression_helix_definition(
     })
 }
 
+fn expression_dependency_reaches(dependencies: &[Vec<usize>], start: usize, target: usize) -> bool {
+    let mut pending = vec![start];
+    let mut visited = BTreeSet::new();
+    while let Some(index) = pending.pop() {
+        if index == target {
+            return true;
+        }
+        if visited.insert(index) {
+            pending.extend(dependencies[index].iter().copied());
+        }
+    }
+    false
+}
+
+fn curve_expression_parameter_order(
+    record: &crate::curve::CurveExpressionRecord,
+    unique_assignment_indices: &BTreeMap<String, usize>,
+) -> (Vec<u32>, BTreeSet<(usize, usize)>) {
+    let dependencies = record
+        .assignments
+        .iter()
+        .map(|assignment| {
+            let mut seen = BTreeSet::new();
+            assignment
+                .dependencies
+                .iter()
+                .filter_map(|name| unique_assignment_indices.get(name).copied())
+                .filter(|index| seen.insert(*index))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut cyclic_edges = BTreeSet::new();
+    for (consumer, dependency_indices) in dependencies.iter().enumerate() {
+        for &dependency in dependency_indices {
+            if expression_dependency_reaches(&dependencies, dependency, consumer) {
+                cyclic_edges.insert((consumer, dependency));
+            }
+        }
+    }
+    let mut ordinals = vec![u32::MAX; dependencies.len()];
+    for ordinal in 0..dependencies.len() {
+        let index = (0..dependencies.len())
+            .find(|&candidate| {
+                ordinals[candidate] == u32::MAX
+                    && dependencies[candidate].iter().all(|dependency| {
+                        cyclic_edges.contains(&(candidate, *dependency))
+                            || ordinals[*dependency] != u32::MAX
+                    })
+            })
+            .expect("removing cyclic edges leaves an acyclic assignment graph");
+        ordinals[index] = ordinal as u32;
+    }
+    (ordinals, cyclic_edges)
+}
+
 fn transfer_curve_expression_features(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -2405,17 +2460,19 @@ fn transfer_curve_expression_features(
             "creo:depdb:curve_expression_feature#{}-{}",
             record.entity_id, record.offset
         ));
-        let mut parameters_by_name = BTreeMap::<String, Option<ParameterId>>::new();
+        let mut assignment_indices_by_name = BTreeMap::<String, Option<usize>>::new();
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
-            let parameter_id = ParameterId(format!(
-                "creo:depdb:curve_expression_parameter#{}-{}-{}",
-                record.entity_id, record.offset, assignment_ordinal
-            ));
-            parameters_by_name
+            assignment_indices_by_name
                 .entry(assignment.name.clone())
-                .and_modify(|id| *id = None)
-                .or_insert(Some(parameter_id));
+                .and_modify(|index| *index = None)
+                .or_insert(Some(assignment_ordinal));
         }
+        let unique_assignment_indices = assignment_indices_by_name
+            .iter()
+            .filter_map(|(name, index)| index.map(|index| (name.clone(), index)))
+            .collect::<BTreeMap<_, _>>();
+        let (parameter_ordinals, cyclic_edges) =
+            curve_expression_parameter_order(record, &unique_assignment_indices);
         let mut source_content = Vec::with_capacity(record.assignments.len());
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
             let parameter_id = ParameterId(format!(
@@ -2425,13 +2482,24 @@ fn transfer_curve_expression_features(
             let dependencies = assignment
                 .dependencies
                 .iter()
-                .filter_map(|name| parameters_by_name.get(name).cloned().flatten())
+                .filter_map(|name| unique_assignment_indices.get(name).copied())
+                .filter(|dependency| !cyclic_edges.contains(&(assignment_ordinal, *dependency)))
+                .scan(BTreeSet::new(), |seen, dependency| {
+                    seen.insert(dependency).then_some(dependency)
+                })
+                .map(|dependency| {
+                    ParameterId(format!(
+                        "creo:depdb:curve_expression_parameter#{}-{}-{}",
+                        record.entity_id, record.offset, dependency
+                    ))
+                })
                 .collect::<Vec<_>>();
             let external_dependencies = assignment
                 .dependencies
                 .iter()
                 .filter(|name| {
-                    name.as_str() != "t" && !matches!(parameters_by_name.get(*name), Some(Some(_)))
+                    name.as_str() != "t"
+                        && !matches!(assignment_indices_by_name.get(*name), Some(Some(_)))
                 })
                 .cloned()
                 .collect::<Vec<_>>();
@@ -2454,6 +2522,27 @@ fn transfer_curve_expression_features(
                     intrinsic_dependencies.join(","),
                 );
             }
+            let cyclic_dependencies = assignment
+                .dependencies
+                .iter()
+                .filter_map(|name| {
+                    unique_assignment_indices
+                        .get(name)
+                        .filter(|dependency| {
+                            cyclic_edges.contains(&(assignment_ordinal, **dependency))
+                        })
+                        .map(|_| name.clone())
+                })
+                .collect::<BTreeSet<_>>();
+            if !cyclic_dependencies.is_empty() {
+                properties.insert(
+                    "cyclic_dependencies".to_string(),
+                    cyclic_dependencies
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
+            }
             annotate(
                 annotations,
                 &parameter_id.0,
@@ -2465,7 +2554,7 @@ fn transfer_curve_expression_features(
             ir.model.parameters.push(DesignParameter {
                 id: parameter_id.clone(),
                 owner: feature_id.clone(),
-                ordinal: assignment_ordinal as u32,
+                ordinal: parameter_ordinals[assignment_ordinal],
                 name: assignment.name.clone(),
                 expression: assignment.expression.clone(),
                 display: None,
