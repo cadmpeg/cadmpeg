@@ -445,6 +445,21 @@ pub fn project_parameter_design(
         .iter()
         .filter_map(|owner| Some(((native_stream(&owner.id)?, owner.record_index), owner)))
         .collect::<HashMap<_, _>>();
+    let native_scope_properties = |scope: &DesignParameterScope, native_scope: &str| {
+        let mut properties = BTreeMap::new();
+        for (ordinal, record_index) in scope.reference_members.iter().enumerate() {
+            properties.insert(format!("reference:{ordinal}"), record_index.to_string());
+        }
+        if let Some(profile) = scope.extrude_profile.as_ref() {
+            if let Some(placement) = placements.iter().find(|placement| {
+                native_stream(&placement.id) == Some(native_scope)
+                    && placement.entity_id == profile.entity_id
+            }) {
+                properties.insert("profile".into(), neutral_sketch_id(placement).0);
+            }
+        }
+        properties
+    };
     let mut features = scopes
         .iter()
         .map(|scope| {
@@ -480,26 +495,15 @@ pub fn project_parameter_design(
                     face_operands,
                     placements,
                 )
-                .unwrap_or_else(|| {
-                    let mut properties = BTreeMap::new();
-                    if let Some(profile) = scope.extrude_profile.as_ref() {
-                        if let Some(placement) = placements.iter().find(|placement| {
-                            native_stream(&placement.id) == Some(native_scope)
-                                && placement.entity_id == profile.entity_id
-                        }) {
-                            properties.insert("profile".into(), neutral_sketch_id(placement).0);
-                        }
-                    }
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: parameters
-                            .iter()
-                            .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
-                            })
-                            .collect(),
-                        properties,
-                    }
+                .unwrap_or_else(|| FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: parameters
+                        .iter()
+                        .map(|(_, parameter)| {
+                            (parameter.name.clone(), parameter.expression.clone())
+                        })
+                        .collect(),
+                    properties: native_scope_properties(scope, native_scope),
                 })
             } else if scope.kind == "Fillet" {
                 let mut assignments = fillet_radius_groups
@@ -596,15 +600,6 @@ pub fn project_parameter_design(
             } else if scope.kind == "Chamfer" {
                 project_chamfer(scope, &parameters, construction_groups, edge_operands)
             } else {
-                let mut properties = BTreeMap::new();
-                if let Some(profile) = scope.extrude_profile.as_ref() {
-                    if let Some(placement) = placements.iter().find(|placement| {
-                        native_stream(&placement.id) == Some(native_scope)
-                            && placement.entity_id == profile.entity_id
-                    }) {
-                        properties.insert("profile".into(), neutral_sketch_id(placement).0);
-                    }
-                }
                 FeatureDefinition::Native {
                     kind: scope.kind.clone(),
                     parameters: parameters
@@ -613,7 +608,7 @@ pub fn project_parameter_design(
                             (parameter.name.clone(), parameter.expression.clone())
                         })
                         .collect(),
-                    properties,
+                    properties: native_scope_properties(scope, native_scope),
                 }
             };
             Feature {
@@ -16293,8 +16288,8 @@ mod relation_tests {
             previous_history_state_id: None,
             previous_history_state_id_offset: 0,
             reference_count_offset: 180,
-            reference_members: vec![44],
-            reference_member_offsets: vec![185],
+            reference_members: vec![44, 44],
+            reference_member_offsets: vec![185, 196],
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -16310,8 +16305,11 @@ mod relation_tests {
         assert!(features[0].suppressed);
         assert!(matches!(
             &features[0].definition,
-            FeatureDefinition::Native { kind, parameters, .. }
-                if kind == "Extrude" && parameters.get("d12").map(String::as_str) == Some("60 mm")
+            FeatureDefinition::Native { kind, parameters, properties }
+                if kind == "Extrude"
+                    && parameters.get("d12").map(String::as_str) == Some("60 mm")
+                    && properties.get("reference:0").map(String::as_str) == Some("44")
+                    && properties.get("reference:1").map(String::as_str) == Some("44")
         ));
         assert_eq!(parameters[0].owner.as_ref(), Some(&features[0].id));
         assert_eq!(parameters[0].ordinal, 2);
