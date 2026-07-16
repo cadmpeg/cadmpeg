@@ -762,7 +762,7 @@ pub fn project_parameter_design(
     let mut document_aliases = HashMap::<(&str, String), Option<ParameterId>>::new();
     let mut feature_aliases =
         HashMap::<(&str, cadmpeg_ir::features::FeatureId, String), Option<ParameterId>>::new();
-    let mut owned_aliases = HashMap::<(&str, String), Option<ParameterId>>::new();
+    let mut owned_aliases = HashMap::<(&str, String), Vec<ParameterId>>::new();
     for parameter in &parameters {
         let scope = parameter_scopes[&parameter.id];
         if let Some(owner) = &parameter.owner {
@@ -772,8 +772,8 @@ pub fn project_parameter_design(
                 .or_insert_with(|| Some(parameter.id.clone()));
             owned_aliases
                 .entry((scope, parameter.name.clone()))
-                .and_modify(|candidate| *candidate = None)
-                .or_insert_with(|| Some(parameter.id.clone()));
+                .or_default()
+                .push(parameter.id.clone());
         } else {
             document_aliases
                 .entry((scope, parameter.name.clone()))
@@ -795,14 +795,31 @@ pub fn project_parameter_design(
         let mut seen = HashSet::new();
         parameter.dependencies = expression_identifiers(&parameter.expression)
             .filter_map(|identifier| {
+                let preceding_owned = || {
+                    let consumer = consumer_owner.as_ref()?;
+                    let consumer_order = feature_order.get(consumer)?;
+                    let mut candidates = owned_aliases
+                        .get(&(scope, identifier.clone()))?
+                        .iter()
+                        .filter(|candidate| {
+                            parameter_owners
+                                .get(*candidate)
+                                .and_then(Option::as_ref)
+                                .and_then(|owner| feature_order.get(owner))
+                                .is_some_and(|order| order < consumer_order)
+                        });
+                    let candidate = candidates.next()?;
+                    candidates.next().is_none().then_some(candidate)
+                };
                 let candidate = if let Some(owner) = &parameter.owner {
                     match feature_aliases.get(&(scope, owner.clone(), identifier.clone())) {
                         Some(None) => return None,
                         Some(Some(local)) => Some(local),
-                        None => document_aliases
-                            .get(&(scope, identifier.clone()))
-                            .or_else(|| owned_aliases.get(&(scope, identifier)))?
-                            .as_ref(),
+                        None => match document_aliases.get(&(scope, identifier.clone())) {
+                            Some(Some(document)) => Some(document),
+                            Some(None) => None,
+                            None => preceding_owned(),
+                        },
                     }
                 } else {
                     document_aliases.get(&(scope, identifier))?.as_ref()
@@ -15986,6 +16003,9 @@ mod relation_tests {
         let document_later = parameter(None, 27, "10 mm", "Later");
         let cycle_a = parameter(None, 28, "CycleB / 2", "CycleA");
         let cycle_b = parameter(None, 29, "CycleA / 2", "CycleB");
+        let preceding_shared = parameter(Some(105), 30, "10 mm", "Shared");
+        let shared_consumer = parameter(Some(106), 31, "Shared / 2", "SharedHalf");
+        let later_shared = parameter(Some(107), 32, "20 mm", "Shared");
         let (_, parameters) = project_parameter_design(
             &[
                 document_width,
@@ -15998,14 +16018,20 @@ mod relation_tests {
                 document_later,
                 cycle_a,
                 cycle_b,
+                preceding_shared,
+                shared_consumer,
+                later_shared,
             ],
             &[
                 owner(101, 21, 201),
                 owner(102, 22, 201),
                 owner(103, 23, 202),
                 owner(104, 24, 201),
+                owner(105, 30, 201),
+                owner(106, 31, 202),
+                owner(107, 32, 203),
             ],
-            &[scope(201), scope(202)],
+            &[scope(201), scope(202), scope(203)],
             &[],
             &[],
             &[],
@@ -16050,6 +16076,11 @@ mod relation_tests {
         assert!(cycle_a.dependencies.is_empty());
         assert_eq!(cycle_b.dependencies, [cycle_a.id.clone()]);
         assert!(cycle_a.ordinal < cycle_b.ordinal);
+        let preceding_shared = by_name_and_owner("Shared", 30);
+        assert_eq!(
+            by_name_and_owner("SharedHalf", 31).dependencies,
+            [preceding_shared.id.clone()]
+        );
     }
 
     #[test]
