@@ -359,10 +359,14 @@ fn jt_int32_cdp2_decodes_arithmetic_single_value_context() {
     packet.extend_from_slice(&16_u32.to_le_bytes());
     packet.extend_from_slice(&0_u32.to_le_bytes());
     packet.extend_from_slice(&context);
+    packet.extend_from_slice(&0_u32.to_le_bytes());
     assert_eq!(
         crate::jt::decode_int32_cdp2(&packet, 0),
         Some((vec![7, 7, 7], packet.len()))
     );
+
+    packet.truncate(packet.len() - 4);
+    assert!(crate::jt::decode_int32_cdp2(&packet, 0).is_none());
 }
 
 #[test]

@@ -153,14 +153,12 @@ pub(crate) fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usiz
         &entries,
     )?;
     let escape_count = symbols.iter().filter(|value| value.is_none()).count();
-    if escape_count != 0 {
-        let (out_of_band_count, _, out_of_band_len) =
-            frame_int32_cdp2(bytes.get(cursor..)?, depth + 1)?;
-        if usize::try_from(out_of_band_count).ok()? != escape_count {
-            return None;
-        }
-        cursor = cursor.checked_add(out_of_band_len)?;
+    let (out_of_band_count, _, out_of_band_len) =
+        frame_int32_cdp2(bytes.get(cursor..)?, depth + 1)?;
+    if usize::try_from(out_of_band_count).ok()? != escape_count {
+        return None;
     }
+    cursor = cursor.checked_add(out_of_band_len)?;
     Some((value_count, codec, cursor))
 }
 
@@ -393,11 +391,7 @@ pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, us
     cursor += context_len;
     let symbols = decode_arithmetic(code_words, code_bit_len, value_count, &entries)?;
     let escape_count = symbols.iter().filter(|value| value.is_none()).count();
-    let (out_of_band, oob_len) = if escape_count == 0 {
-        (Vec::new(), 0)
-    } else {
-        decode_int32_cdp2(bytes.get(cursor..)?, depth + 1)?
-    };
+    let (out_of_band, oob_len) = decode_int32_cdp2(bytes.get(cursor..)?, depth + 1)?;
     if out_of_band.len() != escape_count {
         return None;
     }
