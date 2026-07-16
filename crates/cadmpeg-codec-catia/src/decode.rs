@@ -400,6 +400,38 @@ fn transfer_zero_entity_topology(
     if points.len() != topology.vertices.len() {
         return false;
     }
+    let Some(pcurve_ranges) = topology
+        .supports
+        .iter()
+        .map(|support| match support.pcurve.as_ref() {
+            Some(geometry) => Some(Some(zero_entity_pcurve_range(
+                geometry,
+                support.uv_endpoints,
+            )?)),
+            None => Some(None),
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    let Some(face_senses) = topology
+        .faces
+        .iter()
+        .map(|face| {
+            let outer_classes = face.loop_indices.iter().filter_map(|index| {
+                let loop_ = &topology.loops[*index];
+                (!loop_.inner).then_some(loop_.loop_class)
+            });
+            match outer_classes.collect::<Vec<_>>().as_slice() {
+                [0x41] => Some(Sense::Forward),
+                [0xc1] => Some(Sense::Reversed),
+                _ => None,
+            }
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
 
     for (index, point) in points.into_iter().enumerate() {
         let point_id = PointId(format!("catia:zero-entity:pt#{index}"));
@@ -452,10 +484,8 @@ fn transfer_zero_entity_topology(
         let Some(geometry) = support.pcurve.clone() else {
             continue;
         };
-        let parameter_range = zero_entity_pcurve_range(&geometry, support.uv_endpoints);
-        let Some(parameter_range) = parameter_range else {
-            return false;
-        };
+        let parameter_range =
+            pcurve_ranges[support_index].expect("every emitted pcurve passed topology admission");
         let id = PcurveId(format!("catia:zero-entity:pcurve#{support_index}"));
         let record = &topology.records[support.record_ordinal];
         annotate(
@@ -633,19 +663,7 @@ fn transfer_zero_entity_topology(
     for (face_index, face) in topology.faces.iter().enumerate() {
         let id = FaceId(format!("catia:zero-entity:face#{face_index}"));
         let carrier = face.carrier_run.unwrap_or(face_index);
-        let outer_classes: Vec<u8> = face
-            .loop_indices
-            .iter()
-            .filter_map(|index| {
-                let loop_ = &topology.loops[*index];
-                (!loop_.inner).then_some(loop_.loop_class)
-            })
-            .collect();
-        let sense = match outer_classes.as_slice() {
-            [0x41] => Sense::Forward,
-            [0xc1] => Sense::Reversed,
-            _ => return false,
-        };
+        let sense = face_senses[face_index];
         annotate(
             annotations,
             &id,
