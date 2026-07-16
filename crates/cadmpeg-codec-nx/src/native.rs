@@ -229,6 +229,25 @@ pub struct DisplayJtTopologyPacketSequence {
     pub source_offset: u64,
 }
 
+/// Polygon connectivity reconstructed from one JT topological dual mesh.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtPolygonMesh {
+    /// Globally unique polygon-mesh identity.
+    pub id: String,
+    /// Owning topology packet sequence.
+    pub topology: String,
+    /// Coordinate-array header indexed by the polygons.
+    pub coordinate_header: String,
+    /// Ordered polygon vertex indices.
+    pub polygons: Vec<Vec<u32>>,
+    /// Per-polygon group identifiers.
+    pub polygon_groups: Vec<i32>,
+    /// Per-polygon flag words.
+    pub polygon_flags: Vec<u16>,
+    /// Absolute source offset of the topology packet sequence.
+    pub source_offset: u64,
+}
+
 /// Fixed header of the vertex records following a JT 9 topology envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DisplayJtCompressedVertexRecordsHeader {
@@ -1781,6 +1800,73 @@ pub fn display_jt_vertex_coordinates(
         });
     }
     arrays
+}
+
+/// Reconstruct every complete JT 9 polygon mesh from its dual-mesh lanes.
+pub fn display_jt_polygon_meshes(
+    sequences: &[DisplayJtTopologyPacketSequence],
+    coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
+) -> Vec<DisplayJtPolygonMesh> {
+    let mut meshes = Vec::new();
+    for sequence in sequences {
+        let values = |role: &str| {
+            sequence
+                .packets
+                .iter()
+                .find(|packet| packet.role == role)?
+                .values
+                .as_deref()
+        };
+        let Some(valences) = values("vertex_valences") else {
+            return Vec::new();
+        };
+        if valences.is_empty() {
+            continue;
+        }
+        let Some(coordinate_header) = coordinate_headers
+            .iter()
+            .find(|header| header.element == sequence.element)
+        else {
+            return Vec::new();
+        };
+        let Some(degrees) = (0..8)
+            .map(|context| values(&format!("face_degrees_{context}")))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Vec::new();
+        };
+        let Some(polygons) = crate::jt_topology::decode(
+            degrees.try_into().expect("eight degree contexts"),
+            valences,
+            values("vertex_groups").unwrap_or_default(),
+            values("vertex_flags").unwrap_or_default(),
+            values("split_face_symbols").unwrap_or_default(),
+            values("split_face_positions").unwrap_or_default(),
+        ) else {
+            return Vec::new();
+        };
+        if polygons.iter().any(|polygon| {
+            polygon
+                .vertex_indices
+                .iter()
+                .any(|&index| index >= coordinate_header.unique_vertex_count)
+        }) {
+            return Vec::new();
+        }
+        meshes.push(DisplayJtPolygonMesh {
+            id: sequence.id.replacen("topology-packets", "polygon-mesh", 1),
+            topology: sequence.id.clone(),
+            coordinate_header: coordinate_header.id.clone(),
+            polygon_groups: polygons.iter().map(|polygon| polygon.group).collect(),
+            polygon_flags: polygons.iter().map(|polygon| polygon.flags).collect(),
+            polygons: polygons
+                .into_iter()
+                .map(|polygon| polygon.vertex_indices)
+                .collect(),
+            source_offset: sequence.source_offset,
+        });
+    }
+    meshes
 }
 
 /// Decode element framing and exact post-marker tails from compressed segments.

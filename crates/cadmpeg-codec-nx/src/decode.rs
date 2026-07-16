@@ -6495,6 +6495,10 @@ fn attach_native_object_model(
         &scan.container,
         &display_jt_coordinate_array_headers,
     );
+    let display_jt_polygon_meshes = crate::native::display_jt_polygon_meshes(
+        &display_jt_topology_packet_sequences,
+        &display_jt_coordinate_array_headers,
+    );
     let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
         crate::native::display_jt_compressed_element_sequences(
             &scan.container,
@@ -6948,6 +6952,12 @@ fn attach_native_object_model(
             )
             .tag("DISPLAY_JT_VERTEX_COORDINATES");
         annotations.exactness(&coordinates.id, Exactness::Derived);
+    }
+    for mesh in &display_jt_polygon_meshes {
+        annotations
+            .note(&mesh.id, annotation_stream, mesh.source_offset)
+            .tag("DISPLAY_JT_POLYGON_MESH");
+        annotations.exactness(&mesh.id, Exactness::Derived);
     }
     for sequence in &display_jt_compressed_element_sequences {
         annotations
@@ -7774,6 +7784,9 @@ fn attach_native_object_model(
             "display_jt_vertex_coordinates",
             &display_jt_vertex_coordinates,
         )?;
+    }
+    if !display_jt_polygon_meshes.is_empty() {
+        namespace.set_arena("display_jt_polygon_meshes", &display_jt_polygon_meshes)?;
     }
     if !display_jt_compressed_element_sequences.is_empty() {
         namespace.set_arena(

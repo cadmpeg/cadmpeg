@@ -68,6 +68,7 @@ pub mod deltas;
 pub mod geometry;
 pub mod intersection;
 mod jt;
+mod jt_topology;
 pub mod native;
 pub mod nurbs;
 pub mod om;

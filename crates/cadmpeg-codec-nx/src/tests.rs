@@ -506,6 +506,34 @@ fn jt_predictors_use_wrapping_i32_arithmetic() {
 }
 
 #[test]
+fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
+    let polygons = crate::jt_topology::decode(
+        [&[3, 3, 3], &[3], &[], &[], &[], &[], &[], &[]],
+        &[3, 3, 3, 3],
+        &[10, 12, 11, 13],
+        &[0, 0, 0, 0],
+        &[],
+        &[],
+    )
+    .expect("valid closed dual mesh");
+
+    assert_eq!(
+        polygons
+            .iter()
+            .map(|polygon| polygon.vertex_indices.as_slice())
+            .collect::<Vec<_>>(),
+        vec![&[0, 1, 2], &[2, 1, 3], &[2, 3, 0], &[3, 1, 0]]
+    );
+    assert_eq!(
+        polygons
+            .iter()
+            .map(|polygon| polygon.group)
+            .collect::<Vec<_>>(),
+        vec![10, 12, 11, 13]
+    );
+}
+
+#[test]
 fn jt9_topology_bounds_variable_high_degree_lane_count() {
     fn representation(high_degree_lanes: usize, topological_vertices: u32) -> Vec<u8> {
         let mut bytes = vec![0; (21 + high_degree_lanes + 2) * 4];

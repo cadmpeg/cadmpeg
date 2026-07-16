@@ -34,4 +34,3 @@ This document records unresolved NX `.prt` byte semantics.
 ## Embedded JT display model
 
 - Coordinate reconstruction for nonzero quantization widths is unspecified.
-- Reconstruction of triangle-strip connectivity from the decoded topological dual-mesh vectors is unspecified.
