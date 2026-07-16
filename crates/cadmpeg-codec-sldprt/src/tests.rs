@@ -2632,6 +2632,18 @@ fn encoder_writes_source_less_curved_sketches() {
             center: Point2::new(8.0, 0.0),
             radius: Length(2.0),
         },
+        SketchGeometry::Ellipse {
+            center: Point2::new(60.0, 0.0),
+            major_angle: Angle(0.0),
+            major_radius: Length(3.0),
+            minor_radius: Length(1.5),
+            start_angle: Some(Angle(0.0)),
+            end_angle: Some(Angle(std::f64::consts::FRAC_PI_2)),
+        },
+        SketchGeometry::Line {
+            start: Point2::new(60.0, 1.5),
+            end: Point2::new(63.0, 0.0),
+        },
     ];
     let entity_ids = geometries
         .into_iter()
@@ -2679,6 +2691,7 @@ fn encoder_writes_source_less_curved_sketches() {
             profile(&[3]),
             profile(&[4]),
             profile(&[22]),
+            profile(&[23, 24]),
         ],
         native_ref: None,
     });
@@ -2795,6 +2808,15 @@ fn encoder_writes_source_less_curved_sketches() {
         definition: SketchConstraintDefinition::ArcAngle {
             entity: entity_ids[1].clone(),
             angle: Angle(std::f64::consts::PI),
+        },
+        native_ref: None,
+    });
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: SketchConstraintId("synthetic:test:constraint#arc-angle-ellipse".into()),
+        sketch: sketch_id.clone(),
+        definition: SketchConstraintDefinition::EllipseAngle {
+            entity: entity_ids[23].clone(),
+            angle: Angle(std::f64::consts::FRAC_PI_2),
         },
         native_ref: None,
     });
@@ -2952,7 +2974,7 @@ fn encoder_writes_source_less_curved_sketches() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketch_entities.len(), 27);
+    assert_eq!(decoded.ir.model.sketch_entities.len(), 29);
     assert!(decoded
         .ir
         .model
@@ -2961,6 +2983,15 @@ fn encoder_writes_source_less_curved_sketches() {
         .any(|constraint| matches!(
             constraint.definition,
             SketchConstraintDefinition::Coradial { .. }
+        )));
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::EllipseAngle { .. }
         )));
     assert!(decoded
         .ir

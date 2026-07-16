@@ -8257,8 +8257,9 @@ fn typed_marker_relation_definition_in_sketch(
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
         ArcAngle180, ArcAngle270, ArcAngle90, AtIntersection, Coincident, Collinear, Concentric,
-        Coradial, Equal, Fixed, Horizontal, HorizontalPoints, MergePoints, Midpoint, Parallel,
-        Perpendicular, Symmetric, Tangent, Vertical, VerticalPoints,
+        Coradial, EllipseAngle180, EllipseAngle270, EllipseAngle90, Equal, Fixed, Horizontal,
+        HorizontalPoints, MergePoints, Midpoint, Parallel, Perpendicular, Symmetric, Tangent,
+        Vertical, VerticalPoints,
     };
     let kind = match marker.kind {
         SketchInputKind::Relation(kind) => Some(kind),
@@ -8452,6 +8453,46 @@ fn typed_marker_relation_definition_in_sketch(
                 }
             }
             SketchConstraintDefinition::ArcAngle {
+                entity,
+                angle: cadmpeg_ir::features::Angle(angle),
+            }
+        }
+        EllipseAngle90 | EllipseAngle180 | EllipseAngle270 => {
+            let Some(entity) = linked_single_ellipse_entity(
+                marker,
+                markers_by_id,
+                loci_by_marker,
+                sketch_entities,
+            ) else {
+                return Some(native());
+            };
+            let angle = match kind {
+                EllipseAngle90 => std::f64::consts::FRAC_PI_2,
+                EllipseAngle180 => std::f64::consts::PI,
+                EllipseAngle270 => 3.0 * std::f64::consts::FRAC_PI_2,
+                _ => unreachable!("relation kind was filtered above"),
+            };
+            let Some(SketchEntity {
+                geometry:
+                    SketchGeometry::Ellipse {
+                        start_angle: Some(start),
+                        end_angle: Some(end),
+                        ..
+                    },
+                ..
+            }) = sketch_entities.iter().find(|candidate| candidate.id == entity)
+            else {
+                return Some(native());
+            };
+            let raw = end.0 - start.0;
+            let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
+            if sweep <= 1.0e-12 && raw.abs() > 1.0e-12 {
+                sweep = std::f64::consts::TAU;
+            }
+            if !same_dimension_angle(sweep, angle) {
+                return Some(native());
+            }
+            SketchConstraintDefinition::EllipseAngle {
                 entity,
                 angle: cadmpeg_ir::features::Angle(angle),
             }
@@ -9174,6 +9215,23 @@ fn linked_single_arc_entity(
     let [entity] = entities.as_slice() else {
         return None;
     };
+    Some(entity.clone())
+}
+
+fn linked_single_ellipse_entity(
+    marker: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    sketch_entities: &[SketchEntity],
+) -> Option<SketchEntityId> {
+    let entities = linked_single_entities(marker, markers_by_id, loci_by_marker)?;
+    let [entity] = entities.as_slice() else {
+        return None;
+    };
+    sketch_entities
+        .iter()
+        .find(|candidate| candidate.id == *entity)
+        .filter(|candidate| matches!(candidate.geometry, SketchGeometry::Ellipse { .. }))?;
     Some(entity.clone())
 }
 
@@ -11037,7 +11095,9 @@ fn marker_accepts_locus(kind: SketchInputKind, geometry: &SketchGeometry) -> boo
         SketchInputKind::Arc => matches!(geometry, SketchGeometry::Arc { .. }),
         SketchInputKind::LineOrCircle => matches!(
             geometry,
-            SketchGeometry::Line { .. } | SketchGeometry::Circle { .. }
+            SketchGeometry::Line { .. }
+                | SketchGeometry::Circle { .. }
+                | SketchGeometry::Ellipse { .. }
         ),
         SketchInputKind::Point
         | SketchInputKind::ConstrainedPoint
@@ -11613,8 +11673,35 @@ fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLocus)> {
             locus(*start, SketchLocus::Start(entity.id.clone())),
             locus(*end, SketchLocus::End(entity.id.clone())),
         ],
-        SketchGeometry::Circle { center, .. } | SketchGeometry::Ellipse { center, .. } => {
+        SketchGeometry::Circle { center, .. } => {
             vec![locus(*center, SketchLocus::Center(entity.id.clone()))]
+        }
+        SketchGeometry::Ellipse {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            start_angle,
+            end_angle,
+        } => {
+            let mut loci = vec![locus(*center, SketchLocus::Center(entity.id.clone()))];
+            if let (Some(start), Some(end)) = (start_angle, end_angle) {
+                let point = |parameter: f64| {
+                    Point2::new(
+                        center.u + major_angle.0.cos() * major_radius.0 * parameter.cos()
+                            - major_angle.0.sin() * minor_radius.0 * parameter.sin(),
+                        center.v
+                            + major_angle.0.sin() * major_radius.0 * parameter.cos()
+                            + major_angle.0.cos() * minor_radius.0 * parameter.sin(),
+                    )
+                };
+                loci.push(locus(
+                    point(start.0),
+                    SketchLocus::Start(entity.id.clone()),
+                ));
+                loci.push(locus(point(end.0), SketchLocus::End(entity.id.clone())));
+            }
+            loci
         }
         SketchGeometry::Arc {
             center,
@@ -16610,6 +16697,15 @@ fn validate_generated_marker_constraint(
             }
             (entity, None)
         }
+        SketchConstraintDefinition::EllipseAngle { entity, angle } => {
+            if ellipse_angle_relation_kind(angle.0).is_none() {
+                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                    "source-less SLDPRT ellipse-angle constraint {} is not 90, 180, or 270 degrees",
+                    constraint.id.0
+                )));
+            }
+            (entity, None)
+        }
         _ => {
             return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
                 "source-less SLDPRT sketch constraints support solved endpoint coincidences and horizontal, vertical, or fixed marker relations"
@@ -16635,6 +16731,16 @@ fn validate_generated_marker_constraint(
     {
         return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
             "sketch constraint {} applies an arc-angle relation to a non-arc entity",
+            constraint.id.0
+        )));
+    }
+    if matches!(
+        &constraint.definition,
+        SketchConstraintDefinition::EllipseAngle { .. }
+    ) && !matches!(&entity.geometry, SketchGeometry::Ellipse { .. })
+    {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+            "sketch constraint {} applies an ellipse-angle relation to a non-ellipse entity",
             constraint.id.0
         )));
     }
@@ -17161,6 +17267,23 @@ fn arc_angle_relation_kind(angle: f64) -> Option<SketchRelationKind> {
     .find_map(|(expected, kind)| ((angle - expected).abs() <= TOLERANCE).then_some(kind))
 }
 
+fn ellipse_angle_relation_kind(angle: f64) -> Option<SketchRelationKind> {
+    const TOLERANCE: f64 = 1.0e-9;
+    [
+        (
+            std::f64::consts::FRAC_PI_2,
+            SketchRelationKind::EllipseAngle90,
+        ),
+        (std::f64::consts::PI, SketchRelationKind::EllipseAngle180),
+        (
+            3.0 * std::f64::consts::FRAC_PI_2,
+            SketchRelationKind::EllipseAngle270,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(expected, kind)| ((angle - expected).abs() <= TOLERANCE).then_some(kind))
+}
+
 fn source_less_lanes(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
@@ -17323,6 +17446,9 @@ fn append_generated_sketch_markers(
             )),
             SketchConstraintDefinition::ArcAngle { entity, angle } => Some(
                 GeneratedMarkerRelation::Unary(arc_angle_relation_kind(angle.0)?, entity),
+            ),
+            SketchConstraintDefinition::EllipseAngle { entity, angle } => Some(
+                GeneratedMarkerRelation::Unary(ellipse_angle_relation_kind(angle.0)?, entity),
             ),
             SketchConstraintDefinition::HorizontalPoints { first, second } => Some(
                 GeneratedMarkerRelation::Loci(SketchRelationKind::HorizontalPoints, first, second),

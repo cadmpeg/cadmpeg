@@ -365,6 +365,46 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 ),
             }
         }
+        if let Constraint::EllipseAngle { entity, angle } = &constraint.definition {
+            let valid_angle =
+                angle.0.is_finite() && angle.0 > 0.0 && angle.0 <= std::f64::consts::TAU;
+            if !valid_angle {
+                finding(
+                    findings,
+                    Check::ParameterDomain,
+                    &constraint.id.0,
+                    "invalid sketch ellipse angle",
+                );
+            }
+            match geometry.get(entity) {
+                Some(SketchGeometry::Ellipse {
+                    start_angle: Some(start),
+                    end_angle: Some(end),
+                    ..
+                }) if valid_angle && start.0.is_finite() && end.0.is_finite() => {
+                    let raw = end.0 - start.0;
+                    let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
+                    if sweep <= 1.0e-12 && raw.abs() > 1.0e-12 {
+                        sweep = std::f64::consts::TAU;
+                    }
+                    if (sweep - angle.0).abs() > 1.0e-9 {
+                        finding(
+                            findings,
+                            Check::GeometricConsistency,
+                            &constraint.id.0,
+                            "sketch ellipse angle does not match solved geometry",
+                        );
+                    }
+                }
+                Some(SketchGeometry::Ellipse { .. }) | None => {}
+                Some(_) => finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    &constraint.id.0,
+                    "sketch ellipse-angle constraint references a non-ellipse entity",
+                ),
+            }
+        }
         if let Constraint::Coradial { first, second } = &constraint.definition {
             let circular = |entity| match geometry.get(entity) {
                 Some(SketchGeometry::Circle { center, radius })

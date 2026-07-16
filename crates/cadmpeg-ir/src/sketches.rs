@@ -422,6 +422,13 @@ pub enum SketchConstraintDefinition {
         /// Fixed positive arc angle in radians.
         angle: Angle,
     },
+    /// Bounded ellipse parameter sweep fixed by the relation kind.
+    EllipseAngle {
+        /// Constrained bounded ellipse.
+        entity: SketchEntityId,
+        /// Fixed positive parameter sweep in radians.
+        angle: Angle,
+    },
     /// Distance controlled by a design parameter.
     Distance {
         /// Measured entities.
