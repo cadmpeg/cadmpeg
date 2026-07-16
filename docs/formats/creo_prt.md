@@ -820,8 +820,10 @@ first endpoint angle advanced by full turns until it exceeds the start. Its neut
 dimension whose `value` is in radians. Types `0x01`, `0x02`, `0x03`, `0x04`,
 and `0x05` are linear dimensions whose values use model millimeters. `ext_id` is the dimension identity
 within the owning feature definition. A neutral parameter and any constraint
-that selects it require exactly one `dimtab_ptr` row with that `ext_id`;
-duplicate identities remain native dimensions. Neutral parameter identity includes the
+that selects it require exactly one `dimtab_ptr` row with that `ext_id`.
+Every valued row is a neutral parameter. Repeated local identifiers use
+occurrence-qualified parameter identities and names in source order, but no
+constraint binds through that ambiguous identifier. Neutral parameter identity includes the
 feature-definition identifier, owning model-feature identifier, and `ext_id`;
 different definitions may reuse the same local `ext_id`. In positional dimension rows, a bare
 `18` in the `aux_value` slot encodes zero and does not consume the following

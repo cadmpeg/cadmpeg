@@ -2920,10 +2920,11 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
 #[test]
 fn decode_transfers_feature_dimensions_as_owned_parameters() {
     let payload = b"feat_defs_917\0\xe0\x01feat_id\0\x28\xe0\x00gsec2d_ptr\0\
-        dimtab_ptr\0\xf8\x01\xf7\x81\x02\xfb\xe2\
+        dimtab_ptr\0\xf8\x02\xf7\x81\x02\xfb\xe2\
         \xe0\x01type\0\x0a\xe0\x01value\0\xe4\
         \xe0\x01direct\0\x01\xe0\x01aux_value\0\x0f\
-        \xe0\x01ext_id\0\x2a\xe0\x00relat_ptr\0"
+        \xe0\x01ext_id\0\x2a\xf3\xf7\x81\x02\xe2\
+        \x0a\xe4\x01\x18\x2a\xe0\x00relat_ptr\0"
         .to_vec();
     let data = build_prt(
         "c",
@@ -2937,10 +2938,14 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(scan.feature_definitions[0].owner_feature_id, Some(40));
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
 
-    assert_eq!(result.ir.model.parameters.len(), 1);
-    let parameter = &result.ir.model.parameters[0];
+    assert_eq!(result.ir.model.parameters.len(), 2);
+    let [parameter, repeated] = result.ir.model.parameters.as_slice() else {
+        panic!("two repeated dimensions");
+    };
     assert_eq!(parameter.owner.as_str(), "creo:model:feature#40");
-    assert_eq!(parameter.name, "d42");
+    assert_eq!(parameter.name, "d917_42_1");
+    assert_eq!(repeated.name, "d917_42_2");
+    assert_ne!(parameter.id, repeated.id);
     assert_eq!(parameter.expression, "1");
     assert_eq!(
         parameter.value,
@@ -2951,13 +2956,14 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert!(matches!(
         &result.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. }
-            if parameters.get("dimension_count").map(String::as_str) == Some("1")
+            if parameters.get("dimension_count").map(String::as_str) == Some("2")
     ));
     assert_eq!(
         result.ir.model.features[0].source_content,
-        [cadmpeg_ir::features::FeatureSourceContent::Parameter(
-            parameter.id.clone()
-        )]
+        [
+            cadmpeg_ir::features::FeatureSourceContent::Parameter(parameter.id.clone()),
+            cadmpeg_ir::features::FeatureSourceContent::Parameter(repeated.id.clone()),
+        ]
     );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");

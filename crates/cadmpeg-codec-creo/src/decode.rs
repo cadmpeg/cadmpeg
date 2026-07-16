@@ -10327,6 +10327,23 @@ fn feature_dimension_parameter_id(
     ))
 }
 
+fn feature_dimension_parameter_row_id(
+    definition_id: u32,
+    owner_feature_id: u32,
+    external_id: u32,
+    occurrence: Option<usize>,
+) -> ParameterId {
+    occurrence.map_or_else(
+        || feature_dimension_parameter_id(definition_id, owner_feature_id, external_id),
+        |occurrence| {
+            ParameterId(format!(
+                "creo:featdefs:parameter#{definition_id}:{owner_feature_id}:{external_id}:{}",
+                occurrence + 1
+            ))
+        },
+    )
+}
+
 fn resolved_feature_dimension_parameter(
     definition_id: u32,
     owner_feature_id: u32,
@@ -10353,39 +10370,41 @@ fn resolved_feature_dimension_parameter(
         })
 }
 
-fn resolved_unique_feature_dimension_parameter<'a>(
-    definitions: &'a [crate::feature::FeatureDefinition],
-    definition: &crate::feature::FeatureDefinition,
-    ordinal: usize,
-) -> Option<(&'a crate::feature::FeatureDimension, ParameterId)> {
-    let definition = unique_feature_definition(definitions, definition.id)?;
-    resolved_feature_dimension_parameter(
-        definition.id,
-        definition.owner_feature_id?,
-        definition.dimensions.as_ref()?,
-        ordinal,
-    )
-}
-
-fn feature_dimension_parameter_layout(keys: &[(u32, u32, u32)]) -> Option<Vec<(u32, String)>> {
+fn feature_dimension_parameter_layout(
+    keys: &[(u32, u32, u32)],
+) -> Option<Vec<(u32, String, Option<usize>)>> {
     let mut name_counts = BTreeMap::new();
+    let mut local_counts = BTreeMap::new();
     for &(owner_feature_id, _, external_id) in keys {
         *name_counts
             .entry((owner_feature_id, external_id))
             .or_insert(0usize) += 1;
     }
+    for &key in keys {
+        *local_counts.entry(key).or_insert(0usize) += 1;
+    }
     let mut next_ordinals = BTreeMap::<u32, u32>::new();
+    let mut local_occurrences = BTreeMap::new();
     keys.iter()
         .map(|&(owner_feature_id, definition_id, external_id)| {
             let ordinal = next_ordinals.entry(owner_feature_id).or_default();
             let assigned = *ordinal;
             *ordinal = ordinal.checked_add(1)?;
-            let name = if name_counts.get(&(owner_feature_id, external_id)) == Some(&1) {
+            let key = (owner_feature_id, definition_id, external_id);
+            let occurrence = (local_counts[&key] > 1).then(|| {
+                let occurrence = local_occurrences.entry(key).or_insert(0usize);
+                let assigned = *occurrence;
+                *occurrence += 1;
+                assigned
+            });
+            let name = if name_counts[&(owner_feature_id, external_id)] == 1 {
                 format!("d{external_id}")
+            } else if let Some(occurrence) = occurrence {
+                format!("d{definition_id}_{external_id}_{}", occurrence + 1)
             } else {
                 format!("d{definition_id}_{external_id}")
             };
-            Some((assigned, name))
+            Some((assigned, name, occurrence))
         })
         .collect()
 }
@@ -10413,31 +10432,36 @@ fn transfer_feature_dimensions(
         let Some(table) = &definition.dimensions else {
             continue;
         };
-        for source_ordinal in 0..table.rows.len() {
-            let Some((dimension, id)) = resolved_unique_feature_dimension_parameter(
-                &scan.feature_definitions,
-                definition,
-                source_ordinal,
-            ) else {
+        if unique_feature_definition(&scan.feature_definitions, definition.id).is_none() {
+            continue;
+        }
+        for (source_ordinal, dimension) in table.rows.iter().enumerate() {
+            if dimension.value.is_none() {
                 continue;
-            };
-            candidates.push((owner_feature_id, definition, source_ordinal, dimension, id));
+            }
+            candidates.push((owner_feature_id, definition, source_ordinal, dimension));
         }
     }
-    candidates.sort_by_key(|(owner, definition, source_ordinal, _, _)| {
+    candidates.sort_by_key(|(owner, definition, source_ordinal, _)| {
         (*owner, definition.offset, definition.id, *source_ordinal)
     });
     let keys = candidates
         .iter()
-        .map(|(owner, definition, _, dimension, _)| (*owner, definition.id, dimension.external_id))
+        .map(|(owner, definition, _, dimension)| (*owner, definition.id, dimension.external_id))
         .collect::<Vec<_>>();
     let Some(layout) = feature_dimension_parameter_layout(&keys) else {
         return;
     };
-    for ((owner_feature_id, definition, source_ordinal, dimension, id), (ordinal, name)) in
+    for ((owner_feature_id, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in
         candidates.into_iter().zip(layout)
     {
         let owner = IrFeatureId(format!("creo:model:feature#{owner_feature_id}"));
+        let id = feature_dimension_parameter_row_id(
+            definition.id,
+            owner_feature_id,
+            dimension.external_id,
+            occurrence,
+        );
         let value = dimension
             .value
             .expect("resolved feature dimension has a defined value");
@@ -14559,11 +14583,22 @@ mod resolved_sketch_tests {
                 (41, 1200, 3),
             ]),
             Some(vec![
-                (0, "d917_3".to_string()),
-                (1, "d1104_3".to_string()),
-                (2, "d4".to_string()),
-                (0, "d3".to_string()),
+                (0, "d917_3".to_string(), None),
+                (1, "d1104_3".to_string(), None),
+                (2, "d4".to_string(), None),
+                (0, "d3".to_string(), None),
             ])
+        );
+        assert_eq!(
+            feature_dimension_parameter_layout(&[(40, 917, 3), (40, 917, 3)]),
+            Some(vec![
+                (0, "d917_3_1".to_string(), Some(0)),
+                (1, "d917_3_2".to_string(), Some(1)),
+            ])
+        );
+        assert_ne!(
+            feature_dimension_parameter_row_id(917, 40, 3, Some(0)),
+            feature_dimension_parameter_row_id(917, 40, 3, Some(1))
         );
         let dimension = crate::feature::FeatureDimension {
             dimension_type: 2,
@@ -14598,9 +14633,10 @@ mod resolved_sketch_tests {
             offset: 8,
         };
         assert_eq!(
-            resolved_unique_feature_dimension_parameter(
-                std::slice::from_ref(&definition),
-                &definition,
+            resolved_feature_dimension_parameter(
+                definition.id,
+                definition.owner_feature_id.expect("dimension owner"),
+                definition.dimensions.as_ref().expect("dimension table"),
                 0,
             ),
             Some((
@@ -14611,28 +14647,25 @@ mod resolved_sketch_tests {
         table.rows.push(dimension);
         definition.dimensions = Some(table);
         assert_eq!(
-            resolved_unique_feature_dimension_parameter(
-                std::slice::from_ref(&definition),
-                &definition,
+            resolved_feature_dimension_parameter(
+                definition.id,
+                definition.owner_feature_id.expect("dimension owner"),
+                definition.dimensions.as_ref().expect("dimension table"),
                 0,
             ),
             None
         );
         assert_eq!(
-            resolved_unique_feature_dimension_parameter(
-                std::slice::from_ref(&definition),
-                &definition,
+            resolved_feature_dimension_parameter(
+                definition.id,
+                definition.owner_feature_id.expect("dimension owner"),
+                definition.dimensions.as_ref().expect("dimension table"),
                 1,
             ),
             None
         );
-        assert_eq!(
-            resolved_unique_feature_dimension_parameter(
-                &[definition.clone(), definition.clone()],
-                &definition,
-                0,
-            ),
-            None
+        assert!(
+            unique_feature_definition(&[definition.clone(), definition.clone()], 917).is_none()
         );
     }
 
