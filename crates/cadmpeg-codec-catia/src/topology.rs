@@ -5705,48 +5705,97 @@ impl MeshQuotient {
             solutions: &mut Vec<Vec<usize>>,
             solution_limit: usize,
         ) {
+            fn rollback(
+                assigned: &mut [Option<usize>],
+                used: &mut HashSet<usize>,
+                propagated: Vec<(usize, usize)>,
+            ) {
+                for (root, point) in propagated.into_iter().rev() {
+                    assigned[root] = None;
+                    used.remove(&point);
+                }
+            }
+
             if solutions.len() >= solution_limit {
                 return;
             }
-            let values = assigned
-                .iter()
-                .enumerate()
-                .filter(|(_, point)| point.is_none())
-                .map(|(root, _)| {
-                    let values = domains[root]
-                        .iter()
-                        .copied()
-                        .filter(|point| !used.contains(point))
-                        .filter(|point| {
-                            value_viable(
-                                root,
-                                *point,
-                                domains,
-                                edge_roots,
-                                root_edges,
-                                edge_candidates,
-                                edge_neighbors,
-                                assigned,
-                                used,
-                            )
-                        })
-                        .collect::<Vec<_>>();
-                    (root, values)
-                })
-                .collect::<Vec<_>>();
-            if values.is_empty() {
+            let values_for = |root: usize, assigned: &[Option<usize>], used: &HashSet<usize>| {
+                domains[root]
+                    .iter()
+                    .copied()
+                    .filter(|point| !used.contains(point))
+                    .filter(|point| {
+                        value_viable(
+                            root,
+                            *point,
+                            domains,
+                            edge_roots,
+                            root_edges,
+                            edge_candidates,
+                            edge_neighbors,
+                            assigned,
+                            used,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let mut propagated = Vec::new();
+            let branch = loop {
+                let values = assigned
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, point)| point.is_none())
+                    .map(|(root, _)| (root, values_for(root, assigned, used)))
+                    .collect::<Vec<_>>();
+                if values.is_empty() {
+                    break Some(None);
+                }
+                if values.iter().any(|(_, values)| values.is_empty())
+                    || !remaining_domains_match(&values, assigned.len())
+                {
+                    break None;
+                }
+                let singleton_roots = values
+                    .iter()
+                    .filter_map(|(root, values)| (values.len() == 1).then_some(*root))
+                    .collect::<Vec<_>>();
+                if singleton_roots.is_empty() {
+                    break Some(
+                        values
+                            .into_iter()
+                            .min_by_key(|(root, values)| (values.len(), *root)),
+                    );
+                }
+                let mut dead = false;
+                for root in singleton_roots {
+                    if assigned[root].is_some() {
+                        continue;
+                    }
+                    let values = values_for(root, assigned, used);
+                    let [point] = values.as_slice() else {
+                        dead = true;
+                        break;
+                    };
+                    if !used.insert(*point) {
+                        dead = true;
+                        break;
+                    }
+                    assigned[root] = Some(*point);
+                    propagated.push((root, *point));
+                }
+                if dead {
+                    break None;
+                }
+            };
+            let Some(branch) = branch else {
+                rollback(assigned, used, propagated);
+                return;
+            };
+            let Some((root, values)) = branch else {
                 if let Some(solution) = assigned.iter().copied().collect::<Option<Vec<_>>>() {
                     solutions.push(solution);
                 }
-                return;
-            }
-            if !remaining_domains_match(&values, assigned.len()) {
-                return;
-            }
-            let Some((root, values)) = values
-                .into_iter()
-                .min_by_key(|(root, values)| (values.len(), *root))
-            else {
+                rollback(assigned, used, propagated);
                 return;
             };
             for point in values {
@@ -5766,9 +5815,10 @@ impl MeshQuotient {
                 used.remove(&point);
                 assigned[root] = None;
                 if solutions.len() >= solution_limit {
-                    return;
+                    break;
                 }
             }
+            rollback(assigned, used, propagated);
         }
 
         let mut roots = Vec::new();
@@ -5822,52 +5872,6 @@ impl MeshQuotient {
             })
             .collect::<Vec<_>>();
 
-        let mut assigned = vec![None; domains.len()];
-        let mut used = HashSet::new();
-        loop {
-            let mut forced = None;
-            for root in 0..assigned.len() {
-                if assigned[root].is_some() {
-                    continue;
-                }
-                let values = domains[root]
-                    .iter()
-                    .copied()
-                    .filter(|point| !used.contains(point))
-                    .filter(|point| {
-                        value_viable(
-                            root,
-                            *point,
-                            &domains,
-                            &edge_roots,
-                            &root_edges,
-                            edge_candidates,
-                            &edge_neighbors,
-                            &assigned,
-                            &used,
-                        )
-                    })
-                    .take(2)
-                    .collect::<Vec<_>>();
-                match values.as_slice() {
-                    [] => return Vec::new(),
-                    [point] => {
-                        forced = Some((root, *point));
-                        break;
-                    }
-                    [_, _] => {}
-                    _ => unreachable!("at most two viability witnesses"),
-                }
-            }
-            let Some((root, point)) = forced else {
-                break;
-            };
-            if !used.insert(point) {
-                return Vec::new();
-            }
-            assigned[root] = Some(point);
-        }
-
         let mut solutions = Vec::new();
         walk(
             &domains,
@@ -5875,8 +5879,8 @@ impl MeshQuotient {
             &root_edges,
             edge_candidates,
             &edge_neighbors,
-            &mut assigned,
-            &mut used,
+            &mut vec![None; domains.len()],
+            &mut HashSet::new(),
             &mut solutions,
             solution_limit,
         );
@@ -8961,6 +8965,28 @@ mod motif_tests {
         assert_eq!(assignment[&1], 2);
         assert_eq!(assignment[&2], 1);
         assert_eq!(assignment[&3], 3);
+    }
+
+    #[test]
+    fn point_assignment_propagates_forced_bijection_without_recursion() {
+        const ROOT_COUNT: usize = 10_000;
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(ROOT_COUNT),
+            domains: (0..ROOT_COUNT)
+                .map(|point| Arc::new(HashSet::from([point])))
+                .collect(),
+            members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
+        };
+        let candidates = (0..ROOT_COUNT / 2)
+            .map(|edge| vec![[edge * 2, edge * 2 + 1]])
+            .collect::<Vec<_>>();
+
+        let assignment = quotient
+            .point_assignment(ROOT_COUNT, &candidates)
+            .expect("forced coordinate bijection");
+
+        assert_eq!(assignment.len(), ROOT_COUNT);
+        assert!((0..ROOT_COUNT).all(|root| assignment[&root] == root));
     }
 
     #[test]
