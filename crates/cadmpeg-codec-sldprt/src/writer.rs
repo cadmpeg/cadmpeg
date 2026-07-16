@@ -390,6 +390,16 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
             "SLDPRT semantic writer does not support SubD surfaces".into(),
         ));
     }
+    for surface in &ir.model.surfaces {
+        if let SurfaceGeometry::Cone { ratio, .. } = &surface.geometry {
+            if *ratio != 1.0 {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
+                    surface.id.0, ratio
+                )));
+            }
+        }
+    }
     for body in &ir.model.bodies {
         if body.name.is_some() && body.color.is_none() {
             return Err(CodecError::NotImplemented(
@@ -2130,25 +2140,33 @@ pub(super) fn surface_values(
             origin,
             axis,
             radius,
+            ratio,
             half_angle,
             ..
-        } => (
-            0x34,
-            vec![
-                scaled(origin.x),
-                scaled(origin.y),
-                scaled(origin.z),
-                axis.x,
-                axis.y,
-                axis.z,
-                scaled(*radius),
-                half_angle.sin(),
-                half_angle.cos(),
-                reference.x,
-                reference.y,
-                reference.z,
-            ],
-        ),
+        } => {
+            if *ratio != 1.0 {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT compact cone carriers encode circular cones only".into(),
+                ));
+            }
+            (
+                0x34,
+                vec![
+                    scaled(origin.x),
+                    scaled(origin.y),
+                    scaled(origin.z),
+                    axis.x,
+                    axis.y,
+                    axis.z,
+                    scaled(*radius),
+                    half_angle.sin(),
+                    half_angle.cos(),
+                    reference.x,
+                    reference.y,
+                    reference.z,
+                ],
+            )
+        }
         SurfaceGeometry::Sphere {
             center,
             axis,

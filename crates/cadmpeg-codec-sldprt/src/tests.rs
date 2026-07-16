@@ -5463,6 +5463,36 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
 }
 
 #[test]
+fn semantic_writer_rejects_elliptical_cones_without_changing_shape() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let surface = &mut decoded.ir.model.surfaces[0];
+    let surface_id = surface.id.0.clone();
+    surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Cone {
+        origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        radius: 2.0,
+        ratio: 0.5,
+        half_angle: std::f64::consts::FRAC_PI_4,
+    };
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+            if message.contains(&surface_id) && message.contains("elliptical cone ratio 0.5")
+    ));
+}
+
+#[test]
 fn semantic_writer_converts_millimetres_to_native_metres() {
     let mut decoded = SldprtCodec
         .decode(
