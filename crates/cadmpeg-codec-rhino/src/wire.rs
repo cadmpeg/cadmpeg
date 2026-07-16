@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Archive-wide wire primitives and checked numeric conversions.
+//!
+//! Migrated module (doc section 10 Phase 2). Every read here operates on a
+//! proven fixed-size `[u8; 16]` array, never an untrusted count, so there is
+//! no `View`/`req_*`/`read_counted` obligation and no allocation from a
+//! decoded length. The module drives no budget dimension and carries the
+//! graduated `deny(clippy::disallowed_methods)`.
+#![deny(clippy::disallowed_methods)]
 
 use std::fmt;
 

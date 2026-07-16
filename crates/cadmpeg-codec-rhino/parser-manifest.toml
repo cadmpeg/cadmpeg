@@ -1,0 +1,418 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Per-module migration manifest for the Rhino `.3dm` decoder (doc section 8.6 /
+# 10 Phase 2). One `[[module]]` entry per parser module. `status` is `migrated`
+# or `legacy`; a `legacy` entry states, in `reason`, why the module has not yet
+# graduated. `input_spaces` names the address spaces the module reads;
+# `fuzz_targets` are the section 7 reachability targets that drive the committed
+# path; `charges` names the budget dimensions the module drives; `cost_model`
+# states the charge shape (never a flat unit per iteration). `window_egress`
+# lists the audited `View::window()` sites the module keeps (section 8.8
+# ratchet). `ledger_level` is the section 6.1 record-accounting level.
+#
+# Migration reality (recorded as a deviation for the integrator): this branch
+# predates the Phase 0B `clippy.toml` `disallowed-methods` list and the
+# crate-root `#![allow(clippy::disallowed_methods)]`. The Rhino decoder still
+# reads object-record bodies through the crate-local `BoundedReader`
+# (`chunks.rs`) over `&[u8]`, sizes collections with `Vec::with_capacity` from
+# decoded counts, and carries recursion depth as a plain `depth: usize`
+# parameter (`curves.rs` `MAX_CURVE_DEPTH`, `brep.rs`) rather than
+# `ctx.descend()`. The one platform surface already adopted is decompression:
+# every compressed mesh buffer inflates through `DecodeContext::begin_expand`
+# (`mesh.rs`, Phase 1B), charging `decompressed_bytes`. Ordering below follows
+# doc section 10 Phase 2: count-framed loops first, then irregular marker
+# probes and graph traversals.
+
+# ===========================================================================
+# Migrated modules
+# ===========================================================================
+
+# Pure wire primitives. Every read is over a proven fixed-size `[u8; 16]`
+# array; no untrusted count reaches an allocation, and no disallowed
+# accumulation method is present, so the module graduates with the deny lint
+# and has no `req_*`/`BoundedCount`/`read_counted` obligation. Reached
+# indirectly by every object-record fuzz target through `Uuid`/`scaled_coordinate`.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/wire.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["rhino_object_record", "rhino_container"]
+charges = []
+cost_model = "no budget charge; fixed-size [u8; 16] transforms and a finite-scale coordinate multiply, no framing decisions and no allocation from a decoded count"
+window_egress = []
+ledger_level = 0
+
+# ===========================================================================
+# Legacy modules — count-framed loops (migrate first per doc section 10)
+# ===========================================================================
+
+# NURBS curve families. Count-framed knot/control-point loops sized by decoded
+# counts; also the crate's main recursion site (`MAX_CURVE_DEPTH`, embedded
+# pcurve/polycurve nesting) carried as a `depth: usize` parameter.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/curves.rs"
+status = "legacy"
+reason = "Count-framed knot/CV loops size `Vec` with `Vec::with_capacity(count)` from decoded counts instead of `ctx.exact_vec`/`read_counted` over a `View::counted` `BoundedCount`; embedded-curve recursion uses a manual `depth: usize` guard against `MAX_CURVE_DEPTH` rather than `ctx.descend()`; reads run through `BoundedReader`, not the `View`/`req_*` mirror; no module deny lint. High-risk count and recursion sites live here."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_nurbs", "rhino_object_record"]
+charges = ["alloc_bytes", "work", "depth"]
+cost_model = "target: alloc_bytes per reserved element via exact_vec; depth via ctx.descend on embedded-curve nesting; work per knot/CV read"
+window_egress = []
+ledger_level = 0
+
+# NURBS and analytic surfaces. Count-framed knot/control-point grids sized by
+# decoded row/column counts.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/surfaces.rs"
+status = "legacy"
+reason = "17 `Vec::with_capacity` sites size knot vectors and CV grids from decoded row/column counts without a `View::counted` physical-plausibility proof or `ctx.exact_vec`; reads run through `BoundedReader`, not `View`/`req_*`; no module deny lint."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_nurbs", "rhino_object_record"]
+charges = ["alloc_bytes", "work"]
+cost_model = "target: alloc_bytes per reserved grid element via exact_vec; work per knot/CV read"
+window_egress = []
+ledger_level = 0
+
+# Mesh tessellation channels and compressed buffers. Vertex/face/channel loops
+# are count-framed; compression already routes through the platform expand path.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/mesh.rs"
+status = "legacy"
+reason = "Decompression is already migrated — every compressed buffer inflates through `DecodeContext::begin_expand` and charges `decompressed_bytes`, and `read_counted_raw` bounds channel reads against the remaining window — but face/channel/ngon collections still size via `Vec::with_capacity`, reads use the crate-local `BoundedReader`/`MeshExpand::data` rather than the `View`/`req_*` mirror, and the module has no deny lint. `View::window()` is retained only to hand compressed input to `inflate` and to compute chunk digests."
+input_spaces = ["rhino_object_record", "rhino_mesh_expand"]
+fuzz_targets = ["rhino_mesh_buffer", "rhino_object_record"]
+charges = ["alloc_bytes", "work", "decompressed_bytes"]
+cost_model = "decompressed_bytes charged per ExpandWriter::write; target alloc_bytes per reserved vertex/face via exact_vec; work per channel element"
+window_egress = [
+  "mesh.rs:MeshExpand::data — root window handed to the buffer reader",
+  "mesh.rs:read_buffer — source.window() as decompressor / stored-copy input",
+  "mesh.rs:read_buffer — view.window() for the stored (uncompressed) branch",
+  "mesh.rs:inflate — source.window() as zlib input",
+  "mesh.rs:chunk checksum — window() for CRC digest",
+]
+ledger_level = 0
+
+# B-rep topology. Count-framed vertex/edge/loop/face/trim tables plus a
+# trim-tree traversal.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/brep.rs"
+status = "legacy"
+reason = "11 `Vec::with_capacity` sites size the vertex/edge/trim/loop/face tables from decoded counts without `View::counted`/`ctx.exact_vec`; the trim-tree walk carries depth as a manual parameter rather than `ctx.descend()`; reads run through `BoundedReader`, not `View`/`req_*`; no module deny lint. Highest-risk count aggregation in the codec."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_brep", "rhino_object_record"]
+charges = ["alloc_bytes", "work", "depth"]
+cost_model = "target: alloc_bytes per reserved topology element via exact_vec; work per table row plus nodes+edges over the trim tree; depth via ctx.descend"
+window_egress = []
+ledger_level = 0
+
+# SubD control net. Count-framed vertex/edge/face arrays with fragment tables.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/subd.rs"
+status = "legacy"
+reason = "Count-framed control-net and fragment arrays size via `Vec::with_capacity` from decoded counts without `View::counted`/`ctx.exact_vec`; reads use `BoundedReader`, not `View`/`req_*`; no module deny lint."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_subd", "rhino_object_record"]
+charges = ["alloc_bytes", "work"]
+cost_model = "target: alloc_bytes per reserved control-net element via exact_vec; work per fragment element"
+window_egress = []
+ledger_level = 0
+
+# Extrusion profiles. Count-framed profile-curve and path arrays.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/extrusion.rs"
+status = "legacy"
+reason = "4 `Vec::with_capacity` sites size profile-curve arrays from decoded counts without `View::counted`/`ctx.exact_vec`; reads use `BoundedReader`, not `View`/`req_*`; no module deny lint."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_object_record"]
+charges = ["alloc_bytes", "work"]
+cost_model = "target: alloc_bytes per reserved profile element via exact_vec; work per profile point"
+window_egress = []
+ledger_level = 0
+
+# Cage / morph control lattice. Count-framed point lattice, now migrated.
+# Reads the record body through a `View` on a codec-local `DecodeContext`: knot
+# vectors and the control net are sized by `View::counted` proofs and reserved
+# through `ctx.exact_vec`; derived weights (no input floor) use
+# `alloc_unfloored` under the `MAX_CONTROL_POINTS` codec-local cap; committed
+# scalars use the `req_*` mirror; per-element `work` is charged; the module
+# carries `deny(clippy::disallowed_methods)`. Truncation at the control-net
+# boundary is tested. Only `chunk_at` (record framing) still touches the shared
+# `chunks.rs` plumbing to locate the body window before the `View` takes over.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/cage.rs"
+status = "migrated"
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_object_record"]
+charges = ["alloc_bytes", "work"]
+cost_model = "alloc_bytes per reserved knot/control element via exact_vec (weights via alloc_unfloored under MAX_CONTROL_POINTS); work charged once per count-framed loop proportional to elements read (knot_count per axis, control_count*stored_dimension for the net)"
+window_egress = []
+ledger_level = 0
+
+# Space morph parameters. Count-framed sample tables.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/morph.rs"
+status = "legacy"
+reason = "One `Vec::with_capacity` sizes the morph sample table from a decoded count without `View::counted`/`ctx.exact_vec`; reads use `BoundedReader`, not `View`/`req_*`; no module deny lint."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_object_record"]
+charges = ["alloc_bytes", "work"]
+cost_model = "target: alloc_bytes per reserved sample via exact_vec; work per sample read"
+window_egress = []
+ledger_level = 0
+
+# Persistent polyedge-reference construction, now migrated. Reads the record
+# body and every child segment through a `View` on a codec-local
+# `DecodeContext`: the count-framed parameter table and the segment list are
+# sized by `View::counted` proofs and reserved through `ctx.exact_vec`;
+# committed scalars use the `req_*` mirror; per-element `work` is charged
+# (parameter reads plus fixed field reads per segment); the module carries
+# `deny(clippy::disallowed_methods)`. Child-record framing is located by
+# `chunk_at`/`parse_class_wrapper`, which return typed ranges (no `View::window`
+# egress) before the child `View` takes over. Truncation at the segment child
+# boundary is tested.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/polyedge.rs"
+status = "migrated"
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_object_record"]
+charges = ["alloc_bytes", "work"]
+cost_model = "alloc_bytes per reserved parameter/segment via exact_vec; work charged proportional to elements read (parameter_count for the parameter loop, 13 fixed field reads per segment)"
+window_egress = []
+ledger_level = 0
+
+# Hatch loops, now migrated. Reads the record body through a `View` on a
+# codec-local `DecodeContext`: the count-framed boundary-loop table is sized by a
+# `View::counted` proof and reserved through `ctx.exact_vec`; the plane, pattern
+# scalars, and per-loop header fields commit through the `req_*` mirror; the
+# parse-warning list accumulates through a charged `ctx.grow_vec`; per-element
+# `work` is charged (a fixed header field count plus one unit per loop). Each
+# loop's curve is located by `chunk_at`/`parse_class_wrapper` typed ranges (no
+# `View::window` egress) and re-read by the still-legacy `curves::decode_2d`;
+# that delegation crosses a typed `Range`, not a byte slice, so it is not raw-byte
+# egress. Truncation at the loop child boundary is tested.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/hatch.rs"
+status = "migrated"
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_object_record"]
+charges = ["alloc_bytes", "work"]
+cost_model = "alloc_bytes per reserved loop via exact_vec and per accumulated warning via grow_vec; work charged proportional to elements read (19 fixed header field reads plus loop_count for the boundary-loop table)"
+window_egress = []
+ledger_level = 0
+
+# ===========================================================================
+# Legacy modules — irregular marker probes and graph traversals
+# ===========================================================================
+
+# Object-record dispatch. Probes the object type marker and routes to the leaf
+# decoder; the entry point every object fuzz target drives.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/objects.rs"
+status = "legacy"
+reason = "Uses `View` for the object-record envelope but dispatches leaf bodies through `BoundedReader`; 4 `Vec::with_capacity` sites size attribute/decoration arrays from decoded counts; probe misses are not yet charged proportionally to bytes examined; no `req_*` mirror on committed reads; no module deny lint."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_object_record"]
+charges = ["alloc_bytes", "work"]
+cost_model = "target: work per byte examined by the type-marker probe (not one unit per miss); alloc_bytes per reserved attribute via exact_vec"
+window_egress = []
+ledger_level = 0
+
+# Construction-history graph. Value tables keyed by parameter id; descendant
+# links form a document-level graph consumed downstream.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/history.rs"
+status = "legacy"
+reason = "4 `Vec::with_capacity` sites size parameter-value and descendant lists from decoded counts without `View::counted`/`ctx.exact_vec`/`grow_vec`; reads use `BoundedReader`, not `View`/`req_*`; the descendant graph is walked without a charged nodes+edges cost model; no module deny lint."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_object_record"]
+charges = ["alloc_bytes", "work"]
+cost_model = "target: alloc_bytes per reserved value via exact_vec; work per parameter plus nodes+edges over the descendant graph"
+window_egress = []
+ledger_level = 0
+
+# User-presentation and render records. Large marker-driven module.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/presentation.rs"
+status = "legacy"
+reason = "5 `Vec::with_capacity` sites size render/decoration arrays from decoded counts; marker-driven sub-record probes are not charged by bytes examined; reads use `BoundedReader`, not `View`/`req_*`; no module deny lint."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_object_record"]
+charges = ["alloc_bytes", "work"]
+cost_model = "target: work per byte examined by each sub-record probe; alloc_bytes per reserved element via exact_vec"
+window_egress = []
+ledger_level = 0
+
+# Dimension and leader annotations. Marker-driven field groups.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/dimensions.rs"
+status = "legacy"
+reason = "One `Vec::with_capacity` plus marker-driven field probes read through `BoundedReader` rather than `View`/`req_*`; no probe-by-bytes work charge; no module deny lint."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_object_record"]
+charges = ["alloc_bytes", "work"]
+cost_model = "target: work per byte examined by the field-group probe; alloc_bytes per reserved point via exact_vec"
+window_egress = []
+ledger_level = 0
+
+# Text and generic annotations.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/annotations.rs"
+status = "legacy"
+reason = "Marker-driven annotation fields read through `BoundedReader` rather than `View`/`req_*`; no module deny lint."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_object_record"]
+charges = ["work"]
+cost_model = "target: work per byte examined by the annotation-field probe"
+window_egress = []
+ledger_level = 0
+
+# Instance-reference and block records. Several probe sub-records.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/instances.rs"
+status = "legacy"
+reason = "Marker-driven instance-definition and reference sub-records read through `BoundedReader` rather than `View`/`req_*`; probe misses not charged by bytes examined; no module deny lint."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_object_record"]
+charges = ["work"]
+cost_model = "target: work per byte examined by each sub-record probe"
+window_egress = []
+ledger_level = 0
+
+# Document-wide settings and tables.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/settings.rs"
+status = "legacy"
+reason = "One `Vec::with_capacity` plus wide marker-driven setting groups read through `BoundedReader` rather than `View`/`req_*`; no probe-by-bytes work charge; no module deny lint."
+input_spaces = ["rhino_settings"]
+fuzz_targets = ["rhino_container"]
+charges = ["alloc_bytes", "work"]
+cost_model = "target: work per byte examined by the setting-group probe; alloc_bytes per reserved entry via exact_vec"
+window_egress = []
+ledger_level = 0
+
+# Nested detail viewports.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/detail.rs"
+status = "legacy"
+reason = "Marker-driven viewport fields read through `BoundedReader` rather than `View`/`req_*`; no module deny lint."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_object_record"]
+charges = ["work"]
+cost_model = "target: work per byte examined by the viewport-field probe"
+window_egress = []
+ledger_level = 0
+
+# Curve-on-surface (pcurve) construction. Recursion partner of curves.rs.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/curve_on_surface.rs"
+status = "legacy"
+reason = "Embedded-construction read invoked with a manual `depth: usize` parameter (shared `MAX_CURVE_DEPTH` budget with `curves.rs`) rather than `ctx.descend()`; reads use `BoundedReader`, not `View`/`req_*`; no module deny lint."
+input_spaces = ["rhino_object_record"]
+fuzz_targets = ["rhino_nurbs", "rhino_object_record"]
+charges = ["work", "depth"]
+cost_model = "target: depth via ctx.descend shared with curves.rs; work per read"
+window_egress = []
+ledger_level = 0
+
+# Product/document metadata record.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/product.rs"
+status = "legacy"
+reason = "One `Vec::with_capacity` and metadata fields read through `BoundedReader` rather than `View`/`req_*`; no module deny lint."
+input_spaces = ["rhino_settings"]
+fuzz_targets = ["rhino_container"]
+charges = ["work"]
+cost_model = "target: work per metadata field read"
+window_egress = []
+ledger_level = 0
+
+# Document data / user tables.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/document_data.rs"
+status = "legacy"
+reason = "Marker-driven user-table records read through `BoundedReader` rather than `View`/`req_*`; no module deny lint."
+input_spaces = ["rhino_settings"]
+fuzz_targets = ["rhino_container"]
+charges = ["work"]
+cost_model = "target: work per byte examined by the user-table probe"
+window_egress = []
+ledger_level = 0
+
+# Named views / viewport table.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/views.rs"
+status = "legacy"
+reason = "Reads the viewport table through `View` already, but sizes one array via `Vec::with_capacity` and commits required reads with the `Option` probe API rather than the `req_*` mirror; no module deny lint."
+input_spaces = ["rhino_settings"]
+fuzz_targets = ["rhino_container"]
+charges = ["alloc_bytes", "work"]
+cost_model = "target: alloc_bytes per reserved viewport via exact_vec; work per viewport field read"
+window_egress = []
+ledger_level = 0
+
+# ===========================================================================
+# Legacy modules — container, chunk framing, and space-neutral aggregation
+# ===========================================================================
+
+# Chunk framing, checksums, and the `BoundedReader` itself. The reader all leaf
+# modules borrow from.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/chunks.rs"
+status = "legacy"
+reason = "Defines the crate-local `BoundedReader` over `&[u8]` that is the pre-`View` reader for every leaf module; chunk-length framing is bounds-checked but does not carry the `View`/`req_*` mirror or a module deny lint. This is the shared plumbing whose migration unblocks the leaf modules."
+input_spaces = ["root"]
+fuzz_targets = ["rhino_chunks", "rhino_container"]
+charges = ["work"]
+cost_model = "target: work per chunk header examined; CRC over chunk length is bounded by the parent window"
+window_egress = []
+ledger_level = 0
+
+# Container scan and table-of-contents. Already `View`-based at the top.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/container.rs"
+status = "legacy"
+reason = "The container scan is `View`-based (`View::child`, one audited `window()`), but object-record bodies are handed to leaf decoders as `&[u8]` via `Scan`, committed reads use the `Option` probe rather than `req_*`, one `Vec::with_capacity` sizes the record index, and the module has no deny lint."
+input_spaces = ["root"]
+fuzz_targets = ["rhino_container", "rhino_object_record"]
+charges = ["alloc_bytes", "work"]
+cost_model = "target: work per table-of-contents chunk scanned; alloc_bytes per reserved record-index entry via exact_vec"
+window_egress = [
+  "container.rs:Scan — window() exposes the object-record body slice to leaf decoders (raw-byte egress boundary pending leaf View adoption)",
+]
+ledger_level = 0
+
+# Top-level decode orchestration and object-to-IR assembly.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/decode.rs"
+status = "legacy"
+reason = "Orchestrates the decode using `View` for the header but assembles the IR from leaf `&[u8]` outputs; 15 `Vec::with_capacity` sites size IR arenas from record counts that are trusted (post-scan) but not routed through `ctx.exact_vec`; object recursion carries a manual depth; no module deny lint."
+input_spaces = ["root", "rhino_object_record"]
+fuzz_targets = ["rhino_object_record", "rhino_container"]
+charges = ["alloc_bytes", "work", "retained_bytes"]
+cost_model = "retained_bytes charged against RETAINED_RECORD_CAP/RETAINED_DOCUMENT_CAP on object retention; target alloc_bytes per reserved IR element via exact_vec; work per assembled record"
+window_egress = []
+ledger_level = 0
+
+# Codec entry, format probe, and dispatch.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/lib.rs"
+status = "legacy"
+reason = "Probes the 3DM magic through `View` but the crate root does not yet carry the `#![allow(clippy::disallowed_methods)]` ratchet allow (workspace `clippy.toml` disallowed-methods list is not configured on this branch), so crate-level graduation is blocked upstream, not by this module. No leaf byte reads of its own."
+input_spaces = ["root"]
+fuzz_targets = ["rhino_container", "rhino_object_record"]
+charges = ["work"]
+cost_model = "target: work per byte examined by the magic probe"
+window_egress = []
+ledger_level = 0
+
+# Transfer-outcome aggregation for the object classes. No hostile-byte reads.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/accounting.rs"
+status = "legacy"
+reason = "Aggregates per-class decode outcomes from typed inputs with no untrusted-byte read path, so it is close to graduation, but it is not yet fuzz-declared with a truncation boundary and carries no module deny lint. Held `legacy` until it is listed against a reachability target."
+input_spaces = []
+fuzz_targets = ["rhino_object_record"]
+charges = []
+cost_model = "no budget charge; sums typed per-class outcome counters"
+window_egress = []
+ledger_level = 0
