@@ -402,5 +402,76 @@ test = false
 doc = false
 bench = false
 
+# Phase 2 migrated-leaf parser targets
+[[bin]]
+name = "catia_value_block"
+path = "fuzz_targets/catia_value_block.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_catalog"
+path = "fuzz_targets/catia_catalog.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_object_graph"
+path = "fuzz_targets/catia_object_graph.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catia_topology"
+path = "fuzz_targets/catia_topology.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "creo_datum"
+path = "fuzz_targets/creo_datum.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "creo_scalar"
+path = "fuzz_targets/creo_scalar.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_om"
+path = "fuzz_targets/nx_om.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_topology"
+path = "fuzz_targets/nx_topology.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_deltas"
+path = "fuzz_targets/nx_deltas.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nx_intersection"
+path = "fuzz_targets/nx_intersection.rs"
+test = false
+doc = false
+bench = false
+
 [profile.release]
 debug = 1

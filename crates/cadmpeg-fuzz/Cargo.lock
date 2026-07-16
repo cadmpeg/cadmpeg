@@ -40,23 +40,26 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
 name = "cadmpeg-codec-catia"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
+ "schemars",
+ "serde",
  "sha2",
 ]
 
 [[package]]
 name = "cadmpeg-codec-creo"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
+ "serde",
  "sha2",
 ]
 
 [[package]]
 name = "cadmpeg-codec-f3d"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
  "schemars",
@@ -69,25 +72,30 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-nx"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
+ "flate2",
+ "roxmltree",
+ "serde",
  "sha2",
 ]
 
 [[package]]
 name = "cadmpeg-codec-rhino"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
  "crc32fast",
  "flate2",
+ "serde",
+ "serde_json",
  "sha2",
 ]
 
 [[package]]
 name = "cadmpeg-codec-sldprt"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
  "crc32fast",
@@ -120,7 +128,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-ir"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "base64",
  "flate2",
@@ -133,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-step"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
  "thiserror",

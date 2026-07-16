@@ -99,6 +99,16 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"
 
+# Allocation ratchet: `clippy.toml` lists the growth methods
+# (`Vec::with_capacity`, `reserve`, `resize`, `repeat_n`, ...) that a decoder
+# must not call on an unfloored, attacker-controlled count. The lint is
+# Warn-by-default once the list is populated, but existing encoders and
+# not-yet-migrated decoders still call these methods legitimately, so the
+# workspace baseline stays `allow` and every Phase 2 migrated decoder module
+# re-enables it with `#![deny(clippy::disallowed_methods)]`. This mirrors the
+# per-module `indexing_slicing`/`arithmetic_side_effects` ratchet below.
+disallowed_methods = "allow"
+
 # Restriction picks: fail loudly instead of silently panicking or shipping
 # debug scaffolding. Use `expect` with a message where infallibility is a
 # real invariant; `unwrap` is reserved for tests.
