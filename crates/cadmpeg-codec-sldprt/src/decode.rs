@@ -130,6 +130,32 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+    let mut configuration_source_counts = BTreeMap::new();
+    for source_index in ir
+        .model
+        .configurations
+        .iter()
+        .filter_map(|configuration| configuration.source_index)
+    {
+        *configuration_source_counts
+            .entry(source_index)
+            .or_insert(0usize) += 1;
+    }
+    let ambiguous_configuration_sources = configuration_source_counts
+        .values()
+        .filter(|count| **count > 1)
+        .copied()
+        .sum::<usize>();
+    if ambiguous_configuration_sources > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{ambiguous_configuration_sources} configuration record(s) share non-unique geometry partition identities."
+            ),
+            provenance: None,
+        });
+    }
 
     let feature_names = ir
         .model
@@ -2160,6 +2186,38 @@ mod design_loss_tests {
         assert_eq!(ir.model.configurations[0].bodies, vec![first, second]);
         assert_eq!(ir.model.configurations[1].source_index, Some(7));
         assert_eq!(ir.model.configurations[1].bodies, vec![third]);
+    }
+
+    #[test]
+    fn duplicate_configuration_partition_identities_are_reported() {
+        let mut ir = CadIr::empty(Units::default());
+        for id in ["first", "second"] {
+            ir.model.configurations.push(DesignConfiguration {
+                id: ConfigurationId(id.into()),
+                ordinal: ir.model.configurations.len() as u32,
+                active: false,
+                source_index: Some(5),
+                name: id.into(),
+                material: None,
+                properties: BTreeMap::new(),
+                bodies: Vec::new(),
+                native_ref: Some(format!("native:{id}")),
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "2 configuration record(s) share non-unique geometry partition identities."
+        }));
     }
 
     #[test]
