@@ -41,6 +41,19 @@ pub const MAGIC: &[u8] = b"#UGC:2";
 
 /// End of the UGC header block.
 const UGC_HEADER_END: &[u8] = b"#-END_OF_UGC_HEADER";
+
+/// Allocation charged per section registered as a runtime space (§10 Phase 1A).
+///
+/// A conservative constant covering the retained space-graph record each
+/// enumerated section adds: the [`SpaceId`](cadmpeg_ir::decode::SpaceId) parent,
+/// the [`ByteRange`] span, and the [`SpaceOrigin::Slice`] tag. The platform
+/// graph layout is not visible to the codec, so this rounds up rather than
+/// measuring; its purpose is to make the section count consume the
+/// input-proportional allocation budget so a container packed with minimal
+/// section headers cannot grow the space graph without a matching charge. This
+/// mirrors the f3d reference `PER_ENTRY_GRAPH_BYTES` charge over admitted
+/// archive entries, whose per-entry graph footprint is identical.
+const PER_SECTION_GRAPH_BYTES: u64 = 256;
 /// Start of the ASCII table of contents.
 const TOC_START: &[u8] = b"#UGC_TOC";
 /// End of the ASCII table of contents.
@@ -922,13 +935,24 @@ pub fn scan_view<'a>(
 /// the root space, making the physical container framing visible in the runtime
 /// space graph ("L1-ready", §10 Phase 1A; the v2 ledger schema is not yet
 /// serialized). A section is an alias of already-admitted root bytes, so
-/// registration copies nothing and charges nothing; the returned views are
-/// unused because Phase 1 records the spans without refining their interiors.
+/// registration copies nothing, but each registered span retains a space-graph
+/// record whose count the input does not bound byte-for-byte (a container packed
+/// with minimal `\n#<alnum>\n` headers yields one section per few bytes). Charge
+/// that fixed per-section footprint against the input-proportional allocation
+/// budget up front so section registration is bounded by policy, not only by
+/// `max_input_bytes`. The returned views are unused because Phase 1 records the
+/// spans without refining their interiors.
 fn register_section_spaces(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<(), CodecError> {
+    let section_count = scan.sections.len() as u64;
+    ctx.charge_alloc(
+        section_count.saturating_mul(PER_SECTION_GRAPH_BYTES),
+        "creo_container_sections",
+        Some(root.location()),
+    )?;
     let len = scan.data.len() as u64;
     for section in &scan.sections {
         let start = section.offset as u64;
