@@ -98,8 +98,11 @@ impl PolicyProfile {
 ///
 /// Detection cannot fail, so it classifies by [`Confidence`]; inspection and
 /// decode classify `Ok` or the [`CodecError`](cadmpeg_ir::CodecError) variant.
-/// This is metadata recorded beside the stage-1 oracles — it is informative
-/// context, not itself a gated stage-1 oracle.
+/// This is recorded beside the four stage-1 oracles. It is not one of those
+/// four falsifiable-property oracles, but the regression check gates it as a
+/// ratchet dimension: any divergence from the blessed class is flagged, so a
+/// codec silently switching a fixture between `ok` and an error class fails the
+/// gate until re-blessed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResultClass {
     /// The operation produced a value.

@@ -40,6 +40,20 @@ fn regression_gate() {
         )
     });
 
+    // Oracle verdicts computed under one envelope cannot be compared against a
+    // baseline blessed under another. Refuse before running rather than ratchet
+    // against a calibration the committed baseline no longer claims.
+    let mismatches = baseline.calibration_mismatches(&limits);
+    assert!(
+        mismatches.is_empty(),
+        "runtime envelope differs from the committed baseline's; re-bless with `cargo test -p cadmpeg-harness --test gate -- --ignored bless_baselines`:\n{}",
+        mismatches
+            .iter()
+            .map(|m| format!("  {}: baseline {} vs current {}", m.field, m.baseline, m.current))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+
     let results = run_matrix(&runner(), &fixtures, &limits).expect("run gate matrix");
     let regressions = regressions(&baseline, &results);
 
@@ -48,7 +62,10 @@ fn regression_gate() {
         "oracle regressions against committed baseline:\n{}",
         regressions
             .iter()
-            .map(|r| format!("  {} [{}] {} -> {}", r.key, r.oracle, r.baseline, r.current))
+            .map(|r| format!(
+                "  {} [{}] {} -> {}",
+                r.key, r.dimension, r.baseline, r.current
+            ))
             .collect::<Vec<_>>()
             .join("\n")
     );
