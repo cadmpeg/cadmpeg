@@ -70,7 +70,15 @@ fn unique_feature_section_transform(
         .iter()
         .filter(|transform| transform.definition_id == definition_id);
     let transform = matches.next()?;
-    matches.next().is_none().then_some(transform)
+    matches.next().is_none().then_some(())?;
+    if let Some(feature_id) = transform.feature_id {
+        let feature_matches = transforms
+            .iter()
+            .filter(|candidate| candidate.feature_id == Some(feature_id))
+            .count();
+        (feature_matches == 1).then_some(())?;
+    }
+    Some(transform)
 }
 
 #[derive(Serialize)]
@@ -13212,7 +13220,15 @@ mod resolved_sketch_tests {
                 .map(|placed| placed.offset),
             Some(40)
         );
-        assert!(unique_feature_section_transform(&[transform.clone(), transform], 5).is_none());
+        assert!(
+            unique_feature_section_transform(&[transform.clone(), transform.clone()], 5).is_none()
+        );
+        let competing_definition = crate::placement::FeatureSectionTransform {
+            definition_id: 7,
+            offset: 50,
+            ..transform.clone()
+        };
+        assert!(unique_feature_section_transform(&[transform, competing_definition], 5).is_none());
         let affected = |ids: &[u32], offset| crate::feature::FeatureAffectedIds {
             feature_id: 6,
             kind: crate::feature::AffectedIdKind::Edges,

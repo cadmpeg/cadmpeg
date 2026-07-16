@@ -1605,7 +1605,9 @@ a generating feature identifier, that feature depends on the sketch history
 node. The sketch node precedes its profile consumer in construction order. A
 definition supplies neutral sketch placement and generated geometry only when
 exactly one resolved section transform carries its definition identifier;
-duplicate transforms remain native placement records.
+duplicate transforms remain native placement records. When the transform names
+a generating feature, it also requires exactly one transform for that feature;
+two definitions claiming the same feature do not select a profile snapshot.
 
 `FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table
 pointer. The configuration-root identity is
