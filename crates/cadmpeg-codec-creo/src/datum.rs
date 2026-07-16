@@ -2,7 +2,11 @@
 //! Standard model-space datum planes stored in `ActDatums`.
 //!
 //! Migrated per doc section 10 Phase 2: a context-independent primitive decoder
-//! over a caller-owned slice. Every read is a bounds-checked `get`. [`planes`]
+//! over a caller-owned slice. Hostile-length reads use a bounds-checked `get`;
+//! the residual direct-index reads (`payload[offset]`, and the fixed
+//! `values[4..]`/`outline[..]` slices) are proven in range by the enclosing
+//! loop bound and by `scalars` returning a fixed-length row, not by the read
+//! itself. [`planes`]
 //! accumulates one candidate per byte position while walking
 //! `0..payload.len()`, and [`scalars`] fills a fixed-width row (`count` is a
 //! caller-supplied literal, never an untrusted `compact_int`), so neither

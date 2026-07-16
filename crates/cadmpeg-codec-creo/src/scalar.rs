@@ -2,11 +2,14 @@
 //! PSB scalar forms with context-independent IEEE-754 mappings.
 //!
 //! Migrated per doc section 10 Phase 2: a pure primitive decoder over a
-//! caller-owned slice. Every read is a bounds-checked `get`; the only
-//! accumulator ([`ScalarCache::from_section`]) grows one entry per distinct
-//! `0x46` token found while scanning `0..section.len()`, so its length is
-//! bounded by input bytes, never by an untrusted count. No disallowed
-//! accumulation method is reachable.
+//! caller-owned slice. Hostile-length reads use a bounds-checked `get`; the
+//! `section[offset]` scan index is proven in range by the enclosing
+//! `0..section.len()` loop bound. The only accumulator
+//! ([`ScalarCache::from_section`]) grows one entry per distinct `0x46` token
+//! found while scanning `0..section.len()` (deduplicated through a hash set, so
+//! the pass is linear in the section length), so its length is bounded by input
+//! bytes, never by an untrusted count. No disallowed accumulation method is
+//! reachable.
 #![deny(clippy::disallowed_methods)]
 
 use crate::psb::{compact_int, short_form_float};
@@ -28,6 +31,12 @@ impl ScalarCache {
     /// eight-byte sequence beginning with `0x46` in one section.
     pub fn from_section(section: &[u8]) -> Self {
         let mut entries = Vec::<CacheEntry>::new();
+        // Distinct-token membership through a hash set, not a linear rescan of
+        // `entries` per `0x46` token: the latter is O(n^2) in the section
+        // length, which a multi-MB section of distinct tokens turns into
+        // seconds of CPU. Hash-set dedup keeps the pass linear in the section
+        // length while preserving first-appearance order in `entries`.
+        let mut seen = std::collections::HashSet::<[u8; 8]>::new();
         for offset in 0..section.len() {
             if section[offset] != 0x46 {
                 continue;
@@ -36,7 +45,7 @@ impl ScalarCache {
                 continue;
             };
             let raw: [u8; 8] = bytes.try_into().expect("bounded eight-byte slice");
-            if entries.iter().any(|entry| entry.raw == raw) {
+            if !seen.insert(raw) {
                 continue;
             }
             let mut ieee = raw;

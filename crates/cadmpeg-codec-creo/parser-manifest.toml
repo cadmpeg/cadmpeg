@@ -28,8 +28,10 @@
 
 # Pure primitive decoder over a caller-owned slice. `tokens` accumulates one
 # entry per structural form while walking `while offset < data.len()`, so its
-# output length is bounded by input bytes, never by an untrusted count; every
-# read is a bounds-checked `get`. No disallowed accumulation method is
+# output length is bounded by input bytes, never by an untrusted count;
+# hostile-length reads are bounds-checked `get`s and the `data[offset]` head
+# read is proven in range by the `while offset < data.len()` loop bound. No
+# disallowed accumulation method is
 # reachable, so it graduates with the deny lint and no `req_*`/`BoundedCount`
 # obligation, mirroring the platform `read.rs`/`le.rs` primitives.
 [[module]]
@@ -44,9 +46,11 @@ ledger_level = 0
 
 # Pure primitive decoder. `ScalarCache::from_section` grows one entry per
 # distinct `0x46` token found while scanning `0..section.len()`, bounded by
-# input bytes; `decode`/`decode_in_lane` are bounds-checked `Option` probes
-# over a caller-owned slice with no untrusted-count allocation. Graduates with
-# the deny lint on the same basis as `psb.rs`.
+# input bytes; token distinctness is a hash-set membership test so the pass is
+# linear in the section length (not the former O(n^2) rescan of the entry
+# vector). `decode`/`decode_in_lane` are bounds-checked `Option` probes over a
+# caller-owned slice with no untrusted-count allocation. Graduates with the deny
+# lint on the same basis as `psb.rs`.
 [[module]]
 path = "crates/cadmpeg-codec-creo/src/scalar.rs"
 status = "migrated"

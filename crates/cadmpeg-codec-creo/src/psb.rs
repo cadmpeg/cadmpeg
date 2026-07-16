@@ -7,7 +7,9 @@
 //! stream.
 //!
 //! Migrated per doc section 10 Phase 2: a pure primitive decoder over a
-//! caller-owned slice. Every read is a bounds-checked `get`, all offset
+//! caller-owned slice. Hostile-length reads use a bounds-checked `get`; the
+//! `data[offset]` head read is proven in range by the enclosing
+//! `while offset < data.len()` loop bound. All offset
 //! arithmetic is `checked_*` or saturating, and [`tokens`] accumulates one
 //! entry per structural form while walking `while offset < data.len()`, so its
 //! output length is bounded by input bytes, never by an untrusted count. No
