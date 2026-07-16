@@ -2704,17 +2704,21 @@ pub(crate) fn bind_extrude_profile_selections(
         let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
             continue;
         };
-        *profile = if let [group] = matching_groups.as_slice() {
-            resolved_extrude_profile_selection(
-                sketch_id,
-                group,
-                members,
-                sketch,
-                resolution,
-                scope.history_state_id,
-                scope.previous_history_state_id,
-            )
-        } else {
+        let selections = matching_groups
+            .iter()
+            .map(|group| {
+                resolved_extrude_profile_selection(
+                    sketch_id,
+                    group,
+                    members,
+                    sketch,
+                    resolution,
+                    scope.history_state_id,
+                    scope.previous_history_state_id,
+                )
+            })
+            .collect::<Vec<_>>();
+        *profile = merge_resolved_profile_selections(sketch_id, &selections).unwrap_or_else(|| {
             ProfileRef::SketchSelection {
                 sketch: sketch_id.clone(),
                 selections: matching_groups
@@ -2722,7 +2726,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     .map(|group| group.id.clone())
                     .collect(),
             }
-        };
+        });
     }
 }
 
@@ -2730,6 +2734,34 @@ pub(crate) fn bind_extrude_profile_selections(
 enum ResolvedProfileSelection {
     Loops(Vec<u32>),
     Regions(Vec<cadmpeg_ir::features::SketchProfileRegion>),
+}
+
+fn merge_resolved_profile_selections(
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    selections: &[cadmpeg_ir::features::ProfileRef],
+) -> Option<cadmpeg_ir::features::ProfileRef> {
+    use cadmpeg_ir::features::ProfileRef;
+
+    match ordered_unique_profile_selections(selections.iter().map(|selection| match selection {
+        ProfileRef::SketchProfiles {
+            sketch: selected,
+            profiles,
+        } if selected == sketch => Some(ResolvedProfileSelection::Loops(profiles.clone())),
+        ProfileRef::SketchRegions {
+            sketch: selected,
+            regions,
+        } if selected == sketch => Some(ResolvedProfileSelection::Regions(regions.clone())),
+        _ => None,
+    }))? {
+        ResolvedProfileSelection::Loops(profiles) => Some(ProfileRef::SketchProfiles {
+            sketch: sketch.clone(),
+            profiles,
+        }),
+        ResolvedProfileSelection::Regions(regions) => Some(ProfileRef::SketchRegions {
+            sketch: sketch.clone(),
+            regions,
+        }),
+    }
 }
 
 fn resolved_extrude_profile_selection(
@@ -11272,7 +11304,7 @@ mod relation_tests {
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
         Angle, DesignParameter as NeutralParameter, FaceSelection, Feature, FeatureDefinition,
-        FeatureId, Length, ParameterId, ParameterValue, SketchProfileRegion,
+        FeatureId, Length, ParameterId, ParameterValue, ProfileRef, SketchProfileRegion,
     };
     use cadmpeg_ir::ids::{EdgeId, FaceId, ShellId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -11802,6 +11834,82 @@ mod relation_tests {
                 Some(super::ResolvedProfileSelection::Regions(vec![region(3)])),
                 None,
             ]),
+            None
+        );
+    }
+
+    #[test]
+    fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
+        let sketch = SketchId("f3d:model:sketch#multi-profile".into());
+        let loops = [
+            ProfileRef::SketchProfiles {
+                sketch: sketch.clone(),
+                profiles: vec![3, 1],
+            },
+            ProfileRef::SketchProfiles {
+                sketch: sketch.clone(),
+                profiles: vec![1, 2],
+            },
+        ];
+        assert_eq!(
+            super::merge_resolved_profile_selections(&sketch, &loops),
+            Some(ProfileRef::SketchProfiles {
+                sketch: sketch.clone(),
+                profiles: vec![3, 1, 2],
+            })
+        );
+
+        let regions = [
+            ProfileRef::SketchRegions {
+                sketch: sketch.clone(),
+                regions: vec![SketchProfileRegion {
+                    outer: 4,
+                    holes: vec![5],
+                }],
+            },
+            ProfileRef::SketchRegions {
+                sketch: sketch.clone(),
+                regions: vec![SketchProfileRegion {
+                    outer: 2,
+                    holes: Vec::new(),
+                }],
+            },
+        ];
+        assert_eq!(
+            super::merge_resolved_profile_selections(&sketch, &regions),
+            Some(ProfileRef::SketchRegions {
+                sketch: sketch.clone(),
+                regions: vec![
+                    SketchProfileRegion {
+                        outer: 4,
+                        holes: vec![5],
+                    },
+                    SketchProfileRegion {
+                        outer: 2,
+                        holes: Vec::new(),
+                    },
+                ],
+            })
+        );
+
+        assert_eq!(
+            super::merge_resolved_profile_selections(
+                &sketch,
+                &[loops[0].clone(), regions[0].clone()]
+            ),
+            None
+        );
+        assert_eq!(
+            super::merge_resolved_profile_selections(
+                &sketch,
+                &[
+                    loops[0].clone(),
+                    ProfileRef::SketchSelection {
+                        sketch: sketch.clone(),
+                        selections: vec!["native-group".into()],
+                    },
+                ]
+            ),
             None
         );
     }
