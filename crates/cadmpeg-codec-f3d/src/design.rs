@@ -5751,7 +5751,14 @@ fn reflected_symmetry<'a>(
 )> {
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    if entities.len() != 3 {
+    if entities.len() != 3
+        || entities
+            .iter()
+            .map(|entity| &entity.id)
+            .collect::<HashSet<_>>()
+            .len()
+            != 3
+    {
         return None;
     }
     let mut candidates = Vec::new();
@@ -14831,6 +14838,18 @@ mod relation_tests {
             &[&first, &off_axis, &second],
         )
         .is_none());
+        let on_axis = entity(
+            "generated:point#on-axis",
+            SketchGeometry::Point {
+                position: Point2::new(0.0, 3.0),
+            },
+        );
+        for kind in [
+            SketchConstraintKind::Concentric,
+            SketchConstraintKind::Symmetry,
+        ] {
+            assert!(exact_atomic_constraint(kind, &[&on_axis, &axis_entity, &on_axis]).is_none());
+        }
     }
 
     #[test]
