@@ -4652,6 +4652,7 @@ impl MeshQuotient {
         &self,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
+        oriented_edges: &HashSet<usize>,
         limit: usize,
     ) -> Vec<(Vec<Vec<bool>>, Self)> {
         fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
@@ -4675,12 +4676,16 @@ impl MeshQuotient {
             edge_candidates: &[Vec<[usize; 2]>],
             output: &mut Vec<(Vec<Vec<bool>>, MeshQuotient)>,
             seen: &mut HashSet<MeshOrientationSignature>,
+            oriented_edges: &HashSet<usize>,
             limit: usize,
         ) {
             if output.len() >= limit {
                 return;
             }
             if boundary_index == boundaries.len() {
+                if !uses_canonical_edge_direction_gauge(boundaries, directions, oriented_edges) {
+                    return;
+                }
                 let canonical_directions = directions
                     .iter()
                     .map(|boundary| {
@@ -4726,6 +4731,7 @@ impl MeshQuotient {
                     edge_candidates,
                     output,
                     seen,
+                    oriented_edges,
                     limit,
                 );
                 *boundary_directions = directions.pop().unwrap_or_default();
@@ -4759,6 +4765,7 @@ impl MeshQuotient {
                     edge_candidates,
                     output,
                     seen,
+                    oriented_edges,
                     limit,
                 );
                 boundary_directions.pop();
@@ -4809,6 +4816,13 @@ impl MeshQuotient {
                             .collect::<Vec<_>>()
                     })
                     .collect::<Vec<_>>();
+                if !uses_canonical_edge_direction_gauge(
+                    &assignment.boundaries,
+                    &directions,
+                    oriented_edges,
+                ) {
+                    continue;
+                }
                 let mut quotient = self.clone();
                 let viable =
                     assignment
@@ -4865,6 +4879,7 @@ impl MeshQuotient {
             edge_candidates,
             &mut output,
             &mut seen,
+            oriented_edges,
             limit,
         );
         output
@@ -5372,13 +5387,12 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
 }
 
 fn uses_canonical_edge_direction_gauge(
-    assignment: &MeshFaceBoundaryAssignment,
+    boundaries: &[Vec<MeshBoundaryEdgeCandidate>],
     directions: &[Vec<bool>],
     oriented_edges: &HashSet<usize>,
 ) -> bool {
     let mut oriented = oriented_edges.clone();
-    assignment
-        .boundaries
+    boundaries
         .iter()
         .zip(directions)
         .all(|(boundary, directions)| {
@@ -6270,20 +6284,18 @@ impl MeshSelectionSearch<'_> {
             let assignment = &self.assignments[face][assignment_index];
             options.extend(
                 measured
-                    .assignment_options_limited(assignment, self.edge_candidates, remaining)
+                    .assignment_options_limited(
+                        assignment,
+                        self.edge_candidates,
+                        &selected_edges,
+                        remaining,
+                    )
                     .into_iter()
                     .map(|(directions, next_quotient)| {
                         (assignment_index, directions, next_quotient)
                     }),
             );
         }
-        options.retain(|(assignment_index, directions, _)| {
-            uses_canonical_edge_direction_gauge(
-                &self.assignments[face][*assignment_index],
-                directions,
-                &selected_edges,
-            )
-        });
         options.retain_mut(|(_, _, quotient)| quotient.root_count() >= self.vertex_points.len());
         if options.is_empty() {
             return;
@@ -7657,12 +7669,12 @@ mod motif_tests {
         let already_oriented = HashSet::from([1]);
 
         assert!(uses_canonical_edge_direction_gauge(
-            &assignment,
+            &assignment.boundaries,
             &[vec![false, true, true, true]],
             &already_oriented,
         ));
         assert!(!uses_canonical_edge_direction_gauge(
-            &assignment,
+            &assignment.boundaries,
             &[vec![true, false, false, true]],
             &already_oriented,
         ));
@@ -7786,10 +7798,12 @@ mod motif_tests {
             .any(|(directions, _)| directions == &[vec![false, false, false]]));
         let unrestricted = [Vec::new(), Vec::new(), Vec::new()];
         let options = quotient.assignment_options(&assignment, &unrestricted);
-        let limited = quotient.assignment_options_limited(&assignment, &unrestricted, 1);
+        let limited =
+            quotient.assignment_options_limited(&assignment, &unrestricted, &HashSet::new(), 1);
         assert_eq!(limited.len(), 1);
         assert_eq!(limited[0].0, options[0].0);
-        let unique = quotient.assignment_options_limited(&assignment, &unrestricted, 4_096);
+        let unique =
+            quotient.assignment_options_limited(&assignment, &unrestricted, &HashSet::new(), 4_096);
         assert!(unique
             .iter()
             .all(|option| options.iter().any(|candidate| candidate.0 == option.0)));
