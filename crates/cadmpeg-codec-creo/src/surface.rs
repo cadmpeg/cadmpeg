@@ -9,7 +9,7 @@ use cadmpeg_ir::cursor::bounded_len;
 
 use crate::psb::{self, compact_int};
 use crate::scalar;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Surface family encoded by an `srf_array` row's `geom_type` byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -677,6 +677,27 @@ pub fn frame_bound_outline_planes(
             offset: record.offset,
         });
     }
+    result.sort_by_key(|plane| plane.offset);
+    result
+}
+
+/// Derive outline planes and use complete support frames as the native surface
+/// chart for every identity they resolve.
+#[must_use]
+pub fn placed_outline_planes(
+    envelopes: &[PlaneEnvelopeRecord],
+    frames: &[PlaneLocalSystem],
+) -> Vec<OutlinePlane> {
+    let frame_bound = frame_bound_outline_planes(envelopes, frames);
+    let frame_bound_ids = frame_bound
+        .iter()
+        .map(|plane| plane.surface_id)
+        .collect::<BTreeSet<_>>();
+    let mut result = outline_planes(envelopes)
+        .into_iter()
+        .filter(|plane| !frame_bound_ids.contains(&plane.surface_id))
+        .collect::<Vec<_>>();
+    result.extend(frame_bound);
     result.sort_by_key(|plane| plane.offset);
     result
 }

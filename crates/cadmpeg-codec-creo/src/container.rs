@@ -1615,29 +1615,11 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let cross_section_plane_local_systems = cross_section_plane_local_systems(&data, &sections);
     let plane_envelopes = plane_envelopes(&data, &model_geometry_sections);
     let cross_section_plane_envelopes = cross_section_plane_envelopes(&data, &sections);
-    let mut outline_planes = surface::outline_planes(&plane_envelopes);
-    for plane in surface::frame_bound_outline_planes(&plane_envelopes, &plane_local_systems) {
-        if !outline_planes
-            .iter()
-            .any(|known| known.surface_id == plane.surface_id)
-        {
-            outline_planes.push(plane);
-        }
-    }
-    outline_planes.sort_by_key(|plane| plane.offset);
-    let mut cross_section_outline_planes = surface::outline_planes(&cross_section_plane_envelopes);
-    for plane in surface::frame_bound_outline_planes(
+    let outline_planes = surface::placed_outline_planes(&plane_envelopes, &plane_local_systems);
+    let cross_section_outline_planes = surface::placed_outline_planes(
         &cross_section_plane_envelopes,
         &cross_section_plane_local_systems,
-    ) {
-        if !cross_section_outline_planes
-            .iter()
-            .any(|known| known.surface_id == plane.surface_id)
-        {
-            cross_section_outline_planes.push(plane);
-        }
-    }
-    cross_section_outline_planes.sort_by_key(|plane| plane.offset);
+    );
     let surface_prototypes = surface_prototypes(&data, &model_geometry_sections);
     let surface_prototype_records = surface_prototype_records(&data, &model_geometry_sections);
     let curve_prototypes = curve_prototypes(&data, &model_geometry_sections);

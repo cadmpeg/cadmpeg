@@ -821,7 +821,9 @@ fn scan_ignores_surface_header_candidates_inside_a_preceding_header() {
 fn scan_decodes_plane_local_system_support_frame() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 1, 0]);
-    payload.extend_from_slice(&[0x0f; 10]);
+    for value in [0.0, 0.0, 0.0, 0.0, -1.0, -1.0, 1.0, 1.0, 2.0, 1.0] {
+        push_generated_scalar(&mut payload, value);
+    }
     payload.push(0xe3);
     payload.extend_from_slice(&[
         0x18, 0xe5, // stock first in-plane direction [0, 1, 0]
@@ -843,6 +845,10 @@ fn scan_decodes_plane_local_system_support_frame() {
         frame.classification,
         crate::surface::LocalSystemClassification::Simple
     );
+    assert_eq!(scan.outline_planes.len(), 1);
+    assert_eq!(scan.outline_planes[0].origin, [0.0, 0.0, 1.0]);
+    assert_eq!(scan.outline_planes[0].normal, [0.0, 0.0, -1.0]);
+    assert_eq!(scan.outline_planes[0].u_axis, [0.0, 1.0, 0.0]);
 }
 
 #[test]
@@ -886,7 +892,7 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     );
     assert_eq!(
         namespace.arenas["outline_planes"][0].fields["normal"][2],
-        1.0
+        -1.0
     );
 
     assert_eq!(result.ir.model.surfaces.len(), 1);
@@ -896,8 +902,8 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
         surface.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
         }
     );
     assert_annotation(
