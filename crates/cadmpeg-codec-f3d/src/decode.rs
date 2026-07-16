@@ -476,6 +476,7 @@ pub fn decode(
                 &ir.model.features,
                 &native.design_parameter_scopes,
                 &native.asm_histories,
+                &native.design_edge_operands,
             );
             crate::history::bind_feature_outputs(
                 &mut ir.model.features,
@@ -722,6 +723,7 @@ pub fn decode(
         &ir.model.features,
         &native.design_parameter_scopes,
         &native.asm_histories,
+        &native.design_edge_operands,
     );
     crate::history::bind_feature_outputs(
         &mut ir.model.features,

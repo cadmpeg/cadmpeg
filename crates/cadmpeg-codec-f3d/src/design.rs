@@ -1077,36 +1077,28 @@ fn resolved_edge_group(
     use cadmpeg_ir::features::EdgeSelection;
     use cadmpeg_ir::ids::HistoricalEdgeId;
 
-    let Some(previous_state_id) = previous_state_id else {
-        return if group.lost_edge_references.is_empty() {
-            EdgeSelection::Native(group.id.clone())
-        } else {
-            EdgeSelection::Unresolved
-        };
-    };
-    let state = feature_input_topology_id(feature_id, previous_state_id);
     let feature_key = feature_id
         .0
         .split_once('#')
         .map_or(feature_id.0.as_str(), |(_, key)| key);
-    let lost_selection = || {
-        partial_historical_edge_selection(
-            group
-                .lost_edge_references
-                .iter()
-                .map(|identity| (identity.as_str(), None)),
-            previous_state_id,
-            feature_key,
-            state.clone(),
-            &group.id,
-        )
-        .expect("lost reference group has at least one unresolved identity")
-    };
-    let unmatched_selection = || {
+    let unmatched_selection = |state_id: Option<i64>| {
         if group.lost_edge_references.is_empty() {
             EdgeSelection::Native(group.id.clone())
         } else {
-            lost_selection()
+            state_id
+                .and_then(|state_id| {
+                    partial_historical_edge_selection(
+                        group
+                            .lost_edge_references
+                            .iter()
+                            .map(|identity| (identity.as_str(), None)),
+                        state_id,
+                        feature_key,
+                        feature_input_topology_id(feature_id, state_id),
+                        &group.id,
+                    )
+                })
+                .unwrap_or(EdgeSelection::Unresolved)
         }
     };
     let stream = native_stream(&group.id);
@@ -1114,7 +1106,7 @@ fn resolved_edge_group(
     let mut member_identities = HashSet::new();
     for member in &group.members {
         if !member_identities.insert(*member) {
-            return unmatched_selection();
+            return unmatched_selection(previous_state_id);
         }
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == stream
@@ -1122,45 +1114,76 @@ fn resolved_edge_group(
                 && operand.record_index == *member
         });
         let Some(operand) = matches.next() else {
-            return unmatched_selection();
+            return unmatched_selection(previous_state_id);
         };
         if matches.next().is_some() {
-            return unmatched_selection();
+            return unmatched_selection(previous_state_id);
         }
         matched_operands.push(operand);
     }
-    let resolved_slots = matched_operands
+    let recipe_state_id = || {
+        let mut states = matched_operands
+            .iter()
+            .filter_map(|operand| operand.recipe_state_id);
+        let state = states.next()?;
+        (states.all(|candidate| candidate == state)
+            && matched_operands
+                .iter()
+                .all(|operand| operand.recipe_state_id == Some(state)))
+        .then_some(state)
+    };
+    let transition_state_id = previous_state_id;
+    let Some(previous_state_id) = transition_state_id.or_else(recipe_state_id) else {
+        return if group.lost_edge_references.is_empty() {
+            EdgeSelection::Native(group.id.clone())
+        } else {
+            EdgeSelection::Unresolved
+        };
+    };
+    let state = feature_input_topology_id(feature_id, previous_state_id);
+    let lost_selection = || unmatched_selection(Some(previous_state_id));
+    let exact_slots = matched_operands
         .iter()
         .map(|operand| resolved_edge_operand(operand))
         .collect::<Option<Vec<_>>>()
-        .or_else(|| unique_edge_group_assignment(&matched_operands))
-        .or_else(|| {
-            treatment_radius
-                .and_then(|radius| radius_edge_group_candidates(&matched_operands, radius))
-        })
-        .or_else(|| {
-            context_only_edge_group_candidates(matched_operands.iter().map(|operand| {
-                (
-                    resolved_edge_operand(operand),
-                    operand.changed_boundary_edge_slots.as_slice(),
+        .or_else(|| unique_edge_group_assignment(&matched_operands));
+    let transition_slots = || {
+        treatment_radius
+            .and_then(|radius| radius_edge_group_candidates(&matched_operands, radius))
+            .or_else(|| {
+                context_only_edge_group_candidates(matched_operands.iter().map(|operand| {
+                    (
+                        resolved_edge_operand(operand),
+                        operand.changed_boundary_edge_slots.as_slice(),
+                    )
+                }))
+            })
+            .or_else(|| {
+                common_deleted_edge_group_candidates(
+                    matched_operands
+                        .iter()
+                        .map(|operand| operand.deleted_boundary_edge_slots.as_slice()),
+                    matched_operands.len(),
                 )
-            }))
-        })
-        .or_else(|| {
-            common_deleted_edge_group_candidates(
-                matched_operands
-                    .iter()
-                    .map(|operand| operand.deleted_boundary_edge_slots.as_slice()),
-                matched_operands.len(),
-            )
-        })
-        .or_else(|| scope_partition_edge_group_candidates(group, groups, operands));
+            })
+            .or_else(|| scope_partition_edge_group_candidates(group, groups, operands))
+    };
+    let resolved_slots =
+        exact_slots.or_else(|| transition_state_id.and_then(|_| transition_slots()));
     let Some(resolved_slots) = resolved_slots else {
         if !group.lost_edge_references.is_empty() {
             return lost_selection();
         }
+        let partial_members = if transition_state_id.is_none() {
+            matched_operands
+                .iter()
+                .map(|operand| (operand.id.as_str(), resolved_edge_operand(operand)))
+                .collect()
+        } else {
+            partial_edge_group_members(&matched_operands)
+        };
         return partial_historical_edge_selection(
-            partial_edge_group_members(&matched_operands),
+            partial_members,
             previous_state_id,
             feature_key,
             state,
@@ -1613,6 +1636,20 @@ pub(crate) fn resolve_edge_operand_candidates(operand: &DesignEdgeOperand) -> Op
         &operand.deleted_boundary_edge_slots,
         deleted_reference,
     )
+}
+
+pub(crate) fn resolve_active_edge_recipe_candidates(
+    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+) -> Option<i64> {
+    let incidence = corroborated_edge_intersection(selector_contexts, &[], false);
+    let boundary_count = corroborated_edge_intersection(selector_contexts, &[], true);
+    let common_triplet = corroborated_common_triplet_intersection(selector_contexts, &[]);
+    let proofs = [incidence, boundary_count, common_triplet]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let edge = *proofs.first()?;
+    proofs.iter().all(|proof| *proof == edge).then_some(edge)
 }
 
 fn unique_deleted_triplet_candidate(
@@ -8492,8 +8529,10 @@ fn parse_edge_operand(
         updated_boundary_edge_slots: Vec::new(),
         treatment_radius_candidates: Vec::new(),
         changed_boundary_edge_contexts: Vec::new(),
+        terminal_boundary_edge_contexts: Vec::new(),
         recipe_reference_contexts: Vec::new(),
         recipe_selectors: Vec::new(),
+        recipe_state_id: None,
         resolved_edge_slot: None,
         next_record_index: indexed[4].1,
         next_byte_offset,
@@ -13495,6 +13534,49 @@ mod relation_tests {
                     "f3d:history-input:edge#6:fillet:8:17".into()
                 )]
         ));
+        let mut terminal_group = recovered_group.clone();
+        terminal_group.lost_edge_references.clear();
+        terminal_group.members = vec![100, 104];
+        let mut terminal_resolved = proven_operand.clone();
+        terminal_resolved.recipe_state_id = Some(8);
+        let mut terminal_unresolved = proven_operand.clone();
+        terminal_unresolved.id = "f3d:Design/BulkStream.dat:edge-operand#104".into();
+        terminal_unresolved.record_index = 104;
+        terminal_unresolved.recipe_state_id = Some(8);
+        terminal_unresolved.resolved_edge_slot = None;
+        terminal_unresolved.changed_boundary_edge_slots.clear();
+        terminal_unresolved.deleted_boundary_edge_slots.clear();
+        terminal_unresolved.treatment_radius_candidates.clear();
+        terminal_unresolved.recipe_selectors =
+            vec![crate::records::DesignEdgeRecipeSelectorContext {
+                selector: 0,
+                clause_entries: [None, None],
+                clause_triplet_edge_slots: [None, None],
+                incidence_matching_edge_slots: vec![18, 19],
+                unique_incidence_edge_slot: None,
+                boundary_count_matching_edge_slots: vec![18, 19],
+            }];
+        let terminal = super::resolved_edge_group(
+            &terminal_group,
+            std::slice::from_ref(&terminal_group),
+            &[terminal_resolved, terminal_unresolved],
+            None,
+            &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+            None,
+        );
+        assert!(
+            matches!(
+            terminal,
+            cadmpeg_ir::features::EdgeSelection::HistoricalPartial {
+                ref edges,
+                ref unresolved,
+                ..
+            } if edges == &[cadmpeg_ir::ids::HistoricalEdgeId(
+                "f3d:history-input:edge#6:fillet:8:17".into()
+            )] && unresolved == &["f3d:Design/BulkStream.dat:edge-operand#104"]
+            ),
+            "{terminal:?}"
+        );
         let mut context_operand = edge_operand.clone();
         context_operand.id = "context".into();
         context_operand.changed_boundary_edge_slots.clear();
@@ -16264,6 +16346,27 @@ mod relation_tests {
             None
         );
         assert_eq!(resolved_edge_candidate_intersection(&[], [&[17][..]]), None);
+        assert_eq!(
+            super::resolve_active_edge_recipe_candidates(&[
+                selector_with_counts(0, &[17, 18], &[17, 19]),
+                selector_with_counts(1, &[17, 20], &[17, 21]),
+            ]),
+            Some(17)
+        );
+        assert_eq!(
+            super::resolve_active_edge_recipe_candidates(&[
+                selector_with_counts(0, &[17, 18], &[17, 18]),
+                selector_with_counts(1, &[17, 18], &[17, 18]),
+            ]),
+            None
+        );
+        assert_eq!(
+            super::resolve_active_edge_recipe_candidates(&[
+                selector_with_counts(0, &[17], &[18]),
+                selector_with_counts(1, &[17], &[18]),
+            ]),
+            None
+        );
         assert_eq!(
             resolved_edge_candidate_intersection(&[], [&[17, 18][..], &[17, 19][..]]),
             Some(17)

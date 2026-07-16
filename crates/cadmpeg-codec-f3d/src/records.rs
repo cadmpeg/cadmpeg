@@ -1117,13 +1117,20 @@ pub struct DesignEdgeOperand {
     /// Ordered incident-loop topology for every changed boundary edge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
+    /// Ordered incident-loop topology for terminal candidate-face boundaries
+    /// used by a suppressed feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
     /// Ordered historical topology context for each prefix reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recipe_reference_contexts: Vec<DesignEdgeRecipeReferenceContext>,
-    /// Topology entries grouped by their source selector with changed-edge
+    /// Topology entries grouped by source selector with evaluation-state edge
     /// context matching the selector's incident-loop boundary counts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recipe_selectors: Vec<DesignEdgeRecipeSelectorContext>,
+    /// Historical topology state against which the edge recipe was evaluated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_state_id: Option<i64>,
     /// Stable historical edge slot proven by the selector/reference candidate
     /// intersection.
     #[serde(default, skip_serializing_if = "Option::is_none")]

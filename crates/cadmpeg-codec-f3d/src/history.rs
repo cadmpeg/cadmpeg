@@ -579,6 +579,7 @@ pub(crate) fn project_feature_input_topologies(
     features: &[cadmpeg_ir::features::Feature],
     scopes: &[crate::records::DesignParameterScope],
     histories: &[AsmHistory],
+    edge_operands: &[crate::records::DesignEdgeOperand],
 ) -> Vec<cadmpeg_ir::features::FeatureInputTopology> {
     use cadmpeg_ir::features::FeatureInputTopology;
     use cadmpeg_ir::ids::{HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId};
@@ -599,7 +600,21 @@ pub(crate) fn project_feature_input_topologies(
             if matching_scopes.next().is_some() {
                 return None;
             }
-            let previous_state_id = scope.previous_history_state_id?;
+            let previous_state_id = scope.previous_history_state_id.or_else(|| {
+                let stream = crate::design::native_stream(&scope.id);
+                let operands = edge_operands
+                    .iter()
+                    .filter(|operand| {
+                        operand.scope_record_index == scope.record_index
+                            && crate::design::native_stream(&operand.id) == stream
+                    })
+                    .collect::<Vec<_>>();
+                let state = operands.first()?.recipe_state_id?;
+                operands
+                    .iter()
+                    .all(|operand| operand.recipe_state_id == Some(state))
+                    .then_some(state)
+            })?;
             let state = (*states.get(&previous_state_id)?)?;
             let topology = state.topology.as_ref()?;
             let feature_key = feature
@@ -1058,6 +1073,25 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .and_modify(|state| *state = None)
             .or_insert(Some(state));
     }
+    let terminal_topologies = histories
+        .iter()
+        .filter_map(|history| {
+            let preceding = history
+                .states
+                .iter()
+                .filter_map(|state| state.transition.as_ref()?.previous_state_id)
+                .collect::<HashSet<_>>();
+            let mut terminals = history
+                .states
+                .iter()
+                .filter(|state| !preceding.contains(&state.state_id));
+            let state = terminals.next()?;
+            terminals
+                .next()
+                .is_none()
+                .then_some((state.state_id, state.topology.as_ref()?))
+        })
+        .collect::<Vec<_>>();
     for operand in operands {
         operand.result_candidate_faces.clear();
         operand.result_boundary_edge_slots.clear();
@@ -1069,8 +1103,10 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.updated_boundary_edge_slots.clear();
         operand.treatment_radius_candidates.clear();
         operand.changed_boundary_edge_contexts.clear();
+        operand.terminal_boundary_edge_contexts.clear();
         operand.recipe_reference_contexts.clear();
         operand.recipe_selectors.clear();
+        operand.recipe_state_id = None;
         operand.resolved_edge_slot = None;
         let stream = crate::design::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
@@ -1086,6 +1122,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         let (Some(state_id), Some(previous_state_id)) =
             (scope.history_state_id, scope.previous_history_state_id)
         else {
+            bind_active_edge_operand_candidates(operand, &terminal_topologies);
             continue;
         };
         let (Some(Some(state)), Some(Some(previous))) =
@@ -1101,6 +1138,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         if transition.previous_state_id != Some(previous_state_id) {
             continue;
         }
+        operand.recipe_state_id = Some(previous_state_id);
         operand.result_candidate_faces =
             faces_in_topology(&operand.candidate_faces, result_topology);
         operand.result_boundary_edge_slots =
@@ -1171,6 +1209,48 @@ pub(crate) fn bind_edge_operand_history_candidates(
         );
         operand.resolved_edge_slot = crate::design::resolve_edge_operand_candidates(operand);
     }
+}
+
+fn bind_active_edge_operand_candidates(
+    operand: &mut crate::records::DesignEdgeOperand,
+    topologies: &[(i64, &AsmHistoricalTopology)],
+) {
+    let mut matches = topologies.iter().filter_map(|(state_id, topology)| {
+        let candidate_faces = faces_in_topology(&operand.candidate_faces, topology);
+        if topologies.len() != 1 && candidate_faces.is_empty() {
+            return None;
+        }
+        let boundary_edges = face_boundary_edges(&candidate_faces, topology);
+        let contexts = boundary_edges
+            .iter()
+            .copied()
+            .map(|edge| historical_edge_context(edge, topology))
+            .collect::<Vec<_>>();
+        let selectors = recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
+        let edge = crate::design::resolve_active_edge_recipe_candidates(&selectors);
+        Some((
+            *state_id,
+            edge,
+            candidate_faces,
+            boundary_edges,
+            contexts,
+            selectors,
+        ))
+    });
+    let Some((state_id, edge, candidate_faces, boundary_edges, contexts, selectors)) =
+        matches.next()
+    else {
+        return;
+    };
+    if matches.next().is_some() {
+        return;
+    }
+    operand.preceding_candidate_faces = candidate_faces;
+    operand.preceding_boundary_edge_slots = boundary_edges;
+    operand.terminal_boundary_edge_contexts = contexts;
+    operand.recipe_selectors = selectors;
+    operand.recipe_state_id = Some(state_id);
+    operand.resolved_edge_slot = edge;
 }
 
 fn treatment_radius_candidates(
