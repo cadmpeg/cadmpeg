@@ -90,7 +90,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, Extent,
         FaceSelection, FeatureDefinition, PathRef, PatternKind, ProfileRef, RadiusSpec,
     };
-    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry, SpatialSketchGeometry};
 
     let active_configurations = ir
         .model
@@ -178,6 +178,28 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             severity: Severity::Warning,
             message: format!(
                 "{native_constraints} sketch constraint(s) retain native relation kinds and operands without complete neutral geometric semantics."
+            ),
+            provenance: None,
+        });
+    }
+
+    let native_sketch_geometry = ir
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| matches!(entity.geometry, SketchGeometry::Native { .. }))
+        .count()
+        + ir.model
+            .spatial_sketch_entities
+            .iter()
+            .filter(|entity| matches!(entity.geometry, SpatialSketchGeometry::Native { .. }))
+            .count();
+    if native_sketch_geometry > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{native_sketch_geometry} sketch entity geometry record(s) retain native kinds without solved neutral geometry."
             ),
             provenance: None,
         });
@@ -1780,6 +1802,10 @@ mod design_loss_tests {
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::report::DecodeReport;
+    use cadmpeg_ir::sketches::{
+        SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
+        SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
+    };
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::CadIr;
     use std::collections::BTreeMap;
@@ -1979,5 +2005,44 @@ mod design_loss_tests {
         assert_eq!(ir.model.configurations[0].bodies, vec![first, second]);
         assert_eq!(ir.model.configurations[1].source_index, Some(7));
         assert_eq!(ir.model.configurations[1].bodies, vec![third]);
+    }
+
+    #[test]
+    fn native_planar_and_spatial_sketch_geometry_is_reported() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.sketch_entities.push(SketchEntity {
+            id: SketchEntityId("planar-entity".into()),
+            sketch: SketchId("planar-sketch".into()),
+            construction: false,
+            native_ref: Some("native:planar".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Native {
+                native_kind: "SplineHandle".into(),
+            },
+        });
+        ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+            id: SpatialSketchEntityId("spatial-entity".into()),
+            sketch: SpatialSketchId("spatial-sketch".into()),
+            construction: false,
+            native_ref: Some("native:spatial".into()),
+            geometry: SpatialSketchGeometry::Native {
+                native_kind: "ReferenceCurve".into(),
+            },
+        });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "2 sketch entity geometry record(s) retain native kinds without solved neutral geometry."
+        }));
     }
 }
