@@ -159,6 +159,19 @@ pub(crate) fn validate_configuration_payload(
                 "F3D configuration variant `{name}` parameters must be an object: {entry_name}"
             )));
         }
+        if definition
+            .get("parameters")
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|parameters| {
+                parameters
+                    .values()
+                    .any(|value| value.is_array() || value.is_object())
+            })
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D configuration variant `{name}` parameter overrides must be JSON scalars: {entry_name}"
+            )));
+        }
         if let Some(suppressed) = definition.get("suppressed") {
             let valid = suppressed
                 .as_array()
@@ -11622,7 +11635,7 @@ mod relation_tests {
         repeated_linear_dimension, resolved_edge_candidate_intersection,
         resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
         unresolved_configuration_parameter_override_count, unresolved_configuration_rule_count,
-        unresolved_configuration_suppressed_feature_count,
+        unresolved_configuration_suppressed_feature_count, validate_configuration_payload,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConfiguration, DesignConfigurationKind,
@@ -11676,6 +11689,43 @@ mod relation_tests {
         assert_eq!(forward_ids.len(), 2);
         assert_ne!(forward[0].id, forward[1].id);
         assert_eq!(forward[0].native_ref.as_deref(), Some(first_id.as_str()));
+    }
+
+    #[test]
+    fn configuration_parameter_overrides_require_scalar_values() {
+        let scalar_parameters = serde_json::json!({
+            "configurations": {
+                "variant": {
+                    "parameters": {
+                        "string": "25 mm",
+                        "number": 2.5,
+                        "boolean": true,
+                        "null": null
+                    }
+                }
+            }
+        });
+        assert!(validate_configuration_payload(
+            "table.dsgcfg",
+            DesignConfigurationKind::Table,
+            &scalar_parameters,
+        )
+        .is_ok());
+
+        for value in [
+            serde_json::json!(["25 mm"]),
+            serde_json::json!({"value": "25 mm"}),
+        ] {
+            let payload = serde_json::json!({
+                "configurations": {"variant": {"parameters": {"width": value}}}
+            });
+            assert!(validate_configuration_payload(
+                "table.dsgcfg",
+                DesignConfigurationKind::Table,
+                &payload,
+            )
+            .is_err());
+        }
     }
 
     #[test]
