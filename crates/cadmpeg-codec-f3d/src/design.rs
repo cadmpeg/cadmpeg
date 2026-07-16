@@ -5731,18 +5731,6 @@ fn point_lies_on_sketch_geometry(
     let close = |left: f64, right: f64| {
         (left - right).abs() <= 1.0e-9 * (1.0 + left.abs().max(right.abs()))
     };
-    let angle_in_span = |angle: f64, start: f64, end: f64| {
-        if !angle.is_finite() || !start.is_finite() || !end.is_finite() || end < start {
-            return false;
-        }
-        let tau = std::f64::consts::TAU;
-        if end - start >= tau - 1.0e-9 {
-            return true;
-        }
-        let turns = ((start - angle) / tau).ceil().max(0.0);
-        let lifted = angle + turns * tau;
-        lifted >= start - 1.0e-9 && lifted <= end + 1.0e-9
-    };
     match geometry {
         SketchGeometry::Point { position } => sketch_points_close(point, *position),
         SketchGeometry::Line { start, end } => {
@@ -5769,7 +5757,12 @@ fn point_lies_on_sketch_geometry(
         } => {
             let relative = Point2::new(point.u - center.u, point.v - center.v);
             close(relative.u.hypot(relative.v), radius.0)
-                && angle_in_span(relative.v.atan2(relative.u), start_angle.0, end_angle.0)
+                && angle_in_sweep(
+                    relative.v.atan2(relative.u),
+                    start_angle.0,
+                    end_angle.0,
+                    1.0e-9,
+                )
         }
         SketchGeometry::Ellipse {
             center,
@@ -5788,7 +5781,7 @@ fn point_lies_on_sketch_geometry(
             let y = (-relative.u).mul_add(sin, relative.v * cos) / minor_radius.0;
             close(x.mul_add(x, y * y), 1.0)
                 && match (start_angle, end_angle) {
-                    (Some(start), Some(end)) => angle_in_span(y.atan2(x), start.0, end.0),
+                    (Some(start), Some(end)) => angle_in_sweep(y.atan2(x), start.0, end.0, 1.0e-9),
                     (None, None) => true,
                     _ => false,
                 }
@@ -12622,6 +12615,20 @@ mod relation_tests {
             Point2::new(-2.0, 0.0),
             &arc,
             1.0e-6
+        ));
+        let clockwise_arc = entity(SketchGeometry::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(2.0),
+            start_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+            end_angle: cadmpeg_ir::features::Angle(0.0),
+        });
+        assert!(point_lies_on_sketch_geometry(
+            Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
+            &clockwise_arc.geometry
+        ));
+        assert!(!point_lies_on_sketch_geometry(
+            Point2::new(-2.0, 0.0),
+            &clockwise_arc.geometry
         ));
 
         let ellipse = entity(SketchGeometry::Ellipse {
