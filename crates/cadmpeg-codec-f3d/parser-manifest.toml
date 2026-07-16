@@ -167,7 +167,7 @@ status = "migrated"
 input_spaces = ["entry:*"]
 fuzz_targets = ["f3d_container"]
 charges = ["alloc_bytes", "work"]
-cost_model = "work charged once per stream pass in each of the three whole-stream scans, proportional to the bytes examined (`win_len`, doubled for `decode_table` to cover the ACTTable marker search and the trailing GUID scan); alloc_bytes charged via exact_vec over the ACTTable count under a BoundedCount physical-floor proof, via grow_vec for the entity/guid/root-component accumulators, and via charge_alloc per merged `by_key` graph node (untrusted-count-tracked map growth)"
+cost_model = "work charged in two parts: (1) once per stream pass in each of the three whole-stream scans for the position-stepping cost, proportional to `win_len` (doubled for `decode_table` to cover the ACTTable marker search and the trailing GUID scan); (2) inside each `lp_ascii`/`lp_utf16` probe, `4 + payload_bytes` charged before the probe reads and allocates, so a scan that runs the probe at every position charges CPU proportional to the bytes each probe actually examines rather than a flat unit per position; alloc_bytes charged via exact_vec over the ACTTable count under a BoundedCount physical-floor proof, via grow_vec for the entity/guid/root-component accumulators, and via charge_alloc per merged `by_key` graph node (untrusted-count-tracked map growth)"
 window_egress = []
 ledger_level = 0
 # Migrated per doc section 10 Phase 2: hostile reads go through `View` at

@@ -7,8 +7,11 @@
 //! `ACTTable` count-framed record loop reserves through
 //! [`DecodeContext::exact_vec`] under a [`BoundedCount`] physical-floor proof,
 //! the entity/guid/root-component accumulators grow through
-//! [`DecodeContext::grow_vec`], and each whole-stream marker scan charges the
-//! work budget proportionally to the bytes it examines. Random-access marker
+//! [`DecodeContext::grow_vec`], each whole-stream marker scan charges the
+//! work budget for the position-stepping pass, and every `lp_ascii`/`lp_utf16`
+//! probe charges the bytes it examines before it reads and allocates, so a
+//! hostile stream that forces a large-string probe at every scan position
+//! charges CPU proportionally rather than a flat unit per position. Random-access marker
 //! probes read at offsets relative to the entry window through [`seek_rel`], so
 //! the record fields keep their entry-relative byte offsets while the reads
 //! stay bounded by the view.
@@ -238,7 +241,7 @@ fn decode_table(ctx: &DecodeContext<'_>, base: View<'_>) -> Result<DecodedTable,
             return Ok(empty());
         }
         let entity_id_offset = cursor + 15;
-        let Some((entity_id, end)) = lp_utf16(base, cursor + 11) else {
+        let Some((entity_id, end)) = lp_utf16(ctx, base, cursor + 11)? else {
             return Ok(empty());
         };
         indexed.push(TableEntry {
@@ -252,7 +255,8 @@ fn decode_table(ctx: &DecodeContext<'_>, base: View<'_>) -> Result<DecodedTable,
     let mut guids = ctx.grow_vec::<StreamGuid>();
     let len = win_len(base);
     while cursor + 4 <= len {
-        if let Some((guid, end)) = lp_utf16(base, cursor).filter(|(value, _)| is_guid(value)) {
+        if let Some((guid, end)) = lp_utf16(ctx, base, cursor)?.filter(|(value, _)| is_guid(value))
+        {
             guids.try_push((guid, cursor))?;
             cursor = end;
         } else {
@@ -290,7 +294,7 @@ fn decode_channel_groups(
     let len = win_len(base);
     let mut position = 0usize;
     while position + 4 <= len {
-        let Some((class_tag, after_tag)) = lp_ascii(base, position) else {
+        let Some((class_tag, after_tag)) = lp_ascii(ctx, base, position)? else {
             position += 1;
             continue;
         };
@@ -316,11 +320,12 @@ fn decode_channel_groups(
         let mut channels = BTreeMap::new();
         let mut guid_offsets = BTreeMap::new();
         for _ in 0..count {
-            let Some((name, after_name)) = lp_ascii(base, cursor) else {
+            let Some((name, after_name)) = lp_ascii(ctx, base, cursor)? else {
                 channels.clear();
                 break;
             };
-            let Some((guid, after_guid)) = lp_utf16(base, after_name).filter(|(v, _)| is_guid(v))
+            let Some((guid, after_guid)) =
+                lp_utf16(ctx, base, after_name)?.filter(|(v, _)| is_guid(v))
             else {
                 channels.clear();
                 break;
@@ -337,7 +342,7 @@ fn decode_channel_groups(
             cursor = after_guid;
         }
         if !channels.is_empty() {
-            if let Some((entity_id, end)) = lp_utf16(base, cursor) {
+            if let Some((entity_id, end)) = lp_utf16(ctx, base, cursor)? {
                 out.try_push(ChannelGroup {
                     record_index,
                     record_index_offset: after_tag,
@@ -373,7 +378,7 @@ fn decode_root_components(
     let len = win_len(base);
     let mut position = 0usize;
     while position + 4 <= len {
-        let Some((class_tag, after_tag)) = lp_ascii(base, position) else {
+        let Some((class_tag, after_tag)) = lp_ascii(ctx, base, position)? else {
             position += 1;
             continue;
         };
@@ -395,7 +400,7 @@ fn decode_root_components(
             continue;
         };
         let entity_id_offset = cursor + 4;
-        let Some((entity_id, cursor)) = lp_utf16(base, cursor) else {
+        let Some((entity_id, cursor)) = lp_utf16(ctx, base, cursor)? else {
             position += 1;
             continue;
         };
@@ -417,7 +422,7 @@ fn decode_root_components(
             continue;
         }
         let display_name_offset = cursor + 4;
-        let Some((display_name, cursor)) = lp_utf16(base, cursor) else {
+        let Some((display_name, cursor)) = lp_utf16(ctx, base, cursor)? else {
             position += 1;
             continue;
         };
@@ -479,37 +484,84 @@ fn marker_value(base: View<'_>, position: usize) -> Option<(u32, usize)> {
 /// A length-prefixed ASCII string (little-endian u32 length, then bytes) at
 /// entry-relative offset `position`. Returns the string and the offset just
 /// past it. Lengths outside `1..=128` are rejected.
-fn lp_ascii(base: View<'_>, position: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32_le_rel(base, position)?).ok()?;
+fn lp_ascii(
+    ctx: &DecodeContext<'_>,
+    base: View<'_>,
+    position: usize,
+) -> Result<Option<(String, usize)>, CodecError> {
+    let Some(length) = u32_le_rel(base, position).and_then(|value| usize::try_from(value).ok())
+    else {
+        return Ok(None);
+    };
     if !(1..=128).contains(&length) {
-        return None;
+        return Ok(None);
     }
-    let mut view = seek_rel(base, position)?;
-    let _ = view.u32_le()?;
-    let raw = view.take(length)?;
-    let value = std::str::from_utf8(raw).ok()?;
-    Some((value.into(), position + 4 + length))
+    // Charge the bytes this probe examines (length header plus payload) before
+    // it reads and allocates. A whole-stream scan runs this probe at many
+    // positions; charging only the scan step (once per position) undercharges
+    // the per-position read by a large constant, so a hostile stream would
+    // evade the work freeze. Charging bytes-examined keeps work a faithful CPU
+    // proxy.
+    ctx.charge_work((4 + length) as u64, "act::lp_ascii", Some(base.location()))?;
+    let Some(mut view) = seek_rel(base, position) else {
+        return Ok(None);
+    };
+    if view.u32_le().is_none() {
+        return Ok(None);
+    }
+    let Some(raw) = view.take(length) else {
+        return Ok(None);
+    };
+    let Ok(value) = std::str::from_utf8(raw) else {
+        return Ok(None);
+    };
+    Ok(Some((value.into(), position + 4 + length)))
 }
 
 /// A length-prefixed UTF-16LE string (little-endian u32 unit count, then units)
 /// at entry-relative offset `position`. Returns the string and the offset just
 /// past it. Counts above 1024 units are rejected; the transient decode buffer
 /// is bounded by that domain cap.
-fn lp_utf16(base: View<'_>, position: usize) -> Option<(String, usize)> {
-    let count = usize::try_from(u32_le_rel(base, position)?).ok()?;
+fn lp_utf16(
+    ctx: &DecodeContext<'_>,
+    base: View<'_>,
+    position: usize,
+) -> Result<Option<(String, usize)>, CodecError> {
+    let Some(count) = u32_le_rel(base, position).and_then(|value| usize::try_from(value).ok())
+    else {
+        return Ok(None);
+    };
     if count > 1024 {
-        return None;
+        return Ok(None);
     }
-    let byte_length = count.checked_mul(2)?;
-    let mut view = seek_rel(base, position)?;
-    let _ = view.u32_le()?;
-    let raw = view.take(byte_length)?;
+    let Some(byte_length) = count.checked_mul(2) else {
+        return Ok(None);
+    };
+    // Charge the bytes this probe examines (length header plus the UTF-16
+    // payload) before it reads, decodes, and allocates. See `lp_ascii` for why
+    // the per-position scan charge alone undercharges this probe.
+    ctx.charge_work(
+        (4 + byte_length) as u64,
+        "act::lp_utf16",
+        Some(base.location()),
+    )?;
+    let Some(mut view) = seek_rel(base, position) else {
+        return Ok(None);
+    };
+    if view.u32_le().is_none() {
+        return Ok(None);
+    }
+    let Some(raw) = view.take(byte_length) else {
+        return Ok(None);
+    };
     let units = raw
         .chunks_exact(2)
         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
         .collect::<Vec<_>>();
-    let value = String::from_utf16(&units).ok()?;
-    Some((value, position + 4 + byte_length))
+    let Ok(value) = String::from_utf16(&units) else {
+        return Ok(None);
+    };
+    Ok(Some((value, position + 4 + byte_length)))
 }
 
 /// Whether `value` is a canonical 36-character hyphenated GUID.
