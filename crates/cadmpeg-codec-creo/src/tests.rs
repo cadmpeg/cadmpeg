@@ -579,6 +579,50 @@ fn decode_transfers_positional_line_extrusion_plane() {
 }
 
 #[test]
+fn decode_withholds_positional_line_extrusion_for_duplicate_surface_id() {
+    let mut extrusion = visibgeom_payload(1, 0);
+    extrusion.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 0]);
+    for value in [0.0, 0.0, 1.0] {
+        push_generated_scalar(&mut extrusion, value);
+    }
+    extrusion.extend_from_slice(&[0x00, 0x0c, 0x9a]);
+    for value in [0.0, 0.0, 0.0, 2.0, 0.0, 0.0] {
+        push_generated_scalar(&mut extrusion, value);
+    }
+    extrusion.push(0xe3);
+
+    let mut plane = visibgeom_payload(1, 0);
+    plane.extend_from_slice(&[7, 0x26, 5, 0x01, 0, 0, 0xe4, 0xe3]);
+    let result = decode::decode(
+        &mut Cursor::new(build_prt(
+            "c",
+            &[("ND:0:VisibGeom:0", extrusion), ("ND:1:VisibGeom:0", plane)],
+        )),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+
+    assert!(result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
+    assert!(result
+        .ir
+        .model
+        .curves
+        .iter()
+        .all(|curve| curve.id.as_str() != "creo:visibgeom:surface_directrix#7"));
+    assert!(result
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface_extrusion#7"));
+}
+
+#[test]
 fn decode_preserves_type_2c_direction_before_named_record() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 0, 0x0f, 0xe4, 0x0f]);

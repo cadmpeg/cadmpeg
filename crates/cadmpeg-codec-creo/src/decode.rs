@@ -18627,21 +18627,19 @@ fn transfer_positional_line_extrusion_planes(
         .iter()
         .map(|replay| replay.surface_id)
         .collect::<BTreeSet<_>>();
-    let row_types = scan
-        .surface_rows
-        .iter()
-        .map(|row| (row.id, (row.kind, row.type_byte)))
-        .collect::<BTreeMap<_, _>>();
     let mut transferred = 0;
     for record in &scan.surface_parameters {
         if replay_bound_surfaces.contains(&record.surface_id) {
             continue;
         }
-        let Some((crate::surface::SurfaceKind::Extrusion, type_byte)) =
-            row_types.get(&record.surface_id).copied()
+        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
         else {
             continue;
         };
+        if row.kind != crate::surface::SurfaceKind::Extrusion {
+            continue;
+        }
+        let type_byte = row.type_byte;
         let Some(frame) = record.line_extrusion_frame(type_byte) else {
             continue;
         };
