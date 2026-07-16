@@ -1853,34 +1853,21 @@ pub(crate) fn face_endpoint_candidates_close(
 ) -> bool {
     const MAX_STATES: usize = 65_536;
 
-    fn search(
-        edges: &[usize],
-        candidates: &[Vec<[usize; 2]>],
-        at: usize,
-        selected: &mut [[usize; 2]],
-        degrees: &mut HashMap<usize, u8>,
-        states: &mut usize,
-    ) -> Option<bool> {
-        if *states >= MAX_STATES {
-            return None;
+    fn pair_fits(degrees: &HashMap<usize, u8>, pair: [usize; 2]) -> bool {
+        let left = usize::from(degrees.get(&pair[0]).copied().unwrap_or(0));
+        let right = usize::from(degrees.get(&pair[1]).copied().unwrap_or(0));
+        if pair[0] == pair[1] {
+            left + 2 <= 2
+        } else {
+            left < 2 && right < 2
         }
-        *states += 1;
-        if at == edges.len() {
-            return Some(incidence_cycles(edges, selected).is_some());
-        }
-        let edge = edges[at];
-        for &pair in &candidates[edge] {
-            let mut admissible = true;
-            for point in pair {
-                let degree = degrees.entry(point).or_default();
-                *degree = degree.saturating_add(1);
-                admissible &= *degree <= 2;
-            }
-            selected[edge] = pair;
-            if admissible && search(edges, candidates, at + 1, selected, degrees, states)? {
-                return Some(true);
-            }
-            for point in pair {
+    }
+
+    fn adjust(degrees: &mut HashMap<usize, u8>, pair: [usize; 2], increase: bool) {
+        for point in pair {
+            if increase {
+                *degrees.entry(point).or_default() += 1;
+            } else {
                 let remove = if let Some(degree) = degrees.get_mut(&point) {
                     *degree -= 1;
                     *degree == 0
@@ -1892,31 +1879,77 @@ pub(crate) fn face_endpoint_candidates_close(
                 }
             }
         }
+    }
+
+    fn search(
+        all_edges: &[usize],
+        branches: &[(usize, Vec<[usize; 2]>)],
+        at: usize,
+        selected: &mut [[usize; 2]],
+        degrees: &mut HashMap<usize, u8>,
+        states: &mut usize,
+    ) -> Option<bool> {
+        if at == branches.len() {
+            return Some(incidence_cycles(all_edges, selected).is_some());
+        }
+        let (edge, candidates) = &branches[at];
+        let viable = candidates
+            .iter()
+            .copied()
+            .filter(|pair| pair_fits(degrees, *pair))
+            .collect::<Vec<_>>();
+        if viable.len() > 1 {
+            if *states >= MAX_STATES {
+                return None;
+            }
+            *states += 1;
+        }
+        for pair in viable {
+            adjust(degrees, pair, true);
+            selected[*edge] = pair;
+            if search(all_edges, branches, at + 1, selected, degrees, states)? {
+                return Some(true);
+            }
+            adjust(degrees, pair, false);
+        }
         Some(false)
     }
 
     if edge_faces.len() != candidates.len() {
         return false;
     }
-    let mut edges = edge_faces
+    let edges = edge_faces
         .iter()
         .enumerate()
         .filter_map(|(edge, faces)| faces.contains(&face).then_some(edge))
         .collect::<Vec<_>>();
-    if edges.is_empty() || edges.iter().any(|edge| candidates[*edge].is_empty()) {
+    if edges.is_empty() {
         return false;
     }
-    edges.sort_unstable_by_key(|edge| candidates[*edge].len());
     let mut selected = vec![[0; 2]; candidates.len()];
-    search(
-        &edges,
-        candidates,
-        0,
-        &mut selected,
-        &mut HashMap::new(),
-        &mut 0,
-    )
-    .unwrap_or(false)
+    let mut degrees = HashMap::new();
+    let mut branches = Vec::new();
+    for &edge in &edges {
+        let mut options = candidates[edge].clone();
+        for pair in &mut options {
+            pair.sort_unstable();
+        }
+        options.sort_unstable();
+        options.dedup();
+        match options.as_slice() {
+            [] => return false,
+            [pair] => {
+                if !pair_fits(&degrees, *pair) {
+                    return false;
+                }
+                selected[edge] = *pair;
+                adjust(&mut degrees, *pair, true);
+            }
+            _ => branches.push((edge, options)),
+        }
+    }
+    branches.sort_unstable_by_key(|(edge, options)| (options.len(), *edge));
+    search(&edges, &branches, 0, &mut selected, &mut degrees, &mut 0).unwrap_or(false)
 }
 
 fn resolve_edge_faces_from_runs(
@@ -10093,6 +10126,17 @@ mod motif_tests {
             &[vec![[0, 1]], vec![[1, 2]], vec![[3, 4]]],
             0,
         ));
+    }
+
+    #[test]
+    fn face_endpoint_candidates_do_not_budget_fixed_cycle_size() {
+        const EDGE_COUNT: usize = 65_537;
+        let faces = vec![[0, 0]; EDGE_COUNT];
+        let candidates = (0..EDGE_COUNT)
+            .map(|edge| vec![[edge, (edge + 1) % EDGE_COUNT]])
+            .collect::<Vec<_>>();
+
+        assert!(face_endpoint_candidates_close(&faces, &candidates, 0));
     }
 
     #[test]
