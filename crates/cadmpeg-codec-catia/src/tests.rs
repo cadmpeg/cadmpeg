@@ -5075,6 +5075,18 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert_eq!(result.ir.model.coedges.len(), 3);
     assert_eq!(result.ir.model.edges.len(), 3);
     assert_eq!(result.ir.model.curves.len(), 3);
+    assert_eq!(result.ir.model.procedural_curves.len(), 3);
+    assert!(result.ir.model.procedural_curves.iter().all(|curve| {
+        matches!(
+            curve.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+                ref context,
+                ..
+            } if context.sides[0].surface.is_some()
+                && context.sides[0].pcurve.is_some()
+                && context.sides[1].surface.is_none()
+        )
+    }));
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.pcurves.len(), 3);
     assert!(result.report.losses.iter().all(|loss| {

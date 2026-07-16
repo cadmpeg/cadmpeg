@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of reference-closed `b5 03` object topology into neutral IR.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{pcurve_uv, surface_point};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
+    Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -131,8 +131,9 @@ fn transfer_complete(
     let mut pcurve_plan = BTreeMap::new();
     let mut edge_curve_plan = HashMap::<u32, CurveGeometry>::new();
     let mut edge_procedural_plan = HashMap::<u32, ProceduralCurveDefinition>::new();
+    let mut edge_support_plan = HashMap::<u32, Vec<(u32, u32, [f64; 2])>>::new();
     let mut loop_senses = BTreeMap::new();
-    let mut edge_ids = HashSet::new();
+    let mut edge_ids = BTreeSet::new();
     for loop_ in graph.loops.values() {
         if loop_.pcurves.len() != loop_.edges.len() || loop_.pcurves.is_empty() {
             return false;
@@ -168,6 +169,15 @@ fn transfer_complete(
             let Some(knots) = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities) else {
                 return false;
             };
+            let Some(parameter_range) = knots
+                .first()
+                .copied()
+                .zip(knots.last().copied())
+                .map(|(start, end)| [start, end])
+                .filter(|range| range[0].is_finite() && range[0] < range[1])
+            else {
+                return false;
+            };
             let Some(surface) = graph.surfaces.get(&loop_.surface) else {
                 return false;
             };
@@ -188,6 +198,13 @@ fn transfer_complete(
                 .is_some()
             {
                 return false;
+            }
+            let supports = edge_support_plan.entry(edge_id).or_default();
+            if !supports
+                .iter()
+                .any(|(surface, pcurve, _)| *surface == loop_.surface && *pcurve == pcurve_id)
+            {
+                supports.push((loop_.surface, pcurve_id, parameter_range));
             }
             let lifted = lifted_curve_geometry(pcurve, surface).or_else(|| {
                 let SurfaceGeometry::Nurbs(cache) = &surface_plan.get(&loop_.surface)?.geometry
@@ -375,7 +392,7 @@ fn transfer_complete(
     }
 
     let mut pcurve_ids = HashMap::new();
-    for (object_id, (geometry, cylinder_reparameterized)) in pcurve_plan {
+    for (&object_id, (geometry, cylinder_reparameterized)) in &pcurve_plan {
         let id = PcurveId(format!("catia:b5:pcurve#{object_id}"));
         annotate(
             annotations,
@@ -384,13 +401,13 @@ fn transfer_complete(
             "21_pcurve",
             Exactness::ByteExact,
         );
-        if cylinder_reparameterized {
+        if *cylinder_reparameterized {
             annotations.derived(&id, "geometry.control_points");
         }
         pcurve_ids.insert(object_id, id.clone());
         ir.model.pcurves.push(Pcurve {
             id,
-            geometry,
+            geometry: geometry.clone(),
             wrapper_reversed: None,
             parameter_range: None,
             fit_tolerance: None,
@@ -427,15 +444,28 @@ fn transfer_complete(
             geometry,
             source_object: None,
         });
-        if let Some(definition) = edge_procedural_plan.remove(&edge_id) {
-            let procedural_id = ProceduralCurveId(format!("catia:b5:helix#{edge_id}"));
+        let procedural = edge_procedural_plan
+            .remove(&edge_id)
+            .map(|definition| ("helix", "cylinder_parametric_helix", definition))
+            .or_else(|| {
+                b5_edge_support_definition(
+                    edge_support_plan.get(&edge_id)?,
+                    &surface_ids,
+                    &pcurve_plan,
+                )
+            });
+        if let Some((kind, tag, definition)) = procedural {
+            let procedural_id = ProceduralCurveId(format!("catia:b5:{kind}#{edge_id}"));
             annotate(
                 annotations,
                 &procedural_id,
                 "object_stream_b5_03",
-                "cylinder_parametric_helix",
+                tag,
                 Exactness::Derived,
             );
+            annotations
+                .derived(&procedural_id, "curve")
+                .derived(&procedural_id, "definition");
             ir.model.procedural_curves.push(ProceduralCurve {
                 id: procedural_id,
                 curve: curve_id.clone(),
@@ -1044,6 +1074,57 @@ fn surface_parameter_bounds(graph: &B5Graph, surface_id: u32) -> Option<[[f64; 2
         .then_some(bounds)
 }
 
+fn b5_edge_support_definition(
+    supports: &[(u32, u32, [f64; 2])],
+    surface_ids: &HashMap<u32, SurfaceId>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool)>,
+) -> Option<(&'static str, &'static str, ProceduralCurveDefinition)> {
+    const PARAMETER_TOLERANCE: f64 = 1e-9;
+
+    let ([first] | [first, _]) = supports else {
+        return None;
+    };
+    let parameter_range = first.2;
+    if supports.iter().skip(1).any(|support| {
+        (support.2[0] - parameter_range[0]).abs() > PARAMETER_TOLERANCE
+            || (support.2[1] - parameter_range[1]).abs() > PARAMETER_TOLERANCE
+    }) {
+        return None;
+    }
+    let mut sides = std::array::from_fn(|_| IntcurveSupportSide {
+        surface: None,
+        pcurve: None,
+    });
+    for (side, (surface, pcurve, _)) in sides.iter_mut().zip(supports) {
+        side.surface = Some(surface_ids.get(surface)?.clone());
+        side.pcurve = Some(pcurves.get(pcurve)?.0.clone());
+    }
+    let context = IntcurveSupportContext {
+        sides,
+        parameter_range,
+        discontinuities: std::array::from_fn(|_| Vec::new()),
+    };
+    if supports.len() == 2 && supports[0].0 != supports[1].0 {
+        Some((
+            "intersection",
+            "two_surface_pcurve_intersection",
+            ProceduralCurveDefinition::Intersection {
+                context,
+                discontinuity_flag: false,
+            },
+        ))
+    } else {
+        Some((
+            "surface-curve",
+            "parametric_surface_curve",
+            ProceduralCurveDefinition::SurfaceCurve {
+                family: SurfaceCurveFamily::Parametric,
+                context,
+            },
+        ))
+    }
+}
+
 fn revolution_surface(
     profile: Option<&B5Profile>,
     axis_origin: [f64; 3],
@@ -1459,17 +1540,70 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::{
-        body_kind_if_owned, cylinder_helix, lifted_curve_geometry, neutral_pcurve_point,
-        rational_arc, revolution_surface, revolve_nurbs, transfer_vertex_tolerances, SurfacePlan,
+        b5_edge_support_definition, body_kind_if_owned, cylinder_helix, lifted_curve_geometry,
+        neutral_pcurve_point, rational_arc, revolution_surface, revolve_nurbs,
+        transfer_vertex_tolerances, SurfacePlan,
     };
     use crate::b5::{B5Face, B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{
         CurveGeometry, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
     };
+    use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::BodyKind;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
+
+    #[test]
+    fn edge_supports_preserve_one_sided_and_intersection_constructions() {
+        let surfaces = HashMap::from([
+            (10, SurfaceId("surface-10".to_string())),
+            (11, SurfaceId("surface-11".to_string())),
+        ]);
+        let pcurve_20 = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        let pcurve_21 = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 1.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        let pcurves = BTreeMap::from([
+            (20, (pcurve_20.clone(), false)),
+            (21, (pcurve_21.clone(), false)),
+        ]);
+        let (_, _, one_sided) =
+            b5_edge_support_definition(&[(10, 20, [2.0, 4.0])], &surfaces, &pcurves)
+                .expect("one-sided surface curve");
+        assert!(matches!(
+            one_sided,
+            ProceduralCurveDefinition::SurfaceCurve { context, .. }
+                if context.parameter_range == [2.0, 4.0]
+                    && context.sides[0].surface == Some(surfaces[&10].clone())
+                    && context.sides[0].pcurve == Some(pcurve_20)
+                    && context.sides[1].surface.is_none()
+        ));
+
+        let (_, _, intersection) = b5_edge_support_definition(
+            &[(10, 20, [2.0, 4.0]), (11, 21, [2.0, 4.0])],
+            &surfaces,
+            &pcurves,
+        )
+        .expect("two-sided intersection");
+        assert!(matches!(
+            intersection,
+            ProceduralCurveDefinition::Intersection { context, .. }
+                if context.parameter_range == [2.0, 4.0]
+                    && context.sides[1].surface == Some(surfaces[&11].clone())
+                    && context.sides[1].pcurve == Some(pcurve_21)
+        ));
+        assert!(b5_edge_support_definition(
+            &[(10, 20, [2.0, 4.0]), (11, 21, [2.0, 5.0])],
+            &surfaces,
+            &pcurves,
+        )
+        .is_none());
+    }
 
     #[test]
     fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
