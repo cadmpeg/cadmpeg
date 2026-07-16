@@ -3809,6 +3809,35 @@ fn decode_links_segment_index_words_to_direct_and_separated_om_sections() {
 }
 
 #[test]
+fn feature_history_links_follow_unique_physical_section_order() {
+    use crate::native::{OmSchemaRole, SegmentIndexSlot, SegmentOmLink};
+
+    let link = |id: &str, schema_role, source_offset, section_offset| SegmentOmLink {
+        id: id.to_string(),
+        row: format!("row-{id}"),
+        slot: SegmentIndexSlot::Value,
+        schema_role,
+        separator_byte_len: (section_offset - source_offset) as u32,
+        source_offset,
+        section_offset,
+    };
+    let links = crate::native::canonical_feature_history_links([
+        link("late", OmSchemaRole::FeatureHistory, 300, 300),
+        link("model", OmSchemaRole::Model, 50, 50),
+        link("duplicate", OmSchemaRole::FeatureHistory, 100, 100),
+        link("early", OmSchemaRole::FeatureHistory, 100, 100),
+    ]);
+
+    assert_eq!(
+        links
+            .iter()
+            .map(|link| (link.id.as_str(), link.section_offset))
+            .collect::<Vec<_>>(),
+        [("duplicate", 100), ("late", 300)]
+    );
+}
+
+#[test]
 fn decode_retains_role_scoped_om_record_area_header() {
     let file =
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_om_record_area_payload())]);

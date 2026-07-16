@@ -5566,14 +5566,33 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
         .collect()
 }
 
+fn feature_history_links(container: &Container) -> Vec<SegmentOmLink> {
+    canonical_feature_history_links(segment_om_links(container))
+}
+
+pub(crate) fn canonical_feature_history_links(
+    links: impl IntoIterator<Item = SegmentOmLink>,
+) -> Vec<SegmentOmLink> {
+    let mut links = links
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+        .collect::<Vec<_>>();
+    links.sort_by(|first, second| {
+        first
+            .section_offset
+            .cmp(&second.section_offset)
+            .then_with(|| first.source_offset.cmp(&second.source_offset))
+            .then_with(|| first.id.cmp(&second.id))
+    });
+    links.dedup_by_key(|link| link.section_offset);
+    links
+}
+
 /// Decode ordered operation labels from feature-history record areas.
 pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLabel> {
     let sections = container.om_sections();
     let mut labels = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5604,10 +5623,7 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
 pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOperation> {
     let sections = container.om_sections();
     let mut operations = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5652,10 +5668,7 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
 pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationRecord> {
     let sections = container.om_sections();
     let mut records = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5700,10 +5713,7 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
 pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadString> {
     let sections = container.om_sections();
     let mut strings = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5782,10 +5792,7 @@ pub fn feature_simple_hole_repeated_scalar_lanes(
 ) -> Vec<FeatureSimpleHoleRepeatedScalarLane> {
     let sections = container.om_sections();
     let mut pairs = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5836,10 +5843,7 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
         .map(|block| block.id)
         .collect::<BTreeSet<_>>();
     let mut references = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5981,10 +5985,7 @@ pub(crate) fn parse_simple_hole_template(
 pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReference> {
     let sections = container.om_sections();
     let mut references = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -6017,10 +6018,7 @@ pub fn feature_body_reference_occurrences(
 ) -> Vec<FeatureBodyReferenceOccurrence> {
     let sections = container.om_sections();
     let mut references = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -6216,10 +6214,7 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut inputs = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -6311,10 +6306,7 @@ pub fn feature_datum_csys_constructions(
     let sections = container.om_sections();
     let inputs = feature_input_blocks(container);
     let mut constructions = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -6405,10 +6397,7 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
     let sections = container.om_sections();
     let inputs = feature_input_blocks(container);
     let mut headers = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -7947,10 +7936,7 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut references = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -7998,10 +7984,7 @@ pub fn feature_extrude_profile_references(
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut references = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8043,10 +8026,7 @@ pub fn feature_extrude_profile_references(
 pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtrudePayloadHeader> {
     let sections = container.om_sections();
     let mut headers = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8082,10 +8062,7 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
 pub fn feature_extrude_payload_footers(container: &Container) -> Vec<FeatureExtrudePayloadFooter> {
     let sections = container.om_sections();
     let mut footers = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8126,10 +8103,7 @@ pub fn feature_extrude_payload_scalar_triples(
 ) -> Vec<FeatureExtrudePayloadScalarTriple> {
     let sections = container.om_sections();
     let mut triples = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8179,10 +8153,7 @@ pub fn feature_operation_body_scalar_triples(
 ) -> Vec<FeatureOperationBodyScalarTriple> {
     let sections = container.om_sections();
     let mut triples = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8233,10 +8204,7 @@ pub fn feature_operation_body_scalar_triples(
 pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOperationBodyMember> {
     let sections = container.om_sections();
     let mut members = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8321,10 +8289,7 @@ pub fn feature_operation_body_11_continuations(
 ) -> Vec<FeatureOperationBody11Continuation> {
     let sections = container.om_sections();
     let mut continuations = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8370,10 +8335,7 @@ pub fn feature_operation_body_reference_lanes(
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut lanes = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8507,10 +8469,7 @@ pub fn feature_extrude_payload_32_branches(
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut branches = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8623,10 +8582,7 @@ pub fn feature_block_construction_references(
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut references = Vec::new();
-    for link in segment_om_links(container)
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-    {
+    for link in feature_history_links(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span

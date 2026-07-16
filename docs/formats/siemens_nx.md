@@ -103,6 +103,10 @@ A size-framed OM section's schema trailer can contain a little-endian
 section-relative record-area offset. The target begins with three `u32 LE`
 control words followed by `04|05 01 text_length:u8 "NX " product_text 00`.
 The pointed record area extends to the size-framed section boundary.
+Feature-history sections are traversed in ascending physical section-offset
+order. Multiple validated segment-index links to one section identify one
+semantic feature-history section; the complete segment-link set remains raw
+container linkage. Operations within a section retain record order.
 Within a feature-history record area, an operation header is encoded as the
 marker `80 cd 01 04 01 2f a4 7a e1 47 ae 14 7b ff ff`, four object-index
 slots, then `03 length:u8 name 00`. An index below 128 is one byte. Values
