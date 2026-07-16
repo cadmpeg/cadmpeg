@@ -744,11 +744,13 @@ When the incidence contains exactly two items whose senses resolve to section
 loci, those loci define the measured endpoints in stored order. This join is
 independent of whether the relation discriminator has a neutral typed mapping.
 A type-zero relation with sign zero, one, or `f6`, a defined `dimtab_ptr`
-selector, and a two-locus joined incidence is the Euclidean distance between the
-joined loci. A nonempty incidence without exactly two resolved loci remains an
-entity-level distance. The more specific operand-vector and `verhor` forms below
-refine that distance to horizontal or vertical endpoint loci; incomplete operand
-vectors do not discard the incidence-backed distance.
+selector whose dimension type is linear, and a two-locus joined incidence is
+the Euclidean distance between the joined loci. A nonempty incidence without
+exactly two resolved loci remains an entity-level distance. A non-linear or
+schema-defined selected dimension does not define a neutral distance. The more
+specific operand-vector and `verhor` forms below refine that distance to
+horizontal or vertical endpoint loci; incomplete operand vectors do not discard
+the incidence-backed distance.
 
 Within the three four-slot `relat_ptr` operand vectors, `e5` expands to two
 zero slots and `e6` expands to three zero slots. `e4` is the integer value one,
@@ -782,7 +784,9 @@ type-three `var_arr` radius with that key. An arc's `radius` field selects the
 same radius key. The solved center point and positive radius define its
 unbounded circular carrier before both arc endpoints are available.
 The selected dimension is the neutral radius constraint parameter of the arc
-whose `radius` field names that key.
+whose `radius` field names that key when the selected dimension type is linear.
+A non-linear or schema-defined selected dimension does not define a neutral
+radius constraint.
 
 The named `segtab` row before its schema close is likewise a data row. Its `type`, `dir`, `pointid`, `cntrid`, `arcorient`, `verhor`, radius, and `ext_id` fields contribute one segment to the declared table count.
 Positional rows may insert the two-byte `c0 80` wrapper before `type`. The

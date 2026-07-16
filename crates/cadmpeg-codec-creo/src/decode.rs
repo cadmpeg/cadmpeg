@@ -7752,7 +7752,7 @@ fn section_dimension_constraints(
         .rows
         .iter()
         .map(|relation| {
-            let parameter = definition
+            let dimension = definition
                 .owner_feature_id
                 .zip(definition.dimensions.as_ref())
                 .and_then(|(owner, dimensions)| {
@@ -7760,13 +7760,16 @@ fn section_dimension_constraints(
                         .rows
                         .get(usize::try_from(relation.dimension_id).ok()?)?;
                     dimension.value?;
-                    Some(feature_dimension_parameter_id(
-                        definition.id,
-                        owner,
-                        dimension.external_id,
-                    ))
+                    Some((owner, dimension))
                 });
+            let parameter = dimension.map(|(owner, dimension)| {
+                feature_dimension_parameter_id(definition.id, owner, dimension.external_id)
+            });
             let typed = (|| {
+                let (_, dimension) = dimension?;
+                if dimension.value_unit != crate::feature::DimensionUnit::Millimeters {
+                    return None;
+                }
                 let parameter = parameter.clone()?;
                 if relation.relation_type == 14
                     && relation.sign == 1
@@ -14054,6 +14057,61 @@ mod resolved_sketch_tests {
                 parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
         );
+        let mut angular_distance = distance_definition.clone();
+        angular_distance
+            .dimensions
+            .as_mut()
+            .expect("dimensions")
+            .rows[0]
+            .value_unit = crate::feature::DimensionUnit::Radians;
+        assert!(matches!(
+            section_dimension_constraints(&angular_distance, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native {
+                ref native_kind,
+                ..
+            } if native_kind == "creo:relation:0"
+        ));
+        let mut radius_definition = definition.clone();
+        radius_definition.segments.as_mut().expect("segments").rows[1].radius_ref = Some(101);
+        let radius_relation = &mut radius_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .rows[0];
+        radius_relation.relation_type = 14;
+        radius_relation.sign = 1;
+        radius_relation.dimension_id = 0;
+        radius_relation.operand_vectors = Some([
+            [Some(101), Some(0), Some(0), Some(0)],
+            [Some(0), Some(0), Some(0), Some(0)],
+            [Some(15), Some(0), Some(0), Some(0)],
+        ]);
+        assert_eq!(
+            section_dimension_constraints(&radius_definition, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Radius {
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
+            }
+        );
+        radius_definition
+            .dimensions
+            .as_mut()
+            .expect("dimensions")
+            .rows[0]
+            .value_unit = crate::feature::DimensionUnit::Radians;
+        assert!(matches!(
+            section_dimension_constraints(&radius_definition, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native {
+                ref native_kind,
+                ..
+            } if native_kind == "creo:relation:14"
+        ));
         let mut incidence_distance = distance_definition.clone();
         let incidence_relations = incidence_distance.relations.as_mut().expect("relations");
         incidence_relations.rows[0].operand_vectors = None;
