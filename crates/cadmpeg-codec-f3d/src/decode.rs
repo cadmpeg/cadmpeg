@@ -165,6 +165,9 @@ struct DesignProjectionGaps {
     unprojected_history_dependencies: usize,
     ambiguous_history_dependencies: usize,
     native_constraints: usize,
+    unprojected_sketch_placements: usize,
+    unprojected_sketch_points: usize,
+    unprojected_sketch_curves: usize,
     unprojected_sketch_relations: usize,
     unprojected_dimensions: usize,
     profile_selections: usize,
@@ -226,6 +229,18 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .sketch_constraints
         .iter()
         .filter_map(|constraint| constraint.native_ref.as_deref())
+        .collect::<HashSet<_>>();
+    let projected_sketch_refs = ir
+        .model
+        .sketches
+        .iter()
+        .filter_map(|sketch| sketch.native_ref.as_deref())
+        .collect::<HashSet<_>>();
+    let projected_sketch_entity_refs = ir
+        .model
+        .sketch_entities
+        .iter()
+        .filter_map(|entity| entity.native_ref.as_deref())
         .collect::<HashSet<_>>();
     let projected_feature_refs = ir
         .model
@@ -314,6 +329,21 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     SketchConstraintDefinition::Native { .. }
                 )
             })
+            .count(),
+        unprojected_sketch_placements: native
+            .design_sketch_placements
+            .iter()
+            .filter(|placement| !projected_sketch_refs.contains(placement.id.as_str()))
+            .count(),
+        unprojected_sketch_points: native
+            .sketch_points
+            .iter()
+            .filter(|point| !projected_sketch_entity_refs.contains(point.id.as_str()))
+            .count(),
+        unprojected_sketch_curves: native
+            .sketch_curve_identities
+            .iter()
+            .filter(|curve| !projected_sketch_entity_refs.contains(curve.id.as_str()))
             .count(),
         unprojected_sketch_relations: native
             .sketch_relations
@@ -446,6 +476,27 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} sketch constraint(s) retain native operands because no unique neutral relation was resolved.",
             gaps.native_constraints
+        ),
+    );
+    push(
+        gaps.unprojected_sketch_placements,
+        format!(
+            "{} decoded Sketch placement(s) have no neutral sketch.",
+            gaps.unprojected_sketch_placements
+        ),
+    );
+    push(
+        gaps.unprojected_sketch_points,
+        format!(
+            "{} decoded sketch point(s) have no neutral sketch entity.",
+            gaps.unprojected_sketch_points
+        ),
+    );
+    push(
+        gaps.unprojected_sketch_curves,
+        format!(
+            "{} decoded sketch curve(s) have no neutral sketch entity.",
+            gaps.unprojected_sketch_curves
         ),
     );
     push(
@@ -2124,13 +2175,16 @@ mod tests {
     use crate::records::{
         DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
         DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-        DesignParameterScope, LostEdgeReference, SketchRelation,
+        DesignParameterScope, DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity,
+        SketchPoint, SketchRelation,
     };
 
     #[test]
     fn design_projection_gaps_count_each_retained_selection_family() {
+        use cadmpeg_ir::math::{Point2, Point3, Vector3};
         use cadmpeg_ir::sketches::{
-            SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchId,
+            Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+            SketchEntityId, SketchGeometry, SketchId,
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
@@ -2231,6 +2285,45 @@ mod tests {
         );
 
         let mut native = F3dNative::default();
+        native.design_sketch_placements.push(DesignSketchPlacement {
+            id: "native:sketch-placement".into(),
+            scope_record_index: 10,
+            entity_id: "Sketch_1".into(),
+            entity_suffix: 1,
+            byte_offset: 0,
+            class_tag: "000".into(),
+            record_index: 10,
+            frame_length: 1,
+            transform: [[0.0; 4]; 4],
+            transform_offset: None,
+            paired_class_tag: "001".into(),
+            paired_byte_offset: 1,
+        });
+        native.sketch_points.push(SketchPoint {
+            id: "native:sketch-point".into(),
+            record_index: 11,
+            owner_reference: Some(1),
+            class_tag: "000".into(),
+            byte_offset: 0,
+            coordinate_offset: 0,
+            entity_genesis: None,
+            persistent_id: 1,
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+            raw_bytes: Vec::new(),
+        });
+        native.sketch_curve_identities.push(SketchCurveIdentity {
+            id: "native:sketch-curve".into(),
+            record_index: 12,
+            owner_reference: Some(1),
+            class_tag: "000".into(),
+            byte_offset: 0,
+            geometry_offset: 0,
+            entity_genesis: None,
+            primary_id: 1,
+            secondary_id: 2,
+            geometry: None,
+        });
         native.lost_edge_references.push(LostEdgeReference {
             id: "f3d:test:lost-edge-reference#2".into(),
             record_byte_offset: 0,
@@ -2327,6 +2420,9 @@ mod tests {
                 unprojected_history_dependencies: 0,
                 ambiguous_history_dependencies: 0,
                 native_constraints: 1,
+                unprojected_sketch_placements: 1,
+                unprojected_sketch_points: 1,
+                unprojected_sketch_curves: 1,
                 unprojected_sketch_relations: 1,
                 unprojected_dimensions: 1,
                 profile_selections: 1,
@@ -2336,6 +2432,37 @@ mod tests {
                 unresolved_edge_selections: 1,
             }
         );
+
+        ir.model.sketches.push(Sketch {
+            id: SketchId("sketch".into()),
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: Vec::new(),
+            native_ref: Some("native:sketch-placement".into()),
+        });
+        for (id, native_ref) in [
+            ("point", "native:sketch-point"),
+            ("curve", "native:sketch-curve"),
+        ] {
+            ir.model.sketch_entities.push(SketchEntity {
+                id: SketchEntityId(id.into()),
+                sketch: SketchId("sketch".into()),
+                construction: false,
+                native_ref: Some(native_ref.into()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: Point2::new(0.0, 0.0),
+                },
+            });
+        }
+        let gaps = design_projection_gaps(&ir, &native);
+        assert_eq!(gaps.unprojected_sketch_placements, 0);
+        assert_eq!(gaps.unprojected_sketch_points, 0);
+        assert_eq!(gaps.unprojected_sketch_curves, 0);
 
         ir.model.parameters.push(
             serde_json::from_value(serde_json::json!({
