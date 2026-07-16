@@ -3775,7 +3775,17 @@ fn continue_surface_intersection_parameters_with_seeds(
                 Some(Point2::new(current[2], current[3])),
             )?,
         ];
-        let predictor = [target[0].u, target[0].v, target[1].u, target[1].v];
+        let mut predictor = [target[0].u, target[0].v, target[1].u, target[1].v];
+        for (side, surface) in surfaces.iter().enumerate() {
+            let periods = surface_parameter_periods(ir, surface);
+            for (coordinate, period) in periods.into_iter().enumerate() {
+                let index = side * 2 + coordinate;
+                if let Some(period) = period {
+                    predictor[index] =
+                        lift_periodic_parameter(predictor[index], current[index], period);
+                }
+            }
+        }
         let scale = (0..4)
             .map(|index| (predictor[index] - current[index]) * tangent[index])
             .sum::<f64>();
@@ -3800,6 +3810,40 @@ fn continue_surface_intersection_parameters_with_seeds(
         lanes[1].push(Point2::new(current[2], current[3]));
     }
     Some(lanes)
+}
+
+fn lift_periodic_parameter(value: f64, reference: f64, period: f64) -> f64 {
+    value + ((reference - value) / period).round() * period
+}
+
+fn surface_parameter_periods(ir: &CadIr, surface: &SurfaceId) -> [Option<f64>; 2] {
+    let Some(carrier) = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)
+    else {
+        return [None, None];
+    };
+    match &carrier.geometry {
+        SurfaceGeometry::Cylinder { .. }
+        | SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Sphere { .. } => [Some(std::f64::consts::TAU), None],
+        SurfaceGeometry::Torus { .. } => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
+        SurfaceGeometry::Procedural { construction } => ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|candidate| &candidate.id == construction && &candidate.surface == surface)
+            .and_then(|procedural| match &procedural.definition {
+                ProceduralSurfaceDefinition::Offset { support, .. } => {
+                    Some(surface_parameter_periods(ir, support))
+                }
+                _ => None,
+            })
+            .unwrap_or([None, None]),
+        _ => [None, None],
+    }
 }
 
 fn correct_intersection_parameters(

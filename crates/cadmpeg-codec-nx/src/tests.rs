@@ -11197,6 +11197,18 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         assert!((cylinder_point.y - plane_point.y).abs() < 1.0e-8);
         assert!((cylinder_point.z - plane_point.z).abs() < 1.0e-8);
     }
+
+    let seam_chart = [3.0_f64, 3.1, 3.2, 3.3]
+        .map(|angle| Point3::new(2.0 * angle.cos(), 2.0 * angle.sin(), 1.0e-5));
+    let seam_lanes = crate::decode::continue_surface_intersection_parameters(
+        &ir,
+        [&cylinder, &section_plane],
+        &seam_chart,
+        1.0e-3,
+    )
+    .unwrap();
+    assert!(seam_lanes[0].windows(2).all(|pair| pair[0].u < pair[1].u));
+    assert!(seam_lanes[0].last().unwrap().u > std::f64::consts::PI);
 }
 
 #[test]
