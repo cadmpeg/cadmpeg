@@ -899,6 +899,11 @@ one feature identifier and increase in byte order from zero. A stored state
 retains the prefix-inclusive name bytes, the `id`/`ID` spelling, and the offset
 of the optional prefix; a recipe-only state has no stored operation name.
 
+The current-state record's root schema class selects the operation definition.
+Feature rows supply a schema class only when the current-state record does not
+carry one and all rows for that feature agree on one class. Row order does not
+override the current-state class.
+
 Within one current-state record, `protextrude` identifies an additive linear
 section sweep, `cutextrude` identifies a subtractive linear section sweep,
 `protrevolve` identifies an additive rotational section sweep, and

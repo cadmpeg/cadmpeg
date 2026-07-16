@@ -7619,18 +7619,12 @@ fn feature_recipe(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<crate::feature::FeatureRecipeKind> {
-    let stored_recipe = scan
-        .feature_operations
-        .iter()
-        .find(|operation| operation.feature_id == feature_id)
+    let stored_recipe = current_feature_operation(&scan.feature_operations, feature_id)
         .and_then(|operation| operation.recipe)
         .map(crate::feature::FeatureRecipe::kind);
-    let schema_recipe = scan
-        .feature_rows
-        .iter()
-        .find(|row| row.feature_id == feature_id)
-        .and_then(|row| match row.root_schema_class {
-            Some(916 | 917) => Some(crate::feature::FeatureRecipeKind::Extrude),
+    let schema_recipe =
+        feature_schema_class(scan, feature_id).and_then(|schema_class| match schema_class {
+            916 | 917 => Some(crate::feature::FeatureRecipeKind::Extrude),
             _ => None,
         });
     stored_recipe.or(schema_recipe)
@@ -7640,11 +7634,37 @@ fn feature_recipe_effect(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<crate::feature::FeatureRecipeEffect> {
-    scan.feature_operations
-        .iter()
-        .find(|operation| operation.feature_id == feature_id)
+    current_feature_operation(&scan.feature_operations, feature_id)
         .and_then(|operation| operation.recipe)
         .map(crate::feature::FeatureRecipe::effect)
+}
+
+fn current_feature_operation(
+    operations: &[crate::feature::FeatureOperation],
+    feature_id: u32,
+) -> Option<&crate::feature::FeatureOperation> {
+    let mut matches = operations
+        .iter()
+        .filter(|operation| operation.feature_id == feature_id);
+    let operation = matches.next()?;
+    matches.next().is_none().then_some(operation)
+}
+
+fn feature_schema_class(scan: &ContainerScan, feature_id: u32) -> Option<u32> {
+    if let Some(schema_class) = current_feature_operation(&scan.feature_operations, feature_id)
+        .and_then(|operation| operation.root_schema_class)
+    {
+        return Some(schema_class);
+    }
+    let classes = scan
+        .feature_rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .filter_map(|row| row.root_schema_class)
+        .collect::<BTreeSet<_>>();
+    let mut classes = classes.into_iter();
+    let schema_class = classes.next()?;
+    classes.next().is_none().then_some(schema_class)
 }
 
 fn feature_revolution_extent(scan: &ContainerScan, feature_id: u32) -> Option<Extent> {
@@ -10340,10 +10360,14 @@ fn section_definition_for_history_feature(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<&crate::feature::FeatureDefinition> {
-    let row = scan
+    let rows = scan
         .feature_rows
         .iter()
-        .find(|row| row.feature_id == feature_id && row.root_schema_class == Some(926))?;
+        .filter(|row| row.feature_id == feature_id && row.root_schema_class == Some(926))
+        .collect::<Vec<_>>();
+    let [row] = rows.as_slice() else {
+        return None;
+    };
     let definitions = scan
         .feature_definitions
         .iter()
@@ -10360,26 +10384,12 @@ fn section_definition_for_history_feature(
 
 fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
-    if let Some(recipe) = scan
-        .feature_operations
-        .iter()
-        .find(|operation| operation.feature_id == feature_id)
+    if let Some(recipe) = current_feature_operation(&scan.feature_operations, feature_id)
         .and_then(|operation| operation.recipe)
     {
         properties.insert("recipe".to_string(), recipe.name().to_string());
     }
-    if let Some(schema_class) = scan
-        .feature_rows
-        .iter()
-        .find(|row| row.feature_id == feature_id)
-        .and_then(|row| row.root_schema_class)
-        .or_else(|| {
-            scan.feature_operations
-                .iter()
-                .find(|operation| operation.feature_id == feature_id)
-                .and_then(|operation| operation.root_schema_class)
-        })
-    {
+    if let Some(schema_class) = feature_schema_class(scan, feature_id) {
         properties.insert(
             "featdefs_schema_class".to_string(),
             schema_class.to_string(),
@@ -10472,10 +10482,7 @@ fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
             &emitted,
         );
         if feature.parent.is_none() {
-            feature.parent = scan
-                .feature_operations
-                .iter()
-                .find(|operation| operation.feature_id == feature_id)
+            feature.parent = current_feature_operation(&scan.feature_operations, feature_id)
                 .and_then(|operation| operation.parent_feature_id)
                 .map(|parent| IrFeatureId(format!("creo:model:feature#{parent}")))
                 .filter(|parent| *parent != feature.id && emitted.contains(parent));
@@ -12952,6 +12959,26 @@ mod resolved_sketch_tests {
             Some(0)
         );
         assert!(unique_feature_definition(&[definition.clone(), definition], 5).is_none());
+        let operation = crate::feature::FeatureOperation {
+            feature_id: 6,
+            kind: "Extrude".to_string(),
+            display_name_stored: true,
+            stored_name: Some("Extrude id 6".to_string()),
+            stored_name_bytes: Some(b"Extrude id 6".to_vec()),
+            identifier_keyword: Some("id".to_string()),
+            stored_name_prefix: None,
+            recipe: Some(crate::feature::FeatureRecipe::ProtrudeExtrude),
+            root_schema_class: Some(917),
+            parent_feature_id: None,
+            offset: 10,
+            state_offset: 10,
+        };
+        assert_eq!(
+            current_feature_operation(std::slice::from_ref(&operation), 6)
+                .and_then(|current| current.root_schema_class),
+            Some(917)
+        );
+        assert!(current_feature_operation(&[operation.clone(), operation], 6).is_none());
     }
 
     #[test]
@@ -20350,12 +20377,9 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             );
         }
         let parameters = feature_parameters(scan, operation.feature_id);
-        let schema_class = scan
-            .feature_rows
-            .iter()
-            .find(|row| row.feature_id == operation.feature_id)
-            .and_then(|row| row.root_schema_class)
-            .or(operation.root_schema_class);
+        let schema_class = operation
+            .root_schema_class
+            .or_else(|| feature_schema_class(scan, operation.feature_id));
         let definition = schema_class.map_or_else(
             || {
                 named_feature_definition(scan, &ir, operation.feature_id, &operation.kind)
