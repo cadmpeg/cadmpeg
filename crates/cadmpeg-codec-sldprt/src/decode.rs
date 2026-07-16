@@ -1450,34 +1450,57 @@ fn assign_configuration_bodies(
     ir: &mut CadIr,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
 ) {
-    let mut partitions = configuration_bodies
-        .iter()
-        .filter_map(|(index, bodies)| {
-            u32::try_from(*index)
-                .ok()
-                .map(|index| (index, bodies.clone()))
-        })
-        .collect::<Vec<_>>();
-    partitions.sort_by_key(|(index, _)| *index);
-    let mut configurations = (0..ir.model.configurations.len()).collect::<Vec<_>>();
-    configurations.sort_by_key(|position| ir.model.configurations[*position].ordinal);
-    if configurations.len() == partitions.len() {
-        for (position, (source_index, bodies)) in configurations.into_iter().zip(partitions) {
-            let configuration = &mut ir.model.configurations[position];
-            configuration.source_index = Some(source_index);
-            configuration.bodies = bodies;
+    let mut partition_map = BTreeMap::<u32, Vec<cadmpeg_ir::ids::BodyId>>::new();
+    for (index, bodies) in configuration_bodies {
+        let Ok(index) = u32::try_from(*index) else {
+            continue;
+        };
+        let merged = partition_map.entry(index).or_default();
+        for body in bodies {
+            if !merged.contains(body) {
+                merged.push(body.clone());
+            }
         }
-        return;
     }
-    for (source_index, bodies) in partitions {
-        if let Some(configuration) = ir.model.configurations.iter_mut().find(|configuration| {
-            configuration.source_index == Some(source_index)
-                || configuration.source_index.is_none() && configuration.ordinal == source_index
-        }) {
-            configuration.source_index = Some(source_index);
+
+    let mut assigned = vec![false; ir.model.configurations.len()];
+    for (configuration, is_assigned) in ir.model.configurations.iter_mut().zip(&mut assigned) {
+        let Some(source_index) = configuration.source_index else {
+            continue;
+        };
+        if let Some(bodies) = partition_map.remove(&source_index) {
             configuration.bodies = bodies;
+            *is_assigned = true;
+        }
+    }
+    for (configuration, is_assigned) in ir.model.configurations.iter_mut().zip(&mut assigned) {
+        if *is_assigned || configuration.source_index.is_some() {
             continue;
         }
+        let source_index = configuration.ordinal;
+        if let Some(bodies) = partition_map.remove(&source_index) {
+            configuration.source_index = Some(source_index);
+            configuration.bodies = bodies;
+            *is_assigned = true;
+        }
+    }
+
+    let mut unassigned = (0..ir.model.configurations.len())
+        .filter(|position| {
+            !assigned[*position] && ir.model.configurations[*position].source_index.is_none()
+        })
+        .collect::<Vec<_>>();
+    unassigned.sort_by_key(|position| ir.model.configurations[*position].ordinal);
+    if unassigned.len() == partition_map.len() {
+        for (position, (source_index, bodies)) in unassigned.into_iter().zip(&partition_map) {
+            let configuration = &mut ir.model.configurations[position];
+            configuration.source_index = Some(*source_index);
+            configuration.bodies.clone_from(bodies);
+        }
+        partition_map.clear();
+    }
+
+    for (source_index, bodies) in partition_map {
         let ordinal = ir
             .model
             .configurations
@@ -1701,11 +1724,13 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 
 #[cfg(test)]
 mod design_loss_tests {
-    use super::append_design_losses;
+    use super::{append_design_losses, assign_configuration_bodies};
     use cadmpeg_ir::features::{
-        Angle, BodySelection, BooleanOp, DesignParameter, FaceSelection, Feature,
-        FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId,
+        Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length,
+        ParameterId,
     };
+    use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::report::DecodeReport;
     use cadmpeg_ir::units::Units;
@@ -1868,5 +1893,44 @@ mod design_loss_tests {
             loss.message
                 == "1 parameter(s) lack an evaluated scalar; 1 parameter expression(s) contain unresolved or ambiguous quoted references."
         }));
+    }
+
+    #[test]
+    fn configuration_partitions_preserve_explicit_source_identity() {
+        let mut ir = CadIr::empty(Units::default());
+        let configuration = |id: &str, ordinal, source_index| DesignConfiguration {
+            id: ConfigurationId(id.into()),
+            ordinal,
+            active: false,
+            source_index,
+            name: id.into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: Vec::new(),
+            native_ref: Some(format!("native:{id}")),
+        };
+        ir.model
+            .configurations
+            .push(configuration("explicit", 0, Some(5)));
+        ir.model
+            .configurations
+            .push(configuration("inferred", 9, None));
+        let first = BodyId("body:first".into());
+        let second = BodyId("body:second".into());
+        let third = BodyId("body:third".into());
+
+        assign_configuration_bodies(
+            &mut ir,
+            &[
+                (7, vec![third.clone()]),
+                (5, vec![first.clone()]),
+                (5, vec![second.clone()]),
+            ],
+        );
+
+        assert_eq!(ir.model.configurations[0].source_index, Some(5));
+        assert_eq!(ir.model.configurations[0].bodies, vec![first, second]);
+        assert_eq!(ir.model.configurations[1].source_index, Some(7));
+        assert_eq!(ir.model.configurations[1].bodies, vec![third]);
     }
 }
