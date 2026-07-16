@@ -34,6 +34,7 @@ pub mod bytes;
 pub mod codec;
 pub mod compression;
 pub mod cursor;
+pub mod decode;
 
 pub mod diff;
 pub mod document;
@@ -63,6 +64,7 @@ pub use codec::{
     CadirEncoder, Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions,
     DecodeResult, Encoder, ReadSeek,
 };
+pub use decode::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{

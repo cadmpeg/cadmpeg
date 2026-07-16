@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::io::{Read, Seek, Write};
 
+use crate::decode::{ErrorContext, ResourceLimit, SourceLocation};
 use crate::document::CadIr;
 use crate::report::DecodeReport;
 use crate::report::ExportReport;
@@ -105,7 +106,12 @@ impl DecodeResult {
 }
 
 /// Errors a codec can raise.
+///
+/// Marked `#[non_exhaustive]`: the failure taxonomy grows as the decode
+/// platform lands, and external exhaustive matches must carry a wildcard arm.
+/// Same-crate matches keep exhaustiveness checking.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CodecError {
     /// The bytes are not this codec's format.
     #[error("not the expected format: {0}")]
@@ -113,6 +119,26 @@ pub enum CodecError {
     /// The container was structurally malformed.
     #[error("malformed container: {0}")]
     Malformed(String),
+    /// A required read extended past the end of its window after commitment.
+    ///
+    /// Distinct from [`CodecError::Malformed`]: a truncation is missing input,
+    /// not an inconsistency inside the bytes that are present.
+    #[error("truncated input during {} at offset {}", .context.operation, .location.offset)]
+    Truncated {
+        /// Where the truncated read began.
+        location: SourceLocation,
+        /// Static context for the failure.
+        context: ErrorContext,
+    },
+    /// A resource limit refused the decode: policy or the allocator.
+    ///
+    /// Never reported as [`CodecError::Malformed`]: a budget refusal is a
+    /// statement about policy, not about the input.
+    #[error(
+        "resource limit on {:?}: {:?} (limit {}, used {}, requested {})",
+        .0.dimension, .0.reason, .0.limit, .0.used, .0.additional
+    )]
+    ResourceLimit(ResourceLimit),
     /// The codec does not implement a required capability.
     #[error("not implemented yet: {0}")]
     NotImplemented(String),
