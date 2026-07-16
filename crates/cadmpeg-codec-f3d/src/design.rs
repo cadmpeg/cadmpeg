@@ -6820,10 +6820,7 @@ fn find_dimension_locus_pair(
         parse_dimension_locus_pair(bytes, at, companion_record_index, geometry_indices)
             .filter(|pair| usize::try_from(pair.paired_byte_offset).is_ok_and(|at| at < end))
     };
-    if let Some(pair) = parse(start) {
-        return Some(pair);
-    }
-    let mut candidates = Vec::new();
+    let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
     let mut position = start.saturating_add(1);
     while let Some(at) = next_indexed_record_offset(bytes, position) {
         if at >= end {
@@ -12688,6 +12685,17 @@ mod relation_tests {
                 .expect("nested paired dimension locus frame");
         assert_eq!(nested.byte_offset, 11);
         assert_eq!(nested.paired_byte_offset, 91);
+
+        let mut competing = bytes.clone();
+        competing.extend_from_slice(&bytes);
+        assert!(find_dimension_locus_pair(
+            &competing,
+            0,
+            competing.len(),
+            228,
+            &HashSet::from([192, 194]),
+        )
+        .is_none());
     }
 
     #[test]
