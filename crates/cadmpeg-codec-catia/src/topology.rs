@@ -907,6 +907,20 @@ struct IncidenceComponentSearch<'a> {
 }
 
 impl IncidenceComponentSearch<'_> {
+    fn charge_branch(&mut self, option_count: usize) -> bool {
+        const MAX_STATES: usize = 4_096;
+
+        if option_count <= 1 {
+            return true;
+        }
+        if self.states >= MAX_STATES {
+            self.exhausted = true;
+            return false;
+        }
+        self.states += 1;
+        true
+    }
+
     fn degree_candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
         let faces = self.edge_faces[edge];
         faces.into_iter().enumerate().all(|(rank, face)| {
@@ -1158,18 +1172,16 @@ impl IncidenceComponentSearch<'_> {
     }
 
     fn search_state(&mut self) {
-        const MAX_STATES: usize = 4_096;
         const MAX_SOLUTIONS: usize = 256;
         if self.exhausted {
             return;
         }
-        if self.states >= MAX_STATES || self.solutions.len() >= MAX_SOLUTIONS {
+        if self.solutions.len() >= MAX_SOLUTIONS {
             self.exhausted = true;
             return;
         }
-        self.states += 1;
         if let Some(options) = self.face_configuration_options() {
-            if !options.is_empty() {
+            if !options.is_empty() && self.charge_branch(options.len()) {
                 self.search_face_configurations(options);
             }
             return;
@@ -1198,6 +1210,9 @@ impl IncidenceComponentSearch<'_> {
             if self.solution_filter.is_none_or(|filter| filter(&solution)) {
                 self.solutions.push(solution);
             }
+            return;
+        }
+        if !self.charge_branch(options.len()) {
             return;
         }
         for (edge, pair) in options {
@@ -8315,6 +8330,36 @@ mod motif_tests {
         super::prune_incidence_choices(&mut choices, &edge_faces, 1, 5)
             .expect("face incidence is satisfiable");
         assert_eq!(choices, vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]]);
+    }
+
+    #[test]
+    fn incidence_component_does_not_charge_a_forced_viable_pair() {
+        let choices = vec![vec![[0, 0], [1, 1]]];
+        let edge_faces = [[0, 0]];
+        let face_edges = vec![vec![0]];
+        let edges = [0];
+        let mut search = super::IncidenceComponentSearch {
+            choices: &choices,
+            edge_faces: &edge_faces,
+            face_edges: &face_edges,
+            mesh_assignments: None,
+            active: vec![true],
+            edges: &edges,
+            constraints: vec![(0, 0), (0, 1)],
+            assignment: vec![None],
+            degrees: vec![vec![0, 2]],
+            solutions: Vec::new(),
+            solution_filter: None,
+            dead_states: HashSet::new(),
+            states: 4_096,
+            exhausted: false,
+        };
+
+        search.search();
+
+        assert!(!search.exhausted);
+        assert_eq!(search.states, 4_096);
+        assert_eq!(search.solutions, vec![vec![(0, [0, 0])]]);
     }
 
     #[test]
