@@ -121,9 +121,11 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let point = object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
     let bytes = archive(&[large.clone(), point.clone()]);
     let scan = super::container::scan_owned(bytes).expect("complete archive scan");
-    let mut context = super::decode::DecodeContext::new(&scan);
-    context.set_retention_limits(point.len(), point.len());
-    let result = context.commit();
+    let result = super::decode::with_expand(&scan, |expand| {
+        let mut context = super::decode::DecodeContext::new(&scan, expand);
+        context.set_retention_limits(point.len(), point.len());
+        context.commit()
+    });
 
     assert_eq!(
         result.ir.native_unknowns("rhino").unwrap()[0].byte_len,
@@ -151,9 +153,11 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
 
     let two_points = archive(&[point.clone(), point.clone()]);
     let scan = super::container::scan_owned(two_points).expect("complete archive scan");
-    let mut context = super::decode::DecodeContext::new(&scan);
-    context.set_retention_limits(point.len(), point.len());
-    let result = context.commit();
+    let result = super::decode::with_expand(&scan, |expand| {
+        let mut context = super::decode::DecodeContext::new(&scan, expand);
+        context.set_retention_limits(point.len(), point.len());
+        context.commit()
+    });
     assert_eq!(
         result.ir.native_unknowns("rhino").unwrap()[0]
             .data

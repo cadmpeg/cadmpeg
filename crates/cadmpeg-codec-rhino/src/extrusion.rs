@@ -85,6 +85,7 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
 
 /// Decodes one complete bounded `ON_Extrusion` class payload.
 pub(crate) fn decode(
+    expand: crate::mesh::MeshExpand<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -145,6 +146,7 @@ pub(crate) fn decode(
     let meshes = if minor >= 3 {
         let budget_checkpoint = *mesh_budget;
         match read_mesh_cache(
+            expand,
             data,
             &mut reader,
             archive,
@@ -496,7 +498,12 @@ fn mitered_local(
     Ok(rodrigues(scaled, axis, normal.z.acos()))
 }
 
+// Threads the platform expander through the extrusion mesh-cache walk in
+// addition to the backing bytes, reader, archive, writer version, scale, budget,
+// and warning sink it already carried (§10 Phase 1B).
+#[allow(clippy::too_many_arguments)]
 fn read_mesh_cache(
+    expand: crate::mesh::MeshExpand<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -533,6 +540,7 @@ fn read_mesh_cache(
             return Err(error(wrapper_start, "mesh-cache item is not ON_Mesh"));
         }
         let mesh = crate::mesh::decode(
+            expand,
             data,
             class.class_data_range,
             archive,
@@ -751,13 +759,37 @@ fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::{
-        cap_frame, decode, exact_orientation, mitered_local, split_profiles, DecodedCurve,
-        GeometryError, ANONYMOUS,
+        cap_frame, exact_orientation, mitered_local, split_profiles, DecodedCurve, GeometryError,
+        ANONYMOUS,
     };
     use crate::chunks::ArchiveVersion;
     use crate::curves::Compound;
     use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
     use cadmpeg_ir::math::{Point3, Vector3};
+
+    /// Test wrapper that supplies a [`MeshExpand`](crate::mesh::MeshExpand) over
+    /// `data`, so extrusion tests keep calling `decode` with the fixture bytes
+    /// while the mesh cache inflates through the platform expander.
+    fn decode(
+        data: &[u8],
+        range: std::ops::Range<usize>,
+        archive: ArchiveVersion,
+        writer_version: Option<i64>,
+        scale: f64,
+        mesh_budget: &mut crate::mesh::MeshBudget,
+    ) -> Result<super::DecodedExtrusion, GeometryError> {
+        crate::decode::with_expand_bytes(data, |expand| {
+            super::decode(
+                expand,
+                data,
+                range,
+                archive,
+                writer_version,
+                scale,
+                mesh_budget,
+            )
+        })
+    }
 
     fn push_i32(bytes: &mut Vec<u8>, value: i32) {
         bytes.extend(value.to_le_bytes());

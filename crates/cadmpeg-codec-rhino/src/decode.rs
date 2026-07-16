@@ -118,6 +118,11 @@ impl ArenaLengths {
     }
 }
 
+// Limit classification (§10 Phase 1): algorithm limits. Instance expansion
+// re-enters `decode_geometry` per member, which reaches the mesh decoder's
+// `begin_expand` path; these caps bound reference, member, and entity
+// amplification from a hostile definition graph independently of the platform
+// budget, and are kept as defense in depth.
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
@@ -169,6 +174,11 @@ impl ExpansionBudget {
 #[derive(Clone)]
 pub(crate) struct DecodeContext<'a> {
     scan: &'a Scan<'a>,
+    /// Platform context and root view routed to the mesh decoder so every
+    /// compressed mesh buffer inflates through `begin_expand` (§10 Phase 1B).
+    /// Threaded here once so the geometry, instance-expansion, extrusion, and
+    /// history-projection paths all reach the same charging context.
+    expand: crate::mesh::MeshExpand<'a>,
     ir: CadIr,
     unknowns: Vec<UnknownRecord>,
     statuses: Vec<GeometryStatus>,
@@ -190,7 +200,7 @@ pub(crate) struct DecodeContext<'a> {
 
 impl<'a> DecodeContext<'a> {
     /// Starts a transaction from a completed Rhino scan.
-    pub(crate) fn new(scan: &'a Scan<'a>) -> Self {
+    pub(crate) fn new(scan: &'a Scan<'a>, expand: crate::mesh::MeshExpand<'a>) -> Self {
         let mut object_candidates = BTreeMap::new();
         for (source_order, object) in scan.objects.iter().enumerate() {
             if let Some(identity) = &object.identity {
@@ -202,6 +212,7 @@ impl<'a> DecodeContext<'a> {
         }
         let mut context = Self {
             scan,
+            expand,
             ir: build_ir(scan),
             unknowns: Vec::with_capacity(scan.objects.len()),
             statuses: Vec::with_capacity(scan.objects.len()),
@@ -472,6 +483,7 @@ impl<'a> DecodeContext<'a> {
                 let key = self.object_key(identity, source_order);
                 let budget_checkpoint = self.mesh_budget;
                 let decoded = crate::mesh::decode(
+                    self.expand,
                     self.scan.data,
                     object.class_data_range.clone(),
                     self.archive(),
@@ -1373,6 +1385,9 @@ impl<'a> DecodeContext<'a> {
         path: &mut Vec<String>,
         stack: &mut Vec<crate::wire::Uuid>,
     ) -> Result<Vec<String>, String> {
+        // Limit classification (§10 Phase 1): algorithm limit. Bounds instance
+        // recursion depth on the geometry-expansion path that reaches the mesh
+        // decoder; kept as defense in depth alongside the platform depth gauge.
         const MAX_INSTANCE_DEPTH: usize = 64;
         self.expansion_budget.reference()?;
         if stack.len() >= MAX_INSTANCE_DEPTH {
@@ -1701,6 +1716,7 @@ impl<'a> DecodeContext<'a> {
         };
         let budget_checkpoint = self.mesh_budget;
         let decoded = crate::extrusion::decode(
+            self.expand,
             self.scan.data,
             object.class_data_range.clone(),
             self.archive(),
@@ -2529,6 +2545,7 @@ impl<'a> DecodeContext<'a> {
         let unknown = self.unknowns[source_order].id.clone();
         let budget_checkpoint = self.mesh_budget;
         let transfer = BrepTransferInput {
+            expand: self.expand,
             data: self.scan.data,
             archive: self.archive(),
             writer_version: self.scan.metadata.properties.writer_version,
@@ -2956,6 +2973,7 @@ enum BrepTransferKind {
 }
 
 struct BrepTransferInput<'a> {
+    expand: crate::mesh::MeshExpand<'a>,
     data: &'a [u8],
     archive: ArchiveVersion,
     writer_version: Option<i64>,
@@ -3038,6 +3056,7 @@ impl StagedBrep {
 
 fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves::GeometryError> {
     let BrepTransferInput {
+        expand,
         data,
         archive,
         writer_version,
@@ -3068,6 +3087,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
             let id = format!("rhino:object:tessellation#{key}.{kind}-{index}");
             let budget_checkpoint = *mesh_budget;
             match crate::mesh::decode(
+                expand,
                 data,
                 child.class_data_range.clone(),
                 archive,
@@ -3468,6 +3488,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
 
 /// Projects one embedded Brep into a self-contained semantic topology value.
 pub(crate) fn embedded_brep_json(
+    expand: crate::mesh::MeshExpand<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     archive: ArchiveVersion,
@@ -3491,6 +3512,7 @@ pub(crate) fn embedded_brep_json(
     let unknown = UnknownId("rhino:history:embedded-brep".to_string());
     let mut mesh_budget = crate::mesh::MeshBudget::new();
     let staged = stage_brep(BrepTransferInput {
+        expand,
         data,
         archive,
         writer_version,
@@ -4468,13 +4490,13 @@ fn loss_provenance(class: &str, outcome: &ClassOutcome) -> LossProvenance {
 }
 
 /// Builds the metadata-only Rhino decode transaction.
-pub(crate) fn decode(scan: &Scan<'_>) -> DecodeResult {
-    let mut context = DecodeContext::new(scan);
+pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> DecodeResult {
+    let mut context = DecodeContext::new(scan, expand);
     context.decode_geometry();
     context.decode_dimensions();
     let geometry_context = context.unit_scale().map(|scale| {
         (
-            scan.data,
+            expand,
             scan.archive,
             scan.metadata.properties.writer_version,
             scale,
@@ -4482,6 +4504,39 @@ pub(crate) fn decode(scan: &Scan<'_>) -> DecodeResult {
     });
     crate::history::project(&scan.history, geometry_context, &mut context.ir);
     context.commit()
+}
+
+/// Builds a [`MeshExpand`](crate::mesh::MeshExpand) whose root spans `data` and
+/// runs `f`. The arena and platform context live for the callback only; the
+/// value `f` returns is owned and outlives them.
+#[cfg(test)]
+pub(crate) fn with_expand_bytes<R>(
+    data: &[u8],
+    f: impl FnOnce(crate::mesh::MeshExpand<'_>) -> R,
+) -> R {
+    let arena = cadmpeg_ir::decode::DecodeArena::new();
+    let policy = cadmpeg_ir::decode::DecodePolicy::default();
+    let (ctx, root) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("root view");
+    f(crate::mesh::MeshExpand::new(&ctx, root))
+}
+
+/// Runs `f` with a [`MeshExpand`](crate::mesh::MeshExpand) spanning `scan.data`,
+/// mirroring the production invariant that the geometry decoder's backing slice
+/// is the session root view.
+#[cfg(test)]
+pub(crate) fn with_expand<R>(
+    scan: &Scan<'_>,
+    f: impl FnOnce(crate::mesh::MeshExpand<'_>) -> R,
+) -> R {
+    with_expand_bytes(scan.data, f)
+}
+
+/// Decodes a scan under a fresh platform expansion context. Test-only mirror of
+/// [`decode`] for call sites that only need the owned [`DecodeResult`].
+#[cfg(test)]
+pub(crate) fn decode_for_test(scan: &Scan<'_>) -> DecodeResult {
+    with_expand(scan, |expand| decode(scan, expand))
 }
 
 fn build_ir(scan: &Scan<'_>) -> CadIr {
@@ -5074,17 +5129,20 @@ mod tests {
             instance_path: Vec::new(),
         };
         let unknown: UnknownId = "rhino:object:record#plane".into();
-        let staged = stage_brep(BrepTransferInput {
-            data: &data,
-            archive: ArchiveVersion::V5,
-            writer_version: Some(200_206_180),
-            raw: &raw,
-            key: "plane",
-            association: &association,
-            unknown: &unknown,
-            scale: 25.4,
-            semantic_error: None,
-            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        let staged = with_expand_bytes(&data, |expand| {
+            stage_brep(BrepTransferInput {
+                expand,
+                data: &data,
+                archive: ArchiveVersion::V5,
+                writer_version: Some(200_206_180),
+                raw: &raw,
+                key: "plane",
+                association: &association,
+                unknown: &unknown,
+                scale: 25.4,
+                semantic_error: None,
+                mesh_budget: &mut crate::mesh::MeshBudget::new(),
+            })
         })
         .expect("stage plane Brep");
         assert_eq!(staged.kind, BrepTransferKind::FullTopology);

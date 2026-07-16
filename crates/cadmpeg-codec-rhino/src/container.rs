@@ -769,5 +769,10 @@ pub(crate) fn decode(
     {
         return Ok(container_only_result(&scan));
     }
-    Ok(crate::decode::decode(&scan))
+    // The mesh decoder inflates compressed buffers through `ctx.begin_expand`
+    // against the same root address space the scan borrows (§10 Phase 1B).
+    Ok(crate::decode::decode(
+        &scan,
+        crate::mesh::MeshExpand::new(ctx, root),
+    ))
 }

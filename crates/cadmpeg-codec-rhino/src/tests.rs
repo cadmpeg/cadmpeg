@@ -1160,7 +1160,7 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
         );
     }
     set_test_units(&mut scan, 1.0);
-    let result = super::decode::decode(&scan);
+    let result = super::decode::decode_for_test(&scan);
     assert_eq!(result.ir.model.bodies.len(), 1);
     assert!(result.ir.model.bodies[0]
         .id
@@ -1461,7 +1461,7 @@ fn scan_decodes_history_identity_dependencies_and_typed_values() {
     );
     assert!(history.copy_on_replace);
 
-    let decoded = super::decode::decode(&scan);
+    let decoded = super::decode::decode_for_test(&scan);
     assert_eq!(decoded.ir.model.features.len(), 1);
     assert_eq!(
         decoded.ir.model.features[0].native_ref.as_deref(),
@@ -1700,7 +1700,7 @@ fn malformed_bounded_object_is_retained_and_later_point_decodes() {
         let mut scan = super::container::scan_owned(bytes).expect("bounded object recovery");
         assert!(scan.objects[0].framing_degraded);
         set_test_units(&mut scan, 1.0);
-        let result = super::decode::decode(&scan);
+        let result = super::decode::decode_for_test(&scan);
         assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 2);
         assert_eq!(result.ir.model.points.len(), 1);
         assert!(result
@@ -2225,32 +2225,34 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         ],
     );
     let scan = super::container::scan_owned(bytes).unwrap();
-    let mut context = super::decode::DecodeContext::new(&scan);
-    assert!(context.object(0).is_some());
-    assert!(context.unknown(0).is_some());
-    assert_eq!(context.unit_scale(), None);
-    assert_eq!(context.archive(), archive);
-    assert!(context.append_link(0, "rhino:curve#2".to_string()));
-    assert!(context.append_link(0, "rhino:curve#1".to_string()));
-    assert!(context.append_link(0, "rhino:curve#2".to_string()));
-    assert_eq!(
-        context.unknown(0).unwrap().links,
-        vec!["rhino:curve#1".to_string(), "rhino:curve#2".to_string()]
-    );
-    assert!(context.mark_decoded(0));
-    assert!(!context.mark_decoded(0));
-    assert!(!context.mark_failed(0));
-    assert_eq!(context.ir_mut().model.bodies.len(), 0);
-    context.unknown_mut(0).unwrap().links.clear();
-    let result = context.commit();
-    assert!(result
-        .report
-        .losses
-        .iter()
-        .any(|loss| loss.severity == Severity::Info));
-    assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 1);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
-    assert_eq!(validation.error_count(), 0);
+    super::decode::with_expand(&scan, |expand| {
+        let mut context = super::decode::DecodeContext::new(&scan, expand);
+        assert!(context.object(0).is_some());
+        assert!(context.unknown(0).is_some());
+        assert_eq!(context.unit_scale(), None);
+        assert_eq!(context.archive(), archive);
+        assert!(context.append_link(0, "rhino:curve#2".to_string()));
+        assert!(context.append_link(0, "rhino:curve#1".to_string()));
+        assert!(context.append_link(0, "rhino:curve#2".to_string()));
+        assert_eq!(
+            context.unknown(0).unwrap().links,
+            vec!["rhino:curve#1".to_string(), "rhino:curve#2".to_string()]
+        );
+        assert!(context.mark_decoded(0));
+        assert!(!context.mark_decoded(0));
+        assert!(!context.mark_failed(0));
+        assert_eq!(context.ir_mut().model.bodies.len(), 0);
+        context.unknown_mut(0).unwrap().links.clear();
+        let result = context.commit();
+        assert!(result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.severity == Severity::Info));
+        assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 1);
+        let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+        assert_eq!(validation.error_count(), 0);
+    });
 }
 
 #[test]
@@ -2301,16 +2303,18 @@ fn rejected_candidate_detaches_payload_clone_and_preserves_live_bytes() {
         ],
     );
     let scan = super::container::scan_owned(bytes).unwrap();
-    let mut context = super::decode::DecodeContext::new(&scan);
-    let original = context.unknown(0).unwrap().data.clone().unwrap();
-    let (payloads_detached, findings) = context.reject_duplicate_unknown_candidate();
-    assert!(payloads_detached);
-    assert!(findings.contains("identity"));
-    assert_eq!(
-        context.unknown(0).unwrap().data.as_deref(),
-        Some(original.as_slice())
-    );
-    assert_eq!(context.unknown_count(), 1);
+    super::decode::with_expand(&scan, |expand| {
+        let mut context = super::decode::DecodeContext::new(&scan, expand);
+        let original = context.unknown(0).unwrap().data.clone().unwrap();
+        let (payloads_detached, findings) = context.reject_duplicate_unknown_candidate();
+        assert!(payloads_detached);
+        assert!(findings.contains("identity"));
+        assert_eq!(
+            context.unknown(0).unwrap().data.as_deref(),
+            Some(original.as_slice())
+        );
+        assert_eq!(context.unknown_count(), 1);
+    });
 }
 
 fn set_test_units(scan: &mut super::container::Scan<'_>, scale: f64) {
@@ -2568,7 +2572,7 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
         vec![static_definition(definition_id, &[member_id])],
     );
 
-    let result = super::decode::decode(&scan);
+    let result = super::decode::decode_for_test(&scan);
     assert_eq!(result.ir.model.bodies.len(), 2);
     assert_eq!(result.ir.model.points.len(), 2);
     assert_eq!(
@@ -2672,7 +2676,7 @@ fn nested_instance_composes_parent_child_and_records_outer_to_inner_path() {
         ],
     );
 
-    let result = super::decode::decode(&scan);
+    let result = super::decode::decode_for_test(&scan);
     assert_eq!(result.ir.model.curves.len(), 1);
     let curve = &result.ir.model.curves[0];
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
@@ -2750,7 +2754,7 @@ fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments() {
         vec![static_definition(definition_id, &[member_id])],
     );
 
-    let result = super::decode::decode(&scan);
+    let result = super::decode::decode_for_test(&scan);
     assert_eq!(result.ir.model.curves.len(), 4);
     let ids = result
         .ir
@@ -2814,7 +2818,7 @@ fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadata() {
         vec![static_definition(definition_id, &[mesh_id, subd_id])],
     );
 
-    let result = super::decode::decode(&scan);
+    let result = super::decode::decode_for_test(&scan);
     let mesh = &result.ir.model.tessellations[0];
     assert_eq!(mesh.vertices[0].x, 5.0);
     assert_eq!(mesh.vertices[1].x, 7.0);
@@ -2850,7 +2854,7 @@ fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
         vec![static_definition(definition_id, &[member_id])],
     );
 
-    let result = super::decode::decode(&scan);
+    let result = super::decode::decode_for_test(&scan);
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir.model.curves[0].geometry
     else {
         panic!("nonuniform circle must become NURBS");
@@ -2891,7 +2895,7 @@ fn transformed_procedural_instance_keeps_solved_carriers_without_dangling_refere
         vec![static_definition(definition_id, &[member_id])],
     );
 
-    let result = super::decode::decode(&scan);
+    let result = super::decode::decode_for_test(&scan);
     assert!(!result.ir.model.surfaces.is_empty());
     assert!(result.ir.model.procedural_surfaces.is_empty());
     assert!(result
@@ -2951,23 +2955,25 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
             static_definition(narrow_definition, &[second_member_id]),
         ],
     );
-    let mut context = super::decode::DecodeContext::new(&scan);
-    context.set_expansion_limits([16, 1, 128]);
-    context.decode_geometry();
-    let result = context.commit();
-    assert_eq!(result.ir.model.points.len(), 1);
-    assert_eq!(
-        result.ir.model.bodies[0]
-            .transform
-            .expect("instance transform")
-            .rows[0][3],
-        10.0
-    );
-    assert!(result
-        .report
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains("instance member budget exceeded")));
+    super::decode::with_expand(&scan, |expand| {
+        let mut context = super::decode::DecodeContext::new(&scan, expand);
+        context.set_expansion_limits([16, 1, 128]);
+        context.decode_geometry();
+        let result = context.commit();
+        assert_eq!(result.ir.model.points.len(), 1);
+        assert_eq!(
+            result.ir.model.bodies[0]
+                .transform
+                .expect("instance transform")
+                .rows[0][3],
+            10.0
+        );
+        assert!(result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("instance member budget exceeded")));
+    });
 }
 
 #[test]
@@ -3090,7 +3096,7 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
         ],
     );
 
-    let result = super::decode::decode(&scan);
+    let result = super::decode::decode_for_test(&scan);
     assert_eq!(result.ir.model.bodies.len(), 1);
     assert_eq!(result.ir.model.points.len(), 1);
     assert!(result.ir.model.surfaces.is_empty());
@@ -3136,7 +3142,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
     );
     let mut scan = super::container::scan_owned(bytes).unwrap();
     set_test_units(&mut scan, 25.4);
-    let result = super::decode::decode(&scan);
+    let result = super::decode::decode_for_test(&scan);
     assert_eq!(result.ir.model.subds.len(), 1);
     let subd = &result.ir.model.subds[0];
     assert!(subd.source_object.is_some());
@@ -3182,7 +3188,7 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
     );
     let mut scan = super::container::scan_owned(bytes).unwrap();
     set_test_units(&mut scan, 1.0);
-    let result = super::decode::decode(&scan);
+    let result = super::decode::decode_for_test(&scan);
     assert!(result.ir.model.subds.is_empty());
     assert_eq!(result.ir.native_unknowns("rhino").unwrap().len(), 2);
     assert!(result
@@ -3212,13 +3218,15 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
     );
     let mut scan = super::container::scan_owned(bytes).unwrap();
     scan.objects[0].attributes_degraded = true;
-    let mut context = super::decode::DecodeContext::new(&scan);
-    assert!(context.mark_decoded(0));
-    let result = context.commit();
-    assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Attribute
-            && loss.message.contains("degraded attributes")
-    }));
+    super::decode::with_expand(&scan, |expand| {
+        let mut context = super::decode::DecodeContext::new(&scan, expand);
+        assert!(context.mark_decoded(0));
+        let result = context.commit();
+        assert!(result.report.losses.iter().any(|loss| {
+            loss.category == cadmpeg_ir::report::LossCategory::Attribute
+                && loss.message.contains("degraded attributes")
+        }));
+    });
 }
 
 #[test]
@@ -3227,7 +3235,7 @@ fn unknown_surface_placeholder_does_not_report_geometry_transfer() {
     let object = object_record_with_payload(archive, 8, REV_SURFACE_CLASS, &[0]);
     let mut scan = scan_with_objects(&[object]);
     set_test_units(&mut scan, 1.0);
-    let result = super::decode::decode(&scan);
+    let result = super::decode::decode_for_test(&scan);
     assert_eq!(result.ir.model.surfaces.len(), 1);
     assert!(matches!(
         result.ir.model.surfaces[0].geometry,
@@ -3243,8 +3251,8 @@ fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_determi
         object_record_with_payload(archive, 1, POINT_CLASS, &point_payload([2.0, 0.0, 0.0]));
     let mut scan = scan_with_objects(&[object]);
     set_test_units(&mut scan, 1.0e308);
-    let first = super::decode::decode(&scan);
-    let second = super::decode::decode(&scan);
+    let first = super::decode::decode_for_test(&scan);
+    let second = super::decode::decode_for_test(&scan);
     assert!(first.ir.model.points.is_empty());
     assert_eq!(first.ir, second.ir);
     assert_eq!(first.report, second.report);
@@ -3271,7 +3279,7 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
     let scan = super::container::scan_owned(bytes).unwrap();
     let offset = scan.objects[0].range.start as u64;
     let class = scan.objects[0].class_uuid.to_string();
-    let result = super::decode::decode(&scan);
+    let result = super::decode::decode_for_test(&scan);
 
     let loss = result
         .report

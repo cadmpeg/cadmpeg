@@ -940,15 +940,17 @@ fn cage_json(cage: &crate::cage::Cage) -> serde_json::Value {
 }
 
 fn extended_geometry_json(
-    data: &[u8],
+    expand: crate::mesh::MeshExpand<'_>,
     value: &EmbeddedGeometry,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     scale: f64,
 ) -> Option<String> {
+    let data = expand.data();
     let semantic = if crate::mesh::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
         let mesh = crate::mesh::decode(
+            expand,
             data,
             value.class_data_range.clone(),
             archive,
@@ -996,6 +998,7 @@ fn extended_geometry_json(
     } else if crate::extrusion::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
         let extrusion = crate::extrusion::decode(
+            expand,
             data,
             value.class_data_range.clone(),
             archive,
@@ -1089,6 +1092,7 @@ fn extended_geometry_json(
         })
     } else if crate::brep::supported_class(value.class_id) {
         return crate::decode::embedded_brep_json(
+            expand,
             data,
             value.class_data_range.clone(),
             archive,
@@ -1164,7 +1168,12 @@ fn extended_geometry_json(
 fn structured_value_properties(
     key: &str,
     value: &Value,
-    geometry_context: Option<(&[u8], ArchiveVersion, Option<i64>, f64)>,
+    geometry_context: Option<(
+        crate::mesh::MeshExpand<'_>,
+        ArchiveVersion,
+        Option<i64>,
+        f64,
+    )>,
     properties: &mut BTreeMap<String, String>,
 ) {
     match value {
@@ -1181,7 +1190,8 @@ fn structured_value_properties(
                     format!("{key}.{index}.class_id"),
                     value.class_id.to_string(),
                 );
-                if let Some((data, archive, writer_version, scale)) = geometry_context {
+                if let Some((expand, archive, writer_version, scale)) = geometry_context {
+                    let data = expand.data();
                     if let Ok(decoded) = crate::curves::decode(
                         data,
                         value.class_id,
@@ -1212,7 +1222,7 @@ fn structured_value_properties(
                             properties.insert(format!("{key}.{index}.geometry"), semantic);
                         }
                     } else if let Some(semantic) =
-                        extended_geometry_json(data, value, archive, writer_version, scale)
+                        extended_geometry_json(expand, value, archive, writer_version, scale)
                     {
                         properties.insert(format!("{key}.{index}.geometry"), semantic);
                     }
@@ -1283,7 +1293,12 @@ fn structured_value_properties(
 /// Projects source history into ordered neutral native operations.
 pub(crate) fn project(
     records: &[HistoryRecord],
-    geometry_context: Option<(&[u8], ArchiveVersion, Option<i64>, f64)>,
+    geometry_context: Option<(
+        crate::mesh::MeshExpand<'_>,
+        ArchiveVersion,
+        Option<i64>,
+        f64,
+    )>,
     ir: &mut cadmpeg_ir::document::CadIr,
 ) {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
@@ -1534,12 +1549,14 @@ mod tests {
             if values.len() == 1
                 && values[0].class_id == Uuid::from_wire(crate::archive_test_support::POINT_CLASS)));
         let mut properties = BTreeMap::new();
-        structured_value_properties(
-            "value_7",
-            &parsed.value,
-            Some((&geometry_value, ArchiveVersion::V8, None, 2.0)),
-            &mut properties,
-        );
+        crate::decode::with_expand_bytes(&geometry_value, |expand| {
+            structured_value_properties(
+                "value_7",
+                &parsed.value,
+                Some((expand, ArchiveVersion::V8, None, 2.0)),
+                &mut properties,
+            );
+        });
         assert_eq!(
             properties["value_7.0.geometry"],
             r#"{"x":2.0,"y":4.0,"z":6.0}"#
@@ -1606,8 +1623,10 @@ mod tests {
             class_data_range: 0..bytes.len(),
             userdata: Vec::new(),
         };
-        let semantic = extended_geometry_json(&bytes, &geometry, ArchiveVersion::V8, None, 10.0)
-            .expect("cage semantics");
+        let semantic = crate::decode::with_expand_bytes(&bytes, |expand| {
+            extended_geometry_json(expand, &geometry, ArchiveVersion::V8, None, 10.0)
+        })
+        .expect("cage semantics");
         let semantic: serde_json::Value = serde_json::from_str(&semantic).unwrap();
         assert_eq!(semantic["kind"], "nurbs_cage");
         assert_eq!(semantic["orders"], serde_json::json!([2, 2, 2]));
@@ -1622,9 +1641,10 @@ mod tests {
             class_data_range: 0..1,
             userdata: Vec::new(),
         };
-        let semantic =
-            extended_geometry_json(&empty_subd, &geometry, ArchiveVersion::V8, None, 1.0)
-                .expect("empty SubD semantics");
+        let semantic = crate::decode::with_expand_bytes(&empty_subd, |expand| {
+            extended_geometry_json(expand, &geometry, ArchiveVersion::V8, None, 1.0)
+        })
+        .expect("empty SubD semantics");
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&semantic).unwrap(),
             serde_json::json!({"kind": "subd", "empty": true})
@@ -1636,8 +1656,10 @@ mod tests {
             class_data_range: 0..brep.len(),
             userdata: Vec::new(),
         };
-        let semantic = extended_geometry_json(&brep, &geometry, ArchiveVersion::V8, None, 10.0)
-            .expect("Brep topology semantics");
+        let semantic = crate::decode::with_expand_bytes(&brep, |expand| {
+            extended_geometry_json(expand, &geometry, ArchiveVersion::V8, None, 10.0)
+        })
+        .expect("Brep topology semantics");
         let semantic: serde_json::Value = serde_json::from_str(&semantic).unwrap();
         assert_eq!(semantic["kind"], "brep");
         assert_eq!(semantic["bodies"].as_array().unwrap().len(), 1);
