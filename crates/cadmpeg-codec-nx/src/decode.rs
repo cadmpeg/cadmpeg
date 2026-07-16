@@ -8146,7 +8146,7 @@ fn attach_native_object_model(
             ir.model.configurations.push(DesignConfiguration {
                 id,
                 ordinal: ordinal as u32,
-                active: configuration.active,
+                active: active_attribute_use.is_some(),
                 source_index: Some(ordinal as u32),
                 name: configuration.name.clone(),
                 material: None,

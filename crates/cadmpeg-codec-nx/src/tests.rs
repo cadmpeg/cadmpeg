@@ -9538,9 +9538,19 @@ fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
 }
 
 fn prt_with_arrangements() -> Vec<u8> {
+    prt_with_arrangement_attribute(Some("Model"))
+}
+
+fn prt_with_arrangement_attribute(active_name: Option<&str>) -> Vec<u8> {
     let mut arrangements = br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="NO" Name="Exploded"/></Arrangements>"#.to_vec();
     arrangements.push(0);
-    let mut attributes = br#"<UgAttributes version="4"><Attribute owner="part" pdmBased="false" utf8title="NX_Arrangement" utf8value="Model" version="3" type="StringAttributeType"/></UgAttributes>"#.to_vec();
+    let mut attributes = match active_name {
+        Some(active_name) => format!(
+            r#"<UgAttributes version="4"><Attribute owner="part" pdmBased="false" utf8title="NX_Arrangement" utf8value="{active_name}" version="3" type="StringAttributeType"/></UgAttributes>"#,
+        )
+        .into_bytes(),
+        None => br#"<UgAttributes version="4"></UgAttributes>"#.to_vec(),
+    };
     attributes.push(0);
     prt_with_named_payloads(&[
         (
@@ -10279,6 +10289,28 @@ fn decode_retains_nx_arrangement_configurations() {
     assert!(crate::native::configuration_attribute_uses(&configurations, &duplicate).is_empty());
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn nx_neutral_active_configuration_requires_the_exact_attribute_join() {
+    for active_name in [None, Some("Other")] {
+        let mut cur = Cursor::new(prt_with_arrangement_attribute(active_name));
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        let native = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<crate::native::Configuration>("configurations")
+            .unwrap();
+        assert!(native[0].active);
+        assert!(result
+            .ir
+            .model
+            .configurations
+            .iter()
+            .all(|configuration| !configuration.active && configuration.bodies.is_empty()));
+    }
 }
 
 #[test]
