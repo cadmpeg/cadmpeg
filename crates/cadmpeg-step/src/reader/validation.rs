@@ -125,12 +125,26 @@ pub(super) fn decode(
             ));
         }
     }
+    let mut referenced_validation_points = BTreeSet::new();
+    for (&record_id, record) in &exchange.records {
+        if validation_representations.contains(&record_id) {
+            continue;
+        }
+        for value in record
+            .partials
+            .iter()
+            .flat_map(|partial| &partial.parameters)
+        {
+            collect_validation_references(
+                value,
+                &validation_points,
+                &mut referenced_validation_points,
+            );
+        }
+    }
     ir.model.points.retain(|point| {
         let id = step_id(&point.id.0);
-        !validation_points.contains(&id)
-            || exchange.records.iter().any(|(&record_id, record)| {
-                !validation_representations.contains(&record_id) && record_references(record, id)
-            })
+        !validation_points.contains(&id) || referenced_validation_points.contains(&id)
     });
     ValidationResult {
         typed_records: typed,
@@ -329,20 +343,25 @@ fn step_id(id: &str) -> u64 {
         .unwrap_or(u64::MAX)
 }
 
-fn record_references(record: &RawRecord, target: u64) -> bool {
-    fn value_references(value: &Value, target: u64) -> bool {
-        match value {
-            Value::Reference(id) => *id == target,
-            Value::List(values) => values.iter().any(|value| value_references(value, target)),
-            Value::Typed(_, value) => value_references(value, target),
-            _ => false,
+fn collect_validation_references(
+    value: &Value,
+    validation_points: &BTreeSet<u64>,
+    referenced: &mut BTreeSet<u64>,
+) {
+    match value {
+        Value::Reference(id) if validation_points.contains(id) => {
+            referenced.insert(*id);
         }
+        Value::List(values) => {
+            for value in values {
+                collect_validation_references(value, validation_points, referenced);
+            }
+        }
+        Value::Typed(_, value) => {
+            collect_validation_references(value, validation_points, referenced);
+        }
+        _ => {}
     }
-    record
-        .partials
-        .iter()
-        .flat_map(|partial| &partial.parameters)
-        .any(|value| value_references(value, target))
 }
 
 trait RecordExt {
