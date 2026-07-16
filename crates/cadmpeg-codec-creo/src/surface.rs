@@ -542,6 +542,16 @@ pub struct OutlinePlane {
     pub offset: usize,
 }
 
+/// Return the outline plane for `surface_id` only when exactly one exists.
+pub(crate) fn unique_outline_plane(
+    planes: &[OutlinePlane],
+    surface_id: u32,
+) -> Option<&OutlinePlane> {
+    let mut matches = planes.iter().filter(|plane| plane.surface_id == surface_id);
+    let plane = matches.next()?;
+    matches.next().is_none().then_some(plane)
+}
+
 /// Derive axis-aligned plane equations from complete, non-degenerate outline
 /// corner pairs. Ambiguous pairs with zero or multiple held axes are withheld.
 pub fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {

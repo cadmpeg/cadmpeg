@@ -18259,22 +18259,15 @@ fn transfer_cap_pair_cylinders(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) {
-    let planes = scan
-        .outline_planes
-        .iter()
-        .map(|plane| (plane.surface_id, plane))
-        .collect::<BTreeMap<_, _>>();
-    let circle_offsets = scan
-        .fc05_circles
-        .iter()
-        .map(|circle| (circle.curve_id, circle.offset))
-        .collect::<BTreeMap<_, _>>();
     for pair in &scan.fc05_cylinder_cap_pairs {
         let placed_caps = pair
             .cap_plane_ids
             .iter()
             .zip(&pair.curve_cap_ordinates_row_frame)
-            .filter_map(|(id, ordinate)| planes.get(id).map(|plane| (*plane, *ordinate)))
+            .filter_map(|(id, ordinate)| {
+                crate::surface::unique_outline_plane(&scan.outline_planes, *id)
+                    .map(|plane| (plane, *ordinate))
+            })
             .collect::<Vec<_>>();
         let Some((first_cap, first_ordinate)) = placed_caps.first().copied() else {
             continue;
@@ -18344,10 +18337,12 @@ fn transfer_cap_pair_cylinders(
             .zip(&pair.curve_cap_ordinates_row_frame)
             .zip(&pair.cap_plane_ids)
         {
-            let cap_offset = planes.get(cap_plane_id).map_or_else(
-                || ordinate + translations[0],
-                |plane| plane.origin[axis_index],
-            );
+            let cap_offset =
+                crate::surface::unique_outline_plane(&scan.outline_planes, *cap_plane_id)
+                    .map_or_else(
+                        || ordinate + translations[0],
+                        |plane| plane.origin[axis_index],
+                    );
             let (center, _, _) = fc05_model_frame(
                 axis_index,
                 cap_offset,
@@ -18363,7 +18358,10 @@ fn transfer_cap_pair_cylinders(
                 annotations,
                 &id,
                 "VisibGeom",
-                circle_offsets.get(curve_id).copied().unwrap_or(pair.offset) as u64,
+                scan.fc05_circles
+                    .iter()
+                    .find(|circle| circle.curve_id == *curve_id)
+                    .map_or(pair.offset, |circle| circle.offset) as u64,
                 "fc05_cap_circle",
                 Exactness::Derived,
             );
@@ -18911,15 +18909,7 @@ fn transfer_fc05_cap_circles(
             .filter_map(|face| {
                 crate::surface::unique_surface_row(&scan.surface_rows, *face)
                     .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)?;
-                let planes = scan
-                    .outline_planes
-                    .iter()
-                    .filter(|plane| plane.surface_id == *face)
-                    .collect::<Vec<_>>();
-                let [plane] = planes.as_slice() else {
-                    return None;
-                };
-                Some(*plane)
+                crate::surface::unique_outline_plane(&scan.outline_planes, *face)
             })
             .collect::<Vec<_>>();
         let cylinders = topology

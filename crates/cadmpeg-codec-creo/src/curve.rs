@@ -1540,8 +1540,15 @@ pub fn fc05_cylinder_cap_pairs(
         .into_iter()
         .map(|row| (row.id, row.faces))
         .collect::<BTreeMap<_, _>>();
+    let mut circle_counts = BTreeMap::<u32, usize>::new();
+    for circle in circles {
+        *circle_counts.entry(circle.curve_id).or_default() += 1;
+    }
     let mut groups = BTreeMap::<u32, Vec<(&Fc05Circle, u32)>>::new();
     for circle in circles {
+        if circle_counts.get(&circle.curve_id) != Some(&1) {
+            continue;
+        }
         let Some(adjacent) = faces.get(&circle.curve_id) else {
             continue;
         };
@@ -2141,6 +2148,13 @@ mod tests {
         let mut duplicate_surfaces = surfaces.to_vec();
         duplicate_surfaces.push(surface(10, crate::surface::SurfaceKind::Cylinder, 20));
         assert!(fc05_cylinder_cap_pairs(&circles, &topology_rows, &duplicate_surfaces).is_empty());
+
+        let duplicate_circles = [
+            circle(20, -5.0, 100),
+            circle(20, 7.0, 150),
+            circle(21, 7.0, 200),
+        ];
+        assert!(fc05_cylinder_cap_pairs(&duplicate_circles, &topology_rows, &surfaces).is_empty());
     }
 
     #[test]
