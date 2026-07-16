@@ -1615,3 +1615,11 @@ standalone-zero slot before another complete coordinate. The conic record
 standalone-zero slot before another complete coordinate; a terminal `18` is
 also a zero local-system slot. The conic record retains its coefficients and parameter fields without assigning ellipse,
 parabola, or hyperbola semantics until the coefficient equation is resolved.
+
+A positional conic row repeats its canonical entity identifier on both sides
+of the preceding `e3`, then stores `<id> <type> e2`. Its body begins
+`02 48 10 00 eb 10 00 00 00 00 <flip>` and replays `end1.xyz`, `end2.xyz`,
+`t0`, `t1`, `c1`, `c2`, and the twelve local-system slots in that order. The
+compact `11` parameter form remains an opaque one-byte parameter while leaving
+the following coefficient and local-system positions aligned. A complete row
+consumes all twelve local-system slots before its trailing compound record.

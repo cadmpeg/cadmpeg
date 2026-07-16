@@ -281,6 +281,119 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
     result
 }
 
+fn conic_parameter(
+    body: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(Option<f64>, usize)> {
+    if body.get(offset) == Some(&0x11) {
+        return Some((None, offset + 1));
+    }
+    coordinate(body, offset, cache).map(|(value, next)| (Some(value), next))
+}
+
+fn positional_conic_body(
+    body: &[u8],
+    entity_id: u32,
+    type_id: u32,
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<ReferenceConic> {
+    const GENERAL_INFO: &[u8] = &[0x02, 0x48, 0x10, 0x00, 0xeb, 0x10, 0, 0, 0, 0];
+    (body.get(..GENERAL_INFO.len()) == Some(GENERAL_INFO)).then_some(())?;
+    let (flip, mut cursor) = crate::psb::compact_int(body, GENERAL_INFO.len());
+    (cursor > GENERAL_INFO.len()).then_some(())?;
+    let mut endpoints = [[0.0; 3]; 2];
+    for point in &mut endpoints {
+        for value in point {
+            let (decoded, next) = coordinate(body, cursor, cache)?;
+            *value = decoded;
+            cursor = next;
+        }
+    }
+    let (parameter_start, next) = conic_parameter(body, cursor, cache)?;
+    cursor = next;
+    let (parameter_end, next) = conic_parameter(body, cursor, cache)?;
+    cursor = next;
+    let (coefficient_1, next) = coordinate(body, cursor, cache)?;
+    cursor = next;
+    let (coefficient_2, local_start) = coordinate(body, cursor, cache)?;
+    let (local_end, local_system) = (local_start + 1..=body.len()).find_map(|end| {
+        conic_local_system(&body[local_start..end], cache).map(|frame| (end, frame))
+    })?;
+    let tail = body.get(local_end..)?;
+    (tail.is_empty() || tail.first() == Some(&0xe2)).then_some(())?;
+    endpoints
+        .iter()
+        .flatten()
+        .chain([&coefficient_1, &coefficient_2])
+        .all(|value| value.is_finite())
+        .then_some(())?;
+    Some(ReferenceConic {
+        entity_id,
+        type_id,
+        flip,
+        start: endpoints[0],
+        end: endpoints[1],
+        parameter_start,
+        parameter_end,
+        coefficient_1,
+        coefficient_2,
+        local_system: Some(local_system),
+        body: body[..local_end].to_vec(),
+        offset,
+    })
+}
+
+/// Decode complete positional rows following an `ent_list(conic)` schema.
+pub fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
+    const LIST: &[u8] = b"ent_list(conic)\0";
+    const NEXT_LIST: &[u8] = b"\xe0\x00ent_list(";
+    let cache = ScalarCache::from_section(payload);
+    let mut result = Vec::new();
+    let mut search = 0;
+    while let Some(prototype) = find_in(payload, LIST, search, payload.len()) {
+        let rows_start = prototype + LIST.len();
+        let block_end =
+            find_in(payload, NEXT_LIST, rows_start, payload.len()).unwrap_or(payload.len());
+        let mut headers = Vec::new();
+        for close in rows_start..block_end {
+            if payload.get(close) != Some(&0xe3) {
+                continue;
+            }
+            let Ok((entity_id, after_id)) = crate::psb::reference_id(payload, close + 1) else {
+                continue;
+            };
+            if !matching_row_id(payload, close, entity_id) {
+                continue;
+            }
+            let (type_id, after_type) = crate::psb::compact_int(payload, after_id);
+            if after_type == after_id || payload.get(after_type) != Some(&0xe2) {
+                continue;
+            }
+            headers.push((close, entity_id, type_id, after_type + 1));
+        }
+        for (index, &(close, entity_id, type_id, body_start)) in headers.iter().enumerate() {
+            let body_end = headers
+                .get(index + 1)
+                .map_or(block_end, |(next_close, _, _, _)| *next_close);
+            if let Some(conic) = positional_conic_body(
+                &payload[body_start..body_end],
+                entity_id,
+                type_id,
+                close + 1,
+                &cache,
+            ) {
+                result.push(conic);
+            }
+        }
+        search = block_end.max(rows_start);
+    }
+    result.sort_by_key(|conic| conic.offset);
+    result.dedup_by_key(|conic| conic.offset);
+    result
+}
+
 /// Decode every complete positional `entity(line)` row.
 pub fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
     const PROTOTYPE: &[u8] = b"ent_list(line)\0";
@@ -666,6 +779,28 @@ mod tests {
             conic_local_system(&body, &ScalarCache::from_section(&body)),
             Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0])
         );
+    }
+
+    #[test]
+    fn decodes_positional_conic_with_an_opaque_parameter_token() {
+        let payload = b"ent_list(conic)\0\xf2\xf7\x0e\xe2\x2b\xe3\
+            \x2b\x1e\xe2\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\x01\
+            \xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\x0f\x11\x43\xf0\x00\xe4\
+            \xe4\x0f\x0f\x0f\xe4\x0f\x0f\x0f\xe4\x43\xf0\x00\x0f\x0f\
+            \xe2\x2c\xf7\x10\xe3\xe0\x00ent_list(text)\0";
+
+        let decoded = positional_conics(payload);
+        let [conic] = decoded.as_slice() else {
+            panic!("one positional conic");
+        };
+        assert_eq!(conic.entity_id, 43);
+        assert_eq!(conic.type_id, 30);
+        assert_eq!(conic.start, [1.0, 0.0, 0.0]);
+        assert_eq!(conic.end, [-1.0, 0.0, 0.0]);
+        assert_eq!(conic.parameter_start, Some(0.0));
+        assert_eq!(conic.parameter_end, None);
+        assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
+        assert_eq!(conic.local_system.unwrap()[9], -1.0);
     }
 
     #[test]

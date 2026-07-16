@@ -1590,6 +1590,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
                 .min(data.len());
             reference::named_conics(&data[section.offset..end])
                 .into_iter()
+                .chain(reference::positional_conics(&data[section.offset..end]))
                 .map(move |mut conic| {
                     conic.offset += section.offset;
                     conic
