@@ -1572,3 +1572,11 @@ scalar cache and the signed coordinate DICT lane. `18` immediately before a
 complete coordinate token is a standalone zero slot. A positional row defines
 a line only when exactly six finite scalars consume the complete suffix. The two
 endpoint positions are model coordinates in the active principal length unit.
+
+An `ent_list(line3d)` positional row repeats its canonical entity identifier
+on both sides of `e3`, followed by its compact type and `e2` body opener. The
+body fields include `end1.xyz`, `end2.xyz`, and `orig_len` as seven consecutive
+scalars. A complete spatial line has a nonzero endpoint distance equal to the
+absolute stored `orig_len`. The scalar run precedes the remaining positional
+fields. Entity references and display fields before or after that run do not
+contribute coordinates.

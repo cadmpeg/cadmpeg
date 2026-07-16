@@ -578,6 +578,7 @@ struct CreoPrimitiveScalarArrayRecord {
 #[derive(Debug, Serialize)]
 struct CreoReferenceLineRecord {
     id: String,
+    family: &'static str,
     start: [f64; 3],
     end: [f64; 3],
     offset: usize,
@@ -19236,11 +19237,20 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     ir.source = Some(source_meta(scan));
     preserve_passthrough_sections(scan, &mut ir, &mut annotations)?;
     if !scan.reference_lines.is_empty() {
+        let family = |kind| match kind {
+            crate::reference::ReferenceLineKind::Line => "line",
+            crate::reference::ReferenceLineKind::Line3d => "line3d",
+        };
         let records = scan
             .reference_lines
             .iter()
             .map(|line| CreoReferenceLineRecord {
-                id: format!("creo:mdl_ref_info:line_record#{}", line.offset),
+                id: format!(
+                    "creo:mdl_ref_info:{}_record#{}",
+                    family(line.kind),
+                    line.offset
+                ),
+                family: family(line.kind),
                 start: line.start,
                 end: line.end,
                 offset: line.offset,
@@ -19265,7 +19275,11 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let Some(direction) = normalized(direction) else {
             continue;
         };
-        let prefix = format!("creo:mdl_ref_info:line#{}", line.offset);
+        let family = match line.kind {
+            crate::reference::ReferenceLineKind::Line => "line",
+            crate::reference::ReferenceLineKind::Line3d => "line3d",
+        };
+        let prefix = format!("creo:mdl_ref_info:{family}#{}", line.offset);
         let id = CurveId(prefix);
         annotate(
             &mut annotations,
@@ -19283,7 +19297,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             },
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
-                object_id: format!("MdlRefInfo:{}", line.offset),
+                object_id: format!("MdlRefInfo:{family}:{}", line.offset),
                 name: None,
                 color: None,
                 visible: None,

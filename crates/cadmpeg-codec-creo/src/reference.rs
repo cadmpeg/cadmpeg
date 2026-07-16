@@ -3,9 +3,20 @@
 
 use crate::scalar::{self, ScalarCache};
 
+/// Stored reference-line family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferenceLineKind {
+    /// Planar `entity(line)` record.
+    Line,
+    /// Spatial `line3d` record with a stored original length.
+    Line3d,
+}
+
 /// One finite model-space line entity.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReferenceLine {
+    /// Native entity family.
+    pub kind: ReferenceLineKind,
     /// First endpoint in model coordinates.
     pub start: [f64; 3],
     /// Second endpoint in model coordinates.
@@ -14,20 +25,22 @@ pub struct ReferenceLine {
     pub offset: usize,
 }
 
+fn coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x18)
+        && scalar::decode_tabulated_cylinder_second_coordinate(data, offset + 1, cache).is_some()
+    {
+        return Some((0.0, offset + 1));
+    }
+    scalar::decode_tabulated_cylinder_second_coordinate(data, offset, cache)
+}
+
 fn scalar_suffix(row: &[u8], count: usize, cache: &ScalarCache) -> Option<Vec<f64>> {
     (0..row.len())
         .filter_map(|start| {
             let mut cursor = start;
             let mut values = Vec::with_capacity(count);
             while values.len() < count {
-                let (value, next) = if row.get(cursor) == Some(&0x18)
-                    && scalar::decode_tabulated_cylinder_second_coordinate(row, cursor + 1, cache)
-                        .is_some()
-                {
-                    (0.0, cursor + 1)
-                } else {
-                    scalar::decode_tabulated_cylinder_second_coordinate(row, cursor, cache)?
-                };
+                let (value, next) = coordinate(row, cursor, cache)?;
                 values.push(value);
                 cursor = next;
             }
@@ -100,12 +113,112 @@ pub fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
                 continue;
             };
             result.push(ReferenceLine {
+                kind: ReferenceLineKind::Line,
                 start: values[..3].try_into().expect("three bounded coordinates"),
                 end: values[3..].try_into().expect("three bounded coordinates"),
                 offset: start,
             });
         }
         search = block_end.max(instance_search);
+    }
+    result.sort_by_key(|line| line.offset);
+    result.dedup_by_key(|line| line.offset);
+    result
+}
+
+fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3])> {
+    let candidates = (0..body.len()).filter_map(|start| {
+        let mut cursor = start;
+        let mut values = Vec::with_capacity(7);
+        while values.len() < 7 {
+            let (value, next) = coordinate(body, cursor, cache)?;
+            values.push(value);
+            cursor = next;
+        }
+        let first: [f64; 3] = values[..3].try_into().ok()?;
+        let second: [f64; 3] = values[3..6].try_into().ok()?;
+        let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
+        let distance = delta.iter().map(|value| value * value).sum::<f64>().sqrt();
+        let stored_length = values[6].abs();
+        let scale = distance.max(stored_length).max(1.0);
+        (distance > 1e-12
+            && stored_length > 0.0
+            && (distance - stored_length).abs() <= 1e-9 * scale)
+            .then_some((start, first, second))
+    });
+    let (_, first, second) = candidates.min_by_key(|(start, _, _)| *start)?;
+    Some((first, second))
+}
+
+fn matching_row_id(payload: &[u8], close: usize, id: u32) -> bool {
+    let start = close.saturating_sub(8);
+    (start..close).any(|candidate| {
+        let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
+            return false;
+        };
+        if previous != id {
+            return false;
+        }
+        after == close
+            || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
+                && crate::psb::reference_id(payload, after + 1)
+                    .is_ok_and(|(_, reference_end)| reference_end == close))
+    })
+}
+
+/// Decode complete positional `line3d` rows whose endpoint distance equals
+/// their stored original length.
+pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
+    const PROTOTYPE: &[u8] = b"ent_list(line3d)\0";
+    const LIST: &[u8] = b"\xe0\x00ent_list(";
+
+    let cache = ScalarCache::from_section(payload);
+    let mut result = Vec::new();
+    let mut search = 0;
+    while let Some(prototype) = payload[search..]
+        .windows(PROTOTYPE.len())
+        .position(|window| window == PROTOTYPE)
+        .map(|relative| search + relative)
+    {
+        let rows_start = prototype + PROTOTYPE.len();
+        let block_end = payload[rows_start..]
+            .windows(LIST.len())
+            .position(|window| window == LIST)
+            .map_or(payload.len(), |relative| rows_start + relative);
+        let mut headers = Vec::new();
+        for close in rows_start..block_end {
+            if payload.get(close) != Some(&0xe3) {
+                continue;
+            }
+            let Ok((id, after_id)) = crate::psb::reference_id(payload, close + 1) else {
+                continue;
+            };
+            if !matching_row_id(payload, close, id) {
+                continue;
+            }
+            let (_, body_start) = crate::psb::compact_int(payload, after_id);
+            if body_start == after_id || payload.get(body_start) != Some(&0xe2) {
+                continue;
+            }
+            let body_start = body_start + 1;
+            headers.push((close, body_start));
+        }
+        for (index, (close, body_start)) in headers.iter().copied().enumerate() {
+            let body_end = headers
+                .get(index + 1)
+                .map_or(block_end, |(next_close, _)| *next_close)
+                .min(body_start.saturating_add(384));
+            let Some((start, end)) = line3d_fields(&payload[body_start..body_end], &cache) else {
+                continue;
+            };
+            result.push(ReferenceLine {
+                kind: ReferenceLineKind::Line3d,
+                start,
+                end,
+                offset: close + 1,
+            });
+        }
+        search = block_end.max(rows_start);
     }
     result.sort_by_key(|line| line.offset);
     result.dedup_by_key(|line| line.offset);
@@ -150,5 +263,25 @@ mod tests {
             \x18\x93\x27\x14\x0f\x41\xcd\xf1\x8c\x3e\x32\xfb\x7f\x13\x0b\
             \xe0\x00entity(text)\0";
         assert_eq!(lines(payload).len(), 1);
+    }
+
+    #[test]
+    fn decodes_line3d_with_matching_original_length() {
+        let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
+            \x0f\x0f\x0f\xe4\x0f\x0f\xe4";
+        let decoded = line3d_lines(payload);
+        let [line] = decoded.as_slice() else {
+            panic!("one line3d");
+        };
+        assert_eq!(line.kind, ReferenceLineKind::Line3d);
+        assert_eq!(line.start, [0.0; 3]);
+        assert_eq!(line.end, [1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn withholds_line3d_with_inconsistent_original_length() {
+        let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\
+            \x0f\x0f\x0f\xe4\x0f\x0f\x0e";
+        assert!(line3d_lines(payload).is_empty());
     }
 }

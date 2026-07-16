@@ -1553,6 +1553,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
                 .min(data.len());
             reference::lines(&data[section.offset..end])
                 .into_iter()
+                .chain(reference::line3d_lines(&data[section.offset..end]))
                 .map(move |mut line| {
                     line.offset += section.offset;
                     line
