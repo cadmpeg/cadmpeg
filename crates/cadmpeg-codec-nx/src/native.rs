@@ -568,6 +568,27 @@ pub struct DisplayJtInstanceNode {
     pub source_offset: u64,
 }
 
+/// Common JT 9 group-node data carried by every group-derived scene node.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtGroupNodeData {
+    /// Globally unique group-data identity.
+    pub id: String,
+    /// Owning common node-data record.
+    pub base_node: String,
+    /// Serialized group-derived node object identifier.
+    pub object_id: u32,
+    /// Group-node data version.
+    pub version: u16,
+    /// Ordered child node object identifiers.
+    pub child_object_ids: Vec<u32>,
+    /// Byte length after the common group-node data.
+    pub family_data_byte_len: u32,
+    /// SHA-256 of the bytes after the common group-node data.
+    pub family_data_sha256: String,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
 /// One JT geometric-transform attribute attached to logical scene nodes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DisplayJtGeometricTransformAttribute {
@@ -974,6 +995,11 @@ fn parse_jt9_group_data(bytes: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
         .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
         .collect();
     Some((version, children, &bytes[end..]))
+}
+
+pub(crate) fn parse_jt9_group_node_body(body: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
+    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+    parse_jt9_group_data(family)
 }
 
 pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtPartitionNode> {
@@ -2763,6 +2789,72 @@ pub fn display_jt_base_node_data(
                 version,
                 flags,
                 attribute_object_ids,
+                family_data_byte_len: family_data.len() as u32,
+                family_data_sha256: sha256_hex(family_data),
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    nodes
+}
+
+/// Decode common group-node data from every JT 9 group-derived scene node.
+pub fn display_jt_group_node_data(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtGroupNodeData> {
+    let mut nodes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major != 9 || segment.compression.is_none() {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_base_type != 1 {
+                continue;
+            }
+            let Some((version, child_object_ids, family_data)) =
+                parse_jt9_group_node_body(element.body)
+            else {
+                return Vec::new();
+            };
+            if version != 1 {
+                return Vec::new();
+            }
+            nodes.push(DisplayJtGroupNodeData {
+                id: format!("{}-group-node-data-{ordinal}", segment.id),
+                base_node: format!("{}-base-node-{ordinal}", segment.id),
+                object_id: element.object_id,
+                version,
+                child_object_ids,
                 family_data_byte_len: family_data.len() as u32,
                 family_data_sha256: sha256_hex(family_data),
                 source_offset: segment.source_offset + 24,

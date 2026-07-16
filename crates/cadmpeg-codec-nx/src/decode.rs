@@ -80,10 +80,9 @@ pub(crate) struct DisplayJtTessellationInputs<'a> {
     pub(crate) bindings: &'a [crate::native::DisplayJtShapeLodBinding],
     pub(crate) shape_nodes: &'a [crate::native::DisplayJtTriStripShapeNode],
     pub(crate) base_nodes: &'a [crate::native::DisplayJtBaseNodeData],
+    pub(crate) group_nodes: &'a [crate::native::DisplayJtGroupNodeData],
     pub(crate) instance_nodes: &'a [crate::native::DisplayJtInstanceNode],
     pub(crate) transforms: &'a [crate::native::DisplayJtGeometricTransformAttribute],
-    pub(crate) partition_nodes: &'a [crate::native::DisplayJtPartitionNode],
-    pub(crate) range_lod_nodes: &'a [crate::native::DisplayJtRangeLodNode],
     pub(crate) compressed_elements: &'a [crate::native::DisplayJtCompressedElement],
 }
 
@@ -222,14 +221,8 @@ fn display_jt_node_transform(
         }
     }
     for (object_id, base) in &by_object {
-        let partition_children = inputs
-            .partition_nodes
-            .iter()
-            .filter(|node| node.base_node == base.id)
-            .map(|node| node.child_object_ids.as_slice())
-            .collect::<Vec<_>>();
-        let range_children = inputs
-            .range_lod_nodes
+        let group_children = inputs
+            .group_nodes
             .iter()
             .filter(|node| node.base_node == base.id)
             .map(|node| node.child_object_ids.as_slice())
@@ -240,12 +233,11 @@ fn display_jt_node_transform(
             .filter(|node| node.base_node == base.id)
             .map(|node| std::slice::from_ref(&node.child_object_id))
             .collect::<Vec<_>>();
-        if partition_children.len() + range_children.len() + instance_children.len() > 1 {
+        if group_children.len() + instance_children.len() > 1 {
             return None;
         }
-        let children = partition_children
+        let children = group_children
             .into_iter()
-            .chain(range_children)
             .chain(instance_children)
             .next()
             .unwrap_or_default();
@@ -7089,6 +7081,11 @@ fn attach_native_object_model(
         &display_jt_segments,
         &display_jt_documents,
     );
+    let display_jt_group_node_data = crate::native::display_jt_group_node_data(
+        &scan.container,
+        &display_jt_segments,
+        &display_jt_documents,
+    );
     let display_jt_instance_nodes = crate::native::display_jt_instance_nodes(
         &scan.container,
         &display_jt_segments,
@@ -7128,10 +7125,9 @@ fn attach_native_object_model(
         bindings: &display_jt_shape_lod_bindings,
         shape_nodes: &display_jt_tri_strip_shape_nodes,
         base_nodes: &display_jt_base_node_data,
+        group_nodes: &display_jt_group_node_data,
         instance_nodes: &display_jt_instance_nodes,
         transforms: &display_jt_geometric_transform_attributes,
-        partition_nodes: &display_jt_partition_nodes,
-        range_lod_nodes: &display_jt_range_lod_nodes,
         compressed_elements: &display_jt_compressed_elements,
     })
     .unwrap_or_default();
@@ -7635,6 +7631,12 @@ fn attach_native_object_model(
         annotations
             .note(&node.id, annotation_stream, node.source_offset)
             .tag("DISPLAY_JT_BASE_NODE_DATA");
+        annotations.exactness(&node.id, Exactness::ByteExact);
+    }
+    for node in &display_jt_group_node_data {
+        annotations
+            .note(&node.id, annotation_stream, node.source_offset)
+            .tag("DISPLAY_JT_GROUP_NODE_DATA");
         annotations.exactness(&node.id, Exactness::ByteExact);
     }
     for node in &display_jt_instance_nodes {
@@ -8489,6 +8491,9 @@ fn attach_native_object_model(
     }
     if !display_jt_base_node_data.is_empty() {
         namespace.set_arena("display_jt_base_node_data", &display_jt_base_node_data)?;
+    }
+    if !display_jt_group_node_data.is_empty() {
+        namespace.set_arena("display_jt_group_node_data", &display_jt_group_node_data)?;
     }
     if !display_jt_instance_nodes.is_empty() {
         namespace.set_arena("display_jt_instance_nodes", &display_jt_instance_nodes)?;

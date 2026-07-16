@@ -651,10 +651,11 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
 fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     use crate::native::{
         DisplayJtBaseNodeData, DisplayJtCompressedElement, DisplayJtCompressedVertexRecordsHeader,
-        DisplayJtGeometricTransformAttribute, DisplayJtInstanceNode, DisplayJtPolygonMesh,
-        DisplayJtShapeLodBinding, DisplayJtShapeLodElement, DisplayJtTriStripShapeNode,
-        DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates,
-        DisplayJtVertexFlags, DisplayJtVertexNormals, DisplayJtVertexTextureCoordinates,
+        DisplayJtGeometricTransformAttribute, DisplayJtGroupNodeData, DisplayJtInstanceNode,
+        DisplayJtPolygonMesh, DisplayJtShapeLodBinding, DisplayJtShapeLodElement,
+        DisplayJtTriStripShapeNode, DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader,
+        DisplayJtVertexCoordinates, DisplayJtVertexFlags, DisplayJtVertexNormals,
+        DisplayJtVertexTextureCoordinates,
     };
 
     let mesh = DisplayJtPolygonMesh {
@@ -788,6 +789,41 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         child_object_id: 9,
         source_offset: 123,
     };
+    let group_base = DisplayJtBaseNodeData {
+        id: "group-base".into(),
+        element: "group-element".into(),
+        object_type_id: vec![0; 16],
+        object_id: 20,
+        version: 1,
+        flags: 0,
+        attribute_object_ids: Vec::new(),
+        family_data_byte_len: 14,
+        family_data_sha256: "00".repeat(32),
+        source_offset: 124,
+    };
+    let group_element = DisplayJtCompressedElement {
+        id: "group-element".into(),
+        segment: "scene-segment".into(),
+        segment_type: 1,
+        ordinal: 3,
+        object_type_id: vec![0; 16],
+        object_base_type: 1,
+        object_id: 20,
+        body_byte_len: 0,
+        body_sha256: "00".repeat(32),
+        inflated_offset: 0,
+        source_offset: 124,
+    };
+    let group = DisplayJtGroupNodeData {
+        id: "group-node".into(),
+        base_node: "group-base".into(),
+        object_id: 20,
+        version: 1,
+        child_object_ids: vec![11, 12],
+        family_data_byte_len: 0,
+        family_data_sha256: "00".repeat(32),
+        source_offset: 124,
+    };
     let transform = DisplayJtGeometricTransformAttribute {
         id: "transform".into(),
         element: "scene-element".into(),
@@ -888,12 +924,16 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
             shape_elements: &[shape_element],
             bindings: &[binding],
             shape_nodes: &[node],
-            base_nodes: &[base, instance_base, second_instance_base],
+            base_nodes: &[base, instance_base, second_instance_base, group_base],
+            group_nodes: &[group],
             instance_nodes: &[instance, second_instance],
             transforms: &[transform],
-            partition_nodes: &[],
-            range_lod_nodes: &[],
-            compressed_elements: &[compressed, instance_element, second_instance_element],
+            compressed_elements: &[
+                compressed,
+                instance_element,
+                second_instance_element,
+                group_element,
+            ],
         })
         .expect("complete scene binding");
     assert_eq!(tessellations.len(), 2);
@@ -1243,6 +1283,26 @@ fn display_jt9_instance_node_requires_one_exact_child_reference() {
     body.pop();
     body[14..16].copy_from_slice(&2_u16.to_le_bytes());
     assert!(crate::native::parse_jt9_instance_node_body(&body).is_none());
+}
+
+#[test]
+fn display_jt9_group_node_bounds_ordered_children_and_family_tail() {
+    let mut body = Vec::new();
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&0_u32.to_le_bytes());
+    body.extend_from_slice(&0_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&2_u32.to_le_bytes());
+    body.extend_from_slice(&7_u32.to_le_bytes());
+    body.extend_from_slice(&9_u32.to_le_bytes());
+    body.extend_from_slice(&[4, 3, 2, 1]);
+
+    let (version, children, family) = crate::native::parse_jt9_group_node_body(&body).unwrap();
+    assert_eq!(version, 1);
+    assert_eq!(children, [7, 9]);
+    assert_eq!(family, [4, 3, 2, 1]);
+    body.truncate(body.len() - 5);
+    assert!(crate::native::parse_jt9_group_node_body(&body).is_none());
 }
 
 #[test]
