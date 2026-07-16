@@ -5236,6 +5236,36 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
 }
 
 #[test]
+fn nx_construction_dependency_requires_a_preceding_projected_operation() {
+    use std::collections::BTreeMap;
+
+    use cadmpeg_ir::features::FeatureId;
+
+    let positions = BTreeMap::from([("csys", 1), ("consumer", 2), ("later", 3)]);
+    let features = BTreeMap::from([
+        ("csys", FeatureId("nx:test:feature#csys".into())),
+        ("consumer", FeatureId("nx:test:feature#consumer".into())),
+    ]);
+
+    assert_eq!(
+        crate::decode::preceding_operation_dependency("csys", 2, &positions, &features),
+        Some(FeatureId("nx:test:feature#csys".into()))
+    );
+    assert_eq!(
+        crate::decode::preceding_operation_dependency("consumer", 2, &positions, &features),
+        None
+    );
+    assert_eq!(
+        crate::decode::preceding_operation_dependency("later", 2, &positions, &features),
+        None
+    );
+    assert_eq!(
+        crate::decode::preceding_operation_dependency("missing", 2, &positions, &features),
+        None
+    );
+}
+
+#[test]
 fn om_operation_primary_body_reference_requires_one_complete_field() {
     let label = crate::om::OperationLabel {
         header_offset: 100,

@@ -8187,6 +8187,7 @@ fn attach_native_object_model(
             input_blocks: &feature_input_blocks,
             input_block_identity_groups: &feature_input_block_identity_groups,
             datum_csys_constructions: &feature_datum_csys_constructions,
+            datum_csys_block_uses: &feature_datum_csys_block_uses,
             datum_plane_headers: &feature_datum_plane_headers,
             datum_plane_block_uses: &feature_datum_plane_block_uses,
             datum_plane_payloads: &feature_datum_plane_payloads,
@@ -9204,6 +9205,7 @@ struct FeatureOperationSources<'a> {
     input_blocks: &'a [crate::native::FeatureInputBlock],
     input_block_identity_groups: &'a [crate::native::FeatureInputBlockIdentityGroup],
     datum_csys_constructions: &'a [crate::native::FeatureDatumCsysConstruction],
+    datum_csys_block_uses: &'a [crate::native::FeatureDatumCsysBlockUse],
     datum_plane_headers: &'a [crate::native::FeatureDatumPlaneHeader],
     datum_plane_block_uses: &'a [crate::native::FeatureDatumPlaneBlockUse],
     datum_plane_payloads: &'a [crate::native::FeatureDatumPlanePayload],
@@ -9242,6 +9244,19 @@ struct FeatureOperationSources<'a> {
     body_bindings: &'a [crate::native::SegmentBodyBinding],
 }
 
+pub(crate) fn preceding_operation_dependency(
+    operation: &str,
+    consumer_position: usize,
+    operation_positions: &BTreeMap<&str, usize>,
+    feature_ids: &BTreeMap<&str, FeatureId>,
+) -> Option<FeatureId> {
+    let position = operation_positions.get(operation)?;
+    if *position >= consumer_position {
+        return None;
+    }
+    feature_ids.get(operation).cloned()
+}
+
 fn attach_feature_operations(
     ir: &mut CadIr,
     sources: &FeatureOperationSources<'_>,
@@ -9255,6 +9270,7 @@ fn attach_feature_operations(
         input_blocks,
         input_block_identity_groups,
         datum_csys_constructions,
+        datum_csys_block_uses,
         datum_plane_headers,
         datum_plane_block_uses,
         datum_plane_payloads,
@@ -9339,6 +9355,14 @@ fn attach_feature_operations(
         .iter()
         .map(|construction| (construction.operation_label.as_str(), construction))
         .collect::<BTreeMap<_, _>>();
+    let mut datum_csys_uses_by_input_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureDatumCsysBlockUse>>::new();
+    for block_use in datum_csys_block_uses {
+        datum_csys_uses_by_input_operation
+            .entry(block_use.input_operation_label.as_str())
+            .or_default()
+            .push(block_use);
+    }
     let datum_plane_headers_by_operation = datum_plane_headers
         .iter()
         .map(|header| (header.operation_label.as_str(), header))
@@ -9359,6 +9383,19 @@ fn attach_feature_operations(
         .iter()
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
+        .collect::<BTreeMap<_, _>>();
+    let feature_ids_by_operation = labels
+        .iter()
+        .map(|label| {
+            let key = label
+                .id
+                .strip_prefix("nx:feature-history:operation-label#")
+                .unwrap_or(label.id.as_str());
+            (
+                label.id.as_str(),
+                FeatureId(format!("nx:feature-history:feature#{key}")),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     let sketch_datum_csys_dependencies = sketch_datum_csys_dependencies
         .iter()
@@ -9607,8 +9644,10 @@ fn attach_feature_operations(
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect::<BTreeMap<_, _>>();
     for (ordinal, label) in labels.iter().enumerate() {
-        let key = label.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-        let id = FeatureId(format!("nx:feature-history:feature#{key}"));
+        let id = feature_ids_by_operation
+            .get(label.id.as_str())
+            .expect("every operation label owns one neutral feature identity")
+            .clone();
         let mut dependencies = Vec::new();
         if let Some(body) = body_references.get(label.id.as_str()) {
             if let Some(writer) = last_body_writer.get(&canonical_body(*body)) {
@@ -9642,19 +9681,31 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
-            let Some(construction_position) =
-                operation_positions.get(block_use.construction_operation_label.as_str())
-            else {
+            let Some(dependency) = preceding_operation_dependency(
+                block_use.construction_operation_label.as_str(),
+                ordinal,
+                &operation_positions,
+                &feature_ids_by_operation,
+            ) else {
                 continue;
             };
-            if *construction_position >= ordinal {
-                continue;
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
             }
-            let construction_key = block_use
-                .construction_operation_label
-                .rsplit_once('#')
-                .map_or("unknown", |(_, key)| key);
-            let dependency = FeatureId(format!("nx:feature-history:feature#{construction_key}"));
+        }
+        for block_use in datum_csys_uses_by_input_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            let Some(dependency) = preceding_operation_dependency(
+                block_use.construction_operation_label.as_str(),
+                ordinal,
+                &operation_positions,
+                &feature_ids_by_operation,
+            ) else {
+                continue;
+            };
             if !dependencies.contains(&dependency) {
                 dependencies.push(dependency);
             }
@@ -9669,29 +9720,40 @@ fn attach_feature_operations(
             } else {
                 identity_use.datum_plane_operation_label.as_str()
             };
-            let Some(other_position) = operation_positions.get(other) else {
+            let Some(dependency) = preceding_operation_dependency(
+                other,
+                ordinal,
+                &operation_positions,
+                &feature_ids_by_operation,
+            ) else {
                 continue;
             };
-            if *other_position >= ordinal {
-                continue;
-            }
-            let other_key = other.rsplit_once('#').map_or("unknown", |(_, key)| key);
-            let dependency = FeatureId(format!("nx:feature-history:feature#{other_key}"));
             if !dependencies.contains(&dependency) {
                 dependencies.push(dependency);
             }
         }
         if let Some(dependency) = sketch_datum_csys_dependencies.get(label.id.as_str()) {
-            let sketch_key = dependency
-                .sketch_operation_label
-                .rsplit_once('#')
-                .map_or("unknown", |(_, key)| key);
-            let dependency = FeatureId(format!("nx:feature-history:feature#{sketch_key}"));
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
+            if let Some(feature) = feature_ids_by_operation
+                .get(dependency.sketch_operation_label.as_str())
+                .cloned()
+            {
+                if !dependencies.contains(&feature) {
+                    dependencies.push(feature);
+                }
             }
         }
         let mut source_properties = BTreeMap::new();
+        for (use_ordinal, block_use) in datum_csys_uses_by_input_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_csys_block_use.{use_ordinal}"),
+                block_use.id.clone(),
+            );
+        }
         if let Some(dependency) = sketch_datum_csys_dependencies.get(label.id.as_str()) {
             source_properties.insert(
                 "sketch_point_dependency_use".to_string(),
