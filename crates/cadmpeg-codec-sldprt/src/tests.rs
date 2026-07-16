@@ -8442,6 +8442,81 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
 }
 
 #[test]
+fn parameter_references_distinguish_reserved_expression_syntax() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="sin">1</Dimension><Dimension Name="pi">2</Dimension><Dimension Name="iif">3</Dimension><Dimension Name="Width">4mm</Dimension><Dimension Name="Driven">sin(30deg) + pi + iif(Width = 4mm, 1, 2) + &quot;sin&quot; + &quot;pi&quot; + &quot;iif&quot;</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let parameter_id = |name: &str| {
+        decoded
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap()
+            .id
+            .clone()
+    };
+    let expected_dependencies = vec![
+        parameter_id("Width"),
+        parameter_id("sin"),
+        parameter_id("pi"),
+        parameter_id("iif"),
+    ];
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == "Driven")
+            .unwrap()
+            .dependencies,
+        expected_dependencies
+    );
+
+    for (old_name, new_name) in [
+        ("sin", "Sine input"),
+        ("pi", "Pi input"),
+        ("iif", "Choice input"),
+    ] {
+        decoded
+            .ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == old_name)
+            .unwrap()
+            .name = new_name.into();
+    }
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let driven = regenerated
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Driven")
+        .unwrap();
+    assert_eq!(
+        driven.expression,
+        "sin(30deg) + pi + iif(Width = 4mm, 1, 2) + \"Sine input\" + \"Pi input\" + \"Choice input\""
+    );
+    assert_eq!(driven.dependencies.len(), 4);
+}
+
+#[test]
 fn decode_evaluates_parameter_dependency_expressions() {
     use cadmpeg_ir::features::{Length, ParameterValue};
 

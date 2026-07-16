@@ -1209,6 +1209,9 @@ pub(crate) fn parameters_with_unresolved_references(
                 || parsed
                     .identifiers
                     .into_iter()
+                    .filter(|identifier| {
+                        !expression_identifier_is_syntax(&parameter.expression, identifier)
+                    })
                     .filter(definite_parameter_reference)
                     .any(|identifier| {
                         aliases
@@ -1232,7 +1235,43 @@ fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_
     expression_identifier_tokens(expression)
         .identifiers
         .into_iter()
+        .filter(|token| !expression_identifier_is_syntax(expression, token))
         .map(|token| token.value)
+}
+
+fn expression_identifier_is_syntax(expression: &str, identifier: &ExpressionIdentifier) -> bool {
+    if identifier.quoted {
+        return false;
+    }
+    if identifier.value.eq_ignore_ascii_case("pi")
+        || identifier.value.eq_ignore_ascii_case("true")
+        || identifier.value.eq_ignore_ascii_case("false")
+    {
+        return true;
+    }
+    let is_function = matches!(
+        identifier.value.to_ascii_lowercase().as_str(),
+        "iif"
+            | "abs"
+            | "sin"
+            | "cos"
+            | "tan"
+            | "sec"
+            | "cosec"
+            | "cotan"
+            | "arcsin"
+            | "arccos"
+            | "atn"
+            | "arcsec"
+            | "arccosec"
+            | "arccotan"
+            | "exp"
+            | "log"
+            | "sqr"
+            | "int"
+            | "sgn"
+    );
+    is_function && expression[identifier.end..].trim_start().starts_with('(')
 }
 
 struct ParsedExpressionIdentifiers {
@@ -4742,6 +4781,9 @@ fn rewrite_renamed_parameter_references(
         let mut rewritten = String::with_capacity(parameter.expression.len());
         let mut copied = 0;
         for token in tokens {
+            if expression_identifier_is_syntax(&parameter.expression, &token) {
+                continue;
+            }
             let Some(replacement) = aliases.get(token.value.as_str()) else {
                 continue;
             };
