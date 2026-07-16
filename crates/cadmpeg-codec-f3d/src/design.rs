@@ -619,7 +619,7 @@ pub fn project_parameter_design(
             Feature {
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: scope.byte_offset,
-                name: None,
+                name: Some(format!("{} {}", scope.kind, scope.feature_ordinal)),
                 suppressed: matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer")
                     && scope.history_state_id.is_none()
                     && scope.previous_history_state_id.is_none(),
@@ -15123,6 +15123,7 @@ mod relation_tests {
         let (features, parameters) =
             project_parameter_design(&[parameter], &[owner], &[scope], &[], &[], &[], &[], &[]);
         assert_eq!(features.len(), 1);
+        assert_eq!(features[0].name.as_deref(), Some("Extrude 1"));
         assert!(features[0].suppressed);
         assert!(matches!(
             &features[0].definition,
