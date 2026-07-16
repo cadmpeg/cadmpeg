@@ -92,6 +92,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     };
     use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry, SpatialSketchGeometry};
 
+    let native = ir
+        .native
+        .namespace("sldprt")
+        .and_then(|namespace| crate::native::SldprtNative::load(namespace).ok());
+
     let active_configurations = ir
         .model
         .configurations
@@ -143,13 +148,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         });
     }
 
-    let incomplete_history_references = ir
-        .native
-        .namespace("sldprt")
-        .and_then(|namespace| crate::native::SldprtNative::load(namespace).ok())
-        .map_or(0, |native| {
-            crate::history::incomplete_history_reference_features(&native.feature_histories)
-        });
+    let incomplete_history_references = native.as_ref().map_or(0, |native| {
+        crate::history::incomplete_history_reference_features(&native.feature_histories)
+    });
     if incomplete_history_references > 0 {
         report.losses.push(LossNote {
             category: LossCategory::Other,
@@ -200,6 +201,20 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             severity: Severity::Warning,
             message: format!(
                 "{native_sketch_geometry} sketch entity geometry record(s) retain native kinds without solved neutral geometry."
+            ),
+            provenance: None,
+        });
+    }
+
+    let unprojected_relations = native
+        .as_ref()
+        .map_or(0, |native| unprojected_sketch_relation_records(ir, native));
+    if unprojected_relations > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{unprojected_relations} native sketch relation record(s) have no projected neutral constraint."
             ),
             provenance: None,
         });
@@ -470,6 +485,62 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+}
+
+fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::SldprtNative) -> usize {
+    use crate::records::SketchInputKind;
+
+    let projected = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| constraint.native_ref.clone())
+        .chain(
+            ir.model
+                .sketch_entities
+                .iter()
+                .filter_map(|entity| entity.native_ref.clone()),
+        )
+        .chain(
+            ir.model
+                .spatial_sketch_entities
+                .iter()
+                .filter_map(|entity| entity.native_ref.clone()),
+        )
+        .collect::<std::collections::HashSet<_>>();
+
+    native
+        .feature_input_lanes
+        .iter()
+        .map(|lane| {
+            let instances = lane
+                .relation_instances
+                .iter()
+                .filter(|relation| !projected.contains(&relation.id))
+                .count();
+            let bindings = lane
+                .relation_bindings
+                .iter()
+                .filter(|binding| {
+                    !lane.relation_instances.iter().any(|relation| {
+                        relation.class_ref == binding.class_ref
+                            && relation.scalar_refs.contains(&binding.scalar_ref)
+                    })
+                })
+                .count();
+            let markers = lane
+                .sketch_entities
+                .iter()
+                .filter(|marker| {
+                    matches!(
+                        marker.kind,
+                        SketchInputKind::Relation(_) | SketchInputKind::Native(_)
+                    ) && !projected.contains(&marker.id)
+                })
+                .count();
+            instances + bindings + markers
+        })
+        .sum()
 }
 
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream
@@ -1793,7 +1864,14 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 
 #[cfg(test)]
 mod design_loss_tests {
-    use super::{append_design_losses, assign_configuration_bodies};
+    use super::{
+        append_design_losses, assign_configuration_bodies, unprojected_sketch_relation_records,
+    };
+    use crate::native::SldprtNative;
+    use crate::records::{
+        FeatureInputLane, FeatureInputRelationBinding, FeatureInputRelationFamily,
+        FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchRelationKind,
+    };
     use cadmpeg_ir::features::{
         Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length,
@@ -2044,5 +2122,89 @@ mod design_loss_tests {
             loss.message
                 == "2 sketch entity geometry record(s) retain native kinds without solved neutral geometry."
         }));
+    }
+
+    #[test]
+    fn retained_relation_records_without_constraints_are_counted() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.sketch_entities.push(SketchEntity {
+            id: SketchEntityId("represented-geometry".into()),
+            sketch: SketchId("sketch".into()),
+            construction: false,
+            native_ref: Some("geometry-marker".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Native {
+                native_kind: "UnknownGeometry".into(),
+            },
+        });
+        let marker = |id: &str, ordinal, kind| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal,
+            offset: u64::from(ordinal),
+            object_index: None,
+            local_id: None,
+            kind,
+            state_value: None,
+            coordinates_m: None,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let relation = FeatureInputRelationInstance {
+            id: "relation-instance".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            family: FeatureInputRelationFamily::PointPointDistance,
+            class_ref: "class".into(),
+            feature_ref: "feature".into(),
+            scalar_refs: vec!["scalar".into()],
+            parameter_scalar_ref: Some("scalar".into()),
+            display_scalar_ref: None,
+            operands: Vec::new(),
+        };
+        let binding =
+            |id: &str, class_ref: &str, scalar_ref: &str, ordinal| FeatureInputRelationBinding {
+                id: id.into(),
+                parent: "lane".into(),
+                ordinal,
+                offset: u64::from(ordinal),
+                class_ref: class_ref.into(),
+                family: FeatureInputRelationFamily::PointPointDistance,
+                scalar_ref: scalar_ref.into(),
+                feature_ref: Some("feature".into()),
+            };
+        let native = SldprtNative {
+            feature_input_lanes: vec![FeatureInputLane {
+                id: "lane".into(),
+                configuration: None,
+                native_payload: Vec::new(),
+                classes: Vec::new(),
+                names: Vec::new(),
+                scalars: Vec::new(),
+                relation_bindings: vec![
+                    binding("grouped-binding", "class", "scalar", 0),
+                    binding("orphan-binding", "other-class", "other-scalar", 1),
+                ],
+                relation_instances: vec![relation],
+                body_selections: Vec::new(),
+                edge_selections: Vec::new(),
+                surface_selections: Vec::new(),
+                references: Vec::new(),
+                sketch_entities: vec![
+                    marker(
+                        "relation-marker",
+                        0,
+                        SketchInputKind::Relation(SketchRelationKind::Horizontal),
+                    ),
+                    marker("geometry-marker", 1, SketchInputKind::Native(99)),
+                ],
+            }],
+            ..SldprtNative::default()
+        };
+
+        assert_eq!(unprojected_sketch_relation_records(&ir, &native), 3);
     }
 }
