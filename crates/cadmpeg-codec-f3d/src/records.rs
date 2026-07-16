@@ -503,6 +503,9 @@ pub struct DesignDimensionLocusPair {
     pub id: String,
     /// Companion record containing this frame.
     pub companion_record_index: u32,
+    /// Companion record owned by the following dimension parameter governed by
+    /// this frame.
+    pub governing_companion_record_index: u32,
     /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.

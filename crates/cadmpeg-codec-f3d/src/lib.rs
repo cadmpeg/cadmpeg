@@ -1744,6 +1744,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 })
                 .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
         });
+        let governs_following_dimension = design::governing_dimension_companion_record_index(
+            pair,
+            &native.design_parameter_owners,
+            &native.design_parameters,
+        ) == Some(pair.governing_companion_record_index);
         let valid = pair.class_tag.len() == 3
             && pair.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && pair.paired_class_tag.len() == 3
@@ -1753,6 +1758,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .all(|byte| byte.is_ascii_digit())
             && companion_contains_frame
             && dimension_companion
+            && governs_following_dimension
             && pair.frame_length > 69
             && pair.paired_byte_offset == pair.byte_offset.saturating_add(pair.frame_length)
             && pair.opaque_index_offset == pair.byte_offset.saturating_add(35)
@@ -2183,7 +2189,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for pair in &native.design_dimension_locus_pairs {
         let native_stream = design_stream(&pair.id);
         let owner = companions_by_index
-            .get(&(native_stream, pair.companion_record_index))
+            .get(&(native_stream, pair.governing_companion_record_index))
             .and_then(|companion| {
                 owners_by_index.get(&(native_stream, companion.owner_record_index))
             })

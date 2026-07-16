@@ -2111,6 +2111,7 @@ mod tests {
             .push(DesignDimensionLocusPair {
                 id: format!("{stream}:design-dimension-locus-pair#278"),
                 companion_record_index: 30,
+                governing_companion_record_index: 30,
                 byte_offset: 278,
                 class_tag: "423".into(),
                 record_index: 31,

@@ -3937,7 +3937,9 @@ pub fn project_dimension_constraints(
             {
                 return Some(definition);
             }
-            if parallel_line_separation(entities[0], entities[1], evaluated_mm) {
+            if point_line_separation(entities[0], entities[1], evaluated_mm)
+                || parallel_line_separation(entities[0], entities[1], evaluated_mm)
+            {
                 return Some(Definition::Distance {
                     entities: entities.iter().map(|entity| entity.id.clone()).collect(),
                     parameter,
@@ -4067,7 +4069,8 @@ pub fn project_dimension_constraints(
         .iter()
         .filter_map(|pair| {
             let scope = native_stream(&pair.id)?;
-            let (parameter, parameter_id) = parameter_for(scope, pair.companion_record_index)?;
+            let (parameter, parameter_id) =
+                parameter_for(scope, pair.governing_companion_record_index)?;
             let indices = [
                 pair.first_geometry_record_index,
                 pair.second_geometry_record_index,
@@ -4079,7 +4082,7 @@ pub fn project_dimension_constraints(
                 parameter.evaluated_value,
                 parameter_id,
             )
-            .map(|_| (scope.to_owned(), pair.companion_record_index))
+            .map(|_| (scope.to_owned(), pair.governing_companion_record_index))
         })
         .collect::<HashSet<_>>();
     let locus_companions = pairs
@@ -4108,7 +4111,8 @@ pub fn project_dimension_constraints(
         .iter()
         .filter_map(|pair| {
             let scope = native_stream(&pair.id)?;
-            let (parameter, parameter_id) = parameter_for(scope, pair.companion_record_index)?;
+            let (parameter, parameter_id) =
+                parameter_for(scope, pair.governing_companion_record_index)?;
             let indices = [
                 pair.first_geometry_record_index,
                 pair.second_geometry_record_index,
@@ -4488,7 +4492,7 @@ pub fn bind_dimension_loci(
             continue;
         };
         let Some(parameter_scope) = scopes_by_companion
-            .get(&(scope, pair.companion_record_index))
+            .get(&(scope, pair.governing_companion_record_index))
             .copied()
         else {
             continue;
@@ -5043,6 +5047,31 @@ fn parallel_line_separation(
         (offset.u * first_direction.v - offset.v * first_direction.u).abs() / first_length;
     let expected = evaluated_mm.abs();
     (separation - expected).abs() <= 1.0e-9 * (1.0 + expected)
+}
+
+fn point_line_separation(
+    first: &cadmpeg_ir::sketches::SketchEntity,
+    second: &cadmpeg_ir::sketches::SketchEntity,
+    evaluated_mm: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let (point, line) = match (&first.geometry, &second.geometry) {
+        (SketchGeometry::Point { position }, SketchGeometry::Line { start, end })
+        | (SketchGeometry::Line { start, end }, SketchGeometry::Point { position }) => {
+            (*position, (*start, *end))
+        }
+        _ => return false,
+    };
+    let direction = Point2::new(line.1.u - line.0.u, line.1.v - line.0.v);
+    let length = direction.u.hypot(direction.v);
+    if length <= 1.0e-12 || !evaluated_mm.is_finite() {
+        return false;
+    }
+    let offset = Point2::new(point.u - line.0.u, point.v - line.0.v);
+    let measured = (offset.u * direction.v - offset.v * direction.u).abs() / length;
+    let expected = evaluated_mm.abs();
+    (measured - expected).abs() <= 1.0e-9 * (1.0 + measured.max(expected))
 }
 
 fn two_locus_distance_dimension(
@@ -6509,10 +6538,47 @@ pub fn decode_dimension_locus_pairs(
             "f3d:{}:design-dimension-locus-pair#{}",
             entry.name, pair.byte_offset
         );
+        let Some(governing_companion_record_index) =
+            governing_dimension_companion_record_index(&pair, owners, parameters.values().copied())
+        else {
+            continue;
+        };
+        pair.governing_companion_record_index = governing_companion_record_index;
         out.push(pair);
     }
     out.sort_by_key(|pair| pair.id.clone());
     Ok(out)
+}
+
+pub(crate) fn governing_dimension_companion_record_index<'a>(
+    pair: &DesignDimensionLocusPair,
+    owners: &[DesignParameterOwner],
+    parameter_records: impl IntoIterator<Item = &'a DesignParameter>,
+) -> Option<u32> {
+    let scope = native_stream(&pair.id)?;
+    let mut parameters = HashMap::<u32, Option<&DesignParameter>>::new();
+    for parameter in parameter_records
+        .into_iter()
+        .filter(|parameter| native_stream(&parameter.id) == Some(scope))
+    {
+        parameters
+            .entry(parameter.record_index)
+            .and_modify(|parameter| *parameter = None)
+            .or_insert(Some(parameter));
+    }
+    let mut matches = owners.iter().filter(|owner| {
+        native_stream(&owner.id) == Some(scope)
+            && owner.byte_offset == pair.paired_byte_offset.saturating_add(59)
+            && parameters
+                .get(&owner.parameter_record_index)
+                .and_then(|parameter| *parameter)
+                .is_some_and(|parameter| parameter.kind == DesignParameterKind::Dimension)
+    });
+    let owner = matches.next()?;
+    matches
+        .next()
+        .is_none()
+        .then_some(owner.companion_record_index)
 }
 
 fn find_dimension_locus_pair(
@@ -6589,6 +6655,7 @@ fn parse_dimension_locus_pair(
     Some(DesignDimensionLocusPair {
         id: String::new(),
         companion_record_index,
+        governing_companion_record_index: companion_record_index,
         byte_offset: start as u64,
         class_tag,
         record_index,
@@ -12214,8 +12281,9 @@ mod relation_tests {
         bytes.extend_from_slice(b"273");
         bytes.extend_from_slice(&233u32.to_le_bytes());
 
-        let pair = parse_dimension_locus_pair(&bytes, 0, 228, &HashSet::from([192, 194]))
+        let mut pair = parse_dimension_locus_pair(&bytes, 0, 228, &HashSet::from([192, 194]))
             .expect("paired dimension locus frame");
+        pair.id = "f3d:Design/BulkStream.dat:design-dimension-locus-pair#0".into();
         assert_eq!(pair.companion_record_index, 228);
         assert_eq!(pair.record_index, 233);
         assert_eq!(pair.frame_length, 80);
@@ -12224,6 +12292,47 @@ mod relation_tests {
         assert_eq!(pair.second_geometry_record_index, 194);
         assert_eq!(pair.second_role, 1);
         assert_eq!(pair.paired_class_tag, "273");
+        let mut parameter = parse_design_parameter(&parameter_record(
+            Some(300),
+            "40 mm",
+            "Linear Dimension-3",
+            Some("mm"),
+            "d3",
+            4.0,
+        ))
+        .unwrap();
+        parameter.id = "f3d:Design/BulkStream.dat:design-parameter#301".into();
+        parameter.record_index = 301;
+        let owner = DesignParameterOwner {
+            id: "f3d:Design/BulkStream.dat:design-parameter-owner#300".into(),
+            byte_offset: pair.paired_byte_offset + 59,
+            class_tag: "292".into(),
+            record_index: 300,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 4.0,
+            evaluated_value_offset: pair.paired_byte_offset + 99,
+            parameter_record_index: 301,
+            owned_ordinal: 3,
+            variant: 0,
+            companion_record_index: 302,
+        };
+        assert_eq!(
+            super::governing_dimension_companion_record_index(
+                &pair,
+                std::slice::from_ref(&owner),
+                std::slice::from_ref(&parameter),
+            ),
+            Some(302)
+        );
+        assert_eq!(
+            super::governing_dimension_companion_record_index(
+                &pair,
+                &[owner.clone(), owner],
+                std::slice::from_ref(&parameter),
+            ),
+            None
+        );
 
         let mut nested = Vec::new();
         nested.extend_from_slice(&3u32.to_le_bytes());
@@ -14470,6 +14579,21 @@ mod relation_tests {
             &diagonal.geometry,
             std::f64::consts::FRAC_PI_4,
         ));
+        let vertical = entity(
+            "generated:line#vertical",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, -10.0),
+                end: Point2::new(0.0, 10.0),
+            },
+        );
+        let offset_point = entity(
+            "generated:point#offset",
+            SketchGeometry::Point {
+                position: Point2::new(2.0, 4.0),
+            },
+        );
+        assert!(super::point_line_separation(&offset_point, &vertical, 2.0));
+        assert!(!super::point_line_separation(&vertical, &offset_point, 3.0));
     }
 
     #[test]
@@ -14709,6 +14833,7 @@ mod relation_tests {
         let pair = |stream: &str| DesignDimensionLocusPair {
             id: format!("f3d:{stream}:design-dimension-locus-pair#0"),
             companion_record_index: 12,
+            governing_companion_record_index: 12,
             byte_offset: 0,
             class_tag: "277".into(),
             record_index: 13,
