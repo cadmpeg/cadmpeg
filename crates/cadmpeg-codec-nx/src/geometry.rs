@@ -102,12 +102,12 @@ pub fn surfaces(stream: &[u8]) -> Vec<DecodedSurface> {
     while p + 2 <= stream.len() {
         if stream[p] == 0x00 && p >= occupied_end {
             if let Some((_, len)) = SURFACE_TAGS.iter().find(|(t, _)| *t == stream[p + 1]) {
-                if let Some(geom) = decode_surface(stream, p, stream[p + 1]) {
+                if let Some((geom, shift)) = decode_surface(stream, p, stream[p + 1]) {
                     out.push(DecodedSurface {
                         pos: p,
                         geometry: geom,
                     });
-                    occupied_end = p + *len;
+                    occupied_end = p + *len + shift;
                     p += 2;
                     continue;
                 }
@@ -126,12 +126,12 @@ pub fn curves(stream: &[u8]) -> Vec<DecodedCurve> {
     while p + 2 <= stream.len() {
         if stream[p] == 0x00 && p >= occupied_end {
             if let Some((_, len)) = CURVE_TAGS.iter().find(|(t, _)| *t == stream[p + 1]) {
-                if let Some(geom) = decode_curve(stream, p, stream[p + 1]) {
+                if let Some((geom, shift)) = decode_curve(stream, p, stream[p + 1]) {
                     out.push(DecodedCurve {
                         pos: p,
                         geometry: geom,
                     });
-                    occupied_end = p + *len;
+                    occupied_end = p + *len + shift;
                     p += 2;
                     continue;
                 }
@@ -144,7 +144,7 @@ pub fn curves(stream: &[u8]) -> Vec<DecodedCurve> {
 
 /// Decode an analytic surface at tag position `p`, trying each candidate shift and
 /// returning the first whose payload passes the kind's validation gate.
-fn decode_surface(stream: &[u8], p: usize, kind: u8) -> Option<SurfaceGeometry> {
+fn decode_surface(stream: &[u8], p: usize, kind: u8) -> Option<(SurfaceGeometry, usize)> {
     for sh in SHIFTS {
         let b = p + sh;
         let geom = match kind {
@@ -155,15 +155,15 @@ fn decode_surface(stream: &[u8], p: usize, kind: u8) -> Option<SurfaceGeometry> 
             0x36 => torus(stream, b),
             _ => None,
         };
-        if geom.is_some() {
-            return geom;
+        if let Some(geometry) = geom {
+            return Some((geometry, sh));
         }
     }
     None
 }
 
 /// Decode an analytic curve at tag position `p`, trying each candidate shift.
-fn decode_curve(stream: &[u8], p: usize, kind: u8) -> Option<CurveGeometry> {
+fn decode_curve(stream: &[u8], p: usize, kind: u8) -> Option<(CurveGeometry, usize)> {
     for sh in SHIFTS {
         let b = p + sh;
         let geom = match kind {
@@ -172,8 +172,8 @@ fn decode_curve(stream: &[u8], p: usize, kind: u8) -> Option<CurveGeometry> {
             0x20 => ellipse(stream, b),
             _ => None,
         };
-        if geom.is_some() {
-            return geom;
+        if let Some(geometry) = geom {
+            return Some((geometry, sh));
         }
     }
     None

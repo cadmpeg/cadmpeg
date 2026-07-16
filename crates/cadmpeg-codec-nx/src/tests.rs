@@ -13693,6 +13693,31 @@ fn cone_gate_rejects_nonfinite_or_degenerate_half_angle() {
 }
 
 #[test]
+fn analytic_scanners_include_extended_reference_shifts_in_record_ownership() {
+    let mut surfaces = vec![0; 182];
+    surfaces[1] = 0x32;
+    put_vec3(&mut surfaces, 21, [0.0, 0.0, 0.0]);
+    put_vec3(&mut surfaces, 45, [0.0, 0.0, 1.0]);
+    put_vec3(&mut surfaces, 69, [1.0, 0.0, 0.0]);
+    surfaces[91] = 0;
+    surfaces[92] = 0x32;
+    put_vec3(&mut surfaces, 110, [0.0, 0.0, 0.0]);
+    put_vec3(&mut surfaces, 134, [0.0, 0.0, 1.0]);
+    put_vec3(&mut surfaces, 158, [1.0, 0.0, 0.0]);
+    assert_eq!(crate::geometry::surfaces(&surfaces).len(), 1);
+
+    let mut curves = vec![0; 134];
+    curves[1] = 0x1e;
+    put_vec3(&mut curves, 21, [0.0, 0.0, 0.0]);
+    put_vec3(&mut curves, 45, [1.0, 0.0, 0.0]);
+    curves[67] = 0;
+    curves[68] = 0x1e;
+    put_vec3(&mut curves, 86, [0.0, 0.0, 0.0]);
+    put_vec3(&mut curves, 110, [1.0, 0.0, 0.0]);
+    assert_eq!(crate::geometry::curves(&curves).len(), 1);
+}
+
+#[test]
 fn decode_assembly_reports_external_dependency() {
     let mut cur = Cursor::new(assembly_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();

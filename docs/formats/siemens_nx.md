@@ -511,6 +511,8 @@ Payload offsets are relative to the record's type tag, after the common header (
 
 Every analytic normal or axis and its x-axis are finite unit vectors with an absolute dot product below `1e-6`. A non-unit or non-orthogonal frame rejects the analytic carrier.
 
+An extended leading reference shifts the analytic payload and record end by the same decoded byte count. Bytes before that shifted end remain owned by the record and cannot open another analytic carrier.
+
 Validity gates: CONE has finite nonzero `sin_half` and `cos_half` satisfying `sin_half² + cos_half² ≈ 1`; SPHERE has `radius > 0` and unit axis; a horn torus has `major == minor`.
 
 **OFFSET_SURF (60):** discriminator byte `+19` (`V`/`I`/`U`), `true_offset:u8 +20` (`0`/`1`), base surface ref `+21`, `offset_distance:f64 +23` (meters). Surface `P = base(u,v) + offset_distance · unit_normal(u,v)`. There is no scale field at `+31` (that position lands in the next record). For a B_SURFACE base, the unit normal comes from the rational quotient rule:
