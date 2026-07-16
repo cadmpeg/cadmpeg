@@ -16,6 +16,111 @@ const TRIM_KINDS: [u8; 14] = [
     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
 ];
 
+fn domains_have_distinct_matching<'a>(
+    domains: impl IntoIterator<Item = &'a [usize]>,
+    point_count: usize,
+) -> bool {
+    let domains = domains.into_iter().collect::<Vec<_>>();
+    if domains.len() > point_count {
+        return false;
+    }
+    let mut owner = vec![None; point_count];
+    let mut matched = vec![false; domains.len()];
+    let mut matched_count = 0usize;
+    while matched_count < domains.len() {
+        let mut distance = vec![usize::MAX; domains.len()];
+        let mut queue = VecDeque::new();
+        for root in 0..domains.len() {
+            if !matched[root] {
+                distance[root] = 0;
+                queue.push_back(root);
+            }
+        }
+        let mut shortest = usize::MAX;
+        while let Some(root) = queue.pop_front() {
+            if distance[root] >= shortest {
+                continue;
+            }
+            for &point in domains[root] {
+                if point >= point_count {
+                    continue;
+                }
+                if let Some(next) = owner[point] {
+                    if distance[next] == usize::MAX {
+                        distance[next] = distance[root] + 1;
+                        queue.push_back(next);
+                    }
+                } else {
+                    shortest = distance[root];
+                }
+            }
+        }
+        if shortest == usize::MAX {
+            return false;
+        }
+        let mut cursor = vec![0usize; domains.len()];
+        let mut incoming = vec![None; domains.len()];
+        let mut augmented = 0usize;
+        for start in 0..domains.len() {
+            if matched[start] || distance[start] != 0 {
+                continue;
+            }
+            let mut roots = vec![start];
+            let mut free_point = None;
+            while let Some(&root) = roots.last() {
+                let mut advanced = false;
+                while cursor[root] < domains[root].len() {
+                    let point = domains[root][cursor[root]];
+                    cursor[root] += 1;
+                    if point >= point_count {
+                        continue;
+                    }
+                    match owner[point] {
+                        None if distance[root] == shortest => {
+                            free_point = Some(point);
+                            advanced = true;
+                            break;
+                        }
+                        Some(next) if distance[next] == distance[root] + 1 => {
+                            incoming[next] = Some(point);
+                            roots.push(next);
+                            advanced = true;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                if free_point.is_some() {
+                    break;
+                }
+                if !advanced {
+                    distance[root] = usize::MAX;
+                    roots.pop();
+                }
+            }
+            let Some(mut point) = free_point else {
+                continue;
+            };
+            for (index, &root) in roots.iter().enumerate().rev() {
+                owner[point] = Some(root);
+                if index != 0 {
+                    let Some(previous) = incoming[root] else {
+                        return false;
+                    };
+                    point = previous;
+                }
+            }
+            matched[start] = true;
+            matched_count += 1;
+            augmented += 1;
+        }
+        if augmented == 0 {
+            return false;
+        }
+    }
+    true
+}
+
 /// Reconstructed standard-nested (or FBB-only) topology: the counted spine's
 /// face boundaries recovered from the trim-mesh triangle packets, plus the
 /// physical edge rows and, for the standard family, the `05 08 01` vertex
@@ -5616,29 +5721,10 @@ impl MeshQuotient {
         type PointNeighbors = HashMap<usize, HashSet<usize>>;
 
         fn remaining_domains_match(values: &[(usize, Vec<usize>)], point_count: usize) -> bool {
-            fn augment(
-                root: usize,
-                values: &[(usize, Vec<usize>)],
-                point_owner: &mut [Option<usize>],
-                seen: &mut HashSet<usize>,
-            ) -> bool {
-                for point in &values[root].1 {
-                    if *point >= point_owner.len() || !seen.insert(*point) {
-                        continue;
-                    }
-                    if point_owner[*point]
-                        .is_none_or(|owner| augment(owner, values, point_owner, seen))
-                    {
-                        point_owner[*point] = Some(root);
-                        return true;
-                    }
-                }
-                false
-            }
-
-            let mut point_owner = vec![None; point_count];
-            (0..values.len())
-                .all(|root| augment(root, values, &mut point_owner, &mut HashSet::new()))
+            domains_have_distinct_matching(
+                values.iter().map(|(_, values)| values.as_slice()),
+                point_count,
+            )
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -5755,36 +5841,37 @@ impl MeshQuotient {
                 {
                     break None;
                 }
-                let singleton_roots = values
-                    .iter()
-                    .filter_map(|(root, values)| (values.len() == 1).then_some(*root))
-                    .collect::<Vec<_>>();
-                if singleton_roots.is_empty() {
+                let mut dead = false;
+                let mut progress = false;
+                for root in 0..assigned.len() {
+                    if assigned[root].is_some() {
+                        continue;
+                    }
+                    let values = values_for(root, assigned, used);
+                    let Some(&point) = values.first() else {
+                        dead = true;
+                        break;
+                    };
+                    if values.len() != 1 {
+                        continue;
+                    }
+                    if !used.insert(point) {
+                        dead = true;
+                        break;
+                    }
+                    assigned[root] = Some(point);
+                    propagated.push((root, point));
+                    progress = true;
+                }
+                if dead {
+                    break None;
+                }
+                if !progress {
                     break Some(
                         values
                             .into_iter()
                             .min_by_key(|(root, values)| (values.len(), *root)),
                     );
-                }
-                let mut dead = false;
-                for root in singleton_roots {
-                    if assigned[root].is_some() {
-                        continue;
-                    }
-                    let values = values_for(root, assigned, used);
-                    let [point] = values.as_slice() else {
-                        dead = true;
-                        break;
-                    };
-                    if !used.insert(*point) {
-                        dead = true;
-                        break;
-                    }
-                    assigned[root] = Some(*point);
-                    propagated.push((root, *point));
-                }
-                if dead {
-                    break None;
                 }
             };
             let Some(branch) = branch else {
@@ -6409,26 +6496,6 @@ impl MeshSelectionSearch<'_> {
     }
 
     fn remaining_equation_merge_capacity(&self, quotient: &mut MeshQuotient) -> Option<usize> {
-        fn augment(
-            component: usize,
-            domains: &[HashSet<usize>],
-            point_owner: &mut [Option<usize>],
-            seen: &mut HashSet<usize>,
-        ) -> bool {
-            for point in &domains[component] {
-                if *point >= point_owner.len() || !seen.insert(*point) {
-                    continue;
-                }
-                if point_owner[*point]
-                    .is_none_or(|owner| augment(owner, domains, point_owner, seen))
-                {
-                    point_owner[*point] = Some(component);
-                    return true;
-                }
-            }
-            false
-        }
-
         fn choice_component_reductions(
             choice: &[[usize; 2]],
             quotient: &mut MeshQuotient,
@@ -6583,11 +6650,12 @@ impl MeshSelectionSearch<'_> {
             return None;
         }
         domains.sort_unstable_by_key(HashSet::len);
-        let mut point_owner = vec![None; point_count];
-        for component in 0..domains.len() {
-            if !augment(component, &domains, &mut point_owner, &mut HashSet::new()) {
-                return None;
-            }
+        let domains = domains
+            .into_iter()
+            .map(|domain| domain.into_iter().collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        if !domains_have_distinct_matching(domains.iter().map(Vec::as_slice), point_count) {
+            return None;
         }
         let mut singleton_component = HashMap::new();
         for node in 0..node_count {
@@ -8968,25 +9036,25 @@ mod motif_tests {
     }
 
     #[test]
-    fn point_assignment_propagates_forced_bijection_without_recursion() {
+    fn point_assignment_handles_deep_augmenting_paths_iteratively() {
         const ROOT_COUNT: usize = 10_000;
+        let mut domains = (0..ROOT_COUNT - 1)
+            .map(|root| Arc::new(HashSet::from([root, root + 1])))
+            .collect::<Vec<_>>();
+        domains.push(Arc::new(HashSet::from([0])));
         let mut quotient = MeshQuotient {
             union: UnionFind::new(ROOT_COUNT),
-            domains: (0..ROOT_COUNT)
-                .map(|point| Arc::new(HashSet::from([point])))
-                .collect(),
+            domains,
             members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
         };
-        let candidates = (0..ROOT_COUNT / 2)
-            .map(|edge| vec![[edge * 2, edge * 2 + 1]])
-            .collect::<Vec<_>>();
 
         let assignment = quotient
-            .point_assignment(ROOT_COUNT, &candidates)
+            .point_assignment(ROOT_COUNT, &[])
             .expect("forced coordinate bijection");
 
         assert_eq!(assignment.len(), ROOT_COUNT);
-        assert!((0..ROOT_COUNT).all(|root| assignment[&root] == root));
+        assert_eq!(assignment[&(ROOT_COUNT - 1)], 0);
+        assert!((0..ROOT_COUNT - 1).all(|root| assignment[&root] == root + 1));
     }
 
     #[test]
