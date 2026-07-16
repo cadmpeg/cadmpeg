@@ -62,6 +62,17 @@ fn unique_feature_definition(
     matches.next().is_none().then_some(definition)
 }
 
+fn unique_feature_section_transform(
+    transforms: &[crate::placement::FeatureSectionTransform],
+    definition_id: u32,
+) -> Option<&crate::placement::FeatureSectionTransform> {
+    let mut matches = transforms
+        .iter()
+        .filter(|transform| transform.definition_id == definition_id);
+    let transform = matches.next()?;
+    matches.next().is_none().then_some(transform)
+}
+
 #[derive(Serialize)]
 struct CreoSketchRecord {
     id: String,
@@ -5402,6 +5413,14 @@ fn transfer_saved_spline_curves(
 ) -> usize {
     let mut transferred = 0;
     for transform in &scan.feature_section_transforms {
+        if unique_feature_section_transform(
+            &scan.feature_section_transforms,
+            transform.definition_id,
+        )
+        .is_none()
+        {
+            continue;
+        }
         let Some(definition) =
             unique_feature_definition(&scan.feature_definitions, transform.definition_id)
         else {
@@ -5600,6 +5619,14 @@ fn transfer_feature_extrusion_surfaces(
 ) -> usize {
     let mut transferred = 0;
     for transform in &scan.feature_section_transforms {
+        if unique_feature_section_transform(
+            &scan.feature_section_transforms,
+            transform.definition_id,
+        )
+        .is_none()
+        {
+            continue;
+        }
         let Some(definition) =
             unique_feature_definition(&scan.feature_definitions, transform.definition_id)
         else {
@@ -6646,6 +6673,14 @@ fn transfer_resolved_revolution_breps(
 ) -> usize {
     let mut transferred = 0;
     for (transform_index, transform) in scan.feature_section_transforms.iter().enumerate() {
+        if unique_feature_section_transform(
+            &scan.feature_section_transforms,
+            transform.definition_id,
+        )
+        .is_none()
+        {
+            continue;
+        }
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
@@ -6886,6 +6921,14 @@ fn transfer_resolved_circular_extrusion_breps(
 ) -> usize {
     let mut transferred = 0;
     for (transform_index, transform) in scan.feature_section_transforms.iter().enumerate() {
+        if unique_feature_section_transform(
+            &scan.feature_section_transforms,
+            transform.definition_id,
+        )
+        .is_none()
+        {
+            continue;
+        }
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
@@ -7158,6 +7201,14 @@ fn transfer_resolved_extrusion_breps(
 ) -> usize {
     let mut transferred = 0;
     for (transform_index, transform) in scan.feature_section_transforms.iter().enumerate() {
+        if unique_feature_section_transform(
+            &scan.feature_section_transforms,
+            transform.definition_id,
+        )
+        .is_none()
+        {
+            continue;
+        }
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
@@ -8719,12 +8770,11 @@ fn transfer_resolved_sketches(
     annotations: &mut AnnotationBuilder,
 ) {
     for transform in &scan.feature_section_transforms {
-        if scan
-            .feature_section_transforms
-            .iter()
-            .filter(|candidate| candidate.definition_id == transform.definition_id)
-            .count()
-            != 1
+        if unique_feature_section_transform(
+            &scan.feature_section_transforms,
+            transform.definition_id,
+        )
+        .is_none()
         {
             continue;
         }
@@ -9290,6 +9340,13 @@ fn link_feature_sketch_history(scan: &ContainerScan, ir: &mut CadIr) {
     let links = scan
         .feature_section_transforms
         .iter()
+        .filter(|transform| {
+            unique_feature_section_transform(
+                &scan.feature_section_transforms,
+                transform.definition_id,
+            )
+            .is_some()
+        })
         .filter_map(|transform| {
             let owner = IrFeatureId(format!("creo:model:feature#{}", transform.feature_id?));
             let sketch_feature = owned_section_feature_id(scan, transform.definition_id)
@@ -9478,6 +9535,14 @@ fn transfer_resolved_revolution_surfaces(
 ) -> usize {
     let mut transferred = 0;
     for transform in &scan.feature_section_transforms {
+        if unique_feature_section_transform(
+            &scan.feature_section_transforms,
+            transform.definition_id,
+        )
+        .is_none()
+        {
+            continue;
+        }
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
@@ -9794,6 +9859,14 @@ fn transfer_resolved_revolution_vertex_orbit_curves(
 ) -> usize {
     let mut pending = Vec::new();
     for transform in &scan.feature_section_transforms {
+        if unique_feature_section_transform(
+            &scan.feature_section_transforms,
+            transform.definition_id,
+        )
+        .is_none()
+        {
+            continue;
+        }
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
@@ -9865,6 +9938,14 @@ fn transfer_resolved_extrusion_vertex_orbit_curves(
 ) -> usize {
     let mut pending = Vec::new();
     for transform in &scan.feature_section_transforms {
+        if unique_feature_section_transform(
+            &scan.feature_section_transforms,
+            transform.definition_id,
+        )
+        .is_none()
+        {
+            continue;
+        }
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
@@ -13117,6 +13198,21 @@ mod resolved_sketch_tests {
             unique_feature_revolution_extent_kind(&[extent(7, 40)], 6),
             None
         );
+        let transform = crate::placement::FeatureSectionTransform {
+            definition_id: 5,
+            feature_id: Some(6),
+            origin: [0.0; 3],
+            u_axis: [1.0, 0.0, 0.0],
+            v_axis: [0.0, 1.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            offset: 40,
+        };
+        assert_eq!(
+            unique_feature_section_transform(std::slice::from_ref(&transform), 5)
+                .map(|placed| placed.offset),
+            Some(40)
+        );
+        assert!(unique_feature_section_transform(&[transform.clone(), transform], 5).is_none());
         let affected = |ids: &[u32], offset| crate::feature::FeatureAffectedIds {
             feature_id: 6,
             kind: crate::feature::AffectedIdKind::Edges,

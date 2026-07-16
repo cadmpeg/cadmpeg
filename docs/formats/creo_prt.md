@@ -1602,7 +1602,10 @@ circle.
 A section with a resolved `gsec3d_ptr` placement is an ordered planar sketch
 history node owning the placed sketch geometry. When the section transform has
 a generating feature identifier, that feature depends on the sketch history
-node. The sketch node precedes its profile consumer in construction order.
+node. The sketch node precedes its profile consumer in construction order. A
+definition supplies neutral sketch placement and generated geometry only when
+exactly one resolved section transform carries its definition identifier;
+duplicate transforms remain native placement records.
 
 `FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table
 pointer. The configuration-root identity is
