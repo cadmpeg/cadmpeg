@@ -114,7 +114,7 @@ See [`formats/rhino_3dm.md`](formats/rhino_3dm.md) and [`formats/rhino_3dm-open-
 ### Write and round trip
 
 - **Native write: Partial.** Unchanged IR with a retained source image writes byte for byte. Modified or source-less supported IR regenerates native blocks and a section directory.
-- **Semantic write limits:** at most five regions per body and six shells per solid region; sheet regions require one shell. Elliptical or non-acute cones, signed sphere or torus parameterizations, explicit face names, stored edge parameter ranges, periodic NURBS carriers, and unbounded appearance data are not encoded.
+- **Semantic write limits:** at most five regions per body and six shells per solid region; sheet regions require one shell. Elliptical or non-acute cones, signed sphere or torus parameterizations, explicit face names, stored edge parameter ranges, periodic NURBS carriers, NURBS surface degrees outside 1–8, and unbounded appearance data are not encoded.
 - **Round trip: Partial.** Byte-exact unchanged-file and semantic regeneration paths have generated-fixture tests. The public version and feature matrix remains to be built.
 
 See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`](formats/sldprt-open-items.md).

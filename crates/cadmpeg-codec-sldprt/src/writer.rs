@@ -1759,6 +1759,7 @@ pub(crate) fn brep_body(
                 nurbs,
                 &mut next,
                 length_scale,
+                &surface.id.0,
             )?;
             continue;
         }
@@ -1771,7 +1772,14 @@ pub(crate) fn brep_body(
             continue;
         }
         if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
-            write_nurbs_curve(&mut out, curves[&curve.id], nurbs, &mut next, length_scale)?;
+            write_nurbs_curve(
+                &mut out,
+                curves[&curve.id],
+                nurbs,
+                &mut next,
+                length_scale,
+                &curve.id.0,
+            )?;
             continue;
         }
         let (kind, values) = curve_values(&curve.geometry, length_scale)?;
@@ -2271,6 +2279,7 @@ fn write_nurbs_curve(
     nurbs: &NurbsCurve,
     next: &mut u16,
     length_scale: f64,
+    entity: &str,
 ) -> Result<(), CodecError> {
     if nurbs.periodic {
         return Err(CodecError::NotImplemented(
@@ -2281,14 +2290,25 @@ fn write_nurbs_curve(
     let control = take_attr(next)?;
     let multiplicity = take_attr(next)?;
     let knots = take_attr(next)?;
+    let degree = u16::try_from(nurbs.degree).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS curve {entity} degree {} exceeds the native u16 field",
+            nurbs.degree
+        ))
+    })?;
+    let control_count = u32::try_from(nurbs.control_points.len()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS curve {entity} pole count exceeds the native u32 field"
+        ))
+    })?;
     tag(out, 0x86);
     be16(out, wrapper);
     be16(out, descriptor);
     out.extend_from_slice(&[0; 8]);
     tag(out, 0x88);
     be16(out, descriptor);
-    be16(out, nurbs.degree as u16);
-    be32(out, nurbs.control_points.len() as u32);
+    be16(out, degree);
+    be32(out, control_count);
     be16(out, if nurbs.weights.is_some() { 4 } else { 3 });
     be32(out, 2);
     out.push(0);
@@ -2301,10 +2321,10 @@ fn write_nurbs_curve(
         nurbs.weights.as_deref(),
         length_scale,
     )?;
-    f64_array(out, 0x2d, control, &poles);
-    let (unique, mult) = unique_knots(&nurbs.knots);
-    u16_array(out, multiplicity, &mult);
-    f64_array(out, 0x80, knots, &unique);
+    f64_array(out, 0x2d, control, &poles, entity)?;
+    let (unique, mult) = unique_knots(&nurbs.knots, entity)?;
+    u16_array(out, multiplicity, &mult, entity)?;
+    f64_array(out, 0x80, knots, &unique, entity)?;
     Ok(())
 }
 
@@ -2314,13 +2334,32 @@ fn write_nurbs_surface(
     nurbs: &NurbsSurface,
     next: &mut u16,
     length_scale: f64,
+    entity: &str,
 ) -> Result<(), CodecError> {
     if nurbs.u_periodic || nurbs.v_periodic {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writer does not support periodic NURBS surfaces".into(),
         ));
     }
-    if nurbs.control_points.len() != nurbs.u_count as usize * nurbs.v_count as usize {
+    if !(1..=8).contains(&nurbs.u_degree) || !(1..=8).contains(&nurbs.v_degree) {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} degrees ({}, {}) exceed the inferable native range 1..=8",
+            nurbs.u_degree, nurbs.v_degree
+        )));
+    }
+    let expected_poles = usize::try_from(nurbs.u_count)
+        .ok()
+        .and_then(|u_count| {
+            usize::try_from(nurbs.v_count)
+                .ok()
+                .and_then(|v_count| u_count.checked_mul(v_count))
+        })
+        .ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "SLDPRT NURBS surface {entity} pole grid exceeds the host address space"
+            ))
+        })?;
+    if nurbs.control_points.len() != expected_poles {
         return Err(CodecError::Malformed(
             "invalid NURBS surface pole count".into(),
         ));
@@ -2349,13 +2388,13 @@ fn write_nurbs_surface(
         nurbs.weights.as_deref(),
         length_scale,
     )?;
-    f64_array(out, 0x2d, control, &poles);
-    let (u_unique, u_mult) = unique_knots(&nurbs.u_knots);
-    let (v_unique, v_mult) = unique_knots(&nurbs.v_knots);
-    u16_array(out, u_multiplicity, &u_mult);
-    u16_array(out, v_multiplicity, &v_mult);
-    f64_array(out, 0x80, u_knots, &u_unique);
-    f64_array(out, 0x80, v_knots, &v_unique);
+    f64_array(out, 0x2d, control, &poles, entity)?;
+    let (u_unique, u_mult) = unique_knots(&nurbs.u_knots, entity)?;
+    let (v_unique, v_mult) = unique_knots(&nurbs.v_knots, entity)?;
+    u16_array(out, u_multiplicity, &u_mult, entity)?;
+    u16_array(out, v_multiplicity, &v_mult, entity)?;
+    f64_array(out, 0x80, u_knots, &u_unique, entity)?;
+    f64_array(out, 0x80, v_knots, &v_unique, entity)?;
     Ok(())
 }
 
@@ -2390,38 +2429,61 @@ fn homogeneous_poles(
     Ok(out)
 }
 
-fn unique_knots(knots: &[f64]) -> (Vec<f64>, Vec<u16>) {
+fn unique_knots(knots: &[f64], entity: &str) -> Result<(Vec<f64>, Vec<u16>), CodecError> {
     let mut unique = Vec::new();
-    let mut multiplicities = Vec::new();
+    let mut multiplicities: Vec<u16> = Vec::new();
     for &knot in knots {
         if unique.last() == Some(&knot) {
-            *multiplicities.last_mut().expect("matching unique knot") += 1;
+            let multiplicity = multiplicities.last_mut().expect("matching unique knot");
+            *multiplicity = multiplicity.checked_add(1).ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT NURBS carrier {entity} knot multiplicity exceeds the native u16 field"
+                ))
+            })?;
         } else {
             unique.push(knot);
             multiplicities.push(1);
         }
     }
-    (unique, multiplicities)
+    Ok((unique, multiplicities))
 }
 
-fn f64_array(out: &mut Vec<u8>, kind: u8, attr: u16, values: &[f64]) {
+fn f64_array(
+    out: &mut Vec<u8>,
+    kind: u8,
+    attr: u16,
+    values: &[f64],
+    entity: &str,
+) -> Result<(), CodecError> {
+    let count = u32::try_from(values.len()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS carrier {entity} array length exceeds the native u32 field"
+        ))
+    })?;
     tag(out, kind);
     out.push(0x2b);
-    be32(out, values.len() as u32);
+    be32(out, count);
     be16(out, attr);
     for value in values {
         bef64(out, *value);
     }
+    Ok(())
 }
 
-fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16]) {
+fn u16_array(out: &mut Vec<u8>, attr: u16, values: &[u16], entity: &str) -> Result<(), CodecError> {
+    let count = u32::try_from(values.len()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS carrier {entity} array length exceeds the native u32 field"
+        ))
+    })?;
     tag(out, 0x7f);
     out.push(0x2b);
-    be32(out, values.len() as u32);
+    be32(out, count);
     be16(out, attr);
     for value in values {
         be16(out, *value);
     }
+    Ok(())
 }
 
 pub(super) fn curve_values(
@@ -2613,4 +2675,81 @@ fn be32(out: &mut Vec<u8>, value: u32) {
 }
 fn bef64(out: &mut Vec<u8>, value: f64) {
     out.extend_from_slice(&value.to_be_bytes());
+}
+
+#[cfg(test)]
+mod nurbs_write_tests {
+    use super::*;
+    use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn rejects_surface_degrees_that_cannot_be_inferred_on_decode() {
+        let surface = NurbsSurface {
+            u_degree: 9,
+            v_degree: 1,
+            u_knots: vec![0.0; 20],
+            v_knots: vec![0.0; 4],
+            u_count: 10,
+            v_count: 2,
+            control_points: vec![Point3::new(0.0, 0.0, 0.0); 20],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+
+        let error = write_nurbs_surface(
+            &mut Vec::new(),
+            2,
+            &surface,
+            &mut 3,
+            0.001,
+            "test:surface#high-degree",
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            CodecError::NotImplemented(message)
+                if message.contains("test:surface#high-degree")
+                    && message.contains("inferable native range 1..=8")
+        ));
+    }
+
+    #[test]
+    fn rejects_curve_degree_and_knot_multiplicity_overflow() {
+        let curve = NurbsCurve {
+            degree: u32::from(u16::MAX) + 1,
+            knots: Vec::new(),
+            control_points: Vec::new(),
+            weights: None,
+            periodic: false,
+        };
+        let degree_error = write_nurbs_curve(
+            &mut Vec::new(),
+            2,
+            &curve,
+            &mut 3,
+            0.001,
+            "test:curve#high-degree",
+        )
+        .unwrap_err();
+        let multiplicity_error = unique_knots(
+            &vec![0.0; usize::from(u16::MAX) + 1],
+            "test:curve#high-multiplicity",
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            degree_error,
+            CodecError::NotImplemented(message)
+                if message.contains("test:curve#high-degree")
+                    && message.contains("native u16 field")
+        ));
+        assert!(matches!(
+            multiplicity_error,
+            CodecError::NotImplemented(message)
+                if message.contains("test:curve#high-multiplicity")
+                    && message.contains("knot multiplicity")
+        ));
+    }
 }
