@@ -163,6 +163,19 @@ fn orthonormal(left: &Vector3, right: &Vector3) -> bool {
         && (left.x * right.x + left.y * right.y + left.z * right.z).abs() <= 1.0e-9
 }
 
+fn point3_finite(point: &crate::math::Point3) -> bool {
+    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+}
+
+fn nurbs_weights_valid(weights: Option<&[f64]>, pole_count: usize) -> bool {
+    weights.is_none_or(|weights| {
+        weights.len() == pole_count
+            && weights
+                .iter()
+                .all(|weight| weight.is_finite() && weight.abs() > f64::EPSILON)
+    })
+}
+
 fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bool {
     use crate::geometry::VariableBlendValuePayload;
     let finite = |values: &[f64]| values.iter().all(|value| value.is_finite());
@@ -318,12 +331,37 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             SurfaceGeometry::Nurbs(n) => {
-                let expected = (n.u_count as usize) * (n.v_count as usize);
-                if n.control_points.len() != expected {
+                let shape = usize::try_from(n.u_count)
+                    .ok()
+                    .zip(usize::try_from(n.v_count).ok())
+                    .zip(usize::try_from(n.u_degree).ok())
+                    .zip(usize::try_from(n.v_degree).ok())
+                    .and_then(|(((u_count, v_count), u_degree), v_degree)| {
+                        u_count
+                            .checked_mul(v_count)
+                            .map(|pole_count| (u_count, v_count, u_degree, v_degree, pole_count))
+                    });
+                let valid =
+                    shape.is_some_and(|(u_count, v_count, u_degree, v_degree, pole_count)| {
+                        u_count > u_degree
+                            && v_count > v_degree
+                            && n.control_points.len() == pole_count
+                            && n.control_points.iter().all(point3_finite)
+                            && nurbs_weights_valid(n.weights.as_deref(), pole_count)
+                            && u_count
+                                .checked_add(u_degree)
+                                .and_then(|count| count.checked_add(1))
+                                .is_some_and(|count| n.u_knots.len() == count)
+                            && v_count
+                                .checked_add(v_degree)
+                                .and_then(|count| count.checked_add(1))
+                                .is_some_and(|count| n.v_knots.len() == count)
+                    });
+                if !valid {
                     bounds_err(
                         findings,
                         &s.id.0,
-                        "NURBS surface pole count does not match u_count*v_count",
+                        "NURBS surface degree, poles, weights, or knot cardinality is invalid",
                     );
                 }
                 check_knots(findings, &s.id.0, &n.u_knots, "u");
@@ -1430,11 +1468,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             CurveGeometry::Nurbs(n) => {
-                if n.control_points.len() < (n.degree as usize + 1) {
+                let valid = usize::try_from(n.degree).ok().is_some_and(|degree| {
+                    n.control_points.len() > degree
+                        && n.control_points.iter().all(point3_finite)
+                        && nurbs_weights_valid(n.weights.as_deref(), n.control_points.len())
+                        && n.control_points
+                            .len()
+                            .checked_add(degree)
+                            .and_then(|count| count.checked_add(1))
+                            .is_some_and(|count| n.knots.len() == count)
+                });
+                if !valid {
                     bounds_err(
                         findings,
                         &c.id.0,
-                        "NURBS curve has too few poles for its degree",
+                        "NURBS curve degree, poles, weights, or knot cardinality is invalid",
                     );
                 }
                 check_knots(findings, &c.id.0, &n.knots, "");

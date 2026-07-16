@@ -7,8 +7,8 @@ use crate::annotations::{ExactnessNote, Provenance};
 use crate::document::Model;
 use crate::examples::unit_cube;
 use crate::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
-    SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralSurface,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use crate::ids::{CoedgeId, CurveId, EdgeId, PcurveId, ProceduralSurfaceId, SubdId, UnknownId};
 use crate::math::{Point2, Point3, Vector3};
@@ -1256,6 +1256,45 @@ fn analytic_frames_must_be_orthonormal() {
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(curve_id.as_str())
             && finding.message == "line direction is not unit length"
+    }));
+}
+
+#[test]
+fn nurbs_payloads_require_complete_finite_nonzero_weight_contracts() {
+    let mut ir = unit_cube();
+    let surface_id = ir.model.surfaces[0].id.0.clone();
+    let curve_id = ir.model.curves[0].id.0.clone();
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 2,
+        v_count: 2,
+        control_points: vec![Point3::new(0.0, 0.0, 0.0); 4],
+        weights: Some(vec![1.0, 0.0, 1.0, 1.0]),
+        u_periodic: false,
+        v_periodic: false,
+    });
+    ir.model.curves[0].geometry = CurveGeometry::Nurbs(NurbsCurve {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0],
+        control_points: vec![Point3::new(0.0, 0.0, 0.0); 2],
+        weights: Some(vec![1.0, 1.0]),
+        periodic: false,
+    });
+
+    let report = validate(&ir, Vec::new());
+
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(surface_id.as_str())
+            && finding.message
+                == "NURBS surface degree, poles, weights, or knot cardinality is invalid"
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(curve_id.as_str())
+            && finding.message
+                == "NURBS curve degree, poles, weights, or knot cardinality is invalid"
     }));
 }
 
