@@ -236,6 +236,9 @@ enum Command {
         /// Write geometry output even when decoding transferred no geometry.
         #[arg(long)]
         allow_empty: bool,
+        /// Refuse to write output when decoding reported any loss (exit 1).
+        #[arg(long)]
+        reject_lossy: bool,
         /// Target Rhino archive version; valid only for Rhino output.
         #[arg(long, value_enum)]
         rhino_version: Option<RhinoVersion>,
@@ -278,6 +281,9 @@ enum Command {
         /// Write geometry output even when decoding transferred no geometry.
         #[arg(long)]
         allow_empty: bool,
+        /// Refuse to write output when decoding reported any loss (exit 1).
+        #[arg(long)]
+        reject_lossy: bool,
         /// Target Rhino archive version; valid only for Rhino output.
         #[arg(long, value_enum)]
         rhino_version: Option<RhinoVersion>,
@@ -328,6 +334,7 @@ fn main() -> ExitCode {
             force,
             report,
             allow_empty,
+            reject_lossy,
             rhino_version,
             input_args,
             decode,
@@ -340,6 +347,7 @@ fn main() -> ExitCode {
                 force,
                 report,
                 allow_empty,
+                reject_lossy,
                 rhino_version: rhino_version.map(RhinoVersion::codec),
                 forced_input: input_args.forced(),
             },
@@ -355,6 +363,7 @@ fn main() -> ExitCode {
             report,
             allow_invalid,
             allow_empty,
+            reject_lossy,
             rhino_version,
             input_args,
             decode,
@@ -368,6 +377,7 @@ fn main() -> ExitCode {
                 report,
                 allow_invalid,
                 allow_empty,
+                reject_lossy,
                 rhino_version: rhino_version.map(RhinoVersion::codec),
                 forced_input: input_args.forced(),
             },

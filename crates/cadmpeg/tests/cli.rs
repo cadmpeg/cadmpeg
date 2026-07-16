@@ -790,6 +790,64 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
 }
 
 #[test]
+fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
+    let dir = tempdir().unwrap();
+    // The geometryless Creo container decodes with losses; it is the lossy
+    // fixture here.
+    let lossy = geometryless_creo(dir.path(), "lossy.prt");
+
+    // `--reject-lossy` turns a lossy decode into a model refusal (exit 1),
+    // distinct from a decode error (exit 2). It is checked before the
+    // empty-geometry gate, so `--allow-empty` does not suppress it.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "export",
+            lossy.to_str().unwrap(),
+            "-f",
+            "step",
+            "--allow-empty",
+            "--reject-lossy",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("refusing to write a lossy"));
+
+    // Convert refuses the same way, reporting the refusal in its command report.
+    let report = dir.path().join("lossy-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            lossy.to_str().unwrap(),
+            "-f",
+            "step",
+            "--allow-empty",
+            "--reject-lossy",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1);
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert!(value["decode_report"].is_object());
+    assert!(value["export"].is_null());
+
+    // Without the flag the same lossy decode exports: losses alone are allowed.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "export",
+            lossy.to_str().unwrap(),
+            "-f",
+            "step",
+            "--allow-empty",
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
 fn convert_rejects_empty_native_geometry_unless_allowed() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");

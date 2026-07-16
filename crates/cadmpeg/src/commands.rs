@@ -39,6 +39,10 @@ fn validate_ir(ir: &CadIr, losses: Vec<cadmpeg_ir::LossNote>) -> ValidationRepor
 pub struct SemanticFailure(String);
 
 /// Safety and reporting options for `convert`.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is an independent, orthogonal CLI safety toggle the user opts into by name; an enum would obscure that they compose freely"
+)]
 pub struct ConvertSettings {
     /// Replace an existing output or report file.
     pub force: bool,
@@ -48,6 +52,8 @@ pub struct ConvertSettings {
     pub allow_invalid: bool,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
+    /// Refuse to export when the decode reported any loss.
+    pub reject_lossy: bool,
     /// Explicit Rhino output archive version.
     pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     /// Explicit input format selected by the user.
@@ -206,6 +212,8 @@ pub struct ExportSettings {
     pub report: Option<PathBuf>,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
+    /// Refuse to export when the decode reported any loss.
+    pub reject_lossy: bool,
     /// Explicit Rhino output archive version.
     pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     /// Explicit input format selected by the user.
@@ -225,6 +233,7 @@ pub fn export(
         force,
         report: report_path,
         allow_empty,
+        reject_lossy,
         rhino_version,
         forced_input,
     } = settings;
@@ -233,6 +242,18 @@ pub fn export(
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
         eprintln!("note: export skips IR validation; use `convert` to validate");
+    }
+    if let Some(refusal) = lossy_refusal(reject_lossy, loaded.decode_report.as_ref(), format) {
+        write_command_report(
+            path,
+            report_path.as_deref(),
+            force,
+            "export",
+            loaded.decode_report.as_ref(),
+            None,
+            None,
+        )?;
+        return Err(refusal);
     }
     if format.is_geometry_export()
         && loaded
@@ -290,6 +311,20 @@ pub fn convert(
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut stderr, report)?;
         writeln!(stderr)?;
+    }
+    if let Some(refusal) =
+        lossy_refusal(settings.reject_lossy, loaded.decode_report.as_ref(), format)
+    {
+        write_command_report(
+            path,
+            settings.report.as_deref(),
+            settings.force,
+            "convert",
+            loaded.decode_report.as_ref(),
+            None,
+            None,
+        )?;
+        return Err(refusal);
     }
     let validation = validate_ir(&loaded.ir, losses(loaded.decode_report.as_ref()));
     print_validation_report(&mut stderr, &validation)?;
@@ -415,6 +450,29 @@ fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
     report
         .map(|report| report.losses.clone())
         .unwrap_or_default()
+}
+
+/// A loss-based model refusal, or `None` when the output may be written.
+///
+/// When `--reject-lossy` is set and the decode reported any loss, the export is
+/// refused as a model refusal — [`SemanticFailure`], exit 1 — distinct from a
+/// decode error, which is an operational failure at exit 2. This is the
+/// `refused-lossy` category of the exit-code contract.
+fn lossy_refusal(
+    reject_lossy: bool,
+    report: Option<&DecodeReport>,
+    format: Format,
+) -> Option<anyhow::Error> {
+    if !reject_lossy {
+        return None;
+    }
+    let count = report.map_or(0, |report| report.losses.len());
+    (count > 0).then(|| {
+        semantic(format!(
+            "decode reported {count} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
+            format.name()
+        ))
+    })
 }
 
 fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format> {
