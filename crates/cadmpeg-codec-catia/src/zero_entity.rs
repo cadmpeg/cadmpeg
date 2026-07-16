@@ -273,7 +273,8 @@ pub fn intersection_curve(
     let supports = edge.occurrences.map(|occurrence| occurrence.support_index);
     let ranges = supports.map(|index| support_parameter_range(&topology.supports[index]));
     let [Some(first_range), Some(second_range)] = ranges else {
-        return degenerate_plane_torus_intersection(topology, edge, supports);
+        return degenerate_plane_torus_intersection(topology, edge, supports)
+            .or_else(|| degenerate_parallel_plane_cylinder_intersection(topology, edge, supports));
     };
     if first_range[0] >= first_range[1]
         || first_range
@@ -316,6 +317,124 @@ pub fn intersection_curve(
             periodic: false,
         },
         fit_tolerance: FIT_TOLERANCE + radial_error,
+    })
+}
+
+fn degenerate_parallel_plane_cylinder_intersection(
+    topology: &ZeroEntityTopology,
+    edge: &ZeroResolvedEdge,
+    supports: [usize; 2],
+) -> Option<ZeroIntersectionCurve> {
+    const INCIDENCE_TOLERANCE: f64 = 2e-3;
+
+    if supports
+        .iter()
+        .any(|index| topology.records[topology.supports[*index].record_ordinal].tag != [0x21, 0x18])
+    {
+        return None;
+    }
+    let surfaces = supports.map(|index| support_surface(topology, index));
+    let [Some(first), Some(second)] = surfaces else {
+        return None;
+    };
+    let (plane, cylinder) = match (first, second) {
+        (SurfaceGeometry::Plane { .. }, SurfaceGeometry::Cylinder { .. }) => (first, second),
+        (SurfaceGeometry::Cylinder { .. }, SurfaceGeometry::Plane { .. }) => (second, first),
+        _ => return None,
+    };
+    let SurfaceGeometry::Plane { origin, normal, .. } = plane else {
+        unreachable!();
+    };
+    let SurfaceGeometry::Cylinder {
+        origin: axis_origin,
+        axis,
+        radius,
+        ..
+    } = cylinder
+    else {
+        unreachable!();
+    };
+    if dot(*normal, *axis).abs() > 1e-10 || *radius <= 0.0 {
+        return None;
+    }
+    let signed_axis_offset = dot(point_vector(*origin, *axis_origin), *normal);
+    if signed_axis_offset.abs() > *radius {
+        return None;
+    }
+    let transverse = normalize(cross(*axis, *normal))?;
+    let transverse_offset = (radius.powi(2) - signed_axis_offset.powi(2))
+        .max(0.0)
+        .sqrt();
+    let base = translate(*axis_origin, *normal, -signed_axis_offset);
+    let signs = if transverse_offset <= 1e-12 {
+        &[1.0][..]
+    } else {
+        &[-1.0, 1.0][..]
+    };
+    let endpoint_points = edge
+        .endpoints
+        .map(|point| Point3::new(point[0], point[1], point[2]));
+    let matching = signs
+        .iter()
+        .filter_map(|sign| {
+            let line_origin = translate(base, transverse, sign * transverse_offset);
+            let residuals = endpoint_points.map(|point| {
+                let offset = point_vector(line_origin, point);
+                let axial = dot(offset, *axis);
+                let projected = translate(line_origin, *axis, axial);
+                (
+                    point_distance(
+                        [point.x, point.y, point.z],
+                        [projected.x, projected.y, projected.z],
+                    ),
+                    projected,
+                )
+            });
+            residuals
+                .iter()
+                .all(|(residual, _)| *residual <= INCIDENCE_TOLERANCE)
+                .then_some(residuals)
+        })
+        .collect::<Vec<_>>();
+    let [residuals] = matching.as_slice() else {
+        return None;
+    };
+    let control_points = residuals.map(|(_, projected)| projected);
+    let length = point_distance(
+        [
+            control_points[0].x,
+            control_points[0].y,
+            control_points[0].z,
+        ],
+        [
+            control_points[1].x,
+            control_points[1].y,
+            control_points[1].z,
+        ],
+    );
+    if length <= 1e-12 {
+        return None;
+    }
+    let parameter_range = [0.0, length];
+    Some(ZeroIntersectionCurve {
+        supports,
+        parameter_range,
+        cache: NurbsCurve {
+            degree: 1,
+            knots: vec![
+                parameter_range[0],
+                parameter_range[0],
+                parameter_range[1],
+                parameter_range[1],
+            ],
+            control_points: control_points.to_vec(),
+            weights: None,
+            periodic: false,
+        },
+        fit_tolerance: residuals
+            .iter()
+            .map(|(residual, _)| *residual)
+            .fold(0.0, f64::max),
     })
 }
 
@@ -2076,6 +2195,109 @@ mod occurrence_tests {
         assert!(point_distance([last.x, last.y, last.z], end) < 1e-12);
         assert!(intersection.cache.control_points.len() > 2);
         assert_eq!(intersection.fit_tolerance, 1e-4);
+    }
+
+    #[test]
+    fn degenerate_support_pair_retains_parallel_plane_cylinder_line() {
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 3.0, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 5.0,
+        };
+        let start = [4.0, 3.0, 2.0];
+        let end = [4.0, 3.0, 7.0];
+        let mut supports = [
+            support(0, Some([start, end])),
+            support(1, Some([start, end])),
+        ];
+        supports[0].owner_carrier_ordinal = 10;
+        supports[1].owner_carrier_ordinal = 11;
+        let mut topology = ZeroEntityTopology {
+            records: vec![
+                ZeroEntityRecord {
+                    ordinal: 0,
+                    offset: 0,
+                    tag: [0x21, 0x18],
+                    bytes: Vec::new(),
+                },
+                ZeroEntityRecord {
+                    ordinal: 1,
+                    offset: 0,
+                    tag: [0x21, 0x18],
+                    bytes: Vec::new(),
+                },
+            ],
+            faces: Vec::new(),
+            loops: Vec::new(),
+            carrier_runs: vec![
+                ZeroCarrierRun {
+                    carrier_ordinal: 10,
+                    support_ordinals: vec![0],
+                    geometry: Some(plane),
+                },
+                ZeroCarrierRun {
+                    carrier_ordinal: 11,
+                    support_ordinals: vec![1],
+                    geometry: Some(cylinder),
+                },
+            ],
+            supports: supports.into(),
+            physical_edges: Vec::new(),
+            coedge_twins: Vec::new(),
+            side_pairs: Vec::new(),
+            vertices: Vec::new(),
+        };
+        let mut edge = ZeroResolvedEdge {
+            endpoints: [start, end],
+            occurrences: [
+                ZeroResolvedOccurrence {
+                    loop_index: 0,
+                    member_index: 0,
+                    support_index: 0,
+                },
+                ZeroResolvedOccurrence {
+                    loop_index: 1,
+                    member_index: 0,
+                    support_index: 1,
+                },
+            ],
+            occurrence_endpoints: [[start, end], [start, end]],
+        };
+
+        let intersection =
+            intersection_curve(&topology, &edge).expect("parallel plane-cylinder line");
+        assert_eq!(intersection.parameter_range, [0.0, 5.0]);
+        assert_eq!(
+            intersection.cache.control_points,
+            [Point3::new(4.0, 3.0, 2.0), Point3::new(4.0, 3.0, 7.0)]
+        );
+        assert_eq!(intersection.fit_tolerance, 0.0);
+
+        edge.endpoints = [end, start];
+        let reversed = intersection_curve(&topology, &edge).expect("reversed plane-cylinder line");
+        assert_eq!(reversed.parameter_range, [0.0, 5.0]);
+        assert_eq!(
+            reversed.cache.control_points,
+            [Point3::new(4.0, 3.0, 7.0), Point3::new(4.0, 3.0, 2.0)]
+        );
+
+        topology.carrier_runs[0].geometry = Some(SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 5.0, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        });
+        edge.endpoints = [[0.0, 5.0, 2.0], [0.0, 5.0, 7.0]];
+        let tangent = intersection_curve(&topology, &edge).expect("tangent plane-cylinder line");
+        assert_eq!(
+            tangent.cache.control_points,
+            [Point3::new(0.0, 5.0, 2.0), Point3::new(0.0, 5.0, 7.0)]
+        );
     }
 
     #[test]

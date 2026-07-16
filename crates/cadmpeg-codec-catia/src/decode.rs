@@ -582,6 +582,9 @@ fn transfer_zero_entity_topology(
             .is_none()
             .then(|| crate::zero_entity::intersection_curve(topology, &edges[edge_index]))
             .flatten();
+        let intersection_range = intersection
+            .as_ref()
+            .map(|intersection| intersection.parameter_range);
         let geometry = direct_geometry.or_else(|| {
             intersection
                 .as_ref()
@@ -658,12 +661,15 @@ fn transfer_zero_entity_topology(
         if curve.is_some() {
             annotations.derived(&id, "curve");
         }
+        if intersection_range.is_some() {
+            annotations.derived(&id, "param_range");
+        }
         ir.model.edges.push(Edge {
             id,
             curve,
             start: VertexId(format!("catia:zero-entity:v#{}", pair[0])),
             end: VertexId(format!("catia:zero-entity:v#{}", pair[1])),
-            param_range: None,
+            param_range: intersection_range,
             tolerance: None,
         });
     }
