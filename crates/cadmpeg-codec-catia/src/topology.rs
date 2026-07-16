@@ -7958,28 +7958,16 @@ fn parse_trim_chain(
     record_count: usize,
     width: usize,
 ) -> Option<Vec<TrimRecord>> {
-    fn walk(
-        predecessors: &HashMap<usize, Vec<(usize, TrimRecord)>>,
+    struct Frame {
         end: usize,
         remaining: usize,
-        reversed: &mut Vec<TrimRecord>,
-        solutions: &mut Vec<Vec<TrimRecord>>,
-    ) {
-        if solutions.len() > 1 {
-            return;
-        }
-        if remaining == 0 {
-            let mut records = reversed.clone();
-            records.reverse();
-            solutions.push(records);
-            return;
-        }
-        let Some(records) = predecessors.get(&end) else {
-            return;
-        };
-        for (start, record) in records {
-            reversed.push(record.clone());
-            walk(predecessors, *start, remaining - 1, reversed, solutions);
+        next_predecessor: usize,
+    }
+
+    fn backtrack(frames: &mut Vec<Frame>, reversed: &mut Vec<TrimRecord>) {
+        let had_parent = frames.len() > 1;
+        frames.pop();
+        if had_parent {
             reversed.pop();
         }
     }
@@ -7996,13 +7984,38 @@ fn parse_trim_chain(
     }
 
     let mut solutions = Vec::new();
-    walk(
-        &predecessors,
+    let mut reversed = Vec::with_capacity(record_count);
+    let mut frames = vec![Frame {
         end,
-        record_count,
-        &mut Vec::with_capacity(record_count),
-        &mut solutions,
-    );
+        remaining: record_count,
+        next_predecessor: 0,
+    }];
+    while !frames.is_empty() && solutions.len() <= 1 {
+        let frame = frames.len() - 1;
+        if frames[frame].remaining == 0 {
+            let mut records = reversed.clone();
+            records.reverse();
+            solutions.push(records);
+            backtrack(&mut frames, &mut reversed);
+            continue;
+        }
+        let predecessor = predecessors
+            .get(&frames[frame].end)
+            .and_then(|records| records.get(frames[frame].next_predecessor))
+            .cloned();
+        let Some((start, record)) = predecessor else {
+            backtrack(&mut frames, &mut reversed);
+            continue;
+        };
+        frames[frame].next_predecessor += 1;
+        let remaining = frames[frame].remaining - 1;
+        reversed.push(record);
+        frames.push(Frame {
+            end: start,
+            remaining,
+            next_predecessor: 0,
+        });
+    }
     <[Vec<TrimRecord>; 1]>::try_from(solutions)
         .ok()
         .map(|[records]| records)
@@ -8384,6 +8397,19 @@ mod motif_tests {
         assert!(records[0].strip_lengths.is_empty());
         assert!(records[0].fan_lengths.is_empty());
         assert!(parse_trim_chain(&bytes, bytes.len(), 2, 3).is_none());
+    }
+
+    #[test]
+    fn forced_trim_chain_has_no_recursive_depth_limit() {
+        const RECORD_COUNT: usize = 10_000;
+        let packet = triangle_packet([0, 0, 0]);
+        let bytes = packet.repeat(RECORD_COUNT);
+
+        let records = parse_trim_chain(&bytes, bytes.len(), RECORD_COUNT, 2)
+            .expect("forced trim packet chain");
+
+        assert_eq!(records.len(), RECORD_COUNT);
+        assert!(records.iter().all(|record| record.handles == [0, 0, 0]));
     }
 
     #[test]
