@@ -279,6 +279,19 @@ mod tests {
     }
 
     #[test]
+    fn decodes_line3d_with_positive_full_width_coordinates() {
+        let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
+            \x0f\x0f\x32\xb3\xa2\x70\xe5\xa0\x3f\xfa\
+            \xe4\x0f\x32\xb3\xa2\x70\xe5\xa0\x3f\xfa\xe4";
+        let decoded = line3d_lines(payload);
+        let [line] = decoded.as_slice() else {
+            panic!("one line3d");
+        };
+        assert_eq!(line.start[2], line.end[2]);
+        assert_eq!(line.end[0] - line.start[0], 1.0);
+    }
+
+    #[test]
     fn withholds_line3d_with_inconsistent_original_length() {
         let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\
             \x0f\x0f\x0f\xe4\x0f\x0f\x0e";

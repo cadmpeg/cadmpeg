@@ -409,6 +409,9 @@ pub fn decode_model_reference_coordinate(
     offset: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x32) {
+        return ieee8(data, offset, 0x3f);
+    }
     if data.get(offset) == Some(&0xed) {
         let raw: [u8; 8] = data.get(offset + 1..offset + 9)?.try_into().ok()?;
         return Some((f64::from_be_bytes(raw), offset + 9));
@@ -612,6 +615,23 @@ mod tests {
         );
         assert_eq!(
             decode_model_reference_coordinate(&data[..8], 0, &cache),
+            None
+        );
+    }
+
+    #[test]
+    fn decodes_model_reference_positive_ieee_coordinate() {
+        let data = [0x32, 0xb3, 0xa2, 0x70, 0xe5, 0xa0, 0x3f, 0xfa];
+        let cache = ScalarCache::default();
+        assert_eq!(
+            decode_model_reference_coordinate(&data, 0, &cache),
+            Some((
+                f64::from_be_bytes([0x3f, 0xb3, 0xa2, 0x70, 0xe5, 0xa0, 0x3f, 0xfa]),
+                8
+            ))
+        );
+        assert_eq!(
+            decode_model_reference_coordinate(&data[..7], 0, &cache),
             None
         );
     }
