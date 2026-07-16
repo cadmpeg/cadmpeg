@@ -13663,6 +13663,18 @@ fn cylinder_gate_rejects_denormal_radius() {
 }
 
 #[test]
+fn analytic_frame_gate_rejects_nonorthogonal_reference_direction() {
+    let mut plane = record(0x32, 91);
+    put_vec3(&mut plane, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
+    put_vec3(&mut plane, 67, [0.0, 0.0, 1.0]);
+    assert!(crate::geometry::surfaces(&plane).is_empty());
+
+    put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
+    assert_eq!(crate::geometry::surfaces(&plane).len(), 1);
+}
+
+#[test]
 fn decode_assembly_reports_external_dependency() {
     let mut cur = Cursor::new(assembly_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();

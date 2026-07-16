@@ -213,7 +213,7 @@ fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let origin = read_vec3(s, b + 19)?;
     let normal = read_vec3(s, b + 43)?;
     let x_axis = read_vec3(s, b + 67)?;
-    if !is_unit(normal) || !is_unit(x_axis) || !model_scale(origin) {
+    if !is_orthonormal_frame(normal, x_axis) || !model_scale(origin) {
         return None;
     }
     Some(SurfaceGeometry::Plane {
@@ -228,7 +228,7 @@ fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let axis = read_vec3(s, b + 43)?;
     let radius = read_f64(s, b + 67)?;
     let x_axis = read_vec3(s, b + 75)?;
-    if !is_unit(axis) || !is_unit(x_axis) || !model_scale(origin) || !in_radius(radius) {
+    if !is_orthonormal_frame(axis, x_axis) || !model_scale(origin) || !in_radius(radius) {
         return None;
     }
     Some(SurfaceGeometry::Cylinder {
@@ -246,8 +246,7 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let sin_half = read_f64(s, b + 75)?;
     let cos_half = read_f64(s, b + 83)?;
     let x_axis = read_vec3(s, b + 91)?;
-    if !is_unit(axis)
-        || !is_unit(x_axis)
+    if !is_orthonormal_frame(axis, x_axis)
         || !model_scale(origin)
         || !(0.0..=1.0e3).contains(&radius)
     {
@@ -273,7 +272,7 @@ fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let radius = read_f64(s, b + 43)?;
     let axis = read_vec3(s, b + 51)?;
     let x_axis = read_vec3(s, b + 75)?;
-    if !is_unit(axis) || !is_unit(x_axis) || !model_scale(center) || !in_radius(radius) {
+    if !is_orthonormal_frame(axis, x_axis) || !model_scale(center) || !in_radius(radius) {
         return None;
     }
     Some(SurfaceGeometry::Sphere {
@@ -292,8 +291,7 @@ fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let x_axis = read_vec3(s, b + 83)?;
     // A horn torus (major == minor) is valid; both radii must be positive and in
     // range. `major` may be zero only for degenerate records, which are rejected.
-    if !is_unit(axis)
-        || !is_unit(x_axis)
+    if !is_orthonormal_frame(axis, x_axis)
         || !model_scale(center)
         || !in_radius(major)
         || !in_radius(minor)
@@ -328,7 +326,7 @@ fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
     let normal = read_vec3(s, b + 43)?;
     let x_axis = read_vec3(s, b + 67)?;
     let radius = read_f64(s, b + 91)?;
-    if !is_unit(normal) || !is_unit(x_axis) || !model_scale(center) || !in_radius(radius) {
+    if !is_orthonormal_frame(normal, x_axis) || !model_scale(center) || !in_radius(radius) {
         return None;
     }
     Some(CurveGeometry::Circle {
@@ -345,7 +343,7 @@ fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
     let x_axis = read_vec3(s, b + 67)?;
     let major = read_f64(s, b + 91)?;
     let minor = read_f64(s, b + 99)?;
-    if !is_unit(normal) || !is_unit(x_axis) || !model_scale(center) {
+    if !is_orthonormal_frame(normal, x_axis) || !model_scale(center) {
         return None;
     }
     if !in_radius(major) || !in_radius(minor) || minor > major + 1.0e-9 {
@@ -369,6 +367,13 @@ fn is_unit(v: [f64; 3]) -> bool {
     }
     let n2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
     (n2 - 1.0).abs() < 1.0e-6
+}
+
+/// Return whether two finite vectors form the serialized analytic normal/x-axis frame.
+fn is_orthonormal_frame(axis: [f64; 3], x_axis: [f64; 3]) -> bool {
+    is_unit(axis)
+        && is_unit(x_axis)
+        && (axis[0] * x_axis[0] + axis[1] * x_axis[1] + axis[2] * x_axis[2]).abs() < 1.0e-6
 }
 
 /// An origin/centre is model-scale when finite and under one kilometre in metres.
