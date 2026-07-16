@@ -115,6 +115,31 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+    let active_partition = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("active_parasolid_block"))
+        .and_then(|section| crate::container::configuration_index(section))
+        .and_then(|index| u32::try_from(index).ok());
+    let active_partition_mismatch = active_partition.filter(|active_partition| {
+        ir.model
+            .configurations
+            .iter()
+            .find(|configuration| configuration.active)
+            .is_some_and(|configuration| {
+                configuration.source_index.as_ref() != Some(active_partition)
+            })
+    });
+    if let Some(active_partition) = active_partition_mismatch {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "active configuration identity does not resolve to active geometry partition {active_partition}."
+            ),
+            provenance: None,
+        });
+    }
     let inferred_configurations = ir
         .model
         .configurations
@@ -2686,6 +2711,43 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "1 configuration record(s) have empty names; 2 configuration record(s) share non-unique names."
+        }));
+    }
+
+    #[test]
+    fn active_configuration_partition_disagreement_is_reported() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.source = Some(cadmpeg_ir::document::SourceMeta {
+            format: "sldprt".into(),
+            attributes: BTreeMap::from([(
+                "active_parasolid_block".into(),
+                "Contents/Config-3-Partition".into(),
+            )]),
+        });
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId("configuration".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(5),
+            name: "Default".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: Vec::new(),
+            native_ref: Some("native:configuration".into()),
+        });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "active configuration identity does not resolve to active geometry partition 3."
         }));
     }
 
