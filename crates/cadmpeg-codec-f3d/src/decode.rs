@@ -149,6 +149,7 @@ fn report_unresolved_configuration_rules(
 #[derive(Debug, Default, PartialEq, Eq)]
 struct DesignProjectionGaps {
     native_features: usize,
+    unprojected_feature_scopes: usize,
     native_constraints: usize,
     unprojected_sketch_relations: usize,
     unprojected_dimensions: usize,
@@ -212,6 +213,12 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .iter()
         .filter_map(|constraint| constraint.native_ref.as_deref())
         .collect::<HashSet<_>>();
+    let projected_feature_refs = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| feature.native_ref.as_deref())
+        .collect::<HashSet<_>>();
     let projected_dimension_parameters = ir
         .model
         .sketch_constraints
@@ -221,6 +228,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .collect::<HashSet<_>>();
 
     let mut gaps = DesignProjectionGaps {
+        unprojected_feature_scopes: native
+            .design_parameter_scopes
+            .iter()
+            .filter(|scope| !projected_feature_refs.contains(scope.id.as_str()))
+            .count(),
         native_constraints: ir
             .model
             .sketch_constraints
@@ -328,6 +340,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} feature scope(s) retain native operation semantics because no complete neutral feature definition was resolved.",
             gaps.native_features
+        ),
+    );
+    push(
+        gaps.unprojected_feature_scopes,
+        format!(
+            "{} decoded feature scope(s) have no neutral construction-history feature.",
+            gaps.unprojected_feature_scopes
         ),
     );
     push(
@@ -2012,8 +2031,8 @@ mod tests {
     use crate::native::F3dNative;
     use crate::records::{
         DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignParameter,
-        DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, LostEdgeReference,
-        SketchRelation,
+        DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+        LostEdgeReference, SketchRelation,
     };
 
     #[test]
@@ -2175,10 +2194,43 @@ mod tests {
             evaluated_value: 0.1,
             evaluated_value_offset: 0,
         });
+        native.design_parameter_scopes.push(DesignParameterScope {
+            id: "native:unprojected-scope".into(),
+            byte_offset: 0,
+            class_tag: "000".into(),
+            record_index: 3,
+            frame_length: 1,
+            kind: "Unsupported".into(),
+            kind_offset: 0,
+            extrude_operation: None,
+            extrude_operation_offset: None,
+            extrude_extent: None,
+            extrude_extent_offsets: None,
+            extrude_direction_reversed: None,
+            extrude_direction_reversed_offset: None,
+            extrude_start: None,
+            extrude_start_offset: None,
+            feature_ordinal: 1,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
+            reference_count_offset: 0,
+            reference_members: Vec::new(),
+            reference_member_offsets: Vec::new(),
+            extrude_profile: None,
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: "001".into(),
+            paired_byte_offset: 1,
+        });
         assert_eq!(
             design_projection_gaps(&ir, &native),
             DesignProjectionGaps {
                 native_features: 1,
+                unprojected_feature_scopes: 1,
                 native_constraints: 1,
                 unprojected_sketch_relations: 1,
                 unprojected_dimensions: 1,
