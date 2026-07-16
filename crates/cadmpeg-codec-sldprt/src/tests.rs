@@ -9335,6 +9335,26 @@ fn semantic_writer_round_trips_feature_output_scope() {
 }
 
 #[test]
+fn decode_reports_unresolved_feature_output_scope() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Scoped" Type="Custom" id="1" Scope="MissingBody"/></Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(decoded.ir.model.features[0].outputs.is_empty());
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.message
+            == "1 feature(s) retain non-empty native output scopes that do not resolve to model bodies."
+    }));
+}
+
+#[test]
 fn decode_projects_generic_extrusion_with_explicit_operation() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length};
 

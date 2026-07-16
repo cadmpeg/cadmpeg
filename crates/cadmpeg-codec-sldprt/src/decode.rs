@@ -200,6 +200,29 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         });
     }
 
+    let unresolved_output_scopes = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            feature
+                .source_properties
+                .get("Scope")
+                .is_some_and(|scope| !scope.trim().is_empty())
+                && feature.outputs.is_empty()
+        })
+        .count();
+    if unresolved_output_scopes > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_output_scopes} feature(s) retain non-empty native output scopes that do not resolve to model bodies."
+            ),
+            provenance: None,
+        });
+    }
+
     let native_constraints = ir
         .model
         .sketch_constraints
