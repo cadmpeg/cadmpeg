@@ -10492,6 +10492,32 @@ fn agreed_feature_parent_ids(
     ids
 }
 
+fn agreed_feature_replay_geometry_ids(
+    records: &[crate::feature::FeatureReplayAffectedIds],
+    feature_id: u32,
+) -> Option<&[u32]> {
+    let mut matches = records
+        .iter()
+        .filter(|record| record.feature_id == feature_id);
+    let ids = matches.next()?.geometry_ids.as_slice();
+    matches
+        .all(|record| record.geometry_ids.as_slice() == ids)
+        .then_some(ids)
+}
+
+fn agreed_feature_replay_edge_ids(
+    records: &[crate::feature::FeatureReplayAffectedIds],
+    feature_id: u32,
+) -> Option<&[u32]> {
+    let mut matches = records
+        .iter()
+        .filter(|record| record.feature_id == feature_id);
+    let ids = matches.next()?.edge_ids.as_slice();
+    matches
+        .all(|record| record.edge_ids.as_slice() == ids)
+        .then_some(ids)
+}
+
 fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
     let emitted = ir
         .model
@@ -10635,16 +10661,10 @@ fn feature_edge_selection(scan: &ContainerScan, feature_id: u32) -> Option<EdgeS
         return None;
     }
 
-    let replay_edges = scan
-        .feature_replay_affected_ids
-        .iter()
-        .filter(|record| record.feature_id == feature_id && !record.edge_ids.is_empty())
-        .map(|record| record.edge_ids.clone())
-        .collect::<BTreeSet<_>>();
-    let replay_edges = replay_edges.into_iter().collect::<Vec<_>>();
-    let [ids] = replay_edges.as_slice() else {
+    let ids = agreed_feature_replay_edge_ids(&scan.feature_replay_affected_ids, feature_id)?;
+    if ids.is_empty() {
         return None;
-    };
+    }
     Some(EdgeSelection::Native(format!(
         "creo:allfeatur:replay_edgs_affected#{feature_id}:{}",
         ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
@@ -10832,14 +10852,11 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         feature_id,
         crate::feature::AffectedIdKind::Geometry,
     );
-    let replay_records = scan
-        .feature_replay_affected_ids
-        .iter()
-        .filter(|record| record.feature_id == feature_id)
-        .collect::<Vec<_>>();
-    let affected_ids = match (named_ids, replay_records.as_slice()) {
+    let replay_ids =
+        agreed_feature_replay_geometry_ids(&scan.feature_replay_affected_ids, feature_id);
+    let affected_ids = match (named_ids, replay_ids) {
         (Some(ids), _) => ids,
-        (None, [record]) if !named_present => record.geometry_ids.as_slice(),
+        (None, Some(ids)) if !named_present => ids,
         _ => return None,
     };
     let support_ids = affected_ids.get(2..)?;
@@ -13088,6 +13105,27 @@ mod resolved_sketch_tests {
                 6,
                 crate::feature::AffectedIdKind::Edges,
             ),
+            None
+        );
+        let replay = |geometry_ids: &[u32], edge_ids: &[u32], offset| {
+            crate::feature::FeatureReplayAffectedIds {
+                feature_id: 6,
+                geometry_ids: geometry_ids.to_vec(),
+                edge_ids: edge_ids.to_vec(),
+                geometry_extent: crate::feature::ReplayExtentSource::Explicit,
+                edge_extent: crate::feature::ReplayExtentSource::Inherited,
+                offset,
+            }
+        };
+        assert_eq!(
+            agreed_feature_replay_geometry_ids(
+                &[replay(&[1, 2], &[7], 80), replay(&[1, 2], &[7], 90)],
+                6,
+            ),
+            Some(&[1, 2][..])
+        );
+        assert_eq!(
+            agreed_feature_replay_edge_ids(&[replay(&[1], &[7], 80), replay(&[1], &[], 90)], 6,),
             None
         );
     }
@@ -19468,15 +19506,11 @@ fn transfer_constrained_slot_fillet_cylinders(
             feature_id,
             crate::feature::AffectedIdKind::Geometry,
         );
-        let replay = scan
-            .feature_replay_affected_ids
-            .iter()
-            .filter(|record| record.feature_id == feature_id)
-            .map(|record| record.geometry_ids.as_slice())
-            .collect::<Vec<_>>();
-        let affected = match (named, replay.as_slice()) {
+        let replay =
+            agreed_feature_replay_geometry_ids(&scan.feature_replay_affected_ids, feature_id);
+        let affected = match (named, replay) {
             (Some(ids), _) => ids,
-            (None, [ids]) if !named_present => *ids,
+            (None, Some(ids)) if !named_present => ids,
             _ => continue,
         };
         let Some((cap_ids, support_ids)) = affected.split_at_checked(2) else {
