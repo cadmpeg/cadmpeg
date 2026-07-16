@@ -10786,6 +10786,15 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             edges: EdgeSelection::Unresolved,
             spec: ChamferSpec::Unresolved { form: None },
         },
+        "SEW" => FeatureDefinition::SewBodies {
+            bodies: BodySelection::Unresolved,
+            gap_tolerance: None,
+        },
+        "TRIM BODY" => FeatureDefinition::TrimBodies {
+            targets: BodySelection::Unresolved,
+            tools: BodySelection::Unresolved,
+            keep: BodyTrimSide::Unresolved,
+        },
         "THICKEN_SHEET" => FeatureDefinition::Thicken {
             faces: FaceSelection::Unresolved,
             thickness: None,

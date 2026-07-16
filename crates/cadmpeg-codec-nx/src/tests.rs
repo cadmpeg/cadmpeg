@@ -2777,8 +2777,8 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
 #[test]
 fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     use cadmpeg_ir::features::{
-        BooleanOp, ChamferSpec, EdgeSelection, FaceSelection, FeatureDefinition, HoleKind,
-        PatternKind, RibDraft,
+        BodySelection, BodyTrimSide, BooleanOp, ChamferSpec, EdgeSelection, FaceSelection,
+        FeatureDefinition, HoleKind, PatternKind, RibDraft,
     };
 
     assert!(matches!(
@@ -2819,6 +2819,21 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             spec: ChamferSpec::Unresolved { form: None },
         }
     ));
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("SEW", &[], None, None, None),
+        FeatureDefinition::SewBodies {
+            bodies: BodySelection::Unresolved,
+            gap_tolerance: None,
+        }
+    );
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("TRIM BODY", &[], None, None, None),
+        FeatureDefinition::TrimBodies {
+            targets: BodySelection::Unresolved,
+            tools: BodySelection::Unresolved,
+            keep: BodyTrimSide::Unresolved,
+        }
+    );
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("THICKEN_SHEET", &[], None, None, None),
         FeatureDefinition::Thicken {

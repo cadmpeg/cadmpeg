@@ -789,19 +789,21 @@ An `EXTRUDE` construction profile is complete when its witnessed profile-referen
 
 A wrapped operation-body member is a body operand when its compact index differs from the anchoring body index and equals an object index present in an operation body-reference field or validated segment body-binding tuple. The operand retains its body clause, member order, serialized identity, matching segment bindings, and source offset. Other wrapped members retain only their native member representation.
 
-A `SEW` operation with one or more body operands projects as a neutral body-sew
-feature. Operand order is the wrapped-member order. Every operand resolves to
+A `SEW` operation projects as a neutral body-sew feature. Without body operands,
+the body selection is unresolved. With one or more body operands, operand order
+is the wrapped-member order. Every operand resolves to
 neutral bodies only when all object identities have surviving segment body
 bindings; otherwise the ordered native object-index selection is retained
 atomically. The operation record does not assign a gap tolerance, so the
 neutral tolerance remains absent.
 
-A `TRIM BODY` operation with one unambiguous primary body and one or more body
-operands projects as a neutral body-trim feature. The primary body is the
-target; wrapped-member order defines the ordered tool-body selection. Target
-and tools resolve atomically through surviving segment body bindings and
-otherwise retain their native object-index selections. The body clauses do not
-assign which side is retained, so the neutral retained side is unresolved.
+A `TRIM BODY` operation projects as a neutral body-trim feature. Without one
+unambiguous primary body and one or more body operands, the target and tool-body
+selections are unresolved. With those fields, the primary body is the target;
+wrapped-member order defines the ordered tool-body selection. Target and tools
+resolve atomically through surviving segment body bindings and otherwise retain
+their native object-index selections. The body clauses do not assign which side
+is retained, so the neutral retained side is unresolved.
 
 Bodies named by validated segment binding tuples exist at the start of retained feature history. A `SEW` or `TRIM BODY` body operand consumes that body image when the body's latest decoded writer precedes the operation. Boolean tool operands follow the same ordering rule. A later writer supersedes earlier consumption. Terminal body selection is applied only when every emitted partition has one unambiguous terminal status and at least one, but not every, emitted body remains terminal.
 
