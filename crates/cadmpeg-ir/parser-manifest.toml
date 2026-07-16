@@ -66,9 +66,9 @@ ledger_level = 0
 # ---------------------------------------------------------------------------
 # Source-native namespaces. Converts codec-owned typed records to and from
 # the stored JSON arenas; input is validated document JSON, not raw untrusted
-# framing. Migrated off `Vec::with_capacity` (accumulation now flows through
-# an iterator `collect`, the only lint-legal build path) and carries the deny
-# lint. Sort keeps canonical identity order.
+# framing. Accumulation flows through an iterator `collect` over a caller-owned
+# slice, so allocation is proportional to the trusted record count. Carries the
+# deny lint. Sort keeps canonical identity order.
 [[module]]
 path = "crates/cadmpeg-ir/src/native/mod.rs"
 status = "migrated"
@@ -100,16 +100,20 @@ ledger_level = 0
 
 # ---------------------------------------------------------------------------
 # Legacy cursor. The pre-`View` reader with the section 8.5 reference ratchet
-# still open; `read_values` calls `Vec::with_capacity(count)` on an untrusted
-# count, a class-A site the migration exists to drain. Superseded by `View`
-# (`decode/view.rs`) and its `BoundedCount`/`read_counted` API. Stays
-# `legacy` and keeps the crate-root allow until its references reach zero.
+# still open. `read_counted` sizes its `Vec` with `Vec::with_capacity(count)`,
+# but `count` first passes `counted`/`bounded_len`, which reject any count
+# whose elements could not fit in the unread bytes, so allocation is bounded by
+# input size rather than by the declared count. It stays `legacy` because it is
+# the pre-`View` reader API and has not adopted the migrated
+# `#[deny(clippy::disallowed_methods)]`; it is superseded by `View`
+# (`decode/view.rs`) and its `BoundedCount`/`read_counted` API, and graduates
+# once its references reach zero.
 [[module]]
 path = "crates/cadmpeg-ir/src/cursor.rs"
 status = "legacy"
 input_spaces = []
 fuzz_targets = ["sldprt_container", "nx_container", "catia_container"]
 charges = []
-cost_model = "unbudgeted legacy reader; with_capacity on an untrusted count, superseded by View::counted/read_counted"
+cost_model = "unbudgeted legacy reader; read_counted allocates via with_capacity sized from a count first bounded by counted/bounded_len, superseded by View::counted/read_counted"
 window_egress = []
 ledger_level = 0
