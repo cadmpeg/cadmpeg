@@ -584,6 +584,15 @@ struct CreoReferenceLineRecord {
     offset: usize,
 }
 
+#[derive(Serialize)]
+struct CreoReferenceCircleRecord {
+    id: String,
+    center: [f64; 3],
+    radius: f64,
+    diameter_endpoints: [[f64; 3]; 2],
+    offset: usize,
+}
+
 fn expanded_section_records(scan: &ContainerScan) -> Vec<CreoExpandedSectionRecord> {
     scan.expanded_sections
         .iter()
@@ -19270,6 +19279,32 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("reference_lines", &records)?;
     }
+    if !scan.reference_circles.is_empty() {
+        let records = scan
+            .reference_circles
+            .iter()
+            .map(|circle| CreoReferenceCircleRecord {
+                id: format!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
+                center: circle.center,
+                radius: circle.radius,
+                diameter_endpoints: [circle.start, circle.end],
+                offset: circle.offset,
+            })
+            .collect::<Vec<_>>();
+        for record in &records {
+            annotate(
+                &mut annotations,
+                &record.id,
+                "MdlRefInfo",
+                record.offset as u64,
+                "reference_circle_record",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("reference_circles", &records)?;
+    }
     for line in &scan.reference_lines {
         let direction = std::array::from_fn(|axis| line.end[axis] - line.start[axis]);
         let Some(direction) = normalized(direction) else {
@@ -19298,6 +19333,39 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
                 object_id: format!("MdlRefInfo:{family}:{}", line.offset),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+    }
+    for circle in &scan.reference_circles {
+        let radial = std::array::from_fn(|axis| circle.start[axis] - circle.center[axis]);
+        let Some(reference) = normalized(radial) else {
+            continue;
+        };
+        let id = CurveId(format!("creo:mdl_ref_info:arc_z#{}", circle.offset));
+        annotate(
+            &mut annotations,
+            &id,
+            "MdlRefInfo",
+            circle.offset as u64,
+            "reference_circle",
+            Exactness::Derived,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Circle {
+                center: Point3::new(circle.center[0], circle.center[1], circle.center[2]),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                radius: circle.radius,
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("MdlRefInfo:arc_z:{}", circle.offset),
                 name: None,
                 color: None,
                 visible: None,
@@ -21034,6 +21102,18 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
                 "Transferred {} finite model-space reference line carrier(s) from MdlRefInfo; \
                  their byte-exact endpoints remain attached as native line records.",
                 scan.reference_lines.len()
+            ),
+            provenance: None,
+        });
+    }
+
+    if !container_only && !scan.reference_circles.is_empty() {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {} model-Z circular reference carrier(s) from MdlRefInfo rows with a complete stored diameter; byte-exact diameter endpoints remain attached as native circle records.",
+                scan.reference_circles.len()
             ),
             provenance: None,
         });

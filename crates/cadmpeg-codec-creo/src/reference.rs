@@ -25,6 +25,21 @@ pub struct ReferenceLine {
     pub offset: usize,
 }
 
+/// One model-Z circular reference entity reconstructed from a diameter row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReferenceCircle {
+    /// Circle center in model coordinates.
+    pub center: [f64; 3],
+    /// Positive circle radius.
+    pub radius: f64,
+    /// First stored diameter endpoint.
+    pub start: [f64; 3],
+    /// Second stored diameter endpoint.
+    pub end: [f64; 3],
+    /// Byte offset of the positional row in its section.
+    pub offset: usize,
+}
+
 fn coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
     if data.get(offset) == Some(&0x18)
         && scalar::decode_model_reference_coordinate(data, offset + 1, cache).is_some()
@@ -138,10 +153,11 @@ fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3]
         let first: [f64; 3] = values[..3].try_into().ok()?;
         let second: [f64; 3] = values[3..6].try_into().ok()?;
         let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
-        let distance = delta.iter().map(|value| value * value).sum::<f64>().sqrt();
+        let distance = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
         let stored_length = values[6].abs();
         let scale = distance.max(stored_length).max(1.0);
-        (distance > 1e-12
+        (distance.is_finite()
+            && distance > 1e-12
             && stored_length > 0.0
             && (distance - stored_length).abs() <= 1e-9 * scale)
             .then_some((start, first, second))
@@ -225,6 +241,92 @@ pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
     result
 }
 
+fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
+    let candidates = (0..body.len()).filter_map(|start| {
+        let mut cursor = start;
+        let mut values = Vec::with_capacity(7);
+        while values.len() < 7 {
+            let (value, next) = coordinate(body, cursor, cache)?;
+            values.push(value);
+            cursor = next;
+        }
+        let radius = values[0].abs();
+        let first: [f64; 3] = values[1..4].try_into().ok()?;
+        let second: [f64; 3] = values[4..7].try_into().ok()?;
+        let center = std::array::from_fn(|axis| (first[axis] + second[axis]) * 0.5);
+        let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
+        let diameter = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
+        let scale = radius.max(diameter).max(1.0);
+        (diameter.is_finite()
+            && radius > 0.0
+            && values.iter().all(|value| value.is_finite())
+            && delta[2].abs() <= 1e-10 * scale
+            && (diameter - 2.0 * radius).abs() <= 1e-9 * scale)
+            .then_some(ReferenceCircle {
+                center,
+                radius,
+                start: first,
+                end: second,
+                offset: start,
+            })
+    });
+    candidates.min_by_key(|circle| circle.offset)
+}
+
+/// Decode complete positional `arc_z` rows whose stored endpoints form a
+/// model-Z diameter of the stored radius.
+pub fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
+    const PROTOTYPE: &[u8] = b"ent_list(arc_z)\0";
+    const LIST: &[u8] = b"\xe0\x00ent_list(";
+
+    let cache = ScalarCache::from_section(payload);
+    let mut result = Vec::new();
+    let mut search = 0;
+    while let Some(prototype) = payload[search..]
+        .windows(PROTOTYPE.len())
+        .position(|window| window == PROTOTYPE)
+        .map(|relative| search + relative)
+    {
+        let rows_start = prototype + PROTOTYPE.len();
+        let block_end = payload[rows_start..]
+            .windows(LIST.len())
+            .position(|window| window == LIST)
+            .map_or(payload.len(), |relative| rows_start + relative);
+        let mut headers = Vec::new();
+        for close in rows_start..block_end {
+            if payload.get(close) != Some(&0xe3) {
+                continue;
+            }
+            let Ok((id, after_id)) = crate::psb::reference_id(payload, close + 1) else {
+                continue;
+            };
+            if !matching_row_id(payload, close, id) {
+                continue;
+            }
+            let (_, body_start) = crate::psb::compact_int(payload, after_id);
+            if body_start == after_id || payload.get(body_start) != Some(&0xe2) {
+                continue;
+            }
+            headers.push((close, body_start + 1));
+        }
+        for (index, (close, body_start)) in headers.iter().copied().enumerate() {
+            let body_end = headers
+                .get(index + 1)
+                .map_or(block_end, |(next_close, _)| *next_close)
+                .min(body_start.saturating_add(256));
+            let Some(mut circle) = arc_z_fields(&payload[body_start..body_end], &cache) else {
+                continue;
+            };
+            circle.offset = close + 1;
+            result.push(circle);
+        }
+        search = block_end.max(rows_start);
+    }
+    result.sort_by_key(|circle| circle.offset);
+    result.dedup_by_key(|circle| circle.offset);
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,5 +398,25 @@ mod tests {
         let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\
             \x0f\x0f\x0f\xe4\x0f\x0f\x0e";
         assert!(line3d_lines(payload).is_empty());
+    }
+
+    #[test]
+    fn withholds_line3d_when_endpoint_norm_overflows() {
+        let mut body = Vec::new();
+        for value in [-f64::MAX, 0.0, 0.0, f64::MAX, 0.0, 0.0, f64::MAX] {
+            body.push(0xed);
+            body.extend_from_slice(&value.to_be_bytes());
+        }
+        assert!(line3d_fields(&body, &ScalarCache::from_section(&body)).is_none());
+    }
+
+    #[test]
+    fn decodes_arc_z_diameter_rows() {
+        let body = b"\x01\xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f";
+        let circle = arc_z_fields(body, &ScalarCache::from_section(body)).expect("diameter row");
+        assert_eq!(circle.center, [0.0; 3]);
+        assert_eq!(circle.radius, 1.0);
+        assert_eq!(circle.start, [1.0, 0.0, 0.0]);
+        assert_eq!(circle.end, [-1.0, 0.0, 0.0]);
     }
 }

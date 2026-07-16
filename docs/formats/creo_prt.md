@@ -1227,7 +1227,7 @@ model-coordinate cross-section plane carrier; it is not a material model face.
 A `0x99` DICT prefix maps to IEEE prefix `40 0E` in positive reads and `C0 0E` in the mirrored saved-section lane.
 Model-reference coordinate rows encode `ed <bytes8>` as the big-endian
 IEEE-754 value `<bytes8>`.
-Their `32 <bytes7>` form encodes the big-endian IEEE-754 value
+Their `19 <bytes7>` and `32 <bytes7>` forms encode the big-endian IEEE-754 value
 `3f <bytes7>`.
 In the saved-section scalar lane, `dd` maps to IEEE prefix `40 0c`; its six
 payload bytes are the remaining IEEE bytes.
@@ -1564,7 +1564,7 @@ normal-position tuples and transfers its first three tuple values as vertex
 normals.
 Strip triangles alternate winding: `[i,i+1,i+2]`, then `[i,i+2,i+1]`.
 
-### 8.5 Model reference lines
+### 8.5 Model reference geometry
 
 `MdlRefInfo` stores finite model-space reference lines under an
 `ent_list(line)` prototype. The prototype declares `end1 f8 03` and `end2 f8
@@ -1584,3 +1584,10 @@ scalars. A complete spatial line has a nonzero endpoint distance equal to the
 absolute stored `orig_len`. The scalar run precedes the remaining positional
 fields. Entity references and display fields before or after that run do not
 contribute coordinates.
+
+An `ent_list(arc_z)` positional row uses the same repeated-identifier and
+`e2` body framing. A complete diameter form contains a positive radius followed
+by two XYZ endpoints. The endpoints have equal Z coordinates and their distance
+is twice the radius. Their midpoint is the circle center, the first endpoint
+defines the reference direction, and the model Z axis is the circle normal.
+Other arc forms remain distinct until their parameter fields are defined.
