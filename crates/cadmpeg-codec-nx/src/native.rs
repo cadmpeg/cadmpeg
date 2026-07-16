@@ -8874,6 +8874,9 @@ pub struct Expression {
     pub value: Option<f64>,
     /// Directory entry containing the OM section.
     pub source_entry: String,
+    /// Self-contained expression table selected by the nearest preceding table marker.
+    #[serde(default)]
+    pub source_table: String,
     /// Absolute file offset of the expression text.
     pub source_offset: u64,
 }
@@ -10705,12 +10708,31 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
             continue;
         };
         for expression in crate::om::numeric_expressions(payload) {
+            let Some(table_offset) = payload[..expression.offset]
+                .windows(b"hostglobalvariables".len())
+                .rposition(|window| window == b"hostglobalvariables")
+            else {
+                continue;
+            };
             let indexed_record = indexed
                 .get(&(entry.name.clone(), expression.offset))
                 .cloned();
             let declaration = declarations_by_name
                 .get(&(entry.name.as_str(), expression.name))
                 .and_then(|candidates| {
+                    let same_record_arena = |first: &str, second: &str| {
+                        first.split_once(":entry#").map(|pair| pair.0)
+                            == second.split_once(":entry#").map(|pair| pair.0)
+                    };
+                    let candidates = candidates
+                        .iter()
+                        .copied()
+                        .filter(|declaration| {
+                            indexed_record.as_ref().is_none_or(|(_, record)| {
+                                same_record_arena(&declaration.record, record)
+                            })
+                        })
+                        .collect::<Vec<_>>();
                     let [declaration] = candidates.as_slice() else {
                         return None;
                     };
@@ -10733,6 +10755,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                 expression: expression.expression.to_string(),
                 value: expression.value,
                 source_entry: entry.name.clone(),
+                source_table: format!("nx:om-entry-{entry_index}:expression-table#{table_offset}"),
                 source_offset: entry_offset + expression.offset as u64,
             });
         }
@@ -10745,14 +10768,16 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
     let mut values = BTreeMap::<(String, String), (ExpressionUnit, f64)>::new();
     let mut name_counts = BTreeMap::<(String, String), usize>::new();
     for expression in expressions.iter() {
+        let scope = if expression.source_table.is_empty() {
+            expression.source_entry.clone()
+        } else {
+            expression.source_table.clone()
+        };
         *name_counts
-            .entry((expression.source_entry.clone(), expression.name.clone()))
+            .entry((scope.clone(), expression.name.clone()))
             .or_default() += 1;
         if let Some(value) = expression.value {
-            values.insert(
-                (expression.source_entry.clone(), expression.name.clone()),
-                (expression.unit, value),
-            );
+            values.insert((scope, expression.name.clone()), (expression.unit, value));
         }
     }
 
@@ -10787,7 +10812,12 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
                             at += 1;
                         }
                         let name = &expression.expression[start..at];
-                        let key = (expression.source_entry.clone(), name.to_string());
+                        let scope = if expression.source_table.is_empty() {
+                            expression.source_entry.clone()
+                        } else {
+                            expression.source_table.clone()
+                        };
+                        let key = (scope, name.to_string());
                         let Some((unit, value)) = values.get(&key).copied() else {
                             complete = false;
                             break;
@@ -10808,7 +10838,14 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
                 if let Some(value) = crate::om::evaluate_constant_expression(&substituted) {
                     expression.value = Some(value);
                     values.insert(
-                        (expression.source_entry.clone(), expression.name.clone()),
+                        (
+                            if expression.source_table.is_empty() {
+                                expression.source_entry.clone()
+                            } else {
+                                expression.source_table.clone()
+                            },
+                            expression.name.clone(),
+                        ),
                         (expression.unit, value),
                     );
                     changed = true;

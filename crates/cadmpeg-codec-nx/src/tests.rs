@@ -823,6 +823,7 @@ fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
         expression: formula.into(),
         value,
         source_entry: "part".into(),
+        source_table: "table".into(),
         source_offset: 0,
     };
     let mut expressions = vec![
@@ -836,6 +837,37 @@ fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
 
     assert_eq!(expressions[2].value, Some(10.0));
     assert_eq!(expressions[3].value, Some(13.0));
+}
+
+#[test]
+fn nx_expression_graph_scopes_names_to_their_expression_table() {
+    let expression =
+        |id: &str, table: &str, name: &str, formula: &str, value| crate::native::Expression {
+            id: id.into(),
+            object_id: None,
+            record: None,
+            declaration: None,
+            name: name.into(),
+            parameter_index: None,
+            qualifier: None,
+            unit: crate::native::ExpressionUnit::Millimeter,
+            expression: formula.into(),
+            value,
+            source_entry: "part".into(),
+            source_table: table.into(),
+            source_offset: 0,
+        };
+    let mut expressions = vec![
+        expression("a-p2", "table-a", "p2", "5", Some(5.0)),
+        expression("a-p3", "table-a", "p3", "p2 * 2", None),
+        expression("b-p2", "table-b", "p2", "7", Some(7.0)),
+        expression("b-p3", "table-b", "p3", "p2 * 2", None),
+    ];
+
+    crate::native::evaluate_expression_graphs(&mut expressions);
+
+    assert_eq!(expressions[1].value, Some(10.0));
+    assert_eq!(expressions[3].value, Some(14.0));
 }
 
 #[test]
@@ -857,6 +889,7 @@ fn nx_formula_dependencies_resolve_to_section_parameters() {
         expression: text.into(),
         value,
         source_entry: "/Root/UG_PART/UG_PART".into(),
+        source_table: "table".into(),
         source_offset: u64::from(key),
     };
     let expressions = [
@@ -889,6 +922,7 @@ fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
         expression: text.into(),
         value: None,
         source_entry: "/Root/UG_PART/UG_PART".into(),
+        source_table: "table".into(),
         source_offset: u64::from(key),
     };
     let expressions = [
@@ -939,6 +973,7 @@ fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
         expression: "5".to_string(),
         value: Some(5.0),
         source_entry: "part".to_string(),
+        source_table: "table".to_string(),
         source_offset: 20,
     };
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
@@ -1008,6 +1043,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         expression: text.to_string(),
         value: None,
         source_entry: "entry".to_string(),
+        source_table: "table".to_string(),
         source_offset: 0,
     };
     let parameter_use = |id: &str, expression: &str| crate::native::FeatureParameterUse {
@@ -1156,6 +1192,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         expression: key.to_string(),
         value: Some(f64::from(key)),
         source_entry: "part".into(),
+        source_table: "table".into(),
         source_offset: u64::from(key),
     };
     let expressions = [expression(20), expression(21), expression(22)];
@@ -2385,6 +2422,7 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
         expression: "12".to_string(),
         value: Some(12.0),
         source_entry: "/Root/UG_PART/UG_PART".to_string(),
+        source_table: "table".to_string(),
         source_offset: 900,
     };
     let bindings = crate::native::feature_parameter_bindings(
@@ -8801,6 +8839,9 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(expressions[0].expression, "120");
     assert_eq!(expressions[0].value, Some(120.0));
     assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
+    assert!(expressions[0]
+        .source_table
+        .starts_with("nx:om-entry-0:expression-table#"));
     let declarations = result
         .ir
         .native
