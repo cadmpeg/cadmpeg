@@ -589,7 +589,7 @@ struct CreoReferenceCircleRecord {
     id: String,
     center: [f64; 3],
     radius: f64,
-    diameter_endpoints: [[f64; 3]; 2],
+    endpoints: [[f64; 3]; 2],
     offset: usize,
 }
 
@@ -19295,7 +19295,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                 id: format!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
                 center: circle.center,
                 radius: circle.radius,
-                diameter_endpoints: [circle.start, circle.end],
+                endpoints: [circle.start, circle.end],
                 offset: circle.offset,
             })
             .collect::<Vec<_>>();
@@ -21120,7 +21120,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Transferred {} model-Z circular reference carrier(s) from MdlRefInfo rows with a complete stored diameter; byte-exact diameter endpoints remain attached as native circle records.",
+                "Transferred {} model-Z circular reference carrier(s) from MdlRefInfo rows whose stored center, radius, and endpoints satisfy the circle equation; byte-exact endpoints remain attached as native circle records.",
                 scan.reference_circles.len()
             ),
             provenance: None,

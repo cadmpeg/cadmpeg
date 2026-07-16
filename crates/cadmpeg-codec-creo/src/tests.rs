@@ -3055,7 +3055,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
 }
 
 #[test]
-fn decode_transfers_diameter_verified_model_reference_circles() {
+fn decode_transfers_equation_verified_model_reference_circles() {
     let payload = b"ent_list(arc_z)\0\xe2\x2d\xe3\x2d\x0f\xe2\x01\
         \xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\xe0\x00ent_list(line3d)\0"
         .to_vec();

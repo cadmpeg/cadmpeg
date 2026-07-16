@@ -1586,8 +1586,10 @@ fields. Entity references and display fields before or after that run do not
 contribute coordinates.
 
 An `ent_list(arc_z)` positional row uses the same repeated-identifier and
-`e2` body framing. A complete diameter form contains a positive radius followed
-by two XYZ endpoints. The endpoints have equal Z coordinates and their distance
-is twice the radius. Their midpoint is the circle center, the first endpoint
-defines the reference direction, and the model Z axis is the circle normal.
-Other arc forms remain distinct until their parameter fields are defined.
+`e2` body framing. Its explicit scalar form stores `center.xyz`, positive
+`radius`, `end1.xyz`, and `end2.xyz` consecutively after the fixed row prefix.
+Both endpoints have the center's Z coordinate and lie at the stored radius.
+A compressed diameter form omits the explicit center; its endpoint distance is
+twice the radius and their midpoint is the center. The first endpoint defines
+the reference direction and the model Z axis is the circle normal. The later
+parameter and axis fields do not alter this carrier equation.

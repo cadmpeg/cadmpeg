@@ -198,7 +198,7 @@ pub struct ContainerScan {
     pub primitive_triangle_strips: Vec<PrimitiveTriangleStrip>,
     /// Complete model-space line entities from `MdlRefInfo`.
     pub reference_lines: Vec<ReferenceLine>,
-    /// Complete model-Z circular entities from `MdlRefInfo` diameter rows.
+    /// Complete model-Z circular entities from `MdlRefInfo` rows.
     pub reference_circles: Vec<ReferenceCircle>,
     /// Identified layout family.
     pub layout: Layout,

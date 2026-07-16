@@ -25,16 +25,16 @@ pub struct ReferenceLine {
     pub offset: usize,
 }
 
-/// One model-Z circular reference entity reconstructed from a diameter row.
+/// One model-Z circular reference entity reconstructed from a positional row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReferenceCircle {
     /// Circle center in model coordinates.
     pub center: [f64; 3],
     /// Positive circle radius.
     pub radius: f64,
-    /// First stored diameter endpoint.
+    /// First stored endpoint.
     pub start: [f64; 3],
-    /// Second stored diameter endpoint.
+    /// Second stored endpoint.
     pub end: [f64; 3],
     /// Byte offset of the positional row in its section.
     pub offset: usize,
@@ -242,14 +242,61 @@ pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
 }
 
 fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
-    let candidates = (0..body.len()).filter_map(|start| {
+    let scalar_run = |start: usize, count: usize| {
         let mut cursor = start;
-        let mut values = Vec::with_capacity(7);
-        while values.len() < 7 {
+        let mut values = Vec::with_capacity(count);
+        while values.len() < count {
             let (value, next) = coordinate(body, cursor, cache)?;
             values.push(value);
             cursor = next;
         }
+        Some(values)
+    };
+    let valid_circle = |center: [f64; 3], radius: f64, first: [f64; 3], second: [f64; 3]| {
+        let first_delta = std::array::from_fn::<_, 3, _>(|axis| first[axis] - center[axis]);
+        let second_delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - center[axis]);
+        let first_distance = first_delta
+            .iter()
+            .fold(0.0_f64, |norm, value| norm.hypot(*value));
+        let second_distance = second_delta
+            .iter()
+            .fold(0.0_f64, |norm, value| norm.hypot(*value));
+        let scale = radius.max(first_distance).max(second_distance).max(1.0);
+        (radius.is_finite()
+            && radius > 0.0
+            && center
+                .iter()
+                .chain(first.iter())
+                .chain(second.iter())
+                .all(|value| value.is_finite())
+            && first_distance.is_finite()
+            && second_distance.is_finite()
+            && first_delta[2].abs() <= 1e-10 * scale
+            && second_delta[2].abs() <= 1e-10 * scale
+            && (first_distance - radius).abs() <= 1e-9 * scale
+            && (second_distance - radius).abs() <= 1e-9 * scale)
+            .then_some(())
+    };
+    let explicit = (0..body.len()).filter_map(|start| {
+        let values = scalar_run(start, 10)?;
+        let center: [f64; 3] = values[..3].try_into().ok()?;
+        let radius = values[3].abs();
+        let first: [f64; 3] = values[4..7].try_into().ok()?;
+        let second: [f64; 3] = values[7..10].try_into().ok()?;
+        valid_circle(center, radius, first, second)?;
+        Some(ReferenceCircle {
+            center,
+            radius,
+            start: first,
+            end: second,
+            offset: start,
+        })
+    });
+    if let Some(circle) = explicit.min_by_key(|circle| circle.offset) {
+        return Some(circle);
+    }
+    let diametric = (0..body.len()).filter_map(|start| {
+        let values = scalar_run(start, 7)?;
         let radius = values[0].abs();
         let first: [f64; 3] = values[1..4].try_into().ok()?;
         let second: [f64; 3] = values[4..7].try_into().ok()?;
@@ -270,11 +317,12 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
                 offset: start,
             })
     });
-    candidates.min_by_key(|circle| circle.offset)
+    diametric.min_by_key(|circle| circle.offset)
 }
 
-/// Decode complete positional `arc_z` rows whose stored endpoints form a
-/// model-Z diameter of the stored radius.
+/// Decode complete positional `arc_z` rows whose stored center, radius, and
+/// endpoints satisfy the model-Z circle equation. Diameter-compressed rows
+/// derive the center from their endpoint midpoint.
 pub fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
     const PROTOTYPE: &[u8] = b"ent_list(arc_z)\0";
     const LIST: &[u8] = b"\xe0\x00ent_list(";
@@ -418,5 +466,17 @@ mod tests {
         assert_eq!(circle.radius, 1.0);
         assert_eq!(circle.start, [1.0, 0.0, 0.0]);
         assert_eq!(circle.end, [-1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn decodes_arc_z_explicit_center_rows() {
+        let body = b"\x01\x2f\x0c\x00\x2f\x24\x00\x48\x10\x00\
+            \x2f\x00\x00\x2f\x16\x00\x2f\x24\x00\x48\x10\x00\
+            \x2f\x0c\x00\x2f\x20\x00\x48\x10\x00";
+        let circle = arc_z_fields(body, &ScalarCache::from_section(body)).expect("quarter arc");
+        assert_eq!(circle.center, [3.5, 10.0, -4.0]);
+        assert_eq!(circle.radius, 2.0);
+        assert_eq!(circle.start, [5.5, 10.0, -4.0]);
+        assert_eq!(circle.end, [3.5, 8.0, -4.0]);
     }
 }
