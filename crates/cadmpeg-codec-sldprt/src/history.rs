@@ -564,6 +564,43 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
     parameters
 }
 
+/// Replace evaluable expressions with canonical literals in a temporary history projection.
+///
+/// Retained native histories keep their source expressions. This normalization exists only so
+/// typed feature projectors consume the same evaluated values exposed in the neutral parameter
+/// arena.
+pub(crate) fn apply_evaluated_parameters(histories: &mut [FeatureHistory]) {
+    let evaluated = project_parameters(histories)
+        .into_iter()
+        .filter_map(|parameter| {
+            parameter
+                .value
+                .map(|value| ((parameter.owner, parameter.name), value))
+        })
+        .collect::<HashMap<_, _>>();
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        let owner = neutral_feature_id(&feature.id);
+        let replacements = feature
+            .parameters
+            .iter()
+            .filter(|(name, expression)| {
+                parse_native_parameter_literal(feature, name, expression).is_none()
+            })
+            .filter_map(|(name, _)| {
+                evaluated
+                    .get(&(owner.clone(), name.clone()))
+                    .map(|value| (name.clone(), format_parameter_value(value)))
+            })
+            .collect::<Vec<_>>();
+        for (name, value) in replacements {
+            feature.parameters.insert(name, value);
+        }
+    }
+}
+
 pub(crate) fn parse_native_parameter_literal(
     feature: &Feature,
     name: &str,
@@ -4124,6 +4161,7 @@ fn project_features_with_native_inputs(
         &native.feature_input_lanes,
     );
     crate::pmi::enrich_history_parameters(&mut histories, &native.pmi_dimensions);
+    apply_evaluated_parameters(&mut histories);
     let mut features = project_features(&histories);
     crate::resolved_features::bind_sweep_operations(
         &mut features,
@@ -4924,6 +4962,40 @@ fn generated_feature_source_ids(
     Ok(allocated)
 }
 
+fn restore_equivalent_parameter_expressions(
+    feature: &Feature,
+    original_parameters: &HashMap<String, BTreeMap<String, String>>,
+    evaluated_parameters: &HashMap<String, BTreeMap<String, String>>,
+    desired_parameters: &mut BTreeMap<String, String>,
+) {
+    let Some(original) = original_parameters.get(&feature.id) else {
+        return;
+    };
+    let Some(evaluated) = evaluated_parameters.get(&feature.id) else {
+        return;
+    };
+    for (name, desired) in desired_parameters {
+        let Some(expression) = original.get(name) else {
+            continue;
+        };
+        if parse_native_parameter_literal(feature, name, expression).is_some() {
+            continue;
+        }
+        let Some(evaluated) = evaluated.get(name) else {
+            continue;
+        };
+        let Some(desired_value) = parse_native_parameter_literal(feature, name, desired) else {
+            continue;
+        };
+        let Some(evaluated_value) = parse_native_parameter_literal(feature, name, evaluated) else {
+            continue;
+        };
+        if desired_value == evaluated_value {
+            desired.clone_from(expression);
+        }
+    }
+}
+
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
 pub fn sync_neutral_features(
     features: &[cadmpeg_ir::features::Feature],
@@ -4976,6 +5048,12 @@ pub fn sync_neutral_features(
                 feature.parameters.keys().cloned().collect::<HashSet<_>>(),
             )
         })
+        .collect::<HashMap<_, _>>();
+    apply_evaluated_parameters(&mut resolved_histories);
+    let evaluated_parameters = resolved_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.clone(), feature.parameters.clone()))
         .collect::<HashMap<_, _>>();
     if native.feature_histories.is_empty() {
         native.feature_histories.push(FeatureHistory {
@@ -5081,7 +5159,7 @@ pub fn sync_neutral_features(
             .iter_mut()
             .flat_map(|history| &mut history.features)
             .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
-        let (kind, parameters, mut properties) = match &feature.definition {
+        let (kind, mut parameters, mut properties) = match &feature.definition {
             FeatureDefinition::TreeNode { role } => {
                 if existing
                     .as_deref()
@@ -7963,6 +8041,14 @@ pub fn sync_neutral_features(
                 (kind, parameters, properties)
             }
         };
+        if let Some(record) = existing.as_deref() {
+            restore_equivalent_parameter_expressions(
+                record,
+                &original_parameters,
+                &evaluated_parameters,
+                &mut parameters,
+            );
+        }
         if feature.outputs.is_empty() {
             if existing.is_none() {
                 properties.remove("Scope");

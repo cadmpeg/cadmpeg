@@ -8505,6 +8505,68 @@ fn decode_evaluates_parameter_dependency_expressions() {
 }
 
 #[test]
+fn decode_projects_evaluated_equations_into_feature_semantics() {
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Equation boss" Type="BossExtrude" id="7" Operation="Join" EndCondition="Blind"><Dimension Name="Base">4mm</Dimension><Dimension Name="Depth">Base * 2</Dimension></Extrusion></Keywords>"#,
+    ));
+
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::Blind {
+                length: Length(8.0)
+            },
+            op: BooleanOp::Join,
+            ..
+        }
+    ));
+    let depth = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .expect("depth parameter");
+    assert_eq!(depth.expression, "Base * 2");
+    assert_eq!(
+        depth.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(Length(8.0)))
+    );
+    let native = &sldprt_native(&decoded.ir).feature_histories[0].features[0];
+    assert_eq!(native.parameters["Depth"], "Base * 2");
+
+    decoded.ir.model.features[0].name = Some("Renamed equation boss".into());
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters["Depth"],
+        "Base * 2"
+    );
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::Blind {
+                length: Length(8.0)
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
