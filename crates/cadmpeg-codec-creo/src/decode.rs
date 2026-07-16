@@ -2437,6 +2437,31 @@ fn curve_expression_parameter_order(
     (ordinals, cyclic_edges)
 }
 
+fn curve_expression_parameter_names(
+    assignments: &[crate::curve::CurveExpressionAssignment],
+) -> Vec<String> {
+    let counts = assignments
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, assignment| {
+            *counts.entry(assignment.name.as_str()).or_insert(0usize) += 1;
+            counts
+        });
+    let mut occurrences = BTreeMap::new();
+    assignments
+        .iter()
+        .map(|assignment| {
+            if counts[assignment.name.as_str()] == 1 {
+                return assignment.name.clone();
+            }
+            let occurrence = occurrences
+                .entry(assignment.name.as_str())
+                .or_insert(0usize);
+            *occurrence += 1;
+            format!("{}#{occurrence}", assignment.name)
+        })
+        .collect()
+}
+
 fn transfer_curve_expression_features(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -2473,10 +2498,8 @@ fn transfer_curve_expression_features(
             .collect::<BTreeMap<_, _>>();
         let (parameter_ordinals, cyclic_edges) =
             curve_expression_parameter_order(record, &unique_assignment_indices);
-        let mut emitted_assignment_indices = unique_assignment_indices
-            .values()
-            .copied()
-            .collect::<Vec<_>>();
+        let parameter_names = curve_expression_parameter_names(&record.assignments);
+        let mut emitted_assignment_indices = (0..record.assignments.len()).collect::<Vec<_>>();
         emitted_assignment_indices.sort_by_key(|index| parameter_ordinals[*index]);
         let emitted_ordinals = emitted_assignment_indices
             .into_iter()
@@ -2511,9 +2534,14 @@ fn transfer_curve_expression_features(
                 .dependencies
                 .iter()
                 .filter(|name| {
-                    name.as_str() != "t"
-                        && !matches!(assignment_indices_by_name.get(*name), Some(Some(_)))
+                    name.as_str() != "t" && !assignment_indices_by_name.contains_key(*name)
                 })
+                .cloned()
+                .collect::<Vec<_>>();
+            let ambiguous_dependencies = assignment
+                .dependencies
+                .iter()
+                .filter(|name| matches!(assignment_indices_by_name.get(*name), Some(None)))
                 .cloned()
                 .collect::<Vec<_>>();
             let intrinsic_dependencies = assignment
@@ -2528,6 +2556,19 @@ fn transfer_curve_expression_features(
                     "external_dependencies".to_string(),
                     external_dependencies.join(","),
                 );
+            }
+            if !ambiguous_dependencies.is_empty() {
+                properties.insert(
+                    "ambiguous_dependencies".to_string(),
+                    ambiguous_dependencies.join(","),
+                );
+            }
+            properties.insert(
+                "source_assignment_ordinal".to_string(),
+                assignment_ordinal.to_string(),
+            );
+            if parameter_names[assignment_ordinal] != assignment.name {
+                properties.insert("source_name".to_string(), assignment.name.clone());
             }
             if !intrinsic_dependencies.is_empty() {
                 properties.insert(
@@ -2568,7 +2609,7 @@ fn transfer_curve_expression_features(
                 id: parameter_id.clone(),
                 owner: feature_id.clone(),
                 ordinal,
-                name: assignment.name.clone(),
+                name: parameter_names[assignment_ordinal].clone(),
                 expression: assignment.expression.clone(),
                 display: None,
                 value: assignment.value.map(ParameterValue::Real),

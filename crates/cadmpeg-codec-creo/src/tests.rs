@@ -3402,9 +3402,9 @@ fn decode_retains_cyclic_curve_expression_dependencies_without_invalid_edges() {
 }
 
 #[test]
-fn decode_retains_reassigned_curve_expression_names_without_duplicate_parameters() {
+fn decode_transfers_reassigned_curve_expression_names_without_identity_collisions() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x0aexpression\0\xf8\x04r=1\0r=2\0theta=t*360\0z=1\0"
+        \xe0\x0aexpression\0\xf8\x04r=1\0r=2\0theta=t*360\0z=r\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
@@ -3418,11 +3418,25 @@ fn decode_retains_reassigned_curve_expression_names_without_duplicate_parameters
             .iter()
             .map(|parameter| (parameter.name.as_str(), parameter.ordinal))
             .collect::<Vec<_>>(),
-        [("theta", 0), ("z", 1)]
+        [("r#1", 0), ("r#2", 1), ("theta", 2), ("z", 3)]
     );
+    assert_eq!(result.ir.model.parameters[0].properties["source_name"], "r");
+    assert_eq!(
+        result.ir.model.parameters[0].properties["source_assignment_ordinal"],
+        "0"
+    );
+    assert_eq!(result.ir.model.parameters[1].properties["source_name"], "r");
+    assert_eq!(
+        result.ir.model.parameters[3].properties["ambiguous_dependencies"],
+        "r"
+    );
+    assert!(result.ir.model.parameters[3].dependencies.is_empty());
+    assert!(!result.ir.model.parameters[3]
+        .properties
+        .contains_key("external_dependencies"));
     assert_eq!(
         result.ir.model.features[0].source_text.as_deref(),
-        Some("r=1\nr=2\ntheta=t*360\nz=1")
+        Some("r=1\nr=2\ntheta=t*360\nz=r")
     );
     assert_eq!(
         result
