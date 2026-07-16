@@ -33,7 +33,7 @@ pub struct BaselineRecord {
 /// A committed set of baselines plus the envelopes that produced them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Baseline {
-    /// Acceptance-envelope version tag (`envelope-v1`).
+    /// Acceptance-envelope version tag (`envelope-v2`).
     pub envelope_version: String,
     /// Peak-allocation envelope the run used.
     pub peak_envelope_bytes: u64,

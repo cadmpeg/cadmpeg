@@ -46,13 +46,17 @@ pub struct ResourceLimits {
     /// **Provisional** until the Phase 1 decompression calibration (§5.2).
     pub max_decompressed_bytes_per_expand: u64,
     /// Maximum cumulative committed heap bytes.
-    /// **Provisional** until the Phase 2 alloc/work/depth calibration (§5.2).
+    /// **Frozen** at Phase 2 (§5.2 alloc/work/depth freeze): the Phase 2
+    /// per-codec calibration measured the migrated charge sites well inside
+    /// this ceiling, so the value is unchanged and now load-bearing.
     pub max_alloc_bytes: u64,
     /// Maximum abstract work units.
-    /// **Provisional** until the Phase 2 alloc/work/depth calibration (§5.2).
+    /// **Frozen** at Phase 2 (§5.2 alloc/work/depth freeze); value unchanged by
+    /// calibration.
     pub max_work: u64,
     /// Maximum recursion depth.
-    /// **Provisional** until the Phase 2 alloc/work/depth calibration (§5.2).
+    /// **Frozen** at Phase 2 (§5.2 alloc/work/depth freeze); value unchanged by
+    /// calibration.
     pub max_depth: u32,
     /// Maximum bytes retained opaque in salvage mode.
     /// **Provisional** until the Phase 3 retained calibration (§5.2).
@@ -90,11 +94,14 @@ impl ResourceLimits {
     }
 
     /// Version tag for the desktop profile's ceilings (§5.2). Under the §5.2
-    /// per-dimension freeze schedule only `max_input_bytes` is frozen so far;
-    /// the rest are provisional (see the field docs). The tag names whatever
-    /// set is in force, so a report keeps a durable record of it; bumping any
-    /// desktop ceiling advances the tag. The `desktop_version_pins_its_ceilings`
-    /// test pins the tag to its values so a ceiling cannot change without one.
+    /// per-dimension freeze schedule `max_input_bytes` (Phase 0B),
+    /// `max_decompressed_bytes_*` (Phase 1), and `max_alloc_bytes`/`max_work`/
+    /// `max_depth` (Phase 2) are frozen; only `max_retained_bytes` remains
+    /// provisional (Phase 3). The Phase 2 freeze left every ceiling value
+    /// unchanged — the migrated charge sites calibrated well inside them — so
+    /// the tag stays `desktop-v1`; it advances only when a ceiling *value*
+    /// changes. The `desktop_version_pins_its_ceilings` test pins the tag to
+    /// its values so a ceiling cannot change without one.
     pub const DESKTOP_VERSION: &'static str = "desktop-v1";
 
     /// Version tag for the service profile's ceilings (§5.2), advanced whenever
@@ -188,8 +195,14 @@ pub(crate) struct Envelope {
 }
 
 impl Envelope {
-    /// The platform default envelope. Values are starting points; a false
-    /// reject on a legitimate file is a calibration bug, not a contract.
+    /// The platform default envelope. The `alloc_bytes` and `work` terms are
+    /// **frozen** at Phase 2 (§5.2): the per-codec calibration notes measured
+    /// the migrated charge sites (container framing plus graduated leaves) at
+    /// bytes-to-low-KiB cumulative `alloc_bytes` and tens-to-low-thousands
+    /// `work` units per fixture — orders of magnitude inside these constants —
+    /// so the freeze left every value unchanged. `decompressed_*` froze at
+    /// Phase 1; `retained_bytes` stays provisional until Phase 3. A false
+    /// reject on a legitimate file remains a calibration bug, not a contract.
     pub(crate) const PLATFORM_DEFAULT: Envelope = Envelope {
         base: DimensionAmounts {
             alloc_bytes: 64 * MIB,
@@ -214,10 +227,15 @@ impl Envelope {
 
     /// Version tag for the platform default envelope's calibration constants
     /// (§5.2). No caller API overrides the envelope yet, so every decode runs
-    /// this version; the tag advances when a `PLATFORM_DEFAULT` constant does.
-    /// The `envelope_version_pins_its_constants` test pins the tag to its
-    /// values so a constant cannot change without advancing the tag.
-    pub(crate) const VERSION: &'static str = "envelope-v1";
+    /// this version. `envelope-v2` records the Phase 2 alloc/work/depth freeze:
+    /// the `alloc_bytes`/`work` terms moved from provisional starting points to
+    /// frozen, calibration-defended values (their magnitudes were unchanged —
+    /// the migrated charge sites sit far inside them — but their status did).
+    /// The tag advances when a `PLATFORM_DEFAULT` constant changes or when a
+    /// dimension's freeze status advances. The
+    /// `envelope_version_pins_its_constants` test pins the tag to its values so
+    /// a constant cannot change without advancing the tag.
+    pub(crate) const VERSION: &'static str = "envelope-v2";
 }
 
 #[cfg(test)]
@@ -262,7 +280,7 @@ mod tests {
 
     #[test]
     fn envelope_version_pins_its_constants() {
-        assert_eq!(Envelope::VERSION, "envelope-v1");
+        assert_eq!(Envelope::VERSION, "envelope-v2");
         let e = Envelope::PLATFORM_DEFAULT;
         assert_eq!(e.base.alloc_bytes, 64 * MIB);
         assert_eq!(e.base.decompressed_total, 16 * MIB);

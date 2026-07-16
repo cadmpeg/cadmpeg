@@ -25,6 +25,18 @@ CADIR input bypasses codec detection and parses directly into `CadIr`. The parse
 
 The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`, so root-input limiting and the fused-context invariant hold once for every codec rather than per codec. `DecodeContext` owns the decode's monotonic state — budget counters, the depth gauge, the address-space registry, and record tickets — behind interior mutability; a `DecodeArena` owns byte buffers with stable addresses; and a `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field; the ownership model lives in `cadmpeg_ir::decode`.
 
+The budget's acceptance envelope is versioned. `envelope-v2` freezes the
+`alloc_bytes`, `work`, and `depth` terms after Phase 2 calibration; their values
+are unchanged from `envelope-v1` because the migrated charge sites measure far
+inside them, so the bump records the provisional-to-frozen transition alone. The
+`desktop-v1`/`service-v1` ceiling profiles are unchanged. Every decode report
+stamps the active profile and envelope versions. The Phase 2 performance gate
+(fixture wall time, peak RSS, cumulative charged bytes, semantic hash) ran the
+migrated codecs against the committed stage-1 baseline with no regression: all
+48 baseline entries hold their wall-clock and peak-allocation verdicts, and no
+fixture changed its decode semantics. The aggregated freeze and gate record is
+`crates/cadmpeg-harness/baselines/phase2-performance-gate.md`.
+
 ## CLI stream and exit contract
 
 `decode`, `export`, and `convert` reserve stdout for the output artifact; diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 3`, including semantic refusal paths. JSON output from `inspect`, `validate`, and `diff` uses the same CLI schema version. This envelope version is independent of `CadIr.ir_version`. Status 0 means success, status 1 means semantic failure or a non-empty diff, and status 2 means operational failure.
