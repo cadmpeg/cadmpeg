@@ -21,6 +21,10 @@ native CAD ── detect + inspect ──> container summary
 
 CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 3, including its required `subds` arena. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
 
+## Decode session
+
+The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`, so root-input limiting and the fused-context invariant hold once for every codec rather than per codec. `DecodeContext` owns the decode's monotonic state — budget counters, the depth gauge, the address-space registry, and record tickets — behind interior mutability; a `DecodeArena` owns byte buffers with stable addresses; and a `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field; the ownership model lives in `cadmpeg_ir::decode`.
+
 ## CLI stream and exit contract
 
 `decode`, `export`, and `convert` reserve stdout for the output artifact; diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 3`, including semantic refusal paths. JSON output from `inspect`, `validate`, and `diff` uses the same CLI schema version. This envelope version is independent of `CadIr.ir_version`. Status 0 means success, status 1 means semantic failure or a non-empty diff, and status 2 means operational failure.

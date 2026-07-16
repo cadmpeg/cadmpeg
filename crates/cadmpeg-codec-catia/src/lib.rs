@@ -64,6 +64,7 @@ pub mod zero_entity;
 use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
 };
+use cadmpeg_ir::decode::{DecodeContext, View};
 
 /// The CATIA V5 `.CATPart` codec.
 #[derive(Debug, Default, Clone, Copy)]
@@ -87,12 +88,17 @@ impl Codec for CatiaCodec {
         Ok(container::summarize(&scan))
     }
 
-    fn decode(
+    fn decode_impl(
         &self,
-        reader: &mut dyn ReadSeek,
-        options: &DecodeOptions,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        decode::decode(reader, options)
+        let options = DecodeOptions {
+            container_only: ctx.container_only(),
+            policy: *ctx.policy(),
+        };
+        let mut reader = std::io::Cursor::new(root.window());
+        decode::decode(&mut reader, &options)
     }
 }
 

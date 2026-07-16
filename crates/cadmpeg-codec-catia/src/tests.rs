@@ -3158,6 +3158,7 @@ fn container_only_stops_before_geometry() {
     let mut cur = Cursor::new(f);
     let opts = DecodeOptions {
         container_only: true,
+        ..Default::default()
     };
     let result = CatiaCodec.decode(&mut cur, &opts).unwrap();
     assert!(!result.report.geometry_transferred);
@@ -3191,6 +3192,7 @@ fn every_decode_path_populates_v1_annotations() {
             &mut Cursor::new(standard_catpart()),
             &DecodeOptions {
                 container_only: true,
+                ..Default::default()
             },
         )
         .unwrap();

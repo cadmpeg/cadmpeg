@@ -1578,6 +1578,7 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
                 &mut Cursor::new(bytes),
                 &DecodeOptions {
                     container_only: true,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -1606,6 +1607,7 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
                 &mut Cursor::new(bytes),
                 &DecodeOptions {
                     container_only: true,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -1627,6 +1629,7 @@ fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
             &mut Cursor::new(bytes),
             &DecodeOptions {
                 container_only: true,
+                ..Default::default()
             },
         );
         assert!(matches!(result, Err(CodecError::NotImplemented(_))));

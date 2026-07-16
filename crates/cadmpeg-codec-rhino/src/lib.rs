@@ -6,8 +6,9 @@
 //! decoding, and explicitly versioned semantic native writing.
 
 use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder, ReadSeek,
+    Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder, ReadSeek,
 };
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
 use std::io::Write;
@@ -104,12 +105,13 @@ impl Codec for RhinoCodec {
         container::inspect(reader)
     }
 
-    fn decode(
+    fn decode_impl(
         &self,
-        reader: &mut dyn ReadSeek,
-        options: &DecodeOptions,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        container::decode(reader, options.container_only)
+        let mut reader = std::io::Cursor::new(root.window());
+        container::decode(&mut reader, ctx.container_only())
     }
 }
 

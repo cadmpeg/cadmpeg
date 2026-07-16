@@ -9,7 +9,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::io::{Read, Seek, Write};
 
-use crate::decode::{ErrorContext, ResourceLimit, SourceLocation};
+use crate::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, ErrorContext, ResourceLimit, SourceLocation, View,
+};
 use crate::document::CadIr;
 use crate::report::DecodeReport;
 use crate::report::ExportReport;
@@ -86,6 +88,12 @@ pub struct ContainerSummary {
 pub struct DecodeOptions {
     /// Stop after the container layer; do not attempt entity decode.
     pub container_only: bool,
+    /// Resource limits and failure-handling mode governing the decode.
+    ///
+    /// Defaulted on deserialization so options serialized before this field
+    /// existed still parse, taking the desktop profile in salvage mode.
+    #[serde(default)]
+    pub policy: DecodePolicy,
 }
 
 /// A decoded document plus its loss report.
@@ -164,12 +172,35 @@ pub trait Codec {
     /// Enumerate the container's streams/segments without decoding geometry.
     fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>;
 
-    /// Decode the source and report any incomplete or approximate transfer.
+    /// Decode the acquired root view, reporting incomplete or approximate
+    /// transfer.
+    ///
+    /// Implemented by each codec; never called by the CLI or registry. The
+    /// provided [`Codec::decode`] wrapper acquires the root and finalizes the
+    /// context around this call.
+    fn decode_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<DecodeResult, CodecError>;
+
+    /// Decode the source, enforcing root-input limits and session invariants.
+    ///
+    /// The only public decode path. It acquires the root buffer under the
+    /// policy's input limit, records the container-only request, runs
+    /// [`Codec::decode_impl`], and finalizes the context so a fused decode
+    /// cannot return `Ok`.
     fn decode(
         &self,
         reader: &mut dyn ReadSeek,
         options: &DecodeOptions,
-    ) -> Result<DecodeResult, CodecError>;
+    ) -> Result<DecodeResult, CodecError> {
+        let arena = DecodeArena::new();
+        let (mut ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy)?;
+        ctx.set_container_only(options.container_only);
+        let result = self.decode_impl(&ctx, root);
+        ctx.finish(result)
+    }
 }
 
 /// A native-format writer.

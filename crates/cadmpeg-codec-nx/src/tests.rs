@@ -2847,6 +2847,7 @@ fn container_only_preserves_streams_without_geometry() {
     let mut cur = Cursor::new(single_part_prt());
     let opts = DecodeOptions {
         container_only: true,
+        ..Default::default()
     };
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
     assert!(!result.report.geometry_transferred);

@@ -170,6 +170,7 @@ impl DecodeArgs {
     fn options(&self) -> cadmpeg_ir::DecodeOptions {
         cadmpeg_ir::DecodeOptions {
             container_only: self.container_only,
+            ..Default::default()
         }
     }
 }
