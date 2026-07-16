@@ -9,6 +9,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::curve::CurveTopologyRow;
 
+fn uniquely_identified_rows(rows: &[CurveTopologyRow]) -> Vec<&CurveTopologyRow> {
+    let mut counts = BTreeMap::<u32, usize>::new();
+    for row in rows {
+        *counts.entry(row.id).or_default() += 1;
+    }
+    rows.iter()
+        .filter(|row| counts.get(&row.id) == Some(&1))
+        .collect()
+}
+
 /// A curve identifier paired with one of its two native sides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct HalfEdgeId {
@@ -162,14 +172,16 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdg
     (vertices, incidence)
 }
 
-/// Group non-null face references connected by curve topology rows.
+/// Group non-null face references connected by uniquely identified curve
+/// topology rows.
 ///
 /// Face identifier zero is a boundary sentinel, never a shell face. A curve
 /// contributes to a component when either of its sides names a nonzero face.
 pub fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
+    let rows = uniquely_identified_rows(rows);
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut face_curves = BTreeMap::<u32, BTreeSet<u32>>::new();
-    for row in rows {
+    for row in &rows {
         let [left, right] = row.faces;
         for face in [left, right].into_iter().filter(|face| *face != 0) {
             adjacency.entry(face).or_default();
@@ -206,12 +218,15 @@ pub fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
     components
 }
 
-/// Build half-edges and closed loops from curve topology rows.
+/// Build half-edges and closed loops from uniquely identified curve topology
+/// rows. Repeated curve identifiers define no derived topology because a
+/// half-edge identity cannot distinguish their sides.
 ///
 /// Ambiguous or missing successors remain `None` and cannot form loops.
 pub fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
+    let rows = uniquely_identified_rows(rows);
     let mut face_sides: BTreeMap<u32, Vec<HalfEdgeId>> = BTreeMap::new();
-    for row in rows {
+    for row in &rows {
         for side in 0..2 {
             face_sides
                 .entry(row.faces[side])
@@ -324,13 +339,28 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn duplicate_curve_identities_do_not_contribute_derived_topology() {
+        let rows = [row(1, 2), row(2, 1), row(2, 1)];
+
+        let (half_edges, loops) = build(&rows);
+        assert_eq!(half_edges.len(), 2);
+        assert!(half_edges.iter().all(|edge| edge.id.curve_id == 1));
+        assert!(half_edges.iter().all(|edge| edge.next.is_none()));
+        assert!(loops.is_empty());
+
+        let components = face_components(&rows);
+        assert_eq!(components.len(), 1);
+        assert_eq!(components[0].face_ids, [10, 20]);
+        assert_eq!(components[0].curve_ids, [1]);
+    }
     #[test]
     fn withholds_ambiguous_successors() {
         let (half_edges, loops) = build(&[
             row(1, 2),
-            row(2, 1),
             CurveTopologyRow {
-                faces: [10, 30],
+                faces: [10, 10],
                 ..row(2, 1)
             },
         ]);
