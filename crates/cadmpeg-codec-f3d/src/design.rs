@@ -3728,38 +3728,46 @@ pub fn project_sketch_constraints(
             let exact = relation.unknown_constraint_bits == 0
                 && relation.constraint_kinds.len() == 1
                 && member_entities.len() == relation.members.len();
-            let definition = exact
-                .then(|| exact_atomic_constraint(relation.constraint_kinds[0], &member_entities))
-                .flatten()
-                .or_else(|| exact_offset_constraint(relation, scope, &projected))
-                .unwrap_or_else(|| Definition::Native {
-                    native_kind: relation_kind_name(relation),
-                    entities: member_entities
-                        .iter()
-                        .map(|entity| entity.id.clone())
-                        .collect(),
-                    parameter: None,
-                    operands: relation
-                        .resolved_members
-                        .iter()
-                        .filter_map(|operand| {
-                            let record_index = relation_operand_index(operand);
-                            (!projected.contains_key(&(scope, record_index))).then(|| {
-                                SketchNativeOperand {
-                                    native_kind: relation_operand_kind(operand).into(),
-                                    object_index: record_index,
-                                    native_ref: point_native_refs
-                                        .get(&(scope, record_index))
-                                        .copied()
-                                        .or_else(|| {
-                                            curve_native_refs.get(&(scope, record_index)).copied()
-                                        })
-                                        .map(str::to_owned),
-                                }
-                            })
+            let definition = (if exact {
+                let kind = relation.constraint_kinds[0];
+                let loci = if kind == SketchConstraintKind::Coincident {
+                    exact_coincident_loci(&member_entities)
+                } else {
+                    None
+                };
+                loci.or_else(|| exact_atomic_constraint(kind, &member_entities))
+            } else {
+                None
+            })
+            .or_else(|| exact_offset_constraint(relation, scope, &projected))
+            .unwrap_or_else(|| Definition::Native {
+                native_kind: relation_kind_name(relation),
+                entities: member_entities
+                    .iter()
+                    .map(|entity| entity.id.clone())
+                    .collect(),
+                parameter: None,
+                operands: relation
+                    .resolved_members
+                    .iter()
+                    .filter_map(|operand| {
+                        let record_index = relation_operand_index(operand);
+                        (!projected.contains_key(&(scope, record_index))).then(|| {
+                            SketchNativeOperand {
+                                native_kind: relation_operand_kind(operand).into(),
+                                object_index: record_index,
+                                native_ref: point_native_refs
+                                    .get(&(scope, record_index))
+                                    .copied()
+                                    .or_else(|| {
+                                        curve_native_refs.get(&(scope, record_index)).copied()
+                                    })
+                                    .map(str::to_owned),
+                            }
                         })
-                        .collect(),
-                });
+                    })
+                    .collect(),
+            });
             Some(SketchConstraint {
                 id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
                 sketch,
@@ -4662,6 +4670,66 @@ fn exact_atomic_constraint(
         }
         _ => None,
     }
+}
+
+fn exact_coincident_loci(
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometry as Geometry, SketchLocus,
+    };
+
+    let loci = |entity: &cadmpeg_ir::sketches::SketchEntity| {
+        let mut loci = Vec::new();
+        if let Some([start, end]) = sketch_entity_endpoints(entity) {
+            loci.push((SketchLocus::Start(entity.id.clone()), start));
+            loci.push((SketchLocus::End(entity.id.clone()), end));
+        }
+        match &entity.geometry {
+            Geometry::Point { position } => {
+                loci.push((SketchLocus::Entity(entity.id.clone()), *position));
+            }
+            Geometry::Circle { center, .. }
+            | Geometry::Arc { center, .. }
+            | Geometry::Ellipse { center, .. } => {
+                loci.push((SketchLocus::Center(entity.id.clone()), *center));
+            }
+            Geometry::Line { .. } | Geometry::Nurbs { .. } | Geometry::Native { .. } => {}
+        }
+        loci
+    };
+
+    if entities.len() < 2 {
+        return None;
+    }
+    let loci = entities
+        .iter()
+        .map(|entity| loci(entity))
+        .collect::<Vec<_>>();
+    let mut solutions = Vec::new();
+    for (first_locus, position) in &loci[0] {
+        let mut solution = vec![first_locus.clone()];
+        for member_loci in loci.iter().skip(1) {
+            let matches = member_loci
+                .iter()
+                .filter(|(_, candidate)| {
+                    (candidate.u - position.u).hypot(candidate.v - position.v) <= 1.0e-9
+                })
+                .collect::<Vec<_>>();
+            let [matched] = matches.as_slice() else {
+                solution.clear();
+                break;
+            };
+            solution.push(matched.0.clone());
+        }
+        if solution.len() == entities.len() && !solutions.contains(&solution) {
+            solutions.push(solution);
+        }
+    }
+    let [loci] = solutions.as_slice() else {
+        return None;
+    };
+    Some(Definition::CoincidentLoci { loci: loci.clone() })
 }
 
 fn midpoint_constraint(
@@ -14076,6 +14144,50 @@ mod relation_tests {
             &[&first, &off_axis, &second],
         )
         .is_none());
+    }
+
+    #[test]
+    fn coincident_relation_projects_one_unique_shared_locus_per_member() {
+        let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let line = entity(
+            "generated:line#0",
+            SketchGeometry::Line {
+                start: Point2::new(1.0, 2.0),
+                end: Point2::new(4.0, 2.0),
+            },
+        );
+        let point = entity(
+            "generated:point#0",
+            SketchGeometry::Point {
+                position: Point2::new(1.0, 2.0),
+            },
+        );
+        assert_eq!(
+            super::exact_coincident_loci(&[&line, &point]),
+            Some(SketchConstraintDefinition::CoincidentLoci {
+                loci: vec![
+                    cadmpeg_ir::sketches::SketchLocus::Start(line.id.clone()),
+                    cadmpeg_ir::sketches::SketchLocus::Entity(point.id.clone()),
+                ],
+            })
+        );
+
+        let degenerate = entity(
+            "generated:line#degenerate",
+            SketchGeometry::Line {
+                start: Point2::new(1.0, 2.0),
+                end: Point2::new(1.0, 2.0),
+            },
+        );
+        assert!(super::exact_coincident_loci(&[&degenerate, &point]).is_none());
     }
 
     #[test]
