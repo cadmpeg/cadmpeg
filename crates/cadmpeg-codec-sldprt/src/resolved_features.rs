@@ -9391,7 +9391,7 @@ fn typed_relation_definition(
             let point = marker(0)
                 .and_then(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker));
             let line = marker(1).and_then(|marker| {
-                single_marker_curve_entity(marker, markers_by_id, loci_by_marker, sketch_entities)
+                single_marker_line_entity(marker, markers_by_id, loci_by_marker, sketch_entities)
             });
             let (mut point, mut line) = match (point, line) {
                 (Some(point), Some(line)) => (point, line),
@@ -9432,7 +9432,7 @@ fn typed_relation_definition(
         LineLineDistance => {
             let curve = |index| {
                 marker(index).and_then(|marker| {
-                    single_marker_curve_entity(
+                    single_marker_line_entity(
                         marker,
                         markers_by_id,
                         loci_by_marker,
@@ -9495,7 +9495,7 @@ fn typed_relation_definition(
         Angle => {
             let curve = |index| {
                 marker(index).and_then(|marker| {
-                    single_marker_curve_entity(
+                    single_marker_line_entity(
                         marker,
                         markers_by_id,
                         loci_by_marker,
@@ -10394,6 +10394,29 @@ fn single_marker_curve_entity(
                             | SketchGeometry::Arc { .. }
                     )
                 })
+        })
+        .collect::<Vec<_>>();
+    entities.sort();
+    entities.dedup();
+    let [entity] = entities.as_slice() else {
+        return None;
+    };
+    Some(entity.clone())
+}
+
+fn single_marker_line_entity(
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    sketch_entities: &[SketchEntity],
+) -> Option<SketchEntityId> {
+    let mut entities = marker_entities(marker_id, markers_by_id, loci_by_marker)
+        .into_iter()
+        .filter(|id| {
+            sketch_entities
+                .iter()
+                .find(|entity| entity.id == *id)
+                .is_some_and(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
         })
         .collect::<Vec<_>>();
     entities.sort();
@@ -11706,7 +11729,7 @@ mod profile_join_tests {
         project_dimensioned_sketch_geometry, project_relation_point_geometry,
         project_relation_solved_point_geometry, relation_operand_marker, relation_owner_markers,
         relation_parameter_by_display_name, resolved_marker_locus,
-        select_marker_transforms_by_frame, single_marker_curve_entity,
+        select_marker_transforms_by_frame, single_marker_curve_entity, single_marker_line_entity,
         sketch_frame_marker_transform, type_display_relation_parameters,
         typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
         typed_relation_definition, unique_axis_aligned_linked_loci,
@@ -12192,6 +12215,7 @@ mod profile_join_tests {
         let sketch = SketchId("sketch".into());
         let point_id = SketchEntityId("point".into());
         let line_id = SketchEntityId("line".into());
+        let circle_id = SketchEntityId("circle".into());
         let entities = vec![
             SketchEntity {
                 id: point_id.clone(),
@@ -12216,12 +12240,28 @@ mod profile_join_tests {
                     end: Point2::new(1.0, 0.0),
                 },
             },
+            SketchEntity {
+                id: circle_id.clone(),
+                sketch: SketchId("sketch".into()),
+                construction: false,
+                native_ref: Some("circle-marker".into()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Circle {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length(1.0),
+                },
+            },
         ];
         let loci = HashMap::from([
             ("curve-marker".into(), vec![SketchLocus::Entity(point_id)]),
             (
                 "line-marker".into(),
                 vec![SketchLocus::Entity(line_id.clone())],
+            ),
+            (
+                "circle-marker".into(),
+                vec![SketchLocus::Entity(circle_id.clone())],
             ),
         ]);
 
@@ -12232,6 +12272,14 @@ mod profile_join_tests {
         assert_eq!(
             single_marker_curve_entity("line-marker", &HashMap::new(), &loci, &entities),
             Some(line_id)
+        );
+        assert_eq!(
+            single_marker_line_entity("circle-marker", &HashMap::new(), &loci, &entities),
+            None
+        );
+        assert_eq!(
+            single_marker_curve_entity("circle-marker", &HashMap::new(), &loci, &entities),
+            Some(circle_id)
         );
     }
 
