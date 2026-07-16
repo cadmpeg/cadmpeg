@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked big-endian primitive readers shared by binary codecs.
+#![deny(clippy::disallowed_methods)]
 
 use crate::read::readers;
 

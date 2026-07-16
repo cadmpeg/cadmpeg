@@ -1,0 +1,115 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Per-module migration manifest for the platform-owned parsers in
+# `cadmpeg-ir` (doc section 8.6 / 10 Phase 2). One `[[module]]` entry per
+# module that reads untrusted bytes. `status` is `migrated` or `legacy`;
+# `window_egress` lists the audited `View::window()` sites the module is
+# allowed to keep, cross-referenced by the section 8.8 ratchet. `charges`
+# names the budget dimensions the module drives; `cost_model` states the
+# charge shape (never a flat unit per iteration). `ledger_level` is the
+# section 6.1 record-accounting level (0 for space-neutral primitives).
+
+# ---------------------------------------------------------------------------
+# Checked primitive readers. These are the legacy free-function readers that
+# every binary codec still uses in parallel with `View`. Each read is a pure
+# `Option` probe over a caller-owned slice: `bytes.get(offset..offset+count)`
+# bounds-checks before any dereference, all offset/length arithmetic is
+# `checked_*`, and the few allocating readers (`f64s_at`, `take_f64s`,
+# `utf16le_at`) size their `Vec` from a slice that already passed the bounds
+# check, so allocation is proportional to validated input, never to an
+# untrusted count. No disallowed accumulation method is reachable, so each
+# carries module-level `#[deny(clippy::disallowed_methods)]`.
+[[module]]
+path = "crates/cadmpeg-ir/src/read.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["sldprt_entity", "nx_geometry_curves", "catia_geometry_vertices", "f3d_sab_frame"]
+charges = []
+cost_model = "no budget charge; every read is a bounds-checked slice get, allocation proportional to the validated slice length"
+window_egress = []
+ledger_level = 0
+
+[[module]]
+path = "crates/cadmpeg-ir/src/le.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["sldprt_entity", "sldprt_spline_curves", "nx_nurbs_curves", "f3d_nurbs_curves"]
+charges = []
+cost_model = "no budget charge; fixed-width little-endian reads over bounds-checked slices, checked arithmetic on every offset"
+window_egress = []
+ledger_level = 0
+
+[[module]]
+path = "crates/cadmpeg-ir/src/be.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["rhino_nurbs", "rhino_object_record", "catia_geometry_surfaces"]
+charges = []
+cost_model = "no budget charge; fixed-width big-endian reads over bounds-checked slices, checked arithmetic on every offset"
+window_egress = []
+ledger_level = 0
+
+# ---------------------------------------------------------------------------
+# Retained source records. Pure data model plus deterministic serde; no
+# hostile-byte read path of its own, so it graduates with the deny lint and
+# no `req_*`/`BoundedCount` obligations.
+[[module]]
+path = "crates/cadmpeg-ir/src/unknown.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["ir_from_json", "ir_canonical_roundtrip"]
+charges = []
+cost_model = "no budget charge; a location/digest/links record with optional retained bytes, no framing decisions"
+window_egress = []
+ledger_level = 0
+
+# ---------------------------------------------------------------------------
+# Source-native namespaces. Converts codec-owned typed records to and from
+# the stored JSON arenas; input is validated document JSON, not raw untrusted
+# framing. Migrated off `Vec::with_capacity` (accumulation now flows through
+# an iterator `collect`, the only lint-legal build path) and carries the deny
+# lint. Sort keeps canonical identity order.
+[[module]]
+path = "crates/cadmpeg-ir/src/native/mod.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["ir_from_json", "ir_canonical_roundtrip"]
+charges = []
+cost_model = "no budget charge; per-record JSON object conversion over an in-memory slice, output proportional to input record count"
+window_egress = []
+ledger_level = 0
+
+# ---------------------------------------------------------------------------
+# Legacy zlib prefix helper. `inflate_zlib_prefix` runs `read_to_end` on a
+# `ZlibDecoder` with no output ceiling: a class-A decompression sink whose
+# output is proportional to attacker-controlled compression ratio, not input
+# size. The migrated, budget-charged decompression path is
+# `DecodeContext::begin_derived_space` / `ExpandWriter::write` in
+# `decode/context.rs`, which charges `decompressed_bytes`. This raw helper is
+# a drain target for its remaining callers (sldprt, nx parasolid) and stays
+# `legacy` until they route through the derived-space writer.
+[[module]]
+path = "crates/cadmpeg-ir/src/compression.rs"
+status = "legacy"
+input_spaces = []
+fuzz_targets = ["sldprt_parasolid", "nx_parasolid"]
+charges = []
+cost_model = "unbudgeted: raw read_to_end, output unbounded by input size; migrated path charges decompressed_bytes at ExpandWriter::write"
+window_egress = []
+ledger_level = 0
+
+# ---------------------------------------------------------------------------
+# Legacy cursor. The pre-`View` reader with the section 8.5 reference ratchet
+# still open; `read_values` calls `Vec::with_capacity(count)` on an untrusted
+# count, a class-A site the migration exists to drain. Superseded by `View`
+# (`decode/view.rs`) and its `BoundedCount`/`read_counted` API. Stays
+# `legacy` and keeps the crate-root allow until its references reach zero.
+[[module]]
+path = "crates/cadmpeg-ir/src/cursor.rs"
+status = "legacy"
+input_spaces = []
+fuzz_targets = ["sldprt_container", "nx_container", "catia_container"]
+charges = []
+cost_model = "unbudgeted legacy reader; with_capacity on an untrusted count, superseded by View::counted/read_counted"
+window_egress = []
+ledger_level = 0
