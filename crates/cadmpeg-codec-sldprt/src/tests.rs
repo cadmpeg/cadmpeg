@@ -8783,6 +8783,83 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
 }
 
 #[test]
+fn semantic_writer_rewrites_qualified_bare_equation_ids() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="Width" EquationId="D1">2mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="11"><Dimension Name="Result">D1@Sketch1 * 2</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let width = decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "Width")
+        .unwrap();
+    width.properties.insert("EquationId".into(), "D2".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let mut regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let result = regenerated
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Result")
+        .unwrap();
+    assert_eq!(result.expression, "D2@Sketch1 * 2");
+    assert_eq!(result.dependencies.len(), 1);
+    assert_eq!(
+        regenerated
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == "Width")
+            .unwrap()
+            .properties["EquationId"],
+        "D2"
+    );
+
+    regenerated
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "Width")
+        .unwrap()
+        .properties
+        .insert("EquationId".into(), "D3@Sketch1".into());
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&regenerated.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        regenerated
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == "Result")
+            .unwrap()
+            .expression,
+        "D3@Sketch1 * 2"
+    );
+}
+
+#[test]
 fn semantic_writer_preserves_empty_dimensions() {
     use cadmpeg_ir::features::{Length, ParameterValue};
 

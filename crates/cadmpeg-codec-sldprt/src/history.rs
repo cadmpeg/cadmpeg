@@ -724,7 +724,9 @@ fn parameter_aliases(
         if let Some(owner_name) = feature_names.get(&parameter.owner) {
             names.push(format!("{}@{owner_name}", parameter.name));
             if let Some(equation_id) = parameter.properties.get("EquationId") {
-                names.push(format!("{equation_id}@{owner_name}"));
+                if !equation_id.contains('@') {
+                    names.push(format!("{equation_id}@{owner_name}"));
+                }
             }
         }
         for alias in names {
@@ -4803,6 +4805,17 @@ fn rewrite_renamed_parameter_references(
                 .unwrap_or(&parameter.name);
             if previous_id != replacement {
                 aliases.insert(previous_id.clone(), replacement.clone());
+                if let Some(owner_name) = feature_names.get(&parameter.owner) {
+                    if !previous_id.contains('@') {
+                        let qualified_replacement = if replacement.contains('@') {
+                            replacement.clone()
+                        } else {
+                            format!("{replacement}@{owner_name}")
+                        };
+                        aliases
+                            .insert(format!("{previous_id}@{owner_name}"), qualified_replacement);
+                    }
+                }
             }
         }
         if !aliases.is_empty() {
