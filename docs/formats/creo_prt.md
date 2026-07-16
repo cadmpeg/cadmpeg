@@ -1008,7 +1008,10 @@ containment join uses a definition-scoped sketch history node.
 Every byte-bounded `AllFeatur` row denotes a history feature independently of
 whether the feature owns a materialized surface row. A recognized root schema
 class selects its neutral operation type. Other root schema classes retain a
-native operation with the schema class as a typed source property.
+native operation with the schema class as a typed source property. Rows sharing
+one feature identifier but carrying conflicting root schema classes still
+define one native history feature; the conflicting classes remain source
+properties and do not select a neutral operation family.
 
 Each `DEPDB_DATA` recipe row ends with its canonical `f7` recipe binding. Its
 body begins at the section boundary or immediately after the preceding recipe

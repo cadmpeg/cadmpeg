@@ -7664,14 +7664,20 @@ fn resolved_feature_schema_class(
     {
         return Some(schema_class);
     }
-    let classes = rows
-        .iter()
-        .filter(|row| row.feature_id == feature_id)
-        .filter_map(|row| row.root_schema_class)
-        .collect::<BTreeSet<_>>();
+    let classes = row_feature_schema_classes(rows, feature_id);
     let mut classes = classes.into_iter();
     let schema_class = classes.next()?;
     classes.next().is_none().then_some(schema_class)
+}
+
+fn row_feature_schema_classes(
+    rows: &[crate::feature::FeatureRow],
+    feature_id: u32,
+) -> BTreeSet<u32> {
+    rows.iter()
+        .filter(|row| row.feature_id == feature_id)
+        .filter_map(|row| row.root_schema_class)
+        .collect()
 }
 
 fn feature_revolution_extent(scan: &ContainerScan, feature_id: u32) -> Option<Extent> {
@@ -13002,6 +13008,10 @@ mod resolved_sketch_tests {
         assert_eq!(
             resolved_feature_schema_class(&[], &[row(913, 20), row(914, 30)], 6),
             None
+        );
+        assert_eq!(
+            row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
+            BTreeSet::from([913, 914])
         );
     }
 
@@ -20515,9 +20525,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
-        let Some(schema_class) = feature_schema_class(scan, feature_id) else {
-            continue;
-        };
+        let schema_class = feature_schema_class(scan, feature_id);
         let Some(offset) = scan
             .feature_rows
             .iter()
@@ -20527,7 +20535,9 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         else {
             continue;
         };
-        let kind = schema_operation_kind(schema_class).unwrap_or("Native Feature");
+        let kind = schema_class
+            .and_then(schema_operation_kind)
+            .unwrap_or("Native Feature");
         annotate(
             &mut annotations,
             &id,
@@ -20536,9 +20546,38 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             "schema_feature_operation",
             Exactness::ByteExact,
         );
-        let definition = schema_feature_definition(scan, &ir, feature_id, schema_class, kind);
         let parameters = feature_parameters(scan, feature_id);
         let mut source_properties = feature_source_properties(scan, feature_id);
+        let definition = schema_class.map_or_else(
+            || IrFeatureDefinition::Native {
+                kind: kind.to_string(),
+                parameters: parameters.clone(),
+                properties: BTreeMap::new(),
+            },
+            |schema_class| schema_feature_definition(scan, &ir, feature_id, schema_class, kind),
+        );
+        let row_schema_classes = row_feature_schema_classes(&scan.feature_rows, feature_id);
+        if schema_class.is_none() {
+            source_properties.insert(
+                "featdefs_schema_state".to_string(),
+                if row_schema_classes.is_empty() {
+                    "absent"
+                } else {
+                    "ambiguous"
+                }
+                .to_string(),
+            );
+        }
+        if !row_schema_classes.is_empty() {
+            source_properties.insert(
+                "featdefs_row_schema_classes".to_string(),
+                row_schema_classes
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        }
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         ir.model.features.push(Feature {
             id,
