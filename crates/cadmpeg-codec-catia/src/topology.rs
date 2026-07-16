@@ -5218,85 +5218,90 @@ impl MeshQuotient {
                 .checked_add(usize::from(!reversed))
         }
 
-        fn walk(
-            boundaries: &[Vec<MeshBoundaryEdgeCandidate>],
+        #[derive(Clone)]
+        struct State {
             boundary_index: usize,
             at: usize,
-            directions: &mut Vec<bool>,
-            mut quotient: MeshQuotient,
-            edge_candidates: &[Vec<[usize; 2]>],
-        ) -> bool {
-            if boundary_index == boundaries.len() {
-                return true;
-            }
-            let boundary = &boundaries[boundary_index];
-            if boundary.is_empty() {
-                return false;
-            }
-            if at == boundary.len() {
-                let Some(last_end) = edge_end(boundary[at - 1], directions[at - 1]) else {
-                    return false;
-                };
-                let Some(first_start) = edge_start(boundary[0], directions[0]) else {
-                    return false;
-                };
-                let Some(root) = quotient.merge(last_end, first_start) else {
-                    return false;
-                };
-                return quotient.propagate_component_edge_domains(root, edge_candidates)
-                    && walk(
-                        boundaries,
-                        boundary_index + 1,
-                        0,
-                        &mut Vec::new(),
-                        quotient,
-                        edge_candidates,
-                    );
-            }
-            let advance = |reversed, mut quotient: MeshQuotient, directions: &mut Vec<bool>| {
-                if at > 0 {
-                    let Some(previous_end) = edge_end(boundary[at - 1], directions[at - 1]) else {
-                        return false;
-                    };
-                    let Some(current_start) = edge_start(boundary[at], reversed) else {
-                        return false;
-                    };
-                    let Some(root) = quotient.merge(previous_end, current_start) else {
-                        return false;
-                    };
-                    if !quotient.propagate_component_edge_domains(root, edge_candidates) {
-                        return false;
-                    }
-                }
-                directions.push(reversed);
-                let supported = walk(
-                    boundaries,
-                    boundary_index,
-                    at + 1,
-                    directions,
-                    quotient,
-                    edge_candidates,
-                );
-                directions.pop();
-                supported
-            };
-            match boundary[at].reversed {
-                Some(reversed) => advance(reversed, quotient, directions),
-                None => {
-                    advance(false, quotient.clone(), directions)
-                        || advance(true, quotient, directions)
-                }
-            }
+            directions: Vec<bool>,
+            quotient: MeshQuotient,
         }
 
-        walk(
-            &assignment.boundaries,
-            0,
-            0,
-            &mut Vec::new(),
-            self.clone(),
-            edge_candidates,
-        )
+        fn advance(
+            state: &mut State,
+            boundary: &[MeshBoundaryEdgeCandidate],
+            reversed: bool,
+        ) -> bool {
+            if state.at > 0 {
+                let Some(previous_end) =
+                    edge_end(boundary[state.at - 1], state.directions[state.at - 1])
+                else {
+                    return false;
+                };
+                let Some(current_start) = edge_start(boundary[state.at], reversed) else {
+                    return false;
+                };
+                if state.quotient.merge(previous_end, current_start).is_none() {
+                    return false;
+                }
+            }
+            state.directions.push(reversed);
+            state.at += 1;
+            true
+        }
+
+        let mut states = vec![State {
+            boundary_index: 0,
+            at: 0,
+            directions: Vec::new(),
+            quotient: self.clone(),
+        }];
+        while let Some(mut state) = states.pop() {
+            loop {
+                if state.boundary_index == assignment.boundaries.len() {
+                    return true;
+                }
+                let boundary = &assignment.boundaries[state.boundary_index];
+                if boundary.is_empty() {
+                    break;
+                }
+                if state.at == boundary.len() {
+                    let Some(last_end) =
+                        edge_end(boundary[state.at - 1], state.directions[state.at - 1])
+                    else {
+                        break;
+                    };
+                    let Some(first_start) = edge_start(boundary[0], state.directions[0]) else {
+                        break;
+                    };
+                    if state.quotient.merge(last_end, first_start).is_none() {
+                        break;
+                    }
+                    if !state.quotient.edge_domains_viable(edge_candidates) {
+                        break;
+                    }
+                    state.boundary_index += 1;
+                    state.at = 0;
+                    state.directions.clear();
+                    continue;
+                }
+                if let Some(reversed) = boundary[state.at].reversed {
+                    if !advance(&mut state, boundary, reversed) {
+                        break;
+                    }
+                    continue;
+                }
+                for reversed in [true, false] {
+                    let mut next = state.clone();
+                    if advance(&mut next, boundary, reversed)
+                        && next.quotient.edge_domains_viable(edge_candidates)
+                    {
+                        states.push(next);
+                    }
+                }
+                break;
+            }
+        }
+        false
     }
 
     #[cfg(test)]
@@ -8961,6 +8966,29 @@ mod motif_tests {
         assert!(!quotient.assignment_has_option(&assignment, &[vec![], vec![]]));
         Arc::make_mut(&mut quotient.domains[3]).insert(0);
         assert!(quotient.assignment_has_option(&assignment, &[vec![], vec![]]));
+    }
+
+    #[test]
+    fn fixed_boundary_option_has_no_recursive_depth_limit() {
+        const EDGE_COUNT: usize = 10_000;
+        let quotient = MeshQuotient {
+            union: UnionFind::new(EDGE_COUNT * 2),
+            domains: vec![Arc::new(HashSet::from([0])); EDGE_COUNT * 2],
+            members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
+        };
+        let assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![(0..EDGE_COUNT)
+                .map(|edge| MeshBoundaryEdgeCandidate {
+                    edge,
+                    start: edge,
+                    end: (edge + 1) % EDGE_COUNT,
+                    reversed: Some(false),
+                })
+                .collect()],
+        };
+        let candidates = vec![vec![[0, 0]]; EDGE_COUNT];
+
+        assert!(quotient.assignment_has_option(&assignment, &candidates));
     }
 
     #[test]
