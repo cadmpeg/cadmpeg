@@ -598,10 +598,10 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
 fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     use crate::native::{
         DisplayJtBaseNodeData, DisplayJtCompressedElement, DisplayJtCompressedVertexRecordsHeader,
-        DisplayJtGeometricTransformAttribute, DisplayJtPolygonMesh, DisplayJtShapeLodBinding,
-        DisplayJtShapeLodElement, DisplayJtTriStripShapeNode, DisplayJtVertexColors,
-        DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates, DisplayJtVertexFlags,
-        DisplayJtVertexNormals, DisplayJtVertexTextureCoordinates,
+        DisplayJtGeometricTransformAttribute, DisplayJtInstanceNode, DisplayJtPolygonMesh,
+        DisplayJtShapeLodBinding, DisplayJtShapeLodElement, DisplayJtTriStripShapeNode,
+        DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates,
+        DisplayJtVertexFlags, DisplayJtVertexNormals, DisplayJtVertexTextureCoordinates,
     };
 
     let mesh = DisplayJtPolygonMesh {
@@ -683,6 +683,57 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         body_sha256: "00".repeat(32),
         inflated_offset: 0,
         source_offset: 120,
+    };
+    let instance_base = DisplayJtBaseNodeData {
+        id: "instance-base".into(),
+        element: "instance-element".into(),
+        object_type_id: vec![0; 16],
+        object_id: 11,
+        version: 1,
+        flags: 0,
+        attribute_object_ids: Vec::new(),
+        family_data_byte_len: 6,
+        family_data_sha256: "00".repeat(32),
+        source_offset: 122,
+    };
+    let instance_element = DisplayJtCompressedElement {
+        id: "instance-element".into(),
+        segment: "scene-segment".into(),
+        segment_type: 1,
+        ordinal: 1,
+        object_type_id: vec![0; 16],
+        object_base_type: 0,
+        object_id: 11,
+        body_byte_len: 0,
+        body_sha256: "00".repeat(32),
+        inflated_offset: 0,
+        source_offset: 122,
+    };
+    let instance = DisplayJtInstanceNode {
+        id: "instance-node".into(),
+        base_node: "instance-base".into(),
+        object_id: 11,
+        version: 1,
+        child_object_id: 9,
+        source_offset: 122,
+    };
+    let mut second_instance_base = instance_base.clone();
+    second_instance_base.id = "second-instance-base".into();
+    second_instance_base.element = "second-instance-element".into();
+    second_instance_base.object_id = 12;
+    second_instance_base.source_offset = 123;
+    let mut second_instance_element = instance_element.clone();
+    second_instance_element.id = "second-instance-element".into();
+    second_instance_element.ordinal = 2;
+    second_instance_element.object_id = 12;
+    second_instance_element.source_offset = 123;
+    let second_instance = DisplayJtInstanceNode {
+        id: "second-instance-node".into(),
+        base_node: "second-instance-base".into(),
+        object_id: 12,
+        version: 1,
+        child_object_id: 9,
+        source_offset: 123,
     };
     let transform = DisplayJtGeometricTransformAttribute {
         id: "transform".into(),
@@ -772,7 +823,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     };
 
     let tessellations =
-        crate::decode::display_jt_tessellations(crate::decode::DisplayJtTessellationInputs {
+        crate::decode::display_jt_tessellations(&crate::decode::DisplayJtTessellationInputs {
             meshes: &[mesh],
             coordinates: &[coordinates],
             normals: &[normals],
@@ -784,14 +835,15 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
             shape_elements: &[shape_element],
             bindings: &[binding],
             shape_nodes: &[node],
-            base_nodes: &[base],
+            base_nodes: &[base, instance_base, second_instance_base],
+            instance_nodes: &[instance, second_instance],
             transforms: &[transform],
             partition_nodes: &[],
             range_lod_nodes: &[],
-            compressed_elements: &[compressed],
+            compressed_elements: &[compressed, instance_element, second_instance_element],
         })
         .expect("complete scene binding");
-    assert_eq!(tessellations.len(), 1);
+    assert_eq!(tessellations.len(), 2);
     assert!((tessellations[0].0.vertices[1].x - 12.0).abs() < 1e-6);
     assert!((tessellations[0].0.vertices[2].y - 26.0).abs() < 1e-6);
     assert_eq!(tessellations[0].0.triangles, vec![[0, 1, 2]]);
@@ -802,6 +854,24 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     assert_eq!(
         tessellations[0].0.source_object.as_ref().unwrap().object_id,
         "shape-node"
+    );
+    assert_eq!(
+        tessellations[0]
+            .0
+            .source_object
+            .as_ref()
+            .unwrap()
+            .instance_path,
+        ["instance-node"]
+    );
+    assert_eq!(
+        tessellations[1]
+            .0
+            .source_object
+            .as_ref()
+            .unwrap()
+            .instance_path,
+        ["second-instance-node"]
     );
     assert_eq!(tessellations[0].0.channels.len(), 3);
     assert_eq!(tessellations[0].0.channels[0].kind, 0x4e58_0001);
