@@ -6063,11 +6063,7 @@ pub fn terminal_feature_body_indices(
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
 ) -> Option<BTreeSet<u32>> {
-    let sections = labels
-        .iter()
-        .map(|label| label.section_link.as_str())
-        .collect::<BTreeSet<_>>();
-    if sections.len() != 1 || (references.is_empty() && bindings.is_empty()) {
+    if references.is_empty() && bindings.is_empty() {
         return None;
     }
     let positions = labels

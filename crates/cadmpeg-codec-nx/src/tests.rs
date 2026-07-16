@@ -5240,6 +5240,45 @@ fn feature_body_lineage_excludes_tools_consumed_after_their_latest_writer() {
 }
 
 #[test]
+fn feature_body_lineage_continues_across_ordered_history_sections() {
+    use crate::native::{
+        FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
+    };
+
+    let label = |id: &str, section_link: &str, ordinal, value: &str| FeatureOperationLabel {
+        id: id.to_string(),
+        section_link: section_link.to_string(),
+        ordinal,
+        value: value.to_string(),
+        object_indices: [None; 4],
+        source_offset: u64::from(ordinal),
+    };
+    let labels = [
+        label("operation#early", "history#0", 0, "EXTRUDE"),
+        label("operation#late", "history#1", 0, "UNITE"),
+    ];
+    let references = [FeatureBodyReference {
+        id: "reference#20".to_string(),
+        operation_label: "operation#early".to_string(),
+        body_object_index: 20,
+        source_offset: 0,
+    }];
+    let booleans = [FeatureBooleanOperation {
+        id: "boolean#0".to_string(),
+        operation_label: "operation#late".to_string(),
+        kind: FeatureBooleanKind::Unite,
+        target_object_index: 10,
+        tool_object_indices: vec![20],
+        source_offset: 1,
+    }];
+
+    assert_eq!(
+        crate::native::terminal_feature_body_indices(&labels, &references, &booleans, &[], &[],),
+        Some(std::collections::BTreeSet::new())
+    );
+}
+
+#[test]
 fn segment_body_lineage_statuses_cover_every_bound_image() {
     use crate::native::{
         segment_body_lineage_statuses, FeatureBodyReference, FeatureBooleanKind,
