@@ -2671,11 +2671,11 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
     use cadmpeg_ir::document::{CadIr, Model, IR_VERSION};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
-        CoedgeId, CurveId, EdgeId, FaceId, LoopId, ShellId, SurfaceId, VertexId,
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::native::Native;
-    use cadmpeg_ir::topology::{Coedge, Edge, Face, Sense};
+    use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
     use cadmpeg_ir::units::{Tolerances, Units};
     use cadmpeg_ir::{Annotations, SourceObjectAssociation};
 
@@ -2728,6 +2728,28 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
             tolerance: None,
         });
     }
+    let body = BodyId("body".into());
+    model.bodies.push(Body {
+        id: body.clone(),
+        kind: BodyKind::Solid,
+        regions: vec![RegionId("region".into())],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    model.regions.push(Region {
+        id: RegionId("region".into()),
+        body: body.clone(),
+        shells: vec![ShellId("shell".into())],
+    });
+    model.shells.push(Shell {
+        id: ShellId("shell".into()),
+        region: RegionId("region".into()),
+        faces: vec![FaceId("face-0".into()), FaceId("face-1".into())],
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    });
     let ir = CadIr {
         ir_version: IR_VERSION.into(),
         source: None,
@@ -2737,18 +2759,72 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
         annotations: Annotations::default(),
         native: Native::default(),
     };
+    let outputs = std::collections::BTreeMap::from([
+        ("hole-a".to_string(), vec![body.clone()]),
+        ("hole-b".to_string(), vec![body]),
+    ]);
     assert_eq!(
-        crate::decode::simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group)),
+        crate::decode::simple_hole_diameters(
+            &ir,
+            &templates,
+            std::slice::from_ref(&group),
+            &outputs,
+        ),
         std::collections::BTreeMap::from([
             ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
             ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
         ])
     );
     assert_eq!(
-        crate::decode::simple_hole_diameters(&ir, &templates, &[]),
+        crate::decode::simple_hole_diameters(&ir, &templates, &[], &outputs),
         std::collections::BTreeMap::from([
             ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
             ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+        ])
+    );
+
+    let mut distinct = ir.clone();
+    distinct.model.shells[0].faces.pop();
+    distinct.model.bodies.push(Body {
+        id: BodyId("second-body".into()),
+        kind: BodyKind::Solid,
+        regions: vec![RegionId("second-region".into())],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    distinct.model.regions.push(Region {
+        id: RegionId("second-region".into()),
+        body: BodyId("second-body".into()),
+        shells: vec![ShellId("second-shell".into())],
+    });
+    distinct.model.shells.push(Shell {
+        id: ShellId("second-shell".into()),
+        region: RegionId("second-region".into()),
+        faces: vec![FaceId("face-1".into())],
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    });
+    distinct.model.faces[1].shell = ShellId("second-shell".into());
+    let SurfaceGeometry::Cylinder { radius, .. } = &mut distinct.model.surfaces[1].geometry else {
+        unreachable!()
+    };
+    *radius = 3.0;
+    let distinct_outputs = std::collections::BTreeMap::from([
+        ("hole-a".to_string(), vec![BodyId("body".into())]),
+        ("hole-b".to_string(), vec![BodyId("second-body".into())]),
+    ]);
+    assert_eq!(
+        crate::decode::simple_hole_diameters(
+            &distinct,
+            &templates,
+            std::slice::from_ref(&group),
+            &distinct_outputs,
+        ),
+        std::collections::BTreeMap::from([
+            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
+            ("hole-b".into(), cadmpeg_ir::features::Length(6.0)),
         ])
     );
 
@@ -2852,7 +2928,10 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
         unreachable!()
     };
     *radius = 3.0;
-    assert!(crate::decode::simple_hole_diameters(&mismatched, &templates, &[group]).is_empty());
+    assert!(
+        crate::decode::simple_hole_diameters(&mismatched, &templates, &[group], &outputs,)
+            .is_empty()
+    );
 }
 
 #[test]

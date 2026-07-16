@@ -9493,8 +9493,45 @@ fn attach_feature_operations(
     for triples in operation_body_scalar_triples_by_operation.values_mut() {
         triples.sort_by_key(|triple| triple.body_reference_ordinal);
     }
-    let simple_hole_diameters =
-        simple_hole_diameters(ir, simple_hole_templates, simple_hole_construction_groups);
+    let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
+    for binding in body_bindings {
+        let prefix = format!("nx:s{}:", binding.stream_ordinal);
+        let mut stream_bodies = Vec::new();
+        for body in ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| body.id.0.starts_with(&prefix))
+        {
+            if !stream_bodies.contains(&body.id) {
+                stream_bodies.push(body.id.clone());
+            }
+        }
+        for identity in [binding.body_object_index, binding.body_alias_object_index] {
+            let bodies = bodies_by_object_index.entry(identity).or_default();
+            for body in &stream_bodies {
+                if !bodies.contains(body) {
+                    bodies.push(body.clone());
+                }
+            }
+        }
+    }
+    let hole_outputs = simple_hole_templates
+        .iter()
+        .filter_map(|template| {
+            let object_index = body_references.get(template.operation_label.as_str())?;
+            Some((
+                template.operation_label.clone(),
+                feature_body_outputs(*object_index, &bodies_by_object_index),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let simple_hole_diameters = simple_hole_diameters(
+        ir,
+        simple_hole_templates,
+        simple_hole_construction_groups,
+        &hole_outputs,
+    );
     let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates);
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
@@ -9527,29 +9564,6 @@ fn attach_feature_operations(
             .entry(operation)
             .or_default()
             .push(value);
-    }
-    let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
-    for binding in body_bindings {
-        let prefix = format!("nx:s{}:", binding.stream_ordinal);
-        let mut stream_bodies = Vec::new();
-        for body in ir
-            .model
-            .bodies
-            .iter()
-            .filter(|body| body.id.0.starts_with(&prefix))
-        {
-            if !stream_bodies.contains(&body.id) {
-                stream_bodies.push(body.id.clone());
-            }
-        }
-        for identity in [binding.body_object_index, binding.body_alias_object_index] {
-            let bodies = bodies_by_object_index.entry(identity).or_default();
-            for body in &stream_bodies {
-                if !bodies.contains(body) {
-                    bodies.push(body.clone());
-                }
-            }
-        }
     }
     for (ordinal, label) in labels.iter().enumerate() {
         let key = label.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
@@ -10658,6 +10672,7 @@ pub(crate) fn simple_hole_diameters(
     ir: &CadIr,
     templates: &[crate::native::FeatureSimpleHoleTemplate],
     groups: &[crate::native::FeatureSimpleHoleConstructionGroup],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, Length> {
     let template_operations = templates
         .iter()
@@ -10691,39 +10706,58 @@ pub(crate) fn simple_hole_diameters(
         _ => return BTreeMap::new(),
     };
 
+    let mut operations_by_body = BTreeMap::<BodyId, Vec<String>>::new();
+    for operation in operations {
+        let Some([body]) = outputs.get(&operation).map(Vec::as_slice) else {
+            return BTreeMap::new();
+        };
+        operations_by_body
+            .entry(body.clone())
+            .or_default()
+            .push(operation);
+    }
+
     let surfaces = ir
         .model
         .surfaces
         .iter()
         .map(|surface| (&surface.id, &surface.geometry))
         .collect::<BTreeMap<_, _>>();
-    let radii = ir
-        .model
-        .faces
-        .iter()
-        .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-        .filter_map(|face| match surfaces.get(&face.surface)? {
-            SurfaceGeometry::Cylinder { radius, .. } if radius.is_finite() && *radius > 0.0 => {
-                Some(*radius)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let Some(radius) = radii.first().copied() else {
-        return BTreeMap::new();
-    };
-    if radii.len() != operations.len()
-        || radii
+    let mut diameters = BTreeMap::new();
+    for (body, operations) in operations_by_body {
+        let Some(body_surfaces) = body_surface_ids(ir, &body) else {
+            return BTreeMap::new();
+        };
+        let radii = ir
+            .model
+            .faces
             .iter()
-            .any(|candidate| candidate.to_bits() != radius.to_bits())
-    {
-        return BTreeMap::new();
+            .filter(|face| body_surfaces.contains(&face.surface))
+            .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
+            .filter_map(|face| match surfaces.get(&face.surface)? {
+                SurfaceGeometry::Cylinder { radius, .. } if radius.is_finite() && *radius > 0.0 => {
+                    Some(*radius)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let Some(radius) = radii.first().copied() else {
+            return BTreeMap::new();
+        };
+        if radii.len() != operations.len()
+            || radii
+                .iter()
+                .any(|candidate| candidate.to_bits() != radius.to_bits())
+        {
+            return BTreeMap::new();
+        }
+        diameters.extend(
+            operations
+                .into_iter()
+                .map(|operation| (operation, Length(radius * 2.0))),
+        );
     }
-    operations
-        .iter()
-        .cloned()
-        .map(|operation| (operation, Length(radius * 2.0)))
-        .collect()
+    diameters
 }
 
 /// Derive identical entry and exit chamfer treatments only when every simple
