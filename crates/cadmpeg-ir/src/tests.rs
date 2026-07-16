@@ -1235,6 +1235,31 @@ fn degenerate_plane_normal_is_flagged() {
 }
 
 #[test]
+fn analytic_frames_must_be_orthonormal() {
+    let mut ir = unit_cube();
+    let surface_id = ir.model.surfaces[0].id.0.clone();
+    let curve_id = ir.model.curves[0].id.0.clone();
+    if let SurfaceGeometry::Plane { normal, u_axis, .. } = &mut ir.model.surfaces[0].geometry {
+        *normal = Vector3::new(0.0, 0.0, 2.0);
+        *u_axis = Vector3::new(0.0, 0.0, 1.0);
+    }
+    if let CurveGeometry::Line { direction, .. } = &mut ir.model.curves[0].geometry {
+        *direction = Vector3::new(2.0, 0.0, 0.0);
+    }
+
+    let report = validate(&ir, Vec::new());
+
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(surface_id.as_str())
+            && finding.message == "plane frame is not orthonormal"
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(curve_id.as_str())
+            && finding.message == "line direction is not unit length"
+    }));
+}
+
+#[test]
 fn new_topology_references_are_validated() {
     let mut ir = unit_cube();
     ir.model.shells[0]

@@ -153,6 +153,16 @@ pub(super) fn degenerate(v: &Vector3) -> bool {
     v.norm() <= f64::EPSILON
 }
 
+fn unit_vector(v: &Vector3) -> bool {
+    (v.norm() - 1.0).abs() <= 1.0e-9
+}
+
+fn orthonormal(left: &Vector3, right: &Vector3) -> bool {
+    unit_vector(left)
+        && unit_vector(right)
+        && (left.x * right.x + left.y * right.y + left.z * right.z).abs() <= 1.0e-9
+}
+
 fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bool {
     use crate::geometry::VariableBlendValuePayload;
     let finite = |values: &[f64]| values.iter().all(|value| value.is_finite());
@@ -242,11 +252,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
     for s in &ir.model.surfaces {
         match &s.geometry {
             SurfaceGeometry::Plane { normal, u_axis, .. } => {
-                if degenerate(normal) {
-                    bounds_err(findings, &s.id.0, "plane normal is degenerate");
-                }
-                if degenerate(u_axis) {
-                    bounds_err(findings, &s.id.0, "plane u axis is degenerate");
+                if !orthonormal(normal, u_axis) {
+                    bounds_err(findings, &s.id.0, "plane frame is not orthonormal");
                 }
             }
             SurfaceGeometry::Cylinder {
@@ -255,15 +262,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 radius,
                 ..
             } => {
-                if degenerate(axis) {
-                    bounds_err(findings, &s.id.0, "cylinder axis is degenerate");
-                }
-                if degenerate(ref_direction) {
-                    bounds_err(
-                        findings,
-                        &s.id.0,
-                        "cylinder reference direction is degenerate",
-                    );
+                if !orthonormal(axis, ref_direction) {
+                    bounds_err(findings, &s.id.0, "cylinder frame is not orthonormal");
                 }
                 if nonpositive(*radius) {
                     bounds_err(findings, &s.id.0, "cylinder radius is not positive");
@@ -276,11 +276,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 ratio,
                 ..
             } => {
-                if degenerate(axis) {
-                    bounds_err(findings, &s.id.0, "cone axis is degenerate");
-                }
-                if degenerate(ref_direction) {
-                    bounds_err(findings, &s.id.0, "cone reference direction is degenerate");
+                if !orthonormal(axis, ref_direction) {
+                    bounds_err(findings, &s.id.0, "cone frame is not orthonormal");
                 }
                 if *radius < 0.0 {
                     bounds_err(findings, &s.id.0, "cone radius is negative");
@@ -295,15 +292,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 radius,
                 ..
             } => {
-                if degenerate(axis) {
-                    bounds_err(findings, &s.id.0, "sphere axis is degenerate");
-                }
-                if degenerate(ref_direction) {
-                    bounds_err(
-                        findings,
-                        &s.id.0,
-                        "sphere reference direction is degenerate",
-                    );
+                if !orthonormal(axis, ref_direction) {
+                    bounds_err(findings, &s.id.0, "sphere frame is not orthonormal");
                 }
                 if radius.abs() <= f64::EPSILON {
                     bounds_err(findings, &s.id.0, "sphere radius is zero");
@@ -316,11 +306,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 minor_radius,
                 ..
             } => {
-                if degenerate(axis) {
-                    bounds_err(findings, &s.id.0, "torus axis is degenerate");
-                }
-                if degenerate(ref_direction) {
-                    bounds_err(findings, &s.id.0, "torus reference direction is degenerate");
+                if !orthonormal(axis, ref_direction) {
+                    bounds_err(findings, &s.id.0, "torus frame is not orthonormal");
                 }
                 if nonpositive(*major_radius) || minor_radius.abs() <= f64::EPSILON {
                     bounds_err(
@@ -1379,23 +1366,33 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
     for c in &ir.model.curves {
         match &c.geometry {
             CurveGeometry::Line { direction, .. } => {
-                if degenerate(direction) {
-                    bounds_err(findings, &c.id.0, "line direction is degenerate");
+                if !unit_vector(direction) {
+                    bounds_err(findings, &c.id.0, "line direction is not unit length");
                 }
             }
-            CurveGeometry::Circle { axis, radius, .. } => {
-                if degenerate(axis) {
-                    bounds_err(findings, &c.id.0, "circle axis is degenerate");
+            CurveGeometry::Circle {
+                axis,
+                ref_direction,
+                radius,
+                ..
+            } => {
+                if !orthonormal(axis, ref_direction) {
+                    bounds_err(findings, &c.id.0, "circle frame is not orthonormal");
                 }
                 if nonpositive(*radius) {
                     bounds_err(findings, &c.id.0, "circle radius is not positive");
                 }
             }
             CurveGeometry::Ellipse {
+                axis,
+                major_direction,
                 major_radius,
                 minor_radius,
                 ..
             } => {
+                if !orthonormal(axis, major_direction) {
+                    bounds_err(findings, &c.id.0, "ellipse frame is not orthonormal");
+                }
                 if nonpositive(*major_radius) || nonpositive(*minor_radius) {
                     bounds_err(findings, &c.id.0, "ellipse radius is not positive");
                 }
@@ -1406,8 +1403,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 focal_distance,
                 ..
             } => {
-                if degenerate(axis) || degenerate(major_direction) {
-                    bounds_err(findings, &c.id.0, "parabola frame is degenerate");
+                if !orthonormal(axis, major_direction) {
+                    bounds_err(findings, &c.id.0, "parabola frame is not orthonormal");
                 }
                 if nonpositive(*focal_distance) {
                     bounds_err(findings, &c.id.0, "parabola focal distance is not positive");
@@ -1420,8 +1417,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 minor_radius,
                 ..
             } => {
-                if degenerate(axis) || degenerate(major_direction) {
-                    bounds_err(findings, &c.id.0, "hyperbola frame is degenerate");
+                if !orthonormal(axis, major_direction) {
+                    bounds_err(findings, &c.id.0, "hyperbola frame is not orthonormal");
                 }
                 if nonpositive(*major_radius) || nonpositive(*minor_radius) {
                     bounds_err(findings, &c.id.0, "hyperbola radius is not positive");
