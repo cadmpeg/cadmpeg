@@ -114,6 +114,22 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+    let inferred_configurations = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.native_ref.is_none())
+        .count();
+    if inferred_configurations > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{inferred_configurations} configuration state(s) are inferred from geometry partitions without native configuration definitions."
+            ),
+            provenance: None,
+        });
+    }
 
     let feature_names = ir
         .model

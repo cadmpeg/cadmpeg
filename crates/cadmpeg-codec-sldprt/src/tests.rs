@@ -4438,6 +4438,23 @@ fn decode_preserves_unresolved_active_configuration() {
 }
 
 #[test]
+fn decode_reports_partition_inferred_configuration() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(decoded.ir.model.configurations.len(), 1);
+    assert!(decoded.ir.model.configurations[0].native_ref.is_none());
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.message
+            == "1 configuration state(s) are inferred from geometry partitions without native configuration definitions."
+    }));
+}
+
+#[test]
 fn encoder_partitions_source_less_bodies_by_configuration() {
     use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -6917,10 +6934,10 @@ fn decode_binds_entity53_color_to_face() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(
-        result.report.losses.is_empty(),
-        "{:#?}",
-        result.report.losses
+    assert_eq!(result.report.losses.len(), 1, "{:#?}", result.report.losses);
+    assert_eq!(
+        result.report.losses[0].message,
+        "1 configuration state(s) are inferred from geometry partitions without native configuration definitions."
     );
     let binding = result
         .ir
