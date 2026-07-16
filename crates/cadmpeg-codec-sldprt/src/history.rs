@@ -560,6 +560,7 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
         })
         .collect::<Vec<_>>();
     populate_parameter_dependencies(&mut parameters, &feature_names);
+    evaluate_parameter_expressions(&mut parameters, &feature_names);
     parameters
 }
 
@@ -654,6 +655,282 @@ fn parameter_aliases(
         }
     }
     aliases
+}
+
+fn evaluate_parameter_expressions(
+    parameters: &mut [DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+) {
+    let aliases = parameter_aliases(parameters, feature_names);
+    let mut values = parameters
+        .iter()
+        .filter_map(|parameter| {
+            parameter
+                .value
+                .clone()
+                .map(|value| (parameter.id.clone(), value))
+        })
+        .collect::<HashMap<_, _>>();
+    loop {
+        let mut changed = false;
+        for parameter in parameters
+            .iter_mut()
+            .filter(|parameter| parameter.value.is_none())
+        {
+            let Some(value) =
+                ParameterExpressionParser::new(&parameter.expression, &aliases, &values).parse()
+            else {
+                continue;
+            };
+            if !parameter_value_is_finite(&value) {
+                continue;
+            }
+            values.insert(parameter.id.clone(), value.clone());
+            parameter.value = Some(value);
+            changed = true;
+        }
+        if !changed {
+            break;
+        }
+    }
+}
+
+struct ParameterExpressionParser<'a> {
+    input: &'a str,
+    offset: usize,
+    aliases: &'a HashMap<String, Option<ParameterId>>,
+    values: &'a HashMap<ParameterId, ParameterValue>,
+}
+
+impl<'a> ParameterExpressionParser<'a> {
+    fn new(
+        input: &'a str,
+        aliases: &'a HashMap<String, Option<ParameterId>>,
+        values: &'a HashMap<ParameterId, ParameterValue>,
+    ) -> Self {
+        Self {
+            input,
+            offset: 0,
+            aliases,
+            values,
+        }
+    }
+
+    fn parse(mut self) -> Option<ParameterValue> {
+        let value = self.sum()?;
+        self.skip_space();
+        (self.offset == self.input.len()).then_some(value)
+    }
+
+    fn sum(&mut self) -> Option<ParameterValue> {
+        let mut value = self.product()?;
+        loop {
+            self.skip_space();
+            let op = self.take_one(&['+', '-']);
+            let Some(op) = op else { return Some(value) };
+            value = add_parameter_values(value, self.product()?, op == '-')?;
+        }
+    }
+
+    fn product(&mut self) -> Option<ParameterValue> {
+        let mut value = self.unary()?;
+        loop {
+            self.skip_space();
+            let op = self.take_one(&['*', '/']);
+            let Some(op) = op else { return Some(value) };
+            value = multiply_parameter_values(value, self.unary()?, op == '/')?;
+        }
+    }
+
+    fn unary(&mut self) -> Option<ParameterValue> {
+        self.skip_space();
+        if self.take('-') {
+            negate_parameter_value(&self.unary()?)
+        } else if self.take('+') {
+            self.unary()
+        } else {
+            self.primary()
+        }
+    }
+
+    fn primary(&mut self) -> Option<ParameterValue> {
+        self.skip_space();
+        if self.take('(') {
+            let value = self.sum()?;
+            self.skip_space();
+            return self.take(')').then_some(value);
+        }
+        let token = self.token()?;
+        parse_parameter_literal(&token).or_else(|| {
+            self.aliases
+                .get(&token)
+                .and_then(Clone::clone)
+                .and_then(|id| self.values.get(&id).cloned())
+        })
+    }
+
+    fn token(&mut self) -> Option<String> {
+        let rest = &self.input[self.offset..];
+        if rest.starts_with('"') {
+            self.offset += 1;
+            let mut value = String::new();
+            while self.offset < self.input.len() {
+                let rest = &self.input[self.offset..];
+                if rest.starts_with("\"\"") {
+                    value.push('"');
+                    self.offset += 2;
+                } else if rest.starts_with('"') {
+                    self.offset += 1;
+                    return Some(value);
+                } else {
+                    let character = rest.chars().next()?;
+                    value.push(character);
+                    self.offset += character.len_utf8();
+                }
+            }
+            return None;
+        }
+        let start = self.offset;
+        while self.offset < self.input.len() {
+            let character = self.input[self.offset..].chars().next()?;
+            if character.is_whitespace() || "+-*/()".contains(character) {
+                break;
+            }
+            self.offset += character.len_utf8();
+        }
+        (self.offset > start).then(|| self.input[start..self.offset].to_string())
+    }
+
+    fn skip_space(&mut self) {
+        while let Some(character) = self.input[self.offset..].chars().next() {
+            if !character.is_whitespace() {
+                break;
+            }
+            self.offset += character.len_utf8();
+        }
+    }
+
+    fn take(&mut self, expected: char) -> bool {
+        if self.input[self.offset..].starts_with(expected) {
+            self.offset += expected.len_utf8();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn take_one(&mut self, expected: &[char]) -> Option<char> {
+        let character = self.input[self.offset..].chars().next()?;
+        expected.contains(&character).then(|| {
+            self.offset += character.len_utf8();
+            character
+        })
+    }
+}
+
+fn negate_parameter_value(value: &ParameterValue) -> Option<ParameterValue> {
+    Some(match value {
+        ParameterValue::Length(Length(value)) => ParameterValue::Length(Length(-*value)),
+        ParameterValue::Angle(Angle(value)) => ParameterValue::Angle(Angle(-*value)),
+        ParameterValue::Real(value) => ParameterValue::Real(-*value),
+        ParameterValue::Integer(value) => ParameterValue::Integer(value.checked_neg()?),
+        ParameterValue::Boolean(_) => return None,
+    })
+}
+
+fn add_parameter_values(
+    left: ParameterValue,
+    right: ParameterValue,
+    subtract: bool,
+) -> Option<ParameterValue> {
+    let sign = if subtract { -1.0 } else { 1.0 };
+    Some(match (left, right) {
+        (ParameterValue::Length(Length(left)), ParameterValue::Length(Length(right))) => {
+            ParameterValue::Length(Length(left + sign * right))
+        }
+        (ParameterValue::Angle(Angle(left)), ParameterValue::Angle(Angle(right))) => {
+            ParameterValue::Angle(Angle(left + sign * right))
+        }
+        (ParameterValue::Integer(left), ParameterValue::Integer(right)) => {
+            let right = if subtract {
+                right.checked_neg()?
+            } else {
+                right
+            };
+            ParameterValue::Integer(left.checked_add(right)?)
+        }
+        (left, right) => ParameterValue::Real(
+            real_parameter_value(&left)? + sign * real_parameter_value(&right)?,
+        ),
+    })
+}
+
+fn multiply_parameter_values(
+    left: ParameterValue,
+    right: ParameterValue,
+    divide: bool,
+) -> Option<ParameterValue> {
+    if divide && parameter_numeric_value(&right)? == 0.0 {
+        return None;
+    }
+    match (left, right) {
+        (ParameterValue::Length(Length(left)), ParameterValue::Length(Length(right))) if divide => {
+            Some(ParameterValue::Real(left / right))
+        }
+        (ParameterValue::Angle(Angle(left)), ParameterValue::Angle(Angle(right))) if divide => {
+            Some(ParameterValue::Real(left / right))
+        }
+        (ParameterValue::Length(Length(left)), right) => {
+            Some(ParameterValue::Length(Length(if divide {
+                left / real_parameter_value(&right)?
+            } else {
+                left * real_parameter_value(&right)?
+            })))
+        }
+        (ParameterValue::Angle(Angle(left)), right) => {
+            Some(ParameterValue::Angle(Angle(if divide {
+                left / real_parameter_value(&right)?
+            } else {
+                left * real_parameter_value(&right)?
+            })))
+        }
+        (left, ParameterValue::Length(Length(right))) if !divide => Some(ParameterValue::Length(
+            Length(real_parameter_value(&left)? * right),
+        )),
+        (left, ParameterValue::Angle(Angle(right))) if !divide => Some(ParameterValue::Angle(
+            Angle(real_parameter_value(&left)? * right),
+        )),
+        (ParameterValue::Integer(left), ParameterValue::Integer(right)) if !divide => {
+            Some(ParameterValue::Integer(left.checked_mul(right)?))
+        }
+        (left, right) => Some(ParameterValue::Real(if divide {
+            real_parameter_value(&left)? / real_parameter_value(&right)?
+        } else {
+            real_parameter_value(&left)? * real_parameter_value(&right)?
+        })),
+    }
+}
+
+fn real_parameter_value(value: &ParameterValue) -> Option<f64> {
+    match value {
+        ParameterValue::Real(value) => Some(*value),
+        ParameterValue::Integer(value) => Some(*value as f64),
+        _ => None,
+    }
+}
+
+fn parameter_numeric_value(value: &ParameterValue) -> Option<f64> {
+    match value {
+        ParameterValue::Length(Length(value))
+        | ParameterValue::Angle(Angle(value))
+        | ParameterValue::Real(value) => Some(*value),
+        ParameterValue::Integer(value) => Some(*value as f64),
+        ParameterValue::Boolean(_) => None,
+    }
+}
+
+fn parameter_value_is_finite(value: &ParameterValue) -> bool {
+    parameter_numeric_value(value).is_none_or(f64::is_finite)
 }
 
 pub(crate) fn parameters_with_unresolved_references(

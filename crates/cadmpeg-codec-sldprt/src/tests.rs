@@ -8442,6 +8442,39 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
 }
 
 #[test]
+fn decode_evaluates_parameter_dependency_expressions() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Width">4mm</Dimension><Dimension Name="Copies">3</Dimension><Dimension Name="Double width">Width * 2</Dimension><Dimension Name="Per copy">&quot;Double width&quot; / Copies</Dimension><Dimension Name="Forward">Later + 1mm</Dimension><Dimension Name="Later">2mm</Dimension><Dimension Name="Invalid">Width + Copies</Dimension></Feature></Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let values = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.name.as_str(), parameter.value.clone()))
+        .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(
+        values["Double width"],
+        Some(ParameterValue::Length(Length(8.0)))
+    );
+    assert_eq!(
+        values["Per copy"],
+        Some(ParameterValue::Length(Length(8.0 / 3.0)))
+    );
+    assert_eq!(values["Forward"], Some(ParameterValue::Length(Length(3.0))));
+    assert_eq!(values["Invalid"], None);
+}
+
+#[test]
 fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
