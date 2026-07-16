@@ -891,9 +891,11 @@ impl<'a> ParameterExpressionParser<'a> {
                 }
                 let argument = self.comparison()?;
                 self.skip_space();
-                return self
-                    .take(')')
-                    .then(|| apply_parameter_function(&token, &argument))?;
+                if !self.take(')') {
+                    return None;
+                }
+                return apply_parameter_function(&token, &argument)
+                    .filter(parameter_value_is_finite);
             }
             if token.eq_ignore_ascii_case("pi") {
                 return Some(ParameterValue::Real(std::f64::consts::PI));
@@ -1213,7 +1215,14 @@ fn apply_parameter_function(name: &str, argument: &ParameterValue) -> Option<Par
         }
         "sgn" => {
             let value = parameter_numeric_value(argument)?;
-            ParameterValue::Integer(if value < 0.0 { -1 } else { 1 })
+            if !value.is_finite() {
+                return None;
+            }
+            ParameterValue::Integer(match value.partial_cmp(&0.0)? {
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => 0,
+                std::cmp::Ordering::Greater => 1,
+            })
         }
         _ => return None,
     })
@@ -3749,7 +3758,7 @@ fn format_f64_literal(value: f64) -> String {
 
 #[cfg(test)]
 mod literal_tests {
-    use super::{format_f64_literal, parse_length_mm};
+    use super::{apply_parameter_function, format_f64_literal, parse_length_mm, ParameterValue};
 
     #[test]
     fn native_scalar_literals_are_compact_and_bit_exact() {
@@ -3790,6 +3799,16 @@ mod literal_tests {
             ("1ft", 304.8),
         ] {
             assert_eq!(parse_length_mm(literal), Some(expected), "{literal}");
+        }
+    }
+
+    #[test]
+    fn solidworks_sign_function_is_three_way() {
+        for (argument, expected) in [(-2, -1), (0, 0), (2, 1)] {
+            assert_eq!(
+                apply_parameter_function("sgn", &ParameterValue::Integer(argument)),
+                Some(ParameterValue::Integer(expected))
+            );
         }
     }
 }
