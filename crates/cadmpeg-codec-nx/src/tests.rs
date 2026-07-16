@@ -768,6 +768,48 @@ fn jt_deering_normal_applies_sextant_octant_and_code_bounds() {
 }
 
 #[test]
+fn jt_quantized_texture_coordinates_decode_component_major_lag1_codes() {
+    let mut code = Vec::new();
+    let mut push = |value: u32, width: u8| {
+        code.extend((0..width).rev().map(|shift| ((value >> shift) & 1) as u8));
+    };
+    push(0, 1);
+    push(0, 6);
+    push(3, 6);
+    push(3, 3);
+    for value in 0..4 {
+        push(value, 2);
+    }
+    let mut word = 0u32;
+    for bit in &code {
+        word = (word << 1) | u32::from(*bit);
+    }
+    word <<= 32 - code.len();
+    let mut packet = 4_u32.to_le_bytes().to_vec();
+    packet.push(1);
+    packet.extend_from_slice(&(code.len() as u32).to_le_bytes());
+    packet.extend_from_slice(&word.to_le_bytes());
+
+    let mut array = 4_u32.to_le_bytes().to_vec();
+    array.extend_from_slice(&[2, 2]);
+    for _ in 0..2 {
+        array.extend_from_slice(&0_f32.to_le_bytes());
+        array.extend_from_slice(&3_f32.to_le_bytes());
+        array.push(2);
+    }
+    array.extend_from_slice(&packet);
+    array.extend_from_slice(&packet);
+    array.extend_from_slice(&0x8765_4321_u32.to_le_bytes());
+
+    let (values, hash, consumed) =
+        crate::jt::decode_vertex_texture_coordinates(&array, 4, 2).unwrap();
+    assert_eq!(hash, 0x8765_4321);
+    assert_eq!(consumed, array.len());
+    assert_eq!(values[0], vec![-0.5, -0.5]);
+    assert_eq!(values[3], vec![2.5, 2.5]);
+}
+
+#[test]
 fn jt9_topology_bounds_variable_high_degree_lane_count() {
     fn representation(high_degree_lanes: usize, topological_vertices: u32) -> Vec<u8> {
         let mut bytes = vec![0; (21 + high_degree_lanes + 2) * 4];

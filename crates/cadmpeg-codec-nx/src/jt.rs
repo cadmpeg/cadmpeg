@@ -231,6 +231,76 @@ pub(crate) fn decode_vertex_normals(
     Some((normals, hash, cursor))
 }
 
+/// Decode one JT compressed texture-coordinate array and its trailing hash.
+pub(crate) fn decode_vertex_texture_coordinates(
+    bytes: &[u8],
+    expected_count: usize,
+    expected_bits: u8,
+) -> Option<(Vec<Vec<f32>>, u32, usize)> {
+    let count = usize::try_from(read_u32(bytes, 0)?).ok()?;
+    let component_count = usize::from(*bytes.get(4)?);
+    if count != expected_count
+        || !(1..=4).contains(&component_count)
+        || *bytes.get(5)? != expected_bits
+        || expected_bits > 24
+    {
+        return None;
+    }
+    let mut cursor = 6usize;
+    let mut components = Vec::with_capacity(component_count);
+    if expected_bits == 0 {
+        for _ in 0..component_count {
+            let (exponents, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            cursor = cursor.checked_add(exponent_len)?;
+            let (mantissae, mantissa_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            cursor = cursor.checked_add(mantissa_len)?;
+            if exponents.len() != count || mantissae.len() != count {
+                return None;
+            }
+            components.push(lossless_coordinate_component(&exponents, &mantissae)?);
+        }
+    } else {
+        let mut ranges = Vec::with_capacity(component_count);
+        for _ in 0..component_count {
+            let minimum = f32::from_le_bytes(bytes.get(cursor..cursor + 4)?.try_into().ok()?);
+            let maximum = f32::from_le_bytes(bytes.get(cursor + 4..cursor + 8)?.try_into().ok()?);
+            let bits = *bytes.get(cursor + 8)?;
+            if bits != expected_bits
+                || !minimum.is_finite()
+                || !maximum.is_finite()
+                || minimum > maximum
+            {
+                return None;
+            }
+            ranges.push([minimum, maximum]);
+            cursor = cursor.checked_add(9)?;
+        }
+        for range in ranges {
+            let (residuals, byte_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            cursor = cursor.checked_add(byte_len)?;
+            if residuals.len() != count {
+                return None;
+            }
+            components.push(
+                unpack_predictor_residuals(&residuals, Predictor::Lag1)
+                    .into_iter()
+                    .map(|code| dequantize_uniform(code, range, expected_bits))
+                    .collect::<Option<Vec<_>>>()?,
+            );
+        }
+    }
+    let hash = read_u32(bytes, cursor)?;
+    cursor = cursor.checked_add(4)?;
+    let values = (0..count)
+        .map(|index| {
+            (0..component_count)
+                .map(|component| components.get(component)?.get(index).copied())
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some((values, hash, cursor))
+}
+
 pub(crate) fn dequantize_uniform(code: i32, range: [f32; 2], bits: u8) -> Option<f32> {
     if bits == 0
         || bits > 32
