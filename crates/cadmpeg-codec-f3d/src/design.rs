@@ -1638,27 +1638,6 @@ pub(crate) fn resolve_edge_operand_candidates(operand: &DesignEdgeOperand) -> Op
     )
 }
 
-pub(crate) fn resolve_active_edge_recipe_candidates(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
-) -> Option<i64> {
-    let incidence = corroborated_edge_intersection(selector_contexts, &[], false);
-    let boundary_count = corroborated_edge_intersection(selector_contexts, &[], true);
-    let common_triplet = corroborated_common_triplet_intersection(selector_contexts, &[]);
-    let cross_clause_triplet =
-        corroborated_cross_clause_triplet_intersection(selector_contexts, &[]);
-    let proofs = [
-        incidence,
-        boundary_count,
-        common_triplet,
-        cross_clause_triplet,
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
-    let edge = *proofs.first()?;
-    proofs.iter().all(|proof| *proof == edge).then_some(edge)
-}
-
 fn unique_deleted_triplet_candidate(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     deleted_boundary_edges: &[i64],
@@ -1715,8 +1694,7 @@ fn corroborated_deleted_reference_candidate<'a>(
     }
 }
 
-#[cfg(test)]
-fn resolved_edge_candidate_intersection<'a>(
+pub(crate) fn resolved_edge_candidate_intersection<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
@@ -1739,7 +1717,6 @@ fn resolved_edge_candidate_intersection_with_deleted_proofs<'a>(
     )
 }
 
-#[cfg(test)]
 fn resolved_edge_candidate_intersection_with_extra_proof<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
@@ -1763,7 +1740,7 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
         .copied()
         .filter(|edges| !edges.is_empty())
         .collect::<Vec<_>>();
-    if shared_edge_sets.is_empty() {
+    if !ordered_edge_sets.is_empty() && shared_edge_sets.is_empty() {
         let proofs = extra_proofs.into_iter().flatten().collect::<Vec<_>>();
         let edge = *proofs.first()?;
         return proofs.iter().all(|proof| *proof == edge).then_some(edge);
@@ -16452,24 +16429,33 @@ mod relation_tests {
         );
         assert_eq!(resolved_edge_candidate_intersection(&[], [&[17][..]]), None);
         assert_eq!(
-            super::resolve_active_edge_recipe_candidates(&[
-                selector_with_counts(0, &[17, 18], &[17, 19]),
-                selector_with_counts(1, &[17, 20], &[17, 21]),
-            ]),
+            resolved_edge_candidate_intersection(
+                &[
+                    selector_with_counts(0, &[17, 18], &[17, 19]),
+                    selector_with_counts(1, &[17, 20], &[17, 21]),
+                ],
+                std::iter::empty::<&[i64]>(),
+            ),
             Some(17)
         );
         assert_eq!(
-            super::resolve_active_edge_recipe_candidates(&[
-                selector_with_counts(0, &[17, 18], &[17, 18]),
-                selector_with_counts(1, &[17, 18], &[17, 18]),
-            ]),
+            resolved_edge_candidate_intersection(
+                &[
+                    selector_with_counts(0, &[17, 18], &[17, 18]),
+                    selector_with_counts(1, &[17, 18], &[17, 18]),
+                ],
+                std::iter::empty::<&[i64]>(),
+            ),
             None
         );
         assert_eq!(
-            super::resolve_active_edge_recipe_candidates(&[
-                selector_with_counts(0, &[17], &[18]),
-                selector_with_counts(1, &[17], &[18]),
-            ]),
+            resolved_edge_candidate_intersection(
+                &[
+                    selector_with_counts(0, &[17], &[18]),
+                    selector_with_counts(1, &[17], &[18]),
+                ],
+                std::iter::empty::<&[i64]>(),
+            ),
             None
         );
         assert_eq!(
@@ -16640,7 +16626,10 @@ mod relation_tests {
         cross_clause.clause_triplet_edge_slots =
             [Some([vec![18], vec![17, 19]]), Some([vec![20], vec![17]])];
         assert_eq!(
-            super::resolve_active_edge_recipe_candidates(&[cross_clause.clone()]),
+            resolved_edge_candidate_intersection(
+                &[cross_clause.clone()],
+                std::iter::empty::<&[i64]>(),
+            ),
             Some(17)
         );
         assert_eq!(
@@ -16654,7 +16643,7 @@ mod relation_tests {
         cross_clause.clause_triplet_edge_slots =
             [Some([vec![18], vec![17]]), Some([vec![18], vec![17]])];
         assert_eq!(
-            super::resolve_active_edge_recipe_candidates(&[cross_clause]),
+            resolved_edge_candidate_intersection(&[cross_clause], std::iter::empty::<&[i64]>(),),
             None
         );
     }
