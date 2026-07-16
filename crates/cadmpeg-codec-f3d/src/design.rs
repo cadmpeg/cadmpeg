@@ -690,6 +690,7 @@ pub fn project_parameter_design(
         }
     }
     features.sort_by_key(|feature| feature.id.clone());
+    assign_feature_ordinals(&mut features);
 
     let mut parameters = native
         .iter()
@@ -17316,8 +17317,49 @@ mod relation_tests {
             };
         let predecessor = scope(12, 200, "Fillet", Some(10), Some(9));
         let successor = scope(22, 100, "Chamfer", Some(11), Some(10));
-        let (features, _) =
-            project_parameter_design(&[], &[], &[successor, predecessor], &[], &[], &[], &[], &[]);
+        let parameter = |owner_record_index, record_index, expression: &str, name: &str| {
+            let mut parameter = parse_design_parameter(&parameter_record(
+                Some(owner_record_index),
+                expression,
+                "FeatureInput",
+                Some("mm"),
+                name,
+                1.0,
+            ))
+            .expect("generated history-ordered parameter");
+            parameter.id = format!("f3d:native:parameter#{record_index}");
+            parameter.record_index = record_index;
+            parameter.source_ordinal = record_index;
+            parameter
+        };
+        let owner =
+            |record_index, parameter_record_index, scope_record_index| DesignParameterOwner {
+                id: format!("f3d:native:owner#{record_index}"),
+                byte_offset: 0,
+                class_tag: "292".into(),
+                record_index,
+                scope_record_index,
+                local_ordinal: parameter_record_index,
+                evaluated_value: 1.0,
+                evaluated_value_offset: 0,
+                parameter_record_index,
+                owned_ordinal: parameter_record_index,
+                variant: 0,
+                companion_record_index: record_index + 1,
+            };
+        let (features, parameters) = project_parameter_design(
+            &[
+                parameter(44, 45, "10 mm", "Width"),
+                parameter(54, 55, "Width / 2", "Depth"),
+            ],
+            &[owner(44, 45, 12), owner(54, 55, 22)],
+            &[successor, predecessor],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
         let predecessor = features
             .iter()
             .find(|feature| feature.native_ref.as_deref() == Some("f3d:native:scope#12"))
@@ -17328,6 +17370,15 @@ mod relation_tests {
             .expect("successor feature");
         assert_eq!(successor.dependencies, [predecessor.id.clone()]);
         assert!(predecessor.ordinal < successor.ordinal);
+        let width = parameters
+            .iter()
+            .find(|parameter| parameter.name == "Width")
+            .expect("predecessor Width parameter");
+        let depth = parameters
+            .iter()
+            .find(|parameter| parameter.name == "Depth")
+            .expect("successor Depth parameter");
+        assert_eq!(depth.dependencies, [width.id.clone()]);
     }
 
     #[test]
