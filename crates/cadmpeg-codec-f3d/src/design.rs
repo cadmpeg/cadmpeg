@@ -514,91 +514,141 @@ pub fn project_parameter_design(
                     })
                     .collect::<Vec<_>>();
                 assignments.sort_by_key(|assignment| assignment.group_ordinal);
-                let groups = assignments
-                    .into_iter()
-                    .map(|assignment| {
-                        let radius = native
-                            .iter()
-                            .find(|parameter| {
-                                native_stream(&parameter.id) == Some(native_scope)
-                                    && parameter.record_index
-                                        == assignment.radius_parameter_record_index
-                            })
-                            .and_then(design_length)
-                            .filter(|radius| radius.0 > 0.0)
-                            .map_or(
-                                RadiusSpec::Unresolved {
-                                    form: Some(RadiusForm::Constant),
-                                },
-                                |radius| RadiusSpec::Constant { radius },
-                            );
-                        let tangency_weight = assignment
-                            .tangency_weight_parameter_record_index
-                            .and_then(|record_index| {
-                                native.iter().find(|parameter| {
-                                    native_stream(&parameter.id) == Some(native_scope)
-                                        && parameter.record_index == record_index
-                                })
-                            })
-                            .map(|parameter| parameter.evaluated_value)
-                            .filter(|weight| weight.is_finite());
-                        let edge_radius = match &radius {
-                            RadiusSpec::Constant { radius } => Some(radius.0),
-                            _ => None,
-                        };
-                        let edges = construction_groups
-                            .iter()
-                            .find(|group| {
-                                native_stream(&group.id) == Some(native_scope)
-                                    && group.record_index == assignment.group_record_index
-                            })
-                            .map_or_else(
-                                || EdgeSelection::Native(assignment.id.clone()),
-                                |group| {
-                                    resolved_edge_group(
-                                        group,
-                                        construction_groups,
-                                        edge_operands,
-                                        scope.previous_history_state_id,
-                                        &neutral_feature_id(scope),
-                                        edge_radius,
-                                    )
-                                },
-                            );
-                        FilletGroup {
-                            edges,
-                            radius,
-                            tangency_weight,
-                        }
+                let assigned_parameter_records = assignments
+                    .iter()
+                    .flat_map(|assignment| {
+                        std::iter::once(assignment.radius_parameter_record_index)
+                            .chain(assignment.tangency_weight_parameter_record_index)
                     })
                     .collect::<Vec<_>>();
-                FeatureDefinition::Fillet {
-                    groups: if groups.is_empty() {
-                        vec![FilletGroup {
-                            edges: EdgeSelection::Native(scope.id.clone()),
-                            radius: match parameters
+                let incomplete_assignment = if assignments.is_empty() {
+                    parameters
+                        .iter()
+                        .filter(|(_, parameter)| parameter.source_kind == "Radius")
+                        .count()
+                        > 1
+                        || parameters
+                            .iter()
+                            .any(|(_, parameter)| parameter.source_kind != "Radius")
+                } else {
+                    assigned_parameter_records.len() != parameters.len()
+                        || parameters.iter().any(|(_, parameter)| {
+                            !matches!(parameter.source_kind.as_str(), "Radius" | "TangencyWeight")
+                                || assigned_parameter_records
+                                    .iter()
+                                    .filter(|record_index| **record_index == parameter.record_index)
+                                    .count()
+                                    != 1
+                        })
+                };
+                if incomplete_assignment {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                } else {
+                    let groups = assignments
+                        .into_iter()
+                        .map(|assignment| {
+                            let radius = native
                                 .iter()
-                                .filter(|(_, parameter)| parameter.source_kind == "Radius")
-                                .filter_map(|(_, parameter)| design_length(parameter))
-                                .collect::<Vec<_>>()
-                                .as_slice()
-                            {
-                                [radius] if radius.0 > 0.0 => {
-                                    RadiusSpec::Constant { radius: *radius }
-                                }
-                                [_] => RadiusSpec::Unresolved {
-                                    form: Some(RadiusForm::Constant),
+                                .find(|parameter| {
+                                    native_stream(&parameter.id) == Some(native_scope)
+                                        && parameter.record_index
+                                            == assignment.radius_parameter_record_index
+                                })
+                                .and_then(design_length)
+                                .filter(|radius| radius.0 > 0.0)
+                                .map_or(
+                                    RadiusSpec::Unresolved {
+                                        form: Some(RadiusForm::Constant),
+                                    },
+                                    |radius| RadiusSpec::Constant { radius },
+                                );
+                            let tangency_weight = assignment
+                                .tangency_weight_parameter_record_index
+                                .and_then(|record_index| {
+                                    native.iter().find(|parameter| {
+                                        native_stream(&parameter.id) == Some(native_scope)
+                                            && parameter.record_index == record_index
+                                    })
+                                })
+                                .map(|parameter| parameter.evaluated_value)
+                                .filter(|weight| weight.is_finite());
+                            let edge_radius = match &radius {
+                                RadiusSpec::Constant { radius } => Some(radius.0),
+                                _ => None,
+                            };
+                            let edges = construction_groups
+                                .iter()
+                                .find(|group| {
+                                    native_stream(&group.id) == Some(native_scope)
+                                        && group.record_index == assignment.group_record_index
+                                })
+                                .map_or_else(
+                                    || EdgeSelection::Native(assignment.id.clone()),
+                                    |group| {
+                                        resolved_edge_group(
+                                            group,
+                                            construction_groups,
+                                            edge_operands,
+                                            scope.previous_history_state_id,
+                                            &neutral_feature_id(scope),
+                                            edge_radius,
+                                        )
+                                    },
+                                );
+                            FilletGroup {
+                                edges,
+                                radius,
+                                tangency_weight,
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    FeatureDefinition::Fillet {
+                        groups: if groups.is_empty() {
+                            vec![FilletGroup {
+                                edges: EdgeSelection::Native(scope.id.clone()),
+                                radius: match parameters
+                                    .iter()
+                                    .filter(|(_, parameter)| parameter.source_kind == "Radius")
+                                    .filter_map(|(_, parameter)| design_length(parameter))
+                                    .collect::<Vec<_>>()
+                                    .as_slice()
+                                {
+                                    [radius] if radius.0 > 0.0 => {
+                                        RadiusSpec::Constant { radius: *radius }
+                                    }
+                                    [_] => RadiusSpec::Unresolved {
+                                        form: Some(RadiusForm::Constant),
+                                    },
+                                    _ => RadiusSpec::Unresolved { form: None },
                                 },
-                                _ => RadiusSpec::Unresolved { form: None },
-                            },
-                            tangency_weight: None,
-                        }]
-                    } else {
-                        groups
-                    },
+                                tangency_weight: None,
+                            }]
+                        } else {
+                            groups
+                        },
+                    }
                 }
             } else if scope.kind == "Chamfer" {
                 project_chamfer(scope, &parameters, construction_groups, edge_operands)
+                    .unwrap_or_else(|| FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    })
             } else {
                 FeatureDefinition::Native {
                     kind: scope.kind.clone(),
@@ -979,7 +1029,7 @@ fn project_chamfer(
     parameters: &[(u32, &DesignParameter)],
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
-) -> cadmpeg_ir::features::FeatureDefinition {
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         ChamferForm, ChamferGroup, ChamferSpec, EdgeSelection, FeatureDefinition,
     };
@@ -1013,7 +1063,19 @@ fn project_chamfer(
     let second_distances = ordered_parameters("Distance 2");
     let angles = ordered_parameters("Angle");
 
+    if !parameters.iter().all(|(_, parameter)| {
+        matches!(
+            parameter.source_kind.as_str(),
+            "Distance" | "Distance 1" | "Distance 2" | "Angle"
+        )
+    }) {
+        return None;
+    }
+
     let (form, candidates) = if !first_distances.is_empty() || !second_distances.is_empty() {
+        if !distances.is_empty() || !angles.is_empty() {
+            return None;
+        }
         let candidates = (first_distances.len() == group_count
             && second_distances.len() == group_count)
             .then(|| {
@@ -1029,21 +1091,26 @@ fn project_chamfer(
             });
         (Some(ChamferForm::TwoDistances), candidates)
     } else if !angles.is_empty() {
-        let candidates =
-            (distances.len() == group_count && angles.len() == group_count).then(|| {
-                distances
-                    .iter()
-                    .zip(&angles)
-                    .map(|(distance, angle)| {
-                        design_length(distance)
-                            .zip(design_angle(angle))
-                            .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
-                    })
-                    .collect::<Vec<_>>()
-            });
+        if distances.len() != group_count || angles.len() != group_count {
+            return None;
+        }
+        let candidates = Some({
+            distances
+                .iter()
+                .zip(&angles)
+                .map(|(distance, angle)| {
+                    design_length(distance)
+                        .zip(design_angle(angle))
+                        .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
+                })
+                .collect::<Vec<_>>()
+        });
         (Some(ChamferForm::DistanceAngle), candidates)
     } else if !distances.is_empty() {
-        let candidates = (distances.len() == group_count).then(|| {
+        if distances.len() != group_count {
+            return None;
+        }
+        let candidates = Some({
             distances
                 .iter()
                 .map(|distance| {
@@ -1055,7 +1122,11 @@ fn project_chamfer(
     } else {
         (None, None)
     };
-    let candidates = candidates.unwrap_or_else(|| vec![None; group_count]);
+    let candidates = match candidates {
+        Some(candidates) => candidates,
+        None if parameters.is_empty() => vec![None; group_count],
+        None => return None,
+    };
 
     let groups = candidates
         .into_iter()
@@ -1080,7 +1151,7 @@ fn project_chamfer(
             }
         })
         .collect();
-    FeatureDefinition::Chamfer { groups }
+    Some(FeatureDefinition::Chamfer { groups })
 }
 
 fn resolved_edge_group(
@@ -17094,6 +17165,49 @@ mod relation_tests {
                     edges: EdgeSelection::Native(selection),
                     spec: ChamferSpec::TwoDistances { first, second },
                 }] if selection == &scopes[1].id && first.0 == 1.0 && second.0 == 2.0)
+        ));
+
+        let (features, _) = project_parameter_design(
+            &[
+                parameter(44, 45, "Radius", "d1", "5 mm", 0.5),
+                parameter(46, 47, "TangencyWeight", "w1", "0.5", 0.5),
+            ],
+            &[owner(44, 12, 45, 0), owner(46, 12, 47, 1)],
+            std::slice::from_ref(&scopes[0]),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            &features[0].definition,
+            FeatureDefinition::Native { kind, parameters, .. }
+                if kind == "Fillet" && parameters.len() == 2
+        ));
+
+        let (features, _) = project_parameter_design(
+            &[
+                parameter(54, 55, "Distance 1", "d2", "1 mm", 0.1),
+                parameter(64, 65, "Distance 2", "d3", "2 mm", 0.2),
+                parameter(74, 75, "Distance", "d4", "3 mm", 0.3),
+            ],
+            &[
+                owner(54, 22, 55, 0),
+                owner(64, 22, 65, 1),
+                owner(74, 22, 75, 2),
+            ],
+            std::slice::from_ref(&scopes[1]),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            &features[0].definition,
+            FeatureDefinition::Native { kind, parameters, .. }
+                if kind == "Chamfer" && parameters.len() == 3
         ));
 
         let construction_group =
