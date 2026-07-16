@@ -92,6 +92,24 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     };
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
 
+    let active_configurations = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.active)
+        .count();
+    if !ir.model.configurations.is_empty() && active_configurations != 1 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "active configuration identity is unresolved; {active_configurations} of {} configuration records are active.",
+                ir.model.configurations.len()
+            ),
+            provenance: None,
+        });
+    }
+
     let feature_names = ir
         .model
         .features
@@ -1426,14 +1444,43 @@ fn mark_active_configuration(ir: &mut CadIr) {
         .as_ref()
         .and_then(|source| source.attributes.get("active_parasolid_block"))
         .and_then(|section| crate::container::configuration_index(section));
-    for configuration in &mut ir.model.configurations {
-        configuration.active = active_name.as_ref() == Some(&configuration.name)
-            || active_name.is_none()
-                && active_index.is_some_and(|index| {
-                    configuration.source_index == u32::try_from(index).ok()
-                        || configuration.source_index.is_none()
-                            && configuration.ordinal == u32::try_from(index).unwrap_or(u32::MAX)
-                });
+    let by_name = active_name.as_ref().and_then(|name| {
+        let matches = ir
+            .model
+            .configurations
+            .iter()
+            .enumerate()
+            .filter(|(_, configuration)| &configuration.name == name)
+            .map(|(position, _)| position)
+            .collect::<Vec<_>>();
+        (matches.len() == 1).then(|| matches[0])
+    });
+    let by_index = active_index.and_then(|index| {
+        let index = u32::try_from(index).ok()?;
+        let matches = ir
+            .model
+            .configurations
+            .iter()
+            .enumerate()
+            .filter(|(_, configuration)| {
+                configuration.source_index == Some(index)
+                    || configuration.source_index.is_none() && configuration.ordinal == index
+            })
+            .map(|(position, _)| position)
+            .collect::<Vec<_>>();
+        (matches.len() == 1).then(|| matches[0])
+    });
+    let selected = if active_name.is_some() {
+        by_name
+    } else if active_index.is_some() {
+        by_index
+    } else if ir.model.configurations.len() == 1 {
+        Some(0)
+    } else {
+        None
+    };
+    for (position, configuration) in ir.model.configurations.iter_mut().enumerate() {
+        configuration.active = selected == Some(position);
     }
 }
 

@@ -4430,6 +4430,10 @@ fn decode_preserves_unresolved_active_configuration() {
         .configurations
         .iter()
         .all(|configuration| !configuration.active));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.message
+            == "active configuration identity is unresolved; 0 of 2 configuration records are active."
+    }));
     assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
