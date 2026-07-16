@@ -729,6 +729,9 @@ does not remove the solver relation. `relat_ptr`, `skamp_ptr`, `triples_ptr`,
 `order_table`, and saved-section entities remain valid when `segtab_ptr` is
 absent; segment-dependent refinement is withheld without dropping those design
 records.
+`skamp_ptr.id` is the incidence identity. A typed incidence requires exactly
+one row with that identifier. Rows sharing an identifier remain separate native
+constraints identified by their byte offsets.
 For an ordered saved line, senses `2` and `3` select its first and second stored
 endpoints. For an ordered saved arc they select the neutral end and start loci,
 respectively, because saved-arc evaluation reverses the stored endpoint order.
@@ -740,6 +743,9 @@ identifier under the same arity rules as `segtab` lines.
 The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;
 the last row may terminate directly at the next structural or named record.
+A typed relation requires exactly one `relat_ptr` row with its `rel_id`.
+Rows sharing a `rel_id` do not inherit `triples_ptr` joins and remain separate
+native constraints identified by their byte offsets.
 A relation joined to exactly one incidence through `rel_id` and `skamp_id`
 inherits that incidence's ordered section-entity references and locus senses.
 When the incidence contains exactly two items whose senses resolve to section

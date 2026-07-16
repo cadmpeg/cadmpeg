@@ -7752,6 +7752,12 @@ fn section_dimension_constraints(
         .rows
         .iter()
         .map(|relation| {
+            let unique_relation_id = relations
+                .rows
+                .iter()
+                .filter(|candidate| candidate.relation_id == relation.relation_id)
+                .count()
+                == 1;
             let dimension = definition
                 .owner_feature_id
                 .zip(definition.dimensions.as_ref())
@@ -7765,6 +7771,7 @@ fn section_dimension_constraints(
                 });
             let parameter = dimension.as_ref().map(|(_, parameter)| parameter.clone());
             let typed = (|| {
+                unique_relation_id.then_some(())?;
                 let (dimension, _) = dimension.as_ref()?;
                 if dimension.value_unit != crate::feature::DimensionUnit::Millimeters {
                     return None;
@@ -7856,10 +7863,15 @@ fn section_dimension_constraints(
                     parameter,
                 })
             })();
+            let incidence_entities = if unique_relation_id {
+                relation_incidence_entities(definition, relation.relation_id)
+            } else {
+                Vec::new()
+            };
             let constraint_definition =
                 typed.unwrap_or_else(|| SketchConstraintDefinition::Native {
                     native_kind: format!("creo:relation:{}", relation.relation_type),
-                    entities: relation_incidence_entities(definition, relation.relation_id),
+                    entities: incidence_entities,
                     parameter,
                     operands: vec![SketchNativeOperand {
                         native_kind: "relat_ptr".to_string(),
@@ -7869,10 +7881,17 @@ fn section_dimension_constraints(
                 });
             (
                 SketchConstraint {
-                    id: SketchConstraintId(format!(
-                        "creo:featdefs:sketch_constraint#{}:relation:{}",
-                        definition.id, relation.relation_id
-                    )),
+                    id: SketchConstraintId(if unique_relation_id {
+                        format!(
+                            "creo:featdefs:sketch_constraint#{}:relation:{}",
+                            definition.id, relation.relation_id
+                        )
+                    } else {
+                        format!(
+                            "creo:featdefs:sketch_constraint#{}:relation:offset:{}",
+                            definition.id, relation.offset
+                        )
+                    }),
                     sketch: sketch.clone(),
                     definition: constraint_definition,
                     native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
@@ -8095,164 +8114,179 @@ fn section_skamp_constraints(
         .skamps
         .iter()
         .filter_map(|skamp| {
-            let constraint_definition = match (skamp.kind, skamp.items.as_slice()) {
-                (0, [first, second])
-                    if section_skamp_endpoint(definition, first).is_some()
-                        && section_skamp_endpoint(definition, second).is_some() =>
-                {
-                    SketchConstraintDefinition::CoincidentLoci {
-                        loci: vec![
-                            section_skamp_endpoint(definition, first)?,
-                            section_skamp_endpoint(definition, second)?,
-                        ],
-                    }
-                }
-                (3, [first, second])
-                    if (first.sense == 0
-                        && section_skamp_locus(definition, first).is_some()
-                        && section_skamp_point_locus(definition, second).is_some())
-                        || (second.sense == 0
-                            && section_skamp_locus(definition, second).is_some()
-                            && section_skamp_point_locus(definition, first).is_some()) =>
-                {
-                    SketchConstraintDefinition::CoincidentLoci {
-                        loci: vec![
-                            section_skamp_locus(definition, first)?,
-                            section_skamp_locus(definition, second)?,
-                        ],
-                    }
-                }
-                (1, [item]) if item.sense == 0 && section_skamp_is_line(definition, item) => {
-                    SketchConstraintDefinition::Horizontal {
-                        entity: SketchEntityId(format!(
-                            "creo:featdefs:sketch_entity#{}:{}",
-                            definition.id, item.entity_id
-                        )),
-                    }
-                }
-                (2, [item]) if item.sense == 0 && section_skamp_is_line(definition, item) => {
-                    SketchConstraintDefinition::Vertical {
-                        entity: SketchEntityId(format!(
-                            "creo:featdefs:sketch_entity#{}:{}",
-                            definition.id, item.entity_id
-                        )),
-                    }
-                }
-                (4, [first, second])
-                    if section_skamp_endpoint(definition, first).is_some()
-                        && section_skamp_endpoint(definition, second).is_some() =>
-                {
-                    SketchConstraintDefinition::TangentLoci {
-                        first: section_skamp_endpoint(definition, first)?,
-                        second: section_skamp_endpoint(definition, second)?,
-                    }
-                }
-                (5, [first, second])
-                    if section_skamp_line_pair(definition, first, second).is_some() =>
-                {
-                    let [first, second] = section_skamp_line_pair(definition, first, second)?;
-                    SketchConstraintDefinition::Perpendicular { first, second }
-                }
-                (6, [first, second])
-                    if section_skamp_circular_entity(definition, first).is_some()
-                        && section_skamp_circular_entity(definition, second).is_some() =>
-                {
-                    SketchConstraintDefinition::Equal {
-                        first: section_skamp_circular_entity(definition, first)?,
-                        second: section_skamp_circular_entity(definition, second)?,
-                    }
-                }
-                (7, [first, second])
-                    if section_skamp_line_pair(definition, first, second).is_some() =>
-                {
-                    let [first, second] = section_skamp_line_pair(definition, first, second)?;
-                    SketchConstraintDefinition::Parallel { first, second }
-                }
-                (8, [first, second])
-                    if section_skamp_line_pair(definition, first, second).is_some() =>
-                {
-                    let [first, second] = section_skamp_line_pair(definition, first, second)?;
-                    SketchConstraintDefinition::Equal { first, second }
-                }
-                (9, [first, second])
-                    if first.sense == 0
-                        && second.sense == 0
-                        && ((section_skamp_is_line(definition, first)
-                            && section_skamp_is_point(definition, second))
-                            || (section_skamp_is_point(definition, first)
-                                && section_skamp_is_line(definition, second))) =>
-                {
-                    SketchConstraintDefinition::CoincidentLoci {
-                        loci: vec![
-                            section_skamp_locus(definition, first)?,
-                            section_skamp_locus(definition, second)?,
-                        ],
-                    }
-                }
-                (14, [axis, first, second])
-                    if axis.sense == 0
-                        && section_skamp_is_line(definition, axis)
-                        && section_skamp_point_locus(definition, first).is_some()
-                        && section_skamp_point_locus(definition, second).is_some() =>
-                {
-                    SketchConstraintDefinition::Symmetric {
-                        first: section_skamp_point_locus(definition, first)?,
-                        second: section_skamp_point_locus(definition, second)?,
-                        axis: SketchEntityId(format!(
-                            "creo:featdefs:sketch_entity#{}:{}",
-                            definition.id, axis.entity_id
-                        )),
-                    }
-                }
-                (17, [first, second])
-                    if section_skamp_same_coordinate(definition, first, second).is_some() =>
-                {
-                    let (first, second, axis) =
-                        section_skamp_same_coordinate(definition, first, second)?;
-                    SketchConstraintDefinition::SameCoordinate {
-                        first,
-                        second,
-                        axis,
-                    }
-                }
-                _ => {
-                    let entities = skamp
+            let unique_skamp_id = relations
+                .skamps
+                .iter()
+                .filter(|candidate| candidate.id == skamp.id)
+                .count()
+                == 1;
+            let native_constraint = || {
+                let entities = skamp
+                    .items
+                    .iter()
+                    .map(|item| {
+                        section_entities.contains(&item.entity_id).then(|| {
+                            SketchEntityId(format!(
+                                "creo:featdefs:sketch_entity#{}:{}",
+                                definition.id, item.entity_id
+                            ))
+                        })
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                (!entities.is_empty()).then(|| SketchConstraintDefinition::Native {
+                    native_kind: format!("creo:skamp:{}", skamp.kind),
+                    entities,
+                    parameter: None,
+                    operands: skamp
                         .items
                         .iter()
-                        .map(|item| {
-                            section_entities.contains(&item.entity_id).then(|| {
-                                SketchEntityId(format!(
-                                    "creo:featdefs:sketch_entity#{}:{}",
-                                    definition.id, item.entity_id
-                                ))
-                            })
+                        .map(|item| SketchNativeOperand {
+                            native_kind: format!("sense:{}", item.sense),
+                            object_index: item.entity_id,
+                            native_ref: None,
                         })
-                        .collect::<Option<Vec<_>>>()?;
-                    if entities.is_empty() {
-                        return None;
+                        .collect(),
+                })
+            };
+            let constraint_definition = if unique_skamp_id {
+                match (skamp.kind, skamp.items.as_slice()) {
+                    (0, [first, second])
+                        if section_skamp_endpoint(definition, first).is_some()
+                            && section_skamp_endpoint(definition, second).is_some() =>
+                    {
+                        SketchConstraintDefinition::CoincidentLoci {
+                            loci: vec![
+                                section_skamp_endpoint(definition, first)?,
+                                section_skamp_endpoint(definition, second)?,
+                            ],
+                        }
                     }
-                    SketchConstraintDefinition::Native {
-                        native_kind: format!("creo:skamp:{}", skamp.kind),
-                        entities,
-                        parameter: None,
-                        operands: skamp
-                            .items
-                            .iter()
-                            .map(|item| SketchNativeOperand {
-                                native_kind: format!("sense:{}", item.sense),
-                                object_index: item.entity_id,
-                                native_ref: None,
-                            })
-                            .collect(),
+                    (3, [first, second])
+                        if (first.sense == 0
+                            && section_skamp_locus(definition, first).is_some()
+                            && section_skamp_point_locus(definition, second).is_some())
+                            || (second.sense == 0
+                                && section_skamp_locus(definition, second).is_some()
+                                && section_skamp_point_locus(definition, first).is_some()) =>
+                    {
+                        SketchConstraintDefinition::CoincidentLoci {
+                            loci: vec![
+                                section_skamp_locus(definition, first)?,
+                                section_skamp_locus(definition, second)?,
+                            ],
+                        }
                     }
+                    (1, [item]) if item.sense == 0 && section_skamp_is_line(definition, item) => {
+                        SketchConstraintDefinition::Horizontal {
+                            entity: SketchEntityId(format!(
+                                "creo:featdefs:sketch_entity#{}:{}",
+                                definition.id, item.entity_id
+                            )),
+                        }
+                    }
+                    (2, [item]) if item.sense == 0 && section_skamp_is_line(definition, item) => {
+                        SketchConstraintDefinition::Vertical {
+                            entity: SketchEntityId(format!(
+                                "creo:featdefs:sketch_entity#{}:{}",
+                                definition.id, item.entity_id
+                            )),
+                        }
+                    }
+                    (4, [first, second])
+                        if section_skamp_endpoint(definition, first).is_some()
+                            && section_skamp_endpoint(definition, second).is_some() =>
+                    {
+                        SketchConstraintDefinition::TangentLoci {
+                            first: section_skamp_endpoint(definition, first)?,
+                            second: section_skamp_endpoint(definition, second)?,
+                        }
+                    }
+                    (5, [first, second])
+                        if section_skamp_line_pair(definition, first, second).is_some() =>
+                    {
+                        let [first, second] = section_skamp_line_pair(definition, first, second)?;
+                        SketchConstraintDefinition::Perpendicular { first, second }
+                    }
+                    (6, [first, second])
+                        if section_skamp_circular_entity(definition, first).is_some()
+                            && section_skamp_circular_entity(definition, second).is_some() =>
+                    {
+                        SketchConstraintDefinition::Equal {
+                            first: section_skamp_circular_entity(definition, first)?,
+                            second: section_skamp_circular_entity(definition, second)?,
+                        }
+                    }
+                    (7, [first, second])
+                        if section_skamp_line_pair(definition, first, second).is_some() =>
+                    {
+                        let [first, second] = section_skamp_line_pair(definition, first, second)?;
+                        SketchConstraintDefinition::Parallel { first, second }
+                    }
+                    (8, [first, second])
+                        if section_skamp_line_pair(definition, first, second).is_some() =>
+                    {
+                        let [first, second] = section_skamp_line_pair(definition, first, second)?;
+                        SketchConstraintDefinition::Equal { first, second }
+                    }
+                    (9, [first, second])
+                        if first.sense == 0
+                            && second.sense == 0
+                            && ((section_skamp_is_line(definition, first)
+                                && section_skamp_is_point(definition, second))
+                                || (section_skamp_is_point(definition, first)
+                                    && section_skamp_is_line(definition, second))) =>
+                    {
+                        SketchConstraintDefinition::CoincidentLoci {
+                            loci: vec![
+                                section_skamp_locus(definition, first)?,
+                                section_skamp_locus(definition, second)?,
+                            ],
+                        }
+                    }
+                    (14, [axis, first, second])
+                        if axis.sense == 0
+                            && section_skamp_is_line(definition, axis)
+                            && section_skamp_point_locus(definition, first).is_some()
+                            && section_skamp_point_locus(definition, second).is_some() =>
+                    {
+                        SketchConstraintDefinition::Symmetric {
+                            first: section_skamp_point_locus(definition, first)?,
+                            second: section_skamp_point_locus(definition, second)?,
+                            axis: SketchEntityId(format!(
+                                "creo:featdefs:sketch_entity#{}:{}",
+                                definition.id, axis.entity_id
+                            )),
+                        }
+                    }
+                    (17, [first, second])
+                        if section_skamp_same_coordinate(definition, first, second).is_some() =>
+                    {
+                        let (first, second, axis) =
+                            section_skamp_same_coordinate(definition, first, second)?;
+                        SketchConstraintDefinition::SameCoordinate {
+                            first,
+                            second,
+                            axis,
+                        }
+                    }
+                    _ => native_constraint()?,
                 }
+            } else {
+                native_constraint()?
             };
             Some((
                 SketchConstraint {
-                    id: SketchConstraintId(format!(
-                        "creo:featdefs:sketch_constraint#{}:skamp:{}",
-                        definition.id, skamp.id
-                    )),
+                    id: SketchConstraintId(if unique_skamp_id {
+                        format!(
+                            "creo:featdefs:sketch_constraint#{}:skamp:{}",
+                            definition.id, skamp.id
+                        )
+                    } else {
+                        format!(
+                            "creo:featdefs:sketch_constraint#{}:skamp:offset:{}",
+                            definition.id, skamp.offset
+                        )
+                    }),
                     sketch: sketch.clone(),
                     definition: constraint_definition,
                     native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
@@ -13968,6 +14002,42 @@ mod resolved_sketch_tests {
                 ..
             } if native_kind == "creo:skamp:1"
         ));
+        let mut duplicate_skamp_id = definition.clone();
+        let mut duplicate = duplicate_skamp_id
+            .relations
+            .as_ref()
+            .expect("relations")
+            .skamps[0]
+            .clone();
+        duplicate.offset = 500;
+        duplicate_skamp_id
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps
+            .push(duplicate);
+        let duplicate_constraints =
+            section_skamp_constraints(&duplicate_skamp_id, &SketchId("sketch".into()));
+        assert!(matches!(
+            duplicate_constraints[0].0.definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
+        assert!(matches!(
+            duplicate_constraints
+                .last()
+                .expect("duplicate")
+                .0
+                .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
+        assert_eq!(
+            duplicate_constraints[0].0.id.0,
+            "creo:featdefs:sketch_constraint#917:skamp:offset:50"
+        );
+        assert_eq!(
+            duplicate_constraints.last().expect("duplicate").0.id.0,
+            "creo:featdefs:sketch_constraint#917:skamp:offset:500"
+        );
         assert_eq!(
             constraints[2].0.definition,
             SketchConstraintDefinition::Native {
@@ -14130,6 +14200,34 @@ mod resolved_sketch_tests {
                 )),
                 parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
+        );
+        let mut duplicate_relation_id = distance_definition.clone();
+        let mut duplicate = duplicate_relation_id
+            .relations
+            .as_ref()
+            .expect("relations")
+            .rows[0]
+            .clone();
+        duplicate.offset = 500;
+        duplicate_relation_id
+            .relations
+            .as_mut()
+            .expect("relations")
+            .rows
+            .push(duplicate);
+        let duplicate_constraints =
+            section_dimension_constraints(&duplicate_relation_id, &SketchId("sketch".into()));
+        assert!(duplicate_constraints.iter().all(|(constraint, _)| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::Native { .. }
+        )));
+        assert_eq!(
+            duplicate_constraints[0].0.id.0,
+            "creo:featdefs:sketch_constraint#917:relation:offset:80"
+        );
+        assert_eq!(
+            duplicate_constraints[1].0.id.0,
+            "creo:featdefs:sketch_constraint#917:relation:offset:500"
         );
         let mut duplicate_measured_segment = distance_definition.clone();
         let duplicate = duplicate_measured_segment
