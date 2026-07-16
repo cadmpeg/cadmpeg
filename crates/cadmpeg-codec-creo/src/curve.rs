@@ -1737,8 +1737,18 @@ pub fn bind_prototype_pcurves(
     pcurves: &[PrototypePcurveEndpoints],
     topology: &[CurvePrototypeTopology],
 ) -> Vec<BoundPrototypePcurve> {
+    let mut pcurve_counts = BTreeMap::new();
+    for pcurve in pcurves {
+        *pcurve_counts.entry(pcurve.curve_id).or_insert(0usize) += 1;
+    }
+    let mut topology_counts = BTreeMap::new();
+    for row in topology {
+        *topology_counts.entry(row.curve_id).or_insert(0usize) += 1;
+    }
     let mut result = pcurves
         .iter()
+        .filter(|pcurve| pcurve_counts.get(&pcurve.curve_id) == Some(&1))
+        .filter(|pcurve| topology_counts.get(&pcurve.curve_id) == Some(&1))
         .filter_map(|pcurve| {
             let topology = topology
                 .iter()

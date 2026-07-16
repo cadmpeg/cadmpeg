@@ -4240,6 +4240,33 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
 }
 
 #[test]
+fn prototype_pcurve_binding_requires_unique_native_identity() {
+    let pcurve = crate::curve::PrototypePcurveEndpoints {
+        curve_id: 44,
+        face_0_endpoints: [[0.0, 1.0], [1.0, 0.0]],
+        face_1_endpoints: [[3.0, 0.0], [3.0, 1.0]],
+        offset: 10,
+    };
+    let topology = crate::curve::CurvePrototypeTopology {
+        curve_id: 44,
+        faces: [10, 11],
+        next_edges: [44, 44],
+        offset: 20,
+    };
+
+    assert!(crate::curve::bind_prototype_pcurves(
+        &[pcurve.clone(), pcurve.clone()],
+        std::slice::from_ref(&topology),
+    )
+    .is_empty());
+    assert!(crate::curve::bind_prototype_pcurves(
+        std::slice::from_ref(&pcurve),
+        &[topology.clone(), topology],
+    )
+    .is_empty());
+}
+
+#[test]
 fn scan_groups_connected_nonzero_face_references() {
     let mut payload = visibgeom_payload(0, 2);
     payload.extend_from_slice(
