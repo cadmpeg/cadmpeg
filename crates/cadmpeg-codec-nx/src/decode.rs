@@ -6618,6 +6618,12 @@ fn attach_native_object_model(
         &scan.container,
         &display_jt_coordinate_array_headers,
     );
+    let display_jt_vertex_normals = crate::native::display_jt_vertex_normals(
+        &scan.container,
+        &display_jt_vertex_records_headers,
+        &display_jt_coordinate_array_headers,
+        &display_jt_vertex_coordinates,
+    );
     let display_jt_polygon_meshes = crate::native::display_jt_polygon_meshes(
         &display_jt_topology_packet_sequences,
         &display_jt_coordinate_array_headers,
@@ -7093,6 +7099,12 @@ fn attach_native_object_model(
             )
             .tag("DISPLAY_JT_VERTEX_COORDINATES");
         annotations.exactness(&coordinates.id, Exactness::Derived);
+    }
+    for normals in &display_jt_vertex_normals {
+        annotations
+            .note(&normals.id, annotation_stream, normals.source_offset)
+            .tag("DISPLAY_JT_VERTEX_NORMALS");
+        annotations.exactness(&normals.id, Exactness::Derived);
     }
     for mesh in &display_jt_polygon_meshes {
         annotations
@@ -7925,6 +7937,9 @@ fn attach_native_object_model(
             "display_jt_vertex_coordinates",
             &display_jt_vertex_coordinates,
         )?;
+    }
+    if !display_jt_vertex_normals.is_empty() {
+        namespace.set_arena("display_jt_vertex_normals", &display_jt_vertex_normals)?;
     }
     if !display_jt_polygon_meshes.is_empty() {
         namespace.set_arena("display_jt_polygon_meshes", &display_jt_polygon_meshes)?;

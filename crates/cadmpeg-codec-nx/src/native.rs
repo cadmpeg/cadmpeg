@@ -317,6 +317,23 @@ pub struct DisplayJtVertexCoordinates {
     pub source_offset: u64,
 }
 
+/// Normal vectors decoded from one JT 9 vertex-attribute array.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtVertexNormals {
+    /// Globally unique normal-array identity.
+    pub id: String,
+    /// Owning compressed vertex-record header.
+    pub vertex_records_header: String,
+    /// Ordered unit normal vectors in attribute-record order.
+    pub normals: Vec<[f32; 3]>,
+    /// Combined hash serialized after the component vectors.
+    pub normal_hash: u32,
+    /// Complete byte length of the normal-array header, packets, and hash.
+    pub byte_len: u32,
+    /// Absolute source offset of the normal-array count.
+    pub source_offset: u64,
+}
+
 /// Complete JT 9 tri-strip shape node controlling one late-loaded mesh.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DisplayJtTriStripShapeNode {
@@ -1864,6 +1881,64 @@ pub fn display_jt_polygon_meshes(
         });
     }
     meshes
+}
+
+/// Decode every complete JT 9 normal array following a coordinate array.
+pub fn display_jt_vertex_normals(
+    container: &Container,
+    vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
+    coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
+    coordinates: &[DisplayJtVertexCoordinates],
+) -> Vec<DisplayJtVertexNormals> {
+    let mut arrays = Vec::new();
+    for vertex_header in vertex_headers {
+        if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x8 == 0 {
+            continue;
+        }
+        let Some(coordinate_header) = coordinate_headers
+            .iter()
+            .find(|header| header.element == vertex_header.element)
+        else {
+            return Vec::new();
+        };
+        let Some(coordinates) = coordinates
+            .iter()
+            .find(|coordinates| coordinates.header == coordinate_header.id)
+        else {
+            return Vec::new();
+        };
+        let Some(source_offset) = coordinates
+            .source_offset
+            .checked_add(u64::from(coordinates.byte_len))
+        else {
+            return Vec::new();
+        };
+        let Ok(start) = usize::try_from(source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container.data.get(start..) else {
+            return Vec::new();
+        };
+        let Some((normals, normal_hash, byte_len)) = crate::jt::decode_vertex_normals(
+            bytes,
+            vertex_header.vertex_attribute_count as usize,
+            vertex_header.normal_quantization_factor,
+        ) else {
+            return Vec::new();
+        };
+        let Ok(byte_len) = u32::try_from(byte_len) else {
+            return Vec::new();
+        };
+        arrays.push(DisplayJtVertexNormals {
+            id: format!("{}-vertex-normals", vertex_header.element),
+            vertex_records_header: vertex_header.id.clone(),
+            normals,
+            normal_hash,
+            byte_len,
+            source_offset,
+        });
+    }
+    arrays
 }
 
 /// Decode element framing and exact post-marker tails from compressed segments.

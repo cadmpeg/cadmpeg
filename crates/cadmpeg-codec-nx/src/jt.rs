@@ -121,6 +121,116 @@ fn lossless_coordinate_component(exponents: &[i32], mantissae: &[i32]) -> Option
         .collect()
 }
 
+pub(crate) fn deering_normal(
+    sextant: i32,
+    octant: i32,
+    theta: i32,
+    psi: i32,
+    bits: u8,
+) -> Option<[f32; 3]> {
+    if bits == 0 || bits > 13 {
+        return None;
+    }
+    let sextant = u32::try_from(sextant).ok().filter(|value| *value < 6)?;
+    let octant = u32::try_from(octant).ok().filter(|value| *value < 8)?;
+    let code_limit = 1_u32 << bits;
+    let theta = u32::try_from(theta)
+        .ok()
+        .filter(|value| *value < code_limit)?;
+    let psi = u32::try_from(psi)
+        .ok()
+        .filter(|value| *value < code_limit)?;
+    let shift = 13 - bits;
+    let theta_index = (theta + (sextant & 1)) << shift;
+    let psi_index = psi << shift;
+    let table_size = f64::from(1_u32 << 13);
+    let maximum_psi = 0.615_479_709_f64;
+    let theta_angle = (maximum_psi * (table_size - f64::from(theta_index)) / table_size)
+        .tan()
+        .asin();
+    let psi_angle = maximum_psi * f64::from(psi_index) / table_size;
+    let x = (psi_angle.cos() * theta_angle.cos()) as f32;
+    let y = psi_angle.sin() as f32;
+    let z = (psi_angle.cos() * theta_angle.sin()) as f32;
+    let mut result = match sextant {
+        0 => [x, y, z],
+        1 => [z, y, x],
+        2 => [y, z, x],
+        3 => [y, x, z],
+        4 => [z, x, y],
+        5 => [x, z, y],
+        _ => unreachable!(),
+    };
+    for (component, bit) in [4, 2, 1].into_iter().enumerate() {
+        if octant & bit == 0 {
+            result[component] = -result[component];
+        }
+    }
+    result
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(result)
+}
+
+/// Decode one JT compressed normal array and its trailing hash.
+pub(crate) fn decode_vertex_normals(
+    bytes: &[u8],
+    expected_count: usize,
+    expected_bits: u8,
+) -> Option<(Vec<[f32; 3]>, u32, usize)> {
+    let count = usize::try_from(read_u32(bytes, 0)?).ok()?;
+    if count != expected_count || *bytes.get(4)? != 3 || *bytes.get(5)? != expected_bits {
+        return None;
+    }
+    let mut cursor = 6usize;
+    let normals = if expected_bits == 0 {
+        let mut components = Vec::with_capacity(3);
+        for _ in 0..3 {
+            let (exponents, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            cursor = cursor.checked_add(exponent_len)?;
+            let (mantissae, mantissa_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            cursor = cursor.checked_add(mantissa_len)?;
+            if exponents.len() != count || mantissae.len() != count {
+                return None;
+            }
+            components.push(lossless_coordinate_component(&exponents, &mantissae)?);
+        }
+        (0..count)
+            .map(|index| {
+                [
+                    components[0][index],
+                    components[1][index],
+                    components[2][index],
+                ]
+            })
+            .collect::<Vec<_>>()
+    } else {
+        let mut codes = Vec::with_capacity(4);
+        for _ in 0..4 {
+            let (values, byte_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            cursor = cursor.checked_add(byte_len)?;
+            if values.len() != count {
+                return None;
+            }
+            codes.push(values);
+        }
+        (0..count)
+            .map(|index| {
+                deering_normal(
+                    codes[0][index],
+                    codes[1][index],
+                    codes[2][index],
+                    codes[3][index],
+                    expected_bits,
+                )
+            })
+            .collect::<Option<Vec<_>>>()?
+    };
+    let hash = read_u32(bytes, cursor)?;
+    cursor = cursor.checked_add(4)?;
+    Some((normals, hash, cursor))
+}
+
 pub(crate) fn dequantize_uniform(code: i32, range: [f32; 2], bits: u8) -> Option<f32> {
     if bits == 0
         || bits > 32

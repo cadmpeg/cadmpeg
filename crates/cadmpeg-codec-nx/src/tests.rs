@@ -717,6 +717,17 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
 }
 
 #[test]
+fn jt_deering_normal_applies_sextant_octant_and_code_bounds() {
+    let normal = crate::jt::deering_normal(1, 7, 8191, 0, 13).unwrap();
+    assert!(normal[0].abs() < 1e-3);
+    assert!(normal[1].abs() < 1e-6);
+    assert!((normal[2] - 1.0).abs() < 1e-6);
+    assert!(crate::jt::deering_normal(6, 7, 0, 0, 13).is_none());
+    assert!(crate::jt::deering_normal(0, 8, 0, 0, 13).is_none());
+    assert!(crate::jt::deering_normal(0, 7, 8192, 0, 13).is_none());
+}
+
+#[test]
 fn jt9_topology_bounds_variable_high_degree_lane_count() {
     fn representation(high_degree_lanes: usize, topological_vertices: u32) -> Vec<u8> {
         let mut bytes = vec![0; (21 + high_degree_lanes + 2) * 4];
