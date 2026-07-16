@@ -7811,6 +7811,21 @@ fn agreed_feature_recipe(
         .then_some(recipe)
 }
 
+fn agreed_feature_recipe_parent(
+    operations: &[crate::feature::FeatureOperation],
+    feature_id: u32,
+) -> Option<u32> {
+    let mut parents = operations
+        .iter()
+        .filter(|operation| operation.feature_id == feature_id && operation.recipe.is_some())
+        .map(|operation| operation.parent_feature_id);
+    let parent = parents.next()?;
+    parents
+        .all(|candidate| candidate == parent)
+        .then_some(parent)
+        .flatten()
+}
+
 fn current_feature_operation(
     operations: &[crate::feature::FeatureOperation],
     feature_id: u32,
@@ -10651,12 +10666,10 @@ fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<
 fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<IrFeatureId> {
     agreed_feature_parent_ids(&scan.feature_affected_ids, feature_id)
         .into_iter()
-        .chain(
-            scan.feature_operations
-                .iter()
-                .filter(|operation| operation.feature_id == feature_id)
-                .filter_map(|operation| operation.parent_feature_id),
-        )
+        .chain(agreed_feature_recipe_parent(
+            &scan.feature_operation_states,
+            feature_id,
+        ))
         .filter_map(|dependency| {
             let id = IrFeatureId(format!("creo:model:feature#{dependency}"));
             ir.model
@@ -10766,11 +10779,10 @@ fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
         };
         let native_dependencies = agreed_feature_parent_ids(&scan.feature_affected_ids, feature_id)
             .into_iter()
-            .chain(
-                current_feature_operation(&scan.feature_operations, feature_id)
-                    .into_iter()
-                    .filter_map(|operation| operation.parent_feature_id),
-            )
+            .chain(agreed_feature_recipe_parent(
+                &scan.feature_operation_states,
+                feature_id,
+            ))
             .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
             .filter(|dependency| emitted.contains(dependency))
             .filter(|dependency| *dependency != feature.id)
@@ -10787,10 +10799,10 @@ fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
             &emitted,
         );
         if feature.parent.is_none() {
-            feature.parent = current_feature_operation(&scan.feature_operations, feature_id)
-                .and_then(|operation| operation.parent_feature_id)
-                .map(|parent| IrFeatureId(format!("creo:model:feature#{parent}")))
-                .filter(|parent| *parent != feature.id && emitted.contains(parent));
+            feature.parent =
+                agreed_feature_recipe_parent(&scan.feature_operation_states, feature_id)
+                    .map(|parent| IrFeatureId(format!("creo:model:feature#{parent}")))
+                    .filter(|parent| *parent != feature.id && emitted.contains(parent));
         }
     }
     let mut remaining = (0..ir.model.features.len()).collect::<Vec<_>>();
@@ -13329,6 +13341,21 @@ mod resolved_sketch_tests {
         conflicting_recipe.recipe = Some(crate::feature::FeatureRecipe::ProtrudeRevolve);
         assert_eq!(
             agreed_feature_recipe(&[operation.clone(), conflicting_recipe], 6),
+            None
+        );
+        let mut parented_operation = operation.clone();
+        parented_operation.parent_feature_id = Some(5);
+        assert_eq!(
+            agreed_feature_recipe_parent(
+                &[parented_operation.clone(), parented_operation.clone()],
+                6,
+            ),
+            Some(5)
+        );
+        let mut conflicting_parent = parented_operation.clone();
+        conflicting_parent.parent_feature_id = Some(4);
+        assert_eq!(
+            agreed_feature_recipe_parent(&[parented_operation, conflicting_parent], 6),
             None
         );
         let row = |schema_class, offset| crate::feature::FeatureRow {
@@ -20993,16 +21020,16 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         );
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         let dependencies = feature_dependencies(scan, &ir, operation.feature_id);
-        let parent = current_operation
-            .and_then(|operation| operation.parent_feature_id)
-            .and_then(|parent_feature_id| {
-                let parent = IrFeatureId(format!("creo:model:feature#{parent_feature_id}"));
-                ir.model
-                    .features
-                    .iter()
-                    .any(|feature| feature.id == parent)
-                    .then_some(parent)
-            });
+        let parent =
+            agreed_feature_recipe_parent(&scan.feature_operation_states, operation.feature_id)
+                .and_then(|parent_feature_id| {
+                    let parent = IrFeatureId(format!("creo:model:feature#{parent_feature_id}"));
+                    ir.model
+                        .features
+                        .iter()
+                        .any(|feature| feature.id == parent)
+                        .then_some(parent)
+                });
         let operation_section = scan
             .sections
             .iter()
