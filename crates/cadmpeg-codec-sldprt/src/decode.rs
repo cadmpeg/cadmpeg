@@ -189,6 +189,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .filter(|configuration| configuration.name.is_empty())
         .count();
     let mut configuration_name_counts = BTreeMap::new();
+    let mut configuration_ordinal_counts = BTreeMap::new();
+    for configuration in &ir.model.configurations {
+        *configuration_ordinal_counts
+            .entry(configuration.ordinal)
+            .or_insert(0usize) += 1;
+    }
     for name in ir
         .model
         .configurations
@@ -203,12 +209,20 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .filter(|count| **count > 1)
         .copied()
         .sum::<usize>();
-    if empty_configuration_names > 0 || ambiguous_configuration_names > 0 {
+    let ambiguous_configuration_ordinals = configuration_ordinal_counts
+        .values()
+        .filter(|count| **count > 1)
+        .copied()
+        .sum::<usize>();
+    if empty_configuration_names > 0
+        || ambiguous_configuration_names > 0
+        || ambiguous_configuration_ordinals > 0
+    {
         report.losses.push(LossNote {
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
-                "{empty_configuration_names} configuration record(s) have empty names; {ambiguous_configuration_names} configuration record(s) share non-unique names."
+                "{empty_configuration_names} configuration record(s) have empty names; {ambiguous_configuration_names} configuration record(s) share non-unique names; {ambiguous_configuration_ordinals} configuration record(s) share regeneration ordinals."
             ),
             provenance: None,
         });
@@ -2685,17 +2699,20 @@ mod design_loss_tests {
     #[test]
     fn incomplete_configuration_names_are_reported() {
         let mut ir = CadIr::empty(Units::default());
-        for (ordinal, name) in ["", "Shared", "Shared"].into_iter().enumerate() {
+        for (position, (ordinal, name)) in [(0, ""), (1, "Shared"), (2, "Shared"), (2, "Unique")]
+            .into_iter()
+            .enumerate()
+        {
             ir.model.configurations.push(DesignConfiguration {
-                id: ConfigurationId(format!("configuration:{ordinal}")),
-                ordinal: ordinal as u32,
-                active: ordinal == 1,
-                source_index: Some(ordinal as u32),
+                id: ConfigurationId(format!("configuration:{position}")),
+                ordinal,
+                active: position == 1,
+                source_index: Some(position as u32),
                 name: name.into(),
                 material: None,
                 properties: BTreeMap::new(),
                 bodies: Vec::new(),
-                native_ref: Some(format!("native:{ordinal}")),
+                native_ref: Some(format!("native:{position}")),
             });
         }
         let mut report = DecodeReport {
@@ -2710,7 +2727,7 @@ mod design_loss_tests {
 
         assert!(report.losses.iter().any(|loss| {
             loss.message
-                == "1 configuration record(s) have empty names; 2 configuration record(s) share non-unique names."
+                == "1 configuration record(s) have empty names; 2 configuration record(s) share non-unique names; 2 configuration record(s) share regeneration ordinals."
         }));
     }
 
