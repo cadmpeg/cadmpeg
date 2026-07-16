@@ -36,19 +36,26 @@ pub enum DecodeMode {
 /// derived from the input basis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ResourceLimits {
-    /// Maximum physical input bytes read at the root.
+    /// Maximum physical input bytes read at the root. Frozen at Phase 0B — the
+    /// one dimension whose charges are already real (§5.2).
     pub max_input_bytes: u64,
     /// Maximum cumulative decompressed bytes across all expansions.
+    /// **Provisional** until the Phase 1 decompression calibration (§5.2).
     pub max_decompressed_bytes_total: u64,
     /// Maximum decompressed bytes produced by any single expansion.
+    /// **Provisional** until the Phase 1 decompression calibration (§5.2).
     pub max_decompressed_bytes_per_expand: u64,
     /// Maximum cumulative committed heap bytes.
+    /// **Provisional** until the Phase 2 alloc/work/depth calibration (§5.2).
     pub max_alloc_bytes: u64,
     /// Maximum abstract work units.
+    /// **Provisional** until the Phase 2 alloc/work/depth calibration (§5.2).
     pub max_work: u64,
     /// Maximum recursion depth.
+    /// **Provisional** until the Phase 2 alloc/work/depth calibration (§5.2).
     pub max_depth: u32,
     /// Maximum bytes retained opaque in salvage mode.
+    /// **Provisional** until the Phase 3 retained calibration (§5.2).
     pub max_retained_bytes: u64,
 }
 
@@ -82,13 +89,18 @@ impl ResourceLimits {
         }
     }
 
-    /// Version tag for the desktop profile's frozen calibration constants
-    /// (§5.2). Bumping any desktop ceiling advances this tag so a report from
-    /// before the change keeps a durable record of the constants in force.
+    /// Version tag for the desktop profile's ceilings (§5.2). Under the §5.2
+    /// per-dimension freeze schedule only `max_input_bytes` is frozen so far;
+    /// the rest are provisional (see the field docs). The tag names whatever
+    /// set is in force, so a report keeps a durable record of it; bumping any
+    /// desktop ceiling advances the tag. The `desktop_version_pins_its_ceilings`
+    /// test pins the tag to its values so a ceiling cannot change without one.
     pub const DESKTOP_VERSION: &'static str = "desktop-v1";
 
-    /// Version tag for the service profile's frozen calibration constants
-    /// (§5.2), advanced whenever a service ceiling changes.
+    /// Version tag for the service profile's ceilings (§5.2), advanced whenever
+    /// a service ceiling changes. Provisional under the same per-dimension
+    /// freeze schedule as `DESKTOP_VERSION`, and pinned to its values by
+    /// `service_version_pins_its_ceilings`.
     pub const SERVICE_VERSION: &'static str = "service-v1";
 
     /// The version tag of the named profile these ceilings match exactly, or
@@ -203,5 +215,64 @@ impl Envelope {
     /// Version tag for the platform default envelope's calibration constants
     /// (§5.2). No caller API overrides the envelope yet, so every decode runs
     /// this version; the tag advances when a `PLATFORM_DEFAULT` constant does.
+    /// The `envelope_version_pins_its_constants` test pins the tag to its
+    /// values so a constant cannot change without advancing the tag.
     pub(crate) const VERSION: &'static str = "envelope-v1";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // §5.2 durable record: each version tag certifies an exact set of
+    // calibration constants. `profile_version` decides the tag by structural
+    // equality against the live `desktop()`/`service()` values, so it cannot
+    // notice a ceiling that changed without its tag — the comparison and the
+    // constant move together and every report keeps claiming the old tag.
+    // These tests pin each tag to the values it names: changing any constant
+    // below without bumping the paired version string fails here. When a
+    // recalibration is intended, bump the version tag AND update the pinned
+    // value in the same commit.
+
+    #[test]
+    fn desktop_version_pins_its_ceilings() {
+        assert_eq!(ResourceLimits::DESKTOP_VERSION, "desktop-v1");
+        let d = ResourceLimits::desktop();
+        assert_eq!(d.max_input_bytes, 4 * GIB);
+        assert_eq!(d.max_decompressed_bytes_total, 8 * GIB);
+        assert_eq!(d.max_decompressed_bytes_per_expand, 2 * GIB);
+        assert_eq!(d.max_alloc_bytes, 8 * GIB);
+        assert_eq!(d.max_work, 4_000_000_000);
+        assert_eq!(d.max_depth, 256);
+        assert_eq!(d.max_retained_bytes, 4 * GIB);
+    }
+
+    #[test]
+    fn service_version_pins_its_ceilings() {
+        assert_eq!(ResourceLimits::SERVICE_VERSION, "service-v1");
+        let s = ResourceLimits::service();
+        assert_eq!(s.max_input_bytes, 256 * MIB);
+        assert_eq!(s.max_decompressed_bytes_total, GIB);
+        assert_eq!(s.max_decompressed_bytes_per_expand, 256 * MIB);
+        assert_eq!(s.max_alloc_bytes, GIB);
+        assert_eq!(s.max_work, 200_000_000);
+        assert_eq!(s.max_depth, 64);
+        assert_eq!(s.max_retained_bytes, 256 * MIB);
+    }
+
+    #[test]
+    fn envelope_version_pins_its_constants() {
+        assert_eq!(Envelope::VERSION, "envelope-v1");
+        let e = Envelope::PLATFORM_DEFAULT;
+        assert_eq!(e.base.alloc_bytes, 64 * MIB);
+        assert_eq!(e.base.decompressed_total, 16 * MIB);
+        assert_eq!(e.base.decompressed_per_expand, 16 * MIB);
+        assert_eq!(e.base.work, 4_000_000);
+        assert_eq!(e.base.retained_bytes, 64 * MIB);
+        assert_eq!(e.k.alloc_bytes, 64);
+        assert_eq!(e.k.decompressed_total, 1000);
+        assert_eq!(e.k.decompressed_per_expand, 256);
+        assert_eq!(e.k.work, 256);
+        assert_eq!(e.k.retained_bytes, 16);
+    }
 }

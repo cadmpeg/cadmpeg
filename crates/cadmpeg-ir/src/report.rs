@@ -91,13 +91,18 @@ pub struct LossNote {
 /// that begins failing after a constants update keeps a durable explanation
 /// instead of a mystery. The decode session sets these authoritatively at
 /// [`DecodeContext::finish`](crate::decode::DecodeContext::finish); the
-/// [`Default`] value is a placeholder for a report that never reached `finish`.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+/// [`Default`] value stamps the self-identifying
+/// [`UNSTAMPED`](ProfileVersions::UNSTAMPED) sentinel so a report that never
+/// reached `finish` is distinguishable from a real calibration rather than
+/// masquerading as an all-empty-string match.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ProfileVersions {
-    /// The active limits profile: `desktop-v1`, `service-v1`, or `custom` when
-    /// the caller's ceilings match no named profile.
+    /// The active limits profile: `desktop-v1`, `service-v1`, `custom` when the
+    /// caller's ceilings match no named profile, or
+    /// [`UNSTAMPED`](ProfileVersions::UNSTAMPED) before `finish` stamps it.
     pub profile: String,
-    /// The active acceptance-envelope version, e.g. `envelope-v1`.
+    /// The active acceptance-envelope version, e.g. `envelope-v1`, or
+    /// [`UNSTAMPED`](ProfileVersions::UNSTAMPED) before `finish` stamps it.
     pub envelope: String,
     /// Caller ceilings that differ from the default desktop profile, each as
     /// `dimension=value`, sorted. Empty when the limits match a named profile;
@@ -105,6 +110,25 @@ pub struct ProfileVersions {
     /// changed.
     #[serde(default)]
     pub overrides: Vec<String>,
+}
+
+impl ProfileVersions {
+    /// The version-slot value stamped into a report that never reached
+    /// [`DecodeContext::finish`](crate::decode::DecodeContext::finish). It is a
+    /// self-identifying sentinel: a reader diffing two reports can tell an
+    /// un-stamped placeholder from a genuine `desktop-v1`/`envelope-v1`
+    /// calibration, where an empty string would read as a real match.
+    pub const UNSTAMPED: &'static str = "unstamped";
+}
+
+impl Default for ProfileVersions {
+    fn default() -> Self {
+        ProfileVersions {
+            profile: Self::UNSTAMPED.to_owned(),
+            envelope: Self::UNSTAMPED.to_owned(),
+            overrides: Vec::new(),
+        }
+    }
 }
 
 /// Transfer status and loss details from a successful decode.
@@ -317,10 +341,12 @@ mod tests {
     }
 
     #[test]
-    fn report_without_profile_versions_deserializes_to_empty() {
-        // A serialized report predating the field parses with empty identifiers
-        // rather than failing, so the `#[serde(default)]` back-compat path holds
-        // and older reports still read.
+    fn report_without_profile_versions_deserializes_to_unstamped() {
+        // A serialized report predating the field parses via the
+        // `#[serde(default)]` back-compat path rather than failing, and the
+        // default self-identifies as unstamped — so an old report that carries
+        // no calibration is distinguishable from a genuine one, not mistaken
+        // for an all-empty-string match.
         let json = r#"{
             "format": "test",
             "container_only": false,
@@ -330,7 +356,8 @@ mod tests {
         }"#;
         let report: DecodeReport = serde_json::from_str(json).unwrap();
         assert_eq!(report.profile_versions, ProfileVersions::default());
-        assert!(report.profile_versions.profile.is_empty());
+        assert_eq!(report.profile_versions.profile, ProfileVersions::UNSTAMPED);
+        assert_eq!(report.profile_versions.envelope, ProfileVersions::UNSTAMPED);
         assert!(report.profile_versions.overrides.is_empty());
     }
 }
