@@ -243,7 +243,14 @@ fn transfer_complete(
                 ) else {
                     return false;
                 };
-                let Some(helix) = cylinder_helix(pcurve, surface, edge_start, edge_end) else {
+                let Some(endpoint_parameters) = edge_pcurve_parameters(graph, edge_id, pcurve_id)
+                else {
+                    edge_ids.insert(edge_id);
+                    continue;
+                };
+                let Some(helix) =
+                    cylinder_helix(pcurve, surface, endpoint_parameters, edge_start, edge_end)
+                else {
                     edge_ids.insert(edge_id);
                     continue;
                 };
@@ -785,6 +792,33 @@ fn b5_vertex_point(graph: &B5Graph, vertex: usize) -> Option<[f64; 3]> {
     })
 }
 
+fn edge_pcurve_parameters(graph: &B5Graph, edge: u32, pcurve: u32) -> Option<[f64; 2]> {
+    graph
+        .edge_vertices
+        .get(&edge)?
+        .map(|vertex| {
+            let logical_index = vertex.checked_sub(graph.vertex_points.len())?;
+            let vertex_ref = *graph.logical_vertex_refs.get(logical_index)?;
+            let incidence_ids = graph.vertex_parameter_incidences.get(&vertex_ref)?;
+            let mut parameters = incidence_ids.iter().flat_map(|incidence_id| {
+                graph
+                    .parameter_incidences
+                    .get(incidence_id)
+                    .into_iter()
+                    .flat_map(|incidence| incidence.curves.iter().zip(&incidence.parameters))
+                    .filter_map(|(&curve, &parameter)| (curve == pcurve).then_some(parameter))
+            });
+            let parameter = parameters.next()?;
+            parameters
+                .all(|other| other == parameter)
+                .then_some(parameter)
+        })
+        .into_iter()
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()
+}
+
 fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
     left.into_iter()
         .zip(right)
@@ -997,6 +1031,7 @@ fn cylinder_point(
 fn cylinder_helix(
     pcurve: &B5Pcurve,
     surface: &B5Surface,
+    endpoint_parameters: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
 ) -> Option<HelixPlan> {
@@ -1014,7 +1049,12 @@ fn cylinder_helix(
     if pcurve.degree != 1 || pcurve.control_points.len() != 2 {
         return None;
     }
-    let mut endpoints = [pcurve.control_points[0], pcurve.control_points[1]];
+    let endpoints =
+        endpoint_parameters.map(|parameter| crate::b5::evaluate_pcurve(pcurve, parameter));
+    let [Some(first), Some(second)] = endpoints else {
+        return None;
+    };
+    let mut endpoints = [first, second];
     let lifted = endpoints.map(|uv| cylinder_point(*origin, *reference_x, *axis, *radius, uv));
     let forward_error = distance(lifted[0], edge_start).max(distance(lifted[1], edge_end));
     let reverse_error = distance(lifted[1], edge_start).max(distance(lifted[0], edge_end));
@@ -1762,6 +1802,7 @@ mod tests {
             offset_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
             parameter_incidences: BTreeMap::new(),
+            vertex_parameter_incidences: BTreeMap::new(),
             vertex_points: vec![[0.0; 3], [1.0, 0.0, 0.0]],
             logical_vertex_points: Vec::new(),
             logical_vertex_refs: Vec::new(),
@@ -1807,6 +1848,7 @@ mod tests {
             offset_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
             parameter_incidences: BTreeMap::new(),
+            vertex_parameter_incidences: BTreeMap::new(),
             vertex_points: vec![[0.0, 0.0, 0.1], [1.0, 0.0, 0.0]],
             logical_vertex_points: Vec::new(),
             logical_vertex_refs: Vec::new(),
@@ -2103,7 +2145,8 @@ mod tests {
             radius: 2.0,
         };
         let end = [2.0 * 2.0_f64.cos(), 2.0 * 2.0_f64.sin(), 7.0];
-        let Some(plan) = cylinder_helix(&pcurve, &cylinder, [2.0, 0.0, 3.0], end) else {
+        let Some(plan) = cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], [2.0, 0.0, 3.0], end)
+        else {
             panic!("degree-one cylinder helix");
         };
         let ProceduralCurveDefinition::Helix {
@@ -2127,12 +2170,29 @@ mod tests {
             Some(&Point3::new(2.0, 0.0, 3.0))
         );
 
-        let reversed = cylinder_helix(&pcurve, &cylinder, end, [2.0, 0.0, 3.0])
+        let reversed = cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], end, [2.0, 0.0, 3.0])
             .expect("reversed physical edge helix");
         let ProceduralCurveDefinition::Helix { center, pitch, .. } = reversed.definition else {
             unreachable!();
         };
         assert_eq!(center, Point3::new(0.0, 0.0, 7.0));
         assert!((pitch.z + 4.0 * std::f64::consts::PI).abs() < 1e-12);
+
+        let trimmed_start = [2.0 * 0.5_f64.cos(), 2.0 * 0.5_f64.sin(), 4.0];
+        let trimmed_end = [2.0 * 1.5_f64.cos(), 2.0 * 1.5_f64.sin(), 6.0];
+        let trimmed = cylinder_helix(&pcurve, &cylinder, [0.25, 0.75], trimmed_start, trimmed_end)
+            .expect("trimmed physical edge helix");
+        let ProceduralCurveDefinition::Helix {
+            angle_range,
+            center,
+            pitch,
+            ..
+        } = trimmed.definition
+        else {
+            unreachable!();
+        };
+        assert_eq!(angle_range, [0.0, 1.0]);
+        assert_eq!(center.z, 4.0);
+        assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1e-12);
     }
 }

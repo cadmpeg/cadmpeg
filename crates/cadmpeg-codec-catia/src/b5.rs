@@ -43,6 +43,9 @@ pub struct B5Graph {
     pub supported_surfaces: BTreeMap<u32, B5SupportedSurface>,
     /// Native class-`06` curve-parameter incidences, keyed by object id.
     pub parameter_incidences: BTreeMap<u32, B5ParameterIncidence>,
+    /// Ordered class-`06` incidence ids owned by each native class-`5d`
+    /// vertex identity.
+    pub vertex_parameter_incidences: BTreeMap<u32, Vec<u32>>,
     /// World-frame `05 08 01` vertex coordinates, in stream order.
     pub vertex_points: Vec<[f64; 3]>,
     /// Logical vertex coordinates resolved from native `5d` identity. Their
@@ -549,6 +552,11 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         &surfaces,
         &profiles,
     );
+    let vertex_parameter_incidences = native_vertex_parameter_incidences(
+        native_edge_vertices.values().flatten().copied(),
+        &by_id,
+        &parameter_incidences,
+    );
     let bound_vertices = bind_native_vertices(
         &loops,
         &pcurves,
@@ -598,6 +606,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         offset_surfaces,
         supported_surfaces,
         parameter_incidences,
+        vertex_parameter_incidences,
         vertex_points,
         logical_vertex_points,
         logical_vertex_refs,
@@ -605,6 +614,26 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         vertex_tolerances,
         profiles,
     })
+}
+
+fn native_vertex_parameter_incidences(
+    vertices: impl IntoIterator<Item = u32>,
+    by_id: &HashMap<u32, &B5Record>,
+    parameter_incidences: &BTreeMap<u32, B5ParameterIncidence>,
+) -> BTreeMap<u32, Vec<u32>> {
+    vertices
+        .into_iter()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .filter_map(|vertex| {
+            let incidence = vertex_incidence_ref(by_id.get(&vertex)?)?;
+            let records = counted_references(by_id.get(&incidence)?, 0x05)?;
+            records
+                .iter()
+                .all(|record| parameter_incidences.contains_key(record))
+                .then_some((vertex, records))
+        })
+        .collect()
 }
 
 /// Return native start/end vertex identities for every framed `b5 03 5e`
@@ -799,7 +828,7 @@ fn implicit_pcurve_bindings(
     bindings
 }
 
-fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
+pub(crate) fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     let mut knots = Vec::new();
     for (&knot, &multiplicity) in pcurve.distinct_knots.iter().zip(&pcurve.multiplicities) {
         knots.extend(std::iter::repeat_n(
@@ -2934,6 +2963,56 @@ mod tests {
         assert_eq!(incidence.curves, [9, 10]);
         assert_eq!(incidence.parameters, [1.25, 2.5]);
         assert_eq!(incidence.controls, [5, 11]);
+    }
+
+    #[test]
+    fn native_vertex_retains_its_ordered_parameter_incidences() {
+        let records = vec![
+            B5Record {
+                offset: 0,
+                family: 0xb5,
+                class: 0x5d,
+                object_id: 6,
+                payload: vec![0x81, 0x87, 0x00],
+            },
+            B5Record {
+                offset: 1,
+                family: 0xb5,
+                class: 0x05,
+                object_id: 7,
+                payload: vec![0x82, 0x88, 0x89],
+            },
+        ];
+        let by_id = records
+            .iter()
+            .map(|record| (record.object_id, record))
+            .collect();
+        let incidences = BTreeMap::from([
+            (
+                8,
+                B5ParameterIncidence {
+                    object_id: 8,
+                    curves: vec![2],
+                    parameters: vec![0.0],
+                    controls: vec![5],
+                },
+            ),
+            (
+                9,
+                B5ParameterIncidence {
+                    object_id: 9,
+                    curves: vec![2],
+                    parameters: vec![1.0],
+                    controls: vec![5],
+                },
+            ),
+        ]);
+
+        assert_eq!(
+            native_vertex_parameter_incidences([6], &by_id, &incidences),
+            BTreeMap::from([(6, vec![8, 9])])
+        );
+        assert!(native_vertex_parameter_incidences([6], &by_id, &BTreeMap::new()).is_empty());
     }
 
     #[test]
