@@ -4690,11 +4690,6 @@ impl MeshQuotient {
             if solutions.len() > 1 || *exhausted {
                 return;
             }
-            *states += 1;
-            if *states > MAX_COORDINATE_CLOSURE_STATES {
-                *exhausted = true;
-                return;
-            }
             let viable_values = |root: usize, assigned: &[Option<usize>]| {
                 domains[root]
                     .iter()
@@ -4751,6 +4746,13 @@ impl MeshQuotient {
                 }
                 return;
             };
+            if values.len() > 1 {
+                if *states >= MAX_COORDINATE_CLOSURE_STATES {
+                    *exhausted = true;
+                    return;
+                }
+                *states += 1;
+            }
             for point in values {
                 assigned[root] = Some(point);
                 point_uses[point] += 1;
@@ -5487,6 +5489,12 @@ impl MeshQuotient {
                 } else {
                     return true;
                 };
+                if other == root {
+                    return candidates.is_empty()
+                        || edge_neighbors[edge_index]
+                            .get(&point)
+                            .is_some_and(|neighbors| neighbors.contains(&point));
+                }
                 if let Some(other_point) = assigned[other] {
                     return candidates.is_empty()
                         || edge_neighbors[edge_index]
@@ -8075,7 +8083,11 @@ impl UnionFind {
 
 #[cfg(test)]
 mod motif_tests {
-    use std::{cell::RefCell, collections::HashSet, sync::Arc};
+    use std::{
+        cell::RefCell,
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    };
 
     use cadmpeg_ir::topology::BodyKind;
 
@@ -9862,6 +9874,24 @@ mod motif_tests {
     }
 
     #[test]
+    fn quotient_closure_does_not_budget_forced_component_depth() {
+        const ROOT_COUNT: usize = 300;
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(ROOT_COUNT),
+            domains: vec![Arc::new(HashSet::from([0])); ROOT_COUNT],
+            members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
+        };
+        let candidates = vec![vec![[0, 0]]; ROOT_COUNT / 2];
+
+        let assignment = quotient
+            .close_coordinate_roots(1, &candidates)
+            .expect("forced coordinate component");
+
+        assert_eq!(quotient.root_count(), 1);
+        assert_eq!(assignment.values().copied().collect::<Vec<_>>(), [0]);
+    }
+
+    #[test]
     fn quotient_does_not_guess_an_ambiguous_coordinate_closure() {
         let all = Arc::new(HashSet::from([0, 1]));
         let mut quotient = MeshQuotient {
@@ -9902,6 +9932,21 @@ mod motif_tests {
         quotient.merge(0, 1).expect("closed endpoint merge");
         assert!(quotient.edge_domains_viable(&[vec![[2, 2]]]));
         assert!(!quotient.edge_domains_viable(&[vec![[1, 2]]]));
+    }
+
+    #[test]
+    fn quotient_point_assignment_accepts_a_closed_diagonal_edge() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(2),
+            domains: vec![Arc::new(HashSet::from([0])); 2],
+            members: vec![vec![0], vec![1]],
+        };
+        let root = quotient.merge(0, 1).expect("closed endpoint merge");
+
+        assert_eq!(
+            quotient.point_assignment(1, &[vec![[0, 0]]]),
+            Some(HashMap::from([(root, 0)]))
+        );
     }
 
     #[test]
