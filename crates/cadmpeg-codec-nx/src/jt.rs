@@ -105,6 +105,56 @@ pub(crate) fn unpack_predictor_residuals(residuals: &[i32], predictor: Predictor
     values
 }
 
+fn lossless_coordinate_component(exponents: &[i32], mantissae: &[i32]) -> Option<Vec<f32>> {
+    if exponents.len() != mantissae.len() {
+        return None;
+    }
+    exponents
+        .iter()
+        .zip(mantissae)
+        .map(|(&exponent, &mantissa)| {
+            let exponent = exponent as u32 & 0x1ff;
+            let mantissa = mantissa as u32 & 0x7f_ffff;
+            let value = f32::from_bits((exponent << 23) | mantissa);
+            value.is_finite().then_some(value)
+        })
+        .collect()
+}
+
+/// Decode the lossless component vectors and hash of one JT vertex-coordinate array.
+pub(crate) fn decode_lossless_vertex_coordinates(
+    bytes: &[u8],
+    vertex_count: usize,
+) -> Option<(Vec<[f32; 3]>, u32, usize)> {
+    let mut cursor = 0usize;
+    let mut components = Vec::with_capacity(3);
+    for _ in 0..3 {
+        let (exponent_residuals, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+        cursor = cursor.checked_add(exponent_len)?;
+        let (mantissa_residuals, mantissa_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+        cursor = cursor.checked_add(mantissa_len)?;
+        if exponent_residuals.len() != vertex_count || mantissa_residuals.len() != vertex_count {
+            return None;
+        }
+        components.push(lossless_coordinate_component(
+            &unpack_predictor_residuals(&exponent_residuals, Predictor::Lag1),
+            &unpack_predictor_residuals(&mantissa_residuals, Predictor::Lag1),
+        )?);
+    }
+    let coordinate_hash = read_u32(bytes, cursor)?;
+    cursor = cursor.checked_add(4)?;
+    let points = (0..vertex_count)
+        .map(|index| {
+            [
+                components[0][index],
+                components[1][index],
+                components[2][index],
+            ]
+        })
+        .collect();
+    Some((points, coordinate_hash, cursor))
+}
+
 /// Bound one complete JT Int32 Compressed Data Packet Mk. 2 without interpreting its symbols.
 pub(crate) fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usize)> {
     if depth > 3 {
@@ -177,9 +227,6 @@ fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<ProbabilityEntry>, usi
         let symbol = bits.read(symbol_bits)? as i32 - 2;
         let occurrence_count = bits.read(occurrence_bits)?;
         let value = (bits.read(value_bits)? as i32).wrapping_add(minimum);
-        if occurrence_count == 0 {
-            return None;
-        }
         entries.push(ProbabilityEntry {
             symbol,
             occurrence_count,
@@ -197,6 +244,27 @@ struct CodeBits<'a> {
 }
 
 impl CodeBits<'_> {
+    fn read(&mut self, count: u8) -> Option<u32> {
+        let end = self.bit.checked_add(usize::from(count))?;
+        if end > self.bit_len {
+            return None;
+        }
+        let mut value = 0;
+        for _ in 0..count {
+            value = (value << 1) | u32::from(self.next());
+        }
+        Some(value)
+    }
+
+    fn read_signed(&mut self, count: u8) -> Option<i32> {
+        let raw = self.read(count)?;
+        Some(match count {
+            0 => 0,
+            32 => raw as i32,
+            _ => ((raw << (32 - count)) as i32) >> (32 - count),
+        })
+    }
+
     fn next(&mut self) -> u16 {
         if self.bit >= self.bit_len {
             return 0;
@@ -294,40 +362,65 @@ fn decode_bitlength(
         bit_len: code_bit_len,
         bit: 0,
     };
-    let mut width = 0i32;
-    // Each emitted value consumes at least the one leading run bit, so no more than
-    // code_bit_len values can decode; a larger declared count cannot fill the run.
-    let value_count = cadmpeg_ir::cursor::bounded_len(value_count as u64, 1, code_bit_len)?;
+    let value_count =
+        cadmpeg_ir::cursor::bounded_len(value_count as u64, 1, MAX_ARITHMETIC_VALUES)?;
     let mut values = Vec::with_capacity(value_count);
-    while bits.bit < bits.bit_len && values.len() < value_count {
-        if bits.next() != 0 {
-            let mut previous = 2u16;
+    if bits.read(1)? == 0 {
+        let minimum_bits = u8::try_from(bits.read(6)?).ok()?;
+        let maximum_bits = u8::try_from(bits.read(6)?).ok()?;
+        if minimum_bits > 32 || maximum_bits > 32 {
+            return None;
+        }
+        let minimum = bits.read_signed(minimum_bits)?;
+        let maximum = bits.read_signed(maximum_bits)?;
+        if maximum < minimum {
+            return None;
+        }
+        let span = u32::try_from(i64::from(maximum) - i64::from(minimum)).ok()?;
+        let width = if span == 0 {
+            0
+        } else {
+            (u32::BITS - span.leading_zeros()) as u8
+        };
+        for _ in 0..value_count {
+            let code = bits.read(width)?;
+            let value = i64::from(minimum) + i64::from(code);
+            if value > i64::from(maximum) {
+                return None;
+            }
+            values.push(i32::try_from(value).ok()?);
+        }
+    } else {
+        let mean = bits.read_signed(32)?;
+        let delta_bits = u8::try_from(bits.read(3)?).ok()?;
+        let run_bits = u8::try_from(bits.read(3)?).ok()?;
+        if delta_bits == 0 || run_bits == 0 {
+            return None;
+        }
+        let minimum_delta = -(1_i32 << (delta_bits - 1));
+        let maximum_delta = (1_i32 << (delta_bits - 1)) - 1;
+        let mut width = 0i32;
+        while values.len() < value_count {
             loop {
-                let bit = bits.next();
-                if previous != 2 && bit != previous {
-                    break;
-                }
-                width += if bit == 1 { 2 } else { -2 };
+                let delta = bits.read_signed(delta_bits)?;
+                width = width.checked_add(delta)?;
                 if !(0..=32).contains(&width) {
                     return None;
                 }
-                previous = bit;
+                if delta != minimum_delta && delta != maximum_delta {
+                    break;
+                }
+            }
+            let run = usize::try_from(bits.read(run_bits)?).ok()?;
+            if run == 0 || values.len().checked_add(run)? > value_count {
+                return None;
+            }
+            for _ in 0..run {
+                values.push(mean.wrapping_add(bits.read_signed(width as u8)?));
             }
         }
-        let mut raw = 0u32;
-        for _ in 0..width {
-            raw = (raw << 1) | u32::from(bits.next());
-        }
-        let value = if width == 0 {
-            0
-        } else if width == 32 {
-            raw as i32
-        } else {
-            ((raw << (32 - width)) as i32) >> (32 - width)
-        };
-        values.push(value);
     }
-    (values.len() == value_count).then_some(values)
+    (bits.bit == code_bit_len).then_some(values)
 }
 
 /// Decode one complete JT Int32 Compressed Data Packet Mk. 2.

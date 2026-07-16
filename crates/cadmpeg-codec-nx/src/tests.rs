@@ -321,16 +321,58 @@ fn jt_int32_cdp2_decodes_empty_and_bitlength_packets() {
         Some((vec![], 4))
     );
 
-    // Width two, then two signed two-bit values: 1 and -1.
-    let packet = [2, 0, 0, 0, 1, 8, 0, 0, 0, 0, 0, 0, 0xcb];
+    let encode_packet = |bits: &[u8], value_count: u32| {
+        let mut code_words = Vec::new();
+        for chunk in bits.chunks(32) {
+            let mut word = 0u32;
+            for bit in chunk {
+                word = (word << 1) | u32::from(*bit);
+            }
+            word <<= 32 - chunk.len();
+            code_words.extend_from_slice(&word.to_le_bytes());
+        }
+        let mut packet = value_count.to_le_bytes().to_vec();
+        packet.push(1);
+        packet.extend_from_slice(&(bits.len() as u32).to_le_bytes());
+        packet.extend(code_words);
+        packet
+    };
+    let field = |bits: &mut Vec<u8>, value: u32, width: u8| {
+        bits.extend((0..width).rev().map(|shift| ((value >> shift) & 1) as u8));
+    };
+
+    // Fixed-width mode: range [-1, 1], followed by codes for 1 and -1.
+    let mut bits = vec![0];
+    field(&mut bits, 2, 6);
+    field(&mut bits, 2, 6);
+    field(&mut bits, 0b11, 2);
+    field(&mut bits, 0b01, 2);
+    field(&mut bits, 2, 2);
+    field(&mut bits, 0, 2);
+    let packet = encode_packet(&bits, 2);
     assert_eq!(
         crate::jt::decode_int32_cdp2(&packet, 0),
         Some((vec![1, -1], packet.len()))
     );
+
+    // Variable-width mode: mean 10, one two-bit run containing +1 and -1.
+    let mut bits = vec![1];
+    field(&mut bits, 10, 32);
+    field(&mut bits, 3, 3);
+    field(&mut bits, 3, 3);
+    field(&mut bits, 2, 3);
+    field(&mut bits, 2, 3);
+    field(&mut bits, 1, 2);
+    field(&mut bits, 3, 2);
+    let packet = encode_packet(&bits, 2);
+    assert_eq!(
+        crate::jt::decode_int32_cdp2(&packet, 0),
+        Some((vec![11, 9], packet.len()))
+    );
 }
 
 #[test]
-fn jt_int32_cdp2_decodes_arithmetic_single_value_context() {
+fn jt_int32_cdp2_decodes_arithmetic_context_with_zero_frequency_entry() {
     let mut context_bits = Vec::<bool>::new();
     let mut push = |value: u32, width: u8| {
         for shift in (0..width).rev() {
@@ -341,10 +383,13 @@ fn jt_int32_cdp2_decodes_arithmetic_single_value_context() {
     push(1, 6);
     push(1, 6);
     push(7, 32);
+    push(0, 2);
+    push(0, 1);
+    push(0, 1);
     push(1, 2);
     push(1, 1);
     push(0, 1);
-    let mut context = vec![0, 1];
+    let mut context = vec![0, 2];
     for chunk in context_bits.chunks(8) {
         let mut byte = 0u8;
         for bit in chunk {
@@ -371,8 +416,8 @@ fn jt_int32_cdp2_decodes_arithmetic_single_value_context() {
 
 #[test]
 fn jt_int32_cdp2_decodes_unsplit_and_split_chopper_packets() {
-    let nested = [2, 0, 0, 0, 1, 8, 0, 0, 0, 0, 0, 0, 0xcb];
-    let low_bits = [2, 0, 0, 0, 1, 8, 0, 0, 0, 0, 0, 0, 0xc9];
+    let nested = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
+    let low_bits = [2, 0, 0, 0, 1, 17, 0, 0, 0, 0x00, 0x80, 0x12, 0x04];
     let mut unsplit = vec![2, 0, 0, 0, 4, 0];
     unsplit.extend_from_slice(&nested);
     assert_eq!(
@@ -393,7 +438,7 @@ fn jt_int32_cdp2_decodes_unsplit_and_split_chopper_packets() {
 
 #[test]
 fn jt_int32_cdp2_frames_zero_chop_nested_packet() {
-    let nested = [2, 0, 0, 0, 1, 8, 0, 0, 0, 0, 0, 0, 0xcb];
+    let nested = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
     let mut packet = vec![2, 0, 0, 0, 4, 0];
     packet.extend_from_slice(&nested);
     assert_eq!(
@@ -436,11 +481,11 @@ fn jt_predictors_reconstruct_primal_integers() {
         [10, 20, 30, 40, 9, 3]
     );
     assert_eq!(
-        unpack_predictor_residuals(&[10, 20, 30, 40, 45 ^ 40], Predictor::Xor1),
+        unpack_predictor_residuals(&[10, 20, 30, 40, 0x2d ^ 0x28], Predictor::Xor1),
         [10, 20, 30, 40, 45]
     );
     assert_eq!(
-        unpack_predictor_residuals(&[10, 20, 30, 40, 35 ^ 30], Predictor::Xor2),
+        unpack_predictor_residuals(&[10, 20, 30, 40, 0x23 ^ 0x1e], Predictor::Xor2),
         [10, 20, 30, 40, 35]
     );
     assert_eq!(

@@ -281,6 +281,23 @@ pub struct DisplayJtVertexCoordinateArrayHeader {
     pub source_offset: u64,
 }
 
+/// Lossless model-space coordinates decoded from one JT 9 vertex array.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtVertexCoordinates {
+    /// Globally unique coordinate-array identity.
+    pub id: String,
+    /// Owning coordinate-array header.
+    pub header: String,
+    /// XYZ coordinates in the JT model's serialized metre unit.
+    pub points_m: Vec<[f32; 3]>,
+    /// Combined hash serialized after the component vectors.
+    pub coordinate_hash: u32,
+    /// Complete byte length of the six component packets and hash.
+    pub byte_len: u32,
+    /// Absolute source offset of the first exponent packet.
+    pub source_offset: u64,
+}
+
 /// Complete JT 9 tri-strip shape node controlling one late-loaded mesh.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DisplayJtTriStripShapeNode {
@@ -1720,6 +1737,50 @@ pub fn display_jt_topology_packet_sequences(
         });
     }
     (sequences, headers, coordinate_headers)
+}
+
+/// Decode every complete lossless JT 9 coordinate array.
+pub fn display_jt_vertex_coordinates(
+    container: &Container,
+    headers: &[DisplayJtVertexCoordinateArrayHeader],
+) -> Vec<DisplayJtVertexCoordinates> {
+    let mut arrays = Vec::new();
+    for header in headers {
+        if header.component_quantization_bits != [0; 3] {
+            continue;
+        }
+        let Ok(start) = usize::try_from(header.source_offset + 32) else {
+            return Vec::new();
+        };
+        let Ok(byte_len) = usize::try_from(header.compressed_components_byte_len) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container.data.get(start..start.saturating_add(byte_len)) else {
+            return Vec::new();
+        };
+        let Some((points_m, coordinate_hash, consumed)) =
+            crate::jt::decode_lossless_vertex_coordinates(
+                bytes,
+                header.unique_vertex_count as usize,
+            )
+        else {
+            return Vec::new();
+        };
+        let Ok(consumed) = u32::try_from(consumed) else {
+            return Vec::new();
+        };
+        arrays.push(DisplayJtVertexCoordinates {
+            id: header
+                .id
+                .replacen("coordinate-array-header", "vertex-coordinates", 1),
+            header: header.id.clone(),
+            points_m,
+            coordinate_hash,
+            byte_len: consumed,
+            source_offset: header.source_offset + 32,
+        });
+    }
+    arrays
 }
 
 /// Decode element framing and exact post-marker tails from compressed segments.

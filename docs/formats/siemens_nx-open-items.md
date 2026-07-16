@@ -33,5 +33,5 @@ This document records unresolved NX `.prt` byte semantics.
 
 ## Embedded JT display model
 
-- The compressed coordinate-component payload following the three uniform quantizers is unspecified. Lossless arrays use a compound floating-point representation with separately framed exponent and mantissa data; it is not three Int32 Compressed Data Packet Mk. 2 component vectors.
+- Coordinate reconstruction for nonzero quantization widths is unspecified.
 - Reconstruction of triangle-strip connectivity from the decoded topological dual-mesh vectors is unspecified.
