@@ -156,6 +156,37 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+    let empty_configuration_names = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.name.is_empty())
+        .count();
+    let mut configuration_name_counts = BTreeMap::new();
+    for name in ir
+        .model
+        .configurations
+        .iter()
+        .map(|configuration| configuration.name.as_str())
+        .filter(|name| !name.is_empty())
+    {
+        *configuration_name_counts.entry(name).or_insert(0usize) += 1;
+    }
+    let ambiguous_configuration_names = configuration_name_counts
+        .values()
+        .filter(|count| **count > 1)
+        .copied()
+        .sum::<usize>();
+    if empty_configuration_names > 0 || ambiguous_configuration_names > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{empty_configuration_names} configuration record(s) have empty names; {ambiguous_configuration_names} configuration record(s) share non-unique names."
+            ),
+            provenance: None,
+        });
+    }
 
     let feature_names = ir
         .model
@@ -2217,6 +2248,38 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "2 configuration record(s) share non-unique geometry partition identities."
+        }));
+    }
+
+    #[test]
+    fn incomplete_configuration_names_are_reported() {
+        let mut ir = CadIr::empty(Units::default());
+        for (ordinal, name) in ["", "Shared", "Shared"].into_iter().enumerate() {
+            ir.model.configurations.push(DesignConfiguration {
+                id: ConfigurationId(format!("configuration:{ordinal}")),
+                ordinal: ordinal as u32,
+                active: ordinal == 1,
+                source_index: Some(ordinal as u32),
+                name: name.into(),
+                material: None,
+                properties: BTreeMap::new(),
+                bodies: Vec::new(),
+                native_ref: Some(format!("native:{ordinal}")),
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "1 configuration record(s) have empty names; 2 configuration record(s) share non-unique names."
         }));
     }
 
