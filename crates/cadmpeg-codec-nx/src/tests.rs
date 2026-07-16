@@ -1102,6 +1102,27 @@ fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
 }
 
 #[test]
+fn display_jt9_instance_node_requires_one_exact_child_reference() {
+    let mut body = Vec::new();
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&0x20_u32.to_le_bytes());
+    body.extend_from_slice(&1_u32.to_le_bytes());
+    body.extend_from_slice(&7_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&9_u32.to_le_bytes());
+
+    assert_eq!(
+        crate::native::parse_jt9_instance_node_body(&body),
+        Some((1, 9))
+    );
+    body.push(0);
+    assert!(crate::native::parse_jt9_instance_node_body(&body).is_none());
+    body.pop();
+    body[14..16].copy_from_slice(&2_u16.to_le_bytes());
+    assert!(crate::native::parse_jt9_instance_node_body(&body).is_none());
+}
+
+#[test]
 fn display_jt9_tri_strip_shape_node_requires_exact_shape_data() {
     let mut body = Vec::new();
     body.extend_from_slice(&1_u16.to_le_bytes());

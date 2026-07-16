@@ -551,6 +551,23 @@ pub struct DisplayJtBaseNodeData {
     pub source_offset: u64,
 }
 
+/// Complete JT 9 instance node referencing one shared logical scene node.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayJtInstanceNode {
+    /// Globally unique instance-node identity.
+    pub id: String,
+    /// Owning common node-data record.
+    pub base_node: String,
+    /// Serialized instance-node object identifier.
+    pub object_id: u32,
+    /// Instance-node data version.
+    pub version: u16,
+    /// Referenced child node object identifier.
+    pub child_object_id: u32,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
 /// One JT geometric-transform attribute attached to logical scene nodes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DisplayJtGeometricTransformAttribute {
@@ -820,6 +837,13 @@ pub(crate) fn parse_jt_base_node_body(
         .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
         .collect();
     Some((version, flags, attribute_object_ids, &body[header_end..]))
+}
+
+pub(crate) fn parse_jt9_instance_node_body(body: &[u8]) -> Option<(u16, u32)> {
+    let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
+    let version = u16::from_le_bytes(family.get(..2)?.try_into().ok()?);
+    let child_object_id = u32::from_le_bytes(family.get(2..6)?.try_into().ok()?);
+    (version == 1 && family.len() == 6).then_some((version, child_object_id))
 }
 
 pub(crate) struct ParsedJtTriStripShapeNode {
@@ -2741,6 +2765,73 @@ pub fn display_jt_base_node_data(
                 attribute_object_ids,
                 family_data_byte_len: family_data.len() as u32,
                 family_data_sha256: sha256_hex(family_data),
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    nodes
+}
+
+/// Decode complete JT 9 instance nodes from logical scene-graph segments.
+pub fn display_jt_instance_nodes(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtInstanceNode> {
+    const INSTANCE_NODE_TYPE: [u8; 16] = [
+        0x2a, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut nodes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major != 9 || segment.compression.is_none() {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != INSTANCE_NODE_TYPE {
+                continue;
+            }
+            if element.object_base_type != 0 {
+                return Vec::new();
+            }
+            let Some((version, child_object_id)) = parse_jt9_instance_node_body(element.body)
+            else {
+                return Vec::new();
+            };
+            nodes.push(DisplayJtInstanceNode {
+                id: format!("{}-instance-node-{ordinal}", segment.id),
+                base_node: format!("{}-base-node-{ordinal}", segment.id),
+                object_id: element.object_id,
+                version,
+                child_object_id,
                 source_offset: segment.source_offset + 24,
             });
         }

@@ -7033,6 +7033,11 @@ fn attach_native_object_model(
         &display_jt_segments,
         &display_jt_documents,
     );
+    let display_jt_instance_nodes = crate::native::display_jt_instance_nodes(
+        &scan.container,
+        &display_jt_segments,
+        &display_jt_documents,
+    );
     let display_jt_geometric_transform_attributes =
         crate::native::display_jt_geometric_transform_attributes(
             &scan.container,
@@ -7573,6 +7578,12 @@ fn attach_native_object_model(
         annotations
             .note(&node.id, annotation_stream, node.source_offset)
             .tag("DISPLAY_JT_BASE_NODE_DATA");
+        annotations.exactness(&node.id, Exactness::ByteExact);
+    }
+    for node in &display_jt_instance_nodes {
+        annotations
+            .note(&node.id, annotation_stream, node.source_offset)
+            .tag("DISPLAY_JT_INSTANCE_NODE");
         annotations.exactness(&node.id, Exactness::ByteExact);
     }
     for node in &display_jt_partition_nodes {
@@ -8421,6 +8432,9 @@ fn attach_native_object_model(
     }
     if !display_jt_base_node_data.is_empty() {
         namespace.set_arena("display_jt_base_node_data", &display_jt_base_node_data)?;
+    }
+    if !display_jt_instance_nodes.is_empty() {
+        namespace.set_arena("display_jt_instance_nodes", &display_jt_instance_nodes)?;
     }
     if !display_jt_partition_nodes.is_empty() {
         namespace.set_arena("display_jt_partition_nodes", &display_jt_partition_nodes)?;
