@@ -2880,20 +2880,20 @@ fn transition_profile_selection(
     let topology = state.topology.as_ref()?;
     let inserted_faces = &state.transition.as_ref()?.topology.faces.inserted;
     let tolerance = linear_tolerance.max(1.0e-7);
-    let mut profiles = Vec::new();
-    for face in inserted_faces {
-        let Some(points) = historical_face_points(*face, topology) else {
-            continue;
-        };
-        let Some(selection) = selection_containing_points(sketch, entities, &points, tolerance)
-        else {
-            continue;
-        };
-        if !profiles.contains(&selection) {
-            profiles.push(selection);
-        }
-    }
-    (profiles.len() == 1).then(|| profiles.remove(0))
+    unique_complete_selection(inserted_faces.iter().map(|face| {
+        let points = historical_face_points(*face, topology)?;
+        selection_containing_points(sketch, entities, &points, tolerance)
+    }))
+}
+
+fn unique_complete_selection<T: PartialEq>(
+    selections: impl IntoIterator<Item = Option<T>>,
+) -> Option<T> {
+    let mut selections = selections.into_iter();
+    let first = selections.next()??;
+    selections
+        .all(|selection| selection.as_ref() == Some(&first))
+        .then_some(first)
 }
 
 fn historical_face_points(
@@ -12067,6 +12067,23 @@ mod relation_tests {
 
         topology.point_positions.pop();
         assert_eq!(super::historical_face_points(10, &topology), None);
+    }
+
+    #[test]
+    fn transition_profile_requires_every_inserted_face_to_resolve_identically() {
+        assert_eq!(
+            super::unique_complete_selection([Some(3), Some(3), Some(3)]),
+            Some(3)
+        );
+        assert_eq!(
+            super::unique_complete_selection([Some(3), None, Some(3)]),
+            None
+        );
+        assert_eq!(super::unique_complete_selection([Some(3), Some(4)]), None);
+        assert_eq!(
+            super::unique_complete_selection(std::iter::empty::<Option<u32>>()),
+            None
+        );
     }
 
     #[test]
