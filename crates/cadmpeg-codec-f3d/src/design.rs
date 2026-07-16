@@ -4646,6 +4646,51 @@ pub fn project_dimension_constraints(
             })
         },
     ));
+    let recipe_companions = recipe_records
+        .iter()
+        .filter_map(|record| {
+            Some((
+                native_stream(&record.id)?.to_owned(),
+                record.companion_record_index,
+            ))
+        })
+        .collect::<HashSet<_>>();
+    constraints.extend(companions.iter().filter_map(|companion| {
+        if companion.payload_byte_length == 0 {
+            return None;
+        }
+        let scope = native_stream(&companion.id)?;
+        let key = (scope.to_owned(), companion.record_index);
+        if locus_companions.contains(&key) || recipe_companions.contains(&key) {
+            return None;
+        }
+        let owner = owners_by_companion.get(&key)?;
+        let (parameter, parameter_id) = parameter_for(scope, companion.record_index)?;
+        if parameter.kind != DesignParameterKind::Dimension {
+            return None;
+        }
+        let sketch = sketches_by_scope
+            .get(&(scope, owner.scope_record_index))?
+            .clone();
+        Some(SketchConstraint {
+            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
+            sketch,
+            definition: Definition::Native {
+                native_kind: parameter.source_kind.clone(),
+                native_state: None,
+                entities: Vec::new(),
+                parameter: Some(parameter_id),
+                operands: vec![SketchNativeOperand {
+                    native_kind: "dimension_companion".into(),
+                    native_field: Some("companion_payload".into()),
+                    native_role: None,
+                    object_index: companion.record_index,
+                    native_ref: Some(companion.id.clone()),
+                }],
+            },
+            native_ref: Some(companion.id.clone()),
+        })
+    }));
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
 }
@@ -15984,13 +16029,13 @@ mod relation_tests {
             line("fourth", Point2::new(12.0, 0.0), Point2::new(12.0, 4.0)),
         ];
         let constraints = project_dimension_constraints(
-            &[placement],
-            &[parameter],
-            &[owner],
+            std::slice::from_ref(&placement),
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&owner),
             &[],
             &[],
             &[],
-            &[companion],
+            std::slice::from_ref(&companion),
             &[recipe(1, 31), recipe(0, 30)],
             &[],
             &[],
@@ -16001,14 +16046,14 @@ mod relation_tests {
         };
         let SketchConstraintDefinition::RepeatedDistance {
             measurements,
-            parameter,
+            parameter: projected_parameter,
             ..
         } = &constraint.definition
         else {
             panic!("expected repeated recipe-backed dimension")
         };
         assert_eq!(
-            parameter.0,
+            projected_parameter.0,
             format!("f3d:model:parameter#{}:{stream}4", stream.len())
         );
         assert_eq!(measurements.len(), 2);
@@ -16016,6 +16061,46 @@ mod relation_tests {
             measurement,
             cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance { .. }
         )));
+
+        let retained = project_dimension_constraints(
+            std::slice::from_ref(&placement),
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&owner),
+            &[],
+            &[],
+            &[],
+            std::slice::from_ref(&companion),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            retained.as_slice(),
+            [cadmpeg_ir::sketches::SketchConstraint {
+                definition: SketchConstraintDefinition::Native {
+                    native_kind,
+                    native_state: None,
+                    entities,
+                    parameter: Some(actual_parameter),
+                    operands,
+                },
+                native_ref: Some(native_ref),
+                ..
+            }] if native_kind == "Linear Dimension-4"
+                && entities.is_empty()
+                && actual_parameter.0 == format!("f3d:model:parameter#{}:{stream}4", stream.len())
+                && native_ref == &companion.id
+                && matches!(operands.as_slice(), [cadmpeg_ir::sketches::SketchNativeOperand {
+                    native_kind,
+                    native_field: Some(field),
+                    native_role: None,
+                    object_index: 22,
+                    native_ref: Some(operand_ref),
+                }] if native_kind == "dimension_companion"
+                    && field == "companion_payload"
+                    && operand_ref == &companion.id)
+        ));
     }
 
     #[test]
