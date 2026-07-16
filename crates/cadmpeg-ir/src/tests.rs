@@ -2487,7 +2487,7 @@ fn spatial_sketch_cannot_own_planar_geometry() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             space: SketchSpace::Spatial,
-            sketch: Some(sketch_id),
+            sketch: Some(sketch_id.clone()),
         },
         native_ref: None,
     });
@@ -2496,6 +2496,14 @@ fn spatial_sketch_cannot_own_planar_geometry() {
         .findings
         .iter()
         .any(|finding| { finding.message == "spatial sketch owns planar sketch geometry" }));
+
+    ir.model.features.last_mut().unwrap().definition = FeatureDefinition::Sketch {
+        space: SketchSpace::Unresolved,
+        sketch: Some(sketch_id),
+    };
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.message == "sketch with unresolved coordinate space owns planar sketch geometry"
+    }));
 }
 
 #[test]

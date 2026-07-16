@@ -13328,6 +13328,23 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
         }
     ));
 
+    let FeatureDefinition::Sketch { space, .. } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed spatial sketch");
+    };
+    *space = SketchSpace::Unresolved;
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("has unresolved sketch coordinate space"));
+    let FeatureDefinition::Sketch { space, .. } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed unresolved sketch");
+    };
+    *space = SketchSpace::Spatial;
+
     decoded.ir.model.features[0].name = Some("Renamed spatial path".into());
     let FeatureDefinition::Sketch { space, .. } = &mut decoded.ir.model.features[1].definition
     else {

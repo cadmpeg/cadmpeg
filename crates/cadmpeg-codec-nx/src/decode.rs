@@ -10679,7 +10679,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
     }
     match kind {
         "SKETCH" => FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
+            space: SketchSpace::Unresolved,
             sketch: None,
         },
         "SIMPLE HOLE" => FeatureDefinition::Hole {

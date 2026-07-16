@@ -149,7 +149,7 @@ primary body object has a segment body-image binding, every surviving neutral
 body from that image is an output of the operation. An unbound primary body
 retains its object index but has no neutral output.
 
-An operation label equal to `SKETCH` denotes a planar sketch history node. Its
+An operation label equal to `SKETCH` denotes a sketch history operation. Its
 position in the operation sequence is the sketch's history position. The
 sketch record consists of that label, the operation record beginning at the
 same header, and its uniquely resolved non-null input blocks in header-slot

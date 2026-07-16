@@ -4499,6 +4499,16 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Sketch { space, .. } => {
+                let requested_kind = match space {
+                    SketchSpace::Unresolved => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unresolved sketch coordinate space",
+                            feature.id
+                        )));
+                    }
+                    SketchSpace::Planar => "Sketch",
+                    SketchSpace::Spatial => "3DSketch",
+                };
                 if existing
                     .as_deref()
                     .is_some_and(|record| !feature_family(record, "Sketch"))
@@ -4510,10 +4520,7 @@ pub fn sync_neutral_features(
                 }
                 (
                     existing.as_deref().map_or_else(
-                        || match space {
-                            SketchSpace::Planar => "Sketch".into(),
-                            SketchSpace::Spatial => "3DSketch".into(),
-                        },
+                        || requested_kind.into(),
                         |record| {
                             let native_space = if record.kind.eq_ignore_ascii_case("3DSketch") {
                                 SketchSpace::Spatial
@@ -4523,10 +4530,7 @@ pub fn sync_neutral_features(
                             if native_space == *space {
                                 record.kind.clone()
                             } else {
-                                match space {
-                                    SketchSpace::Planar => "Sketch".into(),
-                                    SketchSpace::Spatial => "3DSketch".into(),
-                                }
+                                requested_kind.into()
                             }
                         },
                     ),

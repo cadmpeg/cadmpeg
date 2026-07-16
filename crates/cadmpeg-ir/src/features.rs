@@ -826,6 +826,8 @@ pub enum PrincipalPlane {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SketchSpace {
+    /// Source identifies a sketch but does not establish planar or spatial coordinates.
+    Unresolved,
     /// Geometry lies on one plane and may resolve into the planar sketch arena.
     #[default]
     Planar,

@@ -1832,12 +1832,20 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Sketch { space, sketch } => {
-                if matches!(space, crate::features::SketchSpace::Spatial) && sketch.is_some() {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "spatial sketch owns planar sketch geometry",
-                    );
+                if sketch.is_some() {
+                    match space {
+                        crate::features::SketchSpace::Unresolved => feature_geometry_error(
+                            findings,
+                            feature,
+                            "sketch with unresolved coordinate space owns planar sketch geometry",
+                        ),
+                        crate::features::SketchSpace::Spatial => feature_geometry_error(
+                            findings,
+                            feature,
+                            "spatial sketch owns planar sketch geometry",
+                        ),
+                        crate::features::SketchSpace::Planar => {}
+                    }
                 }
                 if let Some(sketch) = sketch {
                     if !ir.model.sketches.iter().any(|value| value.id == *sketch) {

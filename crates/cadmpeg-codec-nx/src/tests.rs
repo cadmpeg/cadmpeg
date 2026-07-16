@@ -2699,11 +2699,11 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
 }
 
 #[test]
-fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
+fn nx_sketch_operation_retains_an_unresolved_coordinate_space() {
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("SKETCH", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
+            space: cadmpeg_ir::features::SketchSpace::Unresolved,
             sketch: None,
         }
     ));
