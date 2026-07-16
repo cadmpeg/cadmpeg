@@ -1992,6 +1992,24 @@ fn project_extrude(
         native_stream(&placement.id) == native_stream(&scope.id)
             && placement.entity_id == profile.entity_id
     })?;
+    let supported_parameter = |source_kind: &str| {
+        matches!(
+            source_kind,
+            "AlongDistance"
+                | "AgainstDistance"
+                | "ProfileOffset"
+                | "Side1Offset"
+                | "Side2Offset"
+                | "TaperAngle"
+                | "Side2TaperAngle"
+        )
+    };
+    if parameters
+        .iter()
+        .any(|(_, parameter)| !supported_parameter(&parameter.source_kind))
+    {
+        return None;
+    }
     let scope_groups = construction_groups
         .iter()
         .filter(|group| {
@@ -2132,7 +2150,10 @@ fn project_extrude(
         None
     };
     let draft = match unique("TaperAngle")? {
-        Some(parameter) => design_angle(parameter).filter(|angle| angle.0 != 0.0),
+        Some(parameter) => {
+            let angle = design_angle(parameter)?;
+            (angle.0 != 0.0).then_some(angle)
+        }
         None => None,
     };
     let has_body_operands = scope_groups
@@ -16697,6 +16718,24 @@ mod relation_tests {
                 ..
             } if profile == &neutral_sketch_id(&placement)
         ));
+        let unsupported = parameter("UnclassifiedControl", "mm", 1.0);
+        assert!(project_extrude(
+            &scope,
+            &[(0, &along), (1, &unsupported)],
+            &[],
+            &[],
+            std::slice::from_ref(&placement),
+        )
+        .is_none());
+        let invalid_taper = parameter("TaperAngle", "native-unit", 0.2);
+        assert!(project_extrude(
+            &scope,
+            &[(0, &along), (1, &invalid_taper)],
+            &[],
+            &[],
+            std::slice::from_ref(&placement),
+        )
+        .is_none());
         let mut owned_along = along.clone();
         owned_along.id = "f3d:Design/BulkStream.dat:parameter#45".into();
         owned_along.record_index = 45;
