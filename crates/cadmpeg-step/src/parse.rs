@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generic Part 21 record-graph parser.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
+use std::sync::OnceLock;
 
 use crate::lex::{lex, BinaryValue, LexError, Token, TokenKind};
 
@@ -104,6 +105,49 @@ pub struct Exchange {
     pub signature: Option<Range<usize>>,
     /// DATA instances indexed across every DATA section.
     pub records: BTreeMap<u64, RawRecord>,
+    entity_ids: OnceLock<HashMap<String, Vec<u64>>>,
+}
+
+impl Exchange {
+    fn entity_ids(&self) -> &HashMap<String, Vec<u64>> {
+        self.entity_ids.get_or_init(|| {
+            let mut entity_ids = HashMap::<String, Vec<u64>>::new();
+            for (&id, record) in &self.records {
+                for partial in &record.partials {
+                    if let Some(ids) = entity_ids.get_mut(partial.name.as_str()) {
+                        ids.push(id);
+                    } else {
+                        entity_ids.insert(partial.name.clone(), vec![id]);
+                    }
+                }
+            }
+            entity_ids
+        })
+    }
+
+    pub(crate) fn entities(&self, name: &str) -> impl Iterator<Item = (u64, &RawRecord)> {
+        self.entity_ids()
+            .get(name)
+            .into_iter()
+            .flatten()
+            .filter_map(|id| self.records.get(id).map(|record| (*id, record)))
+    }
+
+    pub(crate) fn entities_any<'a>(
+        &'a self,
+        names: &[&str],
+    ) -> impl Iterator<Item = (u64, &'a RawRecord)> {
+        let mut ids = names
+            .iter()
+            .filter_map(|name| self.entity_ids().get(*name))
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids.dedup();
+        ids.into_iter()
+            .filter_map(|id| self.records.get(&id).map(|record| (id, record)))
+    }
 }
 
 /// Structural or lexical exchange failure.
@@ -288,6 +332,7 @@ impl Parser {
             data,
             signature,
             records,
+            entity_ids: OnceLock::new(),
         })
     }
 

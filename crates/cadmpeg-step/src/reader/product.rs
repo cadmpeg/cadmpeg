@@ -26,9 +26,11 @@ pub(super) fn decode(
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
     let formations = exchange
-        .records
-        .iter()
-        .filter_map(|(&id, record)| {
+        .entities_any(&[
+            "PRODUCT_DEFINITION_FORMATION",
+            "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE",
+        ])
+        .filter_map(|(id, record)| {
             if !matches!(
                 record.simple_name(),
                 Some("PRODUCT_DEFINITION_FORMATION")
@@ -40,9 +42,8 @@ pub(super) fn decode(
         })
         .collect::<BTreeMap<_, _>>();
     let definitions = exchange
-        .records
-        .iter()
-        .filter_map(|(&id, record)| {
+        .entities("PRODUCT_DEFINITION")
+        .filter_map(|(id, record)| {
             if record.simple_name() != Some("PRODUCT_DEFINITION") {
                 return None;
             }
@@ -51,7 +52,7 @@ pub(super) fn decode(
         .collect::<BTreeMap<_, _>>();
     let shape_bindings = shape_bindings(exchange, &definitions);
 
-    for (&step_id, record) in &exchange.records {
+    for (step_id, record) in exchange.entities("PRODUCT") {
         if record.simple_name() != Some("PRODUCT") {
             continue;
         }
@@ -76,9 +77,8 @@ pub(super) fn decode(
     typed.extend(definitions.keys().copied());
 
     let usages = exchange
-        .records
-        .iter()
-        .filter_map(|(&id, record)| {
+        .entities("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
+        .filter_map(|(id, record)| {
             if record.simple_name() != Some("NEXT_ASSEMBLY_USAGE_OCCURRENCE") {
                 return None;
             }
@@ -200,7 +200,18 @@ pub(super) fn decode(
         warnings.push("assembly occurrence graph has no resolvable root".into());
     }
     apply_body_placements(exchange, geometry, &usages, ir, &mut warnings);
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities_any(&[
+        "APPLICATION_CONTEXT",
+        "PRODUCT_CONTEXT",
+        "PRODUCT_DEFINITION_CONTEXT",
+        "PRODUCT_DEFINITION_SHAPE",
+        "SHAPE_DEFINITION_REPRESENTATION",
+        "ITEM_DEFINED_TRANSFORMATION",
+        "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION",
+        "REPRESENTATION_MAP",
+        "MAPPED_ITEM",
+        "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION",
+    ]) {
         if matches!(
             record.simple_name(),
             Some("APPLICATION_CONTEXT")
@@ -233,18 +244,15 @@ fn apply_body_placements(
     warnings: &mut Vec<String>,
 ) {
     let pds = exchange
-        .records
-        .iter()
-        .filter_map(|(&id, record)| {
+        .entities("PRODUCT_DEFINITION_SHAPE")
+        .filter_map(|(id, record)| {
             (record.simple_name() == Some("PRODUCT_DEFINITION_SHAPE"))
                 .then_some((id, record.parameter(2)?.reference()?))
         })
         .collect::<BTreeMap<_, _>>();
     let definition_representations = exchange
-        .records
-        .values()
-        .filter(|record| record.simple_name() == Some("SHAPE_DEFINITION_REPRESENTATION"))
-        .filter_map(|record| {
+        .entities("SHAPE_DEFINITION_REPRESENTATION")
+        .filter_map(|(_, record)| {
             let definition = *pds.get(&record.parameter(0)?.reference()?)?;
             Some((definition, record.parameter(1)?.reference()?))
         })
@@ -265,7 +273,7 @@ fn apply_body_placements(
         .map(|(index, body)| (body.id.clone(), index))
         .collect::<BTreeMap<_, _>>();
     let mut representation_cache = BTreeMap::new();
-    for (&id, item) in &exchange.records {
+    for (id, item) in exchange.entities("MAPPED_ITEM") {
         if item.simple_name() != Some("MAPPED_ITEM") {
             continue;
         }

@@ -42,7 +42,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         ir.tolerances.linear = uncertainty;
     }
 
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities_any(&["CARTESIAN_POINT", "DIRECTION"]) {
         match record.simple_name() {
             Some("CARTESIAN_POINT") => {
                 if let Some(position) = coordinates(record, 1, scale) {
@@ -122,7 +122,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 position,
             })
         }));
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities("VECTOR") {
         if record.simple_name() == Some("VECTOR") {
             let value = record
                 .parameter(1)
@@ -151,7 +151,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             }
         }
     }
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities_any(&["AXIS2_PLACEMENT_3D", "AXIS1_PLACEMENT"]) {
         if matches!(
             record.simple_name(),
             Some("AXIS2_PLACEMENT_3D" | "AXIS1_PLACEMENT")
@@ -177,9 +177,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
     let mut pcurve_geometries = exchange
-        .records
-        .iter()
-        .filter_map(|(&id, record)| {
+        .entities("LINE")
+        .filter_map(|(id, record)| {
             if record.simple_name() != Some("LINE") {
                 return None;
             }
@@ -194,14 +193,20 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             Some((id, PcurveGeometry::Line { origin, direction }))
         })
         .collect::<BTreeMap<_, _>>();
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities("B_SPLINE_CURVE_WITH_KNOTS") {
         if record.partial("B_SPLINE_CURVE_WITH_KNOTS").is_some() {
             if let Some(geometry) = nurbs_pcurve(record, &points2) {
                 pcurve_geometries.insert(id, geometry);
             }
         }
     }
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities_any(&[
+        "LINE",
+        "CIRCLE",
+        "ELLIPSE",
+        "POLYLINE",
+        "B_SPLINE_CURVE_WITH_KNOTS",
+    ]) {
         let geometry = match record.simple_name() {
             Some("LINE") if pcurve_geometries.contains_key(&id) => continue,
             Some("B_SPLINE_CURVE_WITH_KNOTS") if pcurve_geometries.contains_key(&id) => continue,
@@ -271,7 +276,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             ));
         }
     }
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities("B_SPLINE_CURVE_WITH_KNOTS") {
         if record.partial("B_SPLINE_CURVE_WITH_KNOTS").is_none()
             || record.simple_name() == Some("B_SPLINE_CURVE_WITH_KNOTS")
             || pcurve_geometries.contains_key(&id)
@@ -292,7 +297,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
 
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities_any(&["SURFACE_CURVE", "SEAM_CURVE"]) {
         if !matches!(record.simple_name(), Some("SURFACE_CURVE" | "SEAM_CURVE")) {
             continue;
         }
@@ -310,9 +315,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         typed.insert(id);
     }
     let mut pending_composites = exchange
-        .records
-        .iter()
-        .filter_map(|(&id, record)| record.partial("COMPOSITE_CURVE").map(|_| id))
+        .entities("COMPOSITE_CURVE")
+        .map(|(id, _)| id)
         .collect::<BTreeSet<_>>();
     let curve_geometries = ir
         .model
@@ -320,7 +324,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|curve| (curve.id.clone(), curve.geometry.clone()))
         .collect::<BTreeMap<_, _>>();
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities("TRIMMED_CURVE") {
         if record.simple_name() != Some("TRIMMED_CURVE") {
             continue;
         }
@@ -422,7 +426,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|curve| (curve.id.clone(), curve.geometry.clone()))
         .collect::<BTreeMap<_, _>>();
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities("OFFSET_CURVE_3D") {
         if record.simple_name() != Some("OFFSET_CURVE_3D") {
             continue;
         }
@@ -477,7 +481,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|curve| curve.id.clone())
         .collect::<BTreeSet<_>>();
-    for (&id, record) in &exchange.records {
+    for (id, record) in
+        exchange.entities_any(&["SURFACE_OF_LINEAR_EXTRUSION", "SURFACE_OF_REVOLUTION"])
+    {
         let definition = match record.simple_name() {
             Some("SURFACE_OF_LINEAR_EXTRUSION") => record
                 .parameter(1)
@@ -538,7 +544,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         typed.insert(id);
     }
 
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities_any(&[
+        "PLANE",
+        "CYLINDRICAL_SURFACE",
+        "CONICAL_SURFACE",
+        "SPHERICAL_SURFACE",
+        "TOROIDAL_SURFACE",
+        "DEGENERATE_TOROIDAL_SURFACE",
+        "B_SPLINE_SURFACE_WITH_KNOTS",
+    ]) {
         let placement = record
             .parameter(1)
             .and_then(Value::reference)
@@ -612,7 +626,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             ));
         }
     }
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities("B_SPLINE_SURFACE_WITH_KNOTS") {
         if record.partial("B_SPLINE_SURFACE_WITH_KNOTS").is_none()
             || record.simple_name() == Some("B_SPLINE_SURFACE_WITH_KNOTS")
         {
@@ -644,7 +658,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|curve| curve.id.clone())
         .collect::<BTreeSet<_>>();
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities("CURVE_BOUNDED_SURFACE") {
         if record.simple_name() != Some("CURVE_BOUNDED_SURFACE") {
             continue;
         }
@@ -705,7 +719,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|surface| surface.id.clone())
         .collect::<BTreeSet<_>>();
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities("OFFSET_SURFACE") {
         if record.simple_name() != Some("OFFSET_SURFACE") {
             continue;
         }
@@ -749,7 +763,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|surface| surface.id.clone())
         .collect::<BTreeSet<_>>();
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities("PCURVE") {
         if record.simple_name() != Some("PCURVE") {
             continue;
         }
@@ -788,7 +802,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
 
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities("DEGENERATE_TOROIDAL_SURFACE") {
         if record.simple_name() != Some("DEGENERATE_TOROIDAL_SURFACE") {
             continue;
         }
