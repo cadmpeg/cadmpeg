@@ -801,6 +801,10 @@ The named `segtab` row before its schema close is likewise a data row. Its `type
 Positional rows may insert the two-byte `c0 80` wrapper before `type`. The
 wrapper does not change the following field layout. A compact `ext_id` value of
 zero is an identifier; the `f6` control sentinel represents an absent value.
+`ext_id` is the neutral section-entity identity when exactly one `segtab` row
+stores that value. Rows sharing an `ext_id` remain independent construction
+entities identified by their row offsets and do not participate in profile,
+trim, generated-carrier, or solver-incidence joins through that value.
 Segment type `5` is an isolated point entity. It stores one defined `pointid`;
 the second point slot is a control sentinel.
 
@@ -1463,7 +1467,7 @@ the row may carry six-byte `82..8f` state tokens and standalone `0f`, `18`, or
 stored XYZ endpoints. In this lane, `18 e0` stores a standalone zero followed
 by a named-record opener and is not dictionary index `e0`.
 
-A saved entity identifier is an `order_table.int_id`; joining through that row's `ext_id` binds its evaluated geometry to the corresponding `segtab` entity. A saved line with two complete section-space XY endpoints supplies that entity's line geometry when its `var_arr` endpoints are relation-backed. The saved-entity and solved-`segtab` sets are one-to-one by entity family. After explicit `order_table` joins, exactly one unmatched saved entity and one unmatched solved entity of the same family bind as the unique remaining pair; multiple unmatched pairs remain unresolved.
+A saved entity identifier is an `order_table.int_id`; joining through that row's `ext_id` binds its evaluated geometry to the corresponding `segtab` entity. The internal identifier must occur on exactly one saved entity before this join applies. Saved rows sharing an internal identifier remain independent construction entities identified by their row offsets. A saved line with two complete section-space XY endpoints supplies that entity's line geometry when its `var_arr` endpoints are relation-backed. The saved-entity and solved-`segtab` sets are one-to-one by entity family. After explicit `order_table` joins, exactly one unmatched saved entity and one unmatched solved entity of the same family bind as the unique remaining pair; multiple unmatched pairs remain unresolved.
 
 A saved line, arc, or circle with complete section-space geometry and an
 `order_table` join defines a neutral sketch entity under that row's `ext_id`.

@@ -8298,12 +8298,12 @@ fn section_skamp_constraints(
 }
 
 fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -> BTreeSet<u32> {
-    let mut ids = definition
-        .segments
-        .iter()
-        .flat_map(|segments| &segments.rows)
-        .map(|segment| segment.external_id)
-        .collect::<BTreeSet<_>>();
+    let mut ids = unique_section_segment_external_ids(
+        definition
+            .segments
+            .iter()
+            .flat_map(|segments| &segments.rows),
+    );
     let Some(order) = &definition.order_table else {
         return ids;
     };
@@ -8316,6 +8316,31 @@ fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -
             .filter_map(|(internal_id, _, _)| order.external_id(internal_id)),
     );
     ids
+}
+
+fn unique_section_segment_external_ids<'a>(
+    segments: impl IntoIterator<Item = &'a crate::feature::FeatureSegment>,
+) -> BTreeSet<u32> {
+    segments
+        .into_iter()
+        .fold(BTreeMap::new(), |mut counts, segment| {
+            *counts.entry(segment.external_id).or_insert(0usize) += 1;
+            counts
+        })
+        .into_iter()
+        .filter_map(|(external_id, count)| (count == 1).then_some(external_id))
+        .collect()
+}
+
+fn section_segment_identity_suffix(
+    unique_external_ids: &BTreeSet<u32>,
+    segment: &crate::feature::FeatureSegment,
+) -> String {
+    if unique_external_ids.contains(&segment.external_id) {
+        segment.external_id.to_string()
+    } else {
+        format!("offset:{}", segment.offset)
+    }
 }
 
 fn resolved_profile_chains(
@@ -8568,6 +8593,7 @@ fn transfer_resolved_sketches(
             .segments
             .as_ref()
             .map_or(&[][..], |segments| segments.rows.as_slice());
+        let unique_segment_ids = unique_section_segment_external_ids(segments);
         let points = resolved_section_points(definition);
         let solved = definition
             .trim_entities
@@ -8579,6 +8605,9 @@ fn transfer_resolved_sketches(
         let emitted = segments
             .iter()
             .filter(|segment| {
+                if !unique_segment_ids.contains(&segment.external_id) {
+                    return false;
+                }
                 if solved.contains(&segment.external_id) {
                     trimmed_section_segment_geometry(
                         definition,
@@ -8592,6 +8621,25 @@ fn transfer_resolved_sketches(
                 }
             })
             .map(|segment| segment.external_id)
+            .collect::<BTreeSet<_>>();
+        let resolved_segment_offsets = segments
+            .iter()
+            .filter(|segment| {
+                if unique_segment_ids.contains(&segment.external_id)
+                    && solved.contains(&segment.external_id)
+                {
+                    trimmed_section_segment_geometry(
+                        definition,
+                        &points,
+                        &trim_vertex_coordinates,
+                        segment,
+                    )
+                    .is_some()
+                } else {
+                    resolved_section_segment_geometry(definition, &points, segment).is_some()
+                }
+            })
+            .map(|segment| segment.offset)
             .collect::<BTreeSet<_>>();
         let mut profiles = resolved_profile_chains(definition, &emitted);
         let profile_segments = segments
@@ -8612,7 +8660,9 @@ fn transfer_resolved_sketches(
         let mut entities = segments
             .iter()
             .filter_map(|segment| {
-                let geometry = if solved.contains(&segment.external_id) {
+                let geometry = if unique_segment_ids.contains(&segment.external_id)
+                    && solved.contains(&segment.external_id)
+                {
                     trimmed_section_segment_geometry(
                         definition,
                         &points,
@@ -8624,7 +8674,8 @@ fn transfer_resolved_sketches(
                 };
                 let id = SketchEntityId(format!(
                     "creo:featdefs:sketch_entity#{}:{}",
-                    definition.id, segment.external_id
+                    definition.id,
+                    section_segment_identity_suffix(&unique_segment_ids, segment)
                 ));
                 annotate(
                     annotations,
@@ -8641,12 +8692,14 @@ fn transfer_resolved_sketches(
                 Some(SketchEntity {
                     id,
                     sketch: sketch_id.clone(),
-                    construction: !solved.contains(&segment.external_id)
-                        && !profile_segments.contains(&segment.external_id),
+                    construction: !unique_segment_ids.contains(&segment.external_id)
+                        || (!solved.contains(&segment.external_id)
+                            && !profile_segments.contains(&segment.external_id)),
                     native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
                     geometry_ref: Some(format!(
                         "creo:featdefs:section_curve#{}:{}",
-                        definition.id, segment.external_id
+                        definition.id,
+                        section_segment_identity_suffix(&unique_segment_ids, segment)
                     )),
                     endpoint_refs: match segment.kind {
                         crate::feature::FeatureSegmentKind::Arc => {
@@ -8664,11 +8717,12 @@ fn transfer_resolved_sketches(
             .collect::<Vec<_>>();
         for segment in segments
             .iter()
-            .filter(|segment| !emitted.contains(&segment.external_id))
+            .filter(|segment| !resolved_segment_offsets.contains(&segment.offset))
         {
             let id = SketchEntityId(format!(
                 "creo:featdefs:sketch_entity#{}:{}",
-                definition.id, segment.external_id
+                definition.id,
+                section_segment_identity_suffix(&unique_segment_ids, segment)
             ));
             annotate(
                 annotations,
@@ -8706,20 +8760,45 @@ fn transfer_resolved_sketches(
         }
         let mut saved_section_geometries = Vec::new();
         let mut generated_saved_geometries = Vec::new();
+        let saved_entity_id_counts = definition
+            .saved_section
+            .iter()
+            .flat_map(|saved| &saved.entities)
+            .filter_map(|entity| match entity {
+                crate::feature::FeatureSavedEntity::Line(line) => Some(line.entity_id),
+                crate::feature::FeatureSavedEntity::Arc(arc) => Some(arc.entity_id),
+                crate::feature::FeatureSavedEntity::Circle(circle) => Some(circle.entity_id),
+                crate::feature::FeatureSavedEntity::Spline(spline) => spline.entity_id,
+                crate::feature::FeatureSavedEntity::Dummy(dummy) => dummy.entity_id,
+            })
+            .fold(BTreeMap::new(), |mut counts, internal_id| {
+                *counts.entry(internal_id).or_insert(0usize) += 1;
+                counts
+            });
         for (internal_id, geometry, offset) in definition
             .saved_section
             .iter()
             .flat_map(|saved| &saved.entities)
             .filter_map(saved_section_entity_geometry)
         {
-            let external_id = definition
-                .order_table
-                .as_ref()
-                .and_then(|order| order.external_id(internal_id));
-            let suffix = external_id.map_or_else(
-                || format!("saved{internal_id}"),
-                |external_id| external_id.to_string(),
-            );
+            let unique_internal_id = saved_entity_id_counts.get(&internal_id) == Some(&1);
+            let external_id = if unique_internal_id {
+                definition
+                    .order_table
+                    .as_ref()
+                    .and_then(|order| order.external_id(internal_id))
+                    .filter(|external_id| unique_segment_ids.contains(external_id))
+            } else {
+                None
+            };
+            let suffix = if unique_internal_id {
+                external_id.map_or_else(
+                    || format!("saved{internal_id}"),
+                    |external_id| external_id.to_string(),
+                )
+            } else {
+                format!("saved:offset:{offset}")
+            };
             let entity_id = SketchEntityId(format!(
                 "creo:featdefs:sketch_entity#{}:{suffix}",
                 definition.id
@@ -8781,16 +8860,26 @@ fn transfer_resolved_sketches(
             let Some(nurbs) = saved_spline_nurbs(spline) else {
                 continue;
             };
-            let suffix = spline.entity_id.map_or_else(
-                || format!("offset{}", spline.offset),
-                |entity_id| entity_id.to_string(),
-            );
-            let external_id = spline.entity_id.and_then(|internal_id| {
+            let unique_internal_id = spline
+                .entity_id
+                .is_some_and(|id| saved_entity_id_counts.get(&id) == Some(&1));
+            let suffix = if unique_internal_id {
+                spline
+                    .entity_id
+                    .expect("unique saved spline has an internal id")
+                    .to_string()
+            } else {
+                format!("offset{}", spline.offset)
+            };
+            let external_id = if unique_internal_id {
                 definition
                     .order_table
                     .as_ref()
-                    .and_then(|order| order.external_id(internal_id))
-            });
+                    .and_then(|order| order.external_id(spline.entity_id?))
+                    .filter(|external_id| unique_segment_ids.contains(external_id))
+            } else {
+                None
+            };
             let generated = external_id.is_some_and(|external_id| {
                 saved_entity_is_generated_profile(
                     definition.owner_feature_id,
@@ -8813,6 +8902,9 @@ fn transfer_resolved_sketches(
                 "creo:featdefs:saved_spline_curve#{}:{suffix}",
                 definition.id
             ));
+            if entities.iter().any(|entity| entity.id == entity_id) {
+                continue;
+            }
             if nurbs
                 .control_points
                 .iter()
@@ -8870,7 +8962,8 @@ fn transfer_resolved_sketches(
             };
             let id = CurveId(format!(
                 "creo:featdefs:section_curve#{}:{}",
-                definition.id, segment.external_id
+                definition.id,
+                section_segment_identity_suffix(&unique_segment_ids, segment)
             ));
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
@@ -8890,7 +8983,8 @@ fn transfer_resolved_sketches(
                     format: "creo".to_string(),
                     object_id: format!(
                         "FeatDefs:section#{}:{}",
-                        definition.id, segment.external_id
+                        definition.id,
+                        section_segment_identity_suffix(&unique_segment_ids, segment)
                     ),
                     name: None,
                     color: None,
@@ -8937,12 +9031,14 @@ fn transfer_resolved_sketches(
             .filter_map(|segment| {
                 let entity = SketchEntityId(format!(
                     "creo:featdefs:sketch_entity#{}:{}",
-                    definition.id, segment.external_id
+                    definition.id,
+                    section_segment_identity_suffix(&unique_segment_ids, segment)
                 ));
                 let constraint_definition = line_orientation_definition(segment, entity)?;
                 let id = SketchConstraintId(format!(
                     "creo:featdefs:sketch_constraint#{}:verhor:{}",
-                    definition.id, segment.external_id
+                    definition.id,
+                    section_segment_identity_suffix(&unique_segment_ids, segment)
                 ));
                 annotate(
                     annotations,
@@ -13986,13 +14082,35 @@ mod resolved_sketch_tests {
             } if native_kind == "creo:skamp:1"
         ));
         let mut duplicate_entity = definition.clone();
-        let duplicate_line = duplicate_entity.segments.as_ref().expect("segments").rows[0].clone();
+        let mut duplicate_line =
+            duplicate_entity.segments.as_ref().expect("segments").rows[0].clone();
+        duplicate_line.offset = 500;
         duplicate_entity
             .segments
             .as_mut()
             .expect("segments")
             .rows
             .push(duplicate_line);
+        let unique_ids = unique_section_segment_external_ids(
+            duplicate_entity
+                .segments
+                .iter()
+                .flat_map(|segments| &segments.rows),
+        );
+        assert!(!unique_ids.contains(&12));
+        assert_eq!(
+            section_segment_identity_suffix(
+                &unique_ids,
+                duplicate_entity
+                    .segments
+                    .as_ref()
+                    .expect("segments")
+                    .rows
+                    .last()
+                    .expect("duplicate segment")
+            ),
+            "offset:500"
+        );
         assert!(matches!(
             section_skamp_constraints(&duplicate_entity, &SketchId("sketch".into()))[0]
                 .0
@@ -14756,6 +14874,27 @@ mod resolved_sketch_tests {
                 entity: SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             }
         );
+        let mut duplicate_saved = saved_definition
+            .saved_section
+            .as_ref()
+            .expect("saved section")
+            .entities[1]
+            .clone();
+        if let crate::feature::FeatureSavedEntity::Line(line) = &mut duplicate_saved {
+            line.offset = 86;
+        }
+        saved_definition
+            .saved_section
+            .as_mut()
+            .expect("saved section")
+            .entities
+            .push(duplicate_saved);
+        assert!(matches!(
+            section_skamp_constraints(&saved_definition, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
     }
 
     #[test]
