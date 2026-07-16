@@ -35,6 +35,22 @@ pub(super) fn decode_exchange(
     options: &DecodeOptions,
     exchange: &Exchange,
 ) -> Result<DecodeResult, CodecError> {
+    decode_exchange_mode(input, options, exchange, true).map(|(decoded, _)| decoded)
+}
+
+pub(super) fn inspect_exchange(
+    input: &[u8],
+    exchange: &Exchange,
+) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
+    decode_exchange_mode(input, &DecodeOptions::default(), exchange, false)
+}
+
+fn decode_exchange_mode(
+    input: &[u8],
+    options: &DecodeOptions,
+    exchange: &Exchange,
+    retain_opaque: bool,
+) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut attributes = BTreeMap::new();
     attributes.insert("schema".into(), schema_name(exchange));
@@ -60,7 +76,7 @@ pub(super) fn decode_exchange(
             .collect(),
     };
     if options.container_only {
-        return Ok(DecodeResult::new(ir, report));
+        return Ok((DecodeResult::new(ir, report), BTreeSet::new()));
     }
 
     let geometry = geometry::decode(exchange, &mut ir);
@@ -143,54 +159,79 @@ pub(super) fn decode_exchange(
     typed_records.extend(dependencies.typed_records);
     typed_records.extend(validation.typed_records);
 
-    let mut opaque = Vec::with_capacity(exchange.records.len());
+    let opaque_offsets = if retain_opaque {
+        BTreeSet::new()
+    } else {
+        exchange
+            .records
+            .values()
+            .filter(|record| !typed_records.contains(&record.id))
+            .map(|record| record.span.start)
+            .collect()
+    };
     let mut counts = BTreeMap::<String, usize>::new();
-    let opaque_ids = exchange
-        .records
-        .values()
-        .filter(|record| !typed_records.contains(&record.id))
-        .map(|record| {
+    if retain_opaque {
+        let opaque_ids = exchange
+            .records
+            .values()
+            .filter(|record| !typed_records.contains(&record.id))
+            .map(|record| {
+                let kind = record
+                    .partials
+                    .iter()
+                    .map(|partial| partial.name.to_ascii_lowercase())
+                    .collect::<Vec<_>>()
+                    .join("_");
+                (record.id, format!("step:data:{kind}#{}", record.id))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut opaque = Vec::with_capacity(exchange.records.len());
+        for record in exchange.records.values() {
+            if typed_records.contains(&record.id) {
+                continue;
+            }
             let kind = record
                 .partials
                 .iter()
-                .map(|partial| partial.name.to_ascii_lowercase())
+                .map(|partial| partial.name.as_str())
                 .collect::<Vec<_>>()
-                .join("_");
-            (record.id, format!("step:data:{kind}#{}", record.id))
-        })
-        .collect::<BTreeMap<_, _>>();
-    for record in exchange.records.values() {
-        if typed_records.contains(&record.id) {
-            continue;
+                .join("+");
+            *counts.entry(kind).or_default() += 1;
+            let bytes = input[record.span.clone()].to_vec();
+            let mut links = BTreeSet::new();
+            for partial in &record.partials {
+                partial
+                    .parameters
+                    .iter()
+                    .for_each(|value| collect_references(value, &mut links));
+            }
+            opaque.push(UnknownRecord {
+                id: UnknownId(opaque_ids[&record.id].clone()),
+                offset: record.span.start as u64,
+                byte_len: record.span.len() as u64,
+                sha256: sha256_hex(&bytes),
+                data: Some(bytes),
+                links: links
+                    .into_iter()
+                    .filter_map(|id| opaque_ids.get(&id).cloned())
+                    .collect(),
+            });
         }
-        let kind = record
-            .partials
-            .iter()
-            .map(|partial| partial.name.as_str())
-            .collect::<Vec<_>>()
-            .join("+");
-        *counts.entry(kind.clone()).or_default() += 1;
-        let bytes = input[record.span.clone()].to_vec();
-        let mut links = BTreeSet::new();
-        for partial in &record.partials {
-            partial
-                .parameters
+        ir.set_native_unknowns_owned("step", opaque);
+    } else {
+        for record in exchange.records.values() {
+            if typed_records.contains(&record.id) {
+                continue;
+            }
+            let kind = record
+                .partials
                 .iter()
-                .for_each(|value| collect_references(value, &mut links));
+                .map(|partial| partial.name.as_str())
+                .collect::<Vec<_>>()
+                .join("+");
+            *counts.entry(kind).or_default() += 1;
         }
-        opaque.push(UnknownRecord {
-            id: UnknownId(opaque_ids[&record.id].clone()),
-            offset: record.span.start as u64,
-            byte_len: record.span.len() as u64,
-            sha256: sha256_hex(&bytes),
-            data: Some(bytes),
-            links: links
-                .into_iter()
-                .filter_map(|id| opaque_ids.get(&id).cloned())
-                .collect(),
-        });
     }
-    ir.set_native_unknowns_owned("step", opaque);
     let accounting = byte_accounting(input.len(), exchange, &typed_records);
     if let Some(source) = &mut ir.source {
         source
@@ -219,7 +260,7 @@ pub(super) fn decode_exchange(
             message: format!("preserved {count} {name} instance(s) as named opaque STEP records"),
             provenance: None,
         }));
-    Ok(DecodeResult::new(ir, report))
+    Ok((DecodeResult::new(ir, report), opaque_offsets))
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

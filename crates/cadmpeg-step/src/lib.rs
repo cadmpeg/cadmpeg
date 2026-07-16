@@ -2897,17 +2897,7 @@ impl Codec for StepCodec {
         }
         let exchange =
             parse::parse(&bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
-        let decoded = reader::decode_exchange(&bytes, &DecodeOptions::default(), &exchange)?;
-        let opaque_offsets = decoded
-            .ir
-            .native
-            .namespace("step")
-            .and_then(|namespace| namespace.arenas.get("unknowns"))
-            .into_iter()
-            .flatten()
-            .filter_map(|record| record.fields.get("offset")?.as_u64())
-            .map(|offset| offset as usize)
-            .collect::<std::collections::BTreeSet<_>>();
+        let (decoded, opaque_offsets) = reader::inspect_exchange(&bytes, &exchange)?;
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
             role: "metadata".into(),
