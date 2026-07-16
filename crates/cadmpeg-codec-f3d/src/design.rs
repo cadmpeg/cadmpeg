@@ -1617,11 +1617,24 @@ fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
 
 fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> Vec<&[i64]> {
     if operand.recipe_reference_contexts.is_empty() {
-        operand
-            .terminal_reference_edge_slots
-            .iter()
-            .map(Vec::as_slice)
-            .collect()
+        if operand.recipe_structure.is_some() {
+            operand
+                .local_topology_references
+                .iter()
+                .filter_map(|ordinal| {
+                    operand
+                        .terminal_reference_edge_slots
+                        .get(usize::try_from(ordinal.get()).ok()?.checked_sub(1)?)
+                })
+                .map(Vec::as_slice)
+                .collect()
+        } else {
+            operand
+                .terminal_reference_edge_slots
+                .iter()
+                .map(Vec::as_slice)
+                .collect()
+        }
     } else {
         operand
             .recipe_reference_contexts

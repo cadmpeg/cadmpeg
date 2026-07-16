@@ -1218,6 +1218,8 @@ fn bind_active_edge_operand_candidates(
     topologies: &[(i64, &AsmHistoricalTopology)],
 ) {
     let mut matches = topologies.iter().filter_map(|(state_id, topology)| {
+        let all_reference_faces =
+            terminal_edge_recipe_reference_faces(&operand.recipe_references, None);
         let reference_faces = terminal_edge_recipe_reference_faces(
             &operand.recipe_references,
             operand
@@ -1241,6 +1243,10 @@ fn bind_active_edge_operand_candidates(
             .iter()
             .map(|faces| face_boundary_edges(&faces_in_topology(faces, topology), topology))
             .collect::<Vec<_>>();
+        let all_reference_edge_sets = all_reference_faces
+            .iter()
+            .map(|faces| face_boundary_edges(&faces_in_topology(faces, topology), topology))
+            .collect::<Vec<_>>();
         let edge = crate::design::resolved_edge_candidate_intersection(
             &selectors,
             reference_edge_sets.iter().map(Vec::as_slice),
@@ -1251,7 +1257,7 @@ fn bind_active_edge_operand_candidates(
             candidate_faces,
             boundary_edges,
             contexts,
-            reference_edge_sets,
+            all_reference_edge_sets,
             selectors,
         ))
     });
@@ -1261,7 +1267,7 @@ fn bind_active_edge_operand_candidates(
         candidate_faces,
         boundary_edges,
         contexts,
-        reference_edge_sets,
+        all_reference_edge_sets,
         selectors,
     )) = matches.next()
     else {
@@ -1273,7 +1279,7 @@ fn bind_active_edge_operand_candidates(
     operand.terminal_candidate_faces = candidate_faces;
     operand.terminal_boundary_edge_slots = boundary_edges;
     operand.terminal_boundary_edge_contexts = contexts;
-    operand.terminal_reference_edge_slots = reference_edge_sets;
+    operand.terminal_reference_edge_slots = all_reference_edge_sets;
     operand.recipe_selectors = selectors;
     operand.recipe_state_id = Some(state_id);
     operand.resolved_edge_slot = edge;
