@@ -18637,6 +18637,11 @@ fn transfer_positional_line_extrusion_planes(
         if replay_bound_surfaces.contains(&record.surface_id) {
             continue;
         }
+        if crate::surface::unique_surface_parameter(&scan.surface_parameters, record.surface_id)
+            .is_none_or(|unique| unique.offset != record.offset)
+        {
+            continue;
+        }
         let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
         else {
             continue;
@@ -18760,14 +18765,25 @@ fn transfer_tabulated_cylinder_spline_extrusions(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
-    let parameters = scan
-        .surface_parameters
-        .iter()
-        .map(|record| (record.surface_id, record))
-        .collect::<BTreeMap<_, _>>();
+    let mut replay_counts = BTreeMap::<u32, usize>::new();
+    for replay in &scan.tabulated_cylinder_curve_replays {
+        *replay_counts.entry(replay.surface_id).or_default() += 1;
+    }
     let mut transferred = 0;
     for replay in &scan.tabulated_cylinder_curve_replays {
-        let Some(parameters) = parameters.get(&replay.surface_id) else {
+        if replay_counts.get(&replay.surface_id) != Some(&1) {
+            continue;
+        }
+        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, replay.surface_id)
+        else {
+            continue;
+        };
+        if row.type_byte != 0x2c || row.offset != replay.surface_row_offset {
+            continue;
+        }
+        let Some(parameters) =
+            crate::surface::unique_surface_parameter(&scan.surface_parameters, replay.surface_id)
+        else {
             continue;
         };
         let Some((directrix, sweep)) = placed_tabulated_cylinder_directrix(replay, parameters)

@@ -275,6 +275,19 @@ pub struct SurfaceParameterRecord {
     pub body_offset: usize,
 }
 
+/// Return the positional parameter record for `surface_id` only when exactly
+/// one exists.
+pub(crate) fn unique_surface_parameter(
+    records: &[SurfaceParameterRecord],
+    surface_id: u32,
+) -> Option<&SurfaceParameterRecord> {
+    let mut matches = records
+        .iter()
+        .filter(|record| record.surface_id == surface_id);
+    let record = matches.next()?;
+    matches.next().is_none().then_some(record)
+}
+
 /// Six-slot model-space envelope frame following a tabulated-cylinder marker.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabulatedCylinderFrame {
@@ -1496,11 +1509,16 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
                 .then_some([first, second])
         };
         let control_points = std::array::from_fn(|index| decode_point(&bodies[index]));
-        let Some(owner) = surface_rows.iter().rev().find(|row| {
-            row.offset > owner_lower_bound && row.offset < replay_offset && row.type_byte == 0x2c
-        }) else {
+        let Some(owner) = surface_rows
+            .iter()
+            .rev()
+            .find(|row| row.offset > owner_lower_bound && row.offset < replay_offset)
+        else {
             continue;
         };
+        if owner.type_byte != 0x2c {
+            continue;
+        }
         let Some(last_control_point) = control_point_start.checked_add(3) else {
             continue;
         };
@@ -2585,6 +2603,40 @@ mod tests {
             ),
             Some(body.len() - 1)
         );
+    }
+
+    #[test]
+    fn tabulated_cylinder_replay_requires_the_immediately_preceding_row() {
+        let mut payload = b"srf_array\0\xf8\x02".to_vec();
+        payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 8]);
+        payload.extend_from_slice(&[8, 0x22, 4, 0x01, 0, 0]);
+        payload.extend_from_slice(&[
+            9, 0x13, 0xe2, 0x01, 0x00, 0x03, 0x18, 0xe6, 0x0f, 0xe6, 0xf8, 0x04, 0xf7, 32, 0xfb,
+            0xe2, 0xf7, 36,
+        ]);
+        for separator in [
+            [0x18, 0xf1, 0xf7, 32, 0xe2].as_slice(),
+            [0x18, 0xe2].as_slice(),
+            [0x18, 0xe2].as_slice(),
+            [0x18, 0xf2, 0xf7, 37, 0xf6, 0xe3].as_slice(),
+        ] {
+            payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+            payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+            payload.extend_from_slice(separator);
+        }
+
+        assert!(tabulated_cylinder_curve_replays(&payload).is_empty());
+    }
+
+    #[test]
+    fn positional_surface_parameter_lookup_rejects_repeated_identity() {
+        let payload = [7, 0x2c, 4, 0x01, 0, 0, 0x0f, 0xe4, 0xe3];
+        let records = parameter_records(&payload);
+        let [record] = records.as_slice() else {
+            panic!("expected one positional parameter record");
+        };
+        assert_eq!(unique_surface_parameter(&records, 7), Some(record));
+        assert!(unique_surface_parameter(&[record.clone(), record.clone()], 7).is_none());
     }
 
     #[test]
