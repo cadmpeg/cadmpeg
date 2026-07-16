@@ -5656,6 +5656,7 @@ fn exact_offset_constraint(
         return None;
     }
     let mut pairs = Vec::new();
+    let mut used_entities = HashSet::new();
     let mut signed_distance: Option<f64> = None;
     for operands in relation.resolved_return_members.chunks_exact(2) {
         let (source_record_index, result_record_index) = match operands {
@@ -5672,6 +5673,9 @@ fn exact_offset_constraint(
         };
         let source = projected.get(&(scope, source_record_index))?;
         let result = projected.get(&(scope, result_record_index))?;
+        if !used_entities.insert(source.id.clone()) || !used_entities.insert(result.id.clone()) {
+            return None;
+        }
         let distance = parallel_line_offset(&source.geometry, &result.geometry)?;
         if distance.abs() <= 1.0e-9 {
             return None;
@@ -15018,6 +15022,13 @@ mod relation_tests {
         assert!((signed_distance.0 + 2.0).abs() <= 1.0e-9);
         assert_eq!(parameter, None);
         assert_eq!(parameter_factor, None);
+
+        let mut repeated_pair = relation;
+        repeated_pair.return_members.extend([1, 3]);
+        repeated_pair
+            .resolved_return_members
+            .extend([curve(1, 0), curve(3, 30)]);
+        assert!(exact_offset_constraint(&repeated_pair, "native", &projected).is_none());
     }
 
     #[test]
