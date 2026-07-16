@@ -588,6 +588,7 @@ struct CreoReferenceLineRecord {
 struct CreoReferenceCircleRecord {
     id: String,
     center: [f64; 3],
+    center_source: &'static str,
     radius: f64,
     axis: [f64; 3],
     endpoints: [[f64; 3]; 2],
@@ -19295,6 +19296,11 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             .map(|circle| CreoReferenceCircleRecord {
                 id: format!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
                 center: circle.center,
+                center_source: if circle.center_stored {
+                    "stored"
+                } else {
+                    "endpoint_midpoint"
+                },
                 radius: circle.radius,
                 axis: circle.axis,
                 endpoints: [circle.start, circle.end],
@@ -19308,7 +19314,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                 "MdlRefInfo",
                 record.offset as u64,
                 "reference_circle_record",
-                Exactness::ByteExact,
+                Exactness::Derived,
             );
         }
         let namespace = ir.native.namespace_mut("creo");

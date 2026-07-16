@@ -30,6 +30,8 @@ pub struct ReferenceLine {
 pub struct ReferenceCircle {
     /// Circle center in model coordinates.
     pub center: [f64; 3],
+    /// Whether the center is stored explicitly rather than derived as a midpoint.
+    pub center_stored: bool,
     /// Positive circle radius.
     pub radius: f64,
     /// Unit circle-plane normal.
@@ -307,6 +309,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
         let axis = explicit_axis(center, radius, first, second)?;
         Some(ReferenceCircle {
             center,
+            center_stored: true,
             radius,
             axis,
             start: first,
@@ -333,6 +336,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
             && (diameter - 2.0 * radius).abs() <= 1e-9 * scale)
             .then_some(ReferenceCircle {
                 center,
+                center_stored: false,
                 radius,
                 axis: [0.0, 0.0, 1.0],
                 start: first,

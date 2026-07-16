@@ -3070,9 +3070,15 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Circle { radius: 1.0, .. }
     )));
-    assert_eq!(
-        result.ir.native.namespace("creo").unwrap().arenas["reference_circles"].len(),
-        1
+    let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_circles"][0];
+    assert_eq!(record.fields["center_source"], "endpoint_midpoint");
+    assert_annotation(
+        &result.ir,
+        &record.id,
+        "creo:MdlRefInfo",
+        scan.reference_circles[0].offset as u64,
+        "reference_circle_record",
+        Exactness::Derived,
     );
 }
 
