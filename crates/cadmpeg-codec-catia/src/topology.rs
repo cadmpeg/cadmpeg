@@ -3557,11 +3557,6 @@ impl PortCandidateSearch<'_> {
         if self.ambiguous || self.exhausted {
             return;
         }
-        if self.states >= MAX_STATES {
-            self.exhausted = true;
-            return;
-        }
-        self.states += 1;
         let next = (0..self.ports.len())
             .filter(|edge| self.edge_pairs[*edge].is_none())
             .map(|edge| {
@@ -3598,6 +3593,13 @@ impl PortCandidateSearch<'_> {
         };
         if count == 0 {
             return;
+        }
+        if count > 1 {
+            if self.states >= MAX_STATES {
+                self.exhausted = true;
+                return;
+            }
+            self.states += 1;
         }
         for candidate in 0..self.candidates[edge].len() {
             for points in self.compatible(edge, self.candidates[edge][candidate]) {
@@ -10155,6 +10157,28 @@ mod motif_tests {
             .iter()
             .zip(&candidates)
             .all(|(pair, candidates)| same_unordered_pair(*pair, candidates[0])));
+    }
+
+    #[test]
+    fn native_edge_identities_do_not_charge_forced_chain_depth() {
+        const EDGE_COUNT: usize = 1_200;
+        let ports = (0..EDGE_COUNT)
+            .map(|edge| {
+                let port = u32::try_from(edge).expect("bounded port identity");
+                [port, port + 1]
+            })
+            .collect::<Vec<_>>();
+        let candidates = (0..EDGE_COUNT)
+            .map(|edge| vec![[edge, edge + 1]])
+            .collect::<Vec<_>>();
+
+        let solution =
+            bind_edge_port_candidates(&ports, &candidates).expect("forced connected port chain");
+
+        assert_eq!(
+            solution,
+            candidates.into_iter().flatten().collect::<Vec<_>>()
+        );
     }
 
     #[test]
