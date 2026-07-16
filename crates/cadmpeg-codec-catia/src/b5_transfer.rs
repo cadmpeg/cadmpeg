@@ -41,7 +41,8 @@ struct SurfacePlan {
 struct CurvePlan {
     geometry: CurveGeometry,
     parameter_range: Option<[f64; 2]>,
-    tolerance: Option<f64>,
+    edge_tolerance: Option<f64>,
+    cache_fit_tolerance: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -242,28 +243,35 @@ fn transfer_complete(
                 nurbs_isocurve(pcurve, cache).map(CurveGeometry::Nurbs)
             });
             if let Some(geometry) = lifted {
-                let parameter_range = if matches!(surface, B5Surface::Plane { .. }) {
-                    edge_pcurve_parameters(graph, edge_id, pcurve_id).and_then(|parameters| {
-                        let endpoints = graph.edge_vertices[&edge_id];
-                        oriented_nurbs_range(
-                            geometry.clone(),
-                            parameters,
-                            b5_vertex_point(graph, endpoints[0])?,
-                            b5_vertex_point(graph, endpoints[1])?,
-                        )
-                    })
+                let endpoints = graph.edge_vertices[&edge_id];
+                let (Some(edge_start), Some(edge_end)) = (
+                    b5_vertex_point(graph, endpoints[0]),
+                    b5_vertex_point(graph, endpoints[1]),
+                ) else {
+                    return false;
+                };
+                let oriented_plan = if matches!(surface, B5Surface::Plane { .. }) {
+                    edge_pcurve_parameters(graph, edge_id, pcurve_id)
+                        .and_then(|parameters| {
+                            oriented_nurbs_range(geometry.clone(), parameters, edge_start, edge_end)
+                        })
+                        .map(|(geometry, parameter_range)| CurvePlan {
+                            geometry,
+                            parameter_range: Some(parameter_range),
+                            edge_tolerance: None,
+                            cache_fit_tolerance: None,
+                        })
+                } else if matches!(geometry, CurveGeometry::Line { .. }) {
+                    oriented_line_plan(&geometry, edge_start, edge_end)
                 } else {
                     None
                 };
-                let mut plan = CurvePlan {
+                let plan = oriented_plan.unwrap_or(CurvePlan {
                     geometry,
                     parameter_range: None,
-                    tolerance: None,
-                };
-                if let Some((oriented, range)) = parameter_range {
-                    plan.geometry = oriented;
-                    plan.parameter_range = Some(range);
-                }
+                    edge_tolerance: None,
+                    cache_fit_tolerance: None,
+                });
                 merge_curve_plan(
                     &mut edge_curve_plan,
                     &mut conflicting_edge_curves,
@@ -305,7 +313,8 @@ fn transfer_complete(
                     CurvePlan {
                         geometry: CurveGeometry::Nurbs(helix.cache.clone()),
                         parameter_range: Some(helix.parameter_range),
-                        tolerance: Some(helix.fit_tolerance),
+                        edge_tolerance: Some(helix.fit_tolerance),
+                        cache_fit_tolerance: Some(helix.fit_tolerance),
                     },
                 );
                 if conflicting_edge_curves.contains(&edge_id) {
@@ -524,7 +533,8 @@ fn transfer_complete(
                     record: Some(payload.clone()),
                 },
                 parameter_range: None,
-                tolerance: None,
+                edge_tolerance: None,
+                cache_fit_tolerance: None,
             });
         let geometry = curve_plan.geometry;
         annotate(
@@ -548,7 +558,8 @@ fn transfer_complete(
         });
         let helix = edge_helix_plan.remove(&edge_id);
         let edge_range = curve_plan.parameter_range;
-        let edge_tolerance = curve_plan.tolerance;
+        let edge_tolerance = curve_plan.edge_tolerance;
+        let cache_fit_tolerance = curve_plan.cache_fit_tolerance;
         let procedural = helix
             .as_ref()
             .map(|plan| {
@@ -577,14 +588,14 @@ fn transfer_complete(
             annotations
                 .derived(&procedural_id, "curve")
                 .derived(&procedural_id, "definition");
-            if edge_tolerance.is_some() {
+            if cache_fit_tolerance.is_some() {
                 annotations.derived(&procedural_id, "cache_fit_tolerance");
             }
             ir.model.procedural_curves.push(ProceduralCurve {
                 id: procedural_id,
                 curve: curve_id.clone(),
                 definition,
-                cache_fit_tolerance: edge_tolerance,
+                cache_fit_tolerance,
             });
         }
         annotate(
@@ -848,11 +859,19 @@ fn merge_curve_plan(
         .parameter_range
         .zip(candidate.parameter_range)
         .is_some_and(|(left, right)| left != right);
-    let tolerance_conflict = existing
-        .tolerance
-        .zip(candidate.tolerance)
+    let edge_tolerance_conflict = existing
+        .edge_tolerance
+        .zip(candidate.edge_tolerance)
         .is_some_and(|(left, right)| left != right);
-    if existing.geometry != candidate.geometry || range_conflict || tolerance_conflict {
+    let cache_tolerance_conflict = existing
+        .cache_fit_tolerance
+        .zip(candidate.cache_fit_tolerance)
+        .is_some_and(|(left, right)| left != right);
+    if existing.geometry != candidate.geometry
+        || range_conflict
+        || edge_tolerance_conflict
+        || cache_tolerance_conflict
+    {
         plans.remove(&edge);
         conflicts.insert(edge);
         return;
@@ -860,8 +879,11 @@ fn merge_curve_plan(
     if existing.parameter_range.is_none() {
         existing.parameter_range = candidate.parameter_range;
     }
-    if existing.tolerance.is_none() {
-        existing.tolerance = candidate.tolerance;
+    if existing.edge_tolerance.is_none() {
+        existing.edge_tolerance = candidate.edge_tolerance;
+    }
+    if existing.cache_fit_tolerance.is_none() {
+        existing.cache_fit_tolerance = candidate.cache_fit_tolerance;
     }
 }
 
@@ -899,6 +921,46 @@ fn edge_pcurve_parameters(graph: &B5Graph, edge: u32, pcurve: u32) -> Option<[f6
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()
+}
+
+fn oriented_line_plan(
+    geometry: &CurveGeometry,
+    edge_start: [f64; 3],
+    edge_end: [f64; 3],
+) -> Option<CurvePlan> {
+    let CurveGeometry::Line { origin, direction } = geometry else {
+        return None;
+    };
+    let origin = [origin.x, origin.y, origin.z];
+    let mut direction = [direction.x, direction.y, direction.z];
+    let direction_length = length(direction);
+    if !direction_length.is_finite() || direction_length <= f64::EPSILON {
+        return None;
+    }
+    direction = scale(direction, 1.0 / direction_length);
+    let parameter = |point| dot(subtract(point, origin), direction);
+    let mut range = [parameter(edge_start), parameter(edge_end)];
+    if !range.into_iter().all(f64::is_finite) || range[0] == range[1] {
+        return None;
+    }
+    let projected = range.map(|value| add(origin, scale(direction, value)));
+    let residual = distance(projected[0], edge_start).max(distance(projected[1], edge_end));
+    if residual > POINT_TOLERANCE {
+        return None;
+    }
+    if range[0] > range[1] {
+        direction = scale(direction, -1.0);
+        range = [-range[0], -range[1]];
+    }
+    Some(CurvePlan {
+        geometry: CurveGeometry::Line {
+            origin: point3(origin),
+            direction: vector(direction),
+        },
+        parameter_range: Some(range),
+        edge_tolerance: (residual > 1e-9).then_some(residual + 1e-9),
+        cache_fit_tolerance: None,
+    })
 }
 
 fn oriented_nurbs_range(
@@ -1817,8 +1879,9 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 mod tests {
     use super::{
         b5_edge_support_definition, body_kind_if_owned, cylinder_helix, lifted_curve_geometry,
-        merge_curve_plan, neutral_pcurve_point, oriented_nurbs_range, rational_arc,
-        revolution_surface, revolve_nurbs, transfer_vertex_tolerances, CurvePlan, SurfacePlan,
+        merge_curve_plan, neutral_pcurve_point, oriented_line_plan, oriented_nurbs_range,
+        rational_arc, revolution_surface, revolve_nurbs, transfer_vertex_tolerances, CurvePlan,
+        SurfacePlan,
     };
     use crate::b5::{B5Face, B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
     use cadmpeg_ir::eval::surface_point;
@@ -2166,6 +2229,37 @@ mod tests {
     }
 
     #[test]
+    fn analytic_line_range_uses_oriented_signed_distance() {
+        let line = CurveGeometry::Line {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            direction: Vector3::new(0.0, 0.0, 2.0),
+        };
+        let forward = oriented_line_plan(&line, [1.0, 2.0, 5.0], [1.0, 2.0, 9.0])
+            .expect("forward line range");
+        assert_eq!(forward.parameter_range, Some([2.0, 6.0]));
+        assert!(matches!(
+            forward.geometry,
+            CurveGeometry::Line { direction, .. }
+                if direction == Vector3::new(0.0, 0.0, 1.0)
+        ));
+
+        let reversed = oriented_line_plan(&line, [1.0, 2.0, 9.0], [1.0, 2.0, 5.0])
+            .expect("reversed line range");
+        assert_eq!(reversed.parameter_range, Some([-6.0, -2.0]));
+        assert!(matches!(
+            reversed.geometry,
+            CurveGeometry::Line { direction, .. }
+                if direction == Vector3::new(0.0, 0.0, -1.0)
+        ));
+        let tolerant = oriented_line_plan(&line, [1.001, 2.0, 5.0], [1.0, 2.0, 9.0])
+            .expect("tolerant line endpoints");
+        assert!(tolerant.edge_tolerance.is_some_and(|value| value > 0.001));
+        assert_eq!(tolerant.cache_fit_tolerance, None);
+        assert!(oriented_line_plan(&line, [1.01, 2.0, 5.0], [1.0, 2.0, 9.0]).is_none());
+        assert!(oriented_line_plan(&line, [1.0, 2.0, 5.0], [1.0, 2.0, 5.0]).is_none());
+    }
+
+    #[test]
     fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
         let geometry = CurveGeometry::Line {
             origin: Point3::new(0.0, 0.0, 0.0),
@@ -2180,7 +2274,8 @@ mod tests {
             CurvePlan {
                 geometry: geometry.clone(),
                 parameter_range: None,
-                tolerance: None,
+                edge_tolerance: None,
+                cache_fit_tolerance: None,
             },
         );
         merge_curve_plan(
@@ -2190,7 +2285,8 @@ mod tests {
             CurvePlan {
                 geometry,
                 parameter_range: Some([2.0, 8.0]),
-                tolerance: None,
+                edge_tolerance: None,
+                cache_fit_tolerance: None,
             },
         );
         assert_eq!(plans[&4].parameter_range, Some([2.0, 8.0]));
@@ -2201,7 +2297,8 @@ mod tests {
                 direction: Vector3::new(1.0, 0.0, 0.0),
             },
             parameter_range: Some([2.0, 8.0]),
-            tolerance: None,
+            edge_tolerance: None,
+            cache_fit_tolerance: None,
         };
         merge_curve_plan(&mut plans, &mut conflicts, 4, conflicting.clone());
         assert!(!plans.contains_key(&4));
