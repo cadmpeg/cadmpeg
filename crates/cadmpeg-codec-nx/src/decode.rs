@@ -3518,8 +3518,10 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
         }
         let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
         let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
-        let du = model_surface_derivative(ir, surface, parameters, u_step, true, domain)?;
-        let dv = model_surface_derivative(ir, surface, parameters, v_step, false, domain)?;
+        let du =
+            model_surface_derivative(ir, surface, parameters, u_step, true, domain, [None, None])?;
+        let dv =
+            model_surface_derivative(ir, surface, parameters, v_step, false, domain, [None, None])?;
         let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
             break;
         };
@@ -3645,6 +3647,7 @@ fn model_surface_derivative(
     step: f64,
     along_u: bool,
     domain: Option<([f64; 2], [f64; 2])>,
+    periods: [Option<f64>; 2],
 ) -> Option<Vector3> {
     let mut before = parameters;
     let mut after = parameters;
@@ -3655,8 +3658,8 @@ fn model_surface_derivative(
         before.v -= step;
         after.v += step;
     }
-    clamp_surface_parameters(&mut before, domain);
-    clamp_surface_parameters(&mut after, domain);
+    clamp_surface_parameters_with_periods(&mut before, domain, periods);
+    clamp_surface_parameters_with_periods(&mut after, domain, periods);
     let width = if along_u {
         after.u - before.u
     } else {
@@ -3727,17 +3730,19 @@ fn continue_surface_intersection_parameters_with_seeds(
         fit_parameters(surfaces[0], chart[0], seeds[0])?,
         fit_parameters(surfaces[1], chart[0], seeds[1])?,
     ];
-    let domains = surfaces.map(|surface| surface_parameter_domain(ir, surface));
+    let space = IntersectionParameterSpace {
+        domains: surfaces.map(|surface| surface_parameter_domain(ir, surface)),
+        periods: surfaces.map(|surface| surface_parameter_periods(ir, surface)),
+    };
     let seed = [first[0].u, first[0].v, first[1].u, first[1].v];
-    let seed_tangent = null_vector_3x4(intersection_parameter_jacobian(
-        ir, surfaces, seed, domains,
-    )?)?;
+    let seed_tangent =
+        null_vector_3x4(intersection_parameter_jacobian(ir, surfaces, seed, space)?)?;
     let mut current = correct_intersection_parameters(
         ir,
         surfaces,
         seed,
         seed_tangent,
-        domains,
+        space,
         fit_tolerance,
         1.0,
     )?;
@@ -3751,7 +3756,7 @@ fn continue_surface_intersection_parameters_with_seeds(
     ];
 
     for chart_pair in chart.windows(2) {
-        let jacobian = intersection_parameter_jacobian(ir, surfaces, current, domains)?;
+        let jacobian = intersection_parameter_jacobian(ir, surfaces, current, space)?;
         let tangent = null_vector_3x4(jacobian)?;
         let spatial_tangent = Vector3::new(
             jacobian[0][0] * tangent[0] + jacobian[0][1] * tangent[1],
@@ -3776,9 +3781,8 @@ fn continue_surface_intersection_parameters_with_seeds(
             )?,
         ];
         let mut predictor = [target[0].u, target[0].v, target[1].u, target[1].v];
-        for (side, surface) in surfaces.iter().enumerate() {
-            let periods = surface_parameter_periods(ir, surface);
-            for (coordinate, period) in periods.into_iter().enumerate() {
+        for (side, surface_periods) in space.periods.into_iter().enumerate() {
+            for (coordinate, period) in surface_periods.into_iter().enumerate() {
                 let index = side * 2 + coordinate;
                 if let Some(period) = period {
                     predictor[index] =
@@ -3797,7 +3801,7 @@ fn continue_surface_intersection_parameters_with_seeds(
             surfaces,
             predictor,
             tangent,
-            domains,
+            space,
             fit_tolerance,
             scale,
         )?;
@@ -3843,6 +3847,30 @@ fn surface_parameter_periods_inner(
         | SurfaceGeometry::Cone { .. }
         | SurfaceGeometry::Sphere { .. } => [Some(std::f64::consts::TAU), None],
         SurfaceGeometry::Torus { .. } => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
+        SurfaceGeometry::Nurbs(nurbs) => {
+            let period = |periodic: bool, knots: &[f64], degree: u32, count: u32| {
+                periodic.then(|| {
+                    let degree = usize::try_from(degree).ok()?;
+                    let count = usize::try_from(count).ok()?;
+                    let period = knots.get(count)? - knots.get(degree)?;
+                    (period.is_finite() && period > 0.0).then_some(period)
+                })?
+            };
+            [
+                period(
+                    nurbs.u_periodic,
+                    &nurbs.u_knots,
+                    nurbs.u_degree,
+                    nurbs.u_count,
+                ),
+                period(
+                    nurbs.v_periodic,
+                    &nurbs.v_knots,
+                    nurbs.v_degree,
+                    nurbs.v_count,
+                ),
+            ]
+        }
         SurfaceGeometry::Procedural { construction } => ir
             .model
             .procedural_surfaces
@@ -3866,12 +3894,12 @@ fn correct_intersection_parameters(
     surfaces: [&SurfaceId; 2],
     predictor: [f64; 4],
     tangent: [f64; 4],
-    domains: [Option<([f64; 2], [f64; 2])>; 2],
+    space: IntersectionParameterSpace,
     fit_tolerance: f64,
     scale: f64,
 ) -> Option<[f64; 4]> {
     let mut corrected = predictor;
-    clamp_intersection_parameters(&mut corrected, domains);
+    clamp_intersection_parameters(&mut corrected, space);
     for _ in 0..32 {
         let first = model_surface_point(ir, surfaces[0], corrected[0], corrected[1])?;
         let second = model_surface_point(ir, surfaces[1], corrected[2], corrected[3])?;
@@ -3893,39 +3921,56 @@ fn correct_intersection_parameters(
         {
             return Some(corrected);
         }
-        let jacobian = intersection_parameter_jacobian(ir, surfaces, corrected, domains)?;
+        let jacobian = intersection_parameter_jacobian(ir, surfaces, corrected, space)?;
         let matrix = [jacobian[0], jacobian[1], jacobian[2], tangent];
         let step = solve_4x4(matrix, residual.map(|value| -value))?;
         for index in 0..4 {
             corrected[index] += step[index];
         }
-        clamp_intersection_parameters(&mut corrected, domains);
+        clamp_intersection_parameters(&mut corrected, space);
     }
     None
+}
+
+#[derive(Clone, Copy)]
+struct IntersectionParameterSpace {
+    domains: [Option<([f64; 2], [f64; 2])>; 2],
+    periods: [[Option<f64>; 2]; 2],
 }
 
 fn intersection_parameter_jacobian(
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     parameters: [f64; 4],
-    domains: [Option<([f64; 2], [f64; 2])>; 2],
+    space: IntersectionParameterSpace,
 ) -> Option<[[f64; 4]; 3]> {
     let pairs = [
         Point2::new(parameters[0], parameters[1]),
         Point2::new(parameters[2], parameters[3]),
     ];
     let derivatives = std::array::from_fn(|side| {
-        let u_step = parameter_derivative_step(pairs[side].u, domains[side].map(|value| value.0));
-        let v_step = parameter_derivative_step(pairs[side].v, domains[side].map(|value| value.1));
+        let u_step =
+            parameter_derivative_step(pairs[side].u, space.domains[side].map(|value| value.0));
+        let v_step =
+            parameter_derivative_step(pairs[side].v, space.domains[side].map(|value| value.1));
         Some([
-            model_surface_derivative(ir, surfaces[side], pairs[side], u_step, true, domains[side])?,
+            model_surface_derivative(
+                ir,
+                surfaces[side],
+                pairs[side],
+                u_step,
+                true,
+                space.domains[side],
+                space.periods[side],
+            )?,
             model_surface_derivative(
                 ir,
                 surfaces[side],
                 pairs[side],
                 v_step,
                 false,
-                domains[side],
+                space.domains[side],
+                space.periods[side],
             )?,
         ])
     });
@@ -3939,15 +3984,27 @@ fn intersection_parameter_jacobian(
     ])
 }
 
-fn clamp_intersection_parameters(
-    parameters: &mut [f64; 4],
-    domains: [Option<([f64; 2], [f64; 2])>; 2],
-) {
+fn clamp_intersection_parameters(parameters: &mut [f64; 4], space: IntersectionParameterSpace) {
     for side in 0..2 {
         let mut pair = Point2::new(parameters[side * 2], parameters[side * 2 + 1]);
-        clamp_surface_parameters(&mut pair, domains[side]);
+        clamp_surface_parameters_with_periods(&mut pair, space.domains[side], space.periods[side]);
         parameters[side * 2] = pair.u;
         parameters[side * 2 + 1] = pair.v;
+    }
+}
+
+fn clamp_surface_parameters_with_periods(
+    parameters: &mut Point2,
+    domain: Option<([f64; 2], [f64; 2])>,
+    periods: [Option<f64>; 2],
+) {
+    if let Some((u_domain, v_domain)) = domain {
+        if periods[0].is_none() {
+            parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
+        }
+        if periods[1].is_none() {
+            parameters.v = parameters.v.clamp(v_domain[0], v_domain[1]);
+        }
     }
 }
 

@@ -11209,6 +11209,51 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     .unwrap();
     assert!(seam_lanes[0].windows(2).all(|pair| pair[0].u < pair[1].u));
     assert!(seam_lanes[0].last().unwrap().u > std::f64::consts::PI);
+
+    let periodic_nurbs = SurfaceId("synthetic:periodic-nurbs-prism".into());
+    let nurbs_section = SurfaceId("synthetic:periodic-nurbs-section".into());
+    let periodic_geometry = cadmpeg_ir::geometry::NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 5,
+        v_count: 2,
+        control_points: [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0), (1.0, 0.0)]
+            .into_iter()
+            .flat_map(|(x, y)| [Point3::new(x, y, 0.0), Point3::new(x, y, 1.0)])
+            .collect(),
+        weights: None,
+        u_periodic: true,
+        v_periodic: false,
+    };
+    ir.model.surfaces.extend([
+        Surface {
+            id: periodic_nurbs.clone(),
+            geometry: SurfaceGeometry::Nurbs(periodic_geometry.clone()),
+            source_object: None,
+        },
+        Surface {
+            id: nurbs_section.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.5),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let nurbs_chart = [3.8, 3.9, 4.1, 4.2]
+        .map(|u| cadmpeg_ir::eval::nurbs_surface_point(&periodic_geometry, u, 0.5).unwrap());
+    let nurbs_lanes = crate::decode::continue_surface_intersection_parameters(
+        &ir,
+        [&periodic_nurbs, &nurbs_section],
+        &nurbs_chart,
+        1.0e-8,
+    )
+    .unwrap();
+    assert!(nurbs_lanes[0].windows(2).all(|pair| pair[0].u < pair[1].u));
+    assert!(nurbs_lanes[0].last().unwrap().u > 4.0);
 }
 
 #[test]
