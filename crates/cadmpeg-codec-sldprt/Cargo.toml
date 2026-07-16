@@ -24,5 +24,10 @@ serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
 
+[features]
+# Exposes `pub mod fuzzing`, thin wrappers that drive the crate-private `brep`
+# leaf scanners so the fuzz crate can reach them without widening the stable API.
+fuzzing = []
+
 [lints]
 workspace = true
