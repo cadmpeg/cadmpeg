@@ -254,7 +254,12 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     }
     // The cone's half-angle is carried as its sine/cosine; the identity gate
     // rejects a coincidental offset that does not hold a real (sin, cos) pair.
-    if (sin_half * sin_half + cos_half * cos_half - 1.0).abs() > 1.0e-6 {
+    if !sin_half.is_finite()
+        || !cos_half.is_finite()
+        || sin_half == 0.0
+        || cos_half == 0.0
+        || (sin_half * sin_half + cos_half * cos_half - 1.0).abs() > 1.0e-6
+    {
         return None;
     }
     Some(SurfaceGeometry::Cone {

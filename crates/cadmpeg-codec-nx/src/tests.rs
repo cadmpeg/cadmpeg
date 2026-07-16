@@ -13675,6 +13675,24 @@ fn analytic_frame_gate_rejects_nonorthogonal_reference_direction() {
 }
 
 #[test]
+fn cone_gate_rejects_nonfinite_or_degenerate_half_angle() {
+    let mut cone = record(0x34, 115);
+    put_vec3(&mut cone, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut cone, 43, [0.0, 0.0, 1.0]);
+    put_f64(&mut cone, 67, 0.0);
+    put_f64(&mut cone, 75, std::f64::consts::FRAC_1_SQRT_2);
+    put_f64(&mut cone, 83, std::f64::consts::FRAC_1_SQRT_2);
+    put_vec3(&mut cone, 91, [1.0, 0.0, 0.0]);
+    assert_eq!(crate::geometry::surfaces(&cone).len(), 1);
+
+    for (sine, cosine) in [(f64::NAN, 1.0), (0.0, 1.0), (1.0, 0.0)] {
+        put_f64(&mut cone, 75, sine);
+        put_f64(&mut cone, 83, cosine);
+        assert!(crate::geometry::surfaces(&cone).is_empty());
+    }
+}
+
+#[test]
 fn decode_assembly_reports_external_dependency() {
     let mut cur = Cursor::new(assembly_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
