@@ -6648,10 +6648,8 @@ fn transfer_resolved_revolution_breps(
                 .iter()
                 .filter_map(|preceding| preceding.feature_id)
                 .any(|preceding| feature_recipe(scan, preceding).is_some())
-            || !scan.feature_revolution_extents.iter().any(|extent| {
-                extent.feature_id == feature_id
-                    && extent.kind == crate::feature::FeatureRevolutionExtentKind::FullTurn
-            })
+            || unique_feature_revolution_extent_kind(&scan.feature_revolution_extents, feature_id)
+                != Some(crate::feature::FeatureRevolutionExtentKind::FullTurn)
         {
             continue;
         }
@@ -7681,14 +7679,25 @@ fn row_feature_schema_classes(
 }
 
 fn feature_revolution_extent(scan: &ContainerScan, feature_id: u32) -> Option<Extent> {
-    scan.feature_revolution_extents
-        .iter()
-        .find(|record| record.feature_id == feature_id)
-        .map(|record| match record.kind {
+    unique_feature_revolution_extent_kind(&scan.feature_revolution_extents, feature_id).map(
+        |kind| match kind {
             crate::feature::FeatureRevolutionExtentKind::FullTurn => Extent::Angle {
                 angle: Angle(std::f64::consts::TAU),
             },
-        })
+        },
+    )
+}
+
+fn unique_feature_revolution_extent_kind(
+    records: &[crate::feature::FeatureRevolutionExtent],
+    feature_id: u32,
+) -> Option<crate::feature::FeatureRevolutionExtentKind> {
+    let mut kinds = records
+        .iter()
+        .filter(|record| record.feature_id == feature_id)
+        .map(|record| record.kind);
+    let kind = kinds.next()?;
+    kinds.all(|candidate| candidate == kind).then_some(kind)
 }
 
 fn line_orientation_definition(
@@ -9468,10 +9477,8 @@ fn transfer_resolved_revolution_surfaces(
         if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve) {
             continue;
         }
-        if !scan
-            .feature_revolution_extents
-            .iter()
-            .any(|extent| extent.feature_id == feature_id)
+        if unique_feature_revolution_extent_kind(&scan.feature_revolution_extents, feature_id)
+            .is_none()
         {
             continue;
         }
@@ -10247,14 +10254,12 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         };
         parameters.insert(format!("loop_restore.{name}"), direction.value.to_string());
     }
-    if let Some(extent) = scan
-        .feature_revolution_extents
-        .iter()
-        .find(|record| record.feature_id == feature_id)
+    if let Some(extent) =
+        unique_feature_revolution_extent_kind(&scan.feature_revolution_extents, feature_id)
     {
         parameters.insert(
             "revolution_extent".to_string(),
-            match extent.kind {
+            match extent {
                 crate::feature::FeatureRevolutionExtentKind::FullTurn => "full_turn",
             }
             .to_string(),
@@ -13012,6 +13017,19 @@ mod resolved_sketch_tests {
         assert_eq!(
             row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
             BTreeSet::from([913, 914])
+        );
+        let extent = |feature_id, offset| crate::feature::FeatureRevolutionExtent {
+            feature_id,
+            kind: crate::feature::FeatureRevolutionExtentKind::FullTurn,
+            offset,
+        };
+        assert_eq!(
+            unique_feature_revolution_extent_kind(&[extent(6, 40), extent(6, 50)], 6),
+            Some(crate::feature::FeatureRevolutionExtentKind::FullTurn)
+        );
+        assert_eq!(
+            unique_feature_revolution_extent_kind(&[extent(7, 40)], 6),
+            None
         );
     }
 

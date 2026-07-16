@@ -1046,7 +1046,9 @@ The preceding zero is the inactive `depth_choice`; it is not a zero angular
 extent. The same complete `83 df ...` choice sequence inside the bounded
 section definition applies to its owning DEPDB rotational recipe. Repeated
 identical sequences are distinct stored regeneration states with the same
-full-turn extent.
+full-turn extent. A neutral angular extent exists only when every decoded
+termination state for the feature selects the same extent; state order does not
+select one termination over another.
 
 When a class-911 hole owns exactly two complete outline-backed plane rows, their
 stored order is the entry and termination order. The planes are parallel.
