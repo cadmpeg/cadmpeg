@@ -656,7 +656,7 @@ fn parameter_aliases(
     aliases
 }
 
-pub(crate) fn parameters_with_unresolved_quoted_references(
+pub(crate) fn parameters_with_unresolved_references(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
 ) -> usize {
@@ -666,7 +666,7 @@ pub(crate) fn parameters_with_unresolved_quoted_references(
         .filter(|parameter| {
             expression_identifier_tokens(&parameter.expression)
                 .into_iter()
-                .filter(|identifier| identifier.quoted)
+                .filter(|identifier| identifier.quoted || identifier.value.contains('@'))
                 .any(|identifier| {
                     aliases
                         .get(&identifier.value)

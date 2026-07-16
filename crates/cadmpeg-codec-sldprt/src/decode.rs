@@ -206,16 +206,13 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .filter(|parameter| parameter.value.is_none())
         .count();
     let unresolved_parameter_references =
-        crate::history::parameters_with_unresolved_quoted_references(
-            &ir.model.parameters,
-            &feature_names,
-        );
+        crate::history::parameters_with_unresolved_references(&ir.model.parameters, &feature_names);
     if incomplete_parameters > 0 || unresolved_parameter_references > 0 {
         report.losses.push(LossNote {
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
-                "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved or ambiguous quoted references."
+                "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved or ambiguous parameter references."
             ),
             provenance: None,
         });
@@ -2175,7 +2172,7 @@ mod design_loss_tests {
             owner,
             ordinal: 1,
             name: "D1".into(),
-            expression: "\"D0@Boss-Extrude1\" + \"Missing@Sketch1\"".into(),
+            expression: "\"D0@Boss-Extrude1\" + Missing@Sketch1".into(),
             display: None,
             value: None,
             dependencies: Vec::new(),
@@ -2195,7 +2192,7 @@ mod design_loss_tests {
 
         assert!(report.losses.iter().any(|loss| {
             loss.message
-                == "1 parameter(s) lack an evaluated scalar; 1 parameter expression(s) contain unresolved or ambiguous quoted references."
+                == "1 parameter(s) lack an evaluated scalar; 1 parameter expression(s) contain unresolved or ambiguous parameter references."
         }));
     }
 
