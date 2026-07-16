@@ -2849,6 +2849,7 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
                 },
                 source_object: None,
             });
+            chamfered.model.shells[0].faces.push(face.clone());
             chamfered.model.faces.push(Face {
                 id: face,
                 shell: ShellId("shell".into()),
@@ -2895,7 +2896,7 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
         }
     }
     assert_eq!(
-        crate::decode::simple_hole_chamfers(&chamfered, &templates),
+        crate::decode::simple_hole_chamfers(&chamfered, &templates, &outputs),
         std::collections::BTreeMap::from([
             (
                 "hole-a".into(),
@@ -2913,6 +2914,33 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
             ),
         ])
     );
+    let mut unrelated = chamfered.clone();
+    unrelated.model.surfaces.push(Surface {
+        id: SurfaceId("unrelated-cone".into()),
+        geometry: SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 1.0, 0.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 0.0,
+            ratio: 0.0,
+            half_angle: 0.0,
+        },
+        source_object: None,
+    });
+    unrelated.model.faces.push(Face {
+        id: FaceId("unrelated-cone-face".into()),
+        shell: ShellId("unrelated-shell".into()),
+        surface: SurfaceId("unrelated-cone".into()),
+        sense: Sense::Reversed,
+        loops: vec![LoopId("unrelated-a".into()), LoopId("unrelated-b".into())],
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    assert_eq!(
+        crate::decode::simple_hole_chamfers(&unrelated, &templates, &outputs),
+        crate::decode::simple_hole_chamfers(&chamfered, &templates, &outputs)
+    );
     let mut unequal_chamfers = chamfered;
     let CurveGeometry::Circle { radius, .. } =
         &mut unequal_chamfers.model.curves.last_mut().unwrap().geometry
@@ -2920,7 +2948,9 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
         unreachable!()
     };
     *radius += 0.1;
-    assert!(crate::decode::simple_hole_chamfers(&unequal_chamfers, &templates).is_empty());
+    assert!(
+        crate::decode::simple_hole_chamfers(&unequal_chamfers, &templates, &outputs).is_empty()
+    );
 
     let mut mismatched = ir;
     let SurfaceGeometry::Cylinder { radius, .. } = &mut mismatched.model.surfaces[1].geometry

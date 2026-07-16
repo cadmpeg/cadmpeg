@@ -9532,7 +9532,7 @@ fn attach_feature_operations(
         simple_hole_construction_groups,
         &hole_outputs,
     );
-    let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates);
+    let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
@@ -10766,6 +10766,7 @@ pub(crate) fn simple_hole_diameters(
 pub(crate) fn simple_hole_chamfers(
     ir: &CadIr,
     templates: &[crate::native::FeatureSimpleHoleTemplate],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, HoleKind> {
     let operations = templates
         .iter()
@@ -10780,6 +10781,16 @@ pub(crate) fn simple_hole_chamfers(
     if operations.len() != templates.len() || operations.is_empty() {
         return BTreeMap::new();
     }
+    let mut operations_by_body = BTreeMap::<BodyId, Vec<String>>::new();
+    for operation in operations {
+        let Some([body]) = outputs.get(&operation).map(Vec::as_slice) else {
+            return BTreeMap::new();
+        };
+        operations_by_body
+            .entry(body.clone())
+            .or_default()
+            .push(operation);
+    }
 
     let surfaces = ir
         .model
@@ -10787,32 +10798,6 @@ pub(crate) fn simple_hole_chamfers(
         .iter()
         .map(|surface| (&surface.id, &surface.geometry))
         .collect::<BTreeMap<_, _>>();
-    let bores = ir
-        .model
-        .faces
-        .iter()
-        .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-        .filter_map(|face| match surfaces.get(&face.surface)? {
-            SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                radius,
-                ..
-            } if radius.is_finite() && *radius > 0.0 => Some((*origin, *axis, *radius)),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let [(_, _, bore_radius), ..] = bores.as_slice() else {
-        return BTreeMap::new();
-    };
-    if bores.len() != operations.len()
-        || bores
-            .iter()
-            .any(|(_, _, radius)| radius.to_bits() != bore_radius.to_bits())
-    {
-        return BTreeMap::new();
-    }
-
     let edges = ir
         .model
         .edges
@@ -10835,99 +10820,134 @@ pub(crate) fn simple_hole_chamfers(
 
     let linear_tolerance = ir.tolerances.linear.max(1e-9);
     let angular_tolerance = ir.tolerances.angular.max(1e-12);
-    let mut cone_counts = vec![0usize; bores.len()];
-    let mut outer_radii = Vec::new();
-    let mut included_angles = Vec::new();
-    for face in ir
-        .model
-        .faces
-        .iter()
-        .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-    {
-        let Some(SurfaceGeometry::Cone {
-            origin,
-            axis,
-            half_angle,
-            ..
-        }) = surfaces.get(&face.surface).copied()
-        else {
-            continue;
-        };
-        if !half_angle.is_finite()
-            || *half_angle <= 0.0
-            || *half_angle >= std::f64::consts::FRAC_PI_2
-        {
-            return BTreeMap::new();
-        }
-        let matching_bores = bores
-            .iter()
-            .enumerate()
-            .filter_map(|(ordinal, (bore_origin, bore_axis, _))| {
-                let dot = axis.x * bore_axis.x + axis.y * bore_axis.y + axis.z * bore_axis.z;
-                if (1.0 - dot.abs()) > angular_tolerance {
-                    return None;
-                }
-                let delta = Vector3::new(
-                    origin.x - bore_origin.x,
-                    origin.y - bore_origin.y,
-                    origin.z - bore_origin.z,
-                );
-                let cross = Vector3::new(
-                    delta.y * bore_axis.z - delta.z * bore_axis.y,
-                    delta.z * bore_axis.x - delta.x * bore_axis.z,
-                    delta.x * bore_axis.y - delta.y * bore_axis.x,
-                );
-                (cross.norm() <= linear_tolerance).then_some(ordinal)
-            })
-            .collect::<Vec<_>>();
-        let [bore_ordinal] = matching_bores.as_slice() else {
+    let mut treatments = BTreeMap::new();
+    for (body, operations) in operations_by_body {
+        let Some(body_surfaces) = body_surface_ids(ir, &body) else {
             return BTreeMap::new();
         };
-        cone_counts[*bore_ordinal] += 1;
-
-        let mut radii = face
-            .loops
+        let bores = ir
+            .model
+            .faces
             .iter()
-            .flat_map(|loop_id| coedges_by_loop.get(loop_id).into_iter().flatten())
-            .filter_map(|coedge| edges.get(&coedge.edge).copied().flatten())
-            .filter_map(|curve_id| match curves.get(curve_id)? {
-                CurveGeometry::Circle { radius, .. } if radius.is_finite() && *radius > 0.0 => {
-                    Some(*radius)
-                }
+            .filter(|face| body_surfaces.contains(&face.surface))
+            .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
+            .filter_map(|face| match surfaces.get(&face.surface)? {
+                SurfaceGeometry::Cylinder {
+                    origin,
+                    axis,
+                    radius,
+                    ..
+                } if radius.is_finite() && *radius > 0.0 => Some((*origin, *axis, *radius)),
                 _ => None,
             })
             .collect::<Vec<_>>();
-        radii.sort_by(f64::total_cmp);
-        let [inner, outer] = radii.as_slice() else {
+        let [(_, _, bore_radius), ..] = bores.as_slice() else {
             return BTreeMap::new();
         };
-        if inner.to_bits() != bore_radius.to_bits() || outer <= inner {
+        if bores.len() != operations.len()
+            || bores
+                .iter()
+                .any(|(_, _, radius)| radius.to_bits() != bore_radius.to_bits())
+        {
             return BTreeMap::new();
         }
-        outer_radii.push(*outer);
-        included_angles.push(half_angle * 2.0);
+        let mut cone_counts = vec![0usize; bores.len()];
+        let mut outer_radii = Vec::new();
+        let mut included_angles = Vec::new();
+        for face in ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| body_surfaces.contains(&face.surface))
+            .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
+        {
+            let Some(SurfaceGeometry::Cone {
+                origin,
+                axis,
+                half_angle,
+                ..
+            }) = surfaces.get(&face.surface).copied()
+            else {
+                continue;
+            };
+            if !half_angle.is_finite()
+                || *half_angle <= 0.0
+                || *half_angle >= std::f64::consts::FRAC_PI_2
+            {
+                return BTreeMap::new();
+            }
+            let matching_bores = bores
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, (bore_origin, bore_axis, _))| {
+                    let dot = axis.x * bore_axis.x + axis.y * bore_axis.y + axis.z * bore_axis.z;
+                    if (1.0 - dot.abs()) > angular_tolerance {
+                        return None;
+                    }
+                    let delta = Vector3::new(
+                        origin.x - bore_origin.x,
+                        origin.y - bore_origin.y,
+                        origin.z - bore_origin.z,
+                    );
+                    let cross = Vector3::new(
+                        delta.y * bore_axis.z - delta.z * bore_axis.y,
+                        delta.z * bore_axis.x - delta.x * bore_axis.z,
+                        delta.x * bore_axis.y - delta.y * bore_axis.x,
+                    );
+                    (cross.norm() <= linear_tolerance).then_some(ordinal)
+                })
+                .collect::<Vec<_>>();
+            let [bore_ordinal] = matching_bores.as_slice() else {
+                return BTreeMap::new();
+            };
+            cone_counts[*bore_ordinal] += 1;
+
+            let mut radii = face
+                .loops
+                .iter()
+                .flat_map(|loop_id| coedges_by_loop.get(loop_id).into_iter().flatten())
+                .filter_map(|coedge| edges.get(&coedge.edge).copied().flatten())
+                .filter_map(|curve_id| match curves.get(curve_id)? {
+                    CurveGeometry::Circle { radius, .. } if radius.is_finite() && *radius > 0.0 => {
+                        Some(*radius)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            radii.sort_by(f64::total_cmp);
+            let [inner, outer] = radii.as_slice() else {
+                return BTreeMap::new();
+            };
+            if inner.to_bits() != bore_radius.to_bits() || outer <= inner {
+                return BTreeMap::new();
+            }
+            outer_radii.push(*outer);
+            included_angles.push(half_angle * 2.0);
+        }
+        if cone_counts.iter().any(|count| *count != 2)
+            || outer_radii.len() != bores.len() * 2
+            || included_angles.len() != outer_radii.len()
+        {
+            return BTreeMap::new();
+        }
+        outer_radii.sort_by(f64::total_cmp);
+        included_angles.sort_by(f64::total_cmp);
+        if outer_radii.last().expect("nonempty") - outer_radii[0] > linear_tolerance
+            || included_angles.last().expect("nonempty") - included_angles[0] > angular_tolerance
+        {
+            return BTreeMap::new();
+        }
+        let treatment = HoleKind::Chamfer {
+            diameter: Length(2.0 * outer_radii.iter().sum::<f64>() / outer_radii.len() as f64),
+            angle: Angle(included_angles.iter().sum::<f64>() / included_angles.len() as f64),
+        };
+        treatments.extend(
+            operations
+                .into_iter()
+                .map(|operation| (operation, treatment)),
+        );
     }
-    if cone_counts.iter().any(|count| *count != 2)
-        || outer_radii.len() != bores.len() * 2
-        || included_angles.len() != outer_radii.len()
-    {
-        return BTreeMap::new();
-    }
-    outer_radii.sort_by(f64::total_cmp);
-    included_angles.sort_by(f64::total_cmp);
-    if outer_radii.last().expect("nonempty") - outer_radii[0] > linear_tolerance
-        || included_angles.last().expect("nonempty") - included_angles[0] > angular_tolerance
-    {
-        return BTreeMap::new();
-    }
-    let treatment = HoleKind::Chamfer {
-        diameter: Length(2.0 * outer_radii.iter().sum::<f64>() / outer_radii.len() as f64),
-        angle: Angle(included_angles.iter().sum::<f64>() / included_angles.len() as f64),
-    };
-    operations
-        .into_iter()
-        .map(|operation| (operation, treatment))
-        .collect()
+    treatments
 }
 
 fn simple_hole_extent(payload_strings: &[&str]) -> Option<cadmpeg_ir::features::Extent> {
