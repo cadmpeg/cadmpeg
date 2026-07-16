@@ -1,5 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CATIA-native ownership and design records retained outside the neutral model.
+//!
+//! Migrated per doc section 10 Phase 2. [`CatiaNative::decode`] performs no
+//! hostile read itself: it delegates every untrusted `.CATPart` byte to the
+//! migrated `catalog` (`7C02`), `value_block` (`7C0B`), and `object_graph`
+//! (`7C08`) leaf parsers, each of which charges its own marker scan as work and
+//! its own allocations. The per-source `.collect()` here is a one-to-one typed
+//! transformation of records those parsers already counted and charged, sized
+//! by `records.len()`, not by any untrusted count, so it introduces no
+//! unbudgeted growth. `load`/`store` route through the platform native-arena
+//! API. No recursion, so no `DepthGuard` obligation.
+#![deny(clippy::disallowed_methods)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -136,27 +147,35 @@ impl Default for CatiaNative {
 }
 
 impl CatiaNative {
-    /// Decode CATIA-native records directly from the complete file image.
-    #[must_use]
-    pub fn decode(bytes: &[u8]) -> Self {
-        let catalogs = catalog::parse(bytes)
+    /// Decode CATIA-native records directly from the session root view.
+    ///
+    /// The `7C02` catalog, `7C0B` value-block, and `7C08` object-graph parsers
+    /// are migrated: each takes the
+    /// [`DecodeContext`](cadmpeg_ir::decode::DecodeContext) and charges its
+    /// whole-image marker scan as work, so this entry is fallible and every
+    /// source it reads charges its own reads (see `parser-manifest.toml`).
+    pub fn decode<'a>(
+        ctx: &cadmpeg_ir::decode::DecodeContext<'a>,
+        view: cadmpeg_ir::decode::View<'a>,
+    ) -> Result<Self, cadmpeg_ir::codec::CodecError> {
+        let catalogs = catalog::parse(ctx, view)?
             .into_iter()
             .map(CatiaCatalog::from)
             .collect();
-        let object_graphs = object_graph::parse(bytes)
+        let object_graphs = object_graph::parse(ctx, view)?
             .into_iter()
             .map(CatiaObjectGraph::from)
             .collect();
-        let value_blocks = value_block::parse(bytes)
+        let value_blocks = value_block::parse(ctx, view)?
             .into_iter()
             .map(CatiaValueBlock::from)
             .collect();
-        Self {
+        Ok(Self {
             version: CATIA_NATIVE_VERSION,
             catalogs,
             object_graphs,
             value_blocks,
-        }
+        })
     }
 
     /// Load the typed CATIA namespace from generic native arenas.

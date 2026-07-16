@@ -1,6 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C0B` value blocks.
+//!
+//! Migrated per doc section 10 Phase 2. [`parse`] takes the session
+//! [`DecodeContext`] and a [`View`] over the whole file image. The `7C0B`
+//! marker probe is charged as `work` proportional to the bytes examined, and
+//! each retained block payload is charged against the `retained_bytes` budget
+//! before the copy, so the module drives an honest cost model with no unfloored
+//! allocation. The one residual `View::window()` egress feeds the marker scan;
+//! it is recorded in `parser-manifest.toml` under `window_egress`.
+#![deny(clippy::disallowed_methods)]
 
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::le::u32_at as u32_le;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -19,30 +30,65 @@ pub struct ValueBlock {
 }
 
 /// Parse every exact `7C0B` value block immediately followed by `7C02`.
-#[must_use]
-pub fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
-    bytes
-        .windows(2)
-        .enumerate()
-        .filter(|(_, marker)| *marker == [0x7c, 0x0b])
-        .filter_map(|(pos, _)| parse_candidate(bytes, pos))
-        .collect()
+///
+/// The whole-image marker scan is charged once as `work`; each admitted payload
+/// copy is charged against the `retained_bytes` budget before it is taken.
+pub fn parse<'a>(ctx: &DecodeContext<'a>, view: View<'a>) -> Result<Vec<ValueBlock>, CodecError> {
+    // Named `View::window()` egress: the `7C0B` marker probe examines the whole
+    // admitted image, whose length is charged as work below.
+    let bytes = view.window();
+    ctx.charge_work(
+        bytes.len() as u64,
+        "catia_value_block_scan",
+        Some(view.location()),
+    )?;
+    let mut blocks = ctx.grow_vec::<ValueBlock>();
+    for pos in 0..bytes.len().saturating_sub(1) {
+        if bytes[pos..pos + 2] != [0x7c, 0x0b] {
+            continue;
+        }
+        if let Some(block) = parse_candidate(ctx, view, bytes, pos)? {
+            blocks.try_push(block)?;
+        }
+    }
+    Ok(blocks.finish())
 }
 
-fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
-    let declared_len = usize::try_from(u32_le(bytes, pos + 2)?).ok()?;
+fn parse_candidate<'a>(
+    ctx: &DecodeContext<'a>,
+    view: View<'a>,
+    bytes: &[u8],
+    pos: usize,
+) -> Result<Option<ValueBlock>, CodecError> {
+    let Some(declared_len) = u32_le(bytes, pos + 2).and_then(|len| usize::try_from(len).ok())
+    else {
+        return Ok(None);
+    };
     if declared_len < 6 {
-        return None;
+        return Ok(None);
     }
-    let terminator = pos.checked_add(declared_len)?;
-    let next = terminator.checked_add(1)?;
-    if bytes.get(terminator) != Some(&0xfe) || bytes.get(next..next + 2) != Some(&[0x7c, 0x02]) {
-        return None;
+    let Some(terminator) = pos.checked_add(declared_len) else {
+        return Ok(None);
+    };
+    let Some(next) = terminator.checked_add(1) else {
+        return Ok(None);
+    };
+    if bytes.get(terminator) != Some(&0xfe) || bytes.get(next..next + 2) != Some(&[0x7c, 0x02][..])
+    {
+        return Ok(None);
     }
-    Some(ValueBlock {
+    // `declared_len >= 6` guarantees `terminator >= pos + 6`, so the payload
+    // range is non-descending. Charge the retained copy before taking it.
+    let payload_len = terminator - (pos + 6);
+    ctx.charge_retained(
+        payload_len as u64,
+        "catia_value_block_payload",
+        Some(view.location()),
+    )?;
+    Ok(Some(ValueBlock {
         pos,
         declared_len,
         total_len: declared_len + 1,
         payload: bytes[pos + 6..terminator].to_vec(),
-    })
+    }))
 }

@@ -28,6 +28,19 @@ fn with_scan<R>(bytes: &[u8], f: impl FnOnce(&crate::container::ContainerScan<'_
     f(&scan)
 }
 
+/// Drive a migrated leaf parser over a raw fixture under a default session,
+/// exposing the [`DecodeContext`] and root [`View`] the parser charges against.
+fn with_root<R>(
+    bytes: &[u8],
+    f: impl FnOnce(&cadmpeg_ir::decode::DecodeContext<'_>, cadmpeg_ir::decode::View<'_>) -> R,
+) -> R {
+    use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    f(&ctx, root)
+}
+
 fn assert_every_entity_has_v1_annotation(ir: &CadIr) {
     let mut entity_count = 0;
     macro_rules! check {
@@ -2131,7 +2144,11 @@ fn zero_entity_parser_decodes_face_loop_lanes_and_packed_senses() {
     bytes.extend_from_slice(&incidence);
     bytes.extend_from_slice(&vertex_marker);
 
-    let topology = crate::zero_entity::parse(&bytes).expect("zero-entity topology records");
+    let topology = with_root(&bytes, |ctx, root| {
+        crate::zero_entity::parse(ctx, root)
+            .expect("charged parse")
+            .expect("zero-entity topology records")
+    });
     assert_eq!(topology.faces[0].loop_terminals, vec![100]);
     assert_eq!(topology.loops[0].member_ids, vec![98, 97]);
     assert_eq!(topology.loops[0].secondary_refs, vec![500, 501]);
@@ -2161,6 +2178,21 @@ fn zero_entity_parser_decodes_face_loop_lanes_and_packed_senses() {
     );
     assert_eq!(topology.coedge_twins[1].side, 2);
     assert_eq!(topology.vertices[0].incidence_items, vec![700, 701, 702]);
+}
+
+#[test]
+fn zero_entity_parser_rejects_record_truncated_at_declared_length() {
+    // An `a9 03` header declaring a 212-byte record over a 4-byte buffer: the
+    // stream walk hits the record boundary (`end > bytes.len()`), admits no
+    // record, and the probe returns `Ok(None)` rather than reading past the
+    // buffer or charging the phantom payload.
+    let bytes = vec![0xa9, 0x03, 0x5f, 200];
+    let admitted = with_root(&bytes, |ctx, root| {
+        crate::zero_entity::parse(ctx, root)
+            .expect("charged parse")
+            .is_some()
+    });
+    assert!(!admitted);
 }
 
 fn append_b5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
@@ -2731,7 +2763,10 @@ fn b2_composite_parser_reads_embedded_cylinder_frame() {
 fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
     use crate::object_graph::{PayloadField, PayloadSubtype};
 
-    let graph = crate::object_graph::parse(&object_graph_stream()).unwrap();
+    let graph = with_root(&object_graph_stream(), |ctx, root| {
+        crate::object_graph::parse(ctx, root).unwrap()
+    })
+    .unwrap();
     assert_eq!(graph.records.len(), 2);
     assert_eq!(graph.records[0].owner_ref, Some(2));
     assert_eq!(graph.records[0].class_ref, Some(3));
@@ -2762,7 +2797,9 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
         "Sketch",
         "Pad",
     ];
-    let catalogs = crate::catalog::parse(&catalog_stream(&entries));
+    let catalogs = with_root(&catalog_stream(&entries), |ctx, root| {
+        crate::catalog::parse(ctx, root).unwrap()
+    });
 
     assert_eq!(catalogs.len(), 1);
     assert_eq!(catalogs[0].declared_count, 7);
@@ -2770,6 +2807,50 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
     assert_eq!(catalogs[0].entries[4].ordinal, 4);
     assert_eq!(catalogs[0].entries[4].value, "Sketch");
     assert_eq!(catalogs[0].entries[5].value, "Pad");
+}
+
+#[test]
+fn catalog_parser_rejects_frame_truncated_at_entry_boundary() {
+    // A full frame parses; truncating the image below the framed `total_len`
+    // record boundary must yield no catalog, and the entry-count proof must not
+    // reserve past the remaining bytes.
+    let entries = [
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ];
+    let full = catalog_stream(&entries);
+    assert_eq!(
+        with_root(&full, |ctx, root| crate::catalog::parse(ctx, root).unwrap()).len(),
+        1
+    );
+    let truncated = &full[..full.len() - 1];
+    let catalogs = with_root(truncated, |ctx, root| {
+        crate::catalog::parse(ctx, root).unwrap()
+    });
+    assert!(catalogs.is_empty());
+}
+
+#[test]
+fn value_block_parser_rejects_payload_truncated_before_terminator() {
+    let payload = [0x81, 0x83, 0x32, 0xea, 0, 0, 0, 0x83, 0x82];
+    let mut bytes = value_block_stream(&payload);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+    // Drop the trailing `7C02` frame so the block terminator lookahead fails at
+    // the record boundary; no block survives.
+    let truncated = &bytes[..value_block_stream(&payload).len() - 1];
+    let blocks = with_root(truncated, |ctx, root| {
+        crate::value_block::parse(ctx, root).unwrap()
+    });
+    assert!(blocks.is_empty());
 }
 
 #[test]
@@ -2784,7 +2865,9 @@ fn value_block_parser_reads_length_to_terminator_boundary() {
         "Sketch",
     ]));
 
-    let blocks = crate::value_block::parse(&bytes);
+    let blocks = with_root(&bytes, |ctx, root| {
+        crate::value_block::parse(ctx, root).unwrap()
+    });
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].pos, 0);
     assert_eq!(blocks[0].declared_len, 15);
@@ -2796,7 +2879,10 @@ fn value_block_parser_reads_length_to_terminator_boundary() {
 fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
     use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
 
-    let graph = crate::object_graph::parse(&object_graph_vm_stream()).unwrap();
+    let graph = with_root(&object_graph_vm_stream(), |ctx, root| {
+        crate::object_graph::parse(ctx, root).unwrap()
+    })
+    .unwrap();
     assert!(graph.records[0].head.contains(&HeadToken::NullHandle));
     assert_eq!(graph.records[0].subtype, PayloadSubtype::BulkTable);
     assert!(matches!(
@@ -2812,6 +2898,28 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
             ..
         }
     ));
+}
+
+#[test]
+fn outer_object_graph_parser_rejects_frame_truncated_at_record_boundary() {
+    // A full stream yields a two-record graph; truncating the image below the
+    // framed `7C08` `total_len` record boundary drops the candidate (its nested
+    // walk runs past the shortened end), and no allocation is sized past the
+    // remaining bytes.
+    let full = object_graph_stream();
+    assert_eq!(
+        with_root(&full, |ctx, root| crate::object_graph::parse(ctx, root)
+            .unwrap())
+        .unwrap()
+        .records
+        .len(),
+        2
+    );
+    let truncated = &full[..full.len() - 1];
+    let graph = with_root(truncated, |ctx, root| {
+        crate::object_graph::parse(ctx, root).unwrap()
+    });
+    assert!(graph.is_none());
 }
 
 #[test]
@@ -2896,7 +3004,9 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
 fn outer_surface_alias_parser_reads_fixed_core() {
     use crate::object_graph::AliasLead;
 
-    let rows = crate::object_graph::surface_aliases(&surface_alias_stream());
+    let rows = with_root(&surface_alias_stream(), |ctx, root| {
+        crate::object_graph::surface_aliases(ctx, root).unwrap()
+    });
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].lead, AliasLead::SurfaceSupportStorage);
     assert_eq!(rows[0].tag, 0x0012_3456);
@@ -2907,7 +3017,9 @@ fn outer_surface_alias_parser_reads_fixed_core() {
 
 #[test]
 fn unresolved_7cd9_scanner_preserves_bounded_context_and_spacing() {
-    let markers = crate::object_graph::markers_7cd9(&marker_7cd9_stream(), 5);
+    let markers = with_root(&marker_7cd9_stream(), |ctx, root| {
+        crate::object_graph::markers_7cd9(ctx, root, 5).unwrap()
+    });
     assert_eq!(markers.len(), 2);
     assert_eq!(markers[0].pos, 1);
     assert_eq!(markers[0].context, [0x7c, 0xd9, 1, 2, 3]);

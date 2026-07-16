@@ -78,19 +78,19 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
 
     if matches!(scan.variant, Variant::StandardNested | Variant::FbbOnly) {
         if let Some((ir, report)) = try_decode_standard(&scan) {
-            return finish_decode(&scan, ir, report);
+            return finish_decode(ctx, root, &scan, ir, report);
         }
     }
 
     if scan.variant == Variant::ZeroEntity {
         if let Some((ir, report)) = try_decode_zero_entity(&scan) {
-            return finish_decode(&scan, ir, report);
+            return finish_decode(ctx, root, &scan, ir, report);
         }
     }
 
     if scan.variant == Variant::E5Stream {
         if let Some((ir, report)) = try_decode_e5(&scan) {
-            return finish_decode(&scan, ir, report);
+            return finish_decode(ctx, root, &scan, ir, report);
         }
     }
 
@@ -99,21 +99,23 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         Variant::FloatPackedInnerNoFbb | Variant::FbbOnly | Variant::InnerNoDirectory
     ) {
         if let Some((ir, report)) = try_decode_freeform_surfaces(&scan) {
-            return finish_decode(&scan, ir, report);
+            return finish_decode(ctx, root, &scan, ir, report);
         }
     }
 
     let ir = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
-    finish_decode(&scan, ir, report)
+    finish_decode(ctx, root, &scan, ir, report)
 }
 
-fn finish_decode(
-    scan: &ContainerScan<'_>,
+fn finish_decode<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+    _scan: &ContainerScan<'a>,
     mut ir: CadIr,
     report: DecodeReport,
 ) -> Result<DecodeResult, CodecError> {
-    CatiaNative::decode(scan.data).store(ir.native.namespace_mut("catia"))?;
+    CatiaNative::decode(ctx, root)?.store(ir.native.namespace_mut("catia"))?;
     Ok(DecodeResult::new(ir, report))
 }
 

@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fuzz target for CATIA zero-entity topology parsing.
+//! Fuzz target for CATIA `7C02` string catalog parsing.
 //!
-//! Feeds arbitrary bytes through `cadmpeg_codec_catia::zero_entity::parse`
-//! under a default decode session, exercising the migrated `a9 03` stream walk
-//! and its work, alloc, and retained-bytes charges. Contract: no input may
-//! panic.
+//! Feeds arbitrary bytes through `cadmpeg_codec_catia::catalog::parse` under a
+//! default decode session, exercising the migrated framed catalog scan and its
+//! `BoundedCount`-proven entry-table reservation. Contract: no input may panic.
 
 #![no_main]
 
-use cadmpeg_codec_catia::zero_entity::parse;
+use cadmpeg_codec_catia::catalog::parse;
 use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use libfuzzer_sys::fuzz_target;
 

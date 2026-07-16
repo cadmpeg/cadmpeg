@@ -1,6 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C02` string catalogs.
+//!
+//! Migrated per doc section 10 Phase 2. [`parse`] takes the session
+//! [`DecodeContext`] and a [`View`] over the whole file image. The `7C02`
+//! marker probe is charged as `work`; the per-catalog entry vector is sized
+//! through a [`View::counted`] [`BoundedCount`] proof and filled through an
+//! [`DecodeContext::exact_vec`] builder, so a declared entry count that could
+//! not physically fit the frame is refused before any capacity is reserved.
+//! The one residual `View::window()` egress feeds the marker scan; it is
+//! recorded in `parser-manifest.toml` under `window_egress`.
+#![deny(clippy::disallowed_methods)]
 
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::le::u32_at as u32_le;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -32,46 +44,89 @@ pub struct CatalogEntry {
 }
 
 /// Parse every exact `7C02` catalog in a complete `CATPart` image.
-#[must_use]
-pub fn parse(bytes: &[u8]) -> Vec<Catalog> {
-    bytes
-        .windows(2)
-        .enumerate()
-        .filter(|(_, marker)| *marker == [0x7c, 0x02])
-        .filter_map(|(pos, _)| parse_candidate(bytes, pos))
-        .collect()
+///
+/// The whole-image marker scan is charged once as `work`; each catalog's entry
+/// vector is proven against the remaining frame bytes and reserved exactly.
+pub fn parse<'a>(ctx: &DecodeContext<'a>, view: View<'a>) -> Result<Vec<Catalog>, CodecError> {
+    // Named `View::window()` egress: the `7C02` marker probe examines the whole
+    // admitted image, whose length is charged as work below.
+    let bytes = view.window();
+    ctx.charge_work(
+        bytes.len() as u64,
+        "catia_catalog_scan",
+        Some(view.location()),
+    )?;
+    let mut catalogs = ctx.grow_vec::<Catalog>();
+    for pos in 0..bytes.len().saturating_sub(1) {
+        if bytes[pos..pos + 2] != [0x7c, 0x02] {
+            continue;
+        }
+        if let Some(catalog) = parse_candidate(ctx, view, bytes, pos)? {
+            catalogs.try_push(catalog)?;
+        }
+    }
+    Ok(catalogs.finish())
 }
 
-fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
-    let total_len = usize::try_from(u32_le(bytes, pos + 2)?).ok()?;
-    let end = pos.checked_add(total_len)?;
+fn parse_candidate<'a>(
+    ctx: &DecodeContext<'a>,
+    view: View<'a>,
+    bytes: &[u8],
+    pos: usize,
+) -> Result<Option<Catalog>, CodecError> {
+    let Some(total_len) = u32_le(bytes, pos + 2).and_then(|len| usize::try_from(len).ok()) else {
+        return Ok(None);
+    };
+    let Some(end) = pos.checked_add(total_len) else {
+        return Ok(None);
+    };
     if total_len < 8 || end > bytes.len() {
-        return None;
+        return Ok(None);
     }
-    let (declared_count, mut at) = count_atom(bytes, pos + 6)?;
-    let entry_count = usize::try_from(declared_count.checked_sub(1)?).ok()?;
-    let mut entries = Vec::with_capacity(entry_count);
+    let Some((declared_count, at)) = count_atom(bytes, pos + 6) else {
+        return Ok(None);
+    };
+    let Some(entry_count) = declared_count.checked_sub(1).map(|c| c as usize) else {
+        return Ok(None);
+    };
+    // Prove the declared entry count fits the remaining frame before reserving.
+    // Each entry consumes at least its one-byte inclusive-length field, so the
+    // minimum element size is one byte.
+    let Some(region) = view.child(at, end) else {
+        return Ok(None);
+    };
+    let Some(bounded) = region.counted(entry_count as u64, 1) else {
+        return Ok(None);
+    };
+    let mut entries = ctx.exact_vec::<CatalogEntry>(bounded)?;
+    let mut at = at;
     for ordinal in 0..entry_count {
-        let framed_len = usize::from(*bytes.get(at)?);
+        let framed_len = usize::from(*bytes.get(at).unwrap_or(&0));
         if framed_len == 0 {
-            return None;
+            return Ok(None);
         }
         let value_start = at + 1;
-        let next = at.checked_add(framed_len)?;
+        let Some(next) = at.checked_add(framed_len) else {
+            return Ok(None);
+        };
         if next > end {
-            return None;
+            return Ok(None);
         }
         let raw = &bytes[value_start..next];
         if !raw.iter().all(|byte| (0x20..=0x7e).contains(byte)) {
-            return None;
+            return Ok(None);
         }
+        let Ok(value) = std::str::from_utf8(raw) else {
+            return Ok(None);
+        };
         entries.push(CatalogEntry {
             ordinal: ordinal as u32,
             pos: at,
-            value: std::str::from_utf8(raw).ok()?.to_owned(),
-        });
+            value: value.to_owned(),
+        })?;
         at = next;
     }
+    let entries = entries.finish();
     if at != end
         || entries
             .iter()
@@ -79,14 +134,14 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
             .map(|entry| entry.value.as_str())
             .ne(PREFIX)
     {
-        return None;
+        return Ok(None);
     }
-    Some(Catalog {
+    Ok(Some(Catalog {
         pos,
         total_len,
         declared_count,
         entries,
-    })
+    }))
 }
 
 fn count_atom(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {

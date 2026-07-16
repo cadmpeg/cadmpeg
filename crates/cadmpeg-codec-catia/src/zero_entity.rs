@@ -1,6 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted topology records in the zero-entity `a9 03` stream family.
+//!
+//! Migrated per doc section 10 Phase 2. [`parse`] takes the session
+//! [`DecodeContext`] and a [`View`] over the whole admitted image. The `a9 03`
+//! stream walk is the module's only hostile surface: its whole-window length is
+//! charged once as `work`, the zero-floor record stream accumulates through a
+//! [`DecodeContext::grow_vec`] so each admitted record is charged before it is
+//! reserved, and every retained `record.bytes` copy is charged against
+//! `retained_bytes` before it is taken. The record's downstream reference-lane
+//! decoders (`parse_face`, `parse_loop`, `parse_vertices`, `parse_side_pairs`,
+//! `counted_references`) then read only the already-charged, already-bounded
+//! record copy through the checked `cadmpeg_ir::le` accessors and the count
+//! atom capped at a single header byte, so no further untrusted allocation
+//! occurs. The parser is a pure `Option` probe (section 3.3): any framing
+//! inconsistency yields `Ok(None)`, never a committed error. There is no residual
+//! `View::window()` egress to callers — the window feeds only the internal walk.
+#![deny(clippy::disallowed_methods)]
 
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::le::{f64_at, u32_at};
 
 /// Resolved zero-entity `a9 03` stream: records, faces, loops, carrier runs,
@@ -193,40 +211,65 @@ pub struct ZeroEntityLoop {
 
 /// Walk native zero-entity records by `YY + 12`, then decode face counted
 /// references and `62xx` alternating loop lanes with packed 3-bit senses.
-#[must_use]
-pub fn parse(bytes: &[u8]) -> Option<ZeroEntityTopology> {
-    let records = walk_records(bytes);
+///
+/// The whole-window `a9 03` scan is charged once as `work` and each admitted
+/// record copy is charged against `retained_bytes` before it is taken (see
+/// [`walk_records`]). Downstream lane decoding is a pure probe: any framing
+/// inconsistency returns `Ok(None)`.
+pub fn parse<'a>(
+    ctx: &DecodeContext<'a>,
+    view: View<'a>,
+) -> Result<Option<ZeroEntityTopology>, CodecError> {
+    let records = walk_records(ctx, view)?;
     if records.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let mut faces = records
+    let Some(mut faces) = records
         .iter()
         .filter(|record| record.tag[0] == 0x5f)
         .map(parse_face)
-        .collect::<Option<Vec<_>>>()?;
-    let mut loops = records
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let Some(mut loops) = records
         .iter()
         .filter(|record| record.tag[0] == 0x62)
         .map(parse_loop)
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
     if faces.is_empty() || loops.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let (carrier_runs, supports) = parse_carrier_runs(&records)?;
-    let physical_edges = records
+    let Some((carrier_runs, supports)) = parse_carrier_runs(&records) else {
+        return Ok(None);
+    };
+    let Some(physical_edges) = records
         .iter()
         .filter(|record| record.tag == [0x5e, 0x1a])
         .map(parse_physical_edge)
-        .collect::<Option<Vec<_>>>()?;
-    let coedge_twins = records
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let Some(coedge_twins) = records
         .iter()
         .filter(|record| record.tag == [0x06, 0x38])
         .map(parse_coedge_twin)
-        .collect::<Option<Vec<_>>>()?;
-    let side_pairs = parse_side_pairs(&records, &coedge_twins)?;
-    let vertices = parse_vertices(&records)?;
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let Some(side_pairs) = parse_side_pairs(&records, &coedge_twins) else {
+        return Ok(None);
+    };
+    let Some(vertices) = parse_vertices(&records) else {
+        return Ok(None);
+    };
     bind_face_runs(&mut faces, &mut loops, &carrier_runs, &supports);
-    Some(ZeroEntityTopology {
+    Ok(Some(ZeroEntityTopology {
         records,
         faces,
         loops,
@@ -236,7 +279,7 @@ pub fn parse(bytes: &[u8]) -> Option<ZeroEntityTopology> {
         coedge_twins,
         side_pairs,
         vertices,
-    })
+    }))
 }
 
 fn parse_vertices(records: &[ZeroEntityRecord]) -> Option<Vec<ZeroVertex>> {
@@ -588,8 +631,23 @@ fn token_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     u32_at(bytes, offset + 1)
 }
 
-fn walk_records(bytes: &[u8]) -> Vec<ZeroEntityRecord> {
-    let mut records = Vec::new();
+/// Walk the `a9 03` record stream over the admitted window.
+///
+/// The window length is charged once as `work` (bytes examined by the scan);
+/// the record stream is zero-floor production, so it accumulates through a
+/// charged [`DecodeContext::grow_vec`] and each retained record copy is charged
+/// against `retained_bytes` before `to_vec()` takes it.
+fn walk_records<'a>(
+    ctx: &DecodeContext<'a>,
+    view: View<'a>,
+) -> Result<Vec<ZeroEntityRecord>, CodecError> {
+    let bytes = view.window();
+    ctx.charge_work(
+        bytes.len() as u64,
+        "catia_zero_entity_scan",
+        Some(view.location()),
+    )?;
+    let mut records = ctx.grow_vec::<ZeroEntityRecord>();
     let mut position = 0;
     while position + 4 <= bytes.len() {
         if bytes.get(position..position + 2) != Some(&[0xa9, 0x03]) {
@@ -603,15 +661,20 @@ fn walk_records(bytes: &[u8]) -> Vec<ZeroEntityRecord> {
         if end > bytes.len() {
             break;
         }
-        records.push(ZeroEntityRecord {
+        ctx.charge_retained(
+            (end - position) as u64,
+            "catia_zero_entity_record",
+            Some(view.location()),
+        )?;
+        records.try_push(ZeroEntityRecord {
             ordinal: records.len(),
             offset: position,
             tag: [bytes[position + 2], bytes[position + 3]],
             bytes: bytes[position..end].to_vec(),
-        });
+        })?;
         position = end;
     }
-    records
+    Ok(records.finish())
 }
 
 fn parse_face(record: &ZeroEntityRecord) -> Option<ZeroEntityFace> {
@@ -668,7 +731,10 @@ fn parse_loop(record: &ZeroEntityRecord) -> Option<ZeroEntityLoop> {
     if record.bytes.get(position) != Some(&0x01) {
         return None;
     }
-    let mut reversed = Vec::with_capacity(segment_count);
+    // Bounded by `segment_count`, itself derived from the record's single count
+    // byte over the already-retained record copy; a plain `Vec` push stays
+    // lint-invisible per doc section 8.3 and needs no separate charge.
+    let mut reversed = Vec::new();
     for member in 0..segment_count {
         let mut code = 0u8;
         for bit in 0..3 {
@@ -700,7 +766,11 @@ fn parse_loop(record: &ZeroEntityRecord) -> Option<ZeroEntityLoop> {
 fn counted_references(bytes: &[u8], position: usize) -> Option<(Vec<u32>, usize)> {
     let count = usize::from(bytes.get(position)?.checked_sub(0x80)?);
     let mut cursor = position + 1;
-    let mut references = Vec::with_capacity(count);
+    // `count` is a single header byte (<= 127) over the already-retained,
+    // already-charged record copy, and each entry is validated to consume five
+    // bytes before it is pushed; a plain `Vec` push is lint-invisible (doc
+    // section 8.3) and needs no separate allocation charge.
+    let mut references = Vec::new();
     for _ in 0..count {
         if bytes.get(cursor) != Some(&0x10) {
             return None;
