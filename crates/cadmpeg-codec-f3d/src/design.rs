@@ -4098,6 +4098,11 @@ pub fn project_dimension_constraints(
                 return Some(definition);
             }
         }
+        if let [first, second] = entities.as_slice() {
+            if first.id == second.id {
+                return None;
+            }
+        }
         if source_kind.starts_with("Linear Dimension") && entities.len() == 2 {
             let evaluated_mm = evaluated_value * 10.0;
             if let Some(definition) =
@@ -5316,7 +5321,7 @@ fn two_locus_distance_dimension(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
 
-    (entities.len() == 2).then(|| Definition::Distance {
+    (entities.len() == 2 && entities[0].id != entities[1].id).then(|| Definition::Distance {
         entities: entities.iter().map(|entity| entity.id.clone()).collect(),
         parameter,
     })
@@ -5339,6 +5344,9 @@ fn exact_counted_dimension_relation(
     let [first, second] = entities else {
         return None;
     };
+    if first.id == second.id {
+        return None;
+    }
     let point_on_geometry =
         |point: &cadmpeg_ir::sketches::SketchEntity,
          geometry: &cadmpeg_ir::sketches::SketchEntity| {
@@ -15419,11 +15427,11 @@ mod relation_tests {
             .collect::<Vec<_>>();
 
         let constraints = project_dimension_constraints(
-            &[placement],
-            &[parameter],
-            &[owner],
-            &[pair],
-            &[group],
+            std::slice::from_ref(&placement),
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&owner),
+            std::slice::from_ref(&pair),
+            std::slice::from_ref(&group),
             &[],
             &[],
             &[],
@@ -15436,6 +15444,29 @@ mod relation_tests {
         assert!(matches!(
             constraints[0].definition,
             SketchConstraintDefinition::VerticalDistance { .. }
+        ));
+
+        let mut zero_parameter = parameter;
+        zero_parameter.evaluated_value = 0.0;
+        let mut duplicate_pair = pair;
+        duplicate_pair.second_geometry_record_index = duplicate_pair.first_geometry_record_index;
+        let duplicate = project_dimension_constraints(
+            std::slice::from_ref(&placement),
+            std::slice::from_ref(&zero_parameter),
+            std::slice::from_ref(&owner),
+            std::slice::from_ref(&duplicate_pair),
+            &[],
+            &[],
+            &[],
+            &[],
+            &points,
+            &[],
+            &entities,
+        );
+        assert_eq!(duplicate.len(), 1);
+        assert!(matches!(
+            duplicate[0].definition,
+            SketchConstraintDefinition::Native { .. }
         ));
     }
 
