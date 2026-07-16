@@ -106,6 +106,17 @@ fn report_unresolved_configuration_rules(
     native: &F3dNative,
     ir: &CadIr,
 ) {
+    let count = crate::design::unresolved_configuration_member_count(&native.design_configurations);
+    if count != 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{count} Design configuration JSON member(s) were retained without assigned neutral configuration semantics."
+            ),
+            provenance: None,
+        });
+    }
     let count = crate::design::unresolved_configuration_rule_count(
         &native.design_configurations,
         &ir.model.configurations,

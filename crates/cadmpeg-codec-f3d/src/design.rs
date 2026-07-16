@@ -396,6 +396,41 @@ pub(crate) fn unresolved_configuration_rule_count(
         .count()
 }
 
+pub(crate) fn unresolved_configuration_member_count(native: &[DesignConfiguration]) -> usize {
+    native
+        .iter()
+        .map(|configuration| {
+            let Some(object) = configuration.payload.as_object() else {
+                return 0;
+            };
+            match configuration.kind {
+                DesignConfigurationKind::Rule => object
+                    .keys()
+                    .filter(|key| !matches!(key.as_str(), "when" | "activate"))
+                    .count(),
+                DesignConfigurationKind::Table => {
+                    let table_members = object
+                        .keys()
+                        .filter(|key| !matches!(key.as_str(), "configurations" | "active"))
+                        .count();
+                    let variant_members = object
+                        .get("configurations")
+                        .and_then(serde_json::Value::as_object)
+                        .into_iter()
+                        .flat_map(|variants| variants.values())
+                        .filter_map(serde_json::Value::as_object)
+                        .flat_map(|variant| variant.keys())
+                        .filter(|key| {
+                            !matches!(key.as_str(), "parameters" | "suppressed" | "material")
+                        })
+                        .count();
+                    table_members + variant_members
+                }
+            }
+        })
+        .sum()
+}
+
 fn neutral_configuration_id(
     entry_name: &str,
     variant_name: &str,
@@ -11634,8 +11669,9 @@ mod relation_tests {
         recipe_record_prefix, region_containing_points, remove_dimension_frame_relations,
         repeated_linear_dimension, resolved_edge_candidate_intersection,
         resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
-        unresolved_configuration_parameter_override_count, unresolved_configuration_rule_count,
-        unresolved_configuration_suppressed_feature_count, validate_configuration_payload,
+        unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
+        unresolved_configuration_rule_count, unresolved_configuration_suppressed_feature_count,
+        validate_configuration_payload,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConfiguration, DesignConfigurationKind,
@@ -11726,6 +11762,40 @@ mod relation_tests {
             )
             .is_err());
         }
+    }
+
+    #[test]
+    fn configuration_unknown_members_are_counted_at_each_semantic_level() {
+        let native = [
+            DesignConfiguration {
+                id: "f3d:configuration:entry#table.dsgcfg".into(),
+                entry_name: "table.dsgcfg".into(),
+                kind: DesignConfigurationKind::Table,
+                payload: serde_json::json!({
+                    "active": "variant",
+                    "table_unknown": 1,
+                    "configurations": {
+                        "variant": {
+                            "parameters": {},
+                            "suppressed": [],
+                            "material": "steel",
+                            "variant_unknown": true
+                        }
+                    }
+                }),
+            },
+            DesignConfiguration {
+                id: "f3d:configuration:entry#rule.dsgcfgrule".into(),
+                entry_name: "rule.dsgcfgrule".into(),
+                kind: DesignConfigurationKind::Rule,
+                payload: serde_json::json!({
+                    "when": "width > 20 mm",
+                    "activate": "variant",
+                    "rule_unknown": null
+                }),
+            },
+        ];
+        assert_eq!(unresolved_configuration_member_count(&native), 3);
     }
 
     #[test]
