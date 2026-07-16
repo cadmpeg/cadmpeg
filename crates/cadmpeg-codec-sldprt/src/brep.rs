@@ -94,6 +94,10 @@ fn orthogonal(left: &[f64], right: &[f64]) -> bool {
         && (left[0] * right[0] + left[1] * right[1] + left[2] * right[2]).abs() <= 1.0e-9 * scale
 }
 
+fn unit_length(values: &[f64]) -> bool {
+    (norm3(values) - 1.0).abs() <= 1.0e-9
+}
+
 fn valid_carrier_frame(tt: u8, values: &[f64]) -> bool {
     match tt {
         tag::LINE => valid_direction(&values[3..6]),
@@ -101,7 +105,7 @@ fn valid_carrier_frame(tt: u8, values: &[f64]) -> bool {
         tag::CYLINDER => orthogonal(&values[3..6], &values[7..10]),
         tag::CONE => orthogonal(&values[3..6], &values[9..12]),
         tag::SPHERE => orthogonal(&values[4..7], &values[7..10]),
-        tag::TORUS => orthogonal(&values[3..6], &values[8..11]),
+        tag::TORUS => unit_length(&values[3..6]) && orthogonal(&values[3..6], &values[8..11]),
         _ => false,
     }
 }
@@ -504,6 +508,17 @@ mod tests {
 
         assert!(parse_carrier(&ellipse, 0).is_none());
         assert!(parse_carrier(&torus, 0).is_none());
+    }
+
+    #[test]
+    fn rejects_nonunit_torus_axis() {
+        let bytes = compact_carrier(
+            tag::TORUS,
+            9,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.002, 0.001, 1.0, 0.0, 0.0],
+        );
+
+        assert!(parse_carrier(&bytes, 0).is_none());
     }
 
     #[test]
