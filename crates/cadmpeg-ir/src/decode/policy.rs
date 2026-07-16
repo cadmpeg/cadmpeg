@@ -61,6 +61,9 @@ impl ResourceLimits {
             max_decompressed_bytes_per_expand: 2 * GIB,
             max_alloc_bytes: 8 * GIB,
             max_work: 4_000_000_000,
+            // Above the recorded per-codec local depth limits (32-64): the
+            // desktop gauge is an outer backstop behind them, not their
+            // replacement. `service()` tightens to 64.
             max_depth: 256,
             max_retained_bytes: 4 * GIB,
         }
@@ -160,6 +163,11 @@ impl Envelope {
         },
         k: DimensionAmounts {
             alloc_bytes: 64,
+            // The recorded ratio-1000 precedent is a cumulative threshold;
+            // it applies to `decompressed_total`. Per-expand is deliberately
+            // tighter: one expansion claiming the whole cumulative envelope
+            // is the amplification shape the per-expand term exists to
+            // refuse.
             decompressed_total: 1000,
             decompressed_per_expand: 256,
             work: 256,

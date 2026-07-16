@@ -8,6 +8,8 @@
 //! return `Option` and advance only on success; the committed mirror (`req_*`)
 //! returns [`ParseError`] built from the view's own state.
 
+use crate::cursor::bounded_len;
+
 use super::error::SourceLocation;
 use super::probe::{ParseError, ParseErrorKind};
 use super::space::SpaceId;
@@ -34,18 +36,6 @@ impl BoundedCount {
     pub fn min_element_size(self) -> usize {
         self.min_element_size
     }
-}
-
-/// Returns `count` as a `usize` only if `count * element_size` bytes could
-/// physically be present in `remaining` unread bytes. `element_size` must be
-/// nonzero.
-fn bounded_len(count: u64, element_size: usize, remaining: usize) -> Option<usize> {
-    if element_size == 0 {
-        return None;
-    }
-    let count = usize::try_from(count).ok()?;
-    let bytes = count.checked_mul(element_size)?;
-    (bytes <= remaining).then_some(count)
 }
 
 /// A bounded window over one address space.

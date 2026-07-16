@@ -4,6 +4,11 @@
 //! [`Codec`] is object-safe for runtime codec registries. Detection consumes a
 //! byte prefix, inspection summarizes a seekable container, and decoding
 //! produces a finalized [`CadIr`] plus a [`DecodeReport`].
+//!
+//! [`Codec::decode`] is a provided method that must not be overridden: it is
+//! the single enforcement point for root-input limits and session finalize
+//! checks. Sealing it structurally (a final wrapper type or a sealed
+//! entry-point trait) is a Phase 1 candidate.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -131,7 +136,10 @@ pub enum CodecError {
     ///
     /// Distinct from [`CodecError::Malformed`]: a truncation is missing input,
     /// not an inconsistency inside the bytes that are present.
-    #[error("truncated input during {} at offset {}", .context.operation, .location.offset)]
+    #[error(
+        "truncated input during {} at space {} offset {}",
+        .context.operation, .location.space.index(), .location.offset
+    )]
     Truncated {
         /// Where the truncated read began.
         location: SourceLocation,
@@ -190,6 +198,15 @@ pub trait Codec {
     /// policy's input limit, records the container-only request, runs
     /// [`Codec::decode_impl`], and finalizes the context so a fused decode
     /// cannot return `Ok`.
+    ///
+    /// **Do not override this method.** The session invariants — the root
+    /// input limit, the fused-context check, and ticket resolution — hold
+    /// only because every decode passes through this wrapper; an override
+    /// silently removes them for that codec.
+    ///
+    /// The root buffer is currently read whole into the arena while each
+    /// `decode_impl` re-reads it through its legacy `std::io` path — a
+    /// transitional double buffer that Phase 1 container migration removes.
     fn decode(
         &self,
         reader: &mut dyn ReadSeek,

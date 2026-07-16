@@ -11,7 +11,7 @@
 use std::cell::{Cell, RefCell};
 
 use crate::codec::{CodecError, DecodeResult, ReadSeek};
-use crate::report::LossNote;
+use crate::report::{LossCategory, LossNote, Severity};
 
 use super::arena::DecodeArena;
 use super::budget::BudgetCells;
@@ -152,6 +152,45 @@ impl<'a> DecodeContext<'a> {
 
     // --- charging -----------------------------------------------------------
 
+    /// Charges abstract work units, fusing the context on refusal.
+    ///
+    /// Charge points: commit boundaries (per record), probe scans
+    /// (proportionally to the bytes the probe examined, not one unit per
+    /// miss), and long-loop charge points.
+    pub fn charge_work(
+        &self,
+        units: u64,
+        operation: &'static str,
+        location: Option<SourceLocation>,
+    ) -> Result<(), CodecError> {
+        self.charge(
+            ResourceDimension::Work,
+            LimitScope::Global,
+            units,
+            operation,
+            location,
+        )
+    }
+
+    /// Charges bytes retained opaque in salvage mode, fusing on refusal.
+    ///
+    /// Charge point: salvage-mode opaque retention, before the bytes are
+    /// copied into a retained record.
+    pub fn charge_retained(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+        location: Option<SourceLocation>,
+    ) -> Result<(), CodecError> {
+        self.charge(
+            ResourceDimension::RetainedBytes,
+            LimitScope::Global,
+            bytes,
+            operation,
+            location,
+        )
+    }
+
     /// Charges a counter dimension, fusing the context on refusal.
     fn charge(
         &self,
@@ -214,17 +253,34 @@ impl<'a> DecodeContext<'a> {
 
     // --- allocation ---------------------------------------------------------
 
-    /// Reserves capacity for exactly `count` elements, charging first.
+    /// Reserves capacity for exactly `count` proven elements, charging first.
+    ///
+    /// The count parameter is [`BoundedCount`], not a raw integer: the caller
+    /// must first prove through [`View::counted`] that the elements could
+    /// physically fit in unread input. A raw decoded count does not compile:
+    ///
+    /// ```compile_fail,E0308
+    /// # use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    /// # let bytes = [0u8; 8];
+    /// # let arena = DecodeArena::new();
+    /// # let policy = DecodePolicy::default();
+    /// # let (ctx, _root) =
+    /// #     DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    /// let declared_count = 0xFFFF_FFFFusize; // untrusted, unproven
+    /// let _ = ctx.exact_vec::<u32>(declared_count);
+    /// ```
     ///
     /// The builder pushes up to `count` and never reallocates; it exposes no
     /// `DerefMut`, so uncharged growth cannot leak through it.
-    pub fn exact_vec<T>(&self, count: usize) -> Result<ExactVec<T>, CodecError> {
-        self.reserve_exact_charged(count, "exact_vec")
+    pub fn exact_vec<T>(&self, count: BoundedCount) -> Result<ExactVec<T>, CodecError> {
+        self.reserve_exact_charged(count.get(), "exact_vec")
     }
 
     /// Reserves capacity for a zero-floor stream where no physical proof
-    /// exists. Charges the budget identically to [`DecodeContext::exact_vec`];
-    /// the distinct name marks the missing input floor at the call site.
+    /// exists, taking a raw count. The only budget-only allocation path:
+    /// charges identically to [`DecodeContext::exact_vec`], and the distinct
+    /// greppable name marks the missing input floor at the call site. Sites
+    /// keep an explicit codec-local limit as defense in depth.
     pub fn alloc_unfloored<T>(&self, count: usize) -> Result<ExactVec<T>, CodecError> {
         self.reserve_exact_charged(count, "alloc_unfloored")
     }
@@ -270,27 +326,40 @@ impl<'a> DecodeContext<'a> {
     /// Reads exactly `count.get()` elements through a probe closure, charging
     /// the allocation and refusing a count that could not fit physically.
     ///
-    /// A closure miss mid-loop is a committed truncation: the read has been
-    /// entered, so the failure is classified, not retried.
+    /// A closure miss mid-loop is a committed failure: the read has been
+    /// entered, so it is classified, not retried. Classification follows the
+    /// deterministic commit rule: fewer than `count.min_element_size()` bytes
+    /// remaining at the failure point is `Truncated` (the input ran out);
+    /// a miss with at least one more element's bytes still present is an
+    /// inconsistency wholly inside the view, `Malformed`.
     pub fn read_counted<'v, T>(
         &self,
         view: &mut View<'v>,
         count: BoundedCount,
         mut read: impl FnMut(&mut View<'v>) -> Option<T>,
     ) -> Result<Vec<T>, CodecError> {
-        let mut builder = self.exact_vec::<T>(count.get())?;
+        let mut builder = self.reserve_exact_charged::<T>(count.get(), "read_counted")?;
         for _ in 0..count.get() {
-            let location = view.location();
             match read(view) {
                 Some(value) => builder.push(value)?,
                 None => {
-                    return Err(CodecError::Truncated {
-                        location,
-                        context: ErrorContext {
-                            operation: "read_counted",
-                            location: Some(location),
-                        },
-                    })
+                    let location = view.location();
+                    return Err(if view.remaining() < count.min_element_size() {
+                        CodecError::Truncated {
+                            location,
+                            context: ErrorContext {
+                                operation: "read_counted",
+                                location: Some(location),
+                            },
+                        }
+                    } else {
+                        CodecError::Malformed(format!(
+                            "read_counted element rejected at space {} offset {} with {} bytes remaining",
+                            location.space.index(),
+                            location.offset,
+                            view.remaining()
+                        ))
+                    });
                 }
             }
         }
@@ -404,8 +473,10 @@ impl<'a> DecodeContext<'a> {
     /// A fused context cannot return `Ok`: the original resource error is
     /// returned even if intermediate code swallowed it through `Option`
     /// chains. On success, every committed ticket must be resolved; an
-    /// unresolved ticket is a contract error in strict mode and an
-    /// auto-`Dropped` in salvage mode.
+    /// unresolved ticket is a contract error in strict mode. In salvage mode
+    /// each unresolved ticket is resolved as [`RecordDisposition::Dropped`]
+    /// and its [`LossNote`] is appended to the result's report, so the
+    /// omission stays an accountable outcome.
     pub fn finish(
         self,
         result: Result<DecodeResult, CodecError>,
@@ -413,7 +484,7 @@ impl<'a> DecodeContext<'a> {
         if let Some(limit) = self.fuse.get() {
             return Err(CodecError::ResourceLimit(limit));
         }
-        let result = result?;
+        let mut result = result?;
         let unresolved = self.tickets.unresolved();
         if unresolved > 0 {
             match self.policy.mode {
@@ -422,7 +493,10 @@ impl<'a> DecodeContext<'a> {
                         "{unresolved} committed record ticket(s) left unresolved"
                     )))
                 }
-                DecodeMode::Salvage => self.tickets.auto_drop_unresolved(),
+                DecodeMode::Salvage => {
+                    let losses = self.tickets.auto_drop_unresolved();
+                    result.report.losses.extend(losses);
+                }
             }
         }
         Ok(result)
@@ -751,15 +825,7 @@ pub enum RecordDisposition {
 
 #[derive(Debug)]
 struct TicketState {
-    #[expect(
-        dead_code,
-        reason = "record identity is validated against the ledger when tickets land with L1+ adoption"
-    )]
     kind: RecordKind,
-    #[expect(
-        dead_code,
-        reason = "record identity is validated against the ledger when tickets land with L1+ adoption"
-    )]
     location: SourceLocation,
     disposition: Option<RecordDisposition>,
 }
@@ -778,11 +844,30 @@ impl TicketTable {
             .count()
     }
 
-    fn auto_drop_unresolved(&self) {
+    /// Resolves every unresolved ticket as `Dropped` with an accountable
+    /// loss note, returning the notes for the decode report.
+    ///
+    /// An unresolved committed record is a record the codec accepted and
+    /// never accounted for; it is a loss, never `Structural`.
+    fn auto_drop_unresolved(&self) -> Vec<LossNote> {
+        let mut notes = Vec::new();
         for state in self.entries.borrow_mut().iter_mut() {
             if state.disposition.is_none() {
-                state.disposition = Some(RecordDisposition::Structural);
+                let loss = LossNote {
+                    category: LossCategory::Other,
+                    severity: Severity::Warning,
+                    message: format!(
+                        "unresolved committed record `{}` at space {} offset {} auto-dropped in salvage mode",
+                        state.kind.0,
+                        state.location.space.index(),
+                        state.location.offset
+                    ),
+                    provenance: None,
+                };
+                notes.push(loss.clone());
+                state.disposition = Some(RecordDisposition::Dropped { loss });
             }
         }
+        notes
     }
 }

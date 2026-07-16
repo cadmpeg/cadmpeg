@@ -25,8 +25,9 @@ pub(crate) struct BudgetCells {
 }
 
 impl BudgetCells {
-    /// Reads a counter dimension. Panics on [`ResourceDimension::Depth`],
-    /// which is a gauge read through [`BudgetCells::depth`].
+    /// Reads a dimension's current value. For [`ResourceDimension::Depth`]
+    /// this is the gauge's current level, so failure reports can carry it
+    /// through the same path as the counters.
     pub(crate) fn counter(&self, dim: ResourceDimension) -> u64 {
         match dim {
             ResourceDimension::InputBytes => self.input_bytes.get(),
@@ -38,7 +39,9 @@ impl BudgetCells {
         }
     }
 
-    /// Writes a counter dimension. No-op for [`ResourceDimension::Depth`].
+    /// Writes a counter dimension. [`ResourceDimension::Depth`] is a gauge
+    /// written only through [`BudgetCells::set_depth`]; no charge path passes
+    /// it here, and the arm asserts that in debug builds.
     pub(crate) fn set_counter(&self, dim: ResourceDimension, value: u64) {
         match dim {
             ResourceDimension::InputBytes => self.input_bytes.set(value),
@@ -46,7 +49,9 @@ impl BudgetCells {
             ResourceDimension::AllocBytes => self.alloc_bytes.set(value),
             ResourceDimension::Work => self.work.set(value),
             ResourceDimension::RetainedBytes => self.retained_bytes.set(value),
-            ResourceDimension::Depth => {}
+            ResourceDimension::Depth => {
+                debug_assert!(false, "depth is a gauge; use set_depth");
+            }
         }
     }
 

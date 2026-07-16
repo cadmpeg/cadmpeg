@@ -7,7 +7,7 @@ use std::io::Cursor;
 use super::*;
 use crate::codec::{CodecError, DecodeResult};
 use crate::document::CadIr;
-use crate::report::DecodeReport;
+use crate::report::{DecodeReport, LossCategory, Severity};
 use crate::units::Units;
 
 fn desktop() -> DecodePolicy {
@@ -96,15 +96,15 @@ fn fuse_then_swallow_still_fails_at_finish() {
     let bytes: &[u8] = &[0u8; 16];
     let arena = DecodeArena::new();
     let policy = tight(|limits| limits.max_alloc_bytes = 0);
-    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
-    let first = ctx.exact_vec::<u64>(4);
+    let first = ctx.exact_vec::<u64>(root.counted(4, 1).unwrap());
     assert!(matches!(first, Err(CodecError::ResourceLimit(_))));
     assert!(ctx.is_fused());
 
     // Code that swallows the failure through Option starves rather than spins:
     // every subsequent charge fails immediately.
-    let swallowed = ctx.exact_vec::<u8>(1).ok();
+    let swallowed = ctx.exact_vec::<u8>(root.counted(1, 1).unwrap()).ok();
     assert!(swallowed.is_none());
 
     // finish refuses to return Ok from a fused context, returning the
@@ -170,14 +170,16 @@ fn exact_vec_enforces_capacity_and_full_population() {
     let bytes: &[u8] = &[0u8; 8];
     let arena = DecodeArena::new();
     let policy = desktop();
-    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
-    let mut partial = ctx.exact_vec::<u32>(3).unwrap();
+    // The count proof comes from the view; exact_vec accepts nothing else.
+    let three = root.counted(3, 1).unwrap();
+    let mut partial = ctx.exact_vec::<u32>(three).unwrap();
     assert!(partial.is_empty());
     partial.push(10).unwrap();
     assert!(partial.finish_exact().is_err(), "1 of 3 is not exact");
 
-    let mut full = ctx.exact_vec::<u32>(3).unwrap();
+    let mut full = ctx.exact_vec::<u32>(three).unwrap();
     full.push(1).unwrap();
     full.push(2).unwrap();
     full.push(3).unwrap();
@@ -203,7 +205,7 @@ fn grow_vec_charges_per_element_and_fuses_on_refusal() {
 }
 
 #[test]
-fn read_counted_reads_and_charges_then_truncates() {
+fn read_counted_reads_and_charges() {
     let bytes: &[u8] = &[1u8, 0, 0, 0, 2, 0, 0, 0];
     let arena = DecodeArena::new();
     let policy = desktop();
@@ -213,15 +215,35 @@ fn read_counted_reads_and_charges_then_truncates() {
     let values = ctx.read_counted(&mut view, count, |v| v.u32_le()).unwrap();
     assert_eq!(values, vec![1u32, 2]);
     assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 8);
+}
 
-    // A count that passes the physical floor but outruns the reader mid-loop
-    // is a committed truncation, not a retryable miss.
-    let short: &[u8] = &[1u8, 0, 0, 0, 5];
-    let arena2 = DecodeArena::new();
-    let (ctx2, mut view2) = DecodeContext::from_root_bytes(short, &arena2, &policy).unwrap();
-    let count = view2.counted(2, 1).unwrap();
-    let result = ctx2.read_counted(&mut view2, count, |v| v.u32_le());
+#[test]
+fn read_counted_classifies_exhausted_input_as_truncated() {
+    // The floor is proven for two 4-byte elements, but the reader consumes
+    // eight bytes per element: the second read finds fewer bytes remaining
+    // than one element's minimum size, which is a truncation.
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, mut view) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    let count = view.counted(2, 4).unwrap();
+    let result = ctx.read_counted(&mut view, count, |v| v.u64_le());
     assert!(matches!(result, Err(CodecError::Truncated { .. })));
+}
+
+#[test]
+fn read_counted_classifies_in_window_rejection_as_malformed() {
+    // The reader rejects a value while at least one more element's bytes are
+    // still present: an inconsistency wholly inside the view, malformed.
+    let bytes: &[u8] = &[0x01, 0xFF, 0x02, 0x03, 0x04, 0x05];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, mut view) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    let count = view.counted(4, 1).unwrap();
+    let result = ctx.read_counted(&mut view, count, |v| v.u8().filter(|tag| *tag < 0x80));
+    assert!(matches!(result, Err(CodecError::Malformed(_))));
 }
 
 #[test]
@@ -281,7 +303,8 @@ fn transaction_rolls_back_position_but_not_charges() {
 
     // A transaction that charges the budget, then fails a read.
     let failed: Option<()> = root.transaction(|view| {
-        let _reserved = ctx.exact_vec::<u8>(4).ok()?;
+        let count = view.counted(4, 1)?;
+        let _reserved = ctx.exact_vec::<u8>(count).ok()?;
         view.take(1000)?;
         Some(())
     });
@@ -361,12 +384,61 @@ fn unresolved_tickets_fail_strict_and_auto_drop_in_salvage() {
         other => panic!("expected strict unresolved-ticket error, got {other:?}"),
     }
 
-    // Salvage: unresolved tickets are auto-dropped and the result stands.
+    // Salvage: unresolved tickets are auto-resolved as Dropped, and each
+    // drop surfaces as an accountable loss note on the result's report.
     let arena = DecodeArena::new();
     let policy = desktop();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let _ticket = ctx.commit_record(root.location(), RecordKind("entity"));
-    assert!(ctx.finish(Ok(dummy_result())).is_ok());
+    let result = ctx.finish(Ok(dummy_result())).unwrap();
+    assert_eq!(result.report.losses.len(), 1);
+    let loss = &result.report.losses[0];
+    assert_eq!(loss.category, LossCategory::Other);
+    assert_eq!(loss.severity, Severity::Warning);
+    assert!(loss.message.contains("`entity`"), "{}", loss.message);
+    assert!(
+        loss.message.contains("auto-dropped in salvage mode"),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn work_charge_exhaustion_fuses() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = tight(|limits| limits.max_work = 10);
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    ctx.charge_work(10, "probe_scan", Some(root.location()))
+        .unwrap();
+    assert_eq!(ctx.charged(ResourceDimension::Work), 10);
+    match ctx.charge_work(1, "probe_scan", None) {
+        Err(CodecError::ResourceLimit(limit)) => {
+            assert_eq!(limit.dimension, ResourceDimension::Work);
+        }
+        other => panic!("expected Work ResourceLimit, got {other:?}"),
+    }
+    assert!(ctx.is_fused());
+}
+
+#[test]
+fn retained_charge_exhaustion_fuses() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = tight(|limits| limits.max_retained_bytes = 4);
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    ctx.charge_retained(4, "retain_record", Some(root.location()))
+        .unwrap();
+    assert_eq!(ctx.charged(ResourceDimension::RetainedBytes), 4);
+    match ctx.charge_retained(1, "retain_record", None) {
+        Err(CodecError::ResourceLimit(limit)) => {
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        }
+        other => panic!("expected RetainedBytes ResourceLimit, got {other:?}"),
+    }
+    assert!(ctx.is_fused());
 }
 
 #[test]

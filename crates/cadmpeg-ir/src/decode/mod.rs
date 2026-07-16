@@ -19,8 +19,13 @@
 //!   below the stored lower bound is refused.
 //! - Allocation from a decoded count requires two proofs: [`BoundedCount`]
 //!   (the elements could fit in unread input) and a budget charge (the decode
-//!   may commit the memory). Every reservation is fallible; an allocator
-//!   refusal is a [`ResourceLimit`], not a process abort.
+//!   may commit the memory). The first proof is type-level:
+//!   [`DecodeContext::exact_vec`] and [`DecodeContext::read_counted`] accept
+//!   only [`BoundedCount`], which is constructible only through
+//!   [`View::counted`], so a raw declared count does not compile. The single
+//!   raw-count path is [`DecodeContext::alloc_unfloored`], the greppable
+//!   marker for zero-floor streams. Every reservation is fallible; an
+//!   allocator refusal is a [`ResourceLimit`], not a process abort.
 //! - Every budget charge that fails fuses the context permanently. A fused
 //!   context cannot return `Ok` from [`DecodeContext::finish`], even if
 //!   intermediate code swallowed the failure through an `Option` chain, so

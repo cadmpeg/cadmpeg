@@ -48,6 +48,13 @@ impl DecodeArena {
         // pointer is valid for the returned lifetime. The bytes are never
         // mutated after being stored (the arena exposes no mutation), so
         // aliasing `&[u8]` borrows do not conflict.
+        //
+        // Aliasing-model note: this is the elsa/FrozenVec pattern. A later
+        // `borrow_mut` retags `&mut Vec<Box<[u8]>>`; whether that invalidates
+        // raw pointers derived through an earlier guard is debated under
+        // strict Stacked Borrows but accepted under Tree Borrows, because the
+        // pointee is behind an untouched `Box` allocation. A Miri run over
+        // this module is the follow-up verification.
         unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) }
     }
 }
