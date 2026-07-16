@@ -161,6 +161,7 @@ fn report_unresolved_configuration_rules(
 struct DesignProjectionGaps {
     native_features: usize,
     unprojected_feature_scopes: usize,
+    unprojected_parameters: usize,
     unprojected_history_dependencies: usize,
     ambiguous_history_dependencies: usize,
     native_constraints: usize,
@@ -232,6 +233,12 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .iter()
         .filter_map(|feature| feature.native_ref.as_deref())
         .collect::<HashSet<_>>();
+    let projected_parameter_refs = ir
+        .model
+        .parameters
+        .iter()
+        .filter_map(|parameter| parameter.native_ref.as_deref())
+        .collect::<HashSet<_>>();
     let projected_features = ir
         .model
         .features
@@ -291,6 +298,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .design_parameter_scopes
             .iter()
             .filter(|scope| !projected_feature_refs.contains(scope.id.as_str()))
+            .count(),
+        unprojected_parameters: native
+            .design_parameters
+            .iter()
+            .filter(|parameter| !projected_parameter_refs.contains(parameter.id.as_str()))
             .count(),
         native_constraints: ir
             .model
@@ -406,6 +418,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} decoded feature scope(s) have no neutral construction-history feature.",
             gaps.unprojected_feature_scopes
+        ),
+    );
+    push(
+        gaps.unprojected_parameters,
+        format!(
+            "{} decoded Design parameter(s) have no neutral parameter.",
+            gaps.unprojected_parameters
         ),
     );
     push(
@@ -2304,6 +2323,7 @@ mod tests {
             DesignProjectionGaps {
                 native_features: 1,
                 unprojected_feature_scopes: 1,
+                unprojected_parameters: 1,
                 unprojected_history_dependencies: 0,
                 ambiguous_history_dependencies: 0,
                 native_constraints: 1,
@@ -2315,6 +2335,21 @@ mod tests {
                 partially_resolved_edge_members: 1,
                 unresolved_edge_selections: 1,
             }
+        );
+
+        ir.model.parameters.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "parameter-2",
+                "ordinal": 2,
+                "name": "d2",
+                "expression": "1 mm",
+                "native_ref": "f3d:test:design-parameter#2"
+            }))
+            .expect("Design parameter"),
+        );
+        assert_eq!(
+            design_projection_gaps(&ir, &native).unprojected_parameters,
+            0
         );
     }
 
