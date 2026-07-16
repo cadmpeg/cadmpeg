@@ -85,6 +85,28 @@ pub struct LossNote {
     pub provenance: Option<Provenance>,
 }
 
+/// Versioned calibration identifiers recorded on every decode (§5.2).
+///
+/// Profiles and the acceptance envelope carry frozen version tags so an input
+/// that begins failing after a constants update keeps a durable explanation
+/// instead of a mystery. The decode session sets these authoritatively at
+/// [`DecodeContext::finish`](crate::decode::DecodeContext::finish); the
+/// [`Default`] value is a placeholder for a report that never reached `finish`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ProfileVersions {
+    /// The active limits profile: `desktop-v1`, `service-v1`, or `custom` when
+    /// the caller's ceilings match no named profile.
+    pub profile: String,
+    /// The active acceptance-envelope version, e.g. `envelope-v1`.
+    pub envelope: String,
+    /// Caller ceilings that differ from the default desktop profile, each as
+    /// `dimension=value`, sorted. Empty when the limits match a named profile;
+    /// present only when the profile is `custom`, naming what the caller
+    /// changed.
+    #[serde(default)]
+    pub overrides: Vec<String>,
+}
+
 /// Transfer status and loss details from a successful decode.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DecodeReport {
@@ -98,6 +120,10 @@ pub struct DecodeReport {
     pub losses: Vec<LossNote>,
     /// Free-form informational notes (e.g. container findings).
     pub notes: Vec<String>,
+    /// Versioned calibration identifiers in force for this decode (§5.2), set
+    /// by the decode session at `finish`.
+    #[serde(default)]
+    pub profile_versions: ProfileVersions,
 }
 
 impl DecodeReport {
@@ -253,5 +279,58 @@ impl ValidationReport {
     /// True when there are no [`Severity::Error`]/[`Severity::Blocking`] findings.
     pub fn is_ok(&self) -> bool {
         self.error_count() == 0
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn report_with(profile_versions: ProfileVersions) -> DecodeReport {
+        DecodeReport {
+            format: "test".to_string(),
+            container_only: false,
+            geometry_transferred: false,
+            losses: Vec::new(),
+            notes: Vec::new(),
+            profile_versions,
+        }
+    }
+
+    #[test]
+    fn profile_versions_serialize_under_stable_keys() {
+        // The serialized shape is the durable explanation the feature exists to
+        // provide (§5.2): a report keeps a machine-readable record of the
+        // constants in force. Lock the wire keys and values so a downstream
+        // reader can diff two reports across a library update.
+        let report = report_with(ProfileVersions {
+            profile: "custom".to_string(),
+            envelope: "envelope-v1".to_string(),
+            overrides: vec!["max_work=10".to_string()],
+        });
+        let value: serde_json::Value = serde_json::to_value(&report).unwrap();
+        let versions = &value["profile_versions"];
+        assert_eq!(versions["profile"], "custom");
+        assert_eq!(versions["envelope"], "envelope-v1");
+        assert_eq!(versions["overrides"], serde_json::json!(["max_work=10"]));
+    }
+
+    #[test]
+    fn report_without_profile_versions_deserializes_to_empty() {
+        // A serialized report predating the field parses with empty identifiers
+        // rather than failing, so the `#[serde(default)]` back-compat path holds
+        // and older reports still read.
+        let json = r#"{
+            "format": "test",
+            "container_only": false,
+            "geometry_transferred": false,
+            "losses": [],
+            "notes": []
+        }"#;
+        let report: DecodeReport = serde_json::from_str(json).unwrap();
+        assert_eq!(report.profile_versions, ProfileVersions::default());
+        assert!(report.profile_versions.profile.is_empty());
+        assert!(report.profile_versions.overrides.is_empty());
     }
 }

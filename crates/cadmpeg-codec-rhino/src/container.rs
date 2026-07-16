@@ -6,7 +6,7 @@ use std::io::{Read, SeekFrom};
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, ProfileVersions, Severity};
 use cadmpeg_ir::units::Units;
 
 use crate::chunks::{
@@ -669,6 +669,7 @@ pub(crate) fn container_only_result(scan: &Scan) -> cadmpeg_ir::codec::DecodeRes
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
         DecodeReport {
+            profile_versions: ProfileVersions::default(),
             format: "rhino".to_string(),
             container_only: true,
             geometry_transferred: false,

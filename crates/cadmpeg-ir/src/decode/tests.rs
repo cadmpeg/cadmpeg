@@ -7,11 +7,15 @@ use std::io::Cursor;
 use super::*;
 use crate::codec::{CodecError, DecodeResult};
 use crate::document::CadIr;
-use crate::report::{DecodeReport, LossCategory, Severity};
+use crate::report::{DecodeReport, LossCategory, ProfileVersions, Severity};
 use crate::units::Units;
 
 fn desktop() -> DecodePolicy {
     DecodePolicy::default()
+}
+
+fn service() -> DecodePolicy {
+    DecodePolicy::service()
 }
 
 fn strict() -> DecodePolicy {
@@ -38,6 +42,7 @@ fn dummy_result() -> DecodeResult {
         geometry_transferred: false,
         losses: Vec::new(),
         notes: Vec::new(),
+        profile_versions: ProfileVersions::default(),
     };
     DecodeResult::new(ir, report)
 }
@@ -456,4 +461,73 @@ fn allowance_is_the_smaller_of_ceiling_and_envelope() {
     let policy = tight(|limits| limits.max_input_bytes = 4096);
     let (ctx2, _root) = DecodeContext::from_root_bytes(bytes, &arena2, &policy).unwrap();
     assert_eq!(ctx2.allowance_of(ResourceDimension::InputBytes), 4096);
+}
+
+#[test]
+fn finish_records_profile_and_envelope_versions_under_both_profiles() {
+    let bytes: &[u8] = &[0u8; 8];
+
+    // Desktop (the default) profile: version tags present, no overrides.
+    let arena = DecodeArena::new();
+    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &desktop()).unwrap();
+    let report = ctx.finish(Ok(dummy_result())).unwrap().report;
+    assert_eq!(report.profile_versions.profile, "desktop-v1");
+    assert_eq!(report.profile_versions.envelope, "envelope-v1");
+    assert!(report.profile_versions.overrides.is_empty());
+
+    // Service profile: its own version tag, still no overrides.
+    let arena = DecodeArena::new();
+    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &service()).unwrap();
+    let report = ctx.finish(Ok(dummy_result())).unwrap().report;
+    assert_eq!(report.profile_versions.profile, "service-v1");
+    assert_eq!(report.profile_versions.envelope, "envelope-v1");
+    assert!(report.profile_versions.overrides.is_empty());
+}
+
+#[test]
+fn finish_records_custom_ceiling_overrides_against_the_default() {
+    let bytes: &[u8] = &[0u8; 8];
+
+    // A custom ceiling reports the `custom` profile and names the deviation
+    // from the desktop default; the envelope version is unchanged.
+    let arena = DecodeArena::new();
+    let policy = tight(|limits| limits.max_work = 10);
+    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let report = ctx.finish(Ok(dummy_result())).unwrap().report;
+    assert_eq!(report.profile_versions.profile, "custom");
+    assert_eq!(report.profile_versions.envelope, "envelope-v1");
+    assert_eq!(
+        report.profile_versions.overrides,
+        vec!["max_work=10".to_string()]
+    );
+
+    // Strict mode does not change the versioned ceilings: the desktop version
+    // stands with no overrides, since mode is orthogonal policy, not a
+    // calibration constant.
+    let arena = DecodeArena::new();
+    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &strict()).unwrap();
+    let report = ctx.finish(Ok(dummy_result())).unwrap().report;
+    assert_eq!(report.profile_versions.profile, "desktop-v1");
+    assert!(report.profile_versions.overrides.is_empty());
+}
+
+#[test]
+fn finish_records_every_deviating_dimension_in_sorted_order() {
+    let bytes: &[u8] = &[0u8; 8];
+
+    // Two deviations set out of alphabetical order: the record names each one
+    // and sorts them, so the report reads deterministically regardless of the
+    // order the caller changed ceilings.
+    let arena = DecodeArena::new();
+    let policy = tight(|limits| {
+        limits.max_work = 10;
+        limits.max_depth = 4;
+    });
+    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let report = ctx.finish(Ok(dummy_result())).unwrap().report;
+    assert_eq!(report.profile_versions.profile, "custom");
+    assert_eq!(
+        report.profile_versions.overrides,
+        vec!["max_depth=4".to_string(), "max_work=10".to_string()]
+    );
 }

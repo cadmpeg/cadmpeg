@@ -24,7 +24,7 @@ use cadmpeg_ir::ids::{
     VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, ProfileVersions, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, Point, Region, Sense, Shell, Vertex,
 };
@@ -1173,6 +1173,7 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     });
 
     DecodeReport {
+        profile_versions: ProfileVersions::default(),
         format: "creo".to_string(),
         container_only,
         geometry_transferred: !scan.datum_planes.is_empty() || placed_plane_count != 0,

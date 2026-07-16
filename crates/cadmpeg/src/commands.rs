@@ -15,7 +15,7 @@ use crate::loader::{self, read_prefix};
 use crate::registry::Registry;
 use crate::{DecodeArgs, ForcedInput, Format};
 
-const CLI_SCHEMA_VERSION: u32 = 3;
+const CLI_SCHEMA_VERSION: u32 = 4;
 
 fn validate_ir(ir: &CadIr, losses: Vec<cadmpeg_ir::LossNote>) -> ValidationReport {
     let mut report = validate(ir, losses);

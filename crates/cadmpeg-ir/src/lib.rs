@@ -77,7 +77,8 @@ pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeR
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
-    Check, DecodeReport, ExportReport, Finding, LossCategory, LossNote, Severity, ValidationReport,
+    Check, DecodeReport, ExportReport, Finding, LossCategory, LossNote, ProfileVersions, Severity,
+    ValidationReport,
 };
 pub use sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,

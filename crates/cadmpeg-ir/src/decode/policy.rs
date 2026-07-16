@@ -81,6 +81,31 @@ impl ResourceLimits {
             max_retained_bytes: 256 * MIB,
         }
     }
+
+    /// Version tag for the desktop profile's frozen calibration constants
+    /// (§5.2). Bumping any desktop ceiling advances this tag so a report from
+    /// before the change keeps a durable record of the constants in force.
+    pub const DESKTOP_VERSION: &'static str = "desktop-v1";
+
+    /// Version tag for the service profile's frozen calibration constants
+    /// (§5.2), advanced whenever a service ceiling changes.
+    pub const SERVICE_VERSION: &'static str = "service-v1";
+
+    /// The version tag of the named profile these ceilings match exactly, or
+    /// `None` when the caller supplied ceilings that match no named profile.
+    ///
+    /// Structural equality is the identity test: a caller who reproduces a
+    /// profile's exact ceilings is treated as using that profile; any deviation
+    /// makes the profile `custom` and is recorded against the default baseline.
+    pub fn profile_version(&self) -> Option<&'static str> {
+        if *self == Self::desktop() {
+            Some(Self::DESKTOP_VERSION)
+        } else if *self == Self::service() {
+            Some(Self::SERVICE_VERSION)
+        } else {
+            None
+        }
+    }
 }
 
 impl Default for ResourceLimits {
@@ -174,4 +199,9 @@ impl Envelope {
             retained_bytes: 16,
         },
     };
+
+    /// Version tag for the platform default envelope's calibration constants
+    /// (§5.2). No caller API overrides the envelope yet, so every decode runs
+    /// this version; the tag advances when a `PLATFORM_DEFAULT` constant does.
+    pub(crate) const VERSION: &'static str = "envelope-v1";
 }
