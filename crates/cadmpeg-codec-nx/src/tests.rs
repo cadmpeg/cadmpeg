@@ -810,6 +810,65 @@ fn jt_quantized_texture_coordinates_decode_component_major_lag1_codes() {
 }
 
 #[test]
+fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
+    let mut code = Vec::new();
+    let mut push = |value: u32, width: u8| {
+        code.extend((0..width).rev().map(|shift| ((value >> shift) & 1) as u8));
+    };
+    push(0, 1);
+    push(0, 6);
+    push(3, 6);
+    push(3, 3);
+    for value in 0..4 {
+        push(value, 2);
+    }
+    let mut word = 0u32;
+    for bit in &code {
+        word = (word << 1) | u32::from(*bit);
+    }
+    word <<= 32 - code.len();
+    let mut packet = 4_u32.to_le_bytes().to_vec();
+    packet.push(1);
+    packet.extend_from_slice(&(code.len() as u32).to_le_bytes());
+    packet.extend_from_slice(&word.to_le_bytes());
+
+    let mut rgb = 4_u32.to_le_bytes().to_vec();
+    rgb.extend_from_slice(&[3, 2, 0]);
+    for _ in 0..4 {
+        rgb.extend_from_slice(&0_f32.to_le_bytes());
+        rgb.extend_from_slice(&3_f32.to_le_bytes());
+        rgb.push(2);
+    }
+    for _ in 0..4 {
+        rgb.extend_from_slice(&packet);
+    }
+    rgb.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
+    let (colors, hash, consumed) = crate::jt::decode_vertex_colors(&rgb, 4, 2).unwrap();
+    assert_eq!(hash, 0x1234_5678);
+    assert_eq!(consumed, rgb.len());
+    assert_eq!(colors[0], [-0.5; 4]);
+    assert_eq!(colors[3], [2.5; 4]);
+
+    let mut hsv = 4_u32.to_le_bytes().to_vec();
+    hsv.extend_from_slice(&[4, 2, 1, 2, 2, 2, 2]);
+    for _ in 0..4 {
+        hsv.extend_from_slice(&packet);
+    }
+    hsv.extend_from_slice(&0x8765_4321_u32.to_le_bytes());
+    let (colors, hash, consumed) = crate::jt::decode_vertex_colors(&hsv, 4, 2).unwrap();
+    assert_eq!(hash, 0x8765_4321);
+    assert_eq!(consumed, hsv.len());
+    assert!(colors
+        .iter()
+        .flatten()
+        .all(|component| component.is_finite()));
+    assert!((colors[1][0] - 1.0 / 6.0).abs() < 1e-6);
+    assert!((colors[1][1] - 1.0 / 6.0).abs() < 1e-6);
+    assert!((colors[1][2] - 5.0 / 36.0).abs() < 1e-6);
+    assert!((colors[1][3] - 1.0 / 6.0).abs() < 1e-6);
+}
+
+#[test]
 fn jt9_topology_bounds_variable_high_degree_lane_count() {
     fn representation(high_degree_lanes: usize, topological_vertices: u32) -> Vec<u8> {
         let mut bytes = vec![0; (21 + high_degree_lanes + 2) * 4];

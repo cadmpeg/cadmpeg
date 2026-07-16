@@ -336,6 +336,23 @@ pub struct DisplayJtVertexNormals {
     pub source_offset: u64,
 }
 
+/// Colors decoded from one JT 9 vertex-attribute array.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtVertexColors {
+    /// Globally unique color-array identity.
+    pub id: String,
+    /// Owning compressed vertex-record header.
+    pub vertex_records_header: String,
+    /// Ordered RGBA colors in vertex-attribute record order.
+    pub colors: Vec<[f32; 4]>,
+    /// Combined hash serialized after the component vectors.
+    pub color_hash: u32,
+    /// Complete byte length of the color-array header, packets, and hash.
+    pub byte_len: u32,
+    /// Absolute source offset of the color-array count.
+    pub source_offset: u64,
+}
+
 /// One decoded JT 9 vertex texture-coordinate channel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DisplayJtVertexTextureCoordinates {
@@ -2000,13 +2017,85 @@ pub fn display_jt_vertex_normals(
     arrays
 }
 
-/// Decode texture-coordinate channels when no preceding color array is bound.
+/// Decode every complete JT 9 color array after coordinates and optional normals.
+pub fn display_jt_vertex_colors(
+    container: &Container,
+    vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
+    coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
+    coordinates: &[DisplayJtVertexCoordinates],
+    normals: &[DisplayJtVertexNormals],
+) -> Vec<DisplayJtVertexColors> {
+    let mut arrays = Vec::new();
+    for vertex_header in vertex_headers {
+        if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x30 == 0 {
+            continue;
+        }
+        let Some(coordinate_header) = coordinate_headers
+            .iter()
+            .find(|header| header.element == vertex_header.element)
+        else {
+            return Vec::new();
+        };
+        let Some(coordinates) = coordinates
+            .iter()
+            .find(|coordinates| coordinates.header == coordinate_header.id)
+        else {
+            return Vec::new();
+        };
+        let Some(mut source_offset) = coordinates
+            .source_offset
+            .checked_add(u64::from(coordinates.byte_len))
+        else {
+            return Vec::new();
+        };
+        if vertex_header.vertex_bindings & 0x8 != 0 {
+            let Some(normal_array) = normals
+                .iter()
+                .find(|normal| normal.vertex_records_header == vertex_header.id)
+            else {
+                return Vec::new();
+            };
+            let Some(next) = source_offset.checked_add(u64::from(normal_array.byte_len)) else {
+                return Vec::new();
+            };
+            source_offset = next;
+        }
+        let Ok(start) = usize::try_from(source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container.data.get(start..) else {
+            return Vec::new();
+        };
+        let Some((colors, color_hash, byte_len)) = crate::jt::decode_vertex_colors(
+            bytes,
+            vertex_header.vertex_attribute_count as usize,
+            vertex_header.color_quantization_bits,
+        ) else {
+            return Vec::new();
+        };
+        let Ok(byte_len) = u32::try_from(byte_len) else {
+            return Vec::new();
+        };
+        arrays.push(DisplayJtVertexColors {
+            id: format!("{}-vertex-colors", vertex_header.element),
+            vertex_records_header: vertex_header.id.clone(),
+            colors,
+            color_hash,
+            byte_len,
+            source_offset,
+        });
+    }
+    arrays
+}
+
+/// Decode texture-coordinate channels after preceding coordinate, normal, and color arrays.
 pub fn display_jt_vertex_texture_coordinates(
     container: &Container,
     vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
     coordinates: &[DisplayJtVertexCoordinates],
     normals: &[DisplayJtVertexNormals],
+    colors: &[DisplayJtVertexColors],
 ) -> Vec<DisplayJtVertexTextureCoordinates> {
     let mut arrays = Vec::new();
     for vertex_header in vertex_headers {
@@ -2016,7 +2105,7 @@ pub fn display_jt_vertex_texture_coordinates(
         if texture_channels.is_empty() {
             continue;
         }
-        if vertex_header.vertex_bindings & 0x30 != 0 || vertex_header.vertex_attribute_count == 0 {
+        if vertex_header.vertex_attribute_count == 0 {
             return Vec::new();
         }
         let Some(coordinate_header) = coordinate_headers
@@ -2045,6 +2134,18 @@ pub fn display_jt_vertex_texture_coordinates(
                 return Vec::new();
             };
             let Some(next) = source_offset.checked_add(u64::from(normal_array.byte_len)) else {
+                return Vec::new();
+            };
+            source_offset = next;
+        }
+        if vertex_header.vertex_bindings & 0x30 != 0 {
+            let Some(color_array) = colors
+                .iter()
+                .find(|color| color.vertex_records_header == vertex_header.id)
+            else {
+                return Vec::new();
+            };
+            let Some(next) = source_offset.checked_add(u64::from(color_array.byte_len)) else {
                 return Vec::new();
             };
             source_offset = next;

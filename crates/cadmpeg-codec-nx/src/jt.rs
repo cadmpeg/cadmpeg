@@ -301,6 +301,148 @@ pub(crate) fn decode_vertex_texture_coordinates(
     Some((values, hash, cursor))
 }
 
+/// Decode one JT compressed color array as RGBA values and its trailing hash.
+pub(crate) fn decode_vertex_colors(
+    bytes: &[u8],
+    expected_count: usize,
+    expected_bits: u8,
+) -> Option<(Vec<[f32; 4]>, u32, usize)> {
+    let count = usize::try_from(read_u32(bytes, 0)?).ok()?;
+    let component_count = usize::from(*bytes.get(4)?);
+    if count != expected_count
+        || !matches!(component_count, 3 | 4)
+        || *bytes.get(5)? != expected_bits
+        || expected_bits > 8
+    {
+        return None;
+    }
+    let mut cursor = 6usize;
+    let colors = if expected_bits == 0 {
+        let mut components = Vec::with_capacity(component_count);
+        for _ in 0..component_count {
+            let (exponents, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            cursor = cursor.checked_add(exponent_len)?;
+            let (mantissae, mantissa_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            cursor = cursor.checked_add(mantissa_len)?;
+            if exponents.len() != count || mantissae.len() != count {
+                return None;
+            }
+            let exponents = unpack_predictor_residuals(&exponents, Predictor::Lag1);
+            let mantissae = unpack_predictor_residuals(&mantissae, Predictor::Lag1);
+            components.push(lossless_coordinate_component(&exponents, &mantissae)?);
+        }
+        (0..count)
+            .map(|index| {
+                Some([
+                    *components.first()?.get(index)?,
+                    *components.get(1)?.get(index)?,
+                    *components.get(2)?.get(index)?,
+                    components
+                        .get(3)
+                        .and_then(|component| component.get(index))
+                        .copied()
+                        .unwrap_or(1.0),
+                ])
+            })
+            .collect::<Option<Vec<_>>>()?
+    } else {
+        let hsv = match *bytes.get(cursor)? {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+        cursor = cursor.checked_add(1)?;
+        let mut ranges = Vec::with_capacity(4);
+        let mut component_bits = Vec::with_capacity(4);
+        if hsv {
+            for range in [[0.0, 6.0], [0.0, 1.0], [0.0, 1.0], [0.0, 1.0]] {
+                let bits = *bytes.get(cursor)?;
+                if bits == 0 || bits > 8 {
+                    return None;
+                }
+                ranges.push(range);
+                component_bits.push(bits);
+                cursor = cursor.checked_add(1)?;
+            }
+        } else {
+            for _ in 0..4 {
+                let minimum = f32::from_le_bytes(bytes.get(cursor..cursor + 4)?.try_into().ok()?);
+                let maximum =
+                    f32::from_le_bytes(bytes.get(cursor + 4..cursor + 8)?.try_into().ok()?);
+                let bits = *bytes.get(cursor + 8)?;
+                if bits == 0
+                    || bits > 8
+                    || !minimum.is_finite()
+                    || !maximum.is_finite()
+                    || minimum > maximum
+                {
+                    return None;
+                }
+                ranges.push([minimum, maximum]);
+                component_bits.push(bits);
+                cursor = cursor.checked_add(9)?;
+            }
+        }
+        let mut components = Vec::with_capacity(4);
+        for component in 0..4 {
+            let (residuals, byte_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            cursor = cursor.checked_add(byte_len)?;
+            if residuals.len() != count {
+                return None;
+            }
+            components.push(
+                unpack_predictor_residuals(&residuals, Predictor::Lag1)
+                    .into_iter()
+                    .map(|code| {
+                        dequantize_uniform(code, ranges[component], component_bits[component])
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            );
+        }
+        (0..count)
+            .map(|index| {
+                let first = components[0][index];
+                let second = components[1][index];
+                let third = components[2][index];
+                let alpha = components[3][index];
+                if hsv {
+                    let [red, green, blue] = hsv_to_rgb(first, second, third)?;
+                    Some([red, green, blue, alpha])
+                } else {
+                    Some([first, second, third, alpha])
+                }
+            })
+            .collect::<Option<Vec<_>>>()?
+    };
+    let hash = read_u32(bytes, cursor)?;
+    cursor = cursor.checked_add(4)?;
+    Some((colors, hash, cursor))
+}
+
+fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> Option<[f32; 3]> {
+    if !hue.is_finite() || !saturation.is_finite() || !value.is_finite() {
+        return None;
+    }
+    let hue = hue.rem_euclid(6.0);
+    let chroma = value * saturation;
+    let intermediate = chroma * (1.0 - (hue.rem_euclid(2.0) - 1.0).abs());
+    let minimum = value - chroma;
+    let [red, green, blue] = match hue as u8 {
+        0 => [chroma, intermediate, 0.0],
+        1 => [intermediate, chroma, 0.0],
+        2 => [0.0, chroma, intermediate],
+        3 => [0.0, intermediate, chroma],
+        4 => [intermediate, 0.0, chroma],
+        5 => [chroma, 0.0, intermediate],
+        _ => unreachable!(),
+    };
+    let result = [red + minimum, green + minimum, blue + minimum];
+    result
+        .iter()
+        .all(|component| component.is_finite())
+        .then_some(result)
+}
+
 pub(crate) fn dequantize_uniform(code: i32, range: [f32; 2], bits: u8) -> Option<f32> {
     if bits == 0
         || bits > 32

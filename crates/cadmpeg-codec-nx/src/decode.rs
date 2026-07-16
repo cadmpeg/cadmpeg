@@ -6665,6 +6665,13 @@ fn attach_native_object_model(
         &display_jt_coordinate_array_headers,
         &display_jt_vertex_coordinates,
     );
+    let display_jt_vertex_colors = crate::native::display_jt_vertex_colors(
+        &scan.container,
+        &display_jt_vertex_records_headers,
+        &display_jt_coordinate_array_headers,
+        &display_jt_vertex_coordinates,
+        &display_jt_vertex_normals,
+    );
     let display_jt_vertex_texture_coordinates =
         crate::native::display_jt_vertex_texture_coordinates(
             &scan.container,
@@ -6672,6 +6679,7 @@ fn attach_native_object_model(
             &display_jt_coordinate_array_headers,
             &display_jt_vertex_coordinates,
             &display_jt_vertex_normals,
+            &display_jt_vertex_colors,
         );
     let display_jt_polygon_meshes = crate::native::display_jt_polygon_meshes(
         &display_jt_topology_packet_sequences,
@@ -7156,6 +7164,12 @@ fn attach_native_object_model(
             .note(&normals.id, annotation_stream, normals.source_offset)
             .tag("DISPLAY_JT_VERTEX_NORMALS");
         annotations.exactness(&normals.id, Exactness::Derived);
+    }
+    for colors in &display_jt_vertex_colors {
+        annotations
+            .note(&colors.id, annotation_stream, colors.source_offset)
+            .tag("DISPLAY_JT_VERTEX_COLORS");
+        annotations.exactness(&colors.id, Exactness::Derived);
     }
     for texture_coordinates in &display_jt_vertex_texture_coordinates {
         annotations
@@ -8001,6 +8015,9 @@ fn attach_native_object_model(
     }
     if !display_jt_vertex_normals.is_empty() {
         namespace.set_arena("display_jt_vertex_normals", &display_jt_vertex_normals)?;
+    }
+    if !display_jt_vertex_colors.is_empty() {
+        namespace.set_arena("display_jt_vertex_colors", &display_jt_vertex_colors)?;
     }
     if !display_jt_vertex_texture_coordinates.is_empty() {
         namespace.set_arena(
