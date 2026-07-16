@@ -582,10 +582,26 @@ pub fn scan_view<'a>(
         "catia_container_scan",
         Some(root.location()),
     )?;
-    let mut scan = scan_bytes(data);
-    register_extent_spaces(ctx, root, &scan)?;
-    scan.brep = build_brep_space(ctx, root, scan.inner.as_ref())?;
-    Ok(scan)
+    let outer_dir_offset = u32_be(data, 8).unwrap_or(0);
+    let outer_dir_length = u32_be(data, 12).unwrap_or(0);
+    let inner = parse_stream_directory(data);
+    register_extent_spaces(ctx, root, inner.as_ref())?;
+    // Reconstruct the logical BREP stream once, as the charged `Concat` derived
+    // space, and run the census over its bytes. The context-free `scan_bytes`
+    // reconstructs a transient throwaway `Vec` for the same census; the session
+    // path must not — that copy would be a second, uncharged reconstruction of
+    // the whole BREP body on every decode and inspect.
+    let brep = build_brep_space(ctx, root, inner.as_ref())?;
+    let (census, variant) = identify(data, inner.as_ref(), brep.as_ref().map(|v| v.window()));
+    Ok(ContainerScan {
+        data,
+        outer_dir_offset,
+        outer_dir_length,
+        inner,
+        brep,
+        census,
+        variant,
+    })
 }
 
 /// Register every catalogued physical extent as a stored `Slice` child of the
@@ -598,9 +614,9 @@ pub fn scan_view<'a>(
 fn register_extent_spaces(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
-    scan: &ContainerScan<'_>,
+    inner: Option<&InnerDir>,
 ) -> Result<(), CodecError> {
-    let Some(dir) = scan.inner.as_ref() else {
+    let Some(dir) = inner else {
         return Ok(());
     };
     let extent_count: u64 = dir.descriptors.iter().map(|d| d.extents.len() as u64).sum();
@@ -609,12 +625,17 @@ fn register_extent_spaces(
         "catia_container_extents",
         Some(root.location()),
     )?;
-    let len = scan.data.len() as u64;
+    let len = root.window().len() as u64;
     for descriptor in &dir.descriptors {
         for e in &descriptor.extents {
             let start = (dir.inner as u64) + u64::from(e.phys_off);
-            let end = (start + u64::from(e.phys_len)).min(len);
-            if start >= end {
+            let end = start + u64::from(e.phys_len);
+            // Skip any extent that escapes the file rather than clamping it to
+            // the file end. `brep_extent_ranges` and `reconstruct_logical_stream`
+            // drop an out-of-range extent, so clamping here would register a
+            // byte range the reconstructed BREP stream does not contain — a
+            // guard/read disagreement. Both paths now apply the same policy.
+            if end > len || start >= end {
                 continue;
             }
             ctx.register_slice(root, ByteRange { start, end })?;
@@ -662,24 +683,7 @@ pub fn scan_bytes(data: &[u8]) -> ContainerScan<'_> {
 
     let inner = parse_stream_directory(data);
     let brep = inner.as_ref().and_then(|dir| brep_stream(data, dir));
-
-    let mut census = Census {
-        a9_markers: count_subslice(data, A9_MARKER),
-        e5_markers: count_subslice(data, E5_MARKER),
-        ..Default::default()
-    };
-    if let Some(b) = &brep {
-        census.fbb_runs = count_stride8_fbb(b);
-        census.edge_delimiters = count_subslice(b, EDGE_DELIMITER);
-        census.vertex_markers = count_subslice(b, VERTEX_MARKER);
-    }
-
-    let variant = identify_variant(
-        inner.as_ref(),
-        brep.as_deref(),
-        &census,
-        e5_record_stream(data).is_some(),
-    );
+    let (census, variant) = identify(data, inner.as_ref(), brep.as_deref());
 
     ContainerScan {
         data,
@@ -690,6 +694,26 @@ pub fn scan_bytes(data: &[u8]) -> ContainerScan<'_> {
         census,
         variant,
     }
+}
+
+/// Compute the record-family census and storage variant from the file image and
+/// the reconstructed BREP body. Shared by the context-free [`scan_bytes`], which
+/// reconstructs the BREP into a throwaway `Vec`, and [`scan_view`], which passes
+/// the bytes of the charged `Concat` derived space so the census is computed
+/// once over already-accounted memory.
+fn identify(data: &[u8], inner: Option<&InnerDir>, brep: Option<&[u8]>) -> (Census, Variant) {
+    let mut census = Census {
+        a9_markers: count_subslice(data, A9_MARKER),
+        e5_markers: count_subslice(data, E5_MARKER),
+        ..Default::default()
+    };
+    if let Some(b) = brep {
+        census.fbb_runs = count_stride8_fbb(b);
+        census.edge_delimiters = count_subslice(b, EDGE_DELIMITER);
+        census.vertex_markers = count_subslice(b, VERTEX_MARKER);
+    }
+    let variant = identify_variant(inner, brep, &census, e5_record_stream(data).is_some());
+    (census, variant)
 }
 
 /// Build a [`ContainerSummary`] enumerating the inner directory's named streams

@@ -39,6 +39,17 @@ use crate::native::CatiaNative;
 use crate::topology;
 use crate::variant::Variant;
 
+/// Number of whole-image linear passes the entity-decode phase makes over the
+/// file (variant discrimination, E5 record stream, native record decode,
+/// freeform surface scan). A charge multiplier, not a proven bound; work
+/// constants freeze after Phase 2 calibration (§5.2).
+const ENTITY_DECODE_DATA_PASSES: u32 = 4;
+
+/// Number of linear passes the entity-decode phase makes over the reconstructed
+/// BREP body (vertices, `a8`/`a5` surfaces, `b2` cylinders/cones, `b5` records).
+/// A charge multiplier, not a proven bound; see [`ENTITY_DECODE_DATA_PASSES`].
+const ENTITY_DECODE_BREP_PASSES: u32 = 6;
+
 /// Decodes a `.CATPart` session root view into an IR document and decode report.
 ///
 /// Consumes the session root [`View`] directly (§10 Phase 1A). When the context
@@ -52,6 +63,18 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         let report = build_container_report(&scan, true);
         return Ok(DecodeResult::new(ir, report));
     }
+
+    // The entity-decode phase runs several full linear passes the container
+    // census charge does not cover: the variant decoders scan the whole image,
+    // and geometry extraction sweeps the reconstructed BREP body repeatedly
+    // (vertices, analytic surfaces, cylinders, cones, freeform records). Charge
+    // those passes as work up front so decode cost stays proportional to the
+    // bytes actually processed, not only to the one-pass container scan.
+    let brep_len = scan.brep_bytes().map_or(0, <[u8]>::len) as u64;
+    let entity_work = (scan.data.len() as u64)
+        .saturating_mul(u64::from(ENTITY_DECODE_DATA_PASSES))
+        .saturating_add(brep_len.saturating_mul(u64::from(ENTITY_DECODE_BREP_PASSES)));
+    ctx.charge_work(entity_work, "catia_entity_decode", Some(root.location()))?;
 
     if matches!(scan.variant, Variant::StandardNested | Variant::FbbOnly) {
         if let Some((ir, report)) = try_decode_standard(&scan) {
