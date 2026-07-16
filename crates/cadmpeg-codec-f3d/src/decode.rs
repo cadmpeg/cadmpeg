@@ -1955,6 +1955,7 @@ mod tests {
             sketch: SketchId("sketch".into()),
             definition: SketchConstraintDefinition::Native {
                 native_kind: "dimension".into(),
+                native_state: None,
                 entities: Vec::new(),
                 parameter: None,
                 operands: Vec::new(),

@@ -12689,6 +12689,7 @@ fn decode_projects_owned_native_sketch_relation() {
         &constraint.definition,
         SketchConstraintDefinition::Native {
             native_kind,
+            native_state: None,
             entities,
             parameter: Some(relation_parameter),
             operands,

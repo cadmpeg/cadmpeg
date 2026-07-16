@@ -3940,6 +3940,7 @@ pub fn project_sketch_constraints(
         .or_else(|| exact_offset_constraint(relation, scope, &projected))
         .unwrap_or_else(|| Definition::Native {
             native_kind: relation_kind_name(relation),
+            native_state: Some(u64::from(relation.state)),
             entities: native_entities(),
             parameter: None,
             operands: relation
@@ -4090,9 +4091,11 @@ pub fn project_dimension_constraints(
     };
     let native_definition = |scope: &str,
                              source_kind: &str,
+                             state: Option<u32>,
                              operands: &[(&str, Option<u32>, u32)],
                              parameter| Definition::Native {
         native_kind: source_kind.to_owned(),
+        native_state: state.map(u64::from),
         entities: operands
             .iter()
             .filter_map(|(_, _, record_index)| {
@@ -4361,6 +4364,7 @@ pub fn project_dimension_constraints(
                 native_definition(
                     scope,
                     &parameter.source_kind,
+                    None,
                     &[
                         ("first_locus", Some(pair.first_role), indices[0]),
                         ("second_locus", Some(pair.second_role), indices[1]),
@@ -4396,7 +4400,13 @@ pub fn project_dimension_constraints(
                             .iter()
                             .map(|record_index| ("return", None, *record_index)),
                     );
-                    native_definition(scope, &parameter.source_kind, &operands, parameter_id)
+                    native_definition(
+                        scope,
+                        &parameter.source_kind,
+                        Some(group.state),
+                        &operands,
+                        parameter_id,
+                    )
                 });
             Some(SketchConstraint {
                 id: neutral_sketch_constraint_id(&group.id, group.record_index),
@@ -4453,6 +4463,7 @@ pub fn project_dimension_constraints(
                 sketch,
                 definition: Definition::Native {
                     native_kind: parameter.source_kind.clone(),
+                    native_state: None,
                     entities: indices
                         .iter()
                         .filter_map(|record_index| {
@@ -4530,6 +4541,7 @@ pub fn project_dimension_constraints(
                 (_, Some(definition)) => definition,
                 _ => Definition::Native {
                     native_kind: parameter.source_kind.clone(),
+                    native_state: None,
                     entities: recipe_dimension_candidate_entities(&linear_candidates),
                     parameter: Some(parameter_id),
                     operands: records
@@ -14771,6 +14783,8 @@ mod relation_tests {
         );
         horizontal_point.auxiliary_references = vec![999];
         horizontal_point.return_members = vec![175, 175];
+        horizontal_point.state = 0x8000_0040;
+        horizontal_point.unknown_constraint_bits = 0x8000_0000;
         let constraints = project_sketch_constraints(
             &placements,
             &points,
@@ -14800,10 +14814,11 @@ mod relation_tests {
             constraints[1].definition,
             SketchConstraintDefinition::Native {
                 ref native_kind,
+                native_state: Some(0x8000_0040),
                 ref entities,
                 ref operands,
                 ..
-            } if native_kind == "horizontal"
+            } if native_kind == "horizontal+unknown_bits"
                 && entities.len() == 3
                 && entities.iter().all(|entity| entity == &entities[0])
                 && operands.iter().map(|operand| (operand.native_field.as_deref(), operand.native_kind.as_str(), operand.object_index)).collect::<Vec<_>>()
@@ -15621,7 +15636,11 @@ mod relation_tests {
         assert!(matches!(
             grouped.as_slice(),
             [cadmpeg_ir::sketches::SketchConstraint {
-                definition: SketchConstraintDefinition::Native { operands, .. },
+                definition: SketchConstraintDefinition::Native {
+                    native_state: Some(0),
+                    operands,
+                    ..
+                },
                 ..
             }] if operands.iter().map(|operand| (operand.native_field.as_deref(), operand.native_role, operand.object_index)).collect::<Vec<_>>()
                 == [

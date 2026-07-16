@@ -895,6 +895,7 @@ pub(crate) fn project_relation_bindings(
                 sketch: (*sketch).clone(),
                 definition: SketchConstraintDefinition::Native {
                     native_kind: native_kind.into(),
+                    native_state: None,
                     entities: Vec::new(),
                     parameter,
                     operands: relation

@@ -1974,6 +1974,7 @@ fn sketch_constraint_native_ref_must_resolve() {
             sketch: crate::sketches::SketchId("synthetic:test:sketch#missing".into()),
             definition: crate::sketches::SketchConstraintDefinition::Native {
                 native_kind: "test".into(),
+                native_state: None,
                 entities: Vec::new(),
                 parameter: None,
                 operands: vec![crate::sketches::SketchNativeOperand {
