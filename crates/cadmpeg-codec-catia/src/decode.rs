@@ -1458,9 +1458,18 @@ mod chart_tests {
     }
 
     #[test]
-    fn standard_spline_edge_retains_cache_and_exact_intersection_construction() {
+    fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction() {
         let mut ir = CadIr::empty(Units::default());
         let mut annotations = AnnotationBuilder::new();
+        for (index, position) in [Point3::new(1.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)]
+            .into_iter()
+            .enumerate()
+        {
+            ir.model.points.push(Point {
+                id: PointId(format!("p{index}")),
+                position,
+            });
+        }
         for index in 0..2 {
             ir.model.surfaces.push(Surface {
                 id: SurfaceId(format!("surface-{index}")),
@@ -1495,16 +1504,18 @@ mod chart_tests {
             ]),
             &[],
             &support,
-            [0, 0],
+            [0, 1],
         );
         let id = id.expect("spline support identifies a curve carrier");
         assert_eq!(range, Some([0.0, 1.0]));
         assert_eq!(ir.model.curves[0].id, id);
-        assert!(matches!(
+        assert_eq!(
             ir.model.curves[0].geometry,
-            CurveGeometry::Unknown { ref record }
-                if record.as_ref().is_some_and(|id| id.0 == "catia:payload:unknown#brep-stream")
-        ));
+            CurveGeometry::Line {
+                origin: Point3::new(1.0, 0.0, 0.0),
+                direction: Vector3::new(3.0, 0.0, 0.0),
+            }
+        );
         assert!(matches!(
             ir.model.procedural_curves.as_slice(),
             [ProceduralCurve {
@@ -6045,6 +6056,63 @@ fn point_distance_squared(left: Point3, right: Point3) -> f64 {
     (left.x - right.x).powi(2) + (left.y - right.y).powi(2) + (left.z - right.z).powi(2)
 }
 
+fn standard_spline_plane_line(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    support: &geometry::StandardCurveSupport,
+    points: [usize; 2],
+) -> Option<CurveGeometry> {
+    const TOLERANCE: f64 = 2e-3;
+
+    let surfaces = support
+        .faces
+        .map(|face| face_surface(ir, bindings, surface_indices, face));
+    let [Some(left), Some(right)] = surfaces else {
+        return None;
+    };
+    let (
+        SurfaceGeometry::Plane {
+            normal: left_normal,
+            ..
+        },
+        SurfaceGeometry::Plane {
+            normal: right_normal,
+            ..
+        },
+    ) = (&left.geometry, &right.geometry)
+    else {
+        return None;
+    };
+    let intersection = cross_vector(*left_normal, *right_normal);
+    let intersection_norm = vector_norm(intersection);
+    if !intersection_norm.is_finite() || intersection_norm <= f64::EPSILON {
+        return None;
+    }
+    let start = ir.model.points.get(points[0])?.position;
+    let end = ir.model.points.get(points[1])?.position;
+    if !point_on_surface(start, &left.geometry)
+        || !point_on_surface(start, &right.geometry)
+        || !point_on_surface(end, &left.geometry)
+        || !point_on_surface(end, &right.geometry)
+    {
+        return None;
+    }
+    let direction = point_delta(end, start);
+    let length = vector_norm(direction);
+    if !length.is_finite() || length <= f64::EPSILON {
+        return None;
+    }
+    let intersection = scale_vector(intersection, 1.0 / intersection_norm);
+    if vector_norm(cross_vector(direction, intersection)) > TOLERANCE {
+        return None;
+    }
+    Some(CurveGeometry::Line {
+        origin: start,
+        direction,
+    })
+}
+
 fn build_standard_edge_curve(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -6129,9 +6197,11 @@ fn build_standard_edge_curve(
             )
         }
         geometry::StandardCurveGeometry::Bspline => (
-            CurveGeometry::Unknown {
-                record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
-            },
+            standard_spline_plane_line(ir, bindings, surface_indices, support, points).unwrap_or(
+                CurveGeometry::Unknown {
+                    record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
+                },
+            ),
             None,
         ),
     };
@@ -6142,13 +6212,13 @@ fn build_standard_edge_curve(
         "MainDataStream+SurfacicReps",
         support.pos as u64,
         "curve_support_60",
-        if matches!(geometry, CurveGeometry::Unknown { .. }) {
-            Exactness::Unknown
-        } else {
-            Exactness::ByteExact
+        match (&support.geometry, &geometry) {
+            (_, CurveGeometry::Unknown { .. }) => Exactness::Unknown,
+            (geometry::StandardCurveGeometry::Bspline, _) => Exactness::Derived,
+            _ => Exactness::ByteExact,
         },
     );
-    if matches!(&support.geometry, geometry::StandardCurveGeometry::Line) {
+    if matches!(&geometry, CurveGeometry::Line { .. }) {
         annotations
             .derived(&id, "geometry.origin")
             .derived(&id, "geometry.direction");
