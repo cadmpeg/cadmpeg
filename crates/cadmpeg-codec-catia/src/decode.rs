@@ -103,7 +103,7 @@ fn finish_decode(
         .sum::<usize>();
     if object_record_count != 0 {
         report.losses.push(LossNote {
-            category: LossCategory::Other,
+            category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
                 "CATIA native data retains {} design object(s) and {object_record_count} object-graph field record(s), but no neutral features, parameters, sketches, or history dependencies were transferred.",

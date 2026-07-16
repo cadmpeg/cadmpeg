@@ -4683,7 +4683,7 @@ fn decode_retains_outer_object_graph_order_and_dependencies() {
             .collect::<Vec<_>>()
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Other
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 design object(s)")
             && loss.message.contains("2 object-graph field record(s)")
