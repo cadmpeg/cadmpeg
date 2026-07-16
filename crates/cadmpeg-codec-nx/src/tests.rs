@@ -1138,6 +1138,37 @@ fn display_jt9_tri_strip_shape_node_requires_exact_shape_data() {
 }
 
 #[test]
+fn display_jt9_geometric_transform_reconstructs_sparse_affine_matrix() {
+    let mut body = 1_u16.to_le_bytes().to_vec();
+    body.push(0x08);
+    body.extend_from_slice(&0_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&0x000e_u16.to_le_bytes());
+    for value in [1.25_f32, -2.5, 4.0] {
+        body.extend_from_slice(&value.to_le_bytes());
+    }
+    let (state, inhibit, mask, matrix) =
+        crate::native::parse_jt9_geometric_transform_body(&body).unwrap();
+    assert_eq!(state, 0x08);
+    assert_eq!(inhibit, 0);
+    assert_eq!(mask, 0x000e);
+    assert_eq!(matrix[0], [1.0, 0.0, 0.0, 0.0]);
+    assert_eq!(matrix[3], [1.25, -2.5, 4.0, 1.0]);
+
+    body[2] = 0x10;
+    assert!(crate::native::parse_jt9_geometric_transform_body(&body).is_none());
+
+    let mut shear = 1_u16.to_le_bytes().to_vec();
+    shear.push(0);
+    shear.extend_from_slice(&0_u32.to_le_bytes());
+    shear.extend_from_slice(&1_u16.to_le_bytes());
+    shear.extend_from_slice(&0x4800_u16.to_le_bytes());
+    shear.extend_from_slice(&0.5_f32.to_le_bytes());
+    shear.extend_from_slice(&0.5_f32.to_le_bytes());
+    assert!(crate::native::parse_jt9_geometric_transform_body(&shear).is_none());
+}
+
+#[test]
 fn display_jt9_partition_node_requires_complete_bounds_and_ranges() {
     let mut body = Vec::new();
     body.extend_from_slice(&1_u16.to_le_bytes());

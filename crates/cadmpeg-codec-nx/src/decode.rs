@@ -6831,6 +6831,12 @@ fn attach_native_object_model(
         &display_jt_segments,
         &display_jt_documents,
     );
+    let display_jt_geometric_transform_attributes =
+        crate::native::display_jt_geometric_transform_attributes(
+            &scan.container,
+            &display_jt_segments,
+            &display_jt_documents,
+        );
     let display_jt_partition_nodes = crate::native::display_jt_partition_nodes(
         &scan.container,
         &display_jt_segments,
@@ -7321,6 +7327,12 @@ fn attach_native_object_model(
             .note(&flags.id, annotation_stream, flags.source_offset)
             .tag("DISPLAY_JT_VERTEX_FLAGS");
         annotations.exactness(&flags.id, Exactness::Derived);
+    }
+    for transform in &display_jt_geometric_transform_attributes {
+        annotations
+            .note(&transform.id, annotation_stream, transform.source_offset)
+            .tag("DISPLAY_JT_GEOMETRIC_TRANSFORM");
+        annotations.exactness(&transform.id, Exactness::Derived);
     }
     for mesh in &display_jt_polygon_meshes {
         annotations
@@ -8168,6 +8180,12 @@ fn attach_native_object_model(
     }
     if !display_jt_vertex_flags.is_empty() {
         namespace.set_arena("display_jt_vertex_flags", &display_jt_vertex_flags)?;
+    }
+    if !display_jt_geometric_transform_attributes.is_empty() {
+        namespace.set_arena(
+            "display_jt_geometric_transform_attributes",
+            &display_jt_geometric_transform_attributes,
+        )?;
     }
     if !display_jt_polygon_meshes.is_empty() {
         namespace.set_arena("display_jt_polygon_meshes", &display_jt_polygon_meshes)?;

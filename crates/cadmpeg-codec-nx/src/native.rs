@@ -551,6 +551,27 @@ pub struct DisplayJtBaseNodeData {
     pub source_offset: u64,
 }
 
+/// One JT geometric-transform attribute attached to logical scene nodes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtGeometricTransformAttribute {
+    /// Globally unique transform-attribute identity.
+    pub id: String,
+    /// Owning compressed logical scene-graph element.
+    pub element: String,
+    /// Serialized attribute object identifier referenced by nodes.
+    pub object_id: u32,
+    /// Base-attribute state flags.
+    pub state_flags: u8,
+    /// Base-attribute field-inhibit flags.
+    pub field_inhibit_flags: u32,
+    /// Sparse-matrix stored-values mask in row-major bit order.
+    pub stored_values_mask: u16,
+    /// Complete row-major local-to-parent homogeneous matrix.
+    pub matrix: [[f32; 4]; 4],
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
 /// Complete JT 9 partition node linking an LSG branch to a partition file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DisplayJtPartitionNode {
@@ -1094,6 +1115,67 @@ pub(crate) fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRange
         range_limits,
         center,
     })
+}
+
+pub(crate) fn parse_jt9_geometric_transform_body(
+    body: &[u8],
+) -> Option<(u8, u32, u16, [[f32; 4]; 4])> {
+    let base_version = u16::from_le_bytes(body.get(0..2)?.try_into().ok()?);
+    let state_flags = *body.get(2)?;
+    let field_inhibit_flags = u32::from_le_bytes(body.get(3..7)?.try_into().ok()?);
+    let version = u16::from_le_bytes(body.get(7..9)?.try_into().ok()?);
+    let stored_values_mask = u16::from_le_bytes(body.get(9..11)?.try_into().ok()?);
+    if base_version != 1 || version != 1 || state_flags & !0x0f != 0 || field_inhibit_flags != 0 {
+        return None;
+    }
+    let mut matrix = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut cursor = 11usize;
+    for index in 0..16 {
+        if stored_values_mask & (0x8000 >> index) == 0 {
+            continue;
+        }
+        let end = cursor.checked_add(4)?;
+        let value = f32::from_le_bytes(body.get(cursor..end)?.try_into().ok()?);
+        if !value.is_finite() {
+            return None;
+        }
+        matrix[index / 4][index % 4] = value;
+        cursor = cursor.checked_add(4)?;
+    }
+    if cursor != body.len()
+        || matrix[0][3] != 0.0
+        || matrix[1][3] != 0.0
+        || matrix[2][3] != 0.0
+        || matrix[3][3] != 1.0
+    {
+        return None;
+    }
+    let rows = [&matrix[0][..3], &matrix[1][..3], &matrix[2][..3]];
+    let lengths = rows.map(|row| row.iter().map(|value| value * value).sum::<f32>().sqrt());
+    if lengths
+        .iter()
+        .any(|length| !length.is_finite() || *length == 0.0)
+    {
+        return None;
+    }
+    for first in 0..3 {
+        for second in first + 1..3 {
+            let dot = rows[first]
+                .iter()
+                .zip(rows[second])
+                .map(|(left, right)| left * right)
+                .sum::<f32>();
+            if dot.abs() > 1.0e-5 * lengths[first] * lengths[second] {
+                return None;
+            }
+        }
+    }
+    Some((state_flags, field_inhibit_flags, stored_values_mask, matrix))
 }
 
 /// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
@@ -2642,7 +2724,7 @@ pub fn display_jt_base_node_data(
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_base_type > 2 {
-                return Vec::new();
+                continue;
             }
             let Some((version, flags, attribute_object_ids, family_data)) =
                 parse_jt_base_node_body(element.body, document.format_major)
@@ -2664,6 +2746,76 @@ pub fn display_jt_base_node_data(
         }
     }
     nodes
+}
+
+/// Decode JT 9 geometric-transform attributes from logical scene-graph segments.
+pub fn display_jt_geometric_transform_attributes(
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtGeometricTransformAttribute> {
+    const GEOMETRIC_TRANSFORM_TYPE: [u8; 16] = [
+        0x83, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut attributes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major != 9 || segment.compression.is_none() {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(compressed) = bytes.get(33..) else {
+            return Vec::new();
+        };
+        let mut decoder = ZlibDecoder::new(compressed);
+        let mut inflated = Vec::new();
+        if decoder.read_to_end(&mut inflated).is_err()
+            || decoder.total_in() != compressed.len() as u64
+        {
+            return Vec::new();
+        }
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != GEOMETRIC_TRANSFORM_TYPE {
+                continue;
+            }
+            if element.object_base_type != 3 {
+                return Vec::new();
+            }
+            let Some((state_flags, field_inhibit_flags, stored_values_mask, matrix)) =
+                parse_jt9_geometric_transform_body(element.body)
+            else {
+                return Vec::new();
+            };
+            attributes.push(DisplayJtGeometricTransformAttribute {
+                id: format!("{}-geometric-transform-{ordinal}", segment.id),
+                element: format!("{}-inflated-element-{ordinal}", segment.id),
+                object_id: element.object_id,
+                state_flags,
+                field_inhibit_flags,
+                stored_values_mask,
+                matrix,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    attributes
 }
 
 /// Decode complete JT 9 partition nodes from logical scene-graph segments.
