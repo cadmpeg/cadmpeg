@@ -2899,7 +2899,7 @@ impl Codec for StepCodec {
         }
         let exchange =
             parse::parse(&bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
-        let decoded = reader::decode(&bytes, &DecodeOptions::default())?;
+        let decoded = reader::decode_exchange(&bytes, &DecodeOptions::default(), &exchange)?;
         let opaque_offsets = decoded
             .ir
             .native_unknowns("step")?

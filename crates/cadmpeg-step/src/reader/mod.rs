@@ -27,9 +27,17 @@ pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
 /// Decode a complete clear-text exchange structure.
 pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, CodecError> {
     let exchange = parse::parse(input).map_err(|error| CodecError::Malformed(error.to_string()))?;
+    decode_exchange(input, options, &exchange)
+}
+
+pub(super) fn decode_exchange(
+    input: &[u8],
+    options: &DecodeOptions,
+    exchange: &Exchange,
+) -> Result<DecodeResult, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut attributes = BTreeMap::new();
-    attributes.insert("schema".into(), schema_name(&exchange));
+    attributes.insert("schema".into(), schema_name(exchange));
     attributes.insert("data_sections".into(), exchange.data.len().to_string());
     attributes.insert(
         "entity_instances".into(),
@@ -55,14 +63,14 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
         return Ok(DecodeResult::new(ir, report));
     }
 
-    let geometry = geometry::decode(&exchange, &mut ir);
-    let dependencies = dependencies::decode(&exchange);
-    let topology = topology::decode(&exchange, &mut ir);
-    let product = product::decode(&exchange, &geometry, &mut ir);
-    let tessellation = tessellation::decode(&exchange, &geometry, &mut ir);
-    let pmi = pmi::decode(&exchange, &geometry, &mut ir);
-    let presentation = presentation::decode(&exchange, &mut ir);
-    let validation = validation::decode(&exchange, &geometry, &mut ir);
+    let geometry = geometry::decode(exchange, &mut ir);
+    let dependencies = dependencies::decode(exchange);
+    let topology = topology::decode(exchange, &mut ir);
+    let product = product::decode(exchange, &geometry, &mut ir);
+    let tessellation = tessellation::decode(exchange, &geometry, &mut ir);
+    let pmi = pmi::decode(exchange, &geometry, &mut ir);
+    let presentation = presentation::decode(exchange, &mut ir);
+    let validation = validation::decode(exchange, &geometry, &mut ir);
     report.notes.extend(dependencies.notes);
     report.notes.extend(validation.notes);
     report.geometry_transferred = !ir.model.points.is_empty()
@@ -183,7 +191,7 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
         });
     }
     ir.set_native_unknowns("step", &opaque)?;
-    let accounting = byte_accounting(input.len(), &exchange, &typed_records);
+    let accounting = byte_accounting(input.len(), exchange, &typed_records);
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -227,29 +235,16 @@ fn byte_accounting(
     exchange: &Exchange,
     typed_records: &BTreeSet<u64>,
 ) -> ByteAccounting {
-    const STRUCTURAL: u8 = 1;
-    const TYPED: u8 = 2;
-    const OPAQUE: u8 = 3;
-    let mut classes = vec![STRUCTURAL; input_len];
+    let mut counts = ByteAccounting::default();
     for record in exchange.records.values() {
-        let class = if typed_records.contains(&record.id) {
-            TYPED
+        if typed_records.contains(&record.id) {
+            counts.typed += record.span.len();
         } else {
-            OPAQUE
-        };
-        classes[record.span.clone()].fill(class);
+            counts.opaque += record.span.len();
+        }
     }
-    classes
-        .into_iter()
-        .fold(ByteAccounting::default(), |mut counts, class| {
-            match class {
-                STRUCTURAL => counts.structural += 1,
-                TYPED => counts.typed += 1,
-                OPAQUE => counts.opaque += 1,
-                _ => counts.unclassified += 1,
-            }
-            counts
-        })
+    counts.structural = input_len.saturating_sub(counts.typed + counts.opaque);
+    counts
 }
 
 fn schema_name(exchange: &Exchange) -> String {
