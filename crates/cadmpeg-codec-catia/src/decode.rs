@@ -452,18 +452,7 @@ fn transfer_zero_entity_topology(
         let Some(geometry) = support.pcurve.clone() else {
             continue;
         };
-        let parameter_range = match &geometry {
-            PcurveGeometry::Nurbs { degree, knots, .. } => {
-                let degree = usize::try_from(*degree).ok();
-                degree.and_then(|degree| {
-                    Some([
-                        *knots.get(degree)?,
-                        *knots.get(knots.len().checked_sub(degree + 1)?)?,
-                    ])
-                })
-            }
-            PcurveGeometry::Line { .. } => None,
-        };
+        let parameter_range = zero_entity_pcurve_range(&geometry, support.uv_endpoints);
         let Some(parameter_range) = parameter_range else {
             return false;
         };
@@ -766,6 +755,44 @@ fn transfer_zero_entity_topology(
         }
     }
     true
+}
+
+fn zero_entity_pcurve_range(
+    geometry: &PcurveGeometry,
+    uv_endpoints: Option<[[f64; 2]; 2]>,
+) -> Option<[f64; 2]> {
+    match geometry {
+        PcurveGeometry::Nurbs { degree, knots, .. } => {
+            let degree = usize::try_from(*degree).ok()?;
+            Some([
+                *knots.get(degree)?,
+                *knots.get(knots.len().checked_sub(degree + 1)?)?,
+            ])
+        }
+        PcurveGeometry::Line { origin, direction } => {
+            let endpoints = uv_endpoints?;
+            let denominator = direction.u.mul_add(direction.u, direction.v * direction.v);
+            if !denominator.is_finite() || denominator == 0.0 {
+                return None;
+            }
+            let mut range = [0.0; 2];
+            for (parameter, endpoint) in range.iter_mut().zip(endpoints) {
+                let delta = [endpoint[0] - origin.u, endpoint[1] - origin.v];
+                *parameter = delta[0].mul_add(direction.u, delta[1] * direction.v) / denominator;
+                let residual = (origin.u + *parameter * direction.u - endpoint[0])
+                    .hypot(origin.v + *parameter * direction.v - endpoint[1]);
+                let scale = 1.0f64
+                    .max(endpoint[0].abs())
+                    .max(endpoint[1].abs())
+                    .max(origin.u.abs())
+                    .max(origin.v.abs());
+                if !parameter.is_finite() || residual > 1e-10 * scale {
+                    return None;
+                }
+            }
+            Some(range)
+        }
+    }
 }
 
 fn unique_index_owners(groups: &[Vec<usize>], member_count: usize) -> Option<Vec<usize>> {
@@ -1229,7 +1256,7 @@ mod chart_tests {
         point_on_known_surface, point_on_standard_face, quintic_jet_pcurve, rational_pcurve_arc,
         resolve_standard_endpoint_pairs, reverse_e5_pcurve_geometry,
         standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
-        unique_index_owners, unique_native_identity_points,
+        unique_index_owners, unique_native_identity_points, zero_entity_pcurve_range,
     };
     use crate::e5::{E5Edge, E5Face, E5Loop, E5Topology};
     use crate::geometry::{FreeformFaceBounds, StandardCurveGeometry, StandardCurveSupport};
@@ -1257,6 +1284,43 @@ mod chart_tests {
         assert!(unique_index_owners(&[vec![0]], 2).is_none());
         assert!(unique_index_owners(&[vec![1]], 1).is_none());
         assert!(unique_index_owners(&[Vec::new()], 0).is_none());
+    }
+
+    #[test]
+    fn zero_entity_line_pcurve_range_uses_stored_uv_endpoints() {
+        let geometry = PcurveGeometry::Line {
+            origin: Point2::new(2.0, -1.0),
+            direction: Point2::new(3.0, 4.0),
+        };
+
+        assert_eq!(
+            zero_entity_pcurve_range(&geometry, Some([[5.0, 3.0], [-4.0, -9.0]])),
+            Some([1.0, -2.0])
+        );
+    }
+
+    #[test]
+    fn zero_entity_line_pcurve_range_rejects_off_line_endpoints() {
+        let geometry = PcurveGeometry::Line {
+            origin: Point2::new(2.0, -1.0),
+            direction: Point2::new(3.0, 4.0),
+        };
+
+        assert_eq!(
+            zero_entity_pcurve_range(&geometry, Some([[5.0, 3.0], [-4.0, -8.0]])),
+            None
+        );
+        assert_eq!(zero_entity_pcurve_range(&geometry, None), None);
+        assert_eq!(
+            zero_entity_pcurve_range(
+                &PcurveGeometry::Line {
+                    origin: Point2::new(0.0, 0.0),
+                    direction: Point2::new(0.0, 0.0),
+                },
+                Some([[0.0, 0.0], [1.0, 0.0]])
+            ),
+            None
+        );
     }
 
     #[test]
