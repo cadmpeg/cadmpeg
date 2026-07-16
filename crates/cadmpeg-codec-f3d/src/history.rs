@@ -1251,11 +1251,19 @@ fn bind_active_edge_operand_candidates(
             candidate_faces,
             boundary_edges,
             contexts,
+            reference_edge_sets,
             selectors,
         ))
     });
-    let Some((state_id, edge, candidate_faces, boundary_edges, contexts, selectors)) =
-        matches.next()
+    let Some((
+        state_id,
+        edge,
+        candidate_faces,
+        boundary_edges,
+        contexts,
+        reference_edge_sets,
+        selectors,
+    )) = matches.next()
     else {
         return;
     };
@@ -1265,6 +1273,7 @@ fn bind_active_edge_operand_candidates(
     operand.terminal_candidate_faces = candidate_faces;
     operand.terminal_boundary_edge_slots = boundary_edges;
     operand.terminal_boundary_edge_contexts = contexts;
+    operand.terminal_reference_edge_slots = reference_edge_sets;
     operand.recipe_selectors = selectors;
     operand.recipe_state_id = Some(state_id);
     operand.resolved_edge_slot = edge;

@@ -1312,10 +1312,7 @@ fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i
             } else {
                 edge_group_assignment_candidates(
                     &operand.recipe_selectors,
-                    operand
-                        .recipe_reference_contexts
-                        .iter()
-                        .map(|context| context.changed_reference_edge_slots.as_slice()),
+                    edge_operand_reference_edge_sets(operand),
                 )
             }
         })
@@ -1618,21 +1615,31 @@ fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
         .or_else(|| resolve_edge_operand_candidates(operand))
 }
 
-pub(crate) fn resolve_edge_operand_candidates(operand: &DesignEdgeOperand) -> Option<i64> {
-    let deleted_reference = corroborated_deleted_reference_candidate(
-        &operand.recipe_selectors,
+fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> Vec<&[i64]> {
+    if operand.recipe_reference_contexts.is_empty() {
+        operand
+            .terminal_reference_edge_slots
+            .iter()
+            .map(Vec::as_slice)
+            .collect()
+    } else {
         operand
             .recipe_reference_contexts
             .iter()
-            .map(|context| context.changed_reference_edge_slots.as_slice()),
+            .map(|context| context.changed_reference_edge_slots.as_slice())
+            .collect()
+    }
+}
+
+pub(crate) fn resolve_edge_operand_candidates(operand: &DesignEdgeOperand) -> Option<i64> {
+    let deleted_reference = corroborated_deleted_reference_candidate(
+        &operand.recipe_selectors,
+        edge_operand_reference_edge_sets(operand),
         &operand.deleted_boundary_edge_slots,
     );
     resolved_edge_candidate_intersection_with_deleted_proofs(
         &operand.recipe_selectors,
-        operand
-            .recipe_reference_contexts
-            .iter()
-            .map(|context| context.changed_reference_edge_slots.as_slice()),
+        edge_operand_reference_edge_sets(operand),
         &operand.deleted_boundary_edge_slots,
         deleted_reference,
     )
@@ -8563,6 +8570,7 @@ fn parse_edge_operand(
         treatment_radius_candidates: Vec::new(),
         changed_boundary_edge_contexts: Vec::new(),
         terminal_boundary_edge_contexts: Vec::new(),
+        terminal_reference_edge_slots: Vec::new(),
         recipe_reference_contexts: Vec::new(),
         recipe_selectors: Vec::new(),
         recipe_state_id: None,
@@ -13502,6 +13510,11 @@ mod relation_tests {
         assert_eq!(edge_operand.recipe_record_byte_offset, recipe_record_at);
         assert_eq!(edge_operand.recipe_id, recipe.id);
         assert_eq!(edge_operand.resolved_edge_slot, None);
+        edge_operand.terminal_reference_edge_slots = vec![vec![17], vec![18, 19]];
+        assert_eq!(
+            super::edge_operand_reference_edge_sets(&edge_operand),
+            vec![&[17][..], &[18, 19][..]]
+        );
         edge_operand.resolved_edge_slot = Some(17);
         assert_eq!(super::resolved_edge_operand(&edge_operand), Some(17));
         edge_operand.resolved_edge_slot = None;

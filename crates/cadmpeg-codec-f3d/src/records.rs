@@ -1131,6 +1131,10 @@ pub struct DesignEdgeOperand {
     /// used by a suppressed feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub terminal_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
+    /// Boundary-edge sets of the explicitly referenced faces in the terminal
+    /// topology, retained separately in local-reference source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_reference_edge_slots: Vec<Vec<i64>>,
     /// Ordered historical topology context for each prefix reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recipe_reference_contexts: Vec<DesignEdgeRecipeReferenceContext>,
