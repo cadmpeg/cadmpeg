@@ -3931,16 +3931,51 @@ pub fn project_dimension_constraints(
             }
         }
         if source_kind.starts_with("Linear Dimension") && entities.len() == 2 {
-            return Some(Definition::Distance {
-                entities: entities.iter().map(|entity| entity.id.clone()).collect(),
-                parameter,
-            });
+            let evaluated_mm = evaluated_value * 10.0;
+            if let Some(definition) =
+                directional_point_dimension(&entities, evaluated_mm, parameter.clone())
+            {
+                return Some(definition);
+            }
+            if parallel_line_separation(entities[0], entities[1], evaluated_mm) {
+                return Some(Definition::Distance {
+                    entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+                    parameter,
+                });
+            }
+            let (
+                SketchGeometry::Point {
+                    position: first_position,
+                },
+                SketchGeometry::Point {
+                    position: second_position,
+                },
+            ) = (&entities[0].geometry, &entities[1].geometry)
+            else {
+                return None;
+            };
+            let measured =
+                (first_position.u - second_position.u).hypot(first_position.v - second_position.v);
+            let scale = 1.0 + measured.abs().max(evaluated_mm.abs());
+            if evaluated_mm.is_finite() && (measured - evaluated_mm.abs()).abs() <= 1.0e-9 * scale {
+                return Some(Definition::DistanceLoci {
+                    first: cadmpeg_ir::sketches::SketchLocus::Entity(entities[0].id.clone()),
+                    second: cadmpeg_ir::sketches::SketchLocus::Entity(entities[1].id.clone()),
+                    parameter,
+                });
+            }
+            return None;
         }
         if source_kind.starts_with("Angular Dimension")
             && entities.len() == 2
             && entities
                 .iter()
                 .all(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+            && line_angle_matches(
+                &entities[0].geometry,
+                &entities[1].geometry,
+                evaluated_value,
+            )
         {
             return Some(Definition::Angle {
                 first: entities[0].id.clone(),
@@ -14371,6 +14406,70 @@ mod relation_tests {
         )
         .unwrap();
         assert_eq!(supplementary, lines);
+    }
+
+    #[test]
+    fn dimension_proofs_require_the_evaluated_measurement() {
+        let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let first = entity(
+            "generated:point#0",
+            SketchGeometry::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+        );
+        let second = entity(
+            "generated:point#1",
+            SketchGeometry::Point {
+                position: Point2::new(40.0, 0.0),
+            },
+        );
+        let parameter = cadmpeg_ir::features::ParameterId("generated:parameter#0".into());
+        assert!(
+            super::directional_point_dimension(&[&first, &second], 10.0, parameter.clone(),)
+                .is_none()
+        );
+        assert!(matches!(
+            super::directional_point_dimension(&[&first, &second], 40.0, parameter),
+            Some(SketchConstraintDefinition::HorizontalDistance { .. })
+        ));
+
+        let horizontal = entity(
+            "generated:line#horizontal",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(10.0, 0.0),
+            },
+        );
+        let diagonal = entity(
+            "generated:line#diagonal",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(10.0, 10.0),
+            },
+        );
+        assert!(!super::parallel_line_separation(
+            &horizontal,
+            &diagonal,
+            2.0,
+        ));
+        assert!(!super::line_angle_matches(
+            &horizontal.geometry,
+            &diagonal.geometry,
+            std::f64::consts::FRAC_PI_6,
+        ));
+        assert!(super::line_angle_matches(
+            &horizontal.geometry,
+            &diagonal.geometry,
+            std::f64::consts::FRAC_PI_4,
+        ));
     }
 
     #[test]
