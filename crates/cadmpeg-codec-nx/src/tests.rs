@@ -534,6 +534,57 @@ fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
 }
 
 #[test]
+fn jt_uniform_dequantization_uses_the_full_unsigned_code_range() {
+    assert_eq!(
+        crate::jt::dequantize_uniform(0, [10.0, 20.0], 2),
+        Some(8.333_333)
+    );
+    assert_eq!(
+        crate::jt::dequantize_uniform(3, [10.0, 20.0], 2),
+        Some(18.333_334)
+    );
+    assert_eq!(crate::jt::dequantize_uniform(4, [10.0, 20.0], 2), None);
+    assert_eq!(crate::jt::dequantize_uniform(-1, [4.0, 4.0], 32), Some(4.0));
+}
+
+#[test]
+fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
+    let mut code = Vec::new();
+    let mut push = |value: u32, width: u8| {
+        code.extend((0..width).rev().map(|shift| ((value >> shift) & 1) as u8));
+    };
+    push(0, 1);
+    push(0, 6);
+    push(3, 6);
+    push(3, 3);
+    for value in 0..4 {
+        push(value, 2);
+    }
+    let mut word = 0u32;
+    for bit in &code {
+        word = (word << 1) | u32::from(*bit);
+    }
+    word <<= 32 - code.len();
+    let mut packet = 4_u32.to_le_bytes().to_vec();
+    packet.push(1);
+    packet.extend_from_slice(&(code.len() as u32).to_le_bytes());
+    packet.extend_from_slice(&word.to_le_bytes());
+    let mut array = Vec::new();
+    for _ in 0..3 {
+        array.extend_from_slice(&packet);
+    }
+    array.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
+
+    let (points, hash, consumed) =
+        crate::jt::decode_vertex_coordinates(&array, 4, [[10.0, 20.0]; 3], [2; 3])
+            .expect("complete quantized coordinate array");
+    assert_eq!(hash, 0x1234_5678);
+    assert_eq!(consumed, array.len());
+    assert_eq!(points[0], [8.333_333; 3]);
+    assert_eq!(points[3], [18.333_334; 3]);
+}
+
+#[test]
 fn jt9_topology_bounds_variable_high_degree_lane_count() {
     fn representation(high_degree_lanes: usize, topological_vertices: u32) -> Vec<u8> {
         let mut bytes = vec![0; (21 + high_degree_lanes + 2) * 4];

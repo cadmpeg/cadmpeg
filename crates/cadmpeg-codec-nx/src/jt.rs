@@ -121,25 +121,67 @@ fn lossless_coordinate_component(exponents: &[i32], mantissae: &[i32]) -> Option
         .collect()
 }
 
-/// Decode the lossless component vectors and hash of one JT vertex-coordinate array.
-pub(crate) fn decode_lossless_vertex_coordinates(
+pub(crate) fn dequantize_uniform(code: i32, range: [f32; 2], bits: u8) -> Option<f32> {
+    if bits == 0
+        || bits > 32
+        || !range[0].is_finite()
+        || !range[1].is_finite()
+        || range[0] > range[1]
+    {
+        return None;
+    }
+    let maximum_code = if bits == 32 {
+        u32::MAX
+    } else {
+        (1_u32 << bits) - 1
+    };
+    let code = code as u32;
+    if code > maximum_code {
+        return None;
+    }
+    let step = (f64::from(range[1]) - f64::from(range[0])) / f64::from(maximum_code);
+    let value = (f64::from(range[0]) + (f64::from(code) - 0.5) * step) as f32;
+    value.is_finite().then_some(value)
+}
+
+/// Decode the component vectors and hash of one JT vertex-coordinate array.
+pub(crate) fn decode_vertex_coordinates(
     bytes: &[u8],
     vertex_count: usize,
+    ranges: [[f32; 2]; 3],
+    quantization_bits: [u8; 3],
 ) -> Option<(Vec<[f32; 3]>, u32, usize)> {
     let mut cursor = 0usize;
     let mut components = Vec::with_capacity(3);
-    for _ in 0..3 {
-        let (exponent_residuals, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
-        cursor = cursor.checked_add(exponent_len)?;
-        let (mantissa_residuals, mantissa_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
-        cursor = cursor.checked_add(mantissa_len)?;
-        if exponent_residuals.len() != vertex_count || mantissa_residuals.len() != vertex_count {
-            return None;
+    for component in 0..3 {
+        if quantization_bits[component] == 0 {
+            let (exponent_residuals, exponent_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            cursor = cursor.checked_add(exponent_len)?;
+            let (mantissa_residuals, mantissa_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            cursor = cursor.checked_add(mantissa_len)?;
+            if exponent_residuals.len() != vertex_count || mantissa_residuals.len() != vertex_count
+            {
+                return None;
+            }
+            components.push(lossless_coordinate_component(
+                &unpack_predictor_residuals(&exponent_residuals, Predictor::Lag1),
+                &unpack_predictor_residuals(&mantissa_residuals, Predictor::Lag1),
+            )?);
+        } else {
+            let (residuals, byte_len) = decode_int32_cdp2(bytes.get(cursor..)?, 0)?;
+            cursor = cursor.checked_add(byte_len)?;
+            if residuals.len() != vertex_count {
+                return None;
+            }
+            components.push(
+                unpack_predictor_residuals(&residuals, Predictor::Lag1)
+                    .into_iter()
+                    .map(|code| {
+                        dequantize_uniform(code, ranges[component], quantization_bits[component])
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            );
         }
-        components.push(lossless_coordinate_component(
-            &unpack_predictor_residuals(&exponent_residuals, Predictor::Lag1),
-            &unpack_predictor_residuals(&mantissa_residuals, Predictor::Lag1),
-        )?);
     }
     let coordinate_hash = read_u32(bytes, cursor)?;
     cursor = cursor.checked_add(4)?;

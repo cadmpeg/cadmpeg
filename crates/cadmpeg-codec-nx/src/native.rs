@@ -1758,16 +1758,13 @@ pub fn display_jt_topology_packet_sequences(
     (sequences, headers, coordinate_headers)
 }
 
-/// Decode every complete lossless JT 9 coordinate array.
+/// Decode every complete JT 9 coordinate array.
 pub fn display_jt_vertex_coordinates(
     container: &Container,
     headers: &[DisplayJtVertexCoordinateArrayHeader],
 ) -> Vec<DisplayJtVertexCoordinates> {
     let mut arrays = Vec::new();
     for header in headers {
-        if header.component_quantization_bits != [0; 3] {
-            continue;
-        }
         let Ok(start) = usize::try_from(header.source_offset + 32) else {
             return Vec::new();
         };
@@ -1777,12 +1774,12 @@ pub fn display_jt_vertex_coordinates(
         let Some(bytes) = container.data.get(start..start.saturating_add(byte_len)) else {
             return Vec::new();
         };
-        let Some((points_m, coordinate_hash, consumed)) =
-            crate::jt::decode_lossless_vertex_coordinates(
-                bytes,
-                header.unique_vertex_count as usize,
-            )
-        else {
+        let Some((points_m, coordinate_hash, consumed)) = crate::jt::decode_vertex_coordinates(
+            bytes,
+            header.unique_vertex_count as usize,
+            header.component_ranges,
+            header.component_quantization_bits,
+        ) else {
             return Vec::new();
         };
         let Ok(consumed) = u32::try_from(consumed) else {
