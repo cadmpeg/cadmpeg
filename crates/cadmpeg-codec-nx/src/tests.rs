@@ -6470,6 +6470,25 @@ fn om_numeric_expression_retains_formula_without_literal_value() {
 }
 
 #[test]
+fn om_numeric_expression_types_only_canonical_parameter_names() {
+    for name in ["p12foo", "p12_", "p4294967296_radius"] {
+        let text = format!("(Number [mm]) {name}: 5; ");
+        let mut bytes = b"hostglobalvariables".to_vec();
+        bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+        bytes.extend_from_slice(text.as_bytes());
+        bytes.push(0);
+
+        let expressions = crate::om::numeric_expressions(&bytes);
+        assert_eq!(expressions.len(), 1);
+        assert_eq!(expressions[0].name, name);
+        assert_eq!(expressions[0].parameter_index, None);
+        assert_eq!(expressions[0].qualifier, None);
+    }
+    assert!(crate::om::expression_declaration_name(b"\x04\x08p12foo\0").is_none());
+    assert!(crate::om::expression_declaration_name(b"\x04\x06p12_\0").is_none());
+}
+
+#[test]
 fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
     let text = b"(Number [mm]) p9: (193.94 - 6) / 2 + 1.5e1; ";
     let mut bytes = b"hostglobalvariables".to_vec();

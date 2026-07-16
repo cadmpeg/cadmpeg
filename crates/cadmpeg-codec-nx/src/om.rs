@@ -3414,10 +3414,23 @@ fn parameter_name(name: &str) -> (Option<u32>, Option<&str>) {
     if digit_count == 0 {
         return (None, None);
     }
-    let index = tail[..digit_count].parse().ok();
-    let qualifier = tail
-        .get(digit_count..)
-        .and_then(|tail| tail.strip_prefix('_'))
-        .filter(|qualifier| !qualifier.is_empty());
-    (index, qualifier)
+    let Ok(index) = tail[..digit_count].parse() else {
+        return (None, None);
+    };
+    match &tail[digit_count..] {
+        "" => (Some(index), None),
+        suffix => {
+            let qualifier = suffix.strip_prefix('_').filter(|qualifier| {
+                !qualifier.is_empty()
+                    && qualifier
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            });
+            if qualifier.is_some() {
+                (Some(index), qualifier)
+            } else {
+                (None, None)
+            }
+        }
+    }
 }
