@@ -574,11 +574,11 @@ fn transfer_zero_entity_topology(
 
     for (edge_index, pair) in edge_vertices.iter().enumerate() {
         let id = EdgeId(format!("catia:zero-entity:edge#{edge_index}"));
-        let direct_geometry = edges[edge_index]
-            .occurrences
-            .iter()
-            .find_map(|occurrence| crate::zero_entity::support_curve(topology, *occurrence));
-        let intersection = direct_geometry
+        let direct = edges[edge_index].occurrences.iter().find_map(|occurrence| {
+            crate::zero_entity::support_curve_with_range(topology, *occurrence)
+        });
+        let direct_range = direct.as_ref().and_then(|(_, range)| *range);
+        let intersection = direct
             .is_none()
             .then(|| crate::zero_entity::intersection_curve(topology, &edges[edge_index]))
             .flatten();
@@ -588,7 +588,7 @@ fn transfer_zero_entity_topology(
         let intersection_tolerance = intersection
             .as_ref()
             .map(|intersection| intersection.fit_tolerance);
-        let geometry = direct_geometry.or_else(|| {
+        let geometry = direct.map(|(geometry, _)| geometry).or_else(|| {
             intersection
                 .as_ref()
                 .map(|intersection| CurveGeometry::Nurbs(intersection.cache.clone()))
@@ -668,7 +668,8 @@ fn transfer_zero_entity_topology(
         if curve.is_some() {
             annotations.derived(&id, "curve");
         }
-        if intersection_range.is_some() {
+        let edge_range = direct_range.or(intersection_range);
+        if edge_range.is_some() {
             annotations.derived(&id, "param_range");
         }
         if intersection_tolerance.is_some() {
@@ -679,7 +680,7 @@ fn transfer_zero_entity_topology(
             curve,
             start: VertexId(format!("catia:zero-entity:v#{}", pair[0])),
             end: VertexId(format!("catia:zero-entity:v#{}", pair[1])),
-            param_range: intersection_range,
+            param_range: edge_range,
             tolerance: intersection_tolerance,
         });
     }

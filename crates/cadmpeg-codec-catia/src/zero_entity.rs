@@ -237,23 +237,59 @@ pub struct ZeroIntersectionCurve {
     pub fit_tolerance: f64,
 }
 
-/// Lift one decoded support pcurve through its owner carrier.
-///
-/// Plane lifts preserve the complete NURBS representation. Analytic quadric
-/// lifts are exact for isoparametric supports and produce their canonical line,
-/// circle, or ellipse carrier.
+/// Lift one support pcurve and retain its trim interval when the lifted
+/// carrier has a direct, branch-free parameter mapping.
 #[must_use]
-pub fn support_curve(
+pub(crate) fn support_curve_with_range(
     topology: &ZeroEntityTopology,
     occurrence: ZeroResolvedOccurrence,
-) -> Option<CurveGeometry> {
+) -> Option<(CurveGeometry, Option<[f64; 2]>)> {
     let support = topology.supports.get(occurrence.support_index)?;
     let pcurve = support.pcurve.as_ref()?;
     let run = topology
         .carrier_runs
         .iter()
         .find(|run| run.carrier_ordinal == support.owner_carrier_ordinal)?;
-    lift_pcurve(pcurve, run.geometry.as_ref()?)
+    let surface = run.geometry.as_ref()?;
+    let curve = lift_pcurve(pcurve, surface)?;
+    let range = direct_support_curve_range(pcurve, surface, &curve);
+    Some((curve, range))
+}
+
+fn direct_support_curve_range(
+    pcurve: &PcurveGeometry,
+    surface: &SurfaceGeometry,
+    curve: &CurveGeometry,
+) -> Option<[f64; 2]> {
+    let source_range = support_parameter_range_geometry(pcurve)?;
+    let uv = source_range.map(|parameter| cadmpeg_ir::eval::pcurve_uv(pcurve, parameter));
+    let [Some(start_uv), Some(end_uv)] = uv else {
+        return None;
+    };
+    match (surface, curve) {
+        (SurfaceGeometry::Plane { .. }, CurveGeometry::Nurbs(_)) => Some(source_range),
+        (SurfaceGeometry::Nurbs(_), CurveGeometry::Nurbs(_)) => {
+            let PcurveGeometry::Nurbs { control_points, .. } = pcurve else {
+                return None;
+            };
+            if constant_coordinate(control_points, |point| point.u).is_some() {
+                Some([start_uv.v, end_uv.v])
+            } else if constant_coordinate(control_points, |point| point.v).is_some() {
+                Some([start_uv.u, end_uv.u])
+            } else {
+                None
+            }
+        }
+        (_, CurveGeometry::Line { origin, direction }) => {
+            let points =
+                [start_uv, end_uv].map(|uv| cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v));
+            let [Some(start), Some(end)] = points else {
+                return None;
+            };
+            Some([start, end].map(|point| dot(point_vector(*origin, point), *direction)))
+        }
+        _ => None,
+    }
 }
 
 /// Reconstruct a physical curve carried by two complete radial pcurves.
@@ -637,7 +673,11 @@ fn subdivide_parametric_curve(
 }
 
 fn support_parameter_range(support: &ZeroSupport) -> Option<[f64; 2]> {
-    let PcurveGeometry::Nurbs { degree, knots, .. } = support.pcurve.as_ref()? else {
+    support_parameter_range_geometry(support.pcurve.as_ref()?)
+}
+
+fn support_parameter_range_geometry(pcurve: &PcurveGeometry) -> Option<[f64; 2]> {
+    let PcurveGeometry::Nurbs { degree, knots, .. } = pcurve else {
         return None;
     };
     let degree = usize::try_from(*degree).ok()?;
@@ -2004,11 +2044,16 @@ mod occurrence_tests {
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         };
 
-        let Some(CurveGeometry::Nurbs(curve)) = lift_pcurve(&pcurve, &plane) else {
+        let geometry = lift_pcurve(&pcurve, &plane).expect("expected lifted NURBS curve");
+        let CurveGeometry::Nurbs(curve) = &geometry else {
             panic!("expected lifted NURBS curve");
         };
         assert_eq!(curve.control_points[1], Point3::new(11.0, 22.0, 30.0));
         assert_eq!(curve.weights, Some(vec![1.0, 0.5, 1.0]));
+        assert_eq!(
+            direct_support_curve_range(&pcurve, &plane, &geometry),
+            Some([0.0, 1.0])
+        );
     }
 
     #[test]
@@ -2027,18 +2072,36 @@ mod occurrence_tests {
             radius: 2.0,
         };
 
-        let Some(CurveGeometry::Circle {
+        let geometry = lift_pcurve(&pcurve, &cylinder).expect("expected lifted circle");
+        let CurveGeometry::Circle {
             center,
             axis,
             radius,
             ..
-        }) = lift_pcurve(&pcurve, &cylinder)
+        } = &geometry
         else {
             panic!("expected lifted circle");
         };
-        assert_eq!(center, Point3::new(1.0, 2.0, 7.0));
-        assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
-        assert_eq!(radius, 2.0);
+        assert_eq!(*center, Point3::new(1.0, 2.0, 7.0));
+        assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
+        assert_eq!(*radius, 2.0);
+        assert_eq!(
+            direct_support_curve_range(&pcurve, &cylinder, &geometry),
+            None
+        );
+
+        let generator = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.5, -2.0), Point2::new(0.5, 3.0)],
+            weights: None,
+            periodic: false,
+        };
+        let line = lift_pcurve(&generator, &cylinder).expect("lifted generator");
+        assert_eq!(
+            direct_support_curve_range(&generator, &cylinder, &line),
+            Some([-2.0, 3.0])
+        );
     }
 
     #[test]
