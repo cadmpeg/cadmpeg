@@ -109,6 +109,10 @@ fn resolve_display_jt_node_transform(
     transforms: &[&crate::native::DisplayJtGeometricTransformAttribute],
     visiting: &mut BTreeSet<u32>,
 ) -> Option<Vec<DisplayJtPath>> {
+    let base = by_object.get(&object_id)?;
+    if base.flags & 1 != 0 {
+        return Some(Vec::new());
+    }
     if !visiting.insert(object_id) {
         return None;
     }
@@ -143,7 +147,6 @@ fn resolve_display_jt_node_transform(
         },
     )?;
     visiting.remove(&object_id);
-    let base = by_object.get(&object_id)?;
     let mut results = Vec::new();
     for mut path in parent_states {
         for attribute_id in &base.attribute_object_ids {

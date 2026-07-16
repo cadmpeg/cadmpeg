@@ -824,6 +824,27 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         family_data_sha256: "00".repeat(32),
         source_offset: 124,
     };
+    let mut ignored_group_base = group_base.clone();
+    ignored_group_base.id = "ignored-group-base".into();
+    ignored_group_base.element = "ignored-group-element".into();
+    ignored_group_base.object_id = 21;
+    ignored_group_base.flags = 1;
+    ignored_group_base.source_offset = 125;
+    let mut ignored_group_element = group_element.clone();
+    ignored_group_element.id = "ignored-group-element".into();
+    ignored_group_element.ordinal = 4;
+    ignored_group_element.object_id = 21;
+    ignored_group_element.source_offset = 125;
+    let ignored_group = DisplayJtGroupNodeData {
+        id: "ignored-group-node".into(),
+        base_node: "ignored-group-base".into(),
+        object_id: 21,
+        version: 1,
+        child_object_ids: vec![9],
+        family_data_byte_len: 0,
+        family_data_sha256: "00".repeat(32),
+        source_offset: 125,
+    };
     let transform = DisplayJtGeometricTransformAttribute {
         id: "transform".into(),
         element: "scene-element".into(),
@@ -924,8 +945,14 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
             shape_elements: &[shape_element],
             bindings: &[binding],
             shape_nodes: &[node],
-            base_nodes: &[base, instance_base, second_instance_base, group_base],
-            group_nodes: &[group],
+            base_nodes: &[
+                base,
+                instance_base,
+                second_instance_base,
+                group_base,
+                ignored_group_base,
+            ],
+            group_nodes: &[group, ignored_group],
             instance_nodes: &[instance, second_instance],
             transforms: &[transform],
             compressed_elements: &[
@@ -933,6 +960,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
                 instance_element,
                 second_instance_element,
                 group_element,
+                ignored_group_element,
             ],
         })
         .expect("complete scene binding");
