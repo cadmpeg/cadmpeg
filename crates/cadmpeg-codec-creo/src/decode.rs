@@ -7930,26 +7930,6 @@ fn line_orientation_definition(
     }
 }
 
-fn section_point_locus(
-    definition_id: u32,
-    segments: &[crate::feature::FeatureSegment],
-    point_id: u32,
-) -> Option<SketchLocus> {
-    let segment = segments
-        .iter()
-        .filter(|segment| segment.point_ids.contains(&point_id))
-        .min_by_key(|segment| segment.external_id)?;
-    let entity = SketchEntityId(format!(
-        "creo:featdefs:sketch_entity#{definition_id}:{}",
-        segment.external_id
-    ));
-    if segment.point_ids[0] == point_id {
-        Some(SketchLocus::Start(entity))
-    } else {
-        Some(SketchLocus::End(entity))
-    }
-}
-
 fn relation_incidence(
     definition: &crate::feature::FeatureDefinition,
     relation_id: u32,
@@ -8098,31 +8078,36 @@ fn section_dimension_constraints(
                                 })
                                 .collect::<Vec<_>>();
                             if let [measured] = matching.as_slice() {
-                                if let (Some(first), Some(second)) = (
-                                    section_point_locus(definition.id, segments, first_id),
-                                    section_point_locus(definition.id, segments, second_id),
-                                ) {
-                                    match measured.vertical_horizontal {
-                                        Some(0) => {
-                                            return Some(
-                                                SketchConstraintDefinition::VerticalDistance {
-                                                    first,
-                                                    second,
-                                                    parameter,
-                                                },
-                                            );
-                                        }
-                                        Some(1) => {
-                                            return Some(
-                                                SketchConstraintDefinition::HorizontalDistance {
-                                                    first,
-                                                    second,
-                                                    parameter,
-                                                },
-                                            );
-                                        }
-                                        _ => {}
+                                let entity = SketchEntityId(format!(
+                                    "creo:featdefs:sketch_entity#{}:{}",
+                                    definition.id, measured.external_id
+                                ));
+                                let [first, second] = if measured.point_ids == [first_id, second_id]
+                                {
+                                    [SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]
+                                } else {
+                                    [SketchLocus::End(entity.clone()), SketchLocus::Start(entity)]
+                                };
+                                match measured.vertical_horizontal {
+                                    Some(0) => {
+                                        return Some(
+                                            SketchConstraintDefinition::VerticalDistance {
+                                                first,
+                                                second,
+                                                parameter,
+                                            },
+                                        );
                                     }
+                                    Some(1) => {
+                                        return Some(
+                                            SketchConstraintDefinition::HorizontalDistance {
+                                                first,
+                                                second,
+                                                parameter,
+                                            },
+                                        );
+                                    }
+                                    _ => {}
                                 }
                             }
                         }
@@ -13223,30 +13208,6 @@ mod resolved_sketch_tests {
     }
 
     #[test]
-    fn section_point_locus_uses_deterministic_segment_endpoint() {
-        let segment = |external_id, point_ids| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line,
-            directions: [None; 3],
-            point_ids,
-            center_id: None,
-            arc_orientation: None,
-            vertical_horizontal: None,
-            radius_ref: None,
-            radius2_ref: None,
-            external_id,
-            offset: 0,
-        };
-        let segments = [segment(9, [4, 7]), segment(3, [2, 4])];
-
-        assert_eq!(
-            section_point_locus(12, &segments, 4),
-            Some(SketchLocus::End(SketchEntityId(
-                "creo:featdefs:sketch_entity#12:3".to_string()
-            )))
-        );
-    }
-
-    #[test]
     fn section_point_uses_its_single_solved_position() {
         let segment = crate::feature::FeatureSegment {
             kind: crate::feature::FeatureSegmentKind::Point,
@@ -15063,6 +15024,35 @@ mod resolved_sketch_tests {
         ]);
         assert_eq!(
             section_dimension_constraints(&distance_definition, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::VerticalDistance {
+                first: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                second: SketchLocus::End(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
+            }
+        );
+        let mut shared_vertex_definition = distance_definition.clone();
+        let mut incident = shared_vertex_definition
+            .segments
+            .as_ref()
+            .expect("segments")
+            .rows[1]
+            .clone();
+        incident.external_id = 2;
+        incident.point_ids = [9, 1];
+        shared_vertex_definition
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(incident);
+        assert_eq!(
+            section_dimension_constraints(&shared_vertex_definition, &SketchId("sketch".into()))[0]
                 .0
                 .definition,
             SketchConstraintDefinition::VerticalDistance {
