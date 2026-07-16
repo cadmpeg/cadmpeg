@@ -2473,8 +2473,21 @@ fn transfer_curve_expression_features(
             .collect::<BTreeMap<_, _>>();
         let (parameter_ordinals, cyclic_edges) =
             curve_expression_parameter_order(record, &unique_assignment_indices);
-        let mut source_content = Vec::with_capacity(record.assignments.len());
+        let mut emitted_assignment_indices = unique_assignment_indices
+            .values()
+            .copied()
+            .collect::<Vec<_>>();
+        emitted_assignment_indices.sort_by_key(|index| parameter_ordinals[*index]);
+        let emitted_ordinals = emitted_assignment_indices
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, index)| (index, ordinal as u32))
+            .collect::<BTreeMap<_, _>>();
+        let mut source_content = Vec::with_capacity(emitted_ordinals.len());
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
+            let Some(&ordinal) = emitted_ordinals.get(&assignment_ordinal) else {
+                continue;
+            };
             let parameter_id = ParameterId(format!(
                 "creo:depdb:curve_expression_parameter#{}-{}-{}",
                 record.entity_id, record.offset, assignment_ordinal
@@ -2554,7 +2567,7 @@ fn transfer_curve_expression_features(
             ir.model.parameters.push(DesignParameter {
                 id: parameter_id.clone(),
                 owner: feature_id.clone(),
-                ordinal: parameter_ordinals[assignment_ordinal],
+                ordinal,
                 name: assignment.name.clone(),
                 expression: assignment.expression.clone(),
                 display: None,

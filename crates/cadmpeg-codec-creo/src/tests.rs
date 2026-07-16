@@ -3335,6 +3335,46 @@ fn decode_retains_cyclic_curve_expression_dependencies_without_invalid_edges() {
 }
 
 #[test]
+fn decode_retains_reassigned_curve_expression_names_without_duplicate_parameters() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x04r=1\0r=2\0theta=t*360\0z=1\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+
+    assert_eq!(
+        result
+            .ir
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.name.as_str(), parameter.ordinal))
+            .collect::<Vec<_>>(),
+        [("theta", 0), ("z", 1)]
+    );
+    assert_eq!(
+        result.ir.model.features[0].source_text.as_deref(),
+        Some("r=1\nr=2\ntheta=t*360\nz=1")
+    );
+    assert_eq!(
+        result
+            .ir
+            .native
+            .namespace("creo")
+            .expect("Creo native data")
+            .arenas["curve_expressions"][0]
+            .fields["assignments"]
+            .as_array()
+            .expect("assignments")
+            .len(),
+        4
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn decode_places_helix_from_complete_curve_expression_frame() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x02local_sys\0\xf9\x04\x03\xe4\x0f\x0f\x0f\x0f\x0f\x18\xe5\x0f\x0f\x0f\
