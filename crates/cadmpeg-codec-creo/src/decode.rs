@@ -18703,16 +18703,6 @@ fn transfer_fc05_cap_circles(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) {
-    let planes = scan
-        .outline_planes
-        .iter()
-        .map(|plane| (plane.surface_id, plane))
-        .collect::<BTreeMap<_, _>>();
-    let kinds = scan
-        .surface_rows
-        .iter()
-        .map(|surface| (surface.id, surface.kind))
-        .collect::<BTreeMap<_, _>>();
     for circle in &scan.fc05_circles {
         let topology = scan
             .curve_topology_rows
@@ -18725,13 +18715,27 @@ fn transfer_fc05_cap_circles(
         let cap_planes = topology
             .faces
             .iter()
-            .filter(|face| kinds.get(face) == Some(&crate::surface::SurfaceKind::Plane))
-            .filter_map(|face| planes.get(face).copied())
+            .filter_map(|face| {
+                crate::surface::unique_surface_row(&scan.surface_rows, *face)
+                    .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)?;
+                let planes = scan
+                    .outline_planes
+                    .iter()
+                    .filter(|plane| plane.surface_id == *face)
+                    .collect::<Vec<_>>();
+                let [plane] = planes.as_slice() else {
+                    return None;
+                };
+                Some(*plane)
+            })
             .collect::<Vec<_>>();
         let cylinders = topology
             .faces
             .iter()
-            .filter(|face| kinds.get(face) == Some(&crate::surface::SurfaceKind::Cylinder))
+            .filter(|face| {
+                crate::surface::unique_surface_row(&scan.surface_rows, **face)
+                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+            })
             .copied()
             .collect::<Vec<_>>();
         let ([cap], [cylinder_id], Some(reference), Some(parameter_sign), Some(_)) = (

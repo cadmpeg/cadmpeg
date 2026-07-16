@@ -1536,12 +1536,8 @@ pub fn fc05_cylinder_cap_pairs(
 ) -> Vec<Fc05CylinderCapPair> {
     use std::collections::BTreeMap;
 
-    let kinds = surfaces
-        .iter()
-        .map(|surface| (surface.id, surface.kind))
-        .collect::<BTreeMap<_, _>>();
-    let faces = topology
-        .iter()
+    let faces = crate::topology::uniquely_identified_rows(topology)
+        .into_iter()
         .map(|row| (row.id, row.faces))
         .collect::<BTreeMap<_, _>>();
     let mut groups = BTreeMap::<u32, Vec<(&Fc05Circle, u32)>>::new();
@@ -1551,12 +1547,18 @@ pub fn fc05_cylinder_cap_pairs(
         };
         let cylinders = adjacent
             .iter()
-            .filter(|face| kinds.get(face) == Some(&crate::surface::SurfaceKind::Cylinder))
+            .filter(|face| {
+                crate::surface::unique_surface_row(surfaces, **face)
+                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+            })
             .copied()
             .collect::<Vec<_>>();
         let planes = adjacent
             .iter()
-            .filter(|face| kinds.get(face) == Some(&crate::surface::SurfaceKind::Plane))
+            .filter(|face| {
+                crate::surface::unique_surface_row(surfaces, **face)
+                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
+            })
             .copied()
             .collect::<Vec<_>>();
         if cylinders.len() == 1 && planes.len() == 1 && circle.cap_ordinate_row_frame.is_some() {
@@ -2089,6 +2091,56 @@ mod tests {
                 offset: 100,
             }]
         );
+    }
+
+    #[test]
+    fn fc05_cap_pairs_require_unique_topology_and_surface_identities() {
+        let circle = |curve_id, ordinate, offset| Fc05Circle {
+            curve_id,
+            center_row_frame: [3.0, 4.0],
+            radius_mm: 2.0,
+            reference_direction_row_frame: Some([1.0, 0.0]),
+            parameter_sign: Some(1),
+            cap_ordinate_row_frame: Some(ordinate),
+            point_count: 8,
+            max_residual: 0.0,
+            angle_parameter_consistent: true,
+            offset,
+        };
+        let topology = |curve_id, plane_id, offset| CurveTopologyRow {
+            id: curve_id,
+            type_byte: 5,
+            feature_id: 4,
+            directions: [1, 0xf6],
+            faces: [10, plane_id],
+            next_edges: [curve_id, curve_id],
+            offset,
+        };
+        let surface = |id, kind: crate::surface::SurfaceKind, offset| crate::surface::SurfaceRow {
+            id,
+            type_byte: kind.canonical_type_byte(),
+            kind,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset,
+        };
+        let circles = [circle(20, -5.0, 100), circle(21, 7.0, 200)];
+        let topology_rows = [topology(20, 11, 100), topology(21, 12, 200)];
+        let surfaces = [
+            surface(10, crate::surface::SurfaceKind::Cylinder, 10),
+            surface(11, crate::surface::SurfaceKind::Plane, 11),
+            surface(12, crate::surface::SurfaceKind::Plane, 12),
+        ];
+
+        let mut duplicate_topology = topology_rows.to_vec();
+        duplicate_topology.push(topology(20, 11, 300));
+        assert!(fc05_cylinder_cap_pairs(&circles, &duplicate_topology, &surfaces).is_empty());
+
+        let mut duplicate_surfaces = surfaces.to_vec();
+        duplicate_surfaces.push(surface(10, crate::surface::SurfaceKind::Cylinder, 20));
+        assert!(fc05_cylinder_cap_pairs(&circles, &topology_rows, &duplicate_surfaces).is_empty());
     }
 
     #[test]
