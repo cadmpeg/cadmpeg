@@ -330,9 +330,8 @@ fn shape_bindings(
     definitions: &BTreeMap<u64, u64>,
 ) -> BTreeMap<u64, Vec<BodyId>> {
     let pds = exchange
-        .records
-        .iter()
-        .filter_map(|(&id, record)| {
+        .entities("PRODUCT_DEFINITION_SHAPE")
+        .filter_map(|(id, record)| {
             if record.simple_name() != Some("PRODUCT_DEFINITION_SHAPE") {
                 return None;
             }
@@ -457,11 +456,7 @@ fn occurrence_placements(
         })
         .collect::<BTreeMap<_, _>>();
     let mut result = BTreeMap::new();
-    for record in exchange
-        .records
-        .values()
-        .filter(|record| record.simple_name() == Some("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"))
-    {
+    for (_, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
         if let Some((usage, transform)) = occurrence_placement(record, exchange, geometry, &pds) {
             if usages.contains_key(&usage) {
                 result.insert(usage, transform);
@@ -469,19 +464,16 @@ fn occurrence_placements(
         }
     }
     let definition_representations = exchange
-        .records
-        .values()
-        .filter(|record| record.simple_name() == Some("SHAPE_DEFINITION_REPRESENTATION"))
-        .filter_map(|record| {
+        .entities("SHAPE_DEFINITION_REPRESENTATION")
+        .filter_map(|(_, record)| {
             let shape = record.parameter(0)?.reference()?;
             let definition = *pds.get(&shape)?;
             Some((definition, record.parameter(1)?.reference()?))
         })
         .collect::<BTreeMap<_, _>>();
     let representation_maps = exchange
-        .records
-        .iter()
-        .filter_map(|(&id, record)| {
+        .entities("REPRESENTATION_MAP")
+        .filter_map(|(id, record)| {
             (record.simple_name() == Some("REPRESENTATION_MAP")).then_some((
                 id,
                 (
@@ -491,6 +483,37 @@ fn occurrence_placements(
             ))
         })
         .collect::<BTreeMap<_, _>>();
+    let mut placements_by_representation = BTreeMap::<u64, Vec<Transform>>::new();
+    for (_, record) in exchange.entities("MAPPED_ITEM") {
+        let Some((origin, mapped_representation)) = record
+            .parameter(1)
+            .and_then(ValueExt::reference)
+            .and_then(|map| representation_maps.get(&map).copied())
+        else {
+            continue;
+        };
+        let Some(transform) =
+            record
+                .parameter(2)
+                .and_then(ValueExt::reference)
+                .and_then(|target| {
+                    Some(between(
+                        *geometry.placements.get(&origin)?,
+                        *geometry.placements.get(&target)?,
+                    ))
+                })
+        else {
+            continue;
+        };
+        placements_by_representation
+            .entry(mapped_representation)
+            .or_default()
+            .push(transform);
+    }
+    let mut usage_counts = BTreeMap::<u64, usize>::new();
+    for usage in usages.values() {
+        *usage_counts.entry(usage.child_definition).or_default() += 1;
+    }
     for (&usage_id, usage) in usages {
         if result.contains_key(&usage_id) {
             continue;
@@ -499,29 +522,11 @@ fn occurrence_placements(
         else {
             continue;
         };
-        let placements = exchange
-            .records
-            .values()
-            .filter_map(|record| {
-                if record.simple_name() != Some("MAPPED_ITEM") {
-                    return None;
-                }
-                let map = record.parameter(1)?.reference()?;
-                let &(origin, mapped_representation) = representation_maps.get(&map)?;
-                if mapped_representation != child_representation {
-                    return None;
-                }
-                let target = record.parameter(2)?.reference()?;
-                Some(between(
-                    *geometry.placements.get(&origin)?,
-                    *geometry.placements.get(&target)?,
-                ))
-            })
-            .collect::<Vec<_>>();
-        let matching_usages = usages
-            .values()
-            .filter(|candidate| candidate.child_definition == usage.child_definition)
-            .count();
+        let placements = placements_by_representation
+            .get(&child_representation)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let matching_usages = usage_counts[&usage.child_definition];
         if matching_usages == 1 && placements.len() == 1 {
             result.insert(usage_id, placements[0]);
         } else if !placements.is_empty() {
