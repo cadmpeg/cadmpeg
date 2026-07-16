@@ -16709,6 +16709,25 @@ fn decode_extracts_pmi_semantic_dimension() {
 }
 
 #[test]
+fn decode_reports_unbound_pmi_semantic_dimension() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x49,
+        "Contents/PMISemanticDataDB",
+        &pmi_semantic_payload_for("D1@MissingFeature"),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.message
+            == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
+    }));
+}
+
+#[test]
 fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length, ProfileRef};
 

@@ -148,6 +148,44 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         });
     }
 
+    let bound_pmi = ir
+        .model
+        .parameters
+        .iter()
+        .filter_map(|parameter| parameter.pmi.as_ref())
+        .map(|pmi| pmi.native_ref.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let unbound_pmi_dimensions = native.as_ref().map_or(0, |native| {
+        native
+            .pmi_dimensions
+            .iter()
+            .filter(|dimension| !bound_pmi.contains(dimension.id.as_str()))
+            .count()
+    });
+    let native_pmi_subtypes = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            parameter.pmi.as_ref().is_some_and(|pmi| {
+                matches!(
+                    pmi.subtype,
+                    cadmpeg_ir::features::PmiDimensionSubtype::Native(_)
+                )
+            })
+        })
+        .count();
+    if unbound_pmi_dimensions > 0 || native_pmi_subtypes > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{unbound_pmi_dimensions} semantic dimension record(s) are not bound to parameters; {native_pmi_subtypes} parameter dimension(s) retain native subtypes."
+            ),
+            provenance: None,
+        });
+    }
+
     let incomplete_history_references = native.as_ref().map_or(0, |native| {
         crate::history::incomplete_history_reference_features(&native.feature_histories)
     });
@@ -1875,7 +1913,7 @@ mod design_loss_tests {
     use cadmpeg_ir::features::{
         Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length,
-        ParameterId,
+        ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype,
     };
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -2206,5 +2244,63 @@ mod design_loss_tests {
         };
 
         assert_eq!(unprojected_sketch_relation_records(&ir, &native), 3);
+    }
+
+    #[test]
+    fn native_dimension_subtypes_are_reported() {
+        let mut ir = CadIr::empty(Units::default());
+        let owner = FeatureId("owner".into());
+        ir.model.features.push(Feature {
+            id: owner.clone(),
+            ordinal: 0,
+            name: Some("Feature".into()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+            },
+            native_ref: None,
+        });
+        ir.model.parameters.push(DesignParameter {
+            id: ParameterId("parameter".into()),
+            owner,
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "1".into(),
+            display: None,
+            value: Some(ParameterValue::Real(1.0)),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: Some(ParameterPmi {
+                subtype: PmiDimensionSubtype::Native("Ordinate".into()),
+                precision: 3,
+                display_text: None,
+                basic: false,
+                inspection: false,
+                reference_only: false,
+                native_ref: "native:pmi".into(),
+            }),
+            native_ref: None,
+        });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "0 semantic dimension record(s) are not bound to parameters; 1 parameter dimension(s) retain native subtypes."
+        }));
     }
 }
