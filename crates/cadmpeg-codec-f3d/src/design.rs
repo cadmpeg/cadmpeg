@@ -4866,9 +4866,19 @@ fn exact_atomic_constraint(
         .then(|| (first.id.clone(), second.id.clone()))
     };
     match kind {
-        SketchConstraintKind::Coincident if entities.len() >= 2 => Some(Definition::Coincident {
-            entities: entities.iter().map(|entity| entity.id.clone()).collect(),
-        }),
+        SketchConstraintKind::Coincident
+            if entities.len() >= 2
+                && entities
+                    .iter()
+                    .map(|entity| &entity.id)
+                    .collect::<HashSet<_>>()
+                    .len()
+                    == entities.len() =>
+        {
+            Some(Definition::Coincident {
+                entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+            })
+        }
         SketchConstraintKind::Colinear => {
             lines().map(|(first, second)| Definition::Collinear { first, second })
         }
@@ -4979,7 +4989,14 @@ fn exact_coincident_loci(
         loci
     };
 
-    if entities.len() < 2 {
+    if entities.len() < 2
+        || entities
+            .iter()
+            .map(|entity| &entity.id)
+            .collect::<HashSet<_>>()
+            .len()
+            != entities.len()
+    {
         return None;
     }
     let loci = entities
@@ -14898,6 +14915,10 @@ mod relation_tests {
             },
         );
         assert!(super::exact_coincident_loci(&[&degenerate, &point]).is_none());
+        assert!(super::exact_coincident_loci(&[&line, &line]).is_none());
+        assert!(
+            exact_atomic_constraint(SketchConstraintKind::Coincident, &[&line, &line]).is_none()
+        );
     }
 
     #[test]
