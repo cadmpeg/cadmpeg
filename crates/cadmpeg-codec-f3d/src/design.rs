@@ -2747,7 +2747,10 @@ pub fn project_sketch_design(
         let geometry = match curve.geometry.as_ref()? {
             SketchCurveGeometry::Line {
                 start, end, normal, ..
-            } if planar_point(start) && planar_point(end) && positive_sketch_normal(normal) => {
+            } if planar_point(start)
+                && planar_point(end)
+                && sketch_normal_sign(normal).is_some() =>
+            {
                 SketchGeometry::Line {
                     start: Point2::new(start.x, start.y),
                     end: Point2::new(end.x, end.y),
@@ -2760,14 +2763,11 @@ pub fn project_sketch_design(
                 radius,
                 start_angle,
                 end_angle,
-            } if planar_point(center)
-                && positive_sketch_normal(normal)
-                && reference_direction.z.abs() <= 1.0e-9
-                && *radius > 0.0 =>
-            {
+            } if planar_point(center) && reference_direction.z.abs() <= 1.0e-9 && *radius > 0.0 => {
+                let orientation = sketch_normal_sign(normal)?;
                 let phase = reference_direction.y.atan2(reference_direction.x);
-                let start_angle = phase + start_angle;
-                let end_angle = phase + end_angle;
+                let start_angle = phase + orientation * start_angle;
+                let end_angle = phase + orientation * end_angle;
                 if (end_angle - start_angle).abs() >= std::f64::consts::TAU - 1.0e-9 {
                     SketchGeometry::Circle {
                         center: Point2::new(center.x, center.y),
@@ -6185,8 +6185,9 @@ fn planar_point(point: &Point3) -> bool {
     point.x.is_finite() && point.y.is_finite() && point.z.is_finite() && point.z.abs() <= 1.0e-9
 }
 
-fn positive_sketch_normal(normal: &Vector3) -> bool {
-    normal.x.abs() <= 1.0e-9 && normal.y.abs() <= 1.0e-9 && (normal.z - 1.0).abs() <= 1.0e-9
+fn sketch_normal_sign(normal: &Vector3) -> Option<f64> {
+    (normal.x.abs() <= 1.0e-9 && normal.y.abs() <= 1.0e-9 && (normal.z.abs() - 1.0).abs() <= 1.0e-9)
+        .then_some(normal.z.signum())
 }
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> {
@@ -14988,7 +14989,7 @@ mod relation_tests {
     }
 
     #[test]
-    fn placed_sketch_projects_nonclamped_nurbs_with_exact_endpoints() {
+    fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         let placement = DesignSketchPlacement {
             id: "f3d:native:placement#0".into(),
             scope_record_index: 177,
@@ -15035,7 +15036,26 @@ mod relation_tests {
                 start: Point3::new(1.0, 2.0, 0.0),
                 end: Point3::new(4.0, 6.0, 0.0),
                 direction: Vector3::new(0.6, 0.8, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
+                normal: Vector3::new(0.0, 0.0, -1.0),
+            }),
+        };
+        let clockwise_arc = SketchCurveIdentity {
+            id: "f3d:native:curve#220".into(),
+            record_index: 220,
+            owner_reference: Some(172),
+            class_tag: "305".into(),
+            byte_offset: 800,
+            geometry_offset: 100,
+            entity_genesis: None,
+            primary_id: 22,
+            secondary_id: 0,
+            geometry: Some(SketchCurveGeometry::Arc {
+                center: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, -1.0),
+                reference_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+                start_angle: 0.0,
+                end_angle: std::f64::consts::FRAC_PI_2,
             }),
         };
         let nonclamped_nurbs = SketchCurveIdentity {
@@ -15068,13 +15088,13 @@ mod relation_tests {
 
         let placements = vec![placement];
         let points = vec![point];
-        let curves = vec![line, nonclamped_nurbs];
+        let curves = vec![line, nonclamped_nurbs, clockwise_arc];
         let (sketches, entities) = project_sketch_design(&placements, &points, &curves, 1.0e-6);
         assert_eq!(sketches.len(), 1);
         assert_eq!(sketches[0].origin, Point3::new(10.0, 20.0, 30.0));
         assert_eq!(sketches[0].u_axis, Vector3::new(0.0, 1.0, 0.0));
         assert_eq!(sketches[0].normal, Vector3::new(1.0, 0.0, 0.0));
-        assert_eq!(entities.len(), 3);
+        assert_eq!(entities.len(), 4);
         assert!(entities.iter().any(|entity| matches!(
             entity.geometry,
             SketchGeometry::Point { position } if position == Point2::new(2.5, 4.0)
@@ -15083,6 +15103,12 @@ mod relation_tests {
             entity.geometry,
             SketchGeometry::Line { start, end }
                 if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 6.0)
+        )));
+        assert!(entities.iter().any(|entity| matches!(
+            entity.geometry,
+            SketchGeometry::Arc { start_angle, end_angle, .. }
+                if start_angle.0 == 0.0
+                    && end_angle.0 == -std::f64::consts::FRAC_PI_2
         )));
         let nurbs = entities
             .iter()
