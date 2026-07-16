@@ -20798,23 +20798,28 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let operation_ordinal_base = ir.model.features.len();
     for (operation_index, operation) in scan.feature_operations.iter().enumerate() {
         let id = IrFeatureId(format!("creo:model:feature#{}", operation.feature_id));
+        let current_operation =
+            current_feature_operation(&scan.feature_operations, operation.feature_id);
         let outputs = feature_output_bodies(scan, &ir, operation.feature_id);
         let mut source_properties = feature_source_properties(scan, operation.feature_id);
-        if let Some(prefix) = operation.stored_name_prefix {
+        if let Some(prefix) = current_operation.and_then(|operation| operation.stored_name_prefix) {
             source_properties.insert(
                 "mdl_stored_name_prefix".to_string(),
                 char::from(prefix).to_string(),
             );
         }
         let parameters = feature_parameters(scan, operation.feature_id);
-        let schema_class = operation
-            .root_schema_class
-            .or_else(|| feature_schema_class(scan, operation.feature_id));
+        let schema_class = feature_schema_class(scan, operation.feature_id);
         let definition = schema_class.map_or_else(
             || {
-                named_feature_definition(scan, &ir, operation.feature_id, &operation.kind)
+                current_operation
+                    .and_then(|operation| {
+                        named_feature_definition(scan, &ir, operation.feature_id, &operation.kind)
+                    })
                     .unwrap_or_else(|| IrFeatureDefinition::Native {
-                        kind: operation.kind.clone(),
+                        kind: current_operation
+                            .map_or("Native Feature", |operation| operation.kind.as_str())
+                            .to_string(),
                         parameters: parameters.clone(),
                         properties: BTreeMap::new(),
                     })
@@ -20831,14 +20836,16 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         );
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         let dependencies = feature_dependencies(scan, &ir, operation.feature_id);
-        let parent = operation.parent_feature_id.and_then(|parent_feature_id| {
-            let parent = IrFeatureId(format!("creo:model:feature#{parent_feature_id}"));
-            ir.model
-                .features
-                .iter()
-                .any(|feature| feature.id == parent)
-                .then_some(parent)
-        });
+        let parent = current_operation
+            .and_then(|operation| operation.parent_feature_id)
+            .and_then(|parent_feature_id| {
+                let parent = IrFeatureId(format!("creo:model:feature#{parent_feature_id}"));
+                ir.model
+                    .features
+                    .iter()
+                    .any(|feature| feature.id == parent)
+                    .then_some(parent)
+            });
         let operation_section = scan
             .sections
             .iter()
@@ -20847,10 +20854,14 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                     && operation.offset < section.offset.saturating_add(section.length)
             })
             .map_or("MdlStatus", |section| section.name.as_str());
-        let name = operation
-            .display_name_stored
-            .then(|| format!("{} id {}", operation.kind, operation.feature_id));
-        let source_tag = operation.recipe.map(|recipe| recipe.name().to_string());
+        let name = current_operation.and_then(|operation| {
+            operation
+                .display_name_stored
+                .then(|| format!("{} id {}", operation.kind, operation.feature_id))
+        });
+        let source_tag = current_operation
+            .and_then(|operation| operation.recipe)
+            .map(|recipe| recipe.name().to_string());
         let native_ref = owning_feature_definition_ref(scan, operation.feature_id);
         if let Some(existing) = ir
             .model
