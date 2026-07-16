@@ -7291,6 +7291,30 @@ fn decode_retains_topology_owned_point_at_origin() {
 }
 
 #[test]
+fn decode_orders_graph_only_origin_before_later_nonzero_point() {
+    let mut stream = topology_partition_stream();
+    let first = stream
+        .windows(4)
+        .position(|window| window == [0, 29, 0, 11])
+        .expect("point record");
+    put_vec3(&mut stream, first + 16, [0.0, 0.0, 0.0]);
+    let mut second = record(29, 40);
+    put_ref(&mut second, 2, 77);
+    put_vec3(&mut second, 16, [0.04, 0.05, 0.06]);
+    stream.extend(second);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    let points = crate::decode::ordered_point_candidates(&stream, &graph);
+    assert_eq!(points.len(), 2);
+    assert_eq!(points[0].0, first);
+    assert_eq!(points[0].1, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(points[0].2.map(|node| node.xmt), Some(11));
+    assert_eq!(points[1].0, stream.len() - 40);
+    assert_eq!(points[1].1, cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0));
+    assert_eq!(points[1].2.map(|node| node.xmt), Some(77));
+}
+
+#[test]
 fn decode_does_not_attach_unreferenced_point_to_solid_topology() {
     let mut stream = topology_partition_stream();
     let mut point = record(29, 40);

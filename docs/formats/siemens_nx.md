@@ -451,6 +451,7 @@ referenced list and its instances resolve.
 | bodies   | one per validated body-shape SHELL                                    |
 
 POINT is a geometric carrier. It becomes a topological vertex only through a validated `FIN.vertex → VERTEX.point` path. An unreferenced POINT is not a free vertex of an existing body.
+Distinct POINT records retain physical record order. A graph-bounded POINT and a fixed-record candidate at the same type-tag offset are one carrier; graph framing and XMT identity are authoritative.
 An EDGE belongs to the assembled B-rep only when a FIN in a fully resolved owned LOOP references it.
 An unresolved carrier placeholder belongs to the transferred model only when an
 emitted FACE or EDGE references it. Fixed-record scanner candidates outside the

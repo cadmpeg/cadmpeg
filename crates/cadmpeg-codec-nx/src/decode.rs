@@ -674,6 +674,27 @@ impl Counts {
     }
 }
 
+pub(crate) fn ordered_point_candidates<'a>(
+    stream: &[u8],
+    graph: &'a Graph,
+) -> Vec<(usize, Point3, Option<&'a crate::topology::Node>)> {
+    let mut candidates = BTreeMap::new();
+    for point in geometry::points(stream) {
+        let node = graph.at_pos(point.pos).filter(|node| node.kind == 29);
+        candidates.insert(point.pos, (point.position, node));
+    }
+    for node in graph.of_kind(29) {
+        let Some(position) = node.point_position() else {
+            continue;
+        };
+        candidates.insert(node.pos, (position, Some(node)));
+    }
+    candidates
+        .into_iter()
+        .map(|(offset, (position, node))| (offset, position, node))
+        .collect()
+}
+
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
 fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
@@ -705,50 +726,26 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         let mut pending_ext11_support_uv = Vec::new();
         let first_surface = ir.model.surfaces.len();
         let first_curve = ir.model.curves.len();
-        let mut point_ordinal = 0usize;
-        for pt in geometry::points(semantic) {
-            let pi = point_ordinal;
-            point_ordinal += 1;
+        for (pi, (position_offset, position, node)) in ordered_point_candidates(semantic, &graph)
+            .into_iter()
+            .enumerate()
+        {
             let pid = PointId(format!("nx:s{si}:pt#{pi}"));
-            annotations
-                .note(&pid, source_stream, pt.pos as u64)
-                .tag("POINT");
-            annotations.derived(&pid, "position");
-            ir.model.points.push(Point {
-                id: pid.clone(),
-                position: pt.position,
-            });
-            if let Some(node) = graph.at_pos(pt.pos) {
-                if node.kind == 29 {
-                    let point_id = ir
-                        .model
-                        .points
-                        .last()
-                        .expect("invariant: just pushed above")
-                        .id
-                        .clone();
-                    points_by_xmt.insert(node.xmt, point_id);
-                }
+            if let Some(node) = node {
+                annotate_node(&mut annotations, &pid, source_stream, node, "POINT");
+            } else {
+                annotations
+                    .note(&pid, source_stream, position_offset as u64)
+                    .tag("POINT");
             }
-            counts.points += 1;
-        }
-        for node in graph.of_kind(29) {
-            if points_by_xmt.contains_key(&node.xmt) {
-                continue;
-            }
-            let Some(position) = node.point_position() else {
-                continue;
-            };
-            let pi = point_ordinal;
-            point_ordinal += 1;
-            let pid = PointId(format!("nx:s{si}:pt#{pi}"));
-            annotate_node(&mut annotations, &pid, source_stream, node, "POINT");
             annotations.derived(&pid, "position");
             ir.model.points.push(Point {
                 id: pid.clone(),
                 position,
             });
-            points_by_xmt.insert(node.xmt, pid);
+            if let Some(node) = node {
+                points_by_xmt.insert(node.xmt, pid);
+            }
             counts.points += 1;
         }
 
