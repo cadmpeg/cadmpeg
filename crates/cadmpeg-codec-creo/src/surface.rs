@@ -618,18 +618,30 @@ pub fn frame_bound_outline_planes(
     envelopes: &[PlaneEnvelopeRecord],
     frames: &[PlaneLocalSystem],
 ) -> Vec<OutlinePlane> {
-    let frames = frames
-        .iter()
-        .map(|frame| (frame.surface_id, frame))
-        .collect::<BTreeMap<_, _>>();
+    let vectors_agree = |first: [f64; 3], second: [f64; 3]| {
+        first.iter().zip(second).all(|(first, second)| {
+            (first - second).abs() <= 1e-10 * first.abs().max(second.abs()).max(1.0)
+        })
+    };
     let mut result = Vec::new();
     for record in envelopes {
-        let Some(frame) = frames.get(&record.surface_id) else {
+        let support_frames = frames
+            .iter()
+            .filter(|frame| frame.surface_id == record.surface_id)
+            .filter_map(|frame| Some((frame.normal?, frame.u_axis?)))
+            .collect::<Vec<_>>();
+        let Some(&(normal, u_axis)) = support_frames.first() else {
             continue;
         };
-        let (Some(normal), Some(u_axis)) = (frame.normal, frame.u_axis) else {
+        if support_frames
+            .iter()
+            .any(|(candidate_normal, candidate_u_axis)| {
+                !vectors_agree(normal, *candidate_normal)
+                    || !vectors_agree(u_axis, *candidate_u_axis)
+            })
+        {
             continue;
-        };
+        }
         let axes = normal
             .iter()
             .enumerate()
@@ -2777,6 +2789,15 @@ mod tests {
                 offset: 20,
             }]
         );
+
+        let agreeing_frames = [frames[0].clone(), frames[0].clone()];
+        assert_eq!(
+            frame_bound_outline_planes(&records, &agreeing_frames),
+            frame_bound_outline_planes(&records, &frames)
+        );
+        let mut conflicting = frames[0].clone();
+        conflicting.normal = Some([1.0, 0.0, 0.0]);
+        assert!(frame_bound_outline_planes(&records, &[frames[0].clone(), conflicting]).is_empty());
     }
 
     #[test]
