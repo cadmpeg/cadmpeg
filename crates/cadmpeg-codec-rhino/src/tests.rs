@@ -2834,6 +2834,55 @@ fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadata() {
 }
 
 #[test]
+fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
+    // A definition member mesh inflates its compressed buffers into the shared
+    // session arena while the expansion runs on a throwaway context clone. When a
+    // later member aborts the expansion, the clone is discarded, but the arena
+    // cannot reclaim the bytes it already retained. The parent must therefore keep
+    // the clone's mesh-budget charge; dropping it would let a hostile document
+    // ratchet arena memory past the cap by failing one reference after another
+    // while `used` falls back to zero (§10 Phase 1B).
+    let archive = ArchiveVersion::V5;
+    let mesh_id = [0x54; 16];
+    let missing_id = [0x99; 16];
+    let definition_id = [0x65; 16];
+    let reference_id = [0x76; 16];
+    let mesh = object_record_with_payload(
+        archive,
+        0x20,
+        MESH_CLASS,
+        &super::archive_test_support::mesh_payload(3, 0, false, false),
+    );
+    let reference = object_record_with_payload(
+        archive,
+        0x1000,
+        INSTANCE_REFERENCE_CLASS,
+        &instance_reference_payload(definition_id, transform(1.0, [0.0, 0.0, 0.0])),
+    );
+    let mut scan = scan_with_objects(&[mesh, reference]);
+    set_identity(&mut scan, 0, mesh_id, "mesh", None, true);
+    set_identity(&mut scan, 1, reference_id, "reference", None, true);
+    // The mesh member decodes first and charges the budget; the trailing member is
+    // absent from the scan, so the expansion aborts after the mesh has inflated.
+    install_definitions(
+        &mut scan,
+        vec![static_definition(definition_id, &[mesh_id, missing_id])],
+    );
+
+    super::decode::with_expand(&scan, |expand| {
+        let mut context = super::decode::DecodeContext::new(&scan, expand);
+        context.decode_geometry();
+        // The expansion was discarded, so nothing baked into the committed IR, yet
+        // the retained-byte count reflects the arena bytes the member mesh left
+        // behind rather than resetting to zero.
+        assert!(context.mesh_budget_used() > 0);
+        let result = context.commit();
+        assert!(result.ir.model.tessellations.is_empty());
+        assert!(result.ir.model.bodies.is_empty());
+    });
+}
+
+#[test]
 fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     let archive = ArchiveVersion::V5;
     let member_id = [0x56; 16];

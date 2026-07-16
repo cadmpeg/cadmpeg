@@ -257,6 +257,12 @@ impl<'a> DecodeContext<'a> {
         self.retain_object_records();
     }
 
+    /// Returns the document mesh budget's retained-byte count.
+    #[cfg(test)]
+    pub(crate) fn mesh_budget_used(&self) -> usize {
+        self.mesh_budget.used()
+    }
+
     /// Returns the source archive version.
     pub(crate) fn archive(&self) -> ArchiveVersion {
         self.scan.archive
@@ -1349,7 +1355,17 @@ impl<'a> DecodeContext<'a> {
         let mut stack = Vec::new();
         let mut path = self.instance_path.clone();
         let parent = Transform::identity();
-        match candidate.expand_reference_inner(source_order, parent, &mut path, &mut stack) {
+        let outcome = candidate.expand_reference_inner(source_order, parent, &mut path, &mut stack);
+        // Every member the candidate decoded inflated its mesh buffers into the
+        // shared session arena, which cannot reclaim them (§10 Phase 1B). Adopt the
+        // candidate's retained-byte count before any discard below, so a rejected
+        // expansion still charges the parent for the bytes it left in the arena. A
+        // refund here — dropping the charge with the candidate while the arena keeps
+        // the bytes — would let a hostile document ratchet arena memory past the cap
+        // by failing one reference after another while `used` returns to zero. On
+        // the commit path `*self = candidate` re-adopts the same count.
+        self.mesh_budget = candidate.mesh_budget.clone();
+        match outcome {
             Ok(links) => {
                 let validation = cadmpeg_ir::validate::validate(&candidate.ir, Vec::new());
                 if !validation.is_ok() {

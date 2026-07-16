@@ -109,7 +109,11 @@ const MAX_DOCUMENT_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
 /// cheap `let checkpoint = *budget; ...; *budget = checkpoint` refund idiom no
 /// longer compiles. It derives `Clone` only because the enclosing rhino decode
 /// context does; that clone drives transactional instance expansion, which
-/// decodes no mesh buffers and so never charges the cloned budget.
+/// decodes the definition members' mesh buffers into the shared session arena
+/// and charges the cloned budget for them. Those bytes outlive a discarded
+/// expansion, so the parent context adopts the clone's `used` whether the
+/// expansion commits or is rejected — the count still tracks live arena bytes
+/// and is never refunded.
 #[derive(Debug, Clone)]
 pub(crate) struct MeshBudget {
     used: usize,
@@ -128,6 +132,12 @@ impl MeshBudget {
     #[cfg(test)]
     pub(crate) fn with_limit(limit: usize) -> Self {
         Self { used: 0, limit }
+    }
+
+    /// Returns the retained-byte count, for cross-module tests.
+    #[cfg(test)]
+    pub(crate) fn used(&self) -> usize {
+        self.used
     }
 
     /// Returns whether `bytes` more can be retained without exceeding the cap.
