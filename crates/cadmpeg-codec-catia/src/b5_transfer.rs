@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::{pcurve_uv, surface_point};
+use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
     Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -35,6 +35,13 @@ struct RevolutionPlan {
 struct SurfacePlan {
     geometry: SurfaceGeometry,
     revolution: Option<RevolutionPlan>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct CurvePlan {
+    geometry: CurveGeometry,
+    parameter_range: Option<[f64; 2]>,
+    tolerance: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -137,7 +144,8 @@ fn transfer_complete(
     }
 
     let mut pcurve_plan = BTreeMap::new();
-    let mut edge_curve_plan = HashMap::<u32, CurveGeometry>::new();
+    let mut edge_curve_plan = HashMap::<u32, CurvePlan>::new();
+    let mut conflicting_edge_curves = HashSet::<u32>::new();
     let mut edge_helix_plan = HashMap::<u32, HelixPlan>::new();
     let mut edge_support_plan = HashMap::<u32, Vec<(u32, u32, [f64; 2])>>::new();
     let mut loop_senses = BTreeMap::new();
@@ -234,7 +242,37 @@ fn transfer_complete(
                 nurbs_isocurve(pcurve, cache).map(CurveGeometry::Nurbs)
             });
             if let Some(geometry) = lifted {
-                edge_curve_plan.entry(edge_id).or_insert(geometry);
+                let parameter_range = if matches!(surface, B5Surface::Plane { .. }) {
+                    edge_pcurve_parameters(graph, edge_id, pcurve_id).and_then(|parameters| {
+                        let endpoints = graph.edge_vertices[&edge_id];
+                        oriented_nurbs_range(
+                            geometry.clone(),
+                            parameters,
+                            b5_vertex_point(graph, endpoints[0])?,
+                            b5_vertex_point(graph, endpoints[1])?,
+                        )
+                    })
+                } else {
+                    None
+                };
+                let mut plan = CurvePlan {
+                    geometry,
+                    parameter_range: None,
+                    tolerance: None,
+                };
+                if let Some((oriented, range)) = parameter_range {
+                    plan.geometry = oriented;
+                    plan.parameter_range = Some(range);
+                }
+                merge_curve_plan(
+                    &mut edge_curve_plan,
+                    &mut conflicting_edge_curves,
+                    edge_id,
+                    plan,
+                );
+                if conflicting_edge_curves.contains(&edge_id) {
+                    edge_helix_plan.remove(&edge_id);
+                }
             } else {
                 let endpoint_indices = graph.edge_vertices[&edge_id];
                 let (Some(edge_start), Some(edge_end)) = (
@@ -260,16 +298,21 @@ fn transfer_complete(
                 {
                     return false;
                 }
-                if edge_curve_plan
-                    .get(&edge_id)
-                    .is_some_and(|existing| existing != &CurveGeometry::Nurbs(helix.cache.clone()))
-                {
-                    return false;
+                merge_curve_plan(
+                    &mut edge_curve_plan,
+                    &mut conflicting_edge_curves,
+                    edge_id,
+                    CurvePlan {
+                        geometry: CurveGeometry::Nurbs(helix.cache.clone()),
+                        parameter_range: Some(helix.parameter_range),
+                        tolerance: Some(helix.fit_tolerance),
+                    },
+                );
+                if conflicting_edge_curves.contains(&edge_id) {
+                    edge_helix_plan.remove(&edge_id);
+                } else {
+                    edge_helix_plan.entry(edge_id).or_insert(helix);
                 }
-                edge_curve_plan
-                    .entry(edge_id)
-                    .or_insert_with(|| CurveGeometry::Nurbs(helix.cache.clone()));
-                edge_helix_plan.entry(edge_id).or_insert(helix);
             }
             edge_ids.insert(edge_id);
         }
@@ -474,11 +517,16 @@ fn transfer_complete(
         let id = EdgeId(format!("catia:b5:edge#{edge_id}"));
         let curve_id = CurveId(format!("catia:b5:curve#{edge_id}"));
         let endpoints = graph.edge_vertices[&edge_id];
-        let geometry = edge_curve_plan
+        let curve_plan = edge_curve_plan
             .remove(&edge_id)
-            .unwrap_or_else(|| CurveGeometry::Unknown {
-                record: Some(payload.clone()),
+            .unwrap_or_else(|| CurvePlan {
+                geometry: CurveGeometry::Unknown {
+                    record: Some(payload.clone()),
+                },
+                parameter_range: None,
+                tolerance: None,
             });
+        let geometry = curve_plan.geometry;
         annotate(
             annotations,
             &curve_id,
@@ -499,8 +547,8 @@ fn transfer_complete(
             source_object: None,
         });
         let helix = edge_helix_plan.remove(&edge_id);
-        let edge_range = helix.as_ref().map(|plan| plan.parameter_range);
-        let edge_tolerance = helix.as_ref().map(|plan| plan.fit_tolerance);
+        let edge_range = curve_plan.parameter_range;
+        let edge_tolerance = curve_plan.tolerance;
         let procedural = helix
             .as_ref()
             .map(|plan| {
@@ -783,6 +831,40 @@ fn transfer_vertex_tolerances(
     tolerances
 }
 
+fn merge_curve_plan(
+    plans: &mut HashMap<u32, CurvePlan>,
+    conflicts: &mut HashSet<u32>,
+    edge: u32,
+    candidate: CurvePlan,
+) {
+    if conflicts.contains(&edge) {
+        return;
+    }
+    let Some(existing) = plans.get_mut(&edge) else {
+        plans.insert(edge, candidate);
+        return;
+    };
+    let range_conflict = existing
+        .parameter_range
+        .zip(candidate.parameter_range)
+        .is_some_and(|(left, right)| left != right);
+    let tolerance_conflict = existing
+        .tolerance
+        .zip(candidate.tolerance)
+        .is_some_and(|(left, right)| left != right);
+    if existing.geometry != candidate.geometry || range_conflict || tolerance_conflict {
+        plans.remove(&edge);
+        conflicts.insert(edge);
+        return;
+    }
+    if existing.parameter_range.is_none() {
+        existing.parameter_range = candidate.parameter_range;
+    }
+    if existing.tolerance.is_none() {
+        existing.tolerance = candidate.tolerance;
+    }
+}
+
 fn b5_vertex_point(graph: &B5Graph, vertex: usize) -> Option<[f64; 3]> {
     graph.vertex_points.get(vertex).copied().or_else(|| {
         vertex
@@ -817,6 +899,56 @@ fn edge_pcurve_parameters(graph: &B5Graph, edge: u32, pcurve: u32) -> Option<[f6
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()
+}
+
+fn oriented_nurbs_range(
+    geometry: CurveGeometry,
+    endpoint_parameters: [f64; 2],
+    edge_start: [f64; 3],
+    edge_end: [f64; 3],
+) -> Option<(CurveGeometry, [f64; 2])> {
+    let CurveGeometry::Nurbs(mut curve) = geometry else {
+        return None;
+    };
+    let degree = usize::try_from(curve.degree).ok()?;
+    let domain_start = *curve.knots.get(degree)?;
+    let domain_end = *curve
+        .knots
+        .len()
+        .checked_sub(degree + 1)
+        .and_then(|index| curve.knots.get(index))?;
+    let mut range = endpoint_parameters;
+    if range[0] > range[1] {
+        let sum = domain_start + domain_end;
+        curve.knots = curve
+            .knots
+            .into_iter()
+            .rev()
+            .map(|knot| sum - knot)
+            .collect();
+        curve.control_points.reverse();
+        if let Some(weights) = &mut curve.weights {
+            weights.reverse();
+        }
+        range = [sum - range[0], sum - range[1]];
+    }
+    if !range[0].is_finite()
+        || !range[1].is_finite()
+        || range[0] >= range[1]
+        || range[0] < domain_start
+        || range[1] > domain_end
+    {
+        return None;
+    }
+    let geometry = CurveGeometry::Nurbs(curve);
+    let start = curve_point(&geometry, range[0])?;
+    let end = curve_point(&geometry, range[1])?;
+    if distance([start.x, start.y, start.z], edge_start) > POINT_TOLERANCE
+        || distance([end.x, end.y, end.z], edge_end) > POINT_TOLERANCE
+    {
+        return None;
+    }
+    Some((geometry, range))
 }
 
 fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
@@ -1685,18 +1817,18 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 mod tests {
     use super::{
         b5_edge_support_definition, body_kind_if_owned, cylinder_helix, lifted_curve_geometry,
-        neutral_pcurve_point, rational_arc, revolution_surface, revolve_nurbs,
-        transfer_vertex_tolerances, SurfacePlan,
+        merge_curve_plan, neutral_pcurve_point, oriented_nurbs_range, rational_arc,
+        revolution_surface, revolve_nurbs, transfer_vertex_tolerances, CurvePlan, SurfacePlan,
     };
     use crate::b5::{B5Face, B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{
-        CurveGeometry, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
+        CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::BodyKind;
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::{BTreeMap, HashMap, HashSet};
 
     #[test]
     fn edge_supports_preserve_one_sided_and_intersection_constructions() {
@@ -1992,6 +2124,90 @@ mod tests {
         };
         assert_eq!(curve.weights, pcurve.weights);
         assert!(curve.control_points.iter().all(|point| point.z == 2.0));
+    }
+
+    #[test]
+    fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
+        let geometry = CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 10.0, 10.0],
+            control_points: vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
+            weights: None,
+            periodic: false,
+        });
+        let (forward, forward_range) = oriented_nurbs_range(
+            geometry.clone(),
+            [2.0, 8.0],
+            [2.0, 0.0, 2.0],
+            [8.0, 0.0, 2.0],
+        )
+        .expect("forward trimmed range");
+        assert_eq!(forward, geometry);
+        assert_eq!(forward_range, [2.0, 8.0]);
+
+        let (reversed, reversed_range) = oriented_nurbs_range(
+            geometry.clone(),
+            [8.0, 2.0],
+            [8.0, 0.0, 2.0],
+            [2.0, 0.0, 2.0],
+        )
+        .expect("reversed trimmed range");
+        assert_eq!(reversed_range, [2.0, 8.0]);
+        let CurveGeometry::Nurbs(reversed) = reversed else {
+            unreachable!();
+        };
+        assert_eq!(
+            reversed.control_points,
+            [Point3::new(10.0, 0.0, 2.0), Point3::new(0.0, 0.0, 2.0)]
+        );
+        assert!(
+            oriented_nurbs_range(geometry, [2.0, 8.0], [3.0, 0.0, 2.0], [8.0, 0.0, 2.0]).is_none()
+        );
+    }
+
+    #[test]
+    fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
+        let geometry = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let mut plans = HashMap::new();
+        let mut conflicts = HashSet::new();
+        merge_curve_plan(
+            &mut plans,
+            &mut conflicts,
+            4,
+            CurvePlan {
+                geometry: geometry.clone(),
+                parameter_range: None,
+                tolerance: None,
+            },
+        );
+        merge_curve_plan(
+            &mut plans,
+            &mut conflicts,
+            4,
+            CurvePlan {
+                geometry,
+                parameter_range: Some([2.0, 8.0]),
+                tolerance: None,
+            },
+        );
+        assert_eq!(plans[&4].parameter_range, Some([2.0, 8.0]));
+
+        let conflicting = CurvePlan {
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 1.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            parameter_range: Some([2.0, 8.0]),
+            tolerance: None,
+        };
+        merge_curve_plan(&mut plans, &mut conflicts, 4, conflicting.clone());
+        assert!(!plans.contains_key(&4));
+        assert!(conflicts.contains(&4));
+        merge_curve_plan(&mut plans, &mut conflicts, 4, conflicting);
+        assert!(!plans.contains_key(&4));
     }
 
     #[test]
