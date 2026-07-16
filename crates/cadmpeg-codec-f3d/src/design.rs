@@ -1223,7 +1223,7 @@ fn terminal_partial_edge_group_members<'a>(
                         &operand.recipe_selectors,
                         edge_operand_reference_edge_sets(operand),
                     ),
-                    Some(None)
+                    Some(EdgeAssignmentCandidates::Context)
                 )
             {
                 None
@@ -1329,7 +1329,7 @@ fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i
         .iter()
         .map(|operand| {
             if let Some(edge) = resolved_edge_operand(operand) {
-                Some(Some(vec![edge]))
+                Some(EdgeAssignmentCandidates::Edges(vec![edge]))
             } else {
                 edge_group_assignment_candidates(
                     &operand.recipe_selectors,
@@ -1341,28 +1341,35 @@ fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i
     unique_edge_assignment_with_context(&candidate_sets)
 }
 
-// Three-state result: outer `None` fails the operand, inner `None` marks "no
-// applicable candidates", inner `Some` carries the resolved edge slots.
-#[allow(clippy::option_option)]
+#[derive(Debug, PartialEq)]
+enum EdgeAssignmentCandidates {
+    Context,
+    Edges(Vec<i64>),
+}
+
+// `None` means the record claims an edge operand but its proofs do not admit a
+// candidate. `Context` means the recipe has no edge-assignment proof and the
+// record only contributes topology context to its neighboring operands.
 fn edge_group_assignment_candidates<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
-) -> Option<Option<Vec<i64>>> {
+) -> Option<EdgeAssignmentCandidates> {
     let reference_edge_sets = reference_edge_sets.into_iter().collect::<Vec<_>>();
     if !selector_contexts.is_empty() {
-        return edge_assignment_candidates(selector_contexts, reference_edge_sets).map(Some);
+        return edge_assignment_candidates(selector_contexts, reference_edge_sets)
+            .map(EdgeAssignmentCandidates::Edges);
     }
     let [first, second, ..] = reference_edge_sets.as_slice() else {
-        return Some(None);
+        return Some(EdgeAssignmentCandidates::Context);
     };
     if first.is_empty() || second.is_empty() {
-        return Some(None);
+        return None;
     }
     let mut candidates = first.to_vec();
     candidates.retain(|candidate| second.contains(candidate));
     candidates.sort_unstable();
     candidates.dedup();
-    Some((!candidates.is_empty()).then_some(candidates))
+    (!candidates.is_empty()).then_some(EdgeAssignmentCandidates::Edges(candidates))
 }
 
 fn radius_edge_group_candidates(operands: &[&DesignEdgeOperand], radius: f64) -> Option<Vec<i64>> {
@@ -1399,10 +1406,15 @@ fn radius_edge_group_candidates(operands: &[&DesignEdgeOperand], radius: f64) ->
     None
 }
 
-fn unique_edge_assignment_with_context(candidate_sets: &[Option<Vec<i64>>]) -> Option<Vec<i64>> {
+fn unique_edge_assignment_with_context(
+    candidate_sets: &[EdgeAssignmentCandidates],
+) -> Option<Vec<i64>> {
     let edge_candidate_sets = candidate_sets
         .iter()
-        .filter_map(std::clone::Clone::clone)
+        .filter_map(|candidates| match candidates {
+            EdgeAssignmentCandidates::Context => None,
+            EdgeAssignmentCandidates::Edges(edges) => Some(edges.clone()),
+        })
         .collect::<Vec<_>>();
     unique_bipartite_assignment(&edge_candidate_sets)
 }
@@ -13549,7 +13561,17 @@ mod relation_tests {
             super::edge_operand_reference_edge_sets(&edge_operand),
             vec![&[17][..], &[18, 19][..]]
         );
+        assert_eq!(
+            super::terminal_partial_edge_group_members(&[&edge_operand]),
+            vec![(edge_operand.id.as_str(), None)]
+        );
+        edge_operand.terminal_reference_edge_slots = vec![vec![17]];
         assert!(super::terminal_partial_edge_group_members(&[&edge_operand]).is_empty());
+        edge_operand.terminal_reference_edge_slots = vec![vec![], vec![17]];
+        assert_eq!(
+            super::terminal_partial_edge_group_members(&[&edge_operand]),
+            vec![(edge_operand.id.as_str(), None)]
+        );
         edge_operand.terminal_reference_edge_slots = vec![vec![17, 18], vec![17, 18]];
         assert_eq!(
             super::terminal_partial_edge_group_members(&[&edge_operand]),
@@ -16781,19 +16803,19 @@ mod relation_tests {
     fn edge_group_resolves_only_one_perfect_candidate_assignment() {
         assert_eq!(
             super::edge_group_assignment_candidates(&[], [&[17, 18][..], &[18, 19][..], &[20][..]],),
-            Some(Some(vec![18]))
+            Some(super::EdgeAssignmentCandidates::Edges(vec![18]))
         );
         assert_eq!(
             super::edge_group_assignment_candidates(&[], [&[][..], &[18][..]]),
-            Some(None)
+            None
         );
         assert_eq!(
             super::edge_group_assignment_candidates(&[], [&[17][..], &[18][..]]),
-            Some(None)
+            None
         );
         assert_eq!(
             super::edge_group_assignment_candidates(&[], [&[17][..]]),
-            Some(None)
+            Some(super::EdgeAssignmentCandidates::Context)
         );
         assert_eq!(
             super::unique_bipartite_assignment(&[vec![17, 18], vec![18, 19], vec![19],]),
@@ -16813,13 +16835,18 @@ mod relation_tests {
         );
         assert_eq!(super::unique_bipartite_assignment(&[]), None);
         assert_eq!(
-            super::unique_edge_assignment_with_context(
-                &[Some(vec![17, 18]), None, Some(vec![18]),]
-            ),
+            super::unique_edge_assignment_with_context(&[
+                super::EdgeAssignmentCandidates::Edges(vec![17, 18]),
+                super::EdgeAssignmentCandidates::Context,
+                super::EdgeAssignmentCandidates::Edges(vec![18]),
+            ]),
             Some(vec![17, 18])
         );
         assert_eq!(
-            super::unique_edge_assignment_with_context(&[None, None]),
+            super::unique_edge_assignment_with_context(&[
+                super::EdgeAssignmentCandidates::Context,
+                super::EdgeAssignmentCandidates::Context,
+            ]),
             None
         );
     }
