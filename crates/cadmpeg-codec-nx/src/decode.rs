@@ -59,6 +59,8 @@ pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 pub(crate) struct DisplayJtTessellationInputs<'a> {
     pub(crate) meshes: &'a [crate::native::DisplayJtPolygonMesh],
     pub(crate) coordinates: &'a [crate::native::DisplayJtVertexCoordinates],
+    pub(crate) normals: &'a [crate::native::DisplayJtVertexNormals],
+    pub(crate) vertex_headers: &'a [crate::native::DisplayJtCompressedVertexRecordsHeader],
     pub(crate) coordinate_headers: &'a [crate::native::DisplayJtVertexCoordinateArrayHeader],
     pub(crate) shape_elements: &'a [crate::native::DisplayJtShapeLodElement],
     pub(crate) bindings: &'a [crate::native::DisplayJtShapeLodBinding],
@@ -73,6 +75,8 @@ pub(crate) fn display_jt_tessellations(
     let DisplayJtTessellationInputs {
         meshes,
         coordinates,
+        normals,
+        vertex_headers,
         coordinate_headers,
         shape_elements,
         bindings,
@@ -115,17 +119,64 @@ pub(crate) fn display_jt_tessellations(
         if matching_nodes.next().is_some() {
             return None;
         }
-        let mut triangles = Vec::new();
-        for (polygon, &group) in mesh.polygons.iter().zip(&mesh.polygon_groups) {
+        let mut rendered = Vec::new();
+        for ((polygon, attributes), &group) in mesh
+            .polygons
+            .iter()
+            .zip(&mesh.vertex_attribute_indices)
+            .zip(&mesh.polygon_groups)
+        {
             if group < 0 {
                 continue;
             }
             let triangle: [u32; 3] = polygon.as_slice().try_into().ok()?;
-            triangles.push(triangle);
+            let attributes: [Option<u32>; 3] = attributes.as_slice().try_into().ok()?;
+            rendered.push((triangle, attributes));
         }
-        if triangles.is_empty() {
+        if rendered.is_empty() {
             return None;
         }
+        let normal_array = vertex_headers
+            .iter()
+            .find(|header| header.element == shape_element.id)
+            .and_then(|vertex_header| {
+                normals
+                    .iter()
+                    .find(|normals| normals.vertex_records_header == vertex_header.id)
+            });
+        let convert_point = |index: u32| {
+            let point = coordinates.points_m.get(index as usize)?;
+            Some(Point3::new(
+                f64::from(point[0]) * 1000.0,
+                f64::from(point[1]) * 1000.0,
+                f64::from(point[2]) * 1000.0,
+            ))
+        };
+        let (vertices, triangles, normal_vectors) = if let Some(normal_array) = normal_array {
+            let mut vertices = Vec::with_capacity(rendered.len() * 3);
+            let mut triangles = Vec::with_capacity(rendered.len());
+            let mut normal_vectors = Vec::with_capacity(rendered.len() * 3);
+            for (triangle, attributes) in rendered {
+                let base = u32::try_from(vertices.len()).ok()?;
+                for (coordinate, attribute) in triangle.into_iter().zip(attributes) {
+                    vertices.push(convert_point(coordinate)?);
+                    let normal = normal_array.normals.get(attribute? as usize)?;
+                    normal_vectors.push(Vector3::new(
+                        f64::from(normal[0]),
+                        f64::from(normal[1]),
+                        f64::from(normal[2]),
+                    ));
+                }
+                triangles.push([base, base.checked_add(1)?, base.checked_add(2)?]);
+            }
+            (vertices, triangles, normal_vectors)
+        } else {
+            let vertices = (0..coordinates.points_m.len())
+                .map(|index| convert_point(index as u32))
+                .collect::<Option<Vec<_>>>()?;
+            let triangles = rendered.into_iter().map(|(triangle, _)| triangle).collect();
+            (vertices, triangles, Vec::new())
+        };
         tessellations.push((
             Tessellation {
                 id: format!(
@@ -142,20 +193,10 @@ pub(crate) fn display_jt_tessellations(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
-                vertices: coordinates
-                    .points_m
-                    .iter()
-                    .map(|point| {
-                        Point3::new(
-                            f64::from(point[0]) * 1000.0,
-                            f64::from(point[1]) * 1000.0,
-                            f64::from(point[2]) * 1000.0,
-                        )
-                    })
-                    .collect(),
+                vertices,
                 triangles,
                 strip_lengths: Vec::new(),
-                normals: Vec::new(),
+                normals: normal_vectors,
                 channels: Vec::new(),
             },
             shape_node.source_offset,
@@ -6398,7 +6439,7 @@ fn build_geometry_report(
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Decoded {tessellation_count} embedded JT display tessellation(s) with scene-node ownership, model-space coordinates, and topological triangle connectivity."
+                "Decoded {tessellation_count} embedded JT display tessellation(s) with scene-node ownership, model-space coordinates, topological triangle connectivity, and corner normals when bound."
             ),
             provenance: None,
         });
@@ -6660,6 +6701,8 @@ fn attach_native_object_model(
     let display_jt_tessellations = display_jt_tessellations(DisplayJtTessellationInputs {
         meshes: &display_jt_polygon_meshes,
         coordinates: &display_jt_vertex_coordinates,
+        normals: &display_jt_vertex_normals,
+        vertex_headers: &display_jt_vertex_records_headers,
         coordinate_headers: &display_jt_coordinate_array_headers,
         shape_elements: &display_jt_shape_lod_elements,
         bindings: &display_jt_shape_lod_bindings,

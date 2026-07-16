@@ -240,6 +240,8 @@ pub struct DisplayJtPolygonMesh {
     pub coordinate_header: String,
     /// Ordered polygon vertex indices.
     pub polygons: Vec<Vec<u32>>,
+    /// Per-corner vertex-attribute indices parallel to `polygons`.
+    pub vertex_attribute_indices: Vec<Vec<Option<u32>>>,
     /// Per-polygon group identifiers.
     pub polygon_groups: Vec<i32>,
     /// Per-polygon flag words.
@@ -1849,6 +1851,32 @@ pub fn display_jt_polygon_meshes(
         else {
             return Vec::new();
         };
+        let Some(attribute_masks) = (0..8)
+            .map(|context| values(&format!("face_attribute_masks_{context}")))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Vec::new();
+        };
+        let Some(context_7_next_30) = values("face_attribute_masks_7_next_30") else {
+            return Vec::new();
+        };
+        let Some(context_7_upper_4) = values("face_attribute_masks_7_upper_4") else {
+            return Vec::new();
+        };
+        let Some(large_lanes) = sequence
+            .packets
+            .iter()
+            .filter(|packet| packet.role.starts_with("high_degree_face_attribute_masks_"))
+            .map(|packet| packet.values.as_deref())
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Vec::new();
+        };
+        let large_words = large_lanes
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
         let Some(polygons) = crate::jt_topology::decode(
             degrees.try_into().expect("eight degree contexts"),
             valences,
@@ -1856,6 +1884,14 @@ pub fn display_jt_polygon_meshes(
             values("vertex_flags").unwrap_or_default(),
             values("split_face_symbols").unwrap_or_default(),
             values("split_face_positions").unwrap_or_default(),
+            crate::jt_topology::AttributeMaskLanes {
+                small: attribute_masks
+                    .try_into()
+                    .expect("eight attribute-mask contexts"),
+                context_7_next_30,
+                context_7_upper_4,
+                large_words: &large_words,
+            },
         ) else {
             return Vec::new();
         };
@@ -1873,6 +1909,10 @@ pub fn display_jt_polygon_meshes(
             coordinate_header: coordinate_header.id.clone(),
             polygon_groups: polygons.iter().map(|polygon| polygon.group).collect(),
             polygon_flags: polygons.iter().map(|polygon| polygon.flags).collect(),
+            vertex_attribute_indices: polygons
+                .iter()
+                .map(|polygon| polygon.attribute_indices.clone())
+                .collect(),
             polygons: polygons
                 .into_iter()
                 .map(|polygon| polygon.vertex_indices)

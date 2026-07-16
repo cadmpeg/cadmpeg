@@ -8,6 +8,7 @@ const MAX_TOPOLOGY_SLOTS: usize = 8_000_000;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Polygon {
     pub(crate) vertex_indices: Vec<u32>,
+    pub(crate) attribute_indices: Vec<Option<u32>>,
     pub(crate) group: i32,
     pub(crate) flags: u16,
 }
@@ -23,6 +24,16 @@ struct Vertex {
 struct Face {
     vertices: Vec<Option<usize>>,
     empty: usize,
+    attribute_mask: Vec<bool>,
+    attributes: Vec<u32>,
+}
+
+/// Attribute-mask symbol lanes consumed while faces are created.
+pub(crate) struct AttributeMaskLanes<'a> {
+    pub(crate) small: [&'a [i32]; 8],
+    pub(crate) context_7_next_30: &'a [i32],
+    pub(crate) context_7_upper_4: &'a [i32],
+    pub(crate) large_words: &'a [i32],
 }
 
 struct Symbols<'a> {
@@ -33,6 +44,9 @@ struct Symbols<'a> {
     flags: &'a [i32],
     split_faces: &'a [i32],
     split_positions: &'a [i32],
+    attribute_masks: AttributeMaskLanes<'a>,
+    attribute_mask_pos: [usize; 8],
+    large_mask_pos: usize,
     vertex_pos: usize,
     split_pos: usize,
 }
@@ -62,6 +76,54 @@ impl Symbols<'_> {
         (face > 0).then_some((face, position))
     }
 
+    fn attribute_mask(&mut self, degree: usize) -> Option<Vec<bool>> {
+        if degree <= 64 {
+            let context = degree.saturating_sub(2).min(7);
+            let position = self.attribute_mask_pos[context];
+            let low =
+                u64::from(u32::try_from(*self.attribute_masks.small[context].get(position)?).ok()?);
+            let mask = if context == 7 {
+                let next = u64::from(
+                    u32::try_from(*self.attribute_masks.context_7_next_30.get(position)?).ok()?,
+                );
+                let upper = u64::from(
+                    u32::try_from(*self.attribute_masks.context_7_upper_4.get(position)?).ok()?,
+                );
+                if low >= 1_u64 << 30 || next >= 1_u64 << 30 || upper >= 1_u64 << 4 {
+                    return None;
+                }
+                low | (next << 30) | (upper << 60)
+            } else {
+                low
+            };
+            if degree < 64 && mask >> degree != 0 {
+                return None;
+            }
+            self.attribute_mask_pos[context] += 1;
+            return Some((0..degree).map(|bit| mask & (1_u64 << bit) != 0).collect());
+        }
+        let word_count = degree.div_ceil(32);
+        let end = self.large_mask_pos.checked_add(word_count)?;
+        let words = self
+            .attribute_masks
+            .large_words
+            .get(self.large_mask_pos..end)?;
+        self.large_mask_pos = end;
+        let mut mask = Vec::with_capacity(degree);
+        for bit in 0..degree {
+            let word = words[bit / 32] as u32;
+            mask.push(word & (1_u32 << (bit % 32)) != 0);
+        }
+        if !degree.is_multiple_of(32) {
+            let used = degree % 32;
+            let last = *words.last()? as u32;
+            if last >> used != 0 {
+                return None;
+            }
+        }
+        Some(mask)
+    }
+
     fn exhausted(&self) -> bool {
         self.vertex_pos == self.valences.len()
             && self.vertex_pos == self.groups.len()
@@ -73,6 +135,14 @@ impl Symbols<'_> {
                 .iter()
                 .zip(self.degrees)
                 .all(|(&position, lane)| position == lane.len())
+            && self
+                .attribute_mask_pos
+                .iter()
+                .zip(self.attribute_masks.small)
+                .all(|(&position, lane)| position == lane.len())
+            && self.attribute_mask_pos[7] == self.attribute_masks.context_7_next_30.len()
+            && self.attribute_mask_pos[7] == self.attribute_masks.context_7_upper_4.len()
+            && self.large_mask_pos == self.attribute_masks.large_words.len()
     }
 }
 
@@ -83,6 +153,7 @@ struct Decoder<'a> {
     active: Vec<usize>,
     removed: Vec<bool>,
     slot_count: usize,
+    attribute_count: u32,
 }
 
 impl Decoder<'_> {
@@ -207,10 +278,17 @@ impl Decoder<'_> {
                 return None;
             }
             let face = self.faces.len();
+            let attribute_mask = self.symbols.attribute_mask(degree)?;
+            let face_attribute_count =
+                u32::try_from(attribute_mask.iter().filter(|&&bit| bit).count()).ok()?;
+            let attribute_end = self.attribute_count.checked_add(face_attribute_count)?;
             self.faces.push(Face {
                 vertices: vec![None; degree],
                 empty: degree,
+                attribute_mask,
+                attributes: (self.attribute_count..attribute_end).collect(),
             });
+            self.attribute_count = attribute_end;
             self.removed.push(false);
             self.set_vertex_face(vertex, slot, face)?;
             self.set_face_vertex(face, 0, vertex)?;
@@ -339,13 +417,36 @@ impl Decoder<'_> {
         }
         self.vertices
             .into_iter()
-            .map(|vertex| {
+            .enumerate()
+            .map(|(vertex_index, vertex)| {
+                let attribute_indices = vertex
+                    .faces
+                    .iter()
+                    .map(|&face| {
+                        let face = &self.faces[face?];
+                        if face.attributes.is_empty() {
+                            return Some(None);
+                        }
+                        let vertex_slot = face
+                            .vertices
+                            .iter()
+                            .position(|&candidate| candidate == Some(vertex_index))?;
+                        let mut attribute_slot = face.attributes.len() - 1;
+                        for slot in 0..=vertex_slot {
+                            if face.attribute_mask[slot] {
+                                attribute_slot = (attribute_slot + 1) % face.attributes.len();
+                            }
+                        }
+                        Some(Some(face.attributes[attribute_slot]))
+                    })
+                    .collect::<Option<Vec<_>>>()?;
                 Some(Polygon {
                     vertex_indices: vertex
                         .faces
                         .into_iter()
                         .map(|face| u32::try_from(face?).ok())
                         .collect::<Option<Vec<_>>>()?,
+                    attribute_indices,
                     group: vertex.group,
                     flags: vertex.flags,
                 })
@@ -362,6 +463,7 @@ pub(crate) fn decode(
     flags: &[i32],
     split_faces: &[i32],
     split_positions: &[i32],
+    attribute_masks: AttributeMaskLanes<'_>,
 ) -> Option<Vec<Polygon>> {
     if valences.len() > MAX_TOPOLOGY_ITEMS
         || groups.len() != valences.len()
@@ -378,6 +480,9 @@ pub(crate) fn decode(
             flags,
             split_faces,
             split_positions,
+            attribute_masks,
+            attribute_mask_pos: [0; 8],
+            large_mask_pos: 0,
             vertex_pos: 0,
             split_pos: 0,
         },
@@ -386,6 +491,7 @@ pub(crate) fn decode(
         active: Vec::new(),
         removed: Vec::new(),
         slot_count: 0,
+        attribute_count: 0,
     }
     .run()
 }

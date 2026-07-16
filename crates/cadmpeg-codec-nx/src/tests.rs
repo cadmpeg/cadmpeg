@@ -514,6 +514,12 @@ fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
         &[0, 0, 0, 0],
         &[],
         &[],
+        crate::jt_topology::AttributeMaskLanes {
+            small: [&[], &[1, 1, 1, 1], &[], &[], &[], &[], &[], &[]],
+            context_7_next_30: &[],
+            context_7_upper_4: &[],
+            large_words: &[],
+        },
     )
     .expect("valid closed dual mesh");
 
@@ -530,6 +536,10 @@ fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
             .map(|polygon| polygon.group)
             .collect::<Vec<_>>(),
         vec![10, 12, 11, 13]
+    );
+    assert_eq!(
+        polygons[0].attribute_indices,
+        vec![Some(0), Some(1), Some(2)]
     );
 }
 
@@ -587,9 +597,10 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
 #[test]
 fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     use crate::native::{
-        DisplayJtBaseNodeData, DisplayJtCompressedElement, DisplayJtPolygonMesh,
-        DisplayJtShapeLodBinding, DisplayJtShapeLodElement, DisplayJtTriStripShapeNode,
-        DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates,
+        DisplayJtBaseNodeData, DisplayJtCompressedElement, DisplayJtCompressedVertexRecordsHeader,
+        DisplayJtPolygonMesh, DisplayJtShapeLodBinding, DisplayJtShapeLodElement,
+        DisplayJtTriStripShapeNode, DisplayJtVertexCoordinateArrayHeader,
+        DisplayJtVertexCoordinates, DisplayJtVertexNormals,
     };
 
     let mesh = DisplayJtPolygonMesh {
@@ -597,6 +608,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         topology: "topology".into(),
         coordinate_header: "coordinate-header".into(),
         polygons: vec![vec![0, 1, 2], vec![2, 1, 0, 2]],
+        vertex_attribute_indices: vec![vec![Some(0), Some(1), Some(2)], vec![None; 4]],
         polygon_groups: vec![4, -1],
         polygon_flags: vec![0, 0],
         source_offset: 80,
@@ -692,11 +704,35 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         version_2_vertex_bindings: None,
         source_offset: 120,
     };
+    let vertex_header = DisplayJtCompressedVertexRecordsHeader {
+        id: "vertex-header".into(),
+        element: "shape-element".into(),
+        vertex_bindings: 0xa,
+        vertex_quantization_bits: 0,
+        normal_quantization_factor: 0,
+        texture_quantization_bits: 0,
+        color_quantization_bits: 0,
+        topological_vertex_count: 3,
+        vertex_attribute_count: 3,
+        compressed_arrays_byte_len: 0,
+        compressed_arrays_sha256: "00".repeat(32),
+        source_offset: 80,
+    };
+    let normals = DisplayJtVertexNormals {
+        id: "normals".into(),
+        vertex_records_header: "vertex-header".into(),
+        normals: vec![[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        normal_hash: 0,
+        byte_len: 4,
+        source_offset: 94,
+    };
 
     let tessellations =
         crate::decode::display_jt_tessellations(crate::decode::DisplayJtTessellationInputs {
             meshes: &[mesh],
             coordinates: &[coordinates],
+            normals: &[normals],
+            vertex_headers: &[vertex_header],
             coordinate_headers: &[header],
             shape_elements: &[shape_element],
             bindings: &[binding],
@@ -709,6 +745,10 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     assert!((tessellations[0].0.vertices[1].x - 1.0).abs() < 1e-6);
     assert!((tessellations[0].0.vertices[2].y - 2.0).abs() < 1e-6);
     assert_eq!(tessellations[0].0.triangles, vec![[0, 1, 2]]);
+    assert_eq!(
+        tessellations[0].0.normals[1],
+        cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+    );
     assert_eq!(
         tessellations[0].0.source_object.as_ref().unwrap().object_id,
         "shape-node"
