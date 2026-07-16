@@ -18,7 +18,8 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::be::u32_at as be_u32;
-use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, DecodeResult};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::hash::sha256_hex;
@@ -47,18 +48,18 @@ struct DecodedBrep {
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
 }
 
-/// Decode one seekable `.sldprt` stream into IR and diagnostics.
+/// Decode a `.sldprt` session view into IR and diagnostics.
 ///
-/// The function reads and retains the complete source image. Container framing
-/// or I/O failures return [`CodecError`]; unsupported model records are reported
-/// through [`DecodeResult::report`] when a partial result can be represented.
-pub fn decode(
-    reader: &mut dyn ReadSeek,
-    options: &DecodeOptions,
-) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan(reader)?;
+/// Consumes the session root view directly (§10 Phase 1A): [`container::scan_view`]
+/// charges the container scan as work, routes every block through the platform
+/// expander, and registers the physical container spans. The function retains the
+/// complete source image. Container framing or resource failures return
+/// [`CodecError`]; unsupported model records are reported through
+/// [`DecodeResult::report`] when a partial result can be represented.
+pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
+    let scan = container::scan_view(ctx, root)?;
 
-    if options.container_only {
+    if ctx.container_only() {
         let ir = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
         return Ok(DecodeResult::new(ir, report));

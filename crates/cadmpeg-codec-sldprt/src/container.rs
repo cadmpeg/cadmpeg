@@ -11,11 +11,28 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_ir::decode::{ByteRange, DecodeContext, DerivedKind, ExpandSpec, TransformKind, View};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::le::u32_at as u32_le;
 
 /// Marker shared by block, cache-cell, and directory frames.
 pub const MARKER: [u8; 6] = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00];
+
+/// Read chunk for streaming a block's inflated DEFLATE output into the platform
+/// expander. A fixed stack buffer, so no decompressed bytes are retained outside
+/// the [`cadmpeg_ir::decode::ExpandWriter`] before finalize (§10 Phase 1B gate 2).
+const EXPAND_CHUNK: usize = 16 * 1024;
+
+/// Allocation charged per validated block admitted into the runtime space graph
+/// (§10 Phase 1A).
+///
+/// Covers the fixed heap footprint each block adds: the space-graph record for
+/// its decompressed `Transform` space and the [`Block`] summary row. This rounds
+/// up rather than measuring the platform-internal layouts, which the codec cannot
+/// see; its purpose is to make the block count consume the input-proportional
+/// allocation budget so a file packed with minimal frames cannot grow the graph
+/// without a matching charge.
+const PER_BLOCK_GRAPH_BYTES: u64 = 256;
 
 /// Bytes between a marker and its preamble in a block frame
 /// (`marker[6] + type_id[4] + crc32[4] + comp_sz[4] + uncomp_sz[4] + pre_sz[4]`).
@@ -23,6 +40,14 @@ const BLOCK_HEADER_LEN: usize = 26;
 
 /// Upper bound on a single decompressed block, guarding a corrupt `uncomp_sz`
 /// from driving an unbounded allocation. Real part streams sit far below this.
+///
+/// Limit classification (§10 Phase 1 table): deployment ceiling. On the session
+/// decode path `read_root` enforces the platform `max_input_bytes` policy limit
+/// first and [`DecodeContext::begin_expand`] bounds the decompressed output
+/// against the per-expand and cumulative decompression envelope; this tighter
+/// codec-local cap is retained as dual enforcement — and remains the sole bound
+/// on the writer-side [`scan_bytes`] path, which does not run under a session —
+/// until per-profile calibration justifies migrating it wholesale.
 const MAX_UNCOMP: usize = 512 * 1024 * 1024;
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
@@ -196,6 +221,224 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes).map_err(CodecError::Io)?;
     Ok(scan_bytes(&bytes))
+}
+
+/// Consume the session root view directly (§10 Phase 1A) and scan the container.
+///
+/// The marker walk visits every input byte once; its bytes are charged as work
+/// before scanning begins. Every block's DEFLATE payload is inflated through the
+/// platform expander ([`DecodeContext::begin_expand`], §10 Phase 1B), and each
+/// decompressed block plus its nested Parasolid streams is registered in the
+/// runtime space graph ("L1-ready", not emitting L1 — the v2 ledger schema is not
+/// yet serialized). Both `inspect` and `decode` enter here, so they run one
+/// shared container policy (graduation-gate item 6).
+///
+/// The returned scan owns its block payloads: the retained source image and the
+/// preserved per-block records are IR-level requirements, so the validated
+/// decompressed bytes are copied out of the arena once, at admission.
+pub fn scan_view(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<ContainerScan, CodecError> {
+    let bytes = root.window();
+    ctx.charge_work(
+        bytes.len() as u64,
+        "sldprt_container_scan",
+        Some(root.location()),
+    )?;
+
+    let version = cadmpeg_ir::be::u32_at(bytes, 4).unwrap_or(0);
+    let mut blocks = Vec::new();
+    let mut directory = Vec::new();
+    let mut cache_cells = Vec::new();
+
+    let mut i = OUTER_HEADER_LEN;
+    while i + MARKER.len() <= bytes.len() {
+        if bytes[i..i + MARKER.len()] != MARKER {
+            i += 1;
+            continue;
+        }
+        if let Some(raw) = admit_block(ctx, root, bytes, i)? {
+            // Each admitted block pushes a space-graph record and a summary row;
+            // bound that per-block footprint against the input-proportional
+            // allocation budget as blocks are admitted.
+            ctx.charge_alloc(
+                PER_BLOCK_GRAPH_BYTES,
+                "sldprt_container_block",
+                Some(root.location()),
+            )?;
+            i = raw.offset + BLOCK_HEADER_LEN + raw.preamble_len + raw.comp_sz as usize;
+            blocks.push(raw.into_block());
+            continue;
+        }
+        if let Some(cell) = try_cache_cell(bytes, i) {
+            cache_cells.push(cell);
+        } else if let Some(entry) = try_directory_entry(bytes, i) {
+            directory.push(entry);
+        }
+        i += 1;
+    }
+
+    Ok(ContainerScan {
+        source_image: bytes.to_vec(),
+        version,
+        blocks,
+        directory,
+        cache_cells,
+    })
+}
+
+/// Validate a marker hit as a block and, on success, route its DEFLATE payload
+/// through the platform expander, register the decompressed `Transform` space,
+/// and register each nested Parasolid stream.
+///
+/// `ExpandSpec::Exact` bounds the inflated output during the probe, so a corrupt
+/// frame cannot inflate a bomb before validation. The CRC-32 and declared length
+/// are validated from the streamed output before finalize, so a marker hit that
+/// is not a real block registers no space and the writer is dropped. Returns
+/// `Ok(None)` for any marker hit that does not frame or validate as a block — the
+/// probe idiom (§3.3): the caller tries the cache-cell and directory framings
+/// next. The only propagated error is an unswallowable `ResourceLimit` (§4.7).
+fn admit_block(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    bytes: &[u8],
+    off: usize,
+) -> Result<Option<RawBlock>, CodecError> {
+    let (Some(type_id), Some(crc), Some(comp_sz), Some(uncomp_sz), Some(pre_sz)) = (
+        u32_le(bytes, off + 6),
+        u32_le(bytes, off + 10),
+        u32_le(bytes, off + 14),
+        u32_le(bytes, off + 18),
+        u32_le(bytes, off + 22),
+    ) else {
+        return Ok(None);
+    };
+    let comp = comp_sz as usize;
+    let pre = pre_sz as usize;
+    let uncomp = uncomp_sz as usize;
+    // `MAX_UNCOMP`: deployment ceiling (see its definition), enforced here as
+    // dual defense behind the expander's decompression envelope.
+    if comp == 0 || uncomp == 0 || uncomp > MAX_UNCOMP {
+        return Ok(None);
+    }
+    let payload_start = off + BLOCK_HEADER_LEN + pre;
+    let Some(payload_end) = payload_start.checked_add(comp) else {
+        return Ok(None);
+    };
+    let Some(source) = root.child(payload_start, payload_end) else {
+        return Ok(None);
+    };
+
+    let mut writer = match ctx.begin_expand(source, ExpandSpec::Exact(uncomp_sz as u64)) {
+        Ok(writer) => writer,
+        Err(e) => return probe_or_propagate(e),
+    };
+    let mut hasher = crc32fast::Hasher::new();
+    let mut decoder = flate2::read::DeflateDecoder::new(source.window());
+    let mut chunk = [0u8; EXPAND_CHUNK];
+    loop {
+        match decoder.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => {
+                hasher.update(&chunk[..read]);
+                if let Err(e) = writer.write(&chunk[..read]) {
+                    return probe_or_propagate(e);
+                }
+            }
+            // Corrupt DEFLATE stream: not a block, try the next interpretation.
+            Err(_) => return Ok(None),
+        }
+    }
+    if writer.written() != uncomp_sz as u64 || hasher.finalize() != crc {
+        // Not a valid block; dropping the writer registers no space.
+        return Ok(None);
+    }
+    let (_space, view) = match writer.finalize() {
+        Ok(pair) => pair,
+        Err(e) => return probe_or_propagate(e),
+    };
+    let inflated = view.window();
+
+    let preamble = bytes
+        .get(off + BLOCK_HEADER_LEN..payload_start)
+        .unwrap_or(&[]);
+    let section = nibble_swap_name(preamble);
+    let located_streams = crate::parasolid::extract_streams_with_offsets(inflated);
+    register_parasolid_spaces(ctx, view, inflated, &located_streams)?;
+    let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
+    let ps_streams = located_streams
+        .into_iter()
+        .map(|(_, stream)| stream)
+        .collect::<Vec<_>>();
+    let ps_stream = ps_streams.first().cloned();
+    let family = if ps_streams.is_empty() {
+        payload_family(inflated)
+    } else {
+        "parasolid"
+    };
+
+    Ok(Some(RawBlock {
+        offset: off,
+        type_id,
+        comp_sz,
+        uncomp_sz,
+        preamble_len: pre,
+        section,
+        family,
+        payload: inflated.to_vec(),
+        ps_stream,
+        ps_streams,
+        ps_stream_offsets,
+    }))
+}
+
+/// Map an expander error hit during the block probe: a fused `ResourceLimit` is
+/// unswallowable and propagates (§4.7); any other error means this marker hit is
+/// not a valid block, so the probe reports `NoMatch`.
+fn probe_or_propagate(e: CodecError) -> Result<Option<RawBlock>, CodecError> {
+    match e {
+        CodecError::ResourceLimit(_) => Err(e),
+        _ => Ok(None),
+    }
+}
+
+/// Register each nested Parasolid stream in the runtime space graph. A stream
+/// carried directly in the block payload is a `Slice` alias of the block's
+/// decompressed space; a wrapped stream whose bytes are a nested zlib member is a
+/// `Transform` derived space (§10 Phase 1C). Each nested read is framed as a view
+/// of the block space, never a raw length (§10 Phase 1B).
+fn register_parasolid_spaces(
+    ctx: &DecodeContext<'_>,
+    block: View<'_>,
+    inflated: &[u8],
+    streams: &[(usize, Vec<u8>)],
+) -> Result<(), CodecError> {
+    for (offset, stream) in streams {
+        let Some(end) = offset.checked_add(stream.len()) else {
+            continue;
+        };
+        if inflated.get(*offset..end) == Some(stream.as_slice()) {
+            // Direct stream: a zero-copy Slice of the block space.
+            ctx.register_slice(
+                block,
+                ByteRange {
+                    start: *offset as u64,
+                    end: end as u64,
+                },
+            )?;
+            continue;
+        }
+        // Wrapped stream: the bytes at `offset` are a compressed member and
+        // `stream` is its decompression. Record it as a Transform whose input is
+        // the block region from the member offset, charging the decompressed
+        // bytes through the writer.
+        let Some(input) = block.child(*offset, block.end()) else {
+            continue;
+        };
+        let mut writer =
+            ctx.begin_derived_space(&[input], DerivedKind::Transform(TransformKind::Decompress))?;
+        writer.write(stream)?;
+        writer.finalize()?;
+    }
+    Ok(())
 }
 
 /// Scan an in-memory `.sldprt` image.
