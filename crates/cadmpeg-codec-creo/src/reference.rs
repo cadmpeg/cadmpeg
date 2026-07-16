@@ -73,6 +73,123 @@ pub struct ReferenceConic {
     pub offset: usize,
 }
 
+/// Complete model-space ellipse derived from a conic record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReferenceEllipse {
+    /// Ellipse center.
+    pub center: [f64; 3],
+    /// Unit normal of the ellipse plane.
+    pub axis: [f64; 3],
+    /// Unit direction of the semi-major axis.
+    pub major_direction: [f64; 3],
+    /// Positive semi-major radius.
+    pub major_radius: f64,
+    /// Positive semi-minor radius.
+    pub minor_radius: f64,
+    /// Source conic byte offset.
+    pub offset: usize,
+}
+
+fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
+    left[0].mul_add(right[0], left[1].mul_add(right[1], left[2] * right[2]))
+}
+
+fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
+    [
+        left[1].mul_add(right[2], -(left[2] * right[1])),
+        left[2].mul_add(right[0], -(left[0] * right[2])),
+        left[0].mul_add(right[1], -(left[1] * right[0])),
+    ]
+}
+
+fn normalize(vector: [f64; 3]) -> Option<([f64; 3], f64)> {
+    let magnitude = vector
+        .iter()
+        .fold(0.0_f64, |norm, value| norm.hypot(*value));
+    (magnitude.is_finite() && magnitude > 1e-12)
+        .then(|| (vector.map(|value| value / magnitude), magnitude))
+}
+
+/// Derive every ellipse whose conic frame, radii, and antipodal endpoints
+/// independently satisfy one model-space equation.
+pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
+    let mut result = Vec::new();
+    for conic in conics {
+        if conic.type_id != 30 {
+            continue;
+        }
+        let Some(frame) = conic.local_system else {
+            continue;
+        };
+        let center: [f64; 3] = frame[9..12].try_into().expect("three frame origin slots");
+        let first_frame: [f64; 3] = frame[..3].try_into().expect("three frame axis slots");
+        let second_frame: [f64; 3] = frame[3..6].try_into().expect("three frame axis slots");
+        let Some((first_frame, first_length)) = normalize(first_frame) else {
+            continue;
+        };
+        let Some((second_frame, second_length)) = normalize(second_frame) else {
+            continue;
+        };
+        let scale = center
+            .iter()
+            .chain(conic.start.iter())
+            .chain(conic.end.iter())
+            .map(|value| value.abs())
+            .fold(1.0_f64, f64::max);
+        if (first_length - 1.0).abs() > 1e-9
+            || (second_length - 1.0).abs() > 1e-9
+            || dot(first_frame, second_frame).abs() > 1e-9
+        {
+            continue;
+        }
+        let Some((axis, _)) = normalize(cross(first_frame, second_frame)) else {
+            continue;
+        };
+        let first_delta = std::array::from_fn(|index| conic.start[index] - center[index]);
+        let second_delta = std::array::from_fn(|index| conic.end[index] - center[index]);
+        let Some((first_direction, first_radius)) = normalize(first_delta) else {
+            continue;
+        };
+        let Some((_, second_radius)) = normalize(second_delta) else {
+            continue;
+        };
+        if (0..3).any(|index| (first_delta[index] + second_delta[index]).abs() > 1e-9 * scale)
+            || dot(first_direction, axis).abs() > 1e-9
+            || (first_radius - second_radius).abs() > 1e-9 * scale
+        {
+            continue;
+        }
+        let radii = [conic.coefficient_1.abs(), conic.coefficient_2.abs()];
+        if radii
+            .iter()
+            .any(|radius| !radius.is_finite() || *radius <= 0.0)
+        {
+            continue;
+        }
+        let major_radius = radii[0].max(radii[1]);
+        let minor_radius = radii[0].min(radii[1]);
+        let radius_scale = major_radius.max(1.0);
+        let major_direction = if (first_radius - major_radius).abs() <= 1e-9 * radius_scale {
+            first_direction
+        } else if (first_radius - minor_radius).abs() <= 1e-9 * radius_scale {
+            normalize(cross(first_direction, axis))
+                .map_or(first_direction, |(direction, _)| direction)
+        } else {
+            continue;
+        };
+        result.push(ReferenceEllipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+            offset: conic.offset,
+        });
+    }
+    result.sort_by_key(|ellipse| ellipse.offset);
+    result
+}
+
 fn coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
     if data.get(offset) == Some(&0x18)
         && scalar::decode_model_reference_coordinate(data, offset + 1, cache).is_some()
@@ -196,6 +313,9 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
     const LIST: &[u8] = b"ent_list(conic)\0";
     const NEXT_LIST: &[u8] = b"\xe0\x00ent_list(";
     const LOCAL_SYSTEM: &[u8] = b"\xe0\x02local_sys\0\xf9\x04\x03";
+    const ID: &[u8] = b"\xe0\x01id\0";
+    const TYPE: &[u8] = b"\xe0\x01type\0";
+    const FLIP: &[u8] = b"\xe0\x01flip\0";
     let cache = ScalarCache::from_section(payload);
     let mut result = Vec::new();
     let mut search = 0;
@@ -203,9 +323,6 @@ pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
         let fields_start = offset + LIST.len();
         let block_end =
             find_in(payload, NEXT_LIST, fields_start, payload.len()).unwrap_or(payload.len());
-        const ID: &[u8] = b"\xe0\x01id\0";
-        const TYPE: &[u8] = b"\xe0\x01type\0";
-        const FLIP: &[u8] = b"\xe0\x01flip\0";
         let Some(id_label) = find_in(payload, ID, fields_start, block_end) else {
             search = block_end.max(fields_start);
             continue;
@@ -444,8 +561,6 @@ pub fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
             let end = starts.get(index + 1).map_or(block_end, |next| next - 1);
             let end = if payload.get(end.wrapping_sub(1)) == Some(&0xe3) {
                 end - 1
-            } else if payload.get(end) == Some(&0xe3) {
-                end
             } else {
                 end
             };
@@ -801,6 +916,40 @@ mod tests {
         assert_eq!(conic.parameter_end, None);
         assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
         assert_eq!(conic.local_system.unwrap()[9], -1.0);
+    }
+
+    #[test]
+    fn derives_ellipse_from_orthonormal_frame_and_antipodal_major_endpoints() {
+        let conic = ReferenceConic {
+            entity_id: 7,
+            type_id: 30,
+            flip: 1,
+            start: [-3.0, 2.0, 4.0],
+            end: [7.0, 2.0, 4.0],
+            parameter_start: None,
+            parameter_end: None,
+            coefficient_1: -5.0,
+            coefficient_2: 2.0,
+            local_system: Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0]),
+            body: Vec::new(),
+            offset: 10,
+        };
+
+        assert_eq!(
+            ellipse_carriers(std::slice::from_ref(&conic)),
+            [ReferenceEllipse {
+                center: [2.0, 2.0, 4.0],
+                axis: [0.0, 0.0, 1.0],
+                major_direction: [-1.0, 0.0, 0.0],
+                major_radius: 5.0,
+                minor_radius: 2.0,
+                offset: 10,
+            }]
+        );
+
+        let mut invalid = conic;
+        invalid.local_system.as_mut().unwrap()[3] = 1.0;
+        assert!(ellipse_carriers(&[invalid]).is_empty());
     }
 
     #[test]

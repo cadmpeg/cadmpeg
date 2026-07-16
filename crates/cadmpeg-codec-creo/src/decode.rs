@@ -19435,6 +19435,40 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             }),
         });
     }
+    for ellipse in &scan.reference_ellipses {
+        let id = CurveId(format!("creo:mdl_ref_info:conic#{}", ellipse.offset));
+        annotate(
+            &mut annotations,
+            &id,
+            "MdlRefInfo",
+            ellipse.offset as u64,
+            "reference_ellipse",
+            Exactness::Derived,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Ellipse {
+                center: Point3::new(ellipse.center[0], ellipse.center[1], ellipse.center[2]),
+                axis: Vector3::new(ellipse.axis[0], ellipse.axis[1], ellipse.axis[2]),
+                major_direction: Vector3::new(
+                    ellipse.major_direction[0],
+                    ellipse.major_direction[1],
+                    ellipse.major_direction[2],
+                ),
+                major_radius: ellipse.major_radius,
+                minor_radius: ellipse.minor_radius,
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("MdlRefInfo:conic:{}", ellipse.offset),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+    }
     for strip in &scan.primitive_triangle_strips {
         let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
         let mut triangles = Vec::new();

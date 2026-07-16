@@ -30,7 +30,7 @@ use crate::feature::{
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
 use crate::psb;
-use crate::reference::{self, ReferenceCircle, ReferenceConic, ReferenceLine};
+use crate::reference::{self, ReferenceCircle, ReferenceConic, ReferenceEllipse, ReferenceLine};
 use crate::surface::{
     self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceParameterRecord,
     SurfacePrototype, SurfacePrototypeRecord, SurfaceRow, TabulatedCylinderCurveReplay,
@@ -202,6 +202,8 @@ pub struct ContainerScan {
     pub reference_circles: Vec<ReferenceCircle>,
     /// Named conic entities from `MdlRefInfo` with complete defining fields.
     pub reference_conics: Vec<ReferenceConic>,
+    /// Conic records whose complete fields independently define an ellipse.
+    pub reference_ellipses: Vec<ReferenceEllipse>,
     /// Identified layout family.
     pub layout: Layout,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
@@ -1580,7 +1582,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
                 })
         })
         .collect();
-    let reference_conics = sections
+    let reference_conics: Vec<ReferenceConic> = sections
         .iter()
         .filter(|section| section.name == "MdlRefInfo")
         .flat_map(|section| {
@@ -1597,6 +1599,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
                 })
         })
         .collect();
+    let reference_ellipses = reference::ellipse_carriers(&reference_conics);
     let layout = identify_layout(&sections);
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
@@ -1752,6 +1755,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         reference_lines,
         reference_circles,
         reference_conics,
+        reference_ellipses,
         layout,
         census,
         principal_unit,

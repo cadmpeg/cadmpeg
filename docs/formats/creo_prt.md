@@ -1611,10 +1611,10 @@ fields `t0`, `t1`, `c1`, and `c2`; and a twelve-slot
 coordinate lane. Within the local-system body, `4a` is the positive seven-byte
 frame-coordinate form, and `18 e5` expands to the three
 slots `[0, 1, 0]`; other slots use the same coordinate lane, including an `18`
-standalone-zero slot before another complete coordinate. The conic record
 standalone-zero slot before another complete coordinate; a terminal `18` is
-also a zero local-system slot. The conic record retains its coefficients and parameter fields without assigning ellipse,
-parabola, or hyperbola semantics until the coefficient equation is resolved.
+also a zero local-system slot. The conic record retains its coefficients and
+parameter fields without assigning ellipse semantics until its frame and
+carrier invariants are complete.
 
 A positional conic row repeats its canonical entity identifier on both sides
 of the preceding `e3`, then stores `<id> <type> e2`. Its body begins
@@ -1623,3 +1623,14 @@ of the preceding `e3`, then stores `<id> <type> e2`. Its body begins
 compact `11` parameter form remains an opaque one-byte parameter while leaving
 the following coefficient and local-system positions aligned. A complete row
 consumes all twelve local-system slots before its trailing compound record.
+
+A conic record defines a complete ellipse carrier without interpreting its
+parameter tokens when the first two local-system triples are finite orthogonal
+unit vectors, the final triple is a finite center, `|c1|` and `|c2|` are
+positive, and the two stored endpoints are antipodal about that center at
+exactly one of those radii. Their common plane normal is the normalized cross
+product of the frame vectors. The larger coefficient magnitude is the
+semi-major radius. An endpoint at the semi-major radius supplies the major
+direction; an endpoint at the semi-minor radius supplies its in-plane
+perpendicular. Records that fail any invariant do not define an ellipse
+carrier.
