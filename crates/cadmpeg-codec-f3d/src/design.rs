@@ -4646,22 +4646,37 @@ pub fn project_dimension_constraints(
             })
         },
     ));
-    let recipe_companions = recipe_records
+    let governed_companions = pairs
         .iter()
-        .filter_map(|record| {
+        .filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.governing_companion_record_index,
+            ))
+        })
+        .chain(groups.iter().filter_map(|group| {
+            Some((
+                native_stream(&group.id)?.to_owned(),
+                group.companion_record_index,
+            ))
+        }))
+        .chain(null_pairs.iter().filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.governing_companion_record_index,
+            ))
+        }))
+        .chain(recipe_records.iter().filter_map(|record| {
             Some((
                 native_stream(&record.id)?.to_owned(),
                 record.companion_record_index,
             ))
-        })
+        }))
         .collect::<HashSet<_>>();
     constraints.extend(companions.iter().filter_map(|companion| {
-        if companion.payload_byte_length == 0 {
-            return None;
-        }
         let scope = native_stream(&companion.id)?;
         let key = (scope.to_owned(), companion.record_index);
-        if locus_companions.contains(&key) || recipe_companions.contains(&key) {
+        if governed_companions.contains(&key) {
             return None;
         }
         let owner = owners_by_companion.get(&key)?;
@@ -4682,7 +4697,14 @@ pub fn project_dimension_constraints(
                 parameter: Some(parameter_id),
                 operands: vec![SketchNativeOperand {
                     native_kind: "dimension_companion".into(),
-                    native_field: Some("companion_payload".into()),
+                    native_field: Some(
+                        if companion.payload_byte_length == 0 {
+                            "companion"
+                        } else {
+                            "companion_payload"
+                        }
+                        .into(),
+                    ),
                     native_role: None,
                     object_index: companion.record_index,
                     native_ref: Some(companion.id.clone()),
@@ -15619,6 +15641,18 @@ mod relation_tests {
             variant: 0,
             companion_record_index: 22,
         };
+        let companion = DesignParameterCompanion {
+            id: format!("{stream}:design-parameter-companion#22"),
+            byte_offset: 0,
+            class_tag: "408".into(),
+            record_index: 22,
+            owner_record_index: 21,
+            timestamp_micros: 1,
+            timestamp_micros_offset: 42,
+            payload_byte_offset: 58,
+            payload_byte_length: 0,
+            owned_recipe_ids: Vec::new(),
+        };
         let pair = DesignDimensionLocusPair {
             id: format!("{stream}:design-dimension-locus-pair#30"),
             companion_record_index: 99,
@@ -15704,7 +15738,7 @@ mod relation_tests {
             std::slice::from_ref(&pair),
             std::slice::from_ref(&group),
             &[],
-            &[],
+            std::slice::from_ref(&companion),
             &[],
             &points,
             &[],
@@ -16100,6 +16134,32 @@ mod relation_tests {
                 }] if native_kind == "dimension_companion"
                     && field == "companion_payload"
                     && operand_ref == &companion.id)
+        ));
+
+        let mut empty_companion = companion;
+        empty_companion.payload_byte_length = 0;
+        let retained = project_dimension_constraints(
+            std::slice::from_ref(&placement),
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&owner),
+            &[],
+            &[],
+            &[],
+            std::slice::from_ref(&empty_companion),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            retained.as_slice(),
+            [cadmpeg_ir::sketches::SketchConstraint {
+                definition: SketchConstraintDefinition::Native { operands, .. },
+                ..
+            }] if matches!(operands.as_slice(), [cadmpeg_ir::sketches::SketchNativeOperand {
+                native_field: Some(field),
+                ..
+            }] if field == "companion")
         ));
     }
 
