@@ -4681,7 +4681,7 @@ fn attach_standard_topology(
         }
     }
     if let Some(options) = &mut endpoint_options {
-        let allowed_faces = supports
+        let mut allowed_faces = supports
             .iter()
             .enumerate()
             .map(|(edge, support)| {
@@ -4710,6 +4710,13 @@ fn attach_standard_topology(
                     .collect()
             })
             .collect::<Vec<_>>();
+        for edge in 0..allowed_faces.len() {
+            allowed_faces[edge].retain(|face| {
+                let mut trial = edge_faces.clone();
+                trial[edge][1] = *face;
+                topology::face_endpoint_candidates_close(&trial, options, *face)
+            });
+        }
         if let Some(completed) =
             topology::resolve_standard_duplicate_edge_faces(brep, &edge_faces, &allowed_faces)
         {

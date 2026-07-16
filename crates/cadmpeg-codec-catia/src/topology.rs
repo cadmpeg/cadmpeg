@@ -1866,6 +1866,81 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     })
 }
 
+/// Test whether one face can select endpoint pairs that form closed cycles.
+/// The search is bounded independently of the global incidence solver.
+pub(crate) fn face_endpoint_candidates_close(
+    edge_faces: &[[usize; 2]],
+    candidates: &[Vec<[usize; 2]>],
+    face: usize,
+) -> bool {
+    const MAX_STATES: usize = 65_536;
+
+    fn search(
+        edges: &[usize],
+        candidates: &[Vec<[usize; 2]>],
+        at: usize,
+        selected: &mut [[usize; 2]],
+        degrees: &mut HashMap<usize, u8>,
+        states: &mut usize,
+    ) -> Option<bool> {
+        if *states >= MAX_STATES {
+            return None;
+        }
+        *states += 1;
+        if at == edges.len() {
+            return Some(incidence_cycles(edges, selected).is_some());
+        }
+        let edge = edges[at];
+        for &pair in &candidates[edge] {
+            let mut admissible = true;
+            for point in pair {
+                let degree = degrees.entry(point).or_default();
+                *degree = degree.saturating_add(1);
+                admissible &= *degree <= 2;
+            }
+            selected[edge] = pair;
+            if admissible && search(edges, candidates, at + 1, selected, degrees, states)? {
+                return Some(true);
+            }
+            for point in pair {
+                let remove = if let Some(degree) = degrees.get_mut(&point) {
+                    *degree -= 1;
+                    *degree == 0
+                } else {
+                    false
+                };
+                if remove {
+                    degrees.remove(&point);
+                }
+            }
+        }
+        Some(false)
+    }
+
+    if edge_faces.len() != candidates.len() {
+        return false;
+    }
+    let mut edges = edge_faces
+        .iter()
+        .enumerate()
+        .filter_map(|(edge, faces)| faces.contains(&face).then_some(edge))
+        .collect::<Vec<_>>();
+    if edges.is_empty() || edges.iter().any(|edge| candidates[*edge].is_empty()) {
+        return false;
+    }
+    edges.sort_unstable_by_key(|edge| candidates[*edge].len());
+    let mut selected = vec![[0; 2]; candidates.len()];
+    search(
+        &edges,
+        candidates,
+        0,
+        &mut selected,
+        &mut HashMap::new(),
+        &mut 0,
+    )
+    .unwrap_or(false)
+}
+
 fn resolve_edge_faces_from_runs(
     serialized: &[[usize; 2]],
     runs: &[MeshEdgeRun],
@@ -7337,13 +7412,13 @@ mod motif_tests {
 
     use super::{
         bind_edge_port_candidates, canonicalize_mesh_vertex_labels, complete_duplicate_face_slots,
-        deduplicate_mesh_quotient_assignments, mesh_assignment_can_merge,
-        mesh_candidates_equivalent, mesh_edge_points_compatible, motif_port_points,
-        parse_edge_tables_at, parse_edge_tables_scoped_at, parse_fbb_edge_tables_width,
-        parse_trim_chain, parse_trim_record, possible_face_choices, possible_face_equations,
-        propagate_edge_port_points, prune_edge_candidates_by_port_domains, reconstruct_incidence,
-        reconstruct_incidence_candidates, resolve_edge_faces_from_runs, standard_face_count,
-        unique_coordinate_bijection, unique_duplicate_face_assignment,
+        deduplicate_mesh_quotient_assignments, face_endpoint_candidates_close,
+        mesh_assignment_can_merge, mesh_candidates_equivalent, mesh_edge_points_compatible,
+        motif_port_points, parse_edge_tables_at, parse_edge_tables_scoped_at,
+        parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, possible_face_choices,
+        possible_face_equations, propagate_edge_port_points, prune_edge_candidates_by_port_domains,
+        reconstruct_incidence, reconstruct_incidence_candidates, resolve_edge_faces_from_runs,
+        standard_face_count, unique_coordinate_bijection, unique_duplicate_face_assignment,
         uses_canonical_edge_direction_gauge, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
         FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun, MeshFaceBoundaryAssignment,
         MeshQuotient, MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER,
@@ -9036,6 +9111,21 @@ mod motif_tests {
             |_| true,
         )
         .is_none());
+    }
+
+    #[test]
+    fn face_endpoint_candidates_require_one_closed_local_cycle() {
+        let faces = [[0, 1], [0, 2], [0, 3]];
+        assert!(face_endpoint_candidates_close(
+            &faces,
+            &[vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]],
+            0,
+        ));
+        assert!(!face_endpoint_candidates_close(
+            &faces,
+            &[vec![[0, 1]], vec![[1, 2]], vec![[3, 4]]],
+            0,
+        ));
     }
 
     #[test]
