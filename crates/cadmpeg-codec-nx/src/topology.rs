@@ -736,9 +736,12 @@ impl Graph {
         self.get(kind, xmt)
     }
 
-    /// Iterate nodes of one record type.
+    /// Iterate nodes of one record type in physical record order.
     pub fn of_kind(&self, kind: u8) -> impl Iterator<Item = &Node> {
-        self.nodes.values().filter(move |node| node.kind == kind)
+        self.by_pos.values().filter_map(move |key| {
+            let node = self.nodes.get(key)?;
+            (node.kind == kind).then_some(node)
+        })
     }
 
     /// Curve identities occupying typed curve-reference slots in the fixed

@@ -7228,6 +7228,23 @@ fn topology_accepts_fixed_record_envelope_escape() {
 }
 
 #[test]
+fn topology_iterates_each_record_family_in_physical_order() {
+    let mut stream = Vec::new();
+    for (xmt, x) in [(77, 0.01), (3, 0.02)] {
+        let mut point = record(29, 40);
+        put_ref(&mut point, 2, xmt);
+        put_vec3(&mut point, 16, [x, 0.0, 0.0]);
+        stream.extend(point);
+    }
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(
+        graph.of_kind(29).map(|node| node.xmt).collect::<Vec<_>>(),
+        vec![77, 3]
+    );
+}
+
+#[test]
 fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
     let mut stream = topology_partition_stream();
     let fin = stream
@@ -7312,6 +7329,51 @@ fn decode_orders_graph_only_origin_before_later_nonzero_point() {
     assert_eq!(points[1].0, stream.len() - 40);
     assert_eq!(points[1].1, cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0));
     assert_eq!(points[1].2.map(|node| node.xmt), Some(77));
+}
+
+#[test]
+fn decode_orders_graph_only_escaped_analytics_before_later_records() {
+    let mut stream = topology_with_escaped_geometry_envelopes();
+    let first_surface = stream
+        .windows(3)
+        .position(|window| window == [0, 50, 0xff])
+        .expect("escaped plane record");
+    let first_curve = stream
+        .windows(3)
+        .position(|window| window == [0, 30, 0xff])
+        .expect("escaped line record");
+
+    let second_surface_offset = stream.len();
+    let mut plane = record(50, 91);
+    put_ref(&mut plane, 2, 77);
+    plane[18] = b'+';
+    put_vec3(&mut plane, 19, [0.01, 0.02, 0.03]);
+    put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
+    put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
+    stream.extend(plane);
+
+    let second_curve_offset = stream.len();
+    let mut line = record(30, 67);
+    put_ref(&mut line, 2, 78);
+    line[18] = b'+';
+    put_vec3(&mut line, 19, [0.04, 0.05, 0.06]);
+    put_vec3(&mut line, 43, [0.0, 1.0, 0.0]);
+    stream.extend(line);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    let surfaces = crate::decode::ordered_surface_candidates(&stream, &graph);
+    assert_eq!(surfaces.len(), 2);
+    assert_eq!(surfaces[0].0, first_surface);
+    assert_eq!(surfaces[0].2.map(|node| node.xmt), Some(6));
+    assert_eq!(surfaces[1].0, second_surface_offset);
+    assert_eq!(surfaces[1].2.map(|node| node.xmt), Some(77));
+
+    let curves = crate::decode::ordered_curve_candidates(&stream, &graph);
+    assert_eq!(curves.len(), 2);
+    assert_eq!(curves[0].0, first_curve);
+    assert_eq!(curves[0].2.map(|node| node.xmt), Some(9));
+    assert_eq!(curves[1].0, second_curve_offset);
+    assert_eq!(curves[1].2.map(|node| node.xmt), Some(78));
 }
 
 #[test]
