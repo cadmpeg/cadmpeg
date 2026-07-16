@@ -698,8 +698,10 @@ type-four incidence makes the referenced entities tangent at their selected
 endpoint loci.
 A two-item type-three incidence has one sense-zero point entity and one
 endpoint-selected entity; the point and endpoint loci coincide.
-A one-item type-one incidence makes the referenced entity horizontal. A
-one-item type-two incidence makes the referenced entity vertical.
+A one-item type-one incidence with sense zero makes the referenced line
+horizontal. A one-item type-two incidence with sense zero makes the referenced
+line vertical. Other senses select a locus and do not define an entity-level
+orientation constraint.
 Stored horizontal/vertical selectors and unique type-one/type-two incidences
 define the line's held `v`/`u` coordinate, respectively. For type three or type
 nine, a selected point on such a line inherits that held coordinate from either

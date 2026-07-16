@@ -8142,7 +8142,7 @@ fn section_skamp_constraints(
                         ],
                     }
                 }
-                (1, [item]) if section_skamp_is_line(definition, item) => {
+                (1, [item]) if item.sense == 0 && section_skamp_is_line(definition, item) => {
                     SketchConstraintDefinition::Horizontal {
                         entity: SketchEntityId(format!(
                             "creo:featdefs:sketch_entity#{}:{}",
@@ -8150,7 +8150,7 @@ fn section_skamp_constraints(
                         )),
                     }
                 }
-                (2, [item]) if section_skamp_is_line(definition, item) => {
+                (2, [item]) if item.sense == 0 && section_skamp_is_line(definition, item) => {
                     SketchConstraintDefinition::Vertical {
                         entity: SketchEntityId(format!(
                             "creo:featdefs:sketch_entity#{}:{}",
@@ -13893,6 +13893,23 @@ mod resolved_sketch_tests {
         assert!(matches!(
             constraints[1].0.definition,
             SketchConstraintDefinition::Vertical { .. }
+        ));
+        let mut locus_orientation = definition.clone();
+        locus_orientation
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0]
+            .items[0]
+            .sense = 2;
+        assert!(matches!(
+            section_skamp_constraints(&locus_orientation, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native {
+                ref native_kind,
+                ..
+            } if native_kind == "creo:skamp:1"
         ));
         assert_eq!(
             constraints[2].0.definition,
