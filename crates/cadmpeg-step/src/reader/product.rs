@@ -29,7 +29,11 @@ pub(super) fn decode(
         .records
         .iter()
         .filter_map(|(&id, record)| {
-            if record.simple_name() != Some("PRODUCT_DEFINITION_FORMATION") {
+            if !matches!(
+                record.simple_name(),
+                Some("PRODUCT_DEFINITION_FORMATION")
+                    | Some("PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE")
+            ) {
                 return None;
             }
             Some((id, record.parameter(2)?.reference()?))

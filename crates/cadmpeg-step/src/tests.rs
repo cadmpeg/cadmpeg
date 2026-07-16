@@ -1846,6 +1846,40 @@ fn repeated_subassembly_instances_each_receive_the_subtree() {
 }
 
 #[test]
+fn ap203_specified_source_formations_build_occurrence_tree() {
+    let result = decode_inline(
+        "#1=APPLICATION_CONTEXT('configuration controlled design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('A','assembly','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('','',#3,.NOT_KNOWN.);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('assembly','',#4,#5);
+#7=PRODUCT('P','part','',(#2));
+#8=PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('','',#7,.NOT_KNOWN.);
+#9=PRODUCT_DEFINITION('part','',#8,#5);
+#10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u1','part instance','',#6,#9,$);",
+    );
+
+    assert_eq!(result.ir.model.products.len(), 2);
+    assert_eq!(result.ir.model.occurrences.len(), 2);
+    assert!(result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .any(|occurrence| occurrence.product.as_str() == "step:product:product#7"));
+    assert!(!result
+        .ir
+        .native_unknowns("step")
+        .unwrap()
+        .iter()
+        .any(|record| {
+            record.id.0.contains("product_definition_formation")
+                || record.id.0.contains("next_assembly_usage_occurrence")
+        }));
+}
+
+#[test]
 fn tessellation_geometry_sets_transfer_flag_and_invalid_pnindex_is_rejected() {
     let result = StepCodec::default()
         .decode(
