@@ -6234,6 +6234,55 @@ fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> {
     identifiers.into_iter()
 }
 
+/// Count decoded same-stream parameter-name symbols that have no neutral
+/// dependency edge.
+pub(crate) fn unresolved_parameter_expression_dependency_count(
+    native: &[DesignParameter],
+    projected: &[cadmpeg_ir::features::DesignParameter],
+) -> usize {
+    let projected_by_native_ref = projected
+        .iter()
+        .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
+        .collect::<HashMap<_, _>>();
+    let projected_by_id = projected
+        .iter()
+        .map(|parameter| (&parameter.id, parameter))
+        .collect::<HashMap<_, _>>();
+    let mut names_by_stream = HashMap::<&str, HashSet<&str>>::new();
+    for parameter in native {
+        let Some(stream) = native_stream(&parameter.id) else {
+            continue;
+        };
+        names_by_stream
+            .entry(stream)
+            .or_default()
+            .insert(parameter.name.as_str());
+    }
+
+    native
+        .iter()
+        .filter_map(|parameter| {
+            let stream = native_stream(&parameter.id)?;
+            let names = names_by_stream.get(stream)?;
+            let projected = projected_by_native_ref.get(parameter.id.as_str())?;
+            let dependency_names = projected
+                .dependencies
+                .iter()
+                .filter_map(|dependency| projected_by_id.get(dependency))
+                .map(|dependency| dependency.name.as_str())
+                .collect::<HashSet<_>>();
+            Some(
+                expression_identifiers(&parameter.expression)
+                    .filter(|identifier| names.contains(identifier.as_str()))
+                    .collect::<HashSet<_>>()
+                    .into_iter()
+                    .filter(|identifier| !dependency_names.contains(identifier.as_str()))
+                    .count(),
+            )
+        })
+        .sum()
+}
+
 fn json_scalar_text(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::String(value) => value.clone(),
@@ -11671,7 +11720,7 @@ mod relation_tests {
         resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
         unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
         unresolved_configuration_rule_count, unresolved_configuration_suppressed_feature_count,
-        validate_configuration_payload,
+        unresolved_parameter_expression_dependency_count, validate_configuration_payload,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConfiguration, DesignConfigurationKind,
@@ -16712,6 +16761,47 @@ mod relation_tests {
             .find(|parameter| parameter.name == "BareUnitName")
             .expect("consumer of bare unit-named parameter");
         assert_eq!(bare_unit_name.dependencies, [millimetres.id.clone()]);
+    }
+
+    #[test]
+    fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
+        let parameter = |stream: &str, record_index, expression: &str, name: &str| {
+            let mut parameter = parse_design_parameter(&parameter_record(
+                None,
+                expression,
+                "User Parameter",
+                Some("mm"),
+                name,
+                1.0,
+            ))
+            .expect("generated parameter");
+            parameter.id = format!("f3d:{stream}:parameter#{record_index}");
+            parameter.record_index = record_index;
+            parameter.source_ordinal = record_index;
+            parameter
+        };
+        let native = vec![
+            parameter("A", 1, "1 mm", "Width"),
+            parameter("A", 2, "Width + External", "Half"),
+            parameter("B", 1, "1 mm", "External"),
+        ];
+        let (_, mut projected) =
+            project_parameter_design(&native, &[], &[], &[], &[], &[], &[], &[]);
+        assert_eq!(
+            unresolved_parameter_expression_dependency_count(&native, &projected),
+            0
+        );
+
+        projected
+            .iter_mut()
+            .find(|parameter| parameter.name == "Half")
+            .expect("Half parameter")
+            .dependencies
+            .clear();
+        assert_eq!(
+            unresolved_parameter_expression_dependency_count(&native, &projected),
+            1
+        );
     }
 
     #[test]

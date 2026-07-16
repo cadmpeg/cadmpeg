@@ -162,6 +162,7 @@ struct DesignProjectionGaps {
     native_features: usize,
     unprojected_feature_scopes: usize,
     unprojected_parameters: usize,
+    unresolved_expression_dependencies: usize,
     unprojected_history_dependencies: usize,
     ambiguous_history_dependencies: usize,
     native_constraints: usize,
@@ -319,6 +320,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .iter()
             .filter(|parameter| !projected_parameter_refs.contains(parameter.id.as_str()))
             .count(),
+        unresolved_expression_dependencies:
+            crate::design::unresolved_parameter_expression_dependency_count(
+                &native.design_parameters,
+                &ir.model.parameters,
+            ),
         native_constraints: ir
             .model
             .sketch_constraints
@@ -455,6 +461,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} decoded Design parameter(s) have no neutral parameter.",
             gaps.unprojected_parameters
+        ),
+    );
+    push(
+        gaps.unresolved_expression_dependencies,
+        format!(
+            "{} decoded parameter expression symbol(s) name same-stream parameters without a neutral dependency edge.",
+            gaps.unresolved_expression_dependencies
         ),
     );
     push(
@@ -2417,6 +2430,7 @@ mod tests {
                 native_features: 1,
                 unprojected_feature_scopes: 1,
                 unprojected_parameters: 1,
+                unresolved_expression_dependencies: 0,
                 unprojected_history_dependencies: 0,
                 ambiguous_history_dependencies: 0,
                 native_constraints: 1,
