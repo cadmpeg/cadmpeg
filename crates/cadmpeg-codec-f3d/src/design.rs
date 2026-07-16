@@ -1089,25 +1089,32 @@ fn resolved_edge_group(
         .0
         .split_once('#')
         .map_or(feature_id.0.as_str(), |(_, key)| key);
-    if !group.lost_edge_references.is_empty() {
-        return partial_historical_edge_selection(
+    let lost_selection = || {
+        partial_historical_edge_selection(
             group
                 .lost_edge_references
                 .iter()
                 .map(|identity| (identity.as_str(), None)),
             previous_state_id,
             feature_key,
-            state,
+            state.clone(),
             &group.id,
         )
-        .expect("lost reference group has at least one unresolved identity");
-    }
+        .expect("lost reference group has at least one unresolved identity")
+    };
+    let unmatched_selection = || {
+        if group.lost_edge_references.is_empty() {
+            EdgeSelection::Native(group.id.clone())
+        } else {
+            lost_selection()
+        }
+    };
     let stream = native_stream(&group.id);
     let mut matched_operands = Vec::with_capacity(group.members.len());
     let mut member_identities = HashSet::new();
     for member in &group.members {
         if !member_identities.insert(*member) {
-            return EdgeSelection::Native(group.id.clone());
+            return unmatched_selection();
         }
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == stream
@@ -1115,10 +1122,10 @@ fn resolved_edge_group(
                 && operand.record_index == *member
         });
         let Some(operand) = matches.next() else {
-            return EdgeSelection::Native(group.id.clone());
+            return unmatched_selection();
         };
         if matches.next().is_some() {
-            return EdgeSelection::Native(group.id.clone());
+            return unmatched_selection();
         }
         matched_operands.push(operand);
     }
@@ -1149,6 +1156,9 @@ fn resolved_edge_group(
         })
         .or_else(|| scope_partition_edge_group_candidates(group, groups, operands));
     let Some(resolved_slots) = resolved_slots else {
+        if !group.lost_edge_references.is_empty() {
+            return lost_selection();
+        }
         return partial_historical_edge_selection(
             partial_edge_group_members(&matched_operands),
             previous_state_id,
@@ -13190,6 +13200,48 @@ mod relation_tests {
         let mut resolved_operand = edge_operand.clone();
         resolved_operand.id = "resolved".into();
         resolved_operand.resolved_edge_slot = Some(17);
+        let mut proven_operand = edge_operand.clone();
+        proven_operand.resolved_edge_slot = Some(17);
+        let recovered_group = DesignConstructionOperandGroup {
+            id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
+            scope_record_index: 1,
+            scope_reference_ordinal: 0,
+            record_index: 90,
+            byte_offset: 900,
+            class_tag: "288".into(),
+            member_count_offset: 921,
+            members: vec![100],
+            lost_edge_references: vec!["f3d:Design/BulkStream.dat:lost-edge#1".into()],
+            member_offsets: vec![926],
+            identity_record_index: 91,
+            identity_record_offset: 950,
+            role: 0x0000_0008_0000_0000,
+            extrude_role: None,
+            extrude_face_role: None,
+            role_offset: 960,
+            opaque_index: 1,
+            opaque_index_offset: 968,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 972,
+            variant: false,
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 1_000,
+        };
+        let recovered = super::resolved_edge_group(
+            &recovered_group,
+            std::slice::from_ref(&recovered_group),
+            std::slice::from_ref(&proven_operand),
+            Some(8),
+            &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+            None,
+        );
+        assert!(matches!(
+            recovered,
+            cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+                if edges == [cadmpeg_ir::ids::HistoricalEdgeId(
+                    "f3d:history-input:edge#6:fillet:8:17".into()
+                )]
+        ));
         let mut context_operand = edge_operand.clone();
         context_operand.id = "context".into();
         context_operand.changed_boundary_edge_slots.clear();
