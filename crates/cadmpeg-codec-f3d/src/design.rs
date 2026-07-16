@@ -2788,7 +2788,10 @@ pub fn project_sketch_design(
                 weights,
                 control_points,
                 ..
-            } if control_points.iter().all(planar_point) && clamped_nurbs(*degree, knots) => {
+            } if *degree != 0
+                && usize::try_from(*degree).is_ok_and(|degree| control_points.len() > degree)
+                && control_points.iter().all(planar_point) =>
+            {
                 SketchGeometry::Nurbs {
                     degree: *degree,
                     knots: knots.clone(),
@@ -3582,26 +3585,16 @@ fn point_on_sketch_entity(
             knots,
             control_points,
             weights,
-            periodic,
-        } if !periodic
-            && usize::try_from(*degree).ok().is_some_and(|degree| {
-                knots.len() > control_points.len() + degree
-                    && knots[..=degree].iter().all(|knot| *knot == knots[degree])
-                    && knots[control_points.len()..]
-                        .iter()
-                        .all(|knot| *knot == knots[control_points.len()])
-            }) =>
-        {
-            cadmpeg_ir::eval::nurbs_pcurve_contains_point(
-                *degree,
-                knots,
-                control_points,
-                weights.as_deref(),
-                point,
-                tolerance,
-            )
-            .unwrap_or(false)
-        }
+            periodic: false,
+        } => cadmpeg_ir::eval::nurbs_pcurve_contains_point(
+            *degree,
+            knots,
+            control_points,
+            weights.as_deref(),
+            point,
+            tolerance,
+        )
+        .unwrap_or(false),
         _ => false,
     }
 }
@@ -3931,10 +3924,32 @@ fn sketch_entity_endpoints(entity: &cadmpeg_ir::sketches::SketchEntity) -> Optio
             Some([point_at(start_angle.0), point_at(end_angle.0)])
         }
         SketchGeometry::Nurbs {
+            degree,
+            knots,
             control_points,
+            weights,
             periodic: false,
-            ..
-        } => Some([*control_points.first()?, *control_points.last()?]),
+        } => {
+            let degree_index = usize::try_from(*degree).ok()?;
+            let start_parameter = *knots.get(degree_index)?;
+            let end_parameter = *knots.get(control_points.len())?;
+            Some([
+                cadmpeg_ir::eval::nurbs_pcurve_uv(
+                    *degree,
+                    knots,
+                    control_points,
+                    weights.as_deref(),
+                    start_parameter,
+                )?,
+                cadmpeg_ir::eval::nurbs_pcurve_uv(
+                    *degree,
+                    knots,
+                    control_points,
+                    weights.as_deref(),
+                    end_parameter,
+                )?,
+            ])
+        }
         _ => None,
     }
 }
@@ -5782,29 +5797,19 @@ fn point_lies_on_sketch_geometry(
             degree,
             knots,
             control_points,
+            weights,
             periodic: false,
-            ..
         } => {
-            let multiplicity = usize::try_from(*degree)
-                .ok()
-                .and_then(|degree| degree.checked_add(1));
-            let Some(multiplicity) = multiplicity else {
-                return false;
-            };
-            let Some((&first_knot, &last_knot)) = knots.first().zip(knots.last()) else {
-                return false;
-            };
-            knots.len() >= multiplicity * 2
-                && knots[..multiplicity].iter().all(|knot| *knot == first_knot)
-                && knots[knots.len() - multiplicity..]
-                    .iter()
-                    .all(|knot| *knot == last_knot)
-                && control_points
-                    .first()
-                    .zip(control_points.last())
-                    .is_some_and(|(first, last)| {
-                        sketch_points_close(point, *first) || sketch_points_close(point, *last)
-                    })
+            let tolerance = 1.0e-9 * (1.0 + point.u.abs().max(point.v.abs()));
+            cadmpeg_ir::eval::nurbs_pcurve_contains_point(
+                *degree,
+                knots,
+                control_points,
+                weights.as_deref(),
+                point,
+                tolerance,
+            )
+            .unwrap_or(false)
         }
         SketchGeometry::Nurbs { periodic: true, .. } | SketchGeometry::Native { .. } => false,
     }
@@ -6189,17 +6194,6 @@ fn planar_point(point: &Point3) -> bool {
 
 fn positive_sketch_normal(normal: &Vector3) -> bool {
     normal.x.abs() <= 1.0e-9 && normal.y.abs() <= 1.0e-9 && (normal.z - 1.0).abs() <= 1.0e-9
-}
-
-fn clamped_nurbs(degree: u32, knots: &[f64]) -> bool {
-    let multiplicity = degree as usize + 1;
-    knots.len() >= multiplicity.saturating_mul(2)
-        && knots[..multiplicity]
-            .iter()
-            .all(|knot| knot.to_bits() == knots[0].to_bits())
-        && knots[knots.len() - multiplicity..]
-            .iter()
-            .all(|knot| knot.to_bits() == knots[knots.len() - 1].to_bits())
 }
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> {
@@ -11725,12 +11719,13 @@ mod relation_tests {
         parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
         parse_face_operand, parse_parameter_companion, parse_parameter_owner,
         parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        partial_historical_edge_selection, point_on_sketch_entity, project_configurations,
-        project_dimension_constraints, project_extrude, project_parameter_design,
-        project_sketch_constraints, project_sketch_design, radial_dimension_definition,
-        recipe_record_prefix, region_containing_points, remove_dimension_frame_relations,
-        repeated_linear_dimension, resolved_edge_candidate_intersection,
-        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
+        partial_historical_edge_selection, point_lies_on_sketch_geometry, point_on_sketch_entity,
+        project_configurations, project_dimension_constraints, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        radial_dimension_definition, recipe_record_prefix, region_containing_points,
+        remove_dimension_frame_relations, repeated_linear_dimension,
+        resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
+        resolved_face_group, sketch_entity_endpoints, two_locus_distance_dimension,
         unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
         unresolved_configuration_rule_count, unresolved_configuration_suppressed_feature_count,
         unresolved_parameter_expression_dependency_count, untyped_parameter_unit_count,
@@ -14986,7 +14981,7 @@ mod relation_tests {
     }
 
     #[test]
-    fn placed_sketch_projects_point_and_line_in_local_coordinates() {
+    fn placed_sketch_projects_nonclamped_nurbs_with_exact_endpoints() {
         let placement = DesignSketchPlacement {
             id: "f3d:native:placement#0".into(),
             scope_record_index: 177,
@@ -15036,16 +15031,43 @@ mod relation_tests {
                 normal: Vector3::new(0.0, 0.0, 1.0),
             }),
         };
+        let nonclamped_nurbs = SketchCurveIdentity {
+            id: "f3d:native:curve#218".into(),
+            record_index: 218,
+            owner_reference: Some(172),
+            class_tag: "303".into(),
+            byte_offset: 700,
+            geometry_offset: 100,
+            entity_genesis: None,
+            primary_id: 21,
+            secondary_id: 0,
+            geometry: Some(SketchCurveGeometry::Nurbs {
+                carrier_reference: None,
+                subtype_class_tag: "304".into(),
+                subtype_record_index: 219,
+                degree: 2,
+                fit_tolerance: 1.0e-6,
+                scalar_width: 8,
+                knots: vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                weights: Vec::new(),
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                    Point3::new(2.0, 2.0, 0.0),
+                    Point3::new(4.0, 2.0, 0.0),
+                ],
+            }),
+        };
 
         let placements = vec![placement];
         let points = vec![point];
-        let curves = vec![line];
+        let curves = vec![line, nonclamped_nurbs];
         let (sketches, entities) = project_sketch_design(&placements, &points, &curves, 1.0e-6);
         assert_eq!(sketches.len(), 1);
         assert_eq!(sketches[0].origin, Point3::new(10.0, 20.0, 30.0));
         assert_eq!(sketches[0].u_axis, Vector3::new(0.0, 1.0, 0.0));
         assert_eq!(sketches[0].normal, Vector3::new(1.0, 0.0, 0.0));
-        assert_eq!(entities.len(), 2);
+        assert_eq!(entities.len(), 3);
         assert!(entities.iter().any(|entity| matches!(
             entity.geometry,
             SketchGeometry::Point { position } if position == Point2::new(2.5, 4.0)
@@ -15055,6 +15077,17 @@ mod relation_tests {
             SketchGeometry::Line { start, end }
                 if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 6.0)
         )));
+        let nurbs = entities
+            .iter()
+            .find(|entity| entity.native_ref.as_deref() == Some("f3d:native:curve#218"))
+            .expect("non-clamped NURBS projects");
+        let endpoints = sketch_entity_endpoints(nurbs).expect("non-clamped NURBS endpoints");
+        assert_eq!(endpoints, [Point2::new(1.0, 0.0), Point2::new(3.0, 2.0)]);
+        assert!(point_on_sketch_entity(Point2::new(2.0, 1.0), nurbs, 1.0e-9));
+        assert!(point_lies_on_sketch_geometry(
+            Point2::new(2.0, 1.0),
+            &nurbs.geometry
+        ));
 
         let relation = |record_index, member, operand| SketchRelation {
             id: format!("f3d:native:relation#{record_index}"),
