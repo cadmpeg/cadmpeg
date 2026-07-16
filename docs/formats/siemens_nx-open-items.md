@@ -30,3 +30,8 @@ This document records unresolved NX `.prt` byte semantics.
 - The field boundaries and roles of residual `EXTREFSTREAM` tail bytes are unspecified. These bytes are `0x00` padding and small markers interleaved with `e0 + handle:u32` persistent-handle tokens and `0xC0..0xCF + 28-bit-ref` tokens.
 - Parasolid SDL/TYSA attribute field-value serialization is unspecified after the type-81 discriminator selects its type-79 class definition. The attribute-definition catalog includes field type codes such as `SDL/TYSA_DENSITY` and `SDL/TYSA_BLEND_ID`, but the class-specific assignment of referenced value records to declared fields remains unspecified.
 - Material and appearance bindings to face identity are unspecified.
+
+## Embedded JT display model
+
+- The compressed coordinate-component payload following the three uniform quantizers is unspecified. Lossless arrays use a compound floating-point representation with separately framed exponent and mantissa data; it is not three Int32 Compressed Data Packet Mk. 2 component vectors.
+- Reconstruction of triangle-strip connectivity from the decoded topological dual-mesh vectors is unspecified.

@@ -109,12 +109,6 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
 /// endpoint assignment satisfies the check.
 pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
     let surface_evaluator = ModelSurfaceEvaluator::new(ir);
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (surface.id.0.as_str(), surface))
-        .collect::<HashMap<_, _>>();
     let pcurves = ir
         .model
         .pcurves
@@ -155,9 +149,6 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         else {
             continue;
         };
-        let Some(surface) = surfaces.get(face.surface.0.as_str()) else {
-            continue;
-        };
         let Some(edge) = edges.get(coedge.edge.0.as_str()) else {
             continue;
         };
@@ -177,8 +168,8 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             continue;
         };
         let (Some(p0), Some(p1)) = (
-            surface_evaluator.point(&surface.id, uv0.u, uv0.v),
-            surface_evaluator.point(&surface.id, uv1.u, uv1.v),
+            surface_evaluator.point(&face.surface, uv0.u, uv0.v),
+            surface_evaluator.point(&face.surface, uv1.u, uv1.v),
         ) else {
             continue;
         };
