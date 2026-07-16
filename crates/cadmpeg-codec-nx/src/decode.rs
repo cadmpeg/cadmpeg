@@ -3816,16 +3816,29 @@ fn lift_periodic_parameter(value: f64, reference: f64, period: f64) -> f64 {
     value + ((reference - value) / period).round() * period
 }
 
-fn surface_parameter_periods(ir: &CadIr, surface: &SurfaceId) -> [Option<f64>; 2] {
+/// Return supported parameter periods while rejecting cyclic procedural support graphs.
+pub(crate) fn surface_parameter_periods(ir: &CadIr, surface: &SurfaceId) -> [Option<f64>; 2] {
+    surface_parameter_periods_inner(ir, surface, &mut BTreeSet::new())
+}
+
+fn surface_parameter_periods_inner(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    visiting: &mut BTreeSet<SurfaceId>,
+) -> [Option<f64>; 2] {
+    if !visiting.insert(surface.clone()) {
+        return [None, None];
+    }
     let Some(carrier) = ir
         .model
         .surfaces
         .iter()
         .find(|candidate| &candidate.id == surface)
     else {
+        visiting.remove(surface);
         return [None, None];
     };
-    match &carrier.geometry {
+    let periods = match &carrier.geometry {
         SurfaceGeometry::Cylinder { .. }
         | SurfaceGeometry::Cone { .. }
         | SurfaceGeometry::Sphere { .. } => [Some(std::f64::consts::TAU), None],
@@ -3837,13 +3850,15 @@ fn surface_parameter_periods(ir: &CadIr, surface: &SurfaceId) -> [Option<f64>; 2
             .find(|candidate| &candidate.id == construction && &candidate.surface == surface)
             .and_then(|procedural| match &procedural.definition {
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
-                    Some(surface_parameter_periods(ir, support))
+                    Some(surface_parameter_periods_inner(ir, support, visiting))
                 }
                 _ => None,
             })
             .unwrap_or([None, None]),
         _ => [None, None],
-    }
+    };
+    visiting.remove(surface);
+    periods
 }
 
 fn correct_intersection_parameters(

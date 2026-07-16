@@ -11212,6 +11212,45 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
 }
 
 #[test]
+fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
+    use cadmpeg_ir::geometry::{ProceduralSurface, Surface};
+    use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let surfaces = [SurfaceId("cycle-a".into()), SurfaceId("cycle-b".into())];
+    let constructions = [
+        ProceduralSurfaceId("cycle-construction-a".into()),
+        ProceduralSurfaceId("cycle-construction-b".into()),
+    ];
+    for side in 0..2 {
+        ir.model.surfaces.push(Surface {
+            id: surfaces[side].clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: constructions[side].clone(),
+            },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: constructions[side].clone(),
+            surface: surfaces[side].clone(),
+            definition: ProceduralSurfaceDefinition::Offset {
+                support: surfaces[1 - side].clone(),
+                distance: 1.0,
+                u_sense: 0,
+                v_sense: 0,
+                extension_flags: Vec::new(),
+            },
+            cache_fit_tolerance: None,
+        });
+    }
+
+    assert_eq!(
+        crate::decode::surface_parameter_periods(&ir, &surfaces[0]),
+        [None, None]
+    );
+}
+
+#[test]
 fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
     let mut control_points = Vec::new();
     for (x, z) in [
