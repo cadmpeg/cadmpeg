@@ -15,7 +15,8 @@ use std::fmt;
 use std::io::{Read, Seek, Write};
 
 use crate::decode::{
-    DecodeArena, DecodeContext, DecodePolicy, ErrorContext, ResourceLimit, SourceLocation, View,
+    DecodeArena, DecodeContext, DecodeMode, DecodePolicy, ErrorContext, InspectOptions,
+    ResourceLimit, SourceLocation, View,
 };
 use crate::document::CadIr;
 use crate::report::DecodeReport;
@@ -177,8 +178,17 @@ pub trait Codec {
     /// Judge, from a leading byte prefix, whether this codec applies.
     fn detect(&self, prefix: &[u8]) -> Confidence;
 
-    /// Enumerate the container's streams/segments without decoding geometry.
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>;
+    /// Enumerate the acquired root view's streams/segments without decoding
+    /// geometry.
+    ///
+    /// Implemented by each codec; never called by the CLI or registry. The
+    /// provided [`Codec::inspect`] wrapper acquires the root under the
+    /// inspection's input limit and runs this under an internal context.
+    fn inspect_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError>;
 
     /// Decode the acquired root view, reporting incomplete or approximate
     /// transfer.
@@ -191,6 +201,32 @@ pub trait Codec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<DecodeResult, CodecError>;
+
+    /// Inspect the source under its own input limit, enforcing the root-input
+    /// bound so an inspection cannot become an amplification vector.
+    ///
+    /// The public inspection path. It acquires the root buffer under
+    /// `options.limits.max_input_bytes` through an internal context, then runs
+    /// [`Codec::inspect_impl`]. Inspection commits no records and produces no
+    /// [`DecodeResult`], so there is no finalize step; the enforcement it adds
+    /// over a bare reader is the bounded root read.
+    ///
+    /// **Do not override this method.** The internal context — and the input
+    /// limit it applies — holds only because every inspection passes through
+    /// this wrapper.
+    fn inspect(
+        &self,
+        reader: &mut dyn ReadSeek,
+        options: &InspectOptions,
+    ) -> Result<ContainerSummary, CodecError> {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy {
+            mode: DecodeMode::Salvage,
+            limits: options.limits,
+        };
+        let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy)?;
+        self.inspect_impl(&ctx, root)
+    }
 
     /// Decode the source, enforcing root-input limits and session invariants.
     ///

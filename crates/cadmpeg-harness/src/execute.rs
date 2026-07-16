@@ -9,7 +9,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::{Codec, CodecError, DecodeOptions, DecodeResult};
+use cadmpeg_ir::{Codec, CodecError, DecodeOptions, DecodeResult, InspectOptions};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{Operation, PolicyProfile, ResultClass};
@@ -109,8 +109,11 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
             }
         }
         Operation::Inspect => {
+            let options = InspectOptions {
+                limits: profile.policy().limits,
+            };
             let mut reader = Cursor::new(bytes.to_vec());
-            match codec.inspect(&mut reader) {
+            match codec.inspect(&mut reader, &options) {
                 Ok(summary) => {
                     let json = serde_json::to_string(&summary)
                         .unwrap_or_else(|error| format!("summary-json-error:{error}"));

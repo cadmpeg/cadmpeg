@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::{validate, CadIr};
+use cadmpeg_ir::{validate, CadIr, InspectOptions};
 
 use crate::loader::{self, read_prefix};
 use crate::registry::Registry;
@@ -91,7 +91,7 @@ pub fn inspect(
     };
     let mut file = File::open(path)?;
     let summary = codec
-        .inspect(&mut file)
+        .inspect(&mut file, &InspectOptions::default())
         .with_context(|| format!("inspecting {}", path.display()))?;
     if json {
         println!(

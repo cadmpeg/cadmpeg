@@ -5,9 +5,7 @@
 //! support ladder. The codec provides bounded 3DM container inspection, typed
 //! decoding, and explicitly versioned semantic native writing.
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder, ReadSeek,
-};
+use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
@@ -101,8 +99,13 @@ impl Codec for RhinoCodec {
         }
     }
 
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        container::inspect(reader)
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        let mut reader = std::io::Cursor::new(root.window());
+        container::inspect(&mut reader)
     }
 
     fn decode_impl(

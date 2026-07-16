@@ -10,6 +10,7 @@ use std::io::Cursor;
 
 use cadmpeg_codec_f3d::F3dCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::InspectOptions;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
@@ -21,7 +22,7 @@ fuzz_target!(|data: &[u8]| {
     // Inspection and decode read from a seekable cursor; errors are fine, panics
     // are not.
     let mut inspect_cur = Cursor::new(data);
-    let _ = codec.inspect(&mut inspect_cur);
+    let _ = codec.inspect(&mut inspect_cur, &InspectOptions::default());
 
     let mut decode_cur = Cursor::new(data);
     let _ = codec.decode(&mut decode_cur, &DecodeOptions::default());

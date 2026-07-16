@@ -3,6 +3,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecError, Confidence, DecodeOptions};
 use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::InspectOptions;
 use cadmpeg_ir::IR_VERSION;
 
 use super::chunks::{
@@ -1518,7 +1519,9 @@ fn scans_metadata_tables_and_reports_offsets() {
             table(archive, 0x1000_0013, &[object]),
         ],
     );
-    let summary = RhinoCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    let summary = RhinoCodec
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .unwrap();
     assert_eq!(summary.container_kind, "3dm-chunks");
     assert_eq!(summary.entries.len(), 4);
     assert!(summary
@@ -1548,7 +1551,9 @@ fn aggregates_object_classes_after_table_entries() {
             table(archive, 0x1000_0013, &[first, second]),
         ],
     );
-    let summary = RhinoCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    let summary = RhinoCodec
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .unwrap();
     assert_eq!(summary.entries.len(), 5);
     assert_eq!(summary.entries[3].role, "object-class");
     assert_eq!(
@@ -1622,7 +1627,9 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
 fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
     for version in ["1", "2", "5", "999"] {
         let bytes = header(version);
-        let summary = RhinoCodec.inspect(&mut Cursor::new(bytes.clone())).unwrap();
+        let summary = RhinoCodec
+            .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
+            .unwrap();
         assert!(summary.entries.is_empty());
         assert_eq!(summary.container_kind, "3dm-chunks");
         let result = RhinoCodec.decode(
@@ -1643,7 +1650,7 @@ fn requires_end_of_table_and_rejects_wrong_order() {
     missing.extend(long_chunk(archive, 1, b"comment"));
     missing.extend(long_chunk(archive, 0x1000_0014, &[]));
     assert!(matches!(
-        RhinoCodec.inspect(&mut Cursor::new(missing)),
+        RhinoCodec.inspect(&mut Cursor::new(missing), &InspectOptions::default()),
         Err(CodecError::Malformed(_))
     ));
 
@@ -1655,7 +1662,7 @@ fn requires_end_of_table_and_rejects_wrong_order() {
         ],
     );
     assert!(matches!(
-        RhinoCodec.inspect(&mut Cursor::new(bytes)),
+        RhinoCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()),
         Err(CodecError::Malformed(_))
     ));
 }
@@ -1723,7 +1730,7 @@ fn requires_properties_settings_and_object_tables() {
     ] {
         let bytes = minimal_document("50", &tables);
         assert!(matches!(
-            RhinoCodec.inspect(&mut Cursor::new(bytes)),
+            RhinoCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()),
             Err(CodecError::Malformed(message))
                 if message.contains("properties, settings, and object tables")
         ));
@@ -1745,7 +1752,9 @@ fn crc_mismatch_is_a_summary_warning_and_later_record_survives() {
             table(archive, 0x1000_0013, &[bad_object, good_object]),
         ],
     );
-    let summary = RhinoCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    let summary = RhinoCodec
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .unwrap();
     assert!(summary
         .notes
         .iter()
@@ -1796,7 +1805,9 @@ fn repeated_consecutive_user_tables_are_allowed() {
             table(archive, 0x1000_0017, &[]),
         ],
     );
-    let summary = RhinoCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    let summary = RhinoCodec
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .unwrap();
     assert_eq!(summary.entries.len(), 5);
 }
 
@@ -1814,7 +1825,9 @@ fn obsolete_layerset_occupies_the_layer_group_compatibility_slot() {
             table(archive, 0x1000_0013, &[]),
         ],
     );
-    assert!(RhinoCodec.inspect(&mut Cursor::new(valid)).is_ok());
+    assert!(RhinoCodec
+        .inspect(&mut Cursor::new(valid), &InspectOptions::default())
+        .is_ok());
 
     let invalid = minimal_document(
         "50",
@@ -1827,7 +1840,7 @@ fn obsolete_layerset_occupies_the_layer_group_compatibility_slot() {
         ],
     );
     assert!(matches!(
-        RhinoCodec.inspect(&mut Cursor::new(invalid)),
+        RhinoCodec.inspect(&mut Cursor::new(invalid), &InspectOptions::default()),
         Err(CodecError::Malformed(_))
     ));
 }
@@ -1843,7 +1856,9 @@ fn accepts_table_crc_with_its_declared_bound() {
             table(archive, 0x1000_0013, &[]),
         ],
     );
-    let summary = RhinoCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+    let summary = RhinoCodec
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .unwrap();
     assert_eq!(summary.entries.len(), 3);
 }
 
@@ -1863,7 +1878,7 @@ fn rejects_short_object_and_unknown_table_records() {
         ],
     );
     assert!(matches!(
-        RhinoCodec.inspect(&mut Cursor::new(short_object)),
+        RhinoCodec.inspect(&mut Cursor::new(short_object), &InspectOptions::default()),
         Err(CodecError::Malformed(_))
     ));
 
@@ -1875,7 +1890,9 @@ fn rejects_short_object_and_unknown_table_records() {
             table(archive, 0x1000_0013, &[]),
         ],
     );
-    let summary = RhinoCodec.inspect(&mut Cursor::new(unknown)).unwrap();
+    let summary = RhinoCodec
+        .inspect(&mut Cursor::new(unknown), &InspectOptions::default())
+        .unwrap();
     assert!(summary
         .notes
         .iter()

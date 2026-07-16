@@ -7,6 +7,7 @@
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::InspectOptions;
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
@@ -8818,7 +8819,7 @@ fn inspect_enumerates_and_reads_headers() {
     let codec = F3dCodec;
     let f3d = synthetic_f3d(true);
     let mut cur = Cursor::new(f3d);
-    let summary = codec.inspect(&mut cur).unwrap();
+    let summary = codec.inspect(&mut cur, &InspectOptions::default()).unwrap();
 
     assert_eq!(summary.format, "f3d");
     assert_eq!(summary.container_kind, "zip");

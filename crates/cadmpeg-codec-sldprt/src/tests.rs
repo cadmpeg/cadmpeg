@@ -7,6 +7,7 @@
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::InspectOptions;
 
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
@@ -1509,7 +1510,9 @@ fn parasolid_extracts_every_direct_stream_in_block() {
 fn inspect_enumerates_every_structure() {
     let f = synthetic_sldprt();
     let mut cur = Cursor::new(f);
-    let summary = SldprtCodec.inspect(&mut cur).unwrap();
+    let summary = SldprtCodec
+        .inspect(&mut cur, &InspectOptions::default())
+        .unwrap();
     assert_eq!(summary.format, "sldprt");
     assert_eq!(summary.container_kind, "sldprt-blocks");
     assert_eq!(

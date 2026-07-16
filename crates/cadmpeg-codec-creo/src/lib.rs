@@ -15,10 +15,11 @@
 //!
 //! use cadmpeg_codec_creo::CreoCodec;
 //! use cadmpeg_ir::codec::Codec;
+//! use cadmpeg_ir::InspectOptions;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.prt")?;
-//! let summary = CreoCodec.inspect(&mut input)?;
+//! let summary = CreoCodec.inspect(&mut input, &InspectOptions::default())?;
 //! println!("{} sections", summary.entries.len());
 //! # Ok(())
 //! # }
@@ -61,7 +62,7 @@ pub mod surface;
 pub mod topology;
 
 use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
+    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult,
 };
 use cadmpeg_ir::decode::{DecodeContext, View};
 
@@ -84,8 +85,13 @@ impl Codec for CreoCodec {
         }
     }
 
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan(reader)?;
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        let mut reader = std::io::Cursor::new(root.window());
+        let scan = container::scan(&mut reader)?;
         Ok(container::summarize(&scan))
     }
 

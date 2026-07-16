@@ -11,6 +11,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::InspectOptions;
 
 use crate::variant::Variant;
 use crate::CatiaCodec;
@@ -1510,7 +1511,9 @@ fn scan_parses_directory_and_identifies_standard() {
 fn inspect_enumerates_streams_and_names_variant() {
     let f = standard_catpart();
     let mut cur = Cursor::new(f);
-    let summary = CatiaCodec.inspect(&mut cur).unwrap();
+    let summary = CatiaCodec
+        .inspect(&mut cur, &InspectOptions::default())
+        .unwrap();
     assert_eq!(summary.format, "catia");
     assert_eq!(summary.container_kind, "v5-cfv2");
     assert!(summary.entries.iter().any(|e| e.name == "MainDataStream"));

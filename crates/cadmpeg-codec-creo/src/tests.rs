@@ -11,6 +11,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::Exactness;
+use cadmpeg_ir::InspectOptions;
 
 use crate::container::{self, role, Layout};
 use crate::{decode, CreoCodec};
@@ -1596,7 +1597,9 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
 fn inspect_summary_has_layout_and_census_notes() {
     let data = build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(7, 9))]);
     let mut reader = Cursor::new(data);
-    let summary = CreoCodec.inspect(&mut reader).expect("inspect");
+    let summary = CreoCodec
+        .inspect(&mut reader, &InspectOptions::default())
+        .expect("inspect");
     assert_eq!(summary.format, "creo");
     assert_eq!(summary.container_kind, "psb");
     assert!(summary.notes.iter().any(|n| n.contains("layout: ND")));

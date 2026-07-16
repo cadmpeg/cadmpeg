@@ -8,6 +8,7 @@
 
 use cadmpeg_codec_sldprt::SldprtCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::InspectOptions;
 use libfuzzer_sys::fuzz_target;
 use std::io::Cursor;
 
@@ -17,7 +18,7 @@ fuzz_target!(|data: &[u8]| {
     let _ = codec.detect(data);
 
     let mut inspect_cur = Cursor::new(data);
-    let _ = codec.inspect(&mut inspect_cur);
+    let _ = codec.inspect(&mut inspect_cur, &InspectOptions::default());
 
     let mut decode_cur = Cursor::new(data);
     let _ = codec.decode(&mut decode_cur, &DecodeOptions::default());

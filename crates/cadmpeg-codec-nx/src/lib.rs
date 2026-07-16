@@ -70,7 +70,6 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions, DecodeResult,
-    ReadSeek,
 };
 use cadmpeg_ir::decode::{DecodeContext, View};
 
@@ -91,8 +90,13 @@ impl Codec for NxCodec {
         }
     }
 
-    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        let scan = decode::scan(reader)?;
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        let mut reader = std::io::Cursor::new(root.window());
+        let scan = decode::scan(&mut reader)?;
         Ok(summarize(&scan))
     }
 

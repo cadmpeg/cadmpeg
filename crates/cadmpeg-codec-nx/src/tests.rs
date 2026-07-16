@@ -17,6 +17,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::Exactness;
+use cadmpeg_ir::InspectOptions;
 
 use crate::container;
 use crate::parasolid::{self, StreamKind};
@@ -1605,7 +1606,9 @@ fn container_parses_header_and_directory() {
 #[test]
 fn inspect_reports_bounded_nx_object_model_entities() {
     let mut cur = Cursor::new(prt_with_indexed_om_section());
-    let summary = NxCodec.inspect(&mut cur).unwrap();
+    let summary = NxCodec
+        .inspect(&mut cur, &InspectOptions::default())
+        .unwrap();
     assert!(summary.notes.iter().any(|note| {
         note == "NX object model: 1 indexed section(s), 2 bounded entity record(s)"
     }));
@@ -2859,7 +2862,9 @@ fn container_only_preserves_streams_without_geometry() {
 #[test]
 fn inspect_enumerates_streams_and_names_schema() {
     let mut cur = Cursor::new(single_part_prt());
-    let summary = NxCodec.inspect(&mut cur).unwrap();
+    let summary = NxCodec
+        .inspect(&mut cur, &InspectOptions::default())
+        .unwrap();
     assert_eq!(summary.format, "nx");
     assert_eq!(summary.container_kind, "splmsstr");
     assert!(summary.entries.iter().any(|e| e.role == "parasolid-stream"));
