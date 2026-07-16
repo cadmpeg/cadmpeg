@@ -1744,8 +1744,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 })
                 .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
         });
-        let governs_following_dimension = design::governing_dimension_companion_record_index(
-            pair,
+        let governs_following_dimension = design::following_dimension_companion_record_index(
+            &pair.id,
+            pair.paired_byte_offset,
             &native.design_parameter_owners,
             &native.design_parameters,
         ) == Some(pair.governing_companion_record_index);
@@ -1907,6 +1908,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 })
                 .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
         });
+        let governs_following_dimension = design::following_dimension_companion_record_index(
+            &pair.id,
+            pair.paired_byte_offset,
+            &native.design_parameter_owners,
+            &native.design_parameters,
+        ) == Some(pair.governing_companion_record_index);
         let companion_has_typed_frame = locus_pair_companions
             .contains(&(native_stream, pair.companion_record_index))
             || locus_group_companions.contains(&(native_stream, pair.companion_record_index));
@@ -1919,6 +1926,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .all(|byte| byte.is_ascii_digit())
             && companion_contains_frame
             && dimension_companion
+            && governs_following_dimension
             && !companion_has_typed_frame
             && pair.frame_length > 54
             && pair.paired_byte_offset == pair.byte_offset.saturating_add(pair.frame_length)
@@ -2241,7 +2249,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for pair in &native.design_dimension_null_locus_pairs {
         let native_stream = design_stream(&pair.id);
         let owner = companions_by_index
-            .get(&(native_stream, pair.companion_record_index))
+            .get(&(native_stream, pair.governing_companion_record_index))
             .and_then(|companion| {
                 owners_by_index.get(&(native_stream, companion.owner_record_index))
             })

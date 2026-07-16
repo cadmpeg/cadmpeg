@@ -4047,7 +4047,24 @@ pub fn project_dimension_constraints(
                     .zip(&entities)
                     .map(|(locus, entity)| (locus.geometry_record_index, *entity))
                     .collect::<HashMap<_, _>>();
-                return exact_counted_offset(&loci, &group.return_members, &entities_by_record);
+                let mut definition =
+                    exact_counted_offset(&loci, &group.return_members, &entities_by_record)?;
+                let Definition::Offset {
+                    signed_distance,
+                    parameter: driving_parameter,
+                    parameter_factor,
+                    ..
+                } = &mut definition
+                else {
+                    unreachable!("exact_counted_offset always returns an offset")
+                };
+                if let Some(factor) =
+                    offset_parameter_factor(signed_distance.0, parameter.evaluated_value * 10.0)
+                {
+                    *driving_parameter = Some(parameter_id);
+                    *parameter_factor = Some(factor);
+                }
+                return Some(definition);
             }
             if let Some(definition) = directional_point_dimension(
                 &entities,
@@ -4083,6 +4100,21 @@ pub fn project_dimension_constraints(
                 parameter_id,
             )
             .map(|_| (scope.to_owned(), pair.governing_companion_record_index))
+        })
+        .collect::<HashSet<_>>();
+    let parameterized_offset_companions = groups
+        .iter()
+        .filter_map(|group| {
+            let scope = native_stream(&group.id)?;
+            let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
+            matches!(
+                exact_group_definition(scope, group, parameter, parameter_id),
+                Some(Definition::Offset {
+                    parameter: Some(_),
+                    ..
+                })
+            )
+            .then(|| (scope.to_owned(), group.companion_record_index))
         })
         .collect::<HashSet<_>>();
     let locus_companions = pairs
@@ -4161,7 +4193,13 @@ pub fn project_dimension_constraints(
         }))
         .chain(null_pairs.iter().filter_map(|pair| {
             let scope = native_stream(&pair.id)?;
-            let (parameter, parameter_id) = parameter_for(scope, pair.companion_record_index)?;
+            if parameterized_offset_companions
+                .contains(&(scope.to_owned(), pair.governing_companion_record_index))
+            {
+                return None;
+            }
+            let (parameter, parameter_id) =
+                parameter_for(scope, pair.governing_companion_record_index)?;
             let indices = [pair.geometry_record_index];
             let sketch = sketch_for_geometry(scope, &indices)?;
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "null-pair");
@@ -4531,7 +4569,7 @@ pub fn bind_dimension_loci(
             continue;
         };
         let Some(parameter_scope) = scopes_by_companion
-            .get(&(scope, pair.companion_record_index))
+            .get(&(scope, pair.governing_companion_record_index))
             .copied()
         else {
             continue;
@@ -5340,7 +5378,23 @@ fn exact_counted_offset(
     Some(Definition::Offset {
         pairs,
         signed_distance: Length(signed_distance?),
+        parameter: None,
+        parameter_factor: None,
     })
+}
+
+fn offset_parameter_factor(signed_distance: f64, parameter_value: f64) -> Option<f64> {
+    let scale = 1.0 + signed_distance.abs().max(parameter_value.abs());
+    (signed_distance.is_finite()
+        && parameter_value.is_finite()
+        && (signed_distance.abs() - parameter_value.abs()).abs() <= scale * 1.0e-9)
+        .then(|| {
+            if signed_distance.signum() == parameter_value.signum() {
+                1.0
+            } else {
+                -1.0
+            }
+        })
 }
 
 fn line_angle_matches(
@@ -5432,6 +5486,8 @@ fn exact_offset_constraint(
     Some(Definition::Offset {
         pairs,
         signed_distance: Length(signed_distance?),
+        parameter: None,
+        parameter_factor: None,
     })
 }
 
@@ -6538,9 +6594,12 @@ pub fn decode_dimension_locus_pairs(
             "f3d:{}:design-dimension-locus-pair#{}",
             entry.name, pair.byte_offset
         );
-        let Some(governing_companion_record_index) =
-            governing_dimension_companion_record_index(&pair, owners, parameters.values().copied())
-        else {
+        let Some(governing_companion_record_index) = following_dimension_companion_record_index(
+            &pair.id,
+            pair.paired_byte_offset,
+            owners,
+            parameters.values().copied(),
+        ) else {
             continue;
         };
         pair.governing_companion_record_index = governing_companion_record_index;
@@ -6550,12 +6609,13 @@ pub fn decode_dimension_locus_pairs(
     Ok(out)
 }
 
-pub(crate) fn governing_dimension_companion_record_index<'a>(
-    pair: &DesignDimensionLocusPair,
+pub(crate) fn following_dimension_companion_record_index<'a>(
+    native_id: &str,
+    paired_byte_offset: u64,
     owners: &[DesignParameterOwner],
     parameter_records: impl IntoIterator<Item = &'a DesignParameter>,
 ) -> Option<u32> {
-    let scope = native_stream(&pair.id)?;
+    let scope = native_stream(native_id)?;
     let mut parameters = HashMap::<u32, Option<&DesignParameter>>::new();
     for parameter in parameter_records
         .into_iter()
@@ -6568,7 +6628,7 @@ pub(crate) fn governing_dimension_companion_record_index<'a>(
     }
     let mut matches = owners.iter().filter(|owner| {
         native_stream(&owner.id) == Some(scope)
-            && owner.byte_offset == pair.paired_byte_offset.saturating_add(59)
+            && owner.byte_offset == paired_byte_offset.saturating_add(59)
             && parameters
                 .get(&owner.parameter_record_index)
                 .and_then(|parameter| *parameter)
@@ -6685,7 +6745,6 @@ pub fn decode_dimension_null_locus_pairs(
     companions: &[DesignParameterCompanion],
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
-    placements: &[DesignSketchPlacement],
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
     points: &[SketchPoint],
@@ -6748,30 +6807,6 @@ pub fn decode_dimension_null_locus_pairs(
             continue;
         };
         let scope = native_stream(&companion.id).expect("entry matched companion stream");
-        let expected_owner = owners
-            .iter()
-            .find(|owner| {
-                native_stream(&owner.id) == Some(scope)
-                    && owner.companion_record_index == companion.record_index
-            })
-            .and_then(|owner| {
-                placements.iter().find(|placement| {
-                    native_stream(&placement.id) == Some(scope)
-                        && placement.scope_record_index == owner.scope_record_index
-                })
-            })
-            .and_then(|placement| u32::try_from(placement.entity_suffix).ok());
-        let geometry_owners = points
-            .iter()
-            .filter(|point| native_stream(&point.id) == Some(scope))
-            .map(|point| (point.record_index, point.owner_reference))
-            .chain(
-                curves
-                    .iter()
-                    .filter(|curve| native_stream(&curve.id) == Some(scope))
-                    .map(|curve| (curve.record_index, curve.owner_reference)),
-            )
-            .collect::<HashMap<_, _>>();
         let geometry_indices = points
             .iter()
             .filter(|point| native_stream(&point.id) == Some(scope))
@@ -6797,13 +6832,6 @@ pub fn decode_dimension_null_locus_pairs(
         let parse = |at| {
             parse_dimension_null_locus_pair(bytes, at, companion.record_index, &geometry_indices)
                 .filter(|pair| usize::try_from(pair.paired_byte_offset).is_ok_and(|at| at < end))
-                .filter(|pair| {
-                    geometry_owners
-                        .get(&pair.geometry_record_index)
-                        .copied()
-                        .flatten()
-                        .is_none_or(|owner| Some(owner) == expected_owner)
-                })
         };
         let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
         if candidates.is_empty() {
@@ -6826,6 +6854,15 @@ pub fn decode_dimension_null_locus_pairs(
             "f3d:{}:design-dimension-null-locus-pair#{}",
             entry.name, pair.byte_offset
         );
+        let Some(governing_companion_record_index) = following_dimension_companion_record_index(
+            &pair.id,
+            pair.paired_byte_offset,
+            owners,
+            parameters.values().copied(),
+        ) else {
+            continue;
+        };
+        pair.governing_companion_record_index = governing_companion_record_index;
         out.push(pair);
     }
     out.sort_by_key(|pair| pair.id.clone());
@@ -6870,6 +6907,7 @@ fn parse_dimension_null_locus_pair(
     Some(DesignDimensionNullLocusPair {
         id: String::new(),
         companion_record_index,
+        governing_companion_record_index: companion_record_index,
         byte_offset: start as u64,
         class_tag,
         record_index,
@@ -11050,7 +11088,7 @@ mod relation_tests {
         identity_matrix, indexed_record_containing, indirect_angular_lines,
         neutral_dimension_constraint_id, neutral_feature_id_parts, neutral_parameter_id_parts,
         neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id,
-        next_indexed_record_offset, null_locus_dimension_definition,
+        next_indexed_record_offset, null_locus_dimension_definition, offset_parameter_factor,
         parse_construction_operand_group, parse_construction_operand_identity,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -12318,16 +12356,18 @@ mod relation_tests {
             companion_record_index: 302,
         };
         assert_eq!(
-            super::governing_dimension_companion_record_index(
-                &pair,
+            super::following_dimension_companion_record_index(
+                &pair.id,
+                pair.paired_byte_offset,
                 std::slice::from_ref(&owner),
                 std::slice::from_ref(&parameter),
             ),
             Some(302)
         );
         assert_eq!(
-            super::governing_dimension_companion_record_index(
-                &pair,
+            super::following_dimension_companion_record_index(
+                &pair.id,
+                pair.paired_byte_offset,
                 &[owner.clone(), owner],
                 std::slice::from_ref(&parameter),
             ),
@@ -12367,6 +12407,7 @@ mod relation_tests {
         let pair = parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1109]))
             .expect("null-locus dimension frame");
         assert_eq!(pair.companion_record_index, 1290);
+        assert_eq!(pair.governing_companion_record_index, 1290);
         assert_eq!(pair.record_index, 1394);
         assert_eq!(pair.frame_length, 74);
         assert_eq!(pair.null_role, 10);
@@ -14442,6 +14483,8 @@ mod relation_tests {
         let SketchConstraintDefinition::Offset {
             pairs,
             signed_distance,
+            parameter,
+            parameter_factor,
         } = definition
         else {
             panic!("expected neutral offset constraint")
@@ -14452,6 +14495,8 @@ mod relation_tests {
         assert_eq!(pairs[1].source, source_vertical.id);
         assert_eq!(pairs[1].result, result_vertical.id);
         assert!((signed_distance.0 + 2.0).abs() <= 1.0e-9);
+        assert_eq!(parameter, None);
+        assert_eq!(parameter_factor, None);
     }
 
     #[test]
@@ -14789,6 +14834,8 @@ mod relation_tests {
         let SketchConstraintDefinition::Offset {
             pairs,
             signed_distance,
+            parameter,
+            parameter_factor,
         } = definition
         else {
             panic!("expected offset")
@@ -14798,6 +14845,17 @@ mod relation_tests {
         assert_eq!(pairs[1].source, top.id);
         assert_eq!(pairs[1].result, inset_top.id);
         assert!((signed_distance.0 + 2.0).abs() <= 1.0e-9);
+        assert_eq!(parameter, None);
+        assert_eq!(parameter_factor, None);
+    }
+
+    #[test]
+    fn offset_parameter_factor_preserves_curve_direction() {
+        assert_eq!(offset_parameter_factor(2.0, 2.0), Some(1.0));
+        assert_eq!(offset_parameter_factor(2.0, -2.0), Some(-1.0));
+        assert_eq!(offset_parameter_factor(-2.0, 2.0), Some(-1.0));
+        assert_eq!(offset_parameter_factor(2.0, 3.0), None);
+        assert_eq!(offset_parameter_factor(f64::NAN, 2.0), None);
     }
 
     #[test]

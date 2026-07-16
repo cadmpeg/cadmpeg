@@ -222,8 +222,18 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             Constraint::Offset {
                 pairs,
                 signed_distance,
+                parameter,
+                parameter_factor,
             } => {
-                !pairs.is_empty() && signed_distance.0.is_finite() && signed_distance.0.abs() > 0.0
+                let valid_parameter = match (parameter, parameter_factor) {
+                    (None, None) => true,
+                    (Some(_), Some(factor)) => factor.abs() == 1.0,
+                    _ => false,
+                };
+                !pairs.is_empty()
+                    && signed_distance.0.is_finite()
+                    && signed_distance.0.abs() > 0.0
+                    && valid_parameter
             }
             Constraint::Native {
                 native_kind,

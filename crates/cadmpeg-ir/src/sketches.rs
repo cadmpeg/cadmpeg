@@ -273,6 +273,12 @@ pub enum SketchConstraintDefinition {
         pairs: Vec<SketchOffsetPair>,
         /// Distance along each source entity's stored left normal.
         signed_distance: Length,
+        /// Driving offset-distance parameter, when the source relation is dimensional.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter: Option<ParameterId>,
+        /// Multiplier from the driving parameter value to `signed_distance`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter_factor: Option<f64>,
     },
     /// Circular or elliptical entities share a center.
     Concentric {

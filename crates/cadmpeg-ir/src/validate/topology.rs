@@ -1259,12 +1259,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             Definition::Midpoint { point, entity } => {
                 (vec![locus_entity(point).clone(), entity.clone()], None)
             }
-            Definition::Offset { pairs, .. } => (
+            Definition::Offset {
+                pairs, parameter, ..
+            } => (
                 pairs
                     .iter()
                     .flat_map(|pair| [pair.source.clone(), pair.result.clone()])
                     .collect(),
-                None,
+                parameter.as_ref().map(|parameter| parameter.0.as_str()),
             ),
             Definition::Symmetric {
                 first,

@@ -517,6 +517,8 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
                 result: entity.clone(),
             }],
             signed_distance: Length(-2.0),
+            parameter: Some(parameter.clone()),
+            parameter_factor: Some(-1.0),
         },
         SketchConstraintDefinition::Concentric {
             first: entity.clone(),
