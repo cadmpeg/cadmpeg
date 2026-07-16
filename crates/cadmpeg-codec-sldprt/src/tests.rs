@@ -8577,6 +8577,85 @@ fn decode_evaluates_parameter_dependency_expressions() {
     assert_eq!(values["Invalid"], None);
     assert_eq!(values["Invalid area"], None);
     assert_eq!(values["Invalid branches"], None);
+    let ordinal = |name: &str| {
+        decoded
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap()
+            .ordinal
+    };
+    assert!(ordinal("Later") < ordinal("Forward"));
+    assert!(!cadmpeg_ir::validate(&decoded.ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("parameter dependency")));
+}
+
+#[test]
+fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
+    use crate::records::FeatureContent;
+    use cadmpeg_ir::features::ParameterValue;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Result">Input + 1</Dimension><Dimension Name="Input">2</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut parameter_order = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.ordinal, parameter.name.as_str()))
+        .collect::<Vec<_>>();
+    parameter_order.sort_unstable();
+    assert_eq!(parameter_order, vec![(0, "Input"), (1, "Result")]);
+
+    let result = decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "Result")
+        .unwrap();
+    result.expression = "Input + 2".into();
+    result.value = Some(ParameterValue::Integer(4));
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(
+        feature
+            .content
+            .iter()
+            .filter_map(|content| match content {
+                FeatureContent::Dimension(name) => Some(name.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        vec!["Input", "Result"]
+    );
+    let result = regenerated
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Result")
+        .unwrap();
+    assert_eq!(result.expression, "Input + 2");
+    assert_eq!(result.value, Some(ParameterValue::Integer(4)));
+    assert_eq!(result.dependencies.len(), 1);
 }
 
 #[test]

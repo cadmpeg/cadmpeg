@@ -560,6 +560,7 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
         })
         .collect::<Vec<_>>();
     populate_parameter_dependencies(&mut parameters, &feature_names);
+    order_parameters_by_dependencies(&mut parameters);
     evaluate_parameter_expressions(&mut parameters, &feature_names);
     parameters
 }
@@ -665,6 +666,48 @@ fn populate_parameter_dependencies(
             .filter_map(|identifier| aliases.get(&identifier).and_then(Clone::clone))
             .filter(|dependency| dependency != &parameter.id && seen.insert(dependency.clone()))
             .collect();
+    }
+}
+
+fn order_parameters_by_dependencies(parameters: &mut [DesignParameter]) {
+    let mut seen_owners = std::collections::HashSet::new();
+    let owner_order = parameters
+        .iter()
+        .map(|parameter| parameter.owner.clone())
+        .filter(|owner| seen_owners.insert(owner.clone()))
+        .collect::<Vec<_>>();
+    let parameter_owners = parameters
+        .iter()
+        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
+        .collect::<HashMap<_, _>>();
+    for owner in owner_order {
+        let mut remaining = parameters
+            .iter()
+            .enumerate()
+            .filter(|(_, parameter)| parameter.owner == owner)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let mut ordered = Vec::<usize>::with_capacity(remaining.len());
+        let mut ordered_ids = std::collections::HashSet::new();
+        while !remaining.is_empty() {
+            let Some(position) = remaining.iter().position(|index| {
+                parameters[*index].dependencies.iter().all(|dependency| {
+                    parameter_owners
+                        .get(dependency)
+                        .is_none_or(|dependency_owner| dependency_owner != &owner)
+                        || ordered_ids.contains(dependency)
+                })
+            }) else {
+                ordered.clear();
+                break;
+            };
+            let index = remaining.remove(position);
+            ordered_ids.insert(parameters[index].id.clone());
+            ordered.push(index);
+        }
+        for (ordinal, index) in ordered.into_iter().enumerate() {
+            parameters[index].ordinal = ordinal as u32;
+        }
     }
 }
 
