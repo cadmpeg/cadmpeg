@@ -1041,11 +1041,24 @@ impl<'a> Section<'a> {
         operation_records(bytes, base_offset)
     }
 
-    /// Decode unambiguous primary body references from bounded operation records.
-    pub fn operation_body_references(&self) -> Vec<(usize, OperationBodyReference)> {
+    /// Bound operation records and retain their ordinal in the complete label sequence.
+    pub fn operation_records_with_label_ordinals(&self) -> Vec<(usize, OperationRecord<'a>)> {
+        let labels = self.operation_labels();
         self.operation_records()
             .into_iter()
-            .enumerate()
+            .filter_map(|record| {
+                labels
+                    .iter()
+                    .position(|label| label.offset == record.label.offset)
+                    .map(|ordinal| (ordinal, record))
+            })
+            .collect()
+    }
+
+    /// Decode unambiguous primary body references from bounded operation records.
+    pub fn operation_body_references(&self) -> Vec<(usize, OperationBodyReference)> {
+        self.operation_records_with_label_ordinals()
+            .into_iter()
             .filter_map(|(ordinal, record)| {
                 operation_body_reference(record).map(|reference| (ordinal, reference))
             })

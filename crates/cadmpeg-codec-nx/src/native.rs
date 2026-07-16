@@ -5169,7 +5169,7 @@ pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadStrin
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let operation_record =
                 format!("nx:feature-history:operation-record#{section_key}-{operation_ordinal}");
             strings.extend(
@@ -5251,7 +5251,7 @@ pub fn feature_simple_hole_repeated_scalar_lanes(
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(pair) = crate::om::simple_hole_repeated_scalar_lane(record) else {
                 continue;
             };
@@ -5305,7 +5305,7 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
             let prefixes = inputs
@@ -5486,7 +5486,7 @@ pub fn feature_body_reference_occurrences(
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
             references.extend(
@@ -5780,7 +5780,7 @@ pub fn feature_datum_csys_constructions(
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(field) = crate::om::datum_csys_references(record) else {
                 continue;
             };
@@ -5874,7 +5874,7 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(header) = crate::om::datum_plane_payload_header(record) else {
                 continue;
             };
@@ -7416,7 +7416,7 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(decoded) = crate::om::sketch_payload_references(record) else {
                 continue;
             };
@@ -7467,7 +7467,7 @@ pub fn feature_extrude_profile_references(
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(decoded) = crate::om::extrude_profile_references(record) else {
                 continue;
             };
@@ -7512,7 +7512,7 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(header) = crate::om::extrude_payload_header(record) else {
                 continue;
             };
@@ -7551,7 +7551,7 @@ pub fn feature_extrude_payload_footers(container: &Container) -> Vec<FeatureExtr
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(footer) = crate::om::extrude_payload_footer(record) else {
                 continue;
             };
@@ -7595,7 +7595,7 @@ pub fn feature_extrude_payload_scalar_triples(
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(triple) = crate::om::extrude_payload_scalar_triple(record) else {
                 continue;
             };
@@ -7648,7 +7648,7 @@ pub fn feature_operation_body_scalar_triples(
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             for triple in crate::om::operation_body_scalar_triples(record) {
                 let encoding = |encoding| match encoding {
                     crate::om::PayloadScalarEncoding::Zero => FeaturePayloadScalarEncoding::Zero,
@@ -7702,7 +7702,7 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             members.extend(
                 crate::om::operation_body_members(record)
                     .into_iter()
@@ -7790,7 +7790,7 @@ pub fn feature_operation_body_11_continuations(
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             continuations.extend(
                 crate::om::operation_body_11_continuations(record)
                     .into_iter()
@@ -7839,7 +7839,7 @@ pub fn feature_operation_body_reference_lanes(
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             for lane in crate::om::operation_body_reference_lanes(record) {
                 let encoding = match lane.encoding {
                     crate::om::OperationBodyReferenceLaneEncoding::CompactIndex => {
@@ -7976,7 +7976,7 @@ pub fn feature_extrude_payload_32_branches(
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(branch) = crate::om::extrude_payload_32_branch(record) else {
                 continue;
             };
@@ -8092,7 +8092,7 @@ pub fn feature_block_construction_references(
         };
         let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(field) = crate::om::block_construction_references(record) else {
                 continue;
             };
