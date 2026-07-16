@@ -3748,6 +3748,38 @@ pub fn propagate_edge_port_points(
     Some(resolved)
 }
 
+/// Propagate endpoint points through the subgraph of edges carrying native
+/// endpoint identities. Edges without a native identity pair remain
+/// unresolved and do not weaken or invalidate known components.
+#[must_use]
+pub fn propagate_partial_edge_port_points(
+    edge_ports: &[Option<[u32; 2]>],
+    endpoint_pairs: &[Option<[usize; 2]>],
+) -> Option<Vec<Option<[usize; 2]>>> {
+    if edge_ports.len() != endpoint_pairs.len() {
+        return None;
+    }
+    let known = edge_ports
+        .iter()
+        .enumerate()
+        .filter_map(|(edge, ports)| ports.map(|ports| (edge, ports)))
+        .collect::<Vec<_>>();
+    if known.is_empty() {
+        return Some(endpoint_pairs.to_vec());
+    }
+    let ports = known.iter().map(|(_, ports)| *ports).collect::<Vec<_>>();
+    let pairs = known
+        .iter()
+        .map(|(edge, _)| endpoint_pairs[*edge])
+        .collect::<Vec<_>>();
+    let propagated = propagate_edge_port_points(&ports, &pairs)?;
+    let mut resolved = endpoint_pairs.to_vec();
+    for ((edge, _), pair) in known.into_iter().zip(propagated) {
+        resolved[edge] = pair;
+    }
+    Some(resolved)
+}
+
 struct PortCandidateSearch<'a> {
     ports: &'a [[u32; 2]],
     candidates: &'a [Vec<[usize; 2]>],
@@ -8362,14 +8394,14 @@ mod motif_tests {
         mesh_candidates_equivalent, mesh_edge_points_compatible, mesh_face_endpoint_configurations,
         motif_port_points, parse_edge_tables_at, parse_edge_tables_scoped_at,
         parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, possible_face_choices,
-        possible_face_equations, propagate_edge_port_points, prune_edge_candidates_by_port_domains,
-        prune_mesh_endpoint_pair_support, reconstruct_incidence, reconstruct_incidence_candidates,
-        resolve_edge_faces_from_runs, same_unordered_pair, standard_face_count,
-        unique_coordinate_bijection, unique_duplicate_face_assignment,
-        uses_canonical_edge_direction_gauge, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
-        FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun, MeshFaceBoundaryAssignment,
-        MeshQuotient, MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER,
-        MAX_FACE_EQUATION_CACHE_ENTRIES,
+        possible_face_equations, propagate_edge_port_points, propagate_partial_edge_port_points,
+        prune_edge_candidates_by_port_domains, prune_mesh_endpoint_pair_support,
+        reconstruct_incidence, reconstruct_incidence_candidates, resolve_edge_faces_from_runs,
+        same_unordered_pair, standard_face_count, unique_coordinate_bijection,
+        unique_duplicate_face_assignment, uses_canonical_edge_direction_gauge, Boundary, CoedgeUse,
+        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun,
+        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
+        TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -10093,6 +10125,29 @@ mod motif_tests {
         assert_eq!(
             propagate_edge_port_points(&ports, &pairs),
             Some(vec![Some([0, 1]), Some([1, 2]), Some([2, 3]), Some([3, 0]),])
+        );
+    }
+
+    #[test]
+    fn partial_endpoint_ports_propagate_known_components_only() {
+        let ports = [
+            Some([10, 11]),
+            Some([11, 12]),
+            None,
+            Some([12, 13]),
+            Some([13, 10]),
+        ];
+        let pairs = [Some([0, 1]), Some([1, 2]), Some([8, 9]), None, Some([3, 0])];
+
+        assert_eq!(
+            propagate_partial_edge_port_points(&ports, &pairs),
+            Some(vec![
+                Some([0, 1]),
+                Some([1, 2]),
+                Some([8, 9]),
+                Some([2, 3]),
+                Some([3, 0]),
+            ])
         );
     }
 

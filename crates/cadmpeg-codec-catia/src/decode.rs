@@ -1270,12 +1270,12 @@ mod chart_tests {
         circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
         e5_body_kinds, e5_boundary_curve, e5_occurrence_intersection_context, e5_pcurve_on_surface,
         equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes, include_native_endpoint_pairs,
-        intersection_line_direction, ordered_range, parameter_ranges_reversed, point_distance,
-        point_on_known_surface, point_on_standard_face, quintic_jet_pcurve, rational_pcurve_arc,
-        resolve_standard_endpoint_pairs, reverse_e5_pcurve_geometry,
-        standard_circle_endpoint_candidates, standard_circle_param_range,
-        standard_native_edge_references, standard_pcurve_geometry, unique_index_owners,
-        unique_native_identity_points, zero_entity_pcurve_range,
+        intersection_line_direction, merge_native_endpoint_evidence, ordered_range,
+        parameter_ranges_reversed, point_distance, point_on_known_surface, point_on_standard_face,
+        quintic_jet_pcurve, rational_pcurve_arc, resolve_standard_endpoint_pairs,
+        reverse_e5_pcurve_geometry, standard_circle_endpoint_candidates,
+        standard_circle_param_range, standard_native_edge_references, standard_pcurve_geometry,
+        unique_index_owners, unique_native_identity_points, zero_entity_pcurve_range,
     };
     use crate::e5::{E5Edge, E5Face, E5Loop, E5Topology};
     use crate::geometry::{FreeformFaceBounds, StandardCurveGeometry, StandardCurveSupport};
@@ -1997,6 +1997,20 @@ mod chart_tests {
         let mut candidates = vec![vec![1], Vec::new()];
         include_native_endpoint_pairs(&mut candidates, &[Some([1, 2]), Some([3, 4])]);
         assert_eq!(candidates, [vec![1, 2], vec![3, 4]]);
+    }
+
+    #[test]
+    fn native_endpoint_evidence_rejects_directed_pair_conflicts() {
+        let graph = [Some([0, 1]), None];
+        let roster = [Some([0, 1]), Some([2, 3])];
+        assert_eq!(
+            merge_native_endpoint_evidence(Some(&graph), Some(&roster)),
+            Ok(Some(vec![Some([0, 1]), Some([2, 3])]))
+        );
+        assert_eq!(
+            merge_native_endpoint_evidence(Some(&graph), Some(&[Some([1, 0]), None])),
+            Err("conflicting native endpoint evidence")
+        );
     }
 
     #[test]
@@ -4728,9 +4742,13 @@ fn attach_standard_topology(
     let native_edges = standard_native_edge_references(source);
     let graph_endpoint_pairs =
         standard_native_graph_endpoint_pairs(source, &supports, &native_edges, &ir.model.points);
-    let native_ports = supports
+    let native_port_options = supports
         .iter()
         .map(|support| native_edges.get(&support.tag).copied())
+        .collect::<Vec<_>>();
+    let native_ports = native_port_options
+        .iter()
+        .copied()
         .collect::<Option<Vec<_>>>();
     let roster_endpoint_pairs = geometry::standard_vertex_roster(source, ir.model.points.len())
         .map(|roster| {
@@ -4750,10 +4768,13 @@ fn attach_standard_topology(
                 })
                 .collect::<Vec<_>>()
         });
-    if let Some(pairs) = &graph_endpoint_pairs {
-        include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
-    }
-    if let Some(pairs) = &roster_endpoint_pairs {
+    let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
+        graph_endpoint_pairs.as_deref(),
+        roster_endpoint_pairs.as_deref(),
+    ) else {
+        return false;
+    };
+    if let Some(pairs) = &native_endpoint_evidence {
         include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
     }
     let mut endpoint_options = resolve_standard_endpoint_pairs(
@@ -4763,19 +4784,34 @@ fn attach_standard_topology(
         &supports,
         &endpoint_candidates,
     );
-    if let (Some(options), Some(pairs)) = (&mut endpoint_options, &graph_endpoint_pairs) {
+    if let (Some(options), Some(pairs)) = (&mut endpoint_options, &native_endpoint_evidence) {
         for (options, pair) in options.iter_mut().zip(pairs) {
             if let Some(pair) = pair {
                 *options = vec![*pair];
             }
         }
     }
-    if let (Some(options), Some(pairs)) = (&mut endpoint_options, &roster_endpoint_pairs) {
+    let graph_propagated_endpoint_pairs = match native_endpoint_evidence.as_ref() {
+        Some(pairs) => {
+            let Some(propagated) =
+                topology::propagate_partial_edge_port_points(&native_port_options, pairs)
+            else {
+                return false;
+            };
+            Some(propagated)
+        }
+        None => None,
+    };
+    if let (Some(options), Some(pairs)) = (&mut endpoint_options, &graph_propagated_endpoint_pairs)
+    {
         for (options, pair) in options.iter_mut().zip(pairs) {
             if let Some(pair) = pair {
                 *options = vec![*pair];
             }
         }
+    }
+    if let Some(pairs) = &graph_propagated_endpoint_pairs {
+        include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
     }
     if let Some(options) = &mut endpoint_options {
         let mut allowed_faces = supports
@@ -4941,49 +4977,39 @@ fn attach_standard_topology(
             }
         }
     }
-    let graph_propagated_pairs = native_ports
+    let graph_propagated_pairs = graph_propagated_endpoint_pairs
         .as_ref()
-        .zip(graph_endpoint_pairs.as_ref())
-        .and_then(|(ports, pairs)| topology::propagate_edge_port_points(ports, pairs))
-        .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<_>>>());
-    let native_endpoint_pairs = graph_propagated_pairs
-        .or_else(|| {
-            roster_endpoint_pairs
-                .as_ref()?
-                .iter()
-                .copied()
-                .collect::<Option<Vec<_>>>()
-        })
-        .or_else(|| {
-            endpoint_options.as_ref().and_then(|options| {
-                const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
-                const MAX_NATIVE_PORT_WORK: usize = 20_000_000;
+        .and_then(|pairs| pairs.iter().copied().collect::<Option<Vec<_>>>());
+    let native_endpoint_pairs = graph_propagated_pairs.or_else(|| {
+        endpoint_options.as_ref().and_then(|options| {
+            const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
+            const MAX_NATIVE_PORT_WORK: usize = 20_000_000;
 
-                let ports = native_ports.as_ref()?;
-                let seeds = options
-                    .iter()
-                    .map(|choices| {
-                        <[[usize; 2]; 1]>::try_from(choices.as_slice())
-                            .ok()
-                            .map(|[pair]| pair)
-                    })
-                    .collect::<Vec<_>>();
-                let propagated = topology::propagate_edge_port_points(ports, &seeds)?;
-                if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
-                    return Some(complete);
-                }
-                // Exhaustive binding is a fallback after exact identity propagation.
-                // Large symmetric choice sets remain unresolved and continue through
-                // trim-mesh and incidence paths instead of making decode unbounded.
-                let choice_count = options.iter().map(Vec::len).sum::<usize>();
-                (choice_count <= MAX_NATIVE_PORT_CHOICES
-                    && options
-                        .len()
-                        .checked_mul(choice_count)
-                        .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK))
-                .then(|| topology::bind_edge_port_candidates(ports, options))?
-            })
-        });
+            let ports = native_ports.as_ref()?;
+            let seeds = options
+                .iter()
+                .map(|choices| {
+                    <[[usize; 2]; 1]>::try_from(choices.as_slice())
+                        .ok()
+                        .map(|[pair]| pair)
+                })
+                .collect::<Vec<_>>();
+            let propagated = topology::propagate_edge_port_points(ports, &seeds)?;
+            if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
+                return Some(complete);
+            }
+            // Exhaustive binding is a fallback after exact identity propagation.
+            // Large symmetric choice sets remain unresolved and continue through
+            // trim-mesh and incidence paths instead of making decode unbounded.
+            let choice_count = options.iter().map(Vec::len).sum::<usize>();
+            (choice_count <= MAX_NATIVE_PORT_CHOICES
+                && options
+                    .len()
+                    .checked_mul(choice_count)
+                    .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK))
+            .then(|| topology::bind_edge_port_candidates(ports, options))?
+        })
+    });
     let propagated_endpoint_pairs = endpoint_options
         .as_ref()
         .zip(topology::standard_edge_port_identities(brep))
@@ -5580,6 +5606,33 @@ fn combine_propagated_endpoint_pairs(
         (None, None) => return None,
     };
     (!pairs.is_empty()).then_some(pairs)
+}
+
+fn merge_native_endpoint_evidence(
+    graph: Option<&[Option<[usize; 2]>]>,
+    roster: Option<&[Option<[usize; 2]>]>,
+) -> Result<Option<Vec<Option<[usize; 2]>>>, &'static str> {
+    match (graph, roster) {
+        (Some(graph), Some(roster)) => {
+            if graph.len() != roster.len() {
+                return Err("native endpoint evidence length mismatch");
+            }
+            graph
+                .iter()
+                .zip(roster)
+                .map(|(graph, roster)| match (graph, roster) {
+                    (Some(graph), Some(roster)) if graph != roster => {
+                        Err("conflicting native endpoint evidence")
+                    }
+                    (Some(pair), _) | (_, Some(pair)) => Ok(Some(*pair)),
+                    (None, None) => Ok(None),
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(Some)
+        }
+        (Some(pairs), None) | (None, Some(pairs)) => Ok(Some(pairs.to_vec())),
+        (None, None) => Ok(None),
+    }
 }
 
 fn unique_native_identity_points(
