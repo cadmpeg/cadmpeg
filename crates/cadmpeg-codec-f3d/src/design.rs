@@ -4823,6 +4823,7 @@ fn exact_atomic_constraint(
 
     let lines = || {
         (entities.len() == 2
+            && entities[0].id != entities[1].id
             && entities
                 .iter()
                 .all(|entity| matches!(entity.geometry, Geometry::Line { .. })))
@@ -4830,6 +4831,7 @@ fn exact_atomic_constraint(
     };
     let curves = || {
         (entities.len() == 2
+            && entities[0].id != entities[1].id
             && entities.iter().all(|entity| {
                 matches!(
                     entity.geometry,
@@ -4846,15 +4848,16 @@ fn exact_atomic_constraint(
         let [first, second] = entities else {
             return None;
         };
-        matches!(
-            (&first.geometry, &second.geometry),
-            (Geometry::Line { .. }, Geometry::Line { .. })
-                | (
-                    Geometry::Circle { .. } | Geometry::Arc { .. },
-                    Geometry::Circle { .. } | Geometry::Arc { .. }
-                )
-                | (Geometry::Ellipse { .. }, Geometry::Ellipse { .. })
-        )
+        (first.id != second.id
+            && matches!(
+                (&first.geometry, &second.geometry),
+                (Geometry::Line { .. }, Geometry::Line { .. })
+                    | (
+                        Geometry::Circle { .. } | Geometry::Arc { .. },
+                        Geometry::Circle { .. } | Geometry::Arc { .. }
+                    )
+                    | (Geometry::Ellipse { .. }, Geometry::Ellipse { .. })
+            ))
         .then(|| (first.id.clone(), second.id.clone()))
     };
     match kind {
@@ -4866,6 +4869,7 @@ fn exact_atomic_constraint(
         }
         SketchConstraintKind::Concentric => {
             if entities.len() == 2
+                && entities[0].id != entities[1].id
                 && entities.iter().all(|entity| {
                     matches!(
                         entity.geometry,
@@ -14745,6 +14749,17 @@ mod relation_tests {
             exact_atomic_constraint(SketchConstraintKind::Equal, &[line, &other_line]),
             Some(SketchConstraintDefinition::Equal { .. })
         ));
+        for kind in [
+            SketchConstraintKind::Colinear,
+            SketchConstraintKind::EqualLength,
+            SketchConstraintKind::Parallel,
+            SketchConstraintKind::Perpendicular,
+            SketchConstraintKind::Tangent,
+            SketchConstraintKind::Curvature,
+            SketchConstraintKind::Equal,
+        ] {
+            assert!(exact_atomic_constraint(kind, &[line, line]).is_none());
+        }
     }
 
     #[test]
