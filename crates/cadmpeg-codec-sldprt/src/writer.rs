@@ -2347,22 +2347,45 @@ fn write_nurbs_surface(
             nurbs.u_degree, nurbs.v_degree
         )));
     }
-    let expected_poles = usize::try_from(nurbs.u_count)
-        .ok()
-        .and_then(|u_count| {
-            usize::try_from(nurbs.v_count)
-                .ok()
-                .and_then(|v_count| u_count.checked_mul(v_count))
-        })
-        .ok_or_else(|| {
-            CodecError::NotImplemented(format!(
-                "SLDPRT NURBS surface {entity} pole grid exceeds the host address space"
-            ))
-        })?;
+    let u_count = usize::try_from(nurbs.u_count).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} u pole count exceeds the host address space"
+        ))
+    })?;
+    let v_count = usize::try_from(nurbs.v_count).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} v pole count exceeds the host address space"
+        ))
+    })?;
+    let expected_poles = u_count.checked_mul(v_count).ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} pole grid exceeds the host address space"
+        ))
+    })?;
     if nurbs.control_points.len() != expected_poles {
         return Err(CodecError::Malformed(
             "invalid NURBS surface pole count".into(),
         ));
+    }
+    let poles = homogeneous_poles(
+        &nurbs.control_points,
+        nurbs.weights.as_deref(),
+        length_scale,
+    )?;
+    let (u_unique, u_mult) = unique_knots(&nurbs.u_knots, entity)?;
+    let (v_unique, v_mult) = unique_knots(&nurbs.v_knots, entity)?;
+    let intended_shape = (
+        u_count,
+        v_count,
+        nurbs.u_degree,
+        nurbs.v_degree,
+        if nurbs.weights.is_some() { 4 } else { 3 },
+    );
+    let inferred_shape = crate::brep::infer_surface_shape(poles.len(), &u_mult, &v_mult);
+    if inferred_shape != Some(intended_shape) {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} shape {intended_shape:?} would decode as {inferred_shape:?}"
+        )));
     }
     let descriptor = take_attr(next)?;
     let control = take_attr(next)?;
@@ -2383,14 +2406,7 @@ fn write_nurbs_surface(
     for attr in [control, u_multiplicity, v_multiplicity, u_knots, v_knots] {
         be16(out, attr);
     }
-    let poles = homogeneous_poles(
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
-        length_scale,
-    )?;
     f64_array(out, 0x2d, control, &poles, entity)?;
-    let (u_unique, u_mult) = unique_knots(&nurbs.u_knots, entity)?;
-    let (v_unique, v_mult) = unique_knots(&nurbs.v_knots, entity)?;
     u16_array(out, u_multiplicity, &u_mult, entity)?;
     u16_array(out, v_multiplicity, &v_mult, entity)?;
     f64_array(out, 0x80, u_knots, &u_unique, entity)?;
@@ -2713,6 +2729,42 @@ mod nurbs_write_tests {
                 if message.contains("test:surface#high-degree")
                     && message.contains("inferable native range 1..=8")
         ));
+    }
+
+    #[test]
+    fn rejects_surface_shape_that_would_decode_differently() {
+        let surface = NurbsSurface {
+            u_degree: 2,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
+            u_count: 3,
+            v_count: 4,
+            control_points: vec![Point3::new(0.0, 0.0, 0.0); 12],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+
+        let error = write_nurbs_surface(
+            &mut Vec::new(),
+            2,
+            &surface,
+            &mut 3,
+            0.001,
+            "test:surface#ambiguous-shape",
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                &error,
+                CodecError::NotImplemented(message)
+                    if message.contains("test:surface#ambiguous-shape")
+                        && message.contains("would decode as Some((3, 3, 2, 2, 4))")
+            ),
+            "{error:?}"
+        );
     }
 
     #[test]
