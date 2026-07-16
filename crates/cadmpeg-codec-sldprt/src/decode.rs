@@ -253,6 +253,47 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+    let empty_parameter_names = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.name.is_empty())
+        .count();
+    let mut parameter_name_counts = BTreeMap::new();
+    let mut parameter_ordinal_counts = BTreeMap::new();
+    for parameter in &ir.model.parameters {
+        if !parameter.name.is_empty() {
+            *parameter_name_counts
+                .entry((&parameter.owner, parameter.name.as_str()))
+                .or_insert(0usize) += 1;
+        }
+        *parameter_ordinal_counts
+            .entry((&parameter.owner, parameter.ordinal))
+            .or_insert(0usize) += 1;
+    }
+    let duplicate_parameter_names = parameter_name_counts
+        .values()
+        .filter(|count| **count > 1)
+        .copied()
+        .sum::<usize>();
+    let duplicate_parameter_ordinals = parameter_ordinal_counts
+        .values()
+        .filter(|count| **count > 1)
+        .copied()
+        .sum::<usize>();
+    if empty_parameter_names > 0
+        || duplicate_parameter_names > 0
+        || duplicate_parameter_ordinals > 0
+    {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{empty_parameter_names} parameter record(s) have empty names; {duplicate_parameter_names} parameter record(s) share owner-local names; {duplicate_parameter_ordinals} parameter record(s) share owner-local ordinals."
+            ),
+            provenance: None,
+        });
+    }
 
     let bound_pmi = ir
         .model
@@ -2258,7 +2299,7 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: future,
-            owner,
+            owner: owner.clone(),
             ordinal: 5,
             name: "D5".into(),
             expression: "1".into(),
@@ -2269,6 +2310,26 @@ mod design_loss_tests {
             pmi: None,
             native_ref: None,
         });
+        for (id, ordinal, name) in [
+            ("empty", 6, ""),
+            ("shared-a", 7, "Shared"),
+            ("shared-b", 8, "Shared"),
+            ("ordinal", 8, "Unique"),
+        ] {
+            ir.model.parameters.push(DesignParameter {
+                id: ParameterId(format!("identity:{id}")),
+                owner: owner.clone(),
+                ordinal,
+                name: name.into(),
+                expression: "1".into(),
+                display: None,
+                value: Some(cadmpeg_ir::features::ParameterValue::Real(1.0)),
+                dependencies: Vec::new(),
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            });
+        }
         let mut report = DecodeReport {
             format: "sldprt".into(),
             container_only: false,
@@ -2282,6 +2343,10 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "1 parameter(s) lack an evaluated scalar; 3 parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; 1 parameter record(s) contain missing or non-preceding dependency edges."
+        }));
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "1 parameter record(s) have empty names; 2 parameter record(s) share owner-local names; 2 parameter record(s) share owner-local ordinals."
         }));
     }
 
