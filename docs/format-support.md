@@ -16,7 +16,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 4. **Require a usable slice.** A capability rung requires working support across mainstream files in the declared envelope. A single fixture, entity census, or opaque record capture cannot satisfy it.
 5. **Pass inapplicable gates.** A format definition may establish that its document kind cannot contain a category. Missing fixtures cannot establish inapplicability.
 6. **Score each envelope.** A codec declares version and layout-variant bands and receives one score per band. A single version can earn L9. State discontinuous support per band.
-7. **Qualify the evidence.** Every score is **claimed** when code exists, **tested** when fixtures exercise it, or **proven** when it passes the [roadmap's](roadmap.md#progress-gates) public-fixture, byte-accounting, round-trip, and fuzzing gates.
+7. **Qualify the evidence.** Every score is **claimed** when code exists, **tested** when fixtures exercise it, or **proven** when it passes the [roadmap's](roadmap.md#progress-gates) representative-corpus, byte-accounting, round-trip, and fuzzing gates.
 
 ### Levels
 
@@ -54,9 +54,9 @@ Each current score applies to the envelope described in its profile.
 - **None:** the repository lacks an implementation for the domain.
 - **Inspect:** cadmpeg identifies and reports the structure without transferring it into typed IR.
 - **Partial:** cadmpeg transfers a typed subset and reports or preserves the remainder.
-- **Complete:** the domain satisfies the public-fixture, byte-accounting, validation, round-trip, and fuzzing gates in the [roadmap](roadmap.md#progress-gates).
+- **Complete:** the domain satisfies the corpus-coverage, byte-accounting, validation, round-trip, and fuzzing gates in the [roadmap](roadmap.md#progress-gates).
 
-Every current profile contains incomplete domains. Current claims rely on code, generated fixtures, and explicit loss paths while the public corpus remains empty.
+Every current profile contains incomplete domains. Current claims rely on code, generated fixtures, and explicit loss paths; broader corpus evidence remains to be recorded.
 
 Entity provenance and domain status measure different properties. `byte_exact`, `derived`, `inferred`, and `unknown` describe how cadmpeg obtained one IR value.
 
@@ -239,7 +239,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 - **Presentation and metadata: Band-wide.** Layers, direct and overriding styles, colors on topology, exact geometry, tessellation, geometric sets, null styles, semantic dimensions/tolerances/datums, presentation annotations, validation properties, and limits-and-fits classes transfer. Unmodeled application records remain named opaque records with identity and references.
 - **Byte accounting: Band-wide.** Every input byte is structural, typed, or part of a named opaque record; unclassified bytes fail the accounting invariant.
 
-The evidence tier is tested. Proven status additionally requires accepted public CC0 corpus entries, sustained fuzz runs, and the roadmap's complete round-trip gates.
+The evidence tier is tested. Proven status additionally requires demonstrated coverage across a representative corpus of fixtures for the declared envelope, sustained fuzz runs, and the roadmap's complete round-trip gates.
 
 ### Write and round trip
 
@@ -252,6 +252,6 @@ The evidence tier is tested. Proven status additionally requires accepted public
 
 Per-format specifications in [`formats/`](formats/) define byte semantics. Adjacent `*-open-items.md` files contain unresolved fields and structures.
 
-Support profiles describe repository behavior only. A profile changes when code and tests land, and every **Partial** domain must identify its remaining gates here or in the linked open-items document. Claims move to **Complete** only after satisfying the roadmap's public evidence and reliability gates.
+Support profiles describe repository behavior only. A profile changes when code and tests land, and every **Partial** domain must identify its remaining gates here or in the linked open-items document. Claims move to **Complete** only after satisfying the roadmap's corpus evidence and reliability gates.
 
 Ladder scores change only when a per-gate review confirms every gate at the new level and below. A score's headline names the failing gate of the next level. Evidence words move independently of levels: **tested** requires fixtures exercising the scored gates, **proven** requires the roadmap's progress gates.

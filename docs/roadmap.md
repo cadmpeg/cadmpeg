@@ -93,7 +93,7 @@ Make native writing a semantic operation rather than a container replay.
 - Write all supported geometry, topology, tessellation, feature, configuration, appearance, and metadata domains.
 - Emit selected SolidWorks target versions with explicit compatibility checks.
 - Re-decode every generated file and compare it with the intended IR using semantic identity.
-- Verify generated files with independent readers using public fixtures.
+- Verify generated files with independent readers using corpus fixtures.
 - Reject invalid or unrepresentable edits with entity-specific diagnostics.
 
 This milestone is complete when unchanged files round-trip byte exactly, edited files round-trip semantically, and every difference is either requested or reported.
@@ -136,13 +136,13 @@ The progress gates below apply from the first milestone. This final milestone co
 - Fuzz container parsers, record decoders, IR parsing, validation, exporters, and native writers.
 - Test malformed, truncated, adversarial, and resource-exhausting inputs.
 - Run property tests for serialization, unit conversion, transforms, topology invariants, and NURBS evaluation.
-- Run round-trip and cross-version suites over the public corpus.
+- Run round-trip and cross-version suites over representative corpora.
 - Compare independent geometric evaluations within declared tolerances.
 - Test large parts, deep histories, dense tessellations, and assemblies against memory and runtime budgets.
 - Keep output deterministic across machines and repeated runs.
 - Version the IR, reports, and public library interfaces with documented migrations.
 
-No format or translation path is reliable until its supported envelope is exercised by public fixtures, mutation tests, and sustained fuzzing.
+No format or translation path is reliable until its supported envelope is exercised by a representative corpus of fixtures, mutation tests, and sustained fuzzing.
 
 ## Current priorities
 
@@ -162,7 +162,7 @@ Parallel codec work should preserve current capabilities and close bounded open 
 
 Every completed milestone must satisfy the same project-wide gates:
 
-- Public CC0 fixtures exercise the claimed capability.
+- A representative corpus of fixtures demonstrates the claimed capability.
 - Every source byte is typed, classified as structural, or preserved as an opaque record.
 - Every unsupported semantic construct produces a machine-readable loss.
 - Decode, validation, write, and conversion results are deterministic.
