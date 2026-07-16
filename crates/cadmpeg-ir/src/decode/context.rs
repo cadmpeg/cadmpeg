@@ -415,19 +415,31 @@ impl<'a> DecodeContext<'a> {
 
     /// Begins assembling a derived space from several input extents.
     ///
-    /// The multi-input sibling of [`DecodeContext::begin_expand`]: catia
-    /// concatenates extents into a logical stream, iges assembles parameter
-    /// cards, OLE storages splice sectors, and a dictionary-preset
-    /// decompression draws on two inputs at once. `begin_expand` is the
-    /// single-source [`SpaceOrigin::Transform`] special case with
-    /// `decompressed_bytes` semantics; this builder covers the multi-input
-    /// [`SpaceOrigin::Concat`] and [`SpaceOrigin::Transform`] origins and
-    /// charges each write to `alloc_bytes` — the reassembled bytes are a fresh
-    /// heap copy, not new decompressed content, so they do not grow the input
-    /// basis and are not double-counted against the source extents' spaces.
+    /// The multi-input sibling of [`DecodeContext::begin_expand`]; each origin
+    /// carries its own charging semantics:
     ///
-    /// The output space registers only on successful [`DerivedWriter::finalize`]
-    /// — an incomplete space never escapes.
+    /// - [`DerivedKind::Concat`] reassembles the input extents into one logical
+    ///   stream (catia extents, iges parameter cards, OLE sectors). The output
+    ///   is copied from the inputs here, at construction, so the recorded
+    ///   [`SpaceOrigin::Concat`] segments cannot diverge from the bytes the
+    ///   space holds. Each extent is charged to `alloc_bytes` — a fresh heap
+    ///   copy of already-accounted bytes, so the input basis does not grow and
+    ///   the source extents are not double-counted. The returned writer only
+    ///   needs [`DerivedWriter::finalize`].
+    /// - [`DerivedKind::Transform`] produces new bytes from the named inputs,
+    ///   such as a dictionary-preset decompression that `begin_expand` cannot
+    ///   express with its single source view. The caller streams the output
+    ///   through [`DerivedWriter::write`], charged to `decompressed_bytes`
+    ///   under the per-expand and cumulative decompression ceilings (§4.5,
+    ///   §5.2); [`DerivedWriter::finalize`] grows the input basis like
+    ///   [`ExpandWriter::finalize`], because the output is genuine decompressed
+    ///   content the calibrated decompression-bomb ceilings must bound.
+    ///
+    /// `begin_expand` is the single-source [`SpaceOrigin::Transform`] special
+    /// case. The output space registers only on successful
+    /// [`DerivedWriter::finalize`] — an incomplete space never escapes, and a
+    /// Concat assembly that exceeds `alloc_bytes` fuses here before any writer
+    /// escapes.
     pub fn begin_derived_space(
         &self,
         inputs: &[View<'_>],
@@ -447,14 +459,24 @@ impl<'a> DecodeContext<'a> {
             })
             .collect();
         let location = inputs.first().map(|view| view.location());
-        Ok(DerivedWriter {
+        let mut writer = DerivedWriter {
             ctx: self,
             kind,
             segments,
             location,
             buffer: Vec::new(),
             written: 0,
-        })
+        };
+        if matches!(kind, DerivedKind::Concat) {
+            // Assemble the output from the input extents now, so the recorded
+            // segments are the very bytes copied here and cannot be
+            // contradicted later. Each extent charges `alloc_bytes` before it
+            // is retained; a refusal fuses the context and no writer escapes.
+            for view in inputs {
+                writer.append_extent(view.window())?;
+            }
+        }
+        Ok(writer)
     }
 
     // --- depth --------------------------------------------------------------
@@ -905,13 +927,15 @@ impl<'a> ExpandWriter<'_, 'a> {
     }
 }
 
-/// Assembles a multi-input derived space under incremental `alloc_bytes`
-/// charging.
+/// Assembles a multi-input derived space under incremental charging.
 ///
-/// Each [`DerivedWriter::write`] charges before the bytes are retained;
-/// [`DerivedWriter::finalize`] stores the assembled buffer in the arena and
-/// registers the space with the [`DerivedKind`]'s origin. Dropping the writer
-/// without finalizing registers nothing.
+/// A [`DerivedKind::Concat`] writer holds the extents copied from its inputs at
+/// construction, each charged to `alloc_bytes`; a [`DerivedKind::Transform`]
+/// writer takes streamed output through [`DerivedWriter::write`], charged to
+/// `decompressed_bytes` under the decompression ceilings. [`DerivedWriter::finalize`]
+/// stores the buffer in the arena and registers the space with the
+/// [`DerivedKind`]'s origin; a Transform additionally grows the input basis.
+/// Dropping the writer without finalizing registers nothing.
 #[derive(Debug)]
 pub struct DerivedWriter<'ctx, 'a> {
     ctx: &'ctx DecodeContext<'a>,
@@ -923,14 +947,16 @@ pub struct DerivedWriter<'ctx, 'a> {
 }
 
 impl<'a> DerivedWriter<'_, 'a> {
-    /// Appends assembled output, charging `alloc_bytes` before it is retained.
-    pub fn write(&mut self, data: &[u8]) -> Result<(), CodecError> {
+    /// Copies one Concat input extent into the buffer, charging `alloc_bytes`
+    /// before the bytes are retained. Called during construction so the
+    /// recorded segments are exactly the bytes assembled here.
+    fn append_extent(&mut self, data: &[u8]) -> Result<(), CodecError> {
         let len = data.len() as u64;
         self.ctx.charge(
             ResourceDimension::AllocBytes,
             LimitScope::Global,
             len,
-            "derived_write",
+            "derived_concat",
             self.location,
         )?;
         self.buffer.try_reserve(data.len()).map_err(|_| {
@@ -939,7 +965,7 @@ impl<'a> DerivedWriter<'_, 'a> {
                 ResourceFailure::AllocationFailed,
                 LimitScope::Global,
                 len,
-                "derived_write",
+                "derived_concat",
                 self.location,
             )
         })?;
@@ -948,21 +974,88 @@ impl<'a> DerivedWriter<'_, 'a> {
         Ok(())
     }
 
+    /// Appends transform output, charging `decompressed_bytes` under the
+    /// per-expand and cumulative decompression ceilings before it is retained.
+    ///
+    /// Valid only for a [`DerivedKind::Transform`] space, whose output is new
+    /// decompressed content that the calibrated decompression-bomb ceilings
+    /// must bound. A [`DerivedKind::Concat`] space assembles from its declared
+    /// inputs at construction and holds no caller-written bytes; writing to one
+    /// is refused so its provenance ledger cannot be contradicted.
+    pub fn write(&mut self, data: &[u8]) -> Result<(), CodecError> {
+        if !matches!(self.kind, DerivedKind::Transform(_)) {
+            return Err(CodecError::Malformed(
+                "a derived Concat space assembles from its declared inputs; \
+                 write is only for Transform output"
+                    .to_owned(),
+            ));
+        }
+        let len = data.len() as u64;
+        let new_written = self.written.saturating_add(len);
+        let per_expand = self
+            .ctx
+            .budget
+            .per_expand_allowance(&self.ctx.policy.limits, &self.ctx.envelope);
+        if new_written > per_expand {
+            return Err(self.ctx.fuse(
+                ResourceDimension::DecompressedBytes,
+                ResourceFailure::BudgetExceeded,
+                LimitScope::PerExpand,
+                len,
+                "derived_write",
+                self.location,
+            ));
+        }
+        self.ctx.charge(
+            ResourceDimension::DecompressedBytes,
+            LimitScope::Global,
+            len,
+            "derived_write",
+            self.location,
+        )?;
+        self.buffer.try_reserve(data.len()).map_err(|_| {
+            self.ctx.fuse(
+                ResourceDimension::DecompressedBytes,
+                ResourceFailure::AllocationFailed,
+                LimitScope::PerExpand,
+                len,
+                "derived_write",
+                self.location,
+            )
+        })?;
+        self.buffer.extend_from_slice(data);
+        self.written = new_written;
+        Ok(())
+    }
+
     /// Finalizes the assembly: stores the output in the arena and registers the
     /// derived space with its `Concat` or `Transform` origin.
+    ///
+    /// A Transform's output is new decompressed content, so it grows the input
+    /// basis (§5.2) like [`ExpandWriter::finalize`]; a Concat reassembles
+    /// already-accounted bytes and leaves the basis unchanged.
     pub fn finalize(self) -> Result<(SpaceId, View<'a>), CodecError> {
         let length = self.written;
         let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
-        let origin = match self.kind {
-            DerivedKind::Concat => SpaceOrigin::Concat {
-                segments: self.segments,
-            },
-            DerivedKind::Transform(kind) => SpaceOrigin::Transform {
-                inputs: self.segments,
-                kind,
-            },
+        let (origin, grows_basis) = match self.kind {
+            DerivedKind::Concat => (
+                SpaceOrigin::Concat {
+                    segments: self.segments,
+                },
+                false,
+            ),
+            DerivedKind::Transform(kind) => (
+                SpaceOrigin::Transform {
+                    inputs: self.segments,
+                    kind,
+                },
+                true,
+            ),
         };
         let space = self.ctx.spaces.register(length, origin);
+        if grows_basis {
+            self.ctx.budget.grow_input_basis(length);
+        }
         Ok((space, View::over_space(bytes, space)))
     }
 

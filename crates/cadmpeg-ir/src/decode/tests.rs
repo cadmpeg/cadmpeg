@@ -308,11 +308,11 @@ fn derived_space_concats_multiple_extents_and_charges_alloc() {
     let second = root.child(6, 10).unwrap();
     let basis_before = ctx.input_basis();
 
-    let mut writer = ctx
+    // The builder assembles the output from the input extents itself, so the
+    // recorded segments cannot diverge from the bytes the space holds.
+    let writer = ctx
         .begin_derived_space(&[first, second], DerivedKind::Concat)
         .unwrap();
-    writer.write(first.window()).unwrap();
-    writer.write(second.window()).unwrap();
     assert_eq!(writer.written(), 8);
     let (space, view) = writer.finalize().unwrap();
 
@@ -321,7 +321,7 @@ fn derived_space_concats_multiple_extents_and_charges_alloc() {
     assert_eq!(view.window(), &[10, 11, 12, 13, 22, 23, 24, 25]);
     assert_eq!(ctx.spaces_len(), 2);
 
-    // Each write charges alloc_bytes for the assembled copy.
+    // Each extent charges alloc_bytes for the assembled copy.
     assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 8);
 
     // Reassembling existing bytes does not grow the input basis: the source
@@ -343,7 +343,10 @@ fn derived_space_concats_multiple_extents_and_charges_alloc() {
 fn derived_space_records_a_multi_input_transform() {
     // A dictionary-preset decompression is a genuine multi-input transform:
     // one extent is the dictionary, another the compressed data, and the
-    // finalized space records both inputs under a Transform origin.
+    // finalized space records both inputs under a Transform origin. Its output
+    // is new decompressed content, so it is charged as decompressed_bytes under
+    // the decompression ceilings and grows the input basis — never routed
+    // through alloc_bytes, which would evade those ceilings.
     let bytes: &[u8] = &[0xAA, 0xBB, 0xCC, 0xDD, 0x01, 0x02, 0x03, 0x04];
     let arena = DecodeArena::new();
     let policy = desktop();
@@ -351,6 +354,7 @@ fn derived_space_records_a_multi_input_transform() {
 
     let dictionary = root.child(0, 4).unwrap();
     let data = root.child(4, 8).unwrap();
+    let basis_before = ctx.input_basis();
 
     let mut writer = ctx
         .begin_derived_space(
@@ -362,7 +366,12 @@ fn derived_space_records_a_multi_input_transform() {
     let (space, view) = writer.finalize().unwrap();
 
     assert_eq!(view.window(), &[1, 2, 3, 4, 5, 6]);
-    assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 6);
+    // Decompressed output is charged as decompressed_bytes, not alloc_bytes, so
+    // the calibrated per-expand and cumulative ceilings apply.
+    assert_eq!(ctx.charged(ResourceDimension::DecompressedBytes), 6);
+    assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 0);
+    // Finalizing new decompressed content grows the input basis.
+    assert_eq!(ctx.input_basis(), basis_before + 6);
     match ctx.space_origin(space).unwrap() {
         SpaceOrigin::Transform { inputs, kind } => {
             assert_eq!(kind, TransformKind::Decompress);
@@ -383,28 +392,57 @@ fn derived_space_registers_only_on_finalize_and_fuses_on_refusal() {
 
     // A writer dropped without finalizing registers no space.
     {
-        let mut abandoned = ctx
-            .begin_derived_space(&[root], DerivedKind::Concat)
+        let extent = root.child(0, 3).unwrap();
+        let _abandoned = ctx
+            .begin_derived_space(&[extent], DerivedKind::Concat)
             .unwrap();
-        abandoned.write(&[1, 2, 3]).unwrap();
     }
     assert_eq!(ctx.spaces_len(), 1, "an unfinalized space never registers");
 
-    // A write past the alloc allowance fuses the context.
+    // An extent past the alloc allowance fuses the context during assembly: the
+    // first 4-byte extent fits the tight ceiling, the second pushes over it.
     let arena2 = DecodeArena::new();
     let tight = tight(|limits| limits.max_alloc_bytes = 4);
     let (ctx2, root2) = DecodeContext::from_root_bytes(bytes, &arena2, &tight).unwrap();
-    let mut writer = ctx2
-        .begin_derived_space(&[root2], DerivedKind::Concat)
-        .unwrap();
-    writer.write(&[0u8; 4]).unwrap();
-    match writer.write(&[0u8; 1]) {
+    let head = root2.child(0, 4).unwrap();
+    let tail = root2.child(4, 5).unwrap();
+    match ctx2.begin_derived_space(&[head, tail], DerivedKind::Concat) {
         Err(CodecError::ResourceLimit(limit)) => {
             assert_eq!(limit.dimension, ResourceDimension::AllocBytes);
         }
         other => panic!("expected AllocBytes ResourceLimit, got {other:?}"),
     }
     assert!(ctx2.is_fused());
+}
+
+#[test]
+fn derived_concat_refuses_transform_writes() {
+    // A Concat space assembles from its declared inputs; a caller cannot inject
+    // bytes unrelated to the recorded segments through `write`.
+    let bytes: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    let extent = root.child(0, 4).unwrap();
+    let mut writer = ctx
+        .begin_derived_space(&[extent], DerivedKind::Concat)
+        .unwrap();
+    match writer.write(&[99, 99]) {
+        Err(CodecError::Malformed(_)) => {}
+        other => panic!("expected Malformed refusal, got {other:?}"),
+    }
+    // The refusal does not corrupt the assembled buffer: it still concatenates
+    // only the declared extent.
+    let (space, view) = writer.finalize().unwrap();
+    assert_eq!(view.window(), &[1, 2, 3, 4]);
+    match ctx.space_origin(space).unwrap() {
+        SpaceOrigin::Concat { segments } => {
+            assert_eq!(segments.len(), 1);
+            assert_eq!(segments[0].range, ByteRange { start: 0, end: 4 });
+        }
+        other => panic!("expected Concat origin, got {other:?}"),
+    }
 }
 
 #[test]
