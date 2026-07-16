@@ -46,6 +46,18 @@
 # records or validated JSON; they graduate with the module-level deny and carry
 # no `req_*`/`BoundedCount`/`DepthGuard` obligations, matching the platform
 # manifest's model/namespace entries.
+#
+# Errata (commit 5603466c). That commit's body claims `annotations`,
+# `classification`, `native`, and `records` "read their record bodies through
+# the pre-`View` path and sized their accumulators from decoded lengths" and were
+# graduated "reading through the charged `View`/`exact_vec`/`grow_vec` primitives
+# with stated allocation bounds". Both halves are false: these four modules never
+# had a hostile-byte read path, they call no `View`/`exact_vec`/`grow_vec`/`req_*`
+# primitive, and they charge nothing (`charges = []` below). They graduate purely
+# on the "no hostile-byte read path" criterion recorded in their entries and doc
+# comments — not on any bounded-read migration. The genuine hostile paths
+# (`brep/*`, `history`, `parasolid`, `container`) remain `legacy` and uncharged.
+# This note is the reconciliation; the commit body cannot be amended.
 # ===========================================================================
 
 [[module]]
