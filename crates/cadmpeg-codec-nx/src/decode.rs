@@ -3703,7 +3703,11 @@ fn continue_surface_intersection_parameters_with_seeds(
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
 ) -> Option<[Vec<Point2>; 2]> {
-    if chart.len() < 2 || !fit_tolerance.is_finite() || fit_tolerance <= 0.0 {
+    if chart.len() < 2
+        || surfaces[0] == surfaces[1]
+        || !fit_tolerance.is_finite()
+        || fit_tolerance <= 0.0
+    {
         return None;
     }
     let fit_parameters = |surface: &SurfaceId, point: Point3, seed: Option<Point2>| {
@@ -3735,8 +3739,12 @@ fn continue_surface_intersection_parameters_with_seeds(
         periods: surfaces.map(|surface| surface_parameter_periods(ir, surface)),
     };
     let seed = [first[0].u, first[0].v, first[1].u, first[1].v];
-    let seed_tangent =
-        null_vector_3x4(intersection_parameter_jacobian(ir, surfaces, seed, space)?)?;
+    let first_chord = Vector3::new(
+        chart[1].x - chart[0].x,
+        chart[1].y - chart[0].y,
+        chart[1].z - chart[0].z,
+    );
+    let seed_tangent = intersection_parameter_tangent(ir, surfaces, seed, space, first_chord)?;
     let mut current = correct_intersection_parameters(
         ir,
         surfaces,
@@ -3757,16 +3765,16 @@ fn continue_surface_intersection_parameters_with_seeds(
 
     for chart_pair in chart.windows(2) {
         let jacobian = intersection_parameter_jacobian(ir, surfaces, current, space)?;
-        let tangent = null_vector_3x4(jacobian)?;
-        let spatial_tangent = Vector3::new(
-            jacobian[0][0] * tangent[0] + jacobian[0][1] * tangent[1],
-            jacobian[1][0] * tangent[0] + jacobian[1][1] * tangent[1],
-            jacobian[2][0] * tangent[0] + jacobian[2][1] * tangent[1],
-        );
         let chord = Vector3::new(
             chart_pair[1].x - chart_pair[0].x,
             chart_pair[1].y - chart_pair[0].y,
             chart_pair[1].z - chart_pair[0].z,
+        );
+        let tangent = intersection_parameter_tangent(ir, surfaces, current, space, chord)?;
+        let spatial_tangent = Vector3::new(
+            jacobian[0][0] * tangent[0] + jacobian[0][1] * tangent[1],
+            jacobian[1][0] * tangent[0] + jacobian[1][1] * tangent[1],
+            jacobian[2][0] * tangent[0] + jacobian[2][1] * tangent[1],
         );
         let target = [
             fit_parameters(
@@ -3936,6 +3944,50 @@ fn correct_intersection_parameters(
 struct IntersectionParameterSpace {
     domains: [Option<([f64; 2], [f64; 2])>; 2],
     periods: [[Option<f64>; 2]; 2],
+}
+
+fn intersection_parameter_tangent(
+    ir: &CadIr,
+    surfaces: [&SurfaceId; 2],
+    parameters: [f64; 4],
+    space: IntersectionParameterSpace,
+    chord: Vector3,
+) -> Option<[f64; 4]> {
+    let jacobian = intersection_parameter_jacobian(ir, surfaces, parameters, space)?;
+    if let Some(tangent) = null_vector_3x4(jacobian) {
+        return Some(tangent);
+    }
+    let chord = unit_vector(chord)?;
+    let derivatives = [
+        [
+            Vector3::new(jacobian[0][0], jacobian[1][0], jacobian[2][0]),
+            Vector3::new(jacobian[0][1], jacobian[1][1], jacobian[2][1]),
+        ],
+        [
+            Vector3::new(-jacobian[0][2], -jacobian[1][2], -jacobian[2][2]),
+            Vector3::new(-jacobian[0][3], -jacobian[1][3], -jacobian[2][3]),
+        ],
+    ];
+    let mut tangent = [0.0; 4];
+    for side in 0..2 {
+        let (u, v) = least_squares_step(derivatives[side][0], derivatives[side][1], chord)?;
+        let mapped = unit_vector(Vector3::new(
+            derivatives[side][0].x * u + derivatives[side][1].x * v,
+            derivatives[side][0].y * u + derivatives[side][1].y * v,
+            derivatives[side][0].z * u + derivatives[side][1].z * v,
+        ))?;
+        if dot_vector(mapped, chord) < 1.0 - 1.0e-8 {
+            return None;
+        }
+        tangent[side * 2] = u;
+        tangent[side * 2 + 1] = v;
+    }
+    let norm = tangent
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    (norm.is_finite() && norm > 1.0e-14).then(|| tangent.map(|value| value / norm))
 }
 
 fn intersection_parameter_jacobian(

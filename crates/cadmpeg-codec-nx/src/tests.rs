@@ -11198,6 +11198,42 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         assert!((cylinder_point.z - plane_point.z).abs() < 1.0e-8);
     }
 
+    let tangent_cylinder = SurfaceId("synthetic:tangent-cylinder".into());
+    let tangent_plane = SurfaceId("synthetic:tangent-plane".into());
+    ir.model.surfaces.extend([
+        Surface {
+            id: tangent_cylinder.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 1.0),
+                axis: Vector3::new(0.0, 1.0, 0.0),
+                ref_direction: Vector3::new(0.0, 0.0, -1.0),
+                radius: 1.0,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: tangent_plane.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let tangent_chart = [0.0, 1.0, 3.0, 6.0].map(|y| Point3::new(0.0, y, 0.0));
+    let tangent_lanes = crate::decode::continue_surface_intersection_parameters(
+        &ir,
+        [&tangent_cylinder, &tangent_plane],
+        &tangent_chart,
+        1.0e-8,
+    )
+    .unwrap();
+    for (ordinal, y) in [0.0, 1.0, 3.0, 6.0].into_iter().enumerate() {
+        assert!((tangent_lanes[0][ordinal].v - y).abs() < 1.0e-10);
+        assert!((tangent_lanes[1][ordinal].v - y).abs() < 1.0e-10);
+    }
+
     let seam_chart = [3.0_f64, 3.1, 3.2, 3.3]
         .map(|angle| Point3::new(2.0 * angle.cos(), 2.0 * angle.sin(), 1.0e-5));
     let seam_lanes = crate::decode::continue_surface_intersection_parameters(
