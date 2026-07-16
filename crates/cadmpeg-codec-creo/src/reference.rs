@@ -159,6 +159,10 @@ fn conic_local_system(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
     }
     let mut values = Vec::with_capacity(12);
     let mut cursor = 0;
+    let frame_coordinate = |offset| {
+        scalar::decode_model_reference_coordinate(body, offset, cache)
+            .or_else(|| scalar::decode_tabulated_cylinder_frame_coordinate(body, offset, cache))
+    };
     while cursor < body.len() && values.len() < 12 {
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
             values.extend([0.0, 1.0, 0.0]);
@@ -170,7 +174,12 @@ fn conic_local_system(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
             cursor += 1;
             continue;
         }
-        let (value, next) = coordinate(body, cursor, cache)?;
+        if body.get(cursor) == Some(&0x18) && frame_coordinate(cursor + 1).is_some() {
+            values.push(0.0);
+            cursor += 1;
+            continue;
+        }
+        let (value, next) = frame_coordinate(cursor)?;
         values.push(value);
         cursor = next;
     }
@@ -643,6 +652,19 @@ mod tests {
         assert_eq!(
             conic.local_system,
             Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        );
+    }
+
+    #[test]
+    fn conic_frame_accepts_positive_seven_byte_origin_and_terminal_zero() {
+        let body = [
+            0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x4a, 0, 0, 0, 0, 0, 0, 0x0f,
+            0x18,
+        ];
+
+        assert_eq!(
+            conic_local_system(&body, &ScalarCache::from_section(&body)),
+            Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0])
         );
     }
 
