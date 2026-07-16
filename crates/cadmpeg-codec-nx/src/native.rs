@@ -9798,34 +9798,50 @@ pub(crate) fn expression_parameter_names(expression: &str) -> Vec<&str> {
     let mut names = Vec::new();
     let mut at = 0usize;
     while at < bytes.len() {
-        if bytes[at] != b'p'
-            || at
-                .checked_sub(1)
-                .and_then(|before| bytes.get(before))
-                .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
-        {
+        let Some(end) = expression_parameter_reference_end(bytes, at) else {
             at += 1;
             continue;
-        }
-        let start = at + 1;
-        let mut end = start;
-        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
-            end += 1;
-        }
-        if end == start {
-            at += 1;
-            continue;
-        }
+        };
+        names.push(&expression[at..end]);
+        at = end;
+    }
+    names
+}
+
+fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> {
+    if bytes.get(at) != Some(&b'p')
+        || at
+            .checked_sub(1)
+            .and_then(|before| bytes.get(before))
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+    {
+        return None;
+    }
+    let digits = at + 1;
+    let mut end = digits;
+    while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+        end += 1;
+    }
+    if end == digits {
+        return None;
+    }
+    if bytes.get(end) == Some(&b'_') {
+        end += 1;
+        let qualifier = end;
         while bytes
             .get(end)
             .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
         {
             end += 1;
         }
-        names.push(&expression[at..end]);
-        at = end;
+        if end == qualifier {
+            return None;
+        }
     }
-    names
+    (!bytes
+        .get(end)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_'))
+    .then_some(end)
 }
 
 /// Length-framed class definition from an NX OM type registry.
@@ -11703,44 +11719,26 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             let mut at = 0usize;
             let mut complete = true;
             while at < bytes.len() {
-                if bytes[at] == b'p'
-                    && at
-                        .checked_sub(1)
-                        .and_then(|before| bytes.get(before))
-                        .is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')
-                {
+                if let Some(end) = expression_parameter_reference_end(bytes, at) {
                     let start = at;
-                    at += 1;
-                    let digits = at;
-                    while bytes.get(at).is_some_and(u8::is_ascii_digit) {
-                        at += 1;
+                    at = end;
+                    let name = &expression.expression[start..at];
+                    let scope = if expression.source_table.is_empty() {
+                        expression.source_entry.clone()
+                    } else {
+                        expression.source_table.clone()
+                    };
+                    let key = (scope, name.to_string());
+                    let Some((unit, value)) = values.get(&key).copied() else {
+                        complete = false;
+                        break;
+                    };
+                    if name_counts.get(&key) != Some(&1) || expression.unit != unit {
+                        complete = false;
+                        break;
                     }
-                    if at > digits {
-                        while bytes
-                            .get(at)
-                            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
-                        {
-                            at += 1;
-                        }
-                        let name = &expression.expression[start..at];
-                        let scope = if expression.source_table.is_empty() {
-                            expression.source_entry.clone()
-                        } else {
-                            expression.source_table.clone()
-                        };
-                        let key = (scope, name.to_string());
-                        let Some((unit, value)) = values.get(&key).copied() else {
-                            complete = false;
-                            break;
-                        };
-                        if name_counts.get(&key) != Some(&1) || expression.unit != unit {
-                            complete = false;
-                            break;
-                        }
-                        substituted.push_str(&value.to_string());
-                        continue;
-                    }
-                    at = start;
+                    substituted.push_str(&value.to_string());
+                    continue;
                 }
                 substituted.push(char::from(bytes[at]));
                 at += 1;

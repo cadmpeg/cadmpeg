@@ -1598,10 +1598,39 @@ fn segment_om_record_area_with_input_store_payload() -> Vec<u8> {
 fn nx_expression_parameter_references_preserve_formula_order() {
     assert_eq!(
         crate::native::expression_parameter_names(
-            "max(p12, p3) + p12 + exp2 + p7_radius + p7_radius"
+            "max(p12, p3) + p12 + exp2 + p7_radius + p7_radius + p4bad + p5_"
         ),
         vec!["p12", "p3", "p12", "p7_radius", "p7_radius"]
     );
+}
+
+#[test]
+fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
+    let expression = |name: &str, formula: &str, value| crate::native::Expression {
+        id: format!("nx:test:expression#{name}"),
+        object_id: None,
+        record: None,
+        declaration: None,
+        name: name.into(),
+        parameter_index: None,
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: formula.into(),
+        value,
+        source_entry: "part".into(),
+        source_table: "table".into(),
+        source_offset: 0,
+    };
+    let mut expressions = vec![
+        expression("p4", "3", Some(3.0)),
+        expression("p5", "p4bad + 2", None),
+        expression("p6", "p4_ + 2", None),
+    ];
+
+    crate::native::evaluate_expression_graphs(&mut expressions);
+
+    assert_eq!(expressions[1].value, None);
+    assert_eq!(expressions[2].value, None);
 }
 
 #[test]
