@@ -5371,6 +5371,24 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
     }
 }
 
+fn uses_canonical_edge_direction_gauge(
+    assignment: &MeshFaceBoundaryAssignment,
+    directions: &[Vec<bool>],
+    oriented_edges: &HashSet<usize>,
+) -> bool {
+    let mut oriented = oriented_edges.clone();
+    assignment
+        .boundaries
+        .iter()
+        .zip(directions)
+        .all(|(boundary, directions)| {
+            boundary.iter().zip(directions).all(|(use_, direction)| {
+                let first = oriented.insert(use_.edge);
+                !first || use_.reversed.is_some() || !direction
+            })
+        })
+}
+
 impl MeshSelectionSearch<'_> {
     fn should_stop(&self) -> bool {
         self.ambiguous
@@ -6259,6 +6277,13 @@ impl MeshSelectionSearch<'_> {
                     }),
             );
         }
+        options.retain(|(assignment_index, directions, _)| {
+            uses_canonical_edge_direction_gauge(
+                &self.assignments[face][*assignment_index],
+                directions,
+                &selected_edges,
+            )
+        });
         options.retain_mut(|(_, _, quotient)| quotient.root_count() >= self.vertex_points.len());
         if options.is_empty() {
             return;
@@ -7199,10 +7224,10 @@ mod motif_tests {
         parse_trim_chain, parse_trim_record, possible_face_choices, possible_face_equations,
         propagate_edge_port_points, prune_edge_candidates_by_port_domains, reconstruct_incidence,
         reconstruct_incidence_candidates, resolve_edge_faces_from_runs, standard_face_count,
-        unique_coordinate_bijection, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
-        FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun, MeshFaceBoundaryAssignment,
-        MeshQuotient, MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER,
-        MAX_FACE_EQUATION_CACHE_ENTRIES,
+        unique_coordinate_bijection, uses_canonical_edge_direction_gauge, Boundary, CoedgeUse,
+        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun,
+        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
+        TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -7597,6 +7622,50 @@ mod motif_tests {
         assert_eq!(faces[0].len(), 2);
         assert_eq!(faces[0][0].boundaries[0][0].edge, 0);
         assert_eq!(faces[0][1].boundaries[0][1].edge, 2);
+    }
+
+    #[test]
+    fn mesh_direction_search_fixes_each_new_edge_gauge_once() {
+        let assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 1,
+                    reversed: None,
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 1,
+                    end: 2,
+                    reversed: None,
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 2,
+                    end: 3,
+                    reversed: None,
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 2,
+                    start: 3,
+                    end: 0,
+                    reversed: Some(true),
+                },
+            ]],
+        };
+        let already_oriented = HashSet::from([1]);
+
+        assert!(uses_canonical_edge_direction_gauge(
+            &assignment,
+            &[vec![false, true, true, true]],
+            &already_oriented,
+        ));
+        assert!(!uses_canonical_edge_direction_gauge(
+            &assignment,
+            &[vec![true, false, false, true]],
+            &already_oriented,
+        ));
     }
 
     #[test]
