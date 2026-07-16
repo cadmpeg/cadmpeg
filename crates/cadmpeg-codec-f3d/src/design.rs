@@ -1175,10 +1175,7 @@ fn resolved_edge_group(
             return lost_selection();
         }
         let partial_members = if transition_state_id.is_none() {
-            matched_operands
-                .iter()
-                .map(|operand| (operand.id.as_str(), resolved_edge_operand(operand)))
-                .collect()
+            terminal_partial_edge_group_members(&matched_operands)
         } else {
             partial_edge_group_members(&matched_operands)
         };
@@ -1211,6 +1208,30 @@ fn resolved_edge_group(
             native: group.id.clone(),
         }
     }
+}
+
+fn terminal_partial_edge_group_members<'a>(
+    operands: &[&'a DesignEdgeOperand],
+) -> Vec<(&'a str, Option<i64>)> {
+    operands
+        .iter()
+        .filter_map(|operand| {
+            let resolved = resolved_edge_operand(operand);
+            if resolved.is_none()
+                && matches!(
+                    edge_group_assignment_candidates(
+                        &operand.recipe_selectors,
+                        edge_operand_reference_edge_sets(operand),
+                    ),
+                    Some(None)
+                )
+            {
+                None
+            } else {
+                Some((operand.id.as_str(), resolved))
+            }
+        })
+        .collect()
 }
 
 fn partial_edge_group_members<'a>(
@@ -13528,6 +13549,13 @@ mod relation_tests {
             super::edge_operand_reference_edge_sets(&edge_operand),
             vec![&[17][..], &[18, 19][..]]
         );
+        assert!(super::terminal_partial_edge_group_members(&[&edge_operand]).is_empty());
+        edge_operand.terminal_reference_edge_slots = vec![vec![17, 18], vec![17, 18]];
+        assert_eq!(
+            super::terminal_partial_edge_group_members(&[&edge_operand]),
+            vec![(edge_operand.id.as_str(), None)]
+        );
+        edge_operand.terminal_reference_edge_slots.clear();
         edge_operand.resolved_edge_slot = Some(17);
         assert_eq!(super::resolved_edge_operand(&edge_operand), Some(17));
         edge_operand.resolved_edge_slot = None;
