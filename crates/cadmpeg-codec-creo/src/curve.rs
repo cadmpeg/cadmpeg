@@ -1283,13 +1283,27 @@ pub fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
     records
 }
 
+fn uniquely_bounded_parameter_records(
+    records: &[CurveParameterRecord],
+) -> Vec<&CurveParameterRecord> {
+    let mut counts = BTreeMap::new();
+    for record in records {
+        *counts.entry(record.curve_id).or_insert(0usize) += 1;
+    }
+    records
+        .iter()
+        .filter(|record| counts.get(&record.curve_id) == Some(&1))
+        .filter(|record| record.suffix == CurveSuffixStatus::Unique)
+        .collect()
+}
+
 /// Interpret complete eight-scalar parameter lanes for pcurve-family rows.
 pub fn pcurve_endpoints(
     parameters: &[CurveParameterRecord],
     topology: &[CurveTopologyRow],
 ) -> Vec<PcurveEndpoints> {
-    let mut result = parameters
-        .iter()
+    let mut result = uniquely_bounded_parameter_records(parameters)
+        .into_iter()
         .filter(|record| matches!(record.type_byte, 0x00 | 0x01 | 0x06 | 0x08))
         .filter(|record| {
             record.scalar_tokens.len() == 8
@@ -1317,7 +1331,7 @@ pub fn pcurve_endpoints(
 /// Decode exact world-coordinate tokens from FC-prefixed dense curve bodies.
 pub fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCoordinates> {
     let mut result = Vec::new();
-    for record in parameters {
+    for record in uniquely_bounded_parameter_records(parameters) {
         let Some((&0xfc, tail)) = record.body.split_first() else {
             continue;
         };
@@ -1401,7 +1415,7 @@ fn fc05_scalar(body: &[u8], offset: usize) -> Option<(f64, usize)> {
 /// Validate FC05 point lanes against their exact circle identity.
 pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
     let mut circles = Vec::new();
-    for record in parameters {
+    for record in uniquely_bounded_parameter_records(parameters) {
         if record.body.get(..2) != Some(&[0xfc, 0x05]) {
             continue;
         }
@@ -1851,6 +1865,36 @@ fn find_in(data: &[u8], needle: &[u8], from: usize, end: usize) -> Option<usize>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parameter_record(curve_id: u32, suffix: CurveSuffixStatus) -> CurveParameterRecord {
+        CurveParameterRecord {
+            curve_id,
+            type_byte: 0,
+            body: Vec::new(),
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            skipped_references: Vec::new(),
+            references: Vec::new(),
+            opaque_spans: Vec::new(),
+            suffix,
+            offset: curve_id as usize,
+            body_offset: curve_id as usize,
+            suffix_offset: curve_id as usize,
+        }
+    }
+
+    #[test]
+    fn typed_parameter_rows_require_unique_identity_and_suffix_boundary() {
+        let unique = parameter_record(7, CurveSuffixStatus::Unique);
+        assert_eq!(
+            uniquely_bounded_parameter_records(&[unique.clone()]).len(),
+            1
+        );
+
+        let ambiguous = parameter_record(8, CurveSuffixStatus::Ambiguous { candidate_count: 2 });
+        assert!(uniquely_bounded_parameter_records(&[ambiguous]).is_empty());
+        assert!(uniquely_bounded_parameter_records(&[unique.clone(), unique]).is_empty());
+    }
 
     #[test]
     fn finds_labeled_prototypes_in_concatenated_namespaces() {
