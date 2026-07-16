@@ -4827,8 +4827,10 @@ impl MeshQuotient {
         fn walk(
             domains: &[Vec<usize>],
             edges: &[[usize; 2]],
+            edge_ids: &[usize],
             root_edges: &[Vec<usize>],
             edge_candidates: &[Vec<[usize; 2]>],
+            component_points: &HashSet<usize>,
             assigned: &mut [Option<usize>],
             point_uses: &mut [usize],
             solutions: &mut Vec<Vec<usize>>,
@@ -4854,7 +4856,11 @@ impl MeshQuotient {
                             let [left, right] = edges[*edge];
                             let other = if left == root { right } else { left };
                             assigned[other].is_none_or(|other_point| {
-                                pair_supported(&edge_candidates[*edge], *point, other_point)
+                                pair_supported(
+                                    &edge_candidates[edge_ids[*edge]],
+                                    *point,
+                                    other_point,
+                                )
                             })
                         })
                     })
@@ -4862,7 +4868,10 @@ impl MeshQuotient {
             };
 
             let remaining = assigned.iter().filter(|point| point.is_none()).count();
-            let unused = point_uses.iter().filter(|uses| **uses == 0).count();
+            let unused = component_points
+                .iter()
+                .filter(|point| point_uses[**point] == 0)
+                .count();
             if remaining < unused {
                 return;
             }
@@ -4872,8 +4881,10 @@ impl MeshQuotient {
                 .filter(|(_, point)| point.is_none())
                 .map(|(root, _)| (root, viable_values(root, assigned)))
                 .collect::<Vec<_>>();
-            for (point, uses) in point_uses.iter().enumerate() {
-                if *uses == 0 && !values.iter().any(|(_, values)| values.contains(&point)) {
+            for &point in component_points {
+                if point_uses[point] == 0
+                    && !values.iter().any(|(_, values)| values.contains(&point))
+                {
                     return;
                 }
             }
@@ -4881,7 +4892,7 @@ impl MeshQuotient {
                 .into_iter()
                 .min_by_key(|(root, values)| (values.len(), *root));
             let Some((root, values)) = next else {
-                if point_uses.iter().all(|uses| *uses > 0) {
+                if component_points.iter().all(|point| point_uses[*point] > 0) {
                     solutions.push(
                         assigned
                             .iter()
@@ -4898,8 +4909,10 @@ impl MeshQuotient {
                 walk(
                     domains,
                     edges,
+                    edge_ids,
                     root_edges,
                     edge_candidates,
+                    component_points,
                     assigned,
                     point_uses,
                     solutions,
@@ -4941,13 +4954,6 @@ impl MeshQuotient {
                 ])
             })
             .collect::<Option<Vec<_>>>()?;
-        let mut root_edges = vec![Vec::new(); roots.len()];
-        for (edge, [left, right]) in edges.iter().copied().enumerate() {
-            root_edges[left].push(edge);
-            if right != left {
-                root_edges[right].push(edge);
-            }
-        }
         let domains = roots
             .iter()
             .map(|root| {
@@ -4961,28 +4967,102 @@ impl MeshQuotient {
         if domains.iter().any(Vec::is_empty) {
             return None;
         }
-        let mut solutions = Vec::new();
-        let mut states = 0;
-        let mut exhausted = false;
-        walk(
-            &domains,
-            &edges,
-            &root_edges,
-            edge_candidates,
-            &mut vec![None; roots.len()],
-            &mut vec![0; point_count],
-            &mut solutions,
-            &mut states,
-            &mut exhausted,
-        );
-        if exhausted {
+        if domains
+            .iter()
+            .flatten()
+            .copied()
+            .collect::<HashSet<_>>()
+            .len()
+            != point_count
+        {
             return None;
         }
-        let [assignment] = solutions.as_slice() else {
-            return None;
-        };
+        let mut dependency = UnionFind::new(roots.len());
+        for [left, right] in &edges {
+            dependency.union(*left, *right);
+        }
         let mut root_by_point = HashMap::new();
-        for (&root, &point) in roots.iter().zip(assignment) {
+        for (root, domain) in domains.iter().enumerate() {
+            for point in domain {
+                if let Some(previous) = root_by_point.insert(*point, root) {
+                    dependency.union(previous, root);
+                }
+            }
+        }
+        let mut components = HashMap::<usize, Vec<usize>>::new();
+        for root in 0..roots.len() {
+            components
+                .entry(dependency.find(root))
+                .or_default()
+                .push(root);
+        }
+        let mut components = components.into_values().collect::<Vec<_>>();
+        components.sort_by_key(|component| component[0]);
+        let mut assignment = vec![None; roots.len()];
+        for component in components {
+            let component_set = component.iter().copied().collect::<HashSet<_>>();
+            let local_index = component
+                .iter()
+                .enumerate()
+                .map(|(local, global)| (*global, local))
+                .collect::<HashMap<_, _>>();
+            let edge_ids = edges
+                .iter()
+                .enumerate()
+                .filter_map(|(edge, [left, _])| component_set.contains(left).then_some(edge))
+                .collect::<Vec<_>>();
+            let local_edges = edge_ids
+                .iter()
+                .map(|edge| {
+                    let [left, right] = edges[*edge];
+                    Some([*local_index.get(&left)?, *local_index.get(&right)?])
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let local_domains = component
+                .iter()
+                .map(|root| domains[*root].clone())
+                .collect::<Vec<_>>();
+            let component_points = local_domains
+                .iter()
+                .flatten()
+                .copied()
+                .collect::<HashSet<_>>();
+            let mut root_edges = vec![Vec::new(); component.len()];
+            for (edge, [left, right]) in local_edges.iter().copied().enumerate() {
+                root_edges[left].push(edge);
+                if right != left {
+                    root_edges[right].push(edge);
+                }
+            }
+            let mut solutions = Vec::new();
+            let mut states = 0;
+            let mut exhausted = false;
+            walk(
+                &local_domains,
+                &local_edges,
+                &edge_ids,
+                &root_edges,
+                edge_candidates,
+                &component_points,
+                &mut vec![None; component.len()],
+                &mut vec![0; point_count],
+                &mut solutions,
+                &mut states,
+                &mut exhausted,
+            );
+            if exhausted {
+                return None;
+            }
+            let [local_assignment] = solutions.as_slice() else {
+                return None;
+            };
+            for (&root, &point) in component.iter().zip(local_assignment) {
+                assignment[root] = Some(point);
+            }
+        }
+        let assignment = assignment.into_iter().collect::<Option<Vec<_>>>()?;
+        let mut root_by_point = HashMap::new();
+        for (&root, &point) in roots.iter().zip(&assignment) {
             if let Some(previous) = root_by_point.insert(point, root) {
                 let merged = self.merge(previous, root)?;
                 if !self.propagate_component_edge_domains(merged, edge_candidates) {
@@ -9860,15 +9940,21 @@ mod motif_tests {
     }
 
     #[test]
-    fn quotient_closes_more_than_two_independent_coordinate_roots() {
-        let all = Arc::new(HashSet::from_iter(0..9));
+    fn quotient_closes_independent_coordinate_components_with_local_budgets() {
+        const COMPONENT_COUNT: usize = 100;
+        let point_count = COMPONENT_COUNT * 3;
         let mut quotient = MeshQuotient {
-            union: UnionFind::new(18),
-            domains: vec![all; 18],
-            members: (0..18).map(|node| vec![node]).collect(),
+            union: UnionFind::new(COMPONENT_COUNT * 6),
+            domains: (0..COMPONENT_COUNT)
+                .flat_map(|component| {
+                    let points = Arc::new(HashSet::from_iter(component * 3..component * 3 + 3));
+                    std::iter::repeat_n(points, 6)
+                })
+                .collect(),
+            members: (0..COMPONENT_COUNT * 6).map(|node| vec![node]).collect(),
         };
         let mut candidates = Vec::new();
-        for component in 0..3 {
+        for component in 0..COMPONENT_COUNT {
             let node = component * 6;
             let point = component * 3;
             quotient
@@ -9885,12 +9971,12 @@ mod motif_tests {
         }
 
         let assignment = quotient
-            .close_coordinate_roots(9, &candidates)
-            .expect("three independent coordinate closures");
+            .close_coordinate_roots(point_count, &candidates)
+            .expect("independent coordinate closures");
 
-        assert_eq!(quotient.root_count(), 9);
-        assert_eq!(assignment.len(), 9);
-        for component in 0..3 {
+        assert_eq!(quotient.root_count(), point_count);
+        assert_eq!(assignment.len(), point_count);
+        for component in 0..COMPONENT_COUNT {
             let node = component * 6;
             assert_eq!(quotient.union.find(node), quotient.union.find(node + 5));
         }
@@ -9908,6 +9994,21 @@ mod motif_tests {
 
         assert!(quotient
             .close_coordinate_roots(2, &[vec![[0, 1]], vec![[0, 1]]])
+            .is_none());
+        assert_eq!(quotient.root_count(), 3);
+    }
+
+    #[test]
+    fn quotient_closure_requires_every_coordinate_row_in_a_domain() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: vec![Arc::new(HashSet::from([0])); 4],
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        quotient.merge(1, 2).expect("shared endpoint");
+
+        assert!(quotient
+            .close_coordinate_roots(2, &[vec![[0, 0]], vec![[0, 0]]])
             .is_none());
         assert_eq!(quotient.root_count(), 3);
     }
