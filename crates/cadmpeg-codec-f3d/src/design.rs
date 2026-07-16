@@ -419,7 +419,7 @@ pub fn project_parameter_design(
     use cadmpeg_ir::features::{
         Angle, DesignParameter as NeutralParameter, DimensionDisplay, EdgeSelection, Feature,
         FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, ProfileRef,
-        RadiusForm, RadiusSpec, SketchSpace,
+        RadiusSpec, SketchSpace,
     };
     use std::collections::BTreeMap;
 
@@ -522,11 +522,15 @@ pub fn project_parameter_design(
                     })
                     .collect::<Vec<_>>();
                 let incomplete_assignment = if assignments.is_empty() {
-                    parameters
+                    let radii = parameters
                         .iter()
                         .filter(|(_, parameter)| parameter.source_kind == "Radius")
-                        .count()
-                        > 1
+                        .map(|(_, parameter)| *parameter)
+                        .collect::<Vec<_>>();
+                    radii.len() != 1
+                        || radii.iter().any(|parameter| {
+                            design_length(parameter).is_none_or(|value| value.0 <= 0.0)
+                        })
                         || parameters
                             .iter()
                             .any(|(_, parameter)| parameter.source_kind != "Radius")
@@ -539,6 +543,13 @@ pub fn project_parameter_design(
                                     .filter(|record_index| **record_index == parameter.record_index)
                                     .count()
                                     != 1
+                        })
+                        || parameters.iter().any(|(_, parameter)| {
+                            if parameter.source_kind == "Radius" {
+                                design_length(parameter).is_none_or(|value| value.0 <= 0.0)
+                            } else {
+                                !parameter.evaluated_value.is_finite()
+                            }
                         })
                 };
                 if incomplete_assignment {
@@ -556,21 +567,14 @@ pub fn project_parameter_design(
                     let groups = assignments
                         .into_iter()
                         .map(|assignment| {
-                            let radius = native
+                            let radius = parameters
                                 .iter()
-                                .find(|parameter| {
-                                    native_stream(&parameter.id) == Some(native_scope)
-                                        && parameter.record_index
-                                            == assignment.radius_parameter_record_index
+                                .find(|(_, parameter)| {
+                                    parameter.record_index
+                                        == assignment.radius_parameter_record_index
                                 })
-                                .and_then(design_length)
-                                .filter(|radius| radius.0 > 0.0)
-                                .map_or(
-                                    RadiusSpec::Unresolved {
-                                        form: Some(RadiusForm::Constant),
-                                    },
-                                    |radius| RadiusSpec::Constant { radius },
-                                );
+                                .and_then(|(_, parameter)| design_length(parameter))
+                                .expect("complete Fillet assignment has a positive radius");
                             let tangency_weight = assignment
                                 .tangency_weight_parameter_record_index
                                 .and_then(|record_index| {
@@ -581,10 +585,7 @@ pub fn project_parameter_design(
                                 })
                                 .map(|parameter| parameter.evaluated_value)
                                 .filter(|weight| weight.is_finite());
-                            let edge_radius = match &radius {
-                                RadiusSpec::Constant { radius } => Some(radius.0),
-                                _ => None,
-                            };
+                            let edge_radius = Some(radius.0);
                             let edges = construction_groups
                                 .iter()
                                 .find(|group| {
@@ -606,7 +607,7 @@ pub fn project_parameter_design(
                                 );
                             FilletGroup {
                                 edges,
-                                radius,
+                                radius: RadiusSpec::Constant { radius },
                                 tangency_weight,
                             }
                         })
@@ -615,20 +616,14 @@ pub fn project_parameter_design(
                         groups: if groups.is_empty() {
                             vec![FilletGroup {
                                 edges: EdgeSelection::Native(scope.id.clone()),
-                                radius: match parameters
-                                    .iter()
-                                    .filter(|(_, parameter)| parameter.source_kind == "Radius")
-                                    .filter_map(|(_, parameter)| design_length(parameter))
-                                    .collect::<Vec<_>>()
-                                    .as_slice()
-                                {
-                                    [radius] if radius.0 > 0.0 => {
-                                        RadiusSpec::Constant { radius: *radius }
-                                    }
-                                    [_] => RadiusSpec::Unresolved {
-                                        form: Some(RadiusForm::Constant),
-                                    },
-                                    _ => RadiusSpec::Unresolved { form: None },
+                                radius: RadiusSpec::Constant {
+                                    radius: parameters
+                                        .iter()
+                                        .filter(|(_, parameter)| parameter.source_kind == "Radius")
+                                        .find_map(|(_, parameter)| design_length(parameter))
+                                        .expect(
+                                            "complete ungrouped Fillet has one positive radius",
+                                        ),
                                 },
                                 tangency_weight: None,
                             }]
@@ -1030,9 +1025,7 @@ fn project_chamfer(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        ChamferForm, ChamferGroup, ChamferSpec, EdgeSelection, FeatureDefinition,
-    };
+    use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, EdgeSelection, FeatureDefinition};
 
     let native_scope = native_stream(&scope.id);
     let mut edge_groups = construction_groups
@@ -1072,7 +1065,7 @@ fn project_chamfer(
         return None;
     }
 
-    let (form, candidates) = if !first_distances.is_empty() || !second_distances.is_empty() {
+    let candidates = if !first_distances.is_empty() || !second_distances.is_empty() {
         if !distances.is_empty() || !angles.is_empty() {
             return None;
         }
@@ -1089,7 +1082,7 @@ fn project_chamfer(
                     })
                     .collect::<Vec<_>>()
             });
-        (Some(ChamferForm::TwoDistances), candidates)
+        candidates
     } else if !angles.is_empty() {
         if distances.len() != group_count || angles.len() != group_count {
             return None;
@@ -1105,7 +1098,7 @@ fn project_chamfer(
                 })
                 .collect::<Vec<_>>()
         });
-        (Some(ChamferForm::DistanceAngle), candidates)
+        candidates
     } else if !distances.is_empty() {
         if distances.len() != group_count {
             return None;
@@ -1118,15 +1111,14 @@ fn project_chamfer(
                 })
                 .collect::<Vec<_>>()
         });
-        (Some(ChamferForm::Distance), candidates)
+        candidates
     } else {
-        (None, None)
+        None
     };
-    let candidates = match candidates {
-        Some(candidates) => candidates,
-        None if parameters.is_empty() => vec![None; group_count],
-        None => return None,
-    };
+    let candidates = candidates?.into_iter().collect::<Option<Vec<_>>>()?;
+    if !candidates.iter().all(valid_chamfer_spec) {
+        return None;
+    }
 
     let groups = candidates
         .into_iter()
@@ -1145,9 +1137,7 @@ fn project_chamfer(
                     ),
                     None => EdgeSelection::Native(scope.id.clone()),
                 },
-                spec: spec
-                    .filter(valid_chamfer_spec)
-                    .unwrap_or(ChamferSpec::Unresolved { form }),
+                spec,
             }
         })
         .collect();
@@ -17187,6 +17177,22 @@ mod relation_tests {
         ));
 
         let (features, _) = project_parameter_design(
+            &[parameter(44, 45, "Radius", "d1", "0 mm", 0.0)],
+            &[owner(44, 12, 45, 0)],
+            std::slice::from_ref(&scopes[0]),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            &features[0].definition,
+            FeatureDefinition::Native { kind, parameters, .. }
+                if kind == "Fillet" && parameters.len() == 1
+        ));
+
+        let (features, _) = project_parameter_design(
             &[
                 parameter(54, 55, "Distance 1", "d2", "1 mm", 0.1),
                 parameter(64, 65, "Distance 2", "d3", "2 mm", 0.2),
@@ -17208,6 +17214,25 @@ mod relation_tests {
             &features[0].definition,
             FeatureDefinition::Native { kind, parameters, .. }
                 if kind == "Chamfer" && parameters.len() == 3
+        ));
+
+        let (features, _) = project_parameter_design(
+            &[
+                parameter(54, 55, "Distance 1", "d2", "0 mm", 0.0),
+                parameter(64, 65, "Distance 2", "d3", "2 mm", 0.2),
+            ],
+            &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+            std::slice::from_ref(&scopes[1]),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            &features[0].definition,
+            FeatureDefinition::Native { kind, parameters, .. }
+                if kind == "Chamfer" && parameters.len() == 2
         ));
 
         let construction_group =
