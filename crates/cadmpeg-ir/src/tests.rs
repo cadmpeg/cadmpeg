@@ -2075,6 +2075,45 @@ fn analytic_surface_normals_follow_parameter_orientation() {
 }
 
 #[test]
+fn periodic_nurbs_surface_evaluation_accepts_unwrapped_parameters() {
+    let surface = NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 3,
+        v_count: 2,
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        weights: None,
+        u_periodic: true,
+        v_periodic: false,
+    };
+    let canonical = crate::eval::nurbs_surface_point(&surface, 0.25, 0.75).unwrap();
+    let after = crate::eval::nurbs_surface_point(&surface, 2.25, 0.75).unwrap();
+    let before = crate::eval::nurbs_surface_point(&surface, -1.75, 0.75).unwrap();
+    assert_eq!(canonical, after);
+    assert_eq!(canonical, before);
+
+    let canonical_partials = crate::eval::nurbs_surface_partials(&surface, 0.25, 0.75).unwrap();
+    let unwrapped_partials = crate::eval::nurbs_surface_partials(&surface, 2.25, 0.75).unwrap();
+    assert_eq!(canonical_partials, unwrapped_partials);
+
+    let mut nonperiodic = surface;
+    nonperiodic.u_periodic = false;
+    assert_ne!(
+        crate::eval::nurbs_surface_point(&nonperiodic, 2.25, 0.75).unwrap(),
+        canonical
+    );
+}
+
+#[test]
 fn rational_nurbs_surface_normal_uses_exact_partials() {
     let surface = NurbsSurface {
         u_degree: 1,

@@ -190,6 +190,20 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
     if surface.control_points.len() != u_count.checked_mul(v_count)? {
         return None;
     }
+    let u_at = periodic_parameter(
+        &surface.u_knots,
+        u_degree,
+        u_count,
+        surface.u_periodic,
+        u_at,
+    )?;
+    let v_at = periodic_parameter(
+        &surface.v_knots,
+        v_degree,
+        v_count,
+        surface.v_periodic,
+        v_at,
+    )?;
     let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
     let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
     let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at);
@@ -231,6 +245,20 @@ pub fn nurbs_surface_partials(
     if surface.control_points.len() != u_count.checked_mul(v_count)? {
         return None;
     }
+    let u_at = periodic_parameter(
+        &surface.u_knots,
+        u_degree,
+        u_count,
+        surface.u_periodic,
+        u_at,
+    )?;
+    let v_at = periodic_parameter(
+        &surface.v_knots,
+        v_degree,
+        v_count,
+        surface.v_periodic,
+        v_at,
+    )?;
     let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
     let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
     let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at);
@@ -285,6 +313,23 @@ pub fn nurbs_surface_partials(
             (weighted_v.z * weight - weighted_point.z * weight_v) / denominator,
         ),
     ))
+}
+
+fn periodic_parameter(
+    knots: &[f64],
+    degree: usize,
+    count: usize,
+    periodic: bool,
+    parameter: f64,
+) -> Option<f64> {
+    parameter.is_finite().then_some(())?;
+    let start = *knots.get(degree)?;
+    let end = *knots.get(count)?;
+    if !periodic || (start..=end).contains(&parameter) {
+        return Some(parameter);
+    }
+    let period = end - start;
+    (period.is_finite() && period > 0.0).then(|| start + (parameter - start).rem_euclid(period))
 }
 
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
