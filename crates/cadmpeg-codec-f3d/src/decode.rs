@@ -150,6 +150,8 @@ fn report_unresolved_configuration_rules(
 struct DesignProjectionGaps {
     native_features: usize,
     unprojected_feature_scopes: usize,
+    unprojected_history_dependencies: usize,
+    ambiguous_history_dependencies: usize,
     native_constraints: usize,
     unprojected_sketch_relations: usize,
     unprojected_dimensions: usize,
@@ -200,7 +202,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     use cadmpeg_ir::features::{EdgeSelection, Extent, ExtrudeStart, FaceSelection};
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     let source_lost_edge_reference_ids = native
         .lost_edge_references
@@ -219,6 +221,50 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .iter()
         .filter_map(|feature| feature.native_ref.as_deref())
         .collect::<HashSet<_>>();
+    let projected_features = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature)))
+        .collect::<HashMap<_, _>>();
+    let mut state_scopes = HashMap::<(&str, i64), Vec<&str>>::new();
+    for scope in &native.design_parameter_scopes {
+        let (Some(stream), Some(state_id)) = (
+            crate::design::native_stream(&scope.id),
+            scope.history_state_id,
+        ) else {
+            continue;
+        };
+        state_scopes
+            .entry((stream, state_id))
+            .or_default()
+            .push(scope.id.as_str());
+    }
+    let mut unprojected_history_dependencies = 0;
+    let mut ambiguous_history_dependencies = 0;
+    for scope in &native.design_parameter_scopes {
+        let (Some(stream), Some(previous_state_id), Some(feature)) = (
+            crate::design::native_stream(&scope.id),
+            scope.previous_history_state_id,
+            projected_features.get(scope.id.as_str()),
+        ) else {
+            continue;
+        };
+        let Some(predecessors) = state_scopes.get(&(stream, previous_state_id)) else {
+            continue;
+        };
+        let [predecessor_ref] = predecessors.as_slice() else {
+            ambiguous_history_dependencies += 1;
+            continue;
+        };
+        let Some(predecessor) = projected_features.get(predecessor_ref) else {
+            unprojected_history_dependencies += 1;
+            continue;
+        };
+        if predecessor.id != feature.id && !feature.dependencies.contains(&predecessor.id) {
+            unprojected_history_dependencies += 1;
+        }
+    }
     let projected_dimension_parameters = ir
         .model
         .sketch_constraints
@@ -228,6 +274,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .collect::<HashSet<_>>();
 
     let mut gaps = DesignProjectionGaps {
+        unprojected_history_dependencies,
+        ambiguous_history_dependencies,
         unprojected_feature_scopes: native
             .design_parameter_scopes
             .iter()
@@ -347,6 +395,20 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} decoded feature scope(s) have no neutral construction-history feature.",
             gaps.unprojected_feature_scopes
+        ),
+    );
+    push(
+        gaps.unprojected_history_dependencies,
+        format!(
+            "{} feature history-state dependency link(s) were not projected into neutral construction history.",
+            gaps.unprojected_history_dependencies
+        ),
+    );
+    push(
+        gaps.ambiguous_history_dependencies,
+        format!(
+            "{} feature history-state dependency link(s) have multiple source scopes for the preceding state identity.",
+            gaps.ambiguous_history_dependencies
         ),
     );
     push(
@@ -2231,6 +2293,8 @@ mod tests {
             DesignProjectionGaps {
                 native_features: 1,
                 unprojected_feature_scopes: 1,
+                unprojected_history_dependencies: 0,
+                ambiguous_history_dependencies: 0,
                 native_constraints: 1,
                 unprojected_sketch_relations: 1,
                 unprojected_dimensions: 1,
@@ -2241,6 +2305,80 @@ mod tests {
                 unresolved_edge_selections: 1,
             }
         );
+    }
+
+    #[test]
+    fn design_projection_gaps_require_unique_scope_state_dependencies() {
+        let scope = |record_index, current, previous| DesignParameterScope {
+            id: format!("f3d:native:scope#{record_index}"),
+            byte_offset: u64::from(record_index),
+            class_tag: "000".into(),
+            record_index,
+            frame_length: 1,
+            kind: "Unsupported".into(),
+            kind_offset: 0,
+            extrude_operation: None,
+            extrude_operation_offset: None,
+            extrude_extent: None,
+            extrude_extent_offsets: None,
+            extrude_direction_reversed: None,
+            extrude_direction_reversed_offset: None,
+            extrude_start: None,
+            extrude_start_offset: None,
+            feature_ordinal: record_index,
+            feature_ordinal_offset: 0,
+            history_state_id: current,
+            history_state_id_offset: 0,
+            previous_history_state_id: previous,
+            previous_history_state_id_offset: 0,
+            reference_count_offset: 0,
+            reference_members: Vec::new(),
+            reference_member_offsets: Vec::new(),
+            extrude_profile: None,
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: "001".into(),
+            paired_byte_offset: u64::from(record_index) + 1,
+        };
+        let mut native = F3dNative::default();
+        native.design_parameter_scopes = vec![
+            scope(1, Some(10), None),
+            scope(2, Some(11), Some(10)),
+            scope(3, Some(20), None),
+            scope(4, Some(20), None),
+            scope(5, Some(21), Some(20)),
+        ];
+        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        ir.model.features = native
+            .design_parameter_scopes
+            .iter()
+            .map(|scope| {
+                serde_json::from_value(serde_json::json!({
+                    "id": format!("feature-{}", scope.record_index),
+                    "ordinal": scope.record_index,
+                    "definition": {
+                        "definition": "native",
+                        "kind": "Unsupported",
+                        "parameters": {},
+                        "properties": {}
+                    },
+                    "native_ref": scope.id
+                }))
+                .expect("native feature")
+            })
+            .collect();
+
+        let gaps = design_projection_gaps(&ir, &native);
+        assert_eq!(gaps.unprojected_feature_scopes, 0);
+        assert_eq!(gaps.unprojected_history_dependencies, 1);
+        assert_eq!(gaps.ambiguous_history_dependencies, 1);
+
+        let predecessor = ir.model.features[0].id.clone();
+        ir.model.features[1].dependencies.push(predecessor);
+        let gaps = design_projection_gaps(&ir, &native);
+        assert_eq!(gaps.unprojected_history_dependencies, 0);
+        assert_eq!(gaps.ambiguous_history_dependencies, 1);
     }
 
     #[test]
