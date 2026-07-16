@@ -57,13 +57,13 @@ use cadmpeg_ir::codec::{
     Encoder, ReadSeek,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, ProceduralCurveDefinition, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{OccurrenceId, ProductId};
 use cadmpeg_ir::product::OccurrenceParent;
 use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
-use cadmpeg_ir::topology::{BodyKind, Coedge, Edge, Point, Sense, Vertex};
+use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Point, Sense, Shell, Vertex};
 use cadmpeg_ir::CadIr;
 
 use writer::{real, refs, string, Emitter, Ref};
@@ -306,12 +306,18 @@ struct Builder<'a> {
 
     // Lookup indices from the flat IR arenas.
     points: HashMap<&'a str, &'a Point>,
+    bodies: HashMap<&'a str, &'a Body>,
+    shells: HashMap<&'a str, &'a Shell>,
+    faces: HashMap<&'a str, &'a Face>,
+    loops: HashMap<&'a str, &'a Loop>,
     vertices: HashMap<&'a str, &'a Vertex>,
     edges: HashMap<&'a str, &'a Edge>,
     coedges: HashMap<&'a str, &'a Coedge>,
     surfaces: HashMap<&'a str, &'a Surface>,
     curves: HashMap<&'a str, &'a Curve>,
     pcurves: HashMap<&'a str, &'a Pcurve>,
+    procedural_surfaces: HashMap<&'a str, &'a ProceduralSurface>,
+    procedural_curves: HashMap<&'a str, &'a ProceduralCurve>,
     edge_coedges: HashMap<&'a str, Vec<(&'a str, &'a str)>>,
 
     // Emitted-instance caches keyed by IR id, so shared carriers emit once.
@@ -405,6 +411,30 @@ impl<'a> Builder<'a> {
             losses: Vec::new(),
             notes: Vec::new(),
             points: ir.model.points.iter().map(|p| (p.id.as_str(), p)).collect(),
+            bodies: ir
+                .model
+                .bodies
+                .iter()
+                .map(|body| (body.id.as_str(), body))
+                .collect(),
+            shells: ir
+                .model
+                .shells
+                .iter()
+                .map(|shell| (shell.id.as_str(), shell))
+                .collect(),
+            faces: ir
+                .model
+                .faces
+                .iter()
+                .map(|face| (face.id.as_str(), face))
+                .collect(),
+            loops: ir
+                .model
+                .loops
+                .iter()
+                .map(|loop_| (loop_.id.as_str(), loop_))
+                .collect(),
             vertices: ir
                 .model
                 .vertices
@@ -430,6 +460,18 @@ impl<'a> Builder<'a> {
                 .pcurves
                 .iter()
                 .map(|p| (p.id.as_str(), p))
+                .collect(),
+            procedural_surfaces: ir
+                .model
+                .procedural_surfaces
+                .iter()
+                .map(|surface| (surface.surface.as_str(), surface))
+                .collect(),
+            procedural_curves: ir
+                .model
+                .procedural_curves
+                .iter()
+                .map(|curve| (curve.curve.as_str(), curve))
                 .collect(),
             edge_coedges,
             surface_refs: HashMap::new(),
@@ -617,12 +659,7 @@ impl<'a> Builder<'a> {
         for region in &ir.model.regions {
             let body = region.body.0.as_str();
             for shell_id in &region.shells {
-                let Some(shell) = ir
-                    .model
-                    .shells
-                    .iter()
-                    .find(|s| s.id.as_str() == shell_id.as_str())
-                else {
+                let Some(shell) = self.shells.get(shell_id.as_str()).copied() else {
                     continue;
                 };
                 for face in &shell.faces {
@@ -1250,11 +1287,9 @@ impl<'a> Builder<'a> {
         // while still calling `&mut self` helpers (loss/emit).
         let ir = self.ir;
         for region in &ir.model.regions {
-            let body_kind = ir
-                .model
+            let body_kind = self
                 .bodies
-                .iter()
-                .find(|body| body.id == region.body)
+                .get(region.body.as_str())
                 .map(|body| body.kind)
                 .unwrap_or(BodyKind::General);
             if body_kind == BodyKind::Wire {
@@ -1337,11 +1372,8 @@ impl<'a> Builder<'a> {
         context: Ref,
     ) -> Ref {
         let transform = self
-            .ir
-            .model
             .bodies
-            .iter()
-            .find(|body| body.id == *body_id)
+            .get(body_id.as_str())
             .and_then(|body| body.transform);
         let Some(transform) = transform.filter(|transform| !is_identity(&transform.rows)) else {
             return item;
@@ -1418,14 +1450,7 @@ impl<'a> Builder<'a> {
         let shells = region
             .shells
             .iter()
-            .filter_map(|shell_id| {
-                self.ir
-                    .model
-                    .shells
-                    .iter()
-                    .find(|shell| shell.id == *shell_id)
-                    .cloned()
-            })
+            .filter_map(|shell_id| self.shells.get(shell_id.as_str()).copied().cloned())
             .collect::<Vec<_>>();
         let mut connected_sets = Vec::new();
         for shell in shells {
@@ -1604,13 +1629,7 @@ impl<'a> Builder<'a> {
                 .join(",");
             let linked_body = mesh.body.as_ref().and_then(|body| {
                 let link = self.body_step_refs.get(body.as_str()).copied()?;
-                let kind = self
-                    .ir
-                    .model
-                    .bodies
-                    .iter()
-                    .find(|candidate| candidate.id == *body)?
-                    .kind;
+                let kind = self.bodies.get(body.as_str())?.kind;
                 matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
             });
             let item = if let Some((kind, link)) = linked_body {
@@ -1678,12 +1697,7 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_shell(&mut self, shell_id: &str, closed: bool) -> Option<Ref> {
-        let shell = self
-            .ir
-            .model
-            .shells
-            .iter()
-            .find(|s| s.id.as_str() == shell_id)?;
+        let shell = self.shells.get(shell_id).copied()?;
         let face_ids: Vec<String> = shell.faces.iter().map(|f| f.0.clone()).collect();
         let mut face_refs = Vec::new();
         for fid in &face_ids {
@@ -1701,12 +1715,7 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
-        let face = self
-            .ir
-            .model
-            .faces
-            .iter()
-            .find(|f| f.id.as_str() == face_id)?;
+        let face = self.faces.get(face_id).copied()?;
         let surface_id = face.surface.0.clone();
         let loop_ids: Vec<String> = face.loops.iter().map(|l| l.0.clone()).collect();
         let same_sense = matches!(face.sense, Sense::Forward);
@@ -1743,12 +1752,7 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_loop(&mut self, loop_id: &str) -> Option<Ref> {
-        let lp = self
-            .ir
-            .model
-            .loops
-            .iter()
-            .find(|l| l.id.as_str() == loop_id)?;
+        let lp = self.loops.get(loop_id).copied()?;
         if let Some(vertex) = &lp.vertex {
             let vertex = self.emit_vertex(vertex.as_str())?;
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
@@ -1873,11 +1877,8 @@ impl<'a> Builder<'a> {
         let result = (|| {
             let surf = self.surfaces.get(surface_id).copied()?;
             let procedural = self
-                .ir
-                .model
                 .procedural_surfaces
-                .iter()
-                .find(|procedural| procedural.surface.as_str() == surface_id)
+                .get(surface_id)
                 .map(|procedural| (procedural.id.0.clone(), procedural.definition.clone()));
             let emitted = procedural.and_then(|(id, definition)| {
                 self.emit_procedural_surface(&surf.geometry, &definition)
@@ -1996,11 +1997,8 @@ impl<'a> Builder<'a> {
         let result = (|| {
             let geometry = self.curves.get(curve_id)?.geometry.clone();
             let procedural = self
-                .ir
-                .model
                 .procedural_curves
-                .iter()
-                .find(|procedural| procedural.curve.as_str() == curve_id)
+                .get(curve_id)
                 .map(|procedural| (procedural.id.0.clone(), procedural.definition.clone()));
             let emitted = procedural.and_then(|(id, definition)| {
                 self.emit_procedural_curve(&definition)
