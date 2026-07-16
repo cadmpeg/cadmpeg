@@ -574,10 +574,13 @@ fn transfer_zero_entity_topology(
 
     for (edge_index, pair) in edge_vertices.iter().enumerate() {
         let id = EdgeId(format!("catia:zero-entity:edge#{edge_index}"));
-        let direct = edges[edge_index].occurrences.iter().find_map(|occurrence| {
-            crate::zero_entity::support_curve_with_range(topology, *occurrence)
-        });
-        let direct_range = direct.as_ref().and_then(|(_, range)| *range);
+        let direct = edges[edge_index]
+            .occurrences
+            .iter()
+            .find_map(|occurrence| crate::zero_entity::direct_support_curve(topology, *occurrence));
+        let direct_range = direct.as_ref().and_then(|curve| curve.parameter_range);
+        let direct_tolerance = direct.as_ref().and_then(|curve| curve.cache_fit_tolerance);
+        let direct_construction = direct.as_ref().and_then(|curve| curve.construction.clone());
         let intersection = direct
             .is_none()
             .then(|| crate::zero_entity::intersection_curve(topology, &edges[edge_index]))
@@ -588,7 +591,7 @@ fn transfer_zero_entity_topology(
         let intersection_tolerance = intersection
             .as_ref()
             .map(|intersection| intersection.fit_tolerance);
-        let geometry = direct.map(|(geometry, _)| geometry).or_else(|| {
+        let geometry = direct.map(|curve| curve.geometry).or_else(|| {
             intersection
                 .as_ref()
                 .map(|intersection| CurveGeometry::Nurbs(intersection.cache.clone()))
@@ -600,7 +603,9 @@ fn transfer_zero_entity_topology(
                 &curve_id,
                 "zero_entity_a9_03",
                 0,
-                if intersection.is_some() {
+                if direct_construction.is_some() {
+                    "support_pcurve_construction_cache"
+                } else if intersection.is_some() {
                     "radial_surface_intersection_cache"
                 } else {
                     "support_pcurve_lift"
@@ -613,7 +618,28 @@ fn transfer_zero_entity_topology(
                 geometry,
                 source_object: None,
             });
-            if let Some(intersection) = intersection {
+            if let Some(definition) = direct_construction {
+                let procedural_id =
+                    ProceduralCurveId(format!("catia:zero-entity:helix#{edge_index}"));
+                annotate(
+                    annotations,
+                    &procedural_id,
+                    "zero_entity_a9_03",
+                    0,
+                    "support_pcurve_helix",
+                    Exactness::Derived,
+                );
+                annotations
+                    .derived(&procedural_id, "curve")
+                    .derived(&procedural_id, "definition")
+                    .derived(&procedural_id, "cache_fit_tolerance");
+                ir.model.procedural_curves.push(ProceduralCurve {
+                    id: procedural_id,
+                    curve: curve_id.clone(),
+                    definition,
+                    cache_fit_tolerance: direct_tolerance,
+                });
+            } else if let Some(intersection) = intersection {
                 let sides = intersection.supports.map(|support_index| {
                     let support = &topology.supports[support_index];
                     let surface_index = topology
@@ -672,7 +698,8 @@ fn transfer_zero_entity_topology(
         if edge_range.is_some() {
             annotations.derived(&id, "param_range");
         }
-        if intersection_tolerance.is_some() {
+        let edge_tolerance = direct_tolerance.or(intersection_tolerance);
+        if edge_tolerance.is_some() {
             annotations.derived(&id, "tolerance");
         }
         ir.model.edges.push(Edge {
@@ -681,7 +708,7 @@ fn transfer_zero_entity_topology(
             start: VertexId(format!("catia:zero-entity:v#{}", pair[0])),
             end: VertexId(format!("catia:zero-entity:v#{}", pair[1])),
             param_range: edge_range,
-            tolerance: intersection_tolerance,
+            tolerance: edge_tolerance,
         });
     }
 

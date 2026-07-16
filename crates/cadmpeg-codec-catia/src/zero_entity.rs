@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted topology records in the zero-entity `a9 03` stream family.
 
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
+};
 use cadmpeg_ir::le::u32_at;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{BTreeMap, HashMap};
@@ -237,13 +239,27 @@ pub struct ZeroIntersectionCurve {
     pub fit_tolerance: f64,
 }
 
+/// Direct support lift, including an exact construction when the model-space
+/// curve is not an elementary carrier.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ZeroDirectCurve {
+    /// Elementary carrier or tolerance-bounded construction cache.
+    pub geometry: CurveGeometry,
+    /// Increasing interval on `geometry` and on `construction`, when retained.
+    pub parameter_range: Option<[f64; 2]>,
+    /// Exact non-elementary construction represented by `geometry`.
+    pub construction: Option<ProceduralCurveDefinition>,
+    /// Maximum cache deviation in model length units.
+    pub cache_fit_tolerance: Option<f64>,
+}
+
 /// Lift one support pcurve and retain its trim interval when the lifted
 /// carrier has a direct, branch-free parameter mapping.
 #[must_use]
-pub(crate) fn support_curve_with_range(
+pub(crate) fn direct_support_curve(
     topology: &ZeroEntityTopology,
     occurrence: ZeroResolvedOccurrence,
-) -> Option<(CurveGeometry, Option<[f64; 2]>)> {
+) -> Option<ZeroDirectCurve> {
     let support = topology.supports.get(occurrence.support_index)?;
     let pcurve = support.pcurve.as_ref()?;
     let run = topology
@@ -251,14 +267,152 @@ pub(crate) fn support_curve_with_range(
         .iter()
         .find(|run| run.carrier_ordinal == support.owner_carrier_ordinal)?;
     let surface = run.geometry.as_ref()?;
-    let curve = lift_pcurve(pcurve, surface)?;
     let source_range = pcurve_parameter_range(pcurve, support.uv_endpoints)?;
     let reversed = *topology
         .loops
         .get(occurrence.loop_index)?
         .reversed
         .get(occurrence.member_index)?;
-    orient_direct_support_curve(pcurve, surface, curve, source_range, reversed)
+    if let Some(curve) = lift_cylinder_helix(pcurve, surface, source_range, reversed) {
+        return Some(curve);
+    }
+    let curve = lift_pcurve(pcurve, surface)?;
+    let (geometry, parameter_range) =
+        orient_direct_support_curve(pcurve, surface, curve, source_range, reversed)?;
+    Some(ZeroDirectCurve {
+        geometry,
+        parameter_range,
+        construction: None,
+        cache_fit_tolerance: None,
+    })
+}
+
+fn lift_cylinder_helix(
+    pcurve: &PcurveGeometry,
+    surface: &SurfaceGeometry,
+    source_range: [f64; 2],
+    reversed: bool,
+) -> Option<ZeroDirectCurve> {
+    const FIT_TOLERANCE: f64 = 1e-4;
+
+    let SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+    } = surface
+    else {
+        return None;
+    };
+    let PcurveGeometry::Nurbs {
+        degree,
+        control_points,
+        ..
+    } = pcurve
+    else {
+        return None;
+    };
+    if *degree != 1 || control_points.len() != 2 || radius.abs() <= f64::EPSILON {
+        return None;
+    }
+    let uv = source_range.map(|parameter| cadmpeg_ir::eval::pcurve_uv(pcurve, parameter));
+    let [Some(start), Some(end)] = uv else {
+        return None;
+    };
+    let mut uv = [start, end];
+    if reversed {
+        uv.swap(0, 1);
+    }
+    let delta_u = uv[1].u - uv[0].u;
+    let delta_v = uv[1].v - uv[0].v;
+    if !delta_u.is_finite()
+        || !delta_v.is_finite()
+        || delta_u.abs() <= 1e-12
+        || delta_v.abs() <= 1e-12
+    {
+        return None;
+    }
+    let tangent = cross(*axis, *ref_direction);
+    let radial = Vector3::new(
+        ref_direction.x * uv[0].u.cos() + tangent.x * uv[0].u.sin(),
+        ref_direction.y * uv[0].u.cos() + tangent.y * uv[0].u.sin(),
+        ref_direction.z * uv[0].u.cos() + tangent.z * uv[0].u.sin(),
+    );
+    let radial_tangent = cross(*axis, radial);
+    let direction = delta_u.signum();
+    let sweep = delta_u.abs();
+    let construction = ProceduralCurveDefinition::Helix {
+        angle_range: [0.0, sweep],
+        center: translate(*origin, *axis, uv[0].v),
+        major: scale(radial, *radius),
+        minor: scale(radial_tangent, radius * direction),
+        pitch: scale(*axis, delta_v / sweep * 2.0 * std::f64::consts::PI),
+        apex_factor: 0.0,
+        axis: *axis,
+    };
+    let cache_radius = radius.abs();
+    let relative_tolerance = FIT_TOLERANCE / cache_radius;
+    let max_step = if relative_tolerance < 1e-6 {
+        2.0 * (2.0 * relative_tolerance).sqrt()
+    } else {
+        2.0 * (1.0 - relative_tolerance).clamp(-1.0, 1.0).acos()
+    };
+    let segment_count = (sweep / max_step).ceil().max(1.0);
+    if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+        return None;
+    }
+    let segment_count = segment_count as usize;
+    let step = sweep / segment_count as f64;
+    let samples = (0..=segment_count)
+        .map(|index| {
+            let parameter = index as f64 * step;
+            Some((parameter, helix_point(&construction, parameter)?))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let cache_fit_tolerance = 2.0 * cache_radius * (step * 0.25).sin().powi(2);
+    let mut knots = Vec::with_capacity(samples.len() + 2);
+    knots.push(0.0);
+    knots.extend(samples.iter().map(|(parameter, _)| *parameter));
+    knots.push(sweep);
+    Some(ZeroDirectCurve {
+        geometry: CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots,
+            control_points: samples.into_iter().map(|(_, point)| point).collect(),
+            weights: None,
+            periodic: false,
+        }),
+        parameter_range: Some([0.0, sweep]),
+        construction: Some(construction),
+        cache_fit_tolerance: Some(cache_fit_tolerance),
+    })
+}
+
+fn helix_point(construction: &ProceduralCurveDefinition, angle: f64) -> Option<Point3> {
+    let ProceduralCurveDefinition::Helix {
+        center,
+        major,
+        minor,
+        pitch,
+        ..
+    } = construction
+    else {
+        return None;
+    };
+    Some(Point3::new(
+        center.x
+            + major.x * angle.cos()
+            + minor.x * angle.sin()
+            + pitch.x * angle / std::f64::consts::TAU,
+        center.y
+            + major.y * angle.cos()
+            + minor.y * angle.sin()
+            + pitch.y * angle / std::f64::consts::TAU,
+        center.z
+            + major.z * angle.cos()
+            + minor.z * angle.sin()
+            + pitch.z * angle / std::f64::consts::TAU,
+    ))
 }
 
 fn orient_direct_support_curve(
@@ -2594,6 +2748,97 @@ mod occurrence_tests {
             periodic: false,
         };
         assert_eq!(lift_pcurve(&pole, &sphere), None);
+    }
+
+    #[test]
+    fn affine_cylinder_support_retains_oriented_helix_and_bounded_cache() {
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![
+                Point2::new(0.0, 1.0),
+                Point2::new(std::f64::consts::PI, 4.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        let helix = lift_cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], false)
+            .expect("affine cylinder helix");
+        assert_eq!(helix.parameter_range, Some([0.0, std::f64::consts::PI]));
+        assert!(helix
+            .cache_fit_tolerance
+            .is_some_and(|tolerance| tolerance <= 1e-4));
+        let Some(ProceduralCurveDefinition::Helix {
+            angle_range,
+            center,
+            pitch,
+            ..
+        }) = &helix.construction
+        else {
+            panic!("expected exact helix construction");
+        };
+        assert_eq!(*angle_range, [0.0, std::f64::consts::PI]);
+        assert_eq!(*center, Point3::new(1.0, 2.0, 4.0));
+        assert!((pitch.z - 6.0).abs() < 1e-12);
+        let CurveGeometry::Nurbs(cache) = &helix.geometry else {
+            panic!("expected bounded helix cache");
+        };
+        assert_eq!(
+            cache.control_points.first(),
+            Some(&Point3::new(3.0, 2.0, 4.0))
+        );
+        assert!(
+            point_distance(
+                cache
+                    .control_points
+                    .last()
+                    .map(|point| [point.x, point.y, point.z])
+                    .expect("cache endpoint"),
+                [-1.0, 2.0, 7.0],
+            ) < 1e-12
+        );
+
+        let reversed = lift_cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], true)
+            .expect("reversed affine cylinder helix");
+        let Some(ProceduralCurveDefinition::Helix { center, pitch, .. }) = reversed.construction
+        else {
+            panic!("expected reversed helix construction");
+        };
+        assert_eq!(center, Point3::new(1.0, 2.0, 7.0));
+        assert!((pitch.z + 6.0).abs() < 1e-12);
+
+        let isoparametric = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, 1.0), Point2::new(0.0, 4.0)],
+            weights: None,
+            periodic: false,
+        };
+        assert_eq!(
+            lift_cylinder_helix(&isoparametric, &cylinder, [0.0, 1.0], false),
+            None,
+        );
+
+        let unbounded = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![
+                Point2::new(0.0, 1.0),
+                Point2::new(std::f64::consts::TAU * 5_000.0, 4.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        assert_eq!(
+            lift_cylinder_helix(&unbounded, &cylinder, [0.0, 1.0], false),
+            None,
+        );
     }
 
     #[test]
