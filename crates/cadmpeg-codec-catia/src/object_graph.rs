@@ -10,9 +10,10 @@
 //! that escape as `Vec<u8>` (a `0xe5` payload blob and a `7CD9` context window)
 //! are charged against `retained_bytes` before the copy. The parser stays a
 //! pure [`Option`] probe (section 3.3): any framing inconsistency is `NoMatch`,
-//! not a committed error, so no `req_*` mirror applies. The one residual
-//! `View::window()` egress feeds the marker scans and is recorded in
-//! `parser-manifest.toml` under `window_egress`.
+//! not a committed error, so no `req_*` mirror applies. The three residual
+//! `View::window()` egresses (`parse`, `surface_aliases`, `markers_7cd9`) feed
+//! the marker scans and are recorded in `parser-manifest.toml` under
+//! `window_egress`.
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_ir::codec::CodecError;
@@ -349,9 +350,12 @@ pub fn parse<'a>(
             continue;
         }
         if let Some(candidate) = parse_candidate(ctx, view, data, pos)? {
+            // Tie-break matches the pre-migration `max_by_key`, which returns the
+            // last element holding the maximum key: on an equal record count the
+            // later candidate wins, so `>=` (not `>`).
             if best
                 .as_ref()
-                .is_none_or(|graph| candidate.records.len() > graph.records.len())
+                .is_none_or(|graph| candidate.records.len() >= graph.records.len())
             {
                 best = Some(candidate);
             }

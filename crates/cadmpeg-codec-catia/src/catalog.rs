@@ -83,6 +83,16 @@ fn parse_candidate<'a>(
     if total_len < 8 || end > bytes.len() {
         return Ok(None);
     }
+    // Charge the nested entry walk over this candidate frame. Without this an
+    // input packed with many adjacent `7C02` positions, each with a large valid
+    // `total_len`, would run a per-candidate entry walk whose aggregate CPU is
+    // quadratic in the image while only the whole-image scan (`n` bytes) was
+    // charged, so the work budget would never fuse.
+    ctx.charge_work(
+        total_len as u64,
+        "catia_catalog_records",
+        Some(view.location()),
+    )?;
     let Some((declared_count, at)) = count_atom(bytes, pos + 6) else {
         return Ok(None);
     };
@@ -91,8 +101,10 @@ fn parse_candidate<'a>(
     };
     // Prove the declared entry count fits the remaining frame before reserving.
     // Each entry consumes at least its one-byte inclusive-length field, so the
-    // minimum element size is one byte.
-    let Some(region) = view.child(at, end) else {
+    // minimum element size is one byte. `at`/`end` are window-relative indices
+    // into `bytes`, so they are rebased onto the view's absolute space (correct
+    // even when the view is a non-root child, `view.start() > 0`).
+    let Some(region) = view.child(view.start() + at, view.start() + end) else {
         return Ok(None);
     };
     let Some(bounded) = region.counted(entry_count as u64, 1) else {
