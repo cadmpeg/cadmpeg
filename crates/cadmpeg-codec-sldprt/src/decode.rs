@@ -2169,12 +2169,25 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: ParameterId("parameter".into()),
-            owner,
+            owner: owner.clone(),
             ordinal: 1,
             name: "D1".into(),
             expression: "\"D0@Boss-Extrude1\" + Missing@Sketch1".into(),
             display: None,
             value: None,
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        ir.model.parameters.push(DesignParameter {
+            id: ParameterId("bare-reference".into()),
+            owner,
+            ordinal: 2,
+            name: "D2".into(),
+            expression: "D99 + 1".into(),
+            display: None,
+            value: Some(cadmpeg_ir::features::ParameterValue::Real(1.0)),
             dependencies: Vec::new(),
             properties: BTreeMap::new(),
             pmi: None,
@@ -2192,7 +2205,7 @@ mod design_loss_tests {
 
         assert!(report.losses.iter().any(|loss| {
             loss.message
-                == "1 parameter(s) lack an evaluated scalar; 1 parameter expression(s) contain unresolved or ambiguous parameter references."
+                == "1 parameter(s) lack an evaluated scalar; 2 parameter expression(s) contain unresolved or ambiguous parameter references."
         }));
     }
 

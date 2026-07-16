@@ -666,7 +666,7 @@ pub(crate) fn parameters_with_unresolved_references(
         .filter(|parameter| {
             expression_identifier_tokens(&parameter.expression)
                 .into_iter()
-                .filter(|identifier| identifier.quoted || identifier.value.contains('@'))
+                .filter(definite_parameter_reference)
                 .any(|identifier| {
                     aliases
                         .get(&identifier.value)
@@ -675,6 +675,14 @@ pub(crate) fn parameters_with_unresolved_references(
                 })
         })
         .count()
+}
+
+fn definite_parameter_reference(identifier: &ExpressionIdentifier) -> bool {
+    identifier.quoted
+        || identifier.value.contains('@')
+        || identifier.value.strip_prefix('D').is_some_and(|ordinal| {
+            !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
