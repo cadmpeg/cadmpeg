@@ -7982,6 +7982,57 @@ fn reconcile_constraint_entity_references(
     }
 }
 
+fn reconcile_constraint_parameter_reference(
+    definition: &mut SketchConstraintDefinition,
+    emitted: &BTreeSet<ParameterId>,
+) -> bool {
+    match definition {
+        SketchConstraintDefinition::Native { parameter, .. } => {
+            if parameter
+                .as_ref()
+                .is_some_and(|parameter| !emitted.contains(parameter))
+            {
+                *parameter = None;
+            }
+            true
+        }
+        SketchConstraintDefinition::Distance { parameter, .. }
+        | SketchConstraintDefinition::DistanceLoci { parameter, .. }
+        | SketchConstraintDefinition::HorizontalDistance { parameter, .. }
+        | SketchConstraintDefinition::VerticalDistance { parameter, .. }
+        | SketchConstraintDefinition::Angle { parameter, .. }
+        | SketchConstraintDefinition::Radius { parameter, .. }
+        | SketchConstraintDefinition::Diameter { parameter, .. } => emitted.contains(parameter),
+        SketchConstraintDefinition::Coincident { .. }
+        | SketchConstraintDefinition::CoincidentLoci { .. }
+        | SketchConstraintDefinition::SameCoordinate { .. }
+        | SketchConstraintDefinition::Midpoint { .. }
+        | SketchConstraintDefinition::Concentric { .. }
+        | SketchConstraintDefinition::Collinear { .. }
+        | SketchConstraintDefinition::Symmetric { .. }
+        | SketchConstraintDefinition::Horizontal { .. }
+        | SketchConstraintDefinition::Vertical { .. }
+        | SketchConstraintDefinition::Parallel { .. }
+        | SketchConstraintDefinition::Perpendicular { .. }
+        | SketchConstraintDefinition::Tangent { .. }
+        | SketchConstraintDefinition::TangentLoci { .. }
+        | SketchConstraintDefinition::Equal { .. }
+        | SketchConstraintDefinition::Fixed { .. } => true,
+    }
+}
+
+fn close_sketch_constraint_parameter_references(ir: &mut CadIr) {
+    let emitted = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.clone())
+        .collect::<BTreeSet<_>>();
+    ir.model.sketch_constraints.retain_mut(|constraint| {
+        reconcile_constraint_parameter_reference(&mut constraint.definition, &emitted)
+    });
+}
+
 fn relation_incidence(
     definition: &crate::feature::FeatureDefinition,
     relation_id: u32,
@@ -13288,7 +13339,7 @@ mod resolved_sketch_tests {
     }
 
     #[test]
-    fn sketch_constraints_require_every_referenced_entity_to_be_emitted() {
+    fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
         let first = SketchEntityId("first".to_string());
         let second = SketchEntityId("second".to_string());
         let emitted = BTreeSet::from([first.clone()]);
@@ -13331,6 +13382,42 @@ mod resolved_sketch_tests {
             native,
             SketchConstraintDefinition::Native { entities, .. }
                 if entities == vec![first]
+        ));
+
+        let parameter = ParameterId("distance".to_string());
+        let parameters = BTreeSet::from([parameter.clone()]);
+        let mut radius = SketchConstraintDefinition::Radius {
+            entity: SketchEntityId("first".to_string()),
+            parameter: parameter.clone(),
+        };
+        assert!(reconcile_constraint_parameter_reference(
+            &mut radius,
+            &parameters
+        ));
+        let mut missing_distance = SketchConstraintDefinition::Distance {
+            entities: Vec::new(),
+            parameter: ParameterId("missing".to_string()),
+        };
+        assert!(!reconcile_constraint_parameter_reference(
+            &mut missing_distance,
+            &parameters
+        ));
+        let mut native_parameter = SketchConstraintDefinition::Native {
+            native_kind: "creo:test".to_string(),
+            entities: Vec::new(),
+            parameter: Some(ParameterId("missing".to_string())),
+            operands: Vec::new(),
+        };
+        assert!(reconcile_constraint_parameter_reference(
+            &mut native_parameter,
+            &parameters
+        ));
+        assert!(matches!(
+            native_parameter,
+            SketchConstraintDefinition::Native {
+                parameter: None,
+                ..
+            }
         ));
     }
 
@@ -21536,6 +21623,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     reconcile_feature_links(scan, &mut ir);
     transfer_curve_expression_features(scan, &mut ir, &mut annotations);
     transfer_feature_dimensions(scan, &mut ir, &mut annotations);
+    close_sketch_constraint_parameter_references(&mut ir);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     let surface_rows = surface_row_records(scan, &scan.surface_rows, "visibgeom");
     if !surface_rows.is_empty() {
