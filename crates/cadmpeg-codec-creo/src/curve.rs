@@ -2092,6 +2092,14 @@ mod tests {
                 7
             ))
         );
+        let upper = [0xa3, 0x36, 0x6d, 0x17, 0x70, 0xe4, 0xb3];
+        assert_eq!(
+            fc05_scalar(&upper, 0),
+            Some((
+                f64::from_be_bytes([0x40, 0x18, 0x36, 0x6d, 0x17, 0x70, 0xe4, 0xb3]),
+                7
+            ))
+        );
     }
 
     #[test]

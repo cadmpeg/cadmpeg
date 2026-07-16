@@ -602,7 +602,7 @@ span sets partition the complete retained body. Scalar order does not assign
 point or parameter roles.
 
 Within the `fc 05` scalar lane, the positive DICT prefixes `71`, `74`, `76`,
-`81`, `8b`, `90`, `91`, `a1`, `a2`, and `b7` each consume six payload bytes
+`81`, `8b`, `90`, `91`, `a1`, `a2`, `a3`, and `b7` each consume six payload bytes
 and reconstruct the two high IEEE-754 bytes from the prefix. In particular,
 `8b <tail6>` reconstructs `40 00 <tail6>` and `71 <tail6>` reconstructs `3f e6
 <tail6>`. These lane-specific interpretations take precedence over wider
