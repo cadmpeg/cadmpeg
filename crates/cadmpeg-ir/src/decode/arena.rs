@@ -53,11 +53,11 @@ impl DecodeArena {
         // `borrow_mut` retags `&mut Vec<Box<[u8]>>` and may reallocate the
         // outer `Vec`, but the returned pointer addresses the pushed box's own
         // heap allocation, which that retag and any reallocation leave
-        // untouched, so the borrow stays valid. Miri accepts this module under
-        // both Stacked Borrows and Tree Borrows; the `tests` module exercises
-        // alloc-while-earlier-borrows-live, outer-`Vec` regrowth, and
-        // out-of-order reads that make each aliasing model validate every
-        // earlier pointer against later retags.
+        // untouched, so the borrow stays valid. The `miri` CI job runs the
+        // `tests` module under both Stacked Borrows and Tree Borrows; its
+        // interleaved alloc-and-read across enough buffers to reallocate the
+        // outer `Vec` many times makes each model validate every earlier
+        // pointer against the later retags.
         unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) }
     }
 }
@@ -81,11 +81,19 @@ mod tests {
 
     /// Interleave allocation and reads so every earlier borrow is read *after*
     /// a later `alloc` has re-entered `borrow_mut`. Each `alloc` retags
-    /// `&mut Vec<Box<[u8]>>` and may reallocate the outer `Vec`; reading every
-    /// slice handed out so far, on every iteration, forces the aliasing model
-    /// to validate each earlier pointer against the later retag. This is the
-    /// alloc-while-earlier-borrows-live pattern the §4.1 note calls out, and is
-    /// the case a raw-pointer rework would exist to satisfy.
+    /// `&mut Vec<Box<[u8]>>` and, across 256 pushes, reallocates the outer `Vec`
+    /// many times over; reading every slice handed out so far, on every
+    /// iteration, forces the aliasing model to validate each earlier pointer
+    /// against the later retag. This is the alloc-while-earlier-borrows-live
+    /// pattern the §4.1 note calls out, and the case a raw-pointer rework would
+    /// exist to satisfy.
+    ///
+    /// It subsumes the narrower scenarios that do not add coverage: outer-`Vec`
+    /// regrowth (the reallocations here relocate the box *pointers* while the
+    /// boxed bytes the borrows address never move) and read order (a shared read
+    /// never mutates the borrow stack or tree, so revalidating every held
+    /// pointer each iteration already covers any order). Neither could fail
+    /// where this test passes.
     #[test]
     fn interleaved_alloc_and_read_across_many_buffers() {
         let arena = DecodeArena::new();
@@ -95,44 +103,6 @@ mod tests {
             for (i, slice) in borrows.iter().enumerate() {
                 check(i, slice);
             }
-        }
-    }
-
-    /// Isolate outer `Vec` regrowth: hold a borrow into the *first* buffer,
-    /// then push enough buffers to reallocate the `Vec<Box<[u8]>>` backing
-    /// store many times over, reading the held borrow after every push. The
-    /// backing store moves (the box *pointers* are relocated) while the box's
-    /// own heap allocation — the bytes the borrow addresses — never moves.
-    #[test]
-    fn outer_vec_regrowth_preserves_earliest_borrow() {
-        let arena = DecodeArena::new();
-        let first = arena.alloc(vec![0xA5u8; 3].into_boxed_slice());
-        for index in 1..512usize {
-            let _ = arena.alloc(buffer(index));
-            assert_eq!(
-                first,
-                &[0xA5u8, 0xA5, 0xA5][..],
-                "first borrow after push {index}"
-            );
-        }
-    }
-
-    /// Reads through borrows kept in a shuffled order, so pointer validation
-    /// does not follow allocation order and cannot be satisfied by a stack
-    /// discipline that only ever touches the most recent buffer.
-    #[test]
-    fn out_of_order_reads_stay_valid() {
-        let arena = DecodeArena::new();
-        let mut borrows: Vec<(usize, &[u8])> = Vec::new();
-        for index in 0..128usize {
-            borrows.push((index, arena.alloc(buffer(index))));
-        }
-        // Read youngest-to-oldest, then oldest-to-youngest.
-        for &(index, slice) in borrows.iter().rev() {
-            check(index, slice);
-        }
-        for &(index, slice) in &borrows {
-            check(index, slice);
         }
     }
 }
