@@ -2271,6 +2271,7 @@ mod chart_tests {
             Point3::new(2.0, 4.0, 3.0),
             Point3::new(5.0, 8.0, 3.0),
             None,
+            None,
         )
         .expect("plane line pcurve");
         assert_eq!(range, [0.0, 1.0]);
@@ -2279,6 +2280,39 @@ mod chart_tests {
             PcurveGeometry::Line {
                 origin: cadmpeg_ir::math::Point2::new(1.0, 2.0),
                 direction: cadmpeg_ir::math::Point2::new(3.0, 4.0),
+            }
+        );
+    }
+
+    #[test]
+    fn solved_planar_spline_line_inverts_to_exact_parameter_line() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let start = Point3::new(2.0, 4.0, 3.0);
+        let end = Point3::new(5.0, 8.0, 3.0);
+        let carrier = CurveGeometry::Line {
+            origin: start,
+            direction: Vector3::new(3.0, 4.0, 0.0),
+        };
+        let (geometry, range) =
+            standard_pcurve_geometry(&surface, &support, start, end, None, Some(&carrier))
+                .expect("solved spline line pcurve");
+
+        assert_eq!(range, [0.0, 1.0]);
+        assert_eq!(
+            geometry,
+            PcurveGeometry::Line {
+                origin: Point2::new(1.0, 2.0),
+                direction: Point2::new(3.0, 4.0),
             }
         );
     }
@@ -2301,6 +2335,7 @@ mod chart_tests {
             &support,
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
+            None,
             None,
         )
         .is_none());
@@ -2330,6 +2365,7 @@ mod chart_tests {
             &support,
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, radius, height),
+            None,
             None,
         )
         .expect("cone generator through the apex");
@@ -2370,6 +2406,7 @@ mod chart_tests {
             Point3::new(radius, 0.0, 2.0),
             Point3::new(0.0, radius, 2.0),
             None,
+            None,
         )
         .expect("cone latitude pcurve");
         assert_eq!(range, [0.0, 1.0]);
@@ -2405,6 +2442,7 @@ mod chart_tests {
             Point3::new(2.0, 0.0, 3.0),
             Point3::new(0.0, 2.0, 3.0),
             Some(Point3::new(-2.0, 0.0, 3.0)),
+            None,
         )
         .expect("witnessed cylinder section");
         assert_eq!(
@@ -2439,6 +2477,7 @@ mod chart_tests {
             Point3::new(-2.0, 0.0, 3.0),
             Point3::new(0.0, -2.0, 3.0),
             Some(Point3::new(-1.0, 0.0, 4.0)),
+            None,
         )
         .expect("endpoint-aligned witness does not reject the arc");
         assert_eq!(
@@ -2474,6 +2513,7 @@ mod chart_tests {
             Point3::new(7.0, 0.0, 0.0),
             Point3::new(0.0, 7.0, 0.0),
             Some(Point3::new(-7.0, 0.0, 0.0)),
+            None,
         )
         .expect("witnessed torus latitude");
         let PcurveGeometry::Line { origin, direction } = geometry else {
@@ -2525,6 +2565,7 @@ mod chart_tests {
             &support,
             Point3::new(ring, 0.0, height),
             Point3::new(0.0, ring, height),
+            None,
             None,
         )
         .expect("sphere latitude pcurve");
@@ -4943,6 +4984,7 @@ fn attach_standard_topology(
                         start,
                         end,
                         geometry::standard_face_witness(brep, bindings[face].2),
+                        None,
                     )
                     .is_some()
                 })
@@ -5295,6 +5337,13 @@ fn attach_standard_topology(
         });
     }
 
+    let curve_indices = ir
+        .model
+        .curves
+        .iter()
+        .enumerate()
+        .map(|(index, curve)| (curve.id.clone(), index))
+        .collect::<HashMap<_, _>>();
     let mut edge_coedges = vec![Vec::new(); ir.model.edges.len()];
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
         for (loop_index, boundary) in face_topology.boundaries.iter().enumerate() {
@@ -5311,12 +5360,18 @@ fn attach_standard_topology(
                 let logical_vertices = edge_vertices[edge_use.edge_row];
                 let start = ir.model.points[point_assignment[logical_vertices[0]]].position;
                 let end = ir.model.points[point_assignment[logical_vertices[1]]].position;
+                let edge_curve = ir.model.edges[edge_use.edge_row]
+                    .curve
+                    .as_ref()
+                    .and_then(|id| curve_indices.get(id))
+                    .map(|index| &ir.model.curves[*index].geometry);
                 let pcurve_id = standard_pcurve_geometry(
                     &ir.model.surfaces[surface_indices[&bindings[face_index].0]].geometry,
                     support,
                     start,
                     end,
                     geometry::standard_face_witness(brep, bindings[face_index].2),
+                    edge_curve,
                 )
                 .map(|(geometry, range)| {
                     let id = PcurveId(format!(
@@ -5788,6 +5843,7 @@ fn standard_pcurve_geometry(
     start: Point3,
     end: Point3,
     witness: Option<Point3>,
+    edge_curve: Option<&CurveGeometry>,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
     if !point_on_surface(start, surface) || !point_on_surface(end, surface) {
         return None;
@@ -5855,7 +5911,14 @@ fn standard_pcurve_geometry(
         geometry::StandardCurveGeometry::Circle { center, radius } => {
             (point_distance_squared(midpoint, *center).sqrt() - radius).abs() <= 2e-3
         }
-        geometry::StandardCurveGeometry::Bspline => false,
+        geometry::StandardCurveGeometry::Bspline => match edge_curve {
+            Some(CurveGeometry::Line { origin, direction }) => {
+                let offset = point_delta(midpoint, *origin);
+                vector_norm(cross_vector(*direction, offset))
+                    <= 2e-3 * vector_norm(*direction).max(1.0)
+            }
+            _ => false,
+        },
     };
     on_curve.then_some((
         PcurveGeometry::Line {
@@ -6445,7 +6508,7 @@ fn standard_circle_param_range(
         let surface = face_surface(ir, bindings, surface_indices, *face)?;
         let witness = geometry::standard_face_witness(brep, bindings.get(*face)?.2)?;
         let (PcurveGeometry::Line { origin, direction }, _) =
-            standard_pcurve_geometry(&surface.geometry, support, start, end, Some(witness))?
+            standard_pcurve_geometry(&surface.geometry, support, start, end, Some(witness), None)?
         else {
             return None;
         };
