@@ -996,6 +996,24 @@ impl<'a> ExpandWriter<'_, 'a> {
     pub fn written(&self) -> u64 {
         self.written
     }
+
+    /// Narrows the recorded compressed-input extent to the `consumed` bytes the
+    /// expander actually read from the source, for packed streams whose member
+    /// length is only known after inflation.
+    ///
+    /// [`begin_expand`](DecodeContext::begin_expand) frames the source as a view
+    /// that may reach past the member — a codec walking packed zlib members
+    /// cannot know a member's compressed length before decoding it. Recording
+    /// that whole tail as the input span would make every member but the last
+    /// overlap all later members, corrupting the per-space provenance the
+    /// [`SpaceOrigin::Transform`] ledger must keep disjoint. Call this with the
+    /// decoder's consumed-input count before [`finalize`](Self::finalize) so the
+    /// registered span covers only the member. The end never grows past the
+    /// original source extent.
+    pub fn set_consumed(&mut self, consumed: u64) {
+        let end = self.input.range.start.saturating_add(consumed);
+        self.input.range.end = end.min(self.input.range.end);
+    }
 }
 
 /// Assembles a multi-input derived space under incremental charging.

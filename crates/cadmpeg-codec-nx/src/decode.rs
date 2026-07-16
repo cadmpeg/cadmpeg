@@ -81,6 +81,15 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan, CodecEr
         "nx_container_scan",
         Some(root.location()),
     )?;
+    // `Container` retains an owned copy of the whole image for provenance and
+    // passthrough. The arena already holds the root, so this duplicate is
+    // input-proportional heap growth the arena charge does not cover; charge it
+    // against the allocation budget before it is retained.
+    ctx.charge_alloc(
+        image.len() as u64,
+        "nx_container_image",
+        Some(root.location()),
+    )?;
     let container = container::scan_bytes(image.to_vec())?;
     let streams = parasolid::extract_streams(ctx, root, &container)?;
     Ok(Scan { container, streams })

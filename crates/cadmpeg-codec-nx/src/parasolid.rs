@@ -181,6 +181,11 @@ fn inflate_stream<'a>(
     if inflated.len() < MIN_INFLATED {
         return Ok(None);
     }
+    // The source view reaches to the end of the part payload because a member's
+    // compressed length is unknown until it is decoded. Record only the bytes
+    // the decoder actually consumed, so packed members register disjoint input
+    // spans instead of each overlapping every later member.
+    writer.set_consumed(decoder.total_in());
     writer.finalize()?;
     Ok(Some(inflated))
 }
