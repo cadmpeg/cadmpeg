@@ -689,10 +689,126 @@ pub enum SketchRelationKind {
     VerticalPoints,
     /// Collinearity.
     Collinear,
+    /// Circular arcs share a center and radius.
+    Coradial,
+    /// Point snapped to the sketch grid.
+    SnapGrid,
+    /// Length snapped to an increment.
+    SnapLength,
+    /// Angle snapped to an increment.
+    SnapAngle,
+    /// Geometry converted from an external edge.
+    UseEdge,
+    /// Ellipse angle fixed at 90 degrees.
+    EllipseAngle90,
+    /// Ellipse angle fixed at 180 degrees.
+    EllipseAngle180,
+    /// Ellipse angle fixed at 270 degrees.
+    EllipseAngle270,
+    /// Ellipse constrained to the top cardinal position.
+    EllipseAngleTop,
+    /// Ellipse constrained to the bottom cardinal position.
+    EllipseAngleBottom,
+    /// Ellipse constrained to the left cardinal position.
+    EllipseAngleLeft,
+    /// Ellipse constrained to the right cardinal position.
+    EllipseAngleRight,
+    /// Point pierces a referenced entity.
+    AtPierce,
+    /// Doubled distance display relation.
+    DoubleDistance,
+    /// Point merge relation.
+    MergePoints,
+    /// Three-point angular dimension.
+    AngleThreePoint,
+    /// Arc-length dimension.
+    ArcLength,
+    /// Entity normal relation.
+    Normal,
+    /// Point normal relation.
+    NormalPoints,
+    /// Offset relation between entities in one sketch.
+    SketchOffset,
+    /// Entity aligned with the X axis.
+    AlongX,
+    /// Entity aligned with the Y axis.
+    AlongY,
+    /// Entity aligned with the Z axis.
+    AlongZ,
+    /// Points aligned with the X axis.
+    AlongXPoints,
+    /// Points aligned with the Y axis.
+    AlongYPoints,
+    /// Points aligned with the Z axis.
+    AlongZPoints,
+    /// Entity parallel to the YZ plane.
+    ParallelYz,
+    /// Entity parallel to the ZX plane.
+    ParallelZx,
+    /// Intersection relation.
+    Intersection,
+    /// Pattern membership relation.
+    Patterned,
+    /// Isoparametric curve controlled by an external point.
+    IsoByPoint,
+    /// Common isoparametric relation.
+    SameIsoparametric,
+    /// Fit-spline relation.
+    FitSpline,
+    /// Equal-curvature relation.
+    EqualCurvature,
+    /// Equal-tangent relation.
+    EqualTangent,
+    /// Tangency to a face.
+    TangentFace,
+    /// 3D entity aligned with the X axis.
+    AlongX3d,
+    /// 3D entity aligned with the Y axis.
+    AlongY3d,
+    /// 3D points aligned with the X axis.
+    AlongXPoints3d,
+    /// 3D points aligned with the Y axis.
+    AlongYPoints3d,
+    /// Traction relation.
+    Traction,
+    /// Belt-traction relation.
+    BeltTraction,
+    /// Two blocks locked together.
+    BlockFixedLock,
+    /// Blocks locked normal to one another.
+    BlockNormalLock,
+    /// Blocks locked for relative rotation.
+    BlockRotateLock,
+    /// Display-only slot relation.
+    FakeSlotConstraint,
+    /// Fixed-slot relation.
+    FixedSlot,
+    /// Slots have equal dimensions.
+    SameSlots,
+    /// Linear-pattern count relation.
+    LinearPatternCount,
+    /// Circular-pattern count relation.
+    CircularPatternCount,
+    /// Radial routing offset.
+    RadialOffset,
+    /// Planar routing offset.
+    PlanarOffset,
+    /// Aligned equal curvature between 3D splines.
+    EqualCurvature3dAligned,
+    /// Virtual-point distance to a flange face.
+    FlangeFaceDistance,
+    /// Conic rho relation.
+    ConicRho,
+    /// Third-order continuity relation.
+    C3Touch,
+    /// Doubled angle display relation.
+    DoubleAngle,
+    /// Equal arc or spline length.
+    SameCurveLength,
 }
 
 impl SketchRelationKind {
-    /// Decodes relation codes `1..27`.
+    /// Decodes relation codes `1..85`.
     pub fn from_native_code(code: u32) -> Option<Self> {
         Some(match code {
             1 => Self::Distance,
@@ -722,6 +838,64 @@ impl SketchRelationKind {
             25 => Self::HorizontalPoints,
             26 => Self::VerticalPoints,
             27 => Self::Collinear,
+            28 => Self::Coradial,
+            29 => Self::SnapGrid,
+            30 => Self::SnapLength,
+            31 => Self::SnapAngle,
+            32 => Self::UseEdge,
+            33 => Self::EllipseAngle90,
+            34 => Self::EllipseAngle180,
+            35 => Self::EllipseAngle270,
+            36 => Self::EllipseAngleTop,
+            37 => Self::EllipseAngleBottom,
+            38 => Self::EllipseAngleLeft,
+            39 => Self::EllipseAngleRight,
+            40 => Self::AtPierce,
+            41 => Self::DoubleDistance,
+            42 => Self::MergePoints,
+            43 => Self::AngleThreePoint,
+            44 => Self::ArcLength,
+            45 => Self::Normal,
+            46 => Self::NormalPoints,
+            47 => Self::SketchOffset,
+            48 => Self::AlongX,
+            49 => Self::AlongY,
+            50 => Self::AlongZ,
+            51 => Self::AlongXPoints,
+            52 => Self::AlongYPoints,
+            53 => Self::AlongZPoints,
+            54 => Self::ParallelYz,
+            55 => Self::ParallelZx,
+            56 => Self::Intersection,
+            57 => Self::Patterned,
+            58 => Self::IsoByPoint,
+            59 => Self::SameIsoparametric,
+            60 => Self::FitSpline,
+            61 => Self::EqualCurvature,
+            62 => Self::EqualTangent,
+            63 => Self::TangentFace,
+            64 => Self::AlongX3d,
+            65 => Self::AlongY3d,
+            66 => Self::AlongXPoints3d,
+            67 => Self::AlongYPoints3d,
+            68 => Self::Traction,
+            69 => Self::BeltTraction,
+            70 => Self::BlockFixedLock,
+            71 => Self::BlockNormalLock,
+            72 => Self::BlockRotateLock,
+            73 => Self::FakeSlotConstraint,
+            74 => Self::FixedSlot,
+            75 => Self::SameSlots,
+            76 => Self::LinearPatternCount,
+            77 => Self::CircularPatternCount,
+            78 => Self::RadialOffset,
+            79 => Self::PlanarOffset,
+            80 => Self::EqualCurvature3dAligned,
+            81 => Self::FlangeFaceDistance,
+            82 => Self::ConicRho,
+            83 => Self::C3Touch,
+            84 => Self::DoubleAngle,
+            85 => Self::SameCurveLength,
             _ => return None,
         })
     }
@@ -756,6 +930,64 @@ impl SketchRelationKind {
             Self::HorizontalPoints => 25,
             Self::VerticalPoints => 26,
             Self::Collinear => 27,
+            Self::Coradial => 28,
+            Self::SnapGrid => 29,
+            Self::SnapLength => 30,
+            Self::SnapAngle => 31,
+            Self::UseEdge => 32,
+            Self::EllipseAngle90 => 33,
+            Self::EllipseAngle180 => 34,
+            Self::EllipseAngle270 => 35,
+            Self::EllipseAngleTop => 36,
+            Self::EllipseAngleBottom => 37,
+            Self::EllipseAngleLeft => 38,
+            Self::EllipseAngleRight => 39,
+            Self::AtPierce => 40,
+            Self::DoubleDistance => 41,
+            Self::MergePoints => 42,
+            Self::AngleThreePoint => 43,
+            Self::ArcLength => 44,
+            Self::Normal => 45,
+            Self::NormalPoints => 46,
+            Self::SketchOffset => 47,
+            Self::AlongX => 48,
+            Self::AlongY => 49,
+            Self::AlongZ => 50,
+            Self::AlongXPoints => 51,
+            Self::AlongYPoints => 52,
+            Self::AlongZPoints => 53,
+            Self::ParallelYz => 54,
+            Self::ParallelZx => 55,
+            Self::Intersection => 56,
+            Self::Patterned => 57,
+            Self::IsoByPoint => 58,
+            Self::SameIsoparametric => 59,
+            Self::FitSpline => 60,
+            Self::EqualCurvature => 61,
+            Self::EqualTangent => 62,
+            Self::TangentFace => 63,
+            Self::AlongX3d => 64,
+            Self::AlongY3d => 65,
+            Self::AlongXPoints3d => 66,
+            Self::AlongYPoints3d => 67,
+            Self::Traction => 68,
+            Self::BeltTraction => 69,
+            Self::BlockFixedLock => 70,
+            Self::BlockNormalLock => 71,
+            Self::BlockRotateLock => 72,
+            Self::FakeSlotConstraint => 73,
+            Self::FixedSlot => 74,
+            Self::SameSlots => 75,
+            Self::LinearPatternCount => 76,
+            Self::CircularPatternCount => 77,
+            Self::RadialOffset => 78,
+            Self::PlanarOffset => 79,
+            Self::EqualCurvature3dAligned => 80,
+            Self::FlangeFaceDistance => 81,
+            Self::ConicRho => 82,
+            Self::C3Touch => 83,
+            Self::DoubleAngle => 84,
+            Self::SameCurveLength => 85,
         }
     }
 }
@@ -792,9 +1024,13 @@ mod tests {
         );
         assert_eq!(
             SketchInputKind::from_native_code_and_layout(28, false),
-            SketchInputKind::Native(28)
+            SketchInputKind::Relation(SketchRelationKind::Coradial)
         );
-        for code in 1..=27 {
+        assert_eq!(
+            SketchInputKind::from_native_code_and_layout(86, false),
+            SketchInputKind::Native(86)
+        );
+        for code in 1..=85 {
             let relation = SketchRelationKind::from_native_code(code).unwrap();
             assert_eq!(relation.native_code(), code);
         }
