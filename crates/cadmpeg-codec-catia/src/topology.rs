@@ -3618,7 +3618,7 @@ pub fn propagate_edge_port_points(
                 if let (Some(&left), Some(&right)) =
                     (port_points.get(&ports[0]), port_points.get(&ports[1]))
                 {
-                    if left != right {
+                    if ports[0] == ports[1] || left != right {
                         *pair = Some([left, right]);
                     }
                 }
@@ -3628,6 +3628,13 @@ pub fn propagate_edge_port_points(
             break;
         }
     }
+    let (resolved_ports, resolved_candidates): (Vec<_>, Vec<_>) = edge_ports
+        .iter()
+        .copied()
+        .zip(resolved.iter().copied())
+        .filter_map(|(ports, pair)| pair.map(|pair| (ports, vec![pair])))
+        .unzip();
+    edge_port_candidate_assignment(&resolved_ports, &resolved_candidates, false)?;
     Some(resolved)
 }
 
@@ -3642,6 +3649,7 @@ struct PortCandidateSearch<'a> {
     ambiguous: bool,
     exhausted: bool,
     states: usize,
+    require_unique: bool,
 }
 
 impl PortCandidateSearch<'_> {
@@ -3697,7 +3705,7 @@ impl PortCandidateSearch<'_> {
         // still contain symmetric coordinate assignments. Ambiguity beyond
         // this bound is retained for later paths rather than partially bound.
         const MAX_STATES: usize = 1_024;
-        if self.ambiguous || self.exhausted {
+        if self.ambiguous || self.exhausted || (!self.require_unique && self.solution.is_some()) {
             return;
         }
         let mut propagated = Vec::new();
@@ -3753,7 +3761,9 @@ impl PortCandidateSearch<'_> {
                     })
                     .collect::<Vec<_>>();
                 match &self.solution_key {
-                    Some(solution) if *solution != key => self.ambiguous = true,
+                    Some(solution) if self.require_unique && *solution != key => {
+                        self.ambiguous = true;
+                    }
                     None => {
                         self.solution = Some(candidate);
                         self.solution_key = Some(key);
@@ -3768,11 +3778,14 @@ impl PortCandidateSearch<'_> {
             self.exhausted = true;
         } else {
             self.states += 1;
-            for candidate in 0..self.candidates[edge].len() {
+            'candidates: for candidate in 0..self.candidates[edge].len() {
                 for points in self.compatible(edge, self.candidates[edge][candidate]) {
                     let inserted = self.assign(edge, points);
                     self.search();
                     self.unassign(edge, inserted);
+                    if !self.require_unique && self.solution.is_some() {
+                        break 'candidates;
+                    }
                 }
             }
         }
@@ -3786,6 +3799,14 @@ impl PortCandidateSearch<'_> {
 pub fn bind_edge_port_candidates(
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
+) -> Option<Vec<[usize; 2]>> {
+    edge_port_candidate_assignment(ports, candidates, true)
+}
+
+fn edge_port_candidate_assignment(
+    ports: &[[u32; 2]],
+    candidates: &[Vec<[usize; 2]>],
+    require_unique: bool,
 ) -> Option<Vec<[usize; 2]>> {
     if ports.len() != candidates.len() || candidates.iter().any(Vec::is_empty) {
         return None;
@@ -3835,6 +3856,7 @@ pub fn bind_edge_port_candidates(
             ambiguous: false,
             exhausted: false,
             states: 0,
+            require_unique,
         };
         search.search();
         if search.ambiguous || search.exhausted {
@@ -9866,6 +9888,33 @@ mod motif_tests {
         assert_eq!(
             propagate_edge_port_points(&ports, &pairs),
             Some(vec![Some([0, 1]), Some([1, 2]), Some([2, 3]), Some([3, 0]),])
+        );
+    }
+
+    #[test]
+    fn endpoint_port_propagation_requires_a_point_bijection() {
+        assert_eq!(
+            propagate_edge_port_points(&[[10, 11]], &[Some([0, 1])]),
+            Some(vec![Some([0, 1])])
+        );
+        assert_eq!(
+            propagate_edge_port_points(&[[10, 11], [10, 12]], &[Some([0, 1]), Some([0, 1])]),
+            None
+        );
+        assert_eq!(
+            propagate_edge_port_points(&[[10, 11]], &[Some([0, 0])]),
+            None
+        );
+    }
+
+    #[test]
+    fn endpoint_port_propagation_closes_equal_port_edges() {
+        let ports = [[10, 11], [11, 12], [10, 10]];
+        let pairs = [Some([0, 1]), Some([1, 2]), None];
+
+        assert_eq!(
+            propagate_edge_port_points(&ports, &pairs),
+            Some(vec![Some([0, 1]), Some([1, 2]), Some([0, 0])])
         );
     }
 
