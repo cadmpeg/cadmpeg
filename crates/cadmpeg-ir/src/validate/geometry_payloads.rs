@@ -264,17 +264,27 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
     for s in &ir.model.surfaces {
         match &s.geometry {
-            SurfaceGeometry::Plane { normal, u_axis, .. } => {
+            SurfaceGeometry::Plane {
+                origin,
+                normal,
+                u_axis,
+            } => {
+                if !point3_finite(origin) {
+                    bounds_err(findings, &s.id.0, "plane origin is not finite");
+                }
                 if !orthonormal(normal, u_axis) {
                     bounds_err(findings, &s.id.0, "plane frame is not orthonormal");
                 }
             }
             SurfaceGeometry::Cylinder {
+                origin,
                 axis,
                 ref_direction,
                 radius,
-                ..
             } => {
+                if !point3_finite(origin) {
+                    bounds_err(findings, &s.id.0, "cylinder origin is not finite");
+                }
                 if !orthonormal(axis, ref_direction) {
                     bounds_err(findings, &s.id.0, "cylinder frame is not orthonormal");
                 }
@@ -283,46 +293,62 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             SurfaceGeometry::Cone {
+                origin,
                 axis,
                 ref_direction,
                 radius,
                 ratio,
-                ..
+                half_angle,
             } => {
+                if !point3_finite(origin) {
+                    bounds_err(findings, &s.id.0, "cone origin is not finite");
+                }
                 if !orthonormal(axis, ref_direction) {
                     bounds_err(findings, &s.id.0, "cone frame is not orthonormal");
                 }
-                if *radius < 0.0 {
-                    bounds_err(findings, &s.id.0, "cone radius is negative");
+                if !radius.is_finite() || *radius < 0.0 {
+                    bounds_err(findings, &s.id.0, "cone radius is negative or not finite");
                 }
                 if !ratio.is_finite() || *ratio <= 0.0 {
                     bounds_err(findings, &s.id.0, "cone ratio is not positive and finite");
                 }
+                if !half_angle.is_finite() {
+                    bounds_err(findings, &s.id.0, "cone half-angle is not finite");
+                }
             }
             SurfaceGeometry::Sphere {
+                center,
                 axis,
                 ref_direction,
                 radius,
-                ..
             } => {
+                if !point3_finite(center) {
+                    bounds_err(findings, &s.id.0, "sphere center is not finite");
+                }
                 if !orthonormal(axis, ref_direction) {
                     bounds_err(findings, &s.id.0, "sphere frame is not orthonormal");
                 }
-                if radius.abs() <= f64::EPSILON {
-                    bounds_err(findings, &s.id.0, "sphere radius is zero");
+                if !radius.is_finite() || radius.abs() <= f64::EPSILON {
+                    bounds_err(findings, &s.id.0, "sphere radius is zero or not finite");
                 }
             }
             SurfaceGeometry::Torus {
+                center,
                 axis,
                 ref_direction,
                 major_radius,
                 minor_radius,
-                ..
             } => {
+                if !point3_finite(center) {
+                    bounds_err(findings, &s.id.0, "torus center is not finite");
+                }
                 if !orthonormal(axis, ref_direction) {
                     bounds_err(findings, &s.id.0, "torus frame is not orthonormal");
                 }
-                if nonpositive(*major_radius) || minor_radius.abs() <= f64::EPSILON {
+                if nonpositive(*major_radius)
+                    || !minor_radius.is_finite()
+                    || minor_radius.abs() <= f64::EPSILON
+                {
                     bounds_err(
                         findings,
                         &s.id.0,
@@ -1403,17 +1429,23 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
     for c in &ir.model.curves {
         match &c.geometry {
-            CurveGeometry::Line { direction, .. } => {
+            CurveGeometry::Line { origin, direction } => {
+                if !point3_finite(origin) {
+                    bounds_err(findings, &c.id.0, "line origin is not finite");
+                }
                 if !unit_vector(direction) {
                     bounds_err(findings, &c.id.0, "line direction is not unit length");
                 }
             }
             CurveGeometry::Circle {
+                center,
                 axis,
                 ref_direction,
                 radius,
-                ..
             } => {
+                if !point3_finite(center) {
+                    bounds_err(findings, &c.id.0, "circle center is not finite");
+                }
                 if !orthonormal(axis, ref_direction) {
                     bounds_err(findings, &c.id.0, "circle frame is not orthonormal");
                 }
@@ -1422,12 +1454,15 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             CurveGeometry::Ellipse {
+                center,
                 axis,
                 major_direction,
                 major_radius,
                 minor_radius,
-                ..
             } => {
+                if !point3_finite(center) {
+                    bounds_err(findings, &c.id.0, "ellipse center is not finite");
+                }
                 if !orthonormal(axis, major_direction) {
                     bounds_err(findings, &c.id.0, "ellipse frame is not orthonormal");
                 }
@@ -1442,11 +1477,14 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             CurveGeometry::Parabola {
+                vertex,
                 axis,
                 major_direction,
                 focal_distance,
-                ..
             } => {
+                if !point3_finite(vertex) {
+                    bounds_err(findings, &c.id.0, "parabola vertex is not finite");
+                }
                 if !orthonormal(axis, major_direction) {
                     bounds_err(findings, &c.id.0, "parabola frame is not orthonormal");
                 }
@@ -1455,12 +1493,15 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             CurveGeometry::Hyperbola {
+                center,
                 axis,
                 major_direction,
                 major_radius,
                 minor_radius,
-                ..
             } => {
+                if !point3_finite(center) {
+                    bounds_err(findings, &c.id.0, "hyperbola center is not finite");
+                }
                 if !orthonormal(axis, major_direction) {
                     bounds_err(findings, &c.id.0, "hyperbola frame is not orthonormal");
                 }

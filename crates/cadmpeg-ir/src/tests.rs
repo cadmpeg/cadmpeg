@@ -1972,6 +1972,47 @@ fn ellipse_radius_order_is_checked() {
 }
 
 #[test]
+fn analytic_carrier_locations_and_scalars_must_be_finite() {
+    let mut ir = unit_cube();
+    let surface_id = ir.model.faces[0].surface.clone();
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == surface_id)
+        .unwrap()
+        .geometry = SurfaceGeometry::Cone {
+        origin: Point3::new(f64::NAN, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: f64::INFINITY,
+        ratio: 1.0,
+        half_angle: f64::NAN,
+    };
+    let curve_id = ir.model.edges[0].curve.clone().unwrap();
+    ir.model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry = CurveGeometry::Circle {
+        center: Point3::new(0.0, f64::INFINITY, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 1.0,
+    };
+
+    let findings = validate(&ir, Vec::new()).findings;
+    for message in [
+        "cone origin is not finite",
+        "cone radius is negative or not finite",
+        "cone half-angle is not finite",
+        "circle center is not finite",
+    ] {
+        assert!(findings.iter().any(|finding| finding.message == message));
+    }
+}
+
+#[test]
 fn document_and_entity_tolerances_are_checked() {
     let mut ir = unit_cube();
     ir.tolerances.angular = f64::NAN;

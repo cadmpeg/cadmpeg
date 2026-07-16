@@ -5489,6 +5489,31 @@ fn semantic_writer_rejects_noncanonical_ellipse_radius_order() {
 }
 
 #[test]
+fn semantic_writer_rejects_nonfinite_analytic_carriers() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&closed_cylinder_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let cadmpeg_ir::geometry::CurveGeometry::Circle { center, .. } =
+        &mut decoded.ir.model.curves[0].geometry
+    else {
+        panic!("closed cylinder edge must use a circle carrier");
+    };
+    center.x = f64::INFINITY;
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::Malformed(message)
+            if message.contains("circle center is not finite")
+    ));
+}
+
+#[test]
 fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() {
     let decoded = SldprtCodec
         .decode(
