@@ -1092,6 +1092,83 @@ impl IncidenceComponentSearch<'_> {
         })
     }
 
+    fn face_configuration_options(&self) -> Option<MeshFaceEndpointConfigurations> {
+        const MAX_FACE_CONFIGURATIONS: usize = 4_096;
+
+        let mesh_assignments = self.mesh_assignments?;
+        let mut best = None::<Vec<Vec<(usize, [usize; 2])>>>;
+        for (face, assignments) in mesh_assignments.iter().enumerate() {
+            if !self.face_edges[face]
+                .iter()
+                .any(|edge| self.active[*edge] && self.assignment[*edge].is_none())
+            {
+                continue;
+            }
+            let Some(configurations) = mesh_face_endpoint_configurations(
+                assignments,
+                self.choices,
+                &self.assignment,
+                MAX_FACE_CONFIGURATIONS,
+            ) else {
+                continue;
+            };
+            let mut projected = configurations
+                .into_iter()
+                .map(|configuration| {
+                    configuration
+                        .into_iter()
+                        .filter(|(edge, _)| self.active[*edge] && self.assignment[*edge].is_none())
+                        .collect::<Vec<_>>()
+                })
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            projected.sort_unstable();
+            if projected.is_empty() {
+                return Some(Vec::new());
+            }
+            if projected.iter().all(Vec::is_empty) {
+                continue;
+            }
+            if best
+                .as_ref()
+                .is_none_or(|stored| projected.len() < stored.len())
+            {
+                best = Some(projected);
+            }
+        }
+        best
+    }
+
+    fn search_face_configurations(&mut self, options: MeshFaceEndpointConfigurations) {
+        for option in options {
+            let mut assigned = Vec::new();
+            let mut viable = true;
+            for (edge, pair) in option {
+                if !self.active[edge] || self.assignment[edge].is_some() {
+                    continue;
+                }
+                if !self.candidate_fits(edge, pair) {
+                    viable = false;
+                    break;
+                }
+                self.adjust(edge, pair, true);
+                self.assignment[edge] = Some(pair);
+                assigned.push((edge, pair));
+            }
+            if viable && !assigned.is_empty() {
+                self.search();
+            }
+            for (edge, pair) in assigned.into_iter().rev() {
+                self.assignment[edge] = None;
+                self.adjust(edge, pair, false);
+            }
+            if self.exhausted {
+                return;
+            }
+        }
+    }
+
     fn search(&mut self) {
         if self.exhausted {
             return;
@@ -1122,6 +1199,12 @@ impl IncidenceComponentSearch<'_> {
             return;
         }
         self.states += 1;
+        if let Some(options) = self.face_configuration_options() {
+            if !options.is_empty() {
+                self.search_face_configurations(options);
+            }
+            return;
+        }
         let Some(options) = self.branch_options() else {
             return;
         };
@@ -5429,6 +5512,9 @@ impl MeshQuotient {
 }
 
 type MeshFaceSelection = Option<(usize, Vec<Vec<bool>>)>;
+type MeshEndpointPair = (usize, [usize; 2]);
+type MeshFaceEndpointConfiguration = Vec<MeshEndpointPair>;
+type MeshFaceEndpointConfigurations = Vec<MeshFaceEndpointConfiguration>;
 type MeshQuotientSignature = Vec<(Vec<usize>, Vec<usize>)>;
 type MeshOrientationSignature = (MeshQuotientSignature, Vec<Vec<bool>>);
 type MeshFaceEquationCache = RefCell<HashMap<(usize, MeshQuotientSignature), Vec<[usize; 2]>>>;
@@ -5711,6 +5797,142 @@ fn mesh_assignment_endpoint_cycles_viable(
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> bool {
     mesh_assignment_endpoint_cycles_viable_with(assignment, edge_candidates, None).unwrap_or(true)
+}
+
+fn mesh_face_endpoint_configurations(
+    assignments: &[MeshFaceBoundaryAssignment],
+    edge_candidates: &[Vec<[usize; 2]>],
+    selected: &[Option<[usize; 2]>],
+    limit: usize,
+) -> Option<MeshFaceEndpointConfigurations> {
+    fn insert_pair(
+        configuration: &mut MeshFaceEndpointConfiguration,
+        edge: usize,
+        mut pair: [usize; 2],
+    ) -> bool {
+        pair.sort_unstable();
+        match configuration.iter().find(|(stored, _)| *stored == edge) {
+            Some((_, stored)) => *stored == pair,
+            None => {
+                configuration.push((edge, pair));
+                true
+            }
+        }
+    }
+
+    fn boundary_configurations(
+        boundary: &[MeshBoundaryEdgeCandidate],
+        edge_candidates: &[Vec<[usize; 2]>],
+        selected: &[Option<[usize; 2]>],
+        work: &mut usize,
+        limit: usize,
+    ) -> Option<MeshFaceEndpointConfigurations> {
+        if boundary.is_empty()
+            || boundary
+                .iter()
+                .any(|use_| edge_candidates.get(use_.edge).is_none_or(Vec::is_empty))
+        {
+            return None;
+        }
+        let allowed = |edge: usize, pair: [usize; 2]| {
+            selected
+                .get(edge)
+                .copied()
+                .flatten()
+                .is_none_or(|stored| same_unordered_pair(stored, pair))
+        };
+        let mut states = Vec::<(usize, usize, MeshFaceEndpointConfiguration)>::new();
+        for &pair @ [left, right] in &edge_candidates[boundary[0].edge] {
+            if !allowed(boundary[0].edge, pair) {
+                continue;
+            }
+            for (start, current) in [(left, right), (right, left)] {
+                let mut configuration = Vec::new();
+                if insert_pair(&mut configuration, boundary[0].edge, pair) {
+                    states.push((start, current, configuration));
+                }
+            }
+        }
+        for use_ in &boundary[1..] {
+            let mut next = Vec::new();
+            for (start, current, configuration) in states {
+                for &pair @ [left, right] in &edge_candidates[use_.edge] {
+                    if !allowed(use_.edge, pair) {
+                        continue;
+                    }
+                    for endpoint in [
+                        (left == current).then_some(right),
+                        (right == current).then_some(left),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    {
+                        *work = work.checked_add(1)?;
+                        if *work > limit {
+                            return None;
+                        }
+                        let mut configuration = configuration.clone();
+                        if insert_pair(&mut configuration, use_.edge, pair) {
+                            next.push((start, endpoint, configuration));
+                        }
+                    }
+                }
+            }
+            states = next;
+            if states.is_empty() {
+                return Some(Vec::new());
+            }
+        }
+        let mut seen = HashSet::new();
+        Some(
+            states
+                .into_iter()
+                .filter(|(start, current, _)| start == current)
+                .filter_map(|(_, _, mut configuration)| {
+                    configuration.sort_unstable();
+                    seen.insert(configuration.clone()).then_some(configuration)
+                })
+                .collect(),
+        )
+    }
+
+    if limit == 0 || selected.len() != edge_candidates.len() {
+        return None;
+    }
+    let mut work = 0usize;
+    let mut configurations = HashSet::new();
+    for assignment in assignments {
+        let mut combined = vec![Vec::new()];
+        for boundary in &assignment.boundaries {
+            let boundary =
+                boundary_configurations(boundary, edge_candidates, selected, &mut work, limit)?;
+            let mut next = Vec::new();
+            for stored in combined {
+                for candidate in &boundary {
+                    work = work.checked_add(1)?;
+                    if work > limit {
+                        return None;
+                    }
+                    let mut merged = stored.clone();
+                    if candidate
+                        .iter()
+                        .all(|(edge, pair)| insert_pair(&mut merged, *edge, *pair))
+                    {
+                        merged.sort_unstable();
+                        next.push(merged);
+                    }
+                }
+            }
+            combined = next;
+        }
+        configurations.extend(combined);
+        if configurations.len() > limit {
+            return None;
+        }
+    }
+    let mut configurations = configurations.into_iter().collect::<Vec<_>>();
+    configurations.sort_unstable();
+    Some(configurations)
 }
 
 fn prune_mesh_endpoint_pair_support(
@@ -7642,10 +7864,10 @@ mod motif_tests {
         bind_edge_port_candidates, canonicalize_mesh_vertex_labels, complete_duplicate_face_slots,
         deduplicate_mesh_quotient_assignments, face_endpoint_candidates_close,
         mesh_assignment_can_merge, mesh_assignment_endpoint_cycles_viable,
-        mesh_candidates_equivalent, mesh_edge_points_compatible, motif_port_points,
-        parse_edge_tables_at, parse_edge_tables_scoped_at, parse_fbb_edge_tables_width,
-        parse_trim_chain, parse_trim_record, possible_face_choices, possible_face_equations,
-        propagate_edge_port_points, prune_edge_candidates_by_port_domains,
+        mesh_candidates_equivalent, mesh_edge_points_compatible, mesh_face_endpoint_configurations,
+        motif_port_points, parse_edge_tables_at, parse_edge_tables_scoped_at,
+        parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, possible_face_choices,
+        possible_face_equations, propagate_edge_port_points, prune_edge_candidates_by_port_domains,
         prune_mesh_endpoint_pair_support, reconstruct_incidence, reconstruct_incidence_candidates,
         resolve_edge_faces_from_runs, standard_face_count, unique_coordinate_bijection,
         unique_duplicate_face_assignment, uses_canonical_edge_direction_gauge, Boundary, CoedgeUse,
@@ -9377,6 +9599,34 @@ mod motif_tests {
             &assignment(&[0, 2, 1, 3]),
             &candidates,
         ));
+    }
+
+    #[test]
+    fn mesh_face_endpoint_configurations_preserve_pair_correlation() {
+        let assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![(0..4)
+                .map(|edge| MeshBoundaryEdgeCandidate {
+                    edge,
+                    start: 0,
+                    end: 0,
+                    reversed: None,
+                })
+                .collect()],
+        };
+        let candidates = vec![
+            vec![[0, 1]],
+            vec![[1, 2], [2, 3]],
+            vec![[2, 3], [1, 2]],
+            vec![[3, 0]],
+        ];
+        let configurations =
+            mesh_face_endpoint_configurations(&[assignment], &candidates, &[None; 4], 4_096)
+                .expect("bounded face configurations");
+
+        assert_eq!(
+            configurations,
+            vec![vec![(0, [0, 1]), (1, [1, 2]), (2, [2, 3]), (3, [0, 3])]],
+        );
     }
 
     #[test]
