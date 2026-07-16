@@ -207,12 +207,48 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .count();
     let unresolved_parameter_references =
         crate::history::parameters_with_unresolved_references(&ir.model.parameters, &feature_names);
-    if incomplete_parameters > 0 || unresolved_parameter_references > 0 {
+    let feature_ordinals = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (&feature.id, feature.ordinal))
+        .collect::<BTreeMap<_, _>>();
+    let parameter_positions = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (&parameter.id, (&parameter.owner, parameter.ordinal)))
+        .collect::<BTreeMap<_, _>>();
+    let incoherent_parameter_dependencies = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            parameter.dependencies.iter().any(|dependency| {
+                let Some((owner, ordinal)) = parameter_positions.get(dependency) else {
+                    return true;
+                };
+                if *owner == &parameter.owner {
+                    return *ordinal >= parameter.ordinal;
+                }
+                feature_ordinals
+                    .get(*owner)
+                    .zip(feature_ordinals.get(&parameter.owner))
+                    .is_none_or(|(dependency_owner, consumer_owner)| {
+                        dependency_owner >= consumer_owner
+                    })
+            })
+        })
+        .count();
+    if incomplete_parameters > 0
+        || unresolved_parameter_references > 0
+        || incoherent_parameter_dependencies > 0
+    {
         report.losses.push(LossNote {
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
-                "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved, ambiguous, or malformed parameter references."
+                "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; {incoherent_parameter_dependencies} parameter record(s) contain missing or non-preceding dependency edges."
             ),
             provenance: None,
         });
@@ -2195,10 +2231,37 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: ParameterId("malformed-reference".into()),
-            owner,
+            owner: owner.clone(),
             ordinal: 3,
             name: "D3".into(),
             expression: "\"D0@Boss-Extrude1".into(),
+            display: None,
+            value: Some(cadmpeg_ir::features::ParameterValue::Real(1.0)),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        let future = ParameterId("future".into());
+        ir.model.parameters.push(DesignParameter {
+            id: ParameterId("forward-reference".into()),
+            owner: owner.clone(),
+            ordinal: 4,
+            name: "D4".into(),
+            expression: "D5".into(),
+            display: None,
+            value: Some(cadmpeg_ir::features::ParameterValue::Real(1.0)),
+            dependencies: vec![future.clone()],
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        ir.model.parameters.push(DesignParameter {
+            id: future,
+            owner,
+            ordinal: 5,
+            name: "D5".into(),
+            expression: "1".into(),
             display: None,
             value: Some(cadmpeg_ir::features::ParameterValue::Real(1.0)),
             dependencies: Vec::new(),
@@ -2218,7 +2281,7 @@ mod design_loss_tests {
 
         assert!(report.losses.iter().any(|loss| {
             loss.message
-                == "1 parameter(s) lack an evaluated scalar; 3 parameter expression(s) contain unresolved, ambiguous, or malformed parameter references."
+                == "1 parameter(s) lack an evaluated scalar; 3 parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; 1 parameter record(s) contain missing or non-preceding dependency edges."
         }));
     }
 
