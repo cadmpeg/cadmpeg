@@ -464,6 +464,34 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+    let body_ids = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| &body.id)
+        .collect::<std::collections::HashSet<_>>();
+    let incoherent_feature_outputs = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            let mut outputs = std::collections::HashSet::new();
+            feature
+                .outputs
+                .iter()
+                .any(|body| !outputs.insert(body) || !body_ids.contains(body))
+        })
+        .count();
+    if incoherent_feature_outputs > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{incoherent_feature_outputs} feature record(s) contain missing or repeated output body references."
+            ),
+            provenance: None,
+        });
+    }
 
     let native_constraints = ir
         .model
@@ -2507,6 +2535,51 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "3 feature record(s) contain missing, repeated, misowned, or structurally inconsistent source-content references."
+        }));
+    }
+
+    #[test]
+    fn incoherent_feature_outputs_are_reported_as_design_loss() {
+        let mut ir = cadmpeg_ir::examples::unit_cube();
+        ir.model.features.clear();
+        ir.model.parameters.clear();
+        let body = ir.model.bodies[0].id.clone();
+        let feature = |id: &str, ordinal: u64, outputs: Vec<BodyId>| Feature {
+            id: FeatureId(id.into()),
+            ordinal,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs,
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+            },
+            native_ref: None,
+        };
+        ir.model
+            .features
+            .push(feature("duplicate", 0, vec![body.clone(), body]));
+        ir.model
+            .features
+            .push(feature("missing", 1, vec![BodyId("missing-body".into())]));
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "2 feature record(s) contain missing or repeated output body references."
         }));
     }
 
