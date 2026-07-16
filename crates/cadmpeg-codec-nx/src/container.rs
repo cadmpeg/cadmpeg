@@ -6,7 +6,7 @@
 //! in-bounds file offset and size. [`crate::parasolid`] uses the canonical
 //! `/Root/UG_PART/UG_PART` span to bound its compressed-stream scan.
 
-use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{u32_at as u32_le, u64_at as u64_le};
 
 /// The eight-byte signature used to identify an SPLMSSTR container.
@@ -113,6 +113,10 @@ impl Container {
             let Some(count) = u32_le(bytes, pos).map(|value| value as usize) else {
                 continue;
             };
+            // Limit classification (§10 Phase 1): historical guess. The active
+            // object-id table's plausible length window is an undocumented
+            // heuristic that gates a `count * 4` slice; the `bytes.get` below
+            // and the input already charged as work bound the actual read.
             if !(50..=70_000).contains(&count) {
                 continue;
             }
@@ -205,16 +209,6 @@ fn u48_le(d: &[u8], at: usize) -> u64 {
     v
 }
 
-/// Read a complete SPLMSSTR file and parse its header and directories.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<Container, CodecError> {
-    reader
-        .seek(std::io::SeekFrom::Start(0))
-        .map_err(CodecError::Io)?;
-    let mut data = Vec::new();
-    reader.read_to_end(&mut data).map_err(CodecError::Io)?;
-    scan_bytes(data)
-}
-
 /// Parse an SPLMSSTR file image.
 pub fn scan_bytes(data: Vec<u8>) -> Result<Container, CodecError> {
     if !data.starts_with(MAGIC) {
@@ -255,6 +249,10 @@ fn enumerate_region(data: &[u8], from: usize, region: Region, out: &mut Vec<DirE
     // entries follows. Allow a bounded number of framing misses before giving up,
     // because the 16-byte opaque payloads can contain bytes that briefly look like
     // a length field.
+    // Limit classification (§10 Phase 1): algorithm limit. The bounded miss
+    // count is the nx directory-walk probe idiom (§2 principle 4) — a run of
+    // framing misses past this many bytes means the contiguous region ended.
+    // Kept as defense in depth; the work budget independently bounds the scan.
     let mut misses = 0usize;
     while o + 4 <= data.len() && misses < 64 {
         match try_entry(data, o, region) {
@@ -276,6 +274,9 @@ fn enumerate_region(data: &[u8], from: usize, region: Region, out: &mut Vec<DirE
 /// and the offset just past its payload.
 fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)> {
     let name_len = u32_le(data, o)? as usize;
+    // Limit classification (§10 Phase 1): format validity. A `/Root/...` entry
+    // path is between six and 128 bytes; the bound frames the name read and
+    // rejects a length field that is really opaque payload.
     if !(6..=128).contains(&name_len) {
         return None;
     }

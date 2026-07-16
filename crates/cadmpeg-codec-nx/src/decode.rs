@@ -12,7 +12,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, DecodeResult};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -64,26 +65,38 @@ impl Scan {
 }
 
 /// Parse the SPLMSSTR container and inflate streams in its canonical part entry.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
-    let container = container::scan(reader)?;
-    let streams = parasolid::extract_streams(&container.data);
+///
+/// Consumes the session root [`View`] directly: no re-read, no `std::io::Cursor`
+/// adapter. [`container::scan_bytes`] frames the directory over the root image
+/// and [`parasolid::extract_streams`] registers the canonical part payload as a
+/// `Slice` span and inflates each embedded zlib stream through
+/// [`DecodeContext::begin_expand`] (§10 Phase 1A/1B).
+pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan, CodecError> {
+    // `read_root` already enforced the platform `max_input_bytes` policy limit.
+    // The directory enumeration is a linear pass over the whole image; charge
+    // its bytes as work once, before framing begins.
+    let image = root.window();
+    ctx.charge_work(
+        image.len() as u64,
+        "nx_container_scan",
+        Some(root.location()),
+    )?;
+    let container = container::scan_bytes(image.to_vec())?;
+    let streams = parasolid::extract_streams(ctx, root, &container)?;
     Ok(Scan { container, streams })
 }
 
 /// Decode an NX `.prt` into IR and a loss report.
 ///
-/// When [`DecodeOptions::container_only`] is set, the returned IR contains source
+/// When [`DecodeContext::container_only`] is set, the returned IR contains source
 /// metadata and preserved streams but no typed entities. Otherwise the decoder
 /// emits supported geometry and resolvable topology. A valid container can
 /// decode successfully with no geometry, including an assembly whose geometry
 /// resides in external child parts.
-pub fn decode(
-    reader: &mut dyn ReadSeek,
-    options: &DecodeOptions,
-) -> Result<DecodeResult, CodecError> {
-    let scan = scan(reader)?;
+pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
+    let scan = scan(ctx, root)?;
 
-    if options.container_only {
+    if ctx.container_only() {
         let ir = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
         return Ok(DecodeResult::new(ir, report));

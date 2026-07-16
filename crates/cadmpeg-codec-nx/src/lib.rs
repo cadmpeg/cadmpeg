@@ -69,7 +69,7 @@ pub mod topology;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions, DecodeResult,
+    Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeResult,
 };
 use cadmpeg_ir::decode::{DecodeContext, View};
 
@@ -92,11 +92,10 @@ impl Codec for NxCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let mut reader = std::io::Cursor::new(root.window());
-        let scan = decode::scan(&mut reader)?;
+        let scan = decode::scan(ctx, root)?;
         Ok(summarize(&scan))
     }
 
@@ -105,12 +104,7 @@ impl Codec for NxCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        let options = DecodeOptions {
-            container_only: ctx.container_only(),
-            policy: *ctx.policy(),
-        };
-        let mut reader = std::io::Cursor::new(root.window());
-        decode::decode(&mut reader, &options)
+        decode::decode(ctx, root)
     }
 }
 

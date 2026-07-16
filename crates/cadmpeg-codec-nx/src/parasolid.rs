@@ -6,9 +6,13 @@
 //! neutral-binary data and supplies its subtype and optional `SCH_` schema token.
 //! Other inflated payloads are classified as [`StreamKind::Preview`].
 
-use cadmpeg_ir::compression::inflate_zlib_prefix;
+use std::io::Read;
 
-use crate::container;
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use flate2::read::ZlibDecoder;
+
+use crate::container::Container;
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,58 +59,130 @@ pub struct Stream {
 
 /// The minimum inflated length for a candidate to count as a real stream; below
 /// this a `78 01` match is almost certainly a coincidence in packed data.
+///
+/// Limit classification (§10 Phase 1): historical guess. This threshold rejects
+/// coincidental zlib-header matches in packed data; it is not a resource bound.
+/// The per-expand and cumulative decompressed-bytes ceilings enforced by
+/// [`DecodeContext::begin_expand`] are what bound inflation against a
+/// decompression bomb.
 const MIN_INFLATED: usize = 64;
+
+/// Chunk size for streaming inflated output through the expander.
+const INFLATE_CHUNK: usize = 8192;
 
 /// Locate, inflate, and classify zlib streams in `/Root/UG_PART/UG_PART`.
 ///
-/// Returns an empty vector if `data` is not a valid SPLMSSTR image or the
-/// canonical part entry is absent or invalid. The scan remains inside that
-/// entry, excluding compressed payloads stored elsewhere in the container.
-pub fn extract_streams(data: &[u8]) -> Vec<Stream> {
-    let Ok(container) = container::scan_bytes(data.to_vec()) else {
-        return Vec::new();
-    };
+/// Registers the canonical part payload as a [`SpaceOrigin::Slice`] span in the
+/// runtime space graph, then inflates each embedded zlib stream through
+/// [`DecodeContext::begin_expand`] so every decompressed byte is charged and
+/// bounded by the per-expand and cumulative ceilings, and each stream registers
+/// as a decompression `Transform` space only on successful finalize (§10 Phase
+/// 1A/1B). Returns an empty vector when the canonical part entry is absent, so
+/// an assembly `.prt` with no inline geometry decodes without error.
+///
+/// [`SpaceOrigin::Slice`]: cadmpeg_ir::decode::SpaceOrigin::Slice
+pub fn extract_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+    container: &Container,
+) -> Result<Vec<Stream>, CodecError> {
     let Some((part_offset, part_size)) = container
         .entries
         .iter()
         .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
         .and_then(|entry| entry.file_span)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let Ok(start) = usize::try_from(part_offset) else {
-        return Vec::new();
+    let (Ok(start), Ok(size)) = (usize::try_from(part_offset), usize::try_from(part_size)) else {
+        return Ok(Vec::new());
     };
-    let Ok(size) = usize::try_from(part_size) else {
-        return Vec::new();
+    let Some(end) = start.checked_add(size) else {
+        return Ok(Vec::new());
     };
-    let Some(part) = data.get(start..start.saturating_add(size)) else {
-        return Vec::new();
-    };
+    // Register the canonical part payload as a Slice alias of the root space:
+    // its bytes were already accounted for when the root was admitted, so no
+    // copy is made and no counter is charged. The scan stays inside this span,
+    // excluding compressed payloads stored elsewhere in the container.
+    let (_part_space, part_view) = ctx.register_slice(
+        root,
+        ByteRange {
+            start: start as u64,
+            end: end as u64,
+        },
+    )?;
+    let part = part_view.window();
+    // The header scan is a linear pass over the part payload; charge its bytes
+    // as work once (§10 Phase 1A file-wide search charging).
+    ctx.charge_work(
+        part.len() as u64,
+        "nx_parasolid_scan",
+        Some(part_view.location()),
+    )?;
 
     let mut streams = Vec::new();
     let mut i = 0usize;
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
-            if let Some(inflated) = inflate_zlib_prefix(&part[i..]) {
-                if inflated.len() >= MIN_INFLATED {
-                    let (kind, schema) = classify(&inflated);
-                    streams.push(Stream {
-                        file_offset: start + i,
-                        inflated,
-                        kind,
-                        schema,
-                    });
-                    // Resume after this header; a valid stream will not start
-                    // again inside its own compressed body at the very next byte.
-                    i += 2;
-                    continue;
-                }
+            if let Some(inflated) = inflate_stream(ctx, part_view, i)? {
+                let (kind, schema) = classify(&inflated);
+                streams.push(Stream {
+                    file_offset: start + i,
+                    inflated,
+                    kind,
+                    schema,
+                });
+                // Resume after this header; a valid stream will not start
+                // again inside its own compressed body at the very next byte.
+                i += 2;
+                continue;
             }
         }
         i += 1;
     }
-    streams
+    Ok(streams)
+}
+
+/// Inflate the zlib member at `offset` within the part payload through
+/// [`DecodeContext::begin_expand`], returning the inflated bytes when they clear
+/// [`MIN_INFLATED`].
+///
+/// The compressed source is framed as a nested [`View`] of the part span —
+/// never a raw length — so the expander bounds and attributes the stream to its
+/// own extent. Output streams through the writer in chunks, so no unbounded
+/// intermediate buffer forms; the decoder is truncation-tolerant, accepting a
+/// decoded prefix when trailing input belongs to the next packed stream. A
+/// candidate that inflates below the threshold registers no space: the writer
+/// is dropped without finalizing.
+fn inflate_stream<'a>(
+    ctx: &DecodeContext<'a>,
+    part_view: View<'a>,
+    offset: usize,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    let Some(source) = part_view.child(offset, part_view.end()) else {
+        return Ok(None);
+    };
+    let mut decoder = ZlibDecoder::new(source.window());
+    let mut writer = ctx.begin_expand(source, ExpandSpec::Unknown)?;
+    let mut inflated = Vec::new();
+    let mut chunk = [0u8; INFLATE_CHUNK];
+    loop {
+        match decoder.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => {
+                writer.write(&chunk[..read])?;
+                inflated.extend_from_slice(&chunk[..read]);
+            }
+            // Truncation-tolerant: keep the decoded prefix, exactly as the
+            // shared `inflate_zlib_prefix` helper did.
+            Err(_) => break,
+        }
+    }
+    if inflated.len() < MIN_INFLATED {
+        return Ok(None);
+    }
+    writer.finalize()?;
+    Ok(Some(inflated))
 }
 
 /// A zlib header has compression method 8 and a 16-bit header divisible by

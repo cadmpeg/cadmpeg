@@ -20,8 +20,20 @@ use cadmpeg_ir::Exactness;
 use cadmpeg_ir::InspectOptions;
 
 use crate::container;
-use crate::parasolid::{self, StreamKind};
+use crate::parasolid::{self, Stream, StreamKind};
 use crate::NxCodec;
+
+/// Extract streams over a byte image, driving the same context-based path
+/// [`crate::decode::scan`] runs: register the root space, frame the container,
+/// then inflate embedded streams through `begin_expand`.
+fn extract_streams(data: &[u8]) -> Vec<Stream> {
+    let arena = cadmpeg_ir::decode::DecodeArena::new();
+    let policy = cadmpeg_ir::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_ir::decode::DecodeContext::from_root_bytes(data, &arena, &policy).unwrap();
+    let container = container::scan_bytes(data.to_vec()).unwrap();
+    parasolid::extract_streams(&ctx, root, &container).unwrap()
+}
 
 const MAGIC: &[u8; 8] = b"SPLMSSTR";
 
@@ -1693,7 +1705,7 @@ fn decode_rejects_ambiguous_nx_arrangement_table_atomically() {
 #[test]
 fn parasolid_extraction_classifies_partition_and_schema() {
     let f = single_part_prt();
-    let streams = parasolid::extract_streams(&f);
+    let streams = extract_streams(&f);
     let part = streams
         .iter()
         .find(|s| s.kind == StreamKind::Partition)
@@ -2907,7 +2919,7 @@ fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     file.extend_from_slice(&part);
     file.extend_from_slice(&decoy);
 
-    let streams = parasolid::extract_streams(&file);
+    let streams = extract_streams(&file);
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].schema.as_deref(), Some("SCH_TEST_1_9999"));
 }
