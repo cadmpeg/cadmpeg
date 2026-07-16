@@ -1999,9 +1999,13 @@ fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
         .collect();
     let dependencies = crate::decode::parameter_owner_dependencies(
         &parameter_owners,
-        [
-            cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
-            cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
+        &[
+            cadmpeg_ir::features::FeatureSourceContent::Parameter(
+                cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
+            ),
+            cadmpeg_ir::features::FeatureSourceContent::Parameter(
+                cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
+            ),
         ],
     );
 
@@ -2223,11 +2227,6 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         ],
         values: [20.0, 21.0, 22.0],
     };
-    assert_eq!(
-        crate::decode::feature_consumed_parameter_ids(&[], Some(&dimensions)),
-        [20, 21, 22]
-            .map(|key| cadmpeg_ir::features::ParameterId(format!("nx:test:parameter#{key}")))
-    );
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
@@ -2237,11 +2236,10 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         .iter()
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect();
+    let mut content = Vec::new();
+    crate::decode::append_feature_expression_content(&mut content, &dimensions.expressions);
     assert_eq!(
-        crate::decode::parameter_owner_dependencies(
-            &parameter_owners,
-            crate::decode::feature_consumed_parameter_ids(&[], Some(&dimensions)),
-        ),
+        crate::decode::parameter_owner_dependencies(&parameter_owners, &content),
         [ir.model.features[0].id.clone()]
     );
     crate::decode::attach_block_dimension_parameter_consumers(

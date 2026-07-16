@@ -9689,21 +9689,6 @@ fn attach_feature_operations(
                 dependencies.push(dependency);
             }
         }
-        for owner in parameter_owner_dependencies(
-            &parameter_owners,
-            feature_consumed_parameter_ids(
-                parameter_uses_by_operation
-                    .get(label.id.as_str())
-                    .map_or([].as_slice(), Vec::as_slice),
-                block_dimensions_by_operation
-                    .get(label.id.as_str())
-                    .copied(),
-            ),
-        ) {
-            if !dependencies.contains(&owner) {
-                dependencies.push(owner);
-            }
-        }
         let mut source_properties = BTreeMap::new();
         if let Some(dependency) = sketch_datum_csys_dependencies.get(label.id.as_str()) {
             source_properties.insert(
@@ -10181,6 +10166,11 @@ fn attach_feature_operations(
         if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
             append_feature_expression_content(&mut source_content, &dimensions.expressions);
         }
+        for owner in parameter_owner_dependencies(&parameter_owners, &source_content) {
+            if !dependencies.contains(&owner) {
+                dependencies.push(owner);
+            }
+        }
         if !source_content.is_empty() {
             annotations.derived(&id, "source_content");
         }
@@ -10207,11 +10197,14 @@ fn attach_feature_operations(
 
 pub(crate) fn parameter_owner_dependencies(
     parameter_owners: &BTreeMap<ParameterId, FeatureId>,
-    parameter_ids: impl IntoIterator<Item = ParameterId>,
+    source_content: &[FeatureSourceContent],
 ) -> Vec<FeatureId> {
     let mut dependencies = Vec::new();
-    for parameter_id in parameter_ids {
-        let Some(owner) = parameter_owners.get(&parameter_id) else {
+    for parameter_id in source_content.iter().filter_map(|content| match content {
+        FeatureSourceContent::Parameter(parameter) => Some(parameter),
+        FeatureSourceContent::Text(_) | FeatureSourceContent::Feature(_) => None,
+    }) {
+        let Some(owner) = parameter_owners.get(parameter_id) else {
             continue;
         };
         if !dependencies.contains(owner) {
@@ -10219,22 +10212,6 @@ pub(crate) fn parameter_owner_dependencies(
         }
     }
     dependencies
-}
-
-pub(crate) fn feature_consumed_parameter_ids(
-    parameter_uses: &[&crate::native::FeatureParameterUse],
-    block_dimensions: Option<&crate::native::FeatureBlockDimensions>,
-) -> Vec<ParameterId> {
-    parameter_uses
-        .iter()
-        .filter_map(|parameter_use| expression_parameter_id(&parameter_use.expression))
-        .chain(
-            block_dimensions
-                .into_iter()
-                .flat_map(|dimensions| dimensions.expressions.iter())
-                .filter_map(|expression| expression_parameter_id(expression)),
-        )
-        .collect()
 }
 
 pub(crate) fn extrude_feature_definition(
