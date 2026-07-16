@@ -391,13 +391,40 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
         ));
     }
     for surface in &ir.model.surfaces {
-        if let SurfaceGeometry::Cone { ratio, .. } = &surface.geometry {
-            if *ratio != 1.0 {
+        match &surface.geometry {
+            SurfaceGeometry::Cone {
+                ratio, half_angle, ..
+            } => {
+                if *ratio != 1.0 {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
+                        surface.id.0, ratio
+                    )));
+                }
+                if !(*half_angle > 0.0 && *half_angle < std::f64::consts::FRAC_PI_2) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT surface {} has cone half-angle {}; compact cone carriers require an acute positive half-angle",
+                        surface.id.0, half_angle
+                    )));
+                }
+            }
+            SurfaceGeometry::Sphere { radius, .. } if *radius < 0.0 => {
                 return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
-                    surface.id.0, ratio
+                    "SLDPRT surface {} has signed sphere radius {}; compact sphere carriers require a positive radius",
+                    surface.id.0, radius
                 )));
             }
+            SurfaceGeometry::Torus {
+                major_radius,
+                minor_radius,
+                ..
+            } if !(*major_radius > *minor_radius && *minor_radius > 0.0) => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT surface {} has torus radii ({}, {}); compact torus carriers require major > minor > 0",
+                    surface.id.0, major_radius, minor_radius
+                )));
+            }
+            _ => {}
         }
     }
     for body in &ir.model.bodies {
@@ -2149,6 +2176,11 @@ pub(super) fn surface_values(
                     "SLDPRT compact cone carriers encode circular cones only".into(),
                 ));
             }
+            if !(*half_angle > 0.0 && *half_angle < std::f64::consts::FRAC_PI_2) {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT compact cone carriers require an acute positive half-angle".into(),
+                ));
+            }
             (
                 0x34,
                 vec![
@@ -2173,6 +2205,11 @@ pub(super) fn surface_values(
             radius,
             ..
         } => {
+            if *radius < 0.0 {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT compact sphere carriers require a positive radius".into(),
+                ));
+            }
             let axis = *axis;
             (
                 0x35,
@@ -2196,22 +2233,29 @@ pub(super) fn surface_values(
             major_radius,
             minor_radius,
             ..
-        } => (
-            0x36,
-            vec![
-                scaled(center.x),
-                scaled(center.y),
-                scaled(center.z),
-                axis.x,
-                axis.y,
-                axis.z,
-                scaled(*major_radius),
-                scaled(*minor_radius),
-                reference.x,
-                reference.y,
-                reference.z,
-            ],
-        ),
+        } => {
+            if !(*major_radius > *minor_radius && *minor_radius > 0.0) {
+                return Err(CodecError::NotImplemented(
+                    "SLDPRT compact torus carriers require major > minor > 0".into(),
+                ));
+            }
+            (
+                0x36,
+                vec![
+                    scaled(center.x),
+                    scaled(center.y),
+                    scaled(center.z),
+                    axis.x,
+                    axis.y,
+                    axis.z,
+                    scaled(*major_radius),
+                    scaled(*minor_radius),
+                    reference.x,
+                    reference.y,
+                    reference.z,
+                ],
+            )
+        }
         SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support this surface carrier".into(),

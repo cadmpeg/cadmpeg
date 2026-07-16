@@ -5463,33 +5463,75 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
 }
 
 #[test]
-fn semantic_writer_rejects_elliptical_cones_without_changing_shape() {
-    let mut decoded = SldprtCodec
+fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() {
+    let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
             &DecodeOptions::default(),
         )
         .unwrap();
-    let surface = &mut decoded.ir.model.surfaces[0];
-    let surface_id = surface.id.0.clone();
-    surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Cone {
-        origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        radius: 2.0,
-        ratio: 0.5,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    };
+    let origin = cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0);
+    let axis = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
+    let reference = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
+    let cases = [
+        (
+            cadmpeg_ir::geometry::SurfaceGeometry::Cone {
+                origin,
+                axis,
+                ref_direction: reference,
+                radius: 2.0,
+                ratio: 0.5,
+                half_angle: std::f64::consts::FRAC_PI_4,
+            },
+            "elliptical cone ratio 0.5",
+        ),
+        (
+            cadmpeg_ir::geometry::SurfaceGeometry::Cone {
+                origin,
+                axis,
+                ref_direction: reference,
+                radius: 2.0,
+                ratio: 1.0,
+                half_angle: -std::f64::consts::FRAC_PI_4,
+            },
+            "cone half-angle -0.7853981633974483",
+        ),
+        (
+            cadmpeg_ir::geometry::SurfaceGeometry::Sphere {
+                center: origin,
+                axis,
+                ref_direction: reference,
+                radius: -2.0,
+            },
+            "signed sphere radius -2",
+        ),
+        (
+            cadmpeg_ir::geometry::SurfaceGeometry::Torus {
+                center: origin,
+                axis,
+                ref_direction: reference,
+                major_radius: 2.0,
+                minor_radius: -0.5,
+            },
+            "torus radii (2, -0.5)",
+        ),
+    ];
 
-    let error = SldprtCodec
-        .write_preserved(&decoded.ir, &mut Vec::new())
-        .unwrap_err();
+    for (geometry, expected) in cases {
+        let mut ir = decoded.ir.clone();
+        let surface_id = ir.model.surfaces[0].id.0.clone();
+        ir.model.surfaces[0].geometry = geometry;
 
-    assert!(matches!(
-        error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(message)
-            if message.contains(&surface_id) && message.contains("elliptical cone ratio 0.5")
-    ));
+        let error = SldprtCodec
+            .write_preserved(&ir, &mut Vec::new())
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            cadmpeg_ir::codec::CodecError::NotImplemented(message)
+                if message.contains(&surface_id) && message.contains(expected)
+        ));
+    }
 }
 
 #[test]
