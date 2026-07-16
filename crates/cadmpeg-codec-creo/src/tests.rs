@@ -14,7 +14,7 @@ use cadmpeg_ir::Exactness;
 use cadmpeg_ir::InspectOptions;
 
 use crate::container::{self, role, Layout};
-use crate::{decode, CreoCodec};
+use crate::CreoCodec;
 
 /// Assemble a minimal PSB file: the `#UGC:2` header, a TOC, then the given
 /// `(header_name, payload)` sections joined by the `#\n` terminator rule.
@@ -141,7 +141,7 @@ fn scan_enumerates_and_classifies_sections() {
             ("THMB_IMG_MAIN", jpeg_payload()),
         ],
     );
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes(&data);
 
     assert_eq!(scan.version_line, "#UGC:2 P test");
     assert_eq!(scan.sections.len(), 3);
@@ -156,7 +156,7 @@ fn scan_enumerates_and_classifies_sections() {
 #[test]
 fn scan_reads_namespace_counts() {
     let data = build_prt("c", &[("VisibGeom", visibgeom_payload(5, 12))]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes(&data);
     assert_eq!(scan.census.srf_array_count, Some(5));
     assert_eq!(scan.census.crv_array_count, Some(12));
 }
@@ -165,7 +165,8 @@ fn scan_reads_namespace_counts() {
 fn scan_sums_concatenated_depdb_surface_namespaces() {
     let mut payload = visibgeom_payload(3, 4);
     payload.extend_from_slice(&visibgeom_payload(5, 6));
-    let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", payload)]));
+    let scan_data = build_prt("c", &[("DEPDB_DATA", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.layout, Layout::Depdb);
     assert_eq!(scan.census.srf_array_count, Some(8));
@@ -177,7 +178,8 @@ fn scan_discovers_typed_surface_rows() {
     let mut payload = visibgeom_payload(2, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 8]);
     payload.extend_from_slice(&[8, 0x24, 4, 0xf6, 0x01, 0]);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.surface_rows.len(), 2);
     assert_eq!(scan.surface_rows[0].id, 7);
@@ -191,7 +193,8 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
     payload.extend_from_slice(&[8, 0x24, 4, 0xf6, 6, 0]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(b"\xe0\x01next_record\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.surface_parameters.len(), 2);
     assert_eq!(scan.surface_parameters[0].surface_id, 7);
@@ -214,7 +217,8 @@ fn scan_ignores_surface_header_candidates_inside_a_preceding_header() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0x24]);
     payload.extend_from_slice(&[0x22, 4, 0x01, 0, 0, 0xe3]);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.surface_parameters.len(), 1);
     assert_eq!(scan.surface_parameters[0].surface_id, 7);
@@ -233,7 +237,8 @@ fn scan_decodes_plane_local_system_support_frame() {
     ]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.plane_local_systems.len(), 1);
     let frame = &scan.plane_local_systems[0];
@@ -253,7 +258,8 @@ fn scan_resolves_section_scalar_cache_in_surface_rows() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0, 0x18, 0x00, 0xe3]);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.surface_parameters.len(), 1);
     assert_eq!(scan.surface_parameters[0].surface_id, 7);
@@ -270,8 +276,10 @@ fn decode_transfers_complete_plane_local_system() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let expected_offset = container::scan_bytes(data.clone()).plane_local_systems[0].offset as u64;
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let expected_offset = container::scan_bytes(&data).plane_local_systems[0].offset as u64;
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
 
     assert_eq!(result.ir.model.surfaces.len(), 1);
     let surface = &result.ir.model.surfaces[0];
@@ -304,7 +312,8 @@ fn scan_decodes_standard_and_compact_plane_envelopes() {
     payload.extend_from_slice(&[8, 0x22, 4, 0xf6, 0, 0, 0x0e]);
     payload.extend_from_slice(&[0xe4, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0xe4, 0x0f, 0xe4]);
     payload.push(0xe3);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.plane_envelopes.len(), 2);
     let crate::surface::PlaneEnvelope::Standard {
@@ -343,7 +352,8 @@ fn scan_discovers_labeled_surface_namespace_row() {
     payload.extend_from_slice(
         b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\0next_geom_ptr\0\0",
     );
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert!(scan
         .surface_rows
@@ -360,7 +370,8 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     payload.extend_from_slice(b"\xe0\x01radius\0\xe4");
     payload.extend_from_slice(b"\xe0\x00parent_feats\0\xf8\x02\x07\x08");
     payload.extend_from_slice(b"\xe0\x00i_pnts\0\xf8\x03\xf7\x80\x80\xfb");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.surface_prototype_records.len(), 1);
     let prototype = &scan.surface_prototype_records[0];
@@ -404,7 +415,8 @@ fn scan_collects_feature_owners_from_rows_and_parent_lists() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(b"parent_feats\0\xf8\x02\x04\x09");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.feature_ids, vec![4, 9]);
 }
@@ -419,10 +431,8 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         7, 0xe3, // a materialized surface id
         0xf7, 0x1e, 9, 0xe3, // a prefixed non-surface entity id
     ];
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let scan_data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.feature_entity_tables.len(), 1);
     let table = &scan.feature_entity_tables[0];
@@ -438,10 +448,8 @@ fn scan_bounds_known_allfeatur_feature_rows() {
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     geometry.extend_from_slice(&[8, 0x22, 9, 0x01, 0, 0]);
     let allfeatur = vec![4, 0xeb, 0x04, 0xaa, 0xbb, 9, 0x90, 0x01, 0xcc];
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let scan_data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.feature_rows.len(), 2);
     assert_eq!(scan.feature_rows[0].feature_id, 4);
@@ -454,7 +462,8 @@ fn scan_bounds_known_allfeatur_feature_rows() {
 #[test]
 fn scan_resolves_allfeatur_walker_order_entity_references() {
     let allfeatur = b"\xe0\x22first\0\xf7\x01\xe3\xe0\x24second\0\xf7\x00\xe3".to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("AllFeatur", allfeatur)]));
+    let scan_data = build_prt("c", &[("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.feature_entities.len(), 2);
     assert_eq!(scan.feature_entities[0].entity_id, 0);
@@ -474,10 +483,8 @@ fn scan_bounds_allfeatur_procedural_choice_spans() {
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     let allfeatur =
         b"\x04\xeb\x04\xe0\x22blend_choice\0\x11\x12\xe0\x24depth_choice\0\x07".to_vec();
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let scan_data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.feature_choices.len(), 2);
     assert_eq!(scan.feature_choices[0].feature_id, 4);
@@ -495,10 +502,8 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
     let allfeatur =
         b"\x04\xeb\x04\xe0\x22blend_choice\0\xe0\x21count\0\x07\xe0\x22refs\0\xf8\x02\x03\x04"
             .to_vec();
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let scan_data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.feature_choice_fields.len(), 2);
     assert_eq!(scan.feature_choice_fields[0].name, "count");
@@ -520,10 +525,8 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     let mut allfeatur =
         b"\x04\xeb\x04\xe0\x22blend_choice\0\xe0\x21values\0\xf9\x01\x03\x0f\xe4".to_vec();
     allfeatur.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let scan_data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(
         scan.feature_choice_fields[0].value,
@@ -541,10 +544,8 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     let allfeatur = b"\x04\xeb\x04edg_id_tab_ptr\0\xf1\xf8\x03\xf7\x53\xfb\xe3used_bodies\0\xf8\x01\xf7\x60\xfb\xe2".to_vec();
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let scan_data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.feature_geometry_tables.len(), 2);
     assert_eq!(scan.feature_geometry_tables[0].feature_id, 4);
@@ -565,10 +566,8 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     let allfeatur = b"\x04\xeb\x04\xe0\x21geoms_affected\0\xf8\x03\x07\x80\x80\x09\xe0\x22contours\0\xf8\x01\x2a".to_vec();
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let scan_data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.feature_affected_ids.len(), 2);
     assert_eq!(
@@ -590,10 +589,8 @@ fn scan_decodes_allfeatur_positional_replay_affected_ids() {
     let mut allfeatur =
         b"\x04\xeb\x04\xf1\xf7\x42\xd8\x80\x01\xe3\xf8\x03\x07\x80\x80\x09".to_vec();
     allfeatur.extend_from_slice(&[0xf5, 0x96, 0x92]);
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let scan_data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.feature_replay_affected_ids.len(), 1);
     assert_eq!(scan.feature_replay_affected_ids[0].feature_id, 4);
@@ -606,10 +603,8 @@ fn scan_preserves_allfeatur_recipe_direction_bytes() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     let allfeatur = b"\x04\xeb\x04\xe0\x21geoms_affected\0\xf8\x01\x07\xe0\x20direction\0\x00\xe0\x20direction2\0\x43".to_vec();
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+    let scan_data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.feature_direction_bytes.len(), 2);
     assert_eq!(
@@ -629,7 +624,8 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     payload.extend_from_slice(b"\xe0\x21transf\0\xf9\x04\x03");
     payload.extend([0xe4; 12]);
     payload.extend_from_slice(b"feat_defs_81\0opaque");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.feature_definitions.len(), 2);
     assert_eq!(scan.feature_definitions[0].id, 40);
@@ -658,7 +654,8 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     payload.extend([0x0f; 6]);
     payload.extend_from_slice(b"\xe0\x00post_roll_back\0\xe3\xf7\x01\xf5\x96\x92\x02");
     payload.extend([0xe4; 6]);
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     let outlines = &scan.feature_definitions[0].outlines;
     assert_eq!(outlines.len(), 2);
@@ -677,7 +674,8 @@ fn scan_decodes_featdefs_var_arr_section_points() {
         b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
     payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     let variables = scan.feature_definitions[0]
         .variables
@@ -701,8 +699,10 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
     payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let offset = container::scan_bytes(data.clone()).feature_definitions[0].offset as u64;
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let offset = container::scan_bytes(&data).feature_definitions[0].offset as u64;
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
 
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
     assert_eq!(namespace.version, 1);
@@ -732,7 +732,8 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
     payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2, 0xe3]);
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     let segments = scan.feature_definitions[0]
         .segments
@@ -761,7 +762,8 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     payload.extend_from_slice(&[42, 0, 100, 101, 0xf6, 0, 0xe3]);
     payload.extend_from_slice(&[43, 0, 101, 102, 103, 0, 0xe3]);
     payload.extend_from_slice(b"vert_tab\0");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     let entities = scan.feature_definitions[0]
         .trim_entities
@@ -785,7 +787,8 @@ fn scan_decodes_featdefs_vert_tab_entity_pairs() {
     payload.extend_from_slice(b"vert_tab\0chains\0\xf8\x01\xf7\x80\xa2\xfb\xe2");
     payload.extend_from_slice(b"\xf3\xf7\x80\xa2\xe2\x01\xf8\x01\xf7\x80\xa3\xfb\xe3\xf7\x80\xa4");
     payload.extend_from_slice(&[42, 43, 100, 0]);
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     let vertices = scan.feature_definitions[0]
         .trim_vertices
@@ -825,7 +828,8 @@ fn scan_solves_featdefs_trim_vertex_line_intersection() {
     payload.extend_from_slice(b"\xf3\xf7\x80\xa2\xe2\x01\xf8\x01\xf7\x80\xa3\xfb\xe3\xf7\x80\xa4");
     payload.extend_from_slice(&[42, 43, 100, 0]);
 
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
     let vertex = &scan.feature_definitions[0]
         .trim_vertices
         .as_ref()
@@ -840,7 +844,8 @@ fn scan_decodes_featdefs_generated_entity_order_table() {
         \xe0\x01ext_id\0\xe0\x01int_id\0\xe0\x01bitmask\0\
         \xf1\xf7\x81\x02\xe2\x81\x1b\x08\x00\xe2\x81\x36\x0c\x01\xe2"
         .to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     let order = scan.feature_definitions[0]
         .order_table
@@ -866,7 +871,8 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
         \xe0\x01seg_id\0\x81\x2c\xe0\x01flip_flag\0\x00\
         dim_id_tab\0\xf3\xf8\x02\x07\x81\x01"
         .to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     let section = scan.feature_definitions[0]
         .section_3d
@@ -903,7 +909,8 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     payload.extend_from_slice(b"\xf3\xf7\x81\x02\xe2");
     payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0xe4, 43]);
     payload.extend_from_slice(b"\xe0\x00relat_ptr\0");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     let dimensions = scan.feature_definitions[0]
         .dimensions
@@ -931,7 +938,8 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
         \xe0\x01id\0\xe0\x01used\0\xe0\x01type\0\xf1\xf7\x6a\xe2\
         \x34\x00\x05\x01\xe2\x35\x01\x07\x02\xe2"
         .to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     let relations = scan.feature_definitions[0]
         .relations
@@ -960,7 +968,8 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
     payload.extend_from_slice(&[0xe4, 0xe4, 0x0f, 0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0x0f, 0xe4, 0xe3]);
     payload.extend_from_slice(b"\xe0\x02local_sys\0");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     let saved = scan.feature_definitions[0]
         .saved_section
@@ -1006,7 +1015,8 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
     );
     payload.extend_from_slice(b"\xe0\x00entity(dummy_ent)\0\xe0\x01id\0\x2e");
     payload.extend_from_slice(b"\xe0\x02local_sys\0");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan_data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     let entities = &scan.feature_definitions[0]
         .saved_section
@@ -1034,20 +1044,16 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
 
 #[test]
 fn scan_reads_declared_geomlists_body_count() {
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("Geomlists", b"n_bodies\0\x83\x01".to_vec())],
-    ));
+    let scan_data = build_prt("c", &[("Geomlists", b"n_bodies\0\x83\x01".to_vec())]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.declared_body_count, Some(769));
 }
 
 #[test]
 fn scan_reads_geomlists_first_quilt_discriminator() {
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("Geomlists", b"first_quilt_ptr\0\x00".to_vec())],
-    ));
+    let scan_data = build_prt("c", &[("Geomlists", b"first_quilt_ptr\0\x00".to_vec())]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.first_quilt_ptr, Some(0));
 }
@@ -1056,7 +1062,8 @@ fn scan_reads_geomlists_first_quilt_discriminator() {
 fn scan_discovers_labeled_curve_prototypes() {
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"crv_array\0crv_id\0\x07type\0\x08feat_id\0\x04");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.curve_prototypes.len(), 1);
     assert_eq!(scan.curve_prototypes[0].id, 7);
@@ -1069,7 +1076,8 @@ fn scan_discovers_curve_halfedge_topology() {
     let mut payload = visibgeom_payload(0, 1);
     payload
         .extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.curve_topology_rows.len(), 1);
     assert_eq!(scan.curve_topology_rows[0].faces, [10, 11]);
@@ -1085,7 +1093,8 @@ fn scan_decodes_long_terminated_rows_in_each_curve_namespace() {
     payload.extend_from_slice(b"crv_array\0topol_ref_data\0");
     payload.extend_from_slice(b"\x08\x08\x05\x01\xf6\x0c\x0d\x08\x08\0\0\xe3");
     payload.extend_from_slice(b"\xe1\xf5\x05\xf6\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.curve_topology_rows.len(), 2);
     assert_eq!(scan.curve_topology_rows[0].id, 7);
@@ -1101,7 +1110,8 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     payload.extend_from_slice(&[0x0f, 0xe4, 0xf7, 0x81, 0x00]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.curve_parameters.len(), 1);
     let parameters = &scan.curve_parameters[0];
@@ -1120,7 +1130,8 @@ fn scan_resolves_section_scalar_cache_in_curve_rows() {
     payload.extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6");
     payload.extend_from_slice(&[0x18, 0x00, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.curve_parameters.len(), 1);
     assert_eq!(scan.curve_parameters[0].scalar_values, vec![3.0]);
@@ -1136,7 +1147,8 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.pcurves.len(), 1);
     let pcurve = &scan.pcurves[0];
@@ -1155,7 +1167,8 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     payload.extend_from_slice(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0x2d, 0, 0, 0, 0, 0, 0, 0, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.fc_curve_control_points.len(), 1);
     let control_points = &scan.fc_curve_control_points[0];
@@ -1191,7 +1204,8 @@ fn scan_validates_fc05_circle_from_record_points() {
     }
     payload.push(0xff);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.fc05_circles.len(), 1);
     let circle = &scan.fc05_circles[0];
@@ -1214,7 +1228,8 @@ fn scan_decodes_labeled_prototype_pcurve_uvs() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4]);
     payload.extend_from_slice(b"topol_ref_data\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.prototype_pcurves.len(), 1);
     let prototype = &scan.prototype_pcurves[0];
@@ -1236,7 +1251,8 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.push(0xe4);
     payload.extend_from_slice(b"topol_ref_data\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.curve_prototype_topology.len(), 1);
     assert_eq!(scan.curve_prototype_topology[0].curve_id, 44);
@@ -1256,7 +1272,8 @@ fn scan_groups_connected_nonzero_face_references() {
     payload.extend_from_slice(
         b"topol_ref_data\0\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3\x08\x08\x04\x01\xf6\x0b\x0c\x08\x08\0\0\xe3\xe1\xe3",
     );
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.face_components.len(), 1);
     assert_eq!(scan.face_components[0].face_ids, vec![10, 11, 12]);
@@ -1270,7 +1287,8 @@ fn scan_builds_topological_vertex_orbits_and_incidence() {
         b"topol_ref_data\0\x07\x08\x04\x01\xf6\x0a\x0b\x08\x08\0\0\xe3\xe1\xe3\
           \x08\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3",
     );
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan_data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(&scan_data);
 
     assert_eq!(scan.topological_vertices.len(), 2);
     assert_eq!(
@@ -1345,12 +1363,14 @@ fn decode_transfers_closed_plane_intersection_brep() {
     }
 
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes(&data);
     assert_eq!(scan.plane_local_systems.len(), 4);
     assert_eq!(scan.curve_topology_rows.len(), 6);
     assert_eq!(scan.loops.len(), 4);
     assert_eq!(scan.topological_vertices.len(), 4);
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
     let model = &result.ir.model;
 
     assert_eq!(model.points.len(), 4);
@@ -1380,7 +1400,8 @@ fn scan_discovers_model_space_datum_planes() {
             datum.extend(bytes);
         }
     }
-    let scan = container::scan_bytes(build_prt("c", &[("ActDatums", datum)]));
+    let scan_data = build_prt("c", &[("ActDatums", datum)]);
+    let scan = container::scan_bytes(&scan_data);
     assert_eq!(scan.datum_planes.len(), 1);
     assert_eq!(scan.datum_planes[0].normal, [0.0, 1.0, 0.0]);
 }
@@ -1399,7 +1420,9 @@ fn decode_transfers_exact_datum_plane_carrier() {
         }
     }
     let mut reader = Cursor::new(build_prt("c", &[("ActDatums", datum)]));
-    let result = decode::decode(&mut reader, &DecodeOptions::default()).unwrap();
+    let result = CreoCodec
+        .decode(&mut reader, &DecodeOptions::default())
+        .unwrap();
     assert!(result.report.geometry_transferred);
     assert_eq!(result.ir.model.surfaces.len(), 1);
 }
@@ -1425,9 +1448,11 @@ fn decode_annotations_cover_every_emitted_entity() {
             ("ActDatums", datum),
         ],
     );
-    let datum_offset = container::scan_bytes(data.clone()).datum_planes[0].offset_in_payload as u64;
+    let datum_offset = container::scan_bytes(&data).datum_planes[0].offset_in_payload as u64;
     let mut reader = Cursor::new(data);
-    let result = decode::decode(&mut reader, &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut reader, &DecodeOptions::default())
+        .expect("decode");
 
     let unknowns = result.ir.native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 3);
@@ -1469,7 +1494,7 @@ fn scan_decodes_active_principal_unit() {
     let mut payload = visibgeom_payload(5, 12);
     payload.extend_from_slice(b"_principal_sys_units_id\0\x33");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes(&data);
 
     assert_eq!(scan.principal_unit.as_deref(), Some("mmNs"));
 }
@@ -1483,14 +1508,16 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
             b"noise\0Extrude id 40\0Round id 41\0future id 42\0".to_vec(),
         )],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes(&data);
     assert_eq!(scan.feature_operations.len(), 2);
     assert_eq!(scan.feature_operations[0].feature_id, 40);
     assert_eq!(scan.feature_operations[0].kind, "Extrude");
     assert_eq!(scan.feature_operations[1].feature_id, 41);
     assert_eq!(scan.feature_operations[1].kind, "Round");
 
-    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &DecodeOptions::default())
+        .expect("decode");
     assert_eq!(result.ir.model.features.len(), 2);
     assert_eq!(
         result.ir.model.features[0].id.as_str(),
@@ -1519,7 +1546,7 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
 #[test]
 fn nd_decoration_selects_nd_layout() {
     let data = build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(3, 4))]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes(&data);
     assert_eq!(scan.layout, Layout::Nd);
     // The decorated name is normalized for classification and census.
     assert_eq!(scan.sections[0].name, "VisibGeom");
@@ -1533,14 +1560,14 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
         "c",
         &[("VisibGeom", vec![0x00]), ("DEPDB_DATA", vec![0x00, 0x01])],
     );
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes(&data);
     assert_eq!(scan.layout, Layout::Depdb);
 }
 
 #[test]
 fn framing_names_are_not_mistaken_for_sections() {
     let data = build_prt("c", &[("VisibGeom", vec![0x00])]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes(&data);
     // Only VisibGeom — the header/TOC framing markers are excluded.
     assert_eq!(scan.sections.len(), 1);
     assert_eq!(scan.sections[0].name, "VisibGeom");
@@ -1559,7 +1586,9 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
         ],
     );
     let mut reader = Cursor::new(data);
-    let result = decode::decode(&mut reader, &DecodeOptions::default()).expect("decode");
+    let result = CreoCodec
+        .decode(&mut reader, &DecodeOptions::default())
+        .expect("decode");
 
     assert!(!result.report.geometry_transferred);
     // The two PSB geometry sections are preserved as unknown records.

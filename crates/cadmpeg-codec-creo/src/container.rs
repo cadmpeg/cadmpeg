@@ -14,7 +14,8 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_ir::decode::{ByteRange, DecodeContext, View};
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveParameterRecord, CurvePrototype, CurvePrototypeTopology,
@@ -127,9 +128,13 @@ pub struct GeomCensus {
 }
 
 /// Structural data read from one `.prt` file.
-pub struct ContainerScan {
-    /// Complete source bytes.
-    pub data: Vec<u8>,
+///
+/// Borrows the session root bytes directly (§10 Phase 1A): the scan holds a
+/// `&[u8]` into the root address space rather than copying the file, removing
+/// the transitional double buffer the legacy `read_to_end` path imposed.
+pub struct ContainerScan<'a> {
+    /// Complete source bytes, borrowed from the root address space.
+    pub data: &'a [u8],
     /// The magic/version header line, ASCII, trimmed.
     pub version_line: String,
     /// Enumerated sections in file order.
@@ -886,71 +891,110 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
     (after > value_offset).then_some(count)
 }
 
-/// Read the whole file and parse its container framing.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
-    reader
-        .seek(std::io::SeekFrom::Start(0))
-        .map_err(CodecError::Io)?;
-    let mut data = Vec::new();
-    reader.read_to_end(&mut data).map_err(CodecError::Io)?;
-    Ok(scan_bytes(data))
+/// Consume the session root view directly (§10 Phase 1A), charge the file-wide
+/// container scan as work, register each enumerated section as a
+/// [`SpaceOrigin::Slice`](cadmpeg_ir::decode::SpaceOrigin) space, and return the
+/// borrowed scan.
+///
+/// `read_root` already enforced the platform `max_input_bytes` policy limit;
+/// the PSB container has no separate deployment ceiling to dual-enforce here.
+/// The framing walk and the file-wide marker searches (`principal_unit`, the
+/// header/TOC finds, section enumeration) are all linear in the input, so their
+/// bytes are charged once, before scanning begins. Both `inspect` and `decode`
+/// enter through this function, so they run one shared container policy
+/// (graduation-gate item 6).
+pub fn scan_view<'a>(
+    ctx: &DecodeContext<'_>,
+    root: View<'a>,
+) -> Result<ContainerScan<'a>, CodecError> {
+    let data = root.window();
+    ctx.charge_work(
+        data.len() as u64,
+        "creo_container_scan",
+        Some(root.location()),
+    )?;
+    let scan = scan_bytes(data);
+    register_section_spaces(ctx, root, &scan)?;
+    Ok(scan)
 }
 
-/// Parse a whole `.prt` byte image. Split out so tests drive it from a synthetic
-/// buffer without a reader.
-pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
-    let version_line = line_at(&data, 0);
+/// Register each enumerated section as a stored [`SpaceOrigin::Slice`] child of
+/// the root space, making the physical container framing visible in the runtime
+/// space graph ("L1-ready", §10 Phase 1A; the v2 ledger schema is not yet
+/// serialized). A section is an alias of already-admitted root bytes, so
+/// registration copies nothing and charges nothing; the returned views are
+/// unused because Phase 1 records the spans without refining their interiors.
+fn register_section_spaces(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<(), CodecError> {
+    let len = scan.data.len() as u64;
+    for section in &scan.sections {
+        let start = section.offset as u64;
+        let end = (section.offset as u64 + section.length as u64).min(len);
+        if start >= end {
+            continue;
+        }
+        ctx.register_slice(root, ByteRange { start, end })?;
+    }
+    Ok(())
+}
+
+/// Parse a whole `.prt` byte image. Borrows the root bytes; drives the framing,
+/// layout, census, and typed-row decoders that make up a [`ContainerScan`].
+pub fn scan_bytes(data: &[u8]) -> ContainerScan<'_> {
+    let version_line = line_at(data, 0);
 
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
     // marker; fall back to the header end; fall back to the magic line.
-    let header_end = find(&data, UGC_HEADER_END, 0)
-        .and_then(|p| find(&data, b"\n", p))
+    let header_end = find(data, UGC_HEADER_END, 0)
+        .and_then(|p| find(data, b"\n", p))
         .map(|nl| nl + 1);
-    let toc_end = find(&data, TOC_START, 0)
-        .and_then(|toc| find(&data, TOC_END, toc))
-        .and_then(|p| find(&data, b"\n", p))
+    let toc_end = find(data, TOC_START, 0)
+        .and_then(|toc| find(data, TOC_END, toc))
+        .and_then(|p| find(data, b"\n", p))
         .map(|nl| nl + 1);
     let body_start = toc_end.or(header_end).unwrap_or(0);
 
-    let sections = scan_sections(&data, body_start);
+    let sections = scan_sections(data, body_start);
     let layout = identify_layout(&sections);
-    let census = geom_census(&data, &sections);
-    let principal_unit = principal_unit(&data);
-    let surface_rows = surface_rows(&data, &sections);
-    let surface_parameters = surface_parameters(&data, &sections);
-    let plane_local_systems = plane_local_systems(&data, &sections);
-    let plane_envelopes = plane_envelopes(&data, &sections);
-    let surface_prototypes = surface_prototypes(&data, &sections);
-    let surface_prototype_records = surface_prototype_records(&data, &sections);
-    let curve_prototypes = curve_prototypes(&data, &sections);
-    let curve_parameters = curve_parameters(&data, &sections);
-    let curve_topology_rows = curve_topology_rows(&data, &sections);
+    let census = geom_census(data, &sections);
+    let principal_unit = principal_unit(data);
+    let surface_rows = surface_rows(data, &sections);
+    let surface_parameters = surface_parameters(data, &sections);
+    let plane_local_systems = plane_local_systems(data, &sections);
+    let plane_envelopes = plane_envelopes(data, &sections);
+    let surface_prototypes = surface_prototypes(data, &sections);
+    let surface_prototype_records = surface_prototype_records(data, &sections);
+    let curve_prototypes = curve_prototypes(data, &sections);
+    let curve_parameters = curve_parameters(data, &sections);
+    let curve_topology_rows = curve_topology_rows(data, &sections);
     let pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
     let fc_curve_control_points = curve::fc_control_points(&curve_parameters);
     let fc05_circles = curve::fc05_circles(&curve_parameters);
-    let prototype_pcurves = prototype_pcurves(&data, &sections);
-    let curve_prototype_topology = curve_prototype_topology(&data, &sections);
+    let prototype_pcurves = prototype_pcurves(data, &sections);
+    let curve_prototype_topology = curve_prototype_topology(data, &sections);
     let bound_prototype_pcurves =
         curve::bind_prototype_pcurves(&prototype_pcurves, &curve_prototype_topology);
     let (half_edges, loops) = topology::build(&curve_topology_rows);
     let (topological_vertices, half_edge_vertex_incidence) = topology::vertex_orbits(&half_edges);
     let face_components = topology::face_components(&curve_topology_rows);
-    let datum_planes = datum_planes(&data, &sections);
-    let feature_ids = feature_ids(&data, &sections, &surface_rows);
-    let feature_rows = feature_rows(&data, &sections, &feature_ids);
+    let datum_planes = datum_planes(data, &sections);
+    let feature_ids = feature_ids(data, &sections, &surface_rows);
+    let feature_rows = feature_rows(data, &sections, &feature_ids);
     let feature_choices = feature::choices(&feature_rows);
     let feature_choice_fields = feature::choice_fields(&feature_choices);
     let feature_geometry_tables = feature::geometry_tables(&feature_rows);
     let feature_affected_ids = feature::affected_ids(&feature_rows);
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
     let feature_direction_bytes = feature::direction_bytes(&feature_rows);
-    let feature_definitions = feature_definitions(&data, &sections);
-    let feature_operations = feature_operations(&data, &sections);
-    let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections);
-    let feature_entity_tables =
-        feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
-    let declared_body_count = geomlists_value(&data, &sections, b"n_bodies\0");
-    let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0");
+    let feature_definitions = feature_definitions(data, &sections);
+    let feature_operations = feature_operations(data, &sections);
+    let (feature_entities, feature_entity_references) = feature_entity_graph(data, &sections);
+    let feature_entity_tables = feature_entity_tables(data, &sections, &feature_ids, &surface_rows);
+    let declared_body_count = geomlists_value(data, &sections, b"n_bodies\0");
+    let first_quilt_ptr = geomlists_value(data, &sections, b"first_quilt_ptr\0");
 
     ContainerScan {
         data,
@@ -999,7 +1043,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
 }
 
 /// Return whether a thumbnail section contains a JPEG start marker.
-pub fn has_thumbnail(scan: &ContainerScan) -> bool {
+pub fn has_thumbnail(scan: &ContainerScan<'_>) -> bool {
     scan.sections
         .iter()
         .filter(|s| s.role == role::THUMBNAIL)
@@ -1010,7 +1054,7 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
 }
 
 /// Build a codec-neutral summary of the sections, layout, and namespace census.
-pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
+pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
     let entries = scan
         .sections
         .iter()

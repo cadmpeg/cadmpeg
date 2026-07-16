@@ -12,7 +12,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, DecodeResult};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
@@ -87,7 +88,7 @@ struct CreoSketchRelation {
     body: Vec<u8>,
 }
 
-fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
+fn sketch_records(scan: &ContainerScan<'_>) -> Vec<CreoSketchRecord> {
     scan.feature_definitions
         .iter()
         .filter(|definition| {
@@ -217,7 +218,11 @@ fn solve_planes(planes: &[PlaneEquation]) -> Option<[f64; 3]> {
     None
 }
 
-fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+fn transfer_plane_brep(
+    scan: &ContainerScan<'_>,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) {
     let planes = scan
         .plane_local_systems
         .iter()
@@ -547,24 +552,22 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
     }
 }
 
-/// Decode a `.prt` stream into an IR document and loss report.
+/// Decode a `.prt` view into an IR document and loss report.
 ///
-/// The stream is read from its beginning. `options.container_only` is reflected
-/// in the report, but the current decoder always performs the same structural
-/// scan.
-pub fn decode(
-    reader: &mut dyn ReadSeek,
-    options: &DecodeOptions,
-) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan(reader)?;
+/// Consumes the session root view directly (§10 Phase 1A): [`container::scan_view`]
+/// borrows the root bytes, charges the container scan as work, and registers the
+/// section spans. `ctx.container_only()` is reflected in the report, but the
+/// current decoder always performs the same structural scan.
+pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
+    let scan = container::scan_view(ctx, root)?;
 
     let ir = build_ir(&scan)?;
-    let report = build_report(&scan, options.container_only);
+    let report = build_report(&scan, ctx.container_only());
     Ok(DecodeResult::new(ir, report))
 }
 
 /// Build source metadata, preserved geometry records, and datum-plane surfaces.
-fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
+fn build_ir(scan: &ContainerScan<'_>) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
@@ -803,7 +806,7 @@ fn annotate(
     annotations.exactness(id, exactness);
 }
 
-fn source_meta(scan: &ContainerScan) -> SourceMeta {
+fn source_meta(scan: &ContainerScan<'_>) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert("version_line".to_string(), scan.version_line.clone());
     attributes.insert("layout".to_string(), scan.layout.token().to_string());
@@ -1043,7 +1046,7 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
 }
 
 /// Build diagnostics for data that cannot be represented in the emitted IR.
-fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
+fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let geom_sections = scan
         .sections
