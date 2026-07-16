@@ -6913,8 +6913,6 @@ pub fn decode_dimension_null_locus_pairs(
     companions: &[DesignParameterCompanion],
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
-    pairs: &[DesignDimensionLocusPair],
-    groups: &[DesignDimensionLocusGroup],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
 ) -> Result<Vec<DesignDimensionNullLocusPair>, CodecError> {
@@ -6944,26 +6942,10 @@ pub fn decode_dimension_null_locus_pairs(
             ))
         })
         .collect::<HashSet<_>>();
-    let typed_companions = pairs
-        .iter()
-        .filter_map(|pair| {
-            Some((
-                native_stream(&pair.id)?.to_owned(),
-                pair.companion_record_index,
-            ))
-        })
-        .chain(groups.iter().filter_map(|group| {
-            Some((
-                native_stream(&group.id)?.to_owned(),
-                group.companion_record_index,
-            ))
-        }))
-        .collect::<HashSet<_>>();
     let mut out = Vec::new();
     for companion in companions.iter().filter(|companion| {
         native_stream(&companion.id).is_some_and(|scope| {
-            let key = (scope.to_owned(), companion.record_index);
-            dimension_companions.contains(&key) && !typed_companions.contains(&key)
+            dimension_companions.contains(&(scope.to_owned(), companion.record_index))
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
@@ -6997,27 +6979,15 @@ pub fn decode_dimension_null_locus_pairs(
         ) else {
             continue;
         };
-        let parse = |at| {
-            parse_dimension_null_locus_pair(bytes, at, companion.record_index, &geometry_indices)
-                .filter(|pair| usize::try_from(pair.paired_byte_offset).is_ok_and(|at| at < end))
-        };
-        let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
-        if candidates.is_empty() {
-            let mut position = start.saturating_add(1);
-            while let Some(at) = next_indexed_record_offset(bytes, position) {
-                if at >= end {
-                    break;
-                }
-                if let Some(pair) = parse(at) {
-                    candidates.push(pair);
-                }
-                position = at.saturating_add(1);
-            }
-        }
-        let [pair] = candidates.as_slice() else {
+        let Some(mut pair) = find_dimension_null_locus_pair(
+            bytes,
+            start,
+            end,
+            companion.record_index,
+            &geometry_indices,
+        ) else {
             continue;
         };
-        let mut pair = pair.clone();
         pair.id = format!(
             "f3d:{}:design-dimension-null-locus-pair#{}",
             entry.name, pair.byte_offset
@@ -7035,6 +7005,36 @@ pub fn decode_dimension_null_locus_pairs(
     }
     out.sort_by_key(|pair| pair.id.clone());
     Ok(out)
+}
+
+fn find_dimension_null_locus_pair(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    companion_record_index: u32,
+    geometry_indices: &HashSet<u32>,
+) -> Option<DesignDimensionNullLocusPair> {
+    let parse = |at| {
+        parse_dimension_null_locus_pair(bytes, at, companion_record_index, geometry_indices)
+            .filter(|pair| usize::try_from(pair.paired_byte_offset).is_ok_and(|at| at < end))
+    };
+    let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
+    let mut position = start.saturating_add(1);
+    while let Some(at) = next_indexed_record_offset(bytes, position) {
+        if at >= end {
+            break;
+        }
+        if let Some(pair) = parse(at) {
+            candidates.push(pair);
+        }
+        position = at.saturating_add(1);
+    }
+    candidates.sort_by_key(|pair| pair.byte_offset);
+    candidates.dedup_by_key(|pair| pair.byte_offset);
+    let [pair] = candidates.as_slice() else {
+        return None;
+    };
+    Some(pair.clone())
 }
 
 fn parse_dimension_null_locus_pair(
@@ -11295,16 +11295,16 @@ mod relation_tests {
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
         exact_counted_offset, exact_offset_constraint, expression_identifiers,
         feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
-        identity_matrix, indexed_record_containing, indirect_angular_lines,
-        neutral_dimension_constraint_id, neutral_feature_id_parts, neutral_parameter_id_parts,
-        neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id,
-        next_indexed_record_offset, null_locus_dimension_definition, offset_parameter_factor,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation,
+        find_dimension_null_locus_pair, identity_matrix, indexed_record_containing,
+        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
+        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
+        neutral_sketch_point_id, next_indexed_record_offset, null_locus_dimension_definition,
+        offset_parameter_factor, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
         partial_historical_edge_selection, point_on_sketch_entity, project_configurations,
         project_dimension_constraints, project_extrude, project_parameter_design,
         project_sketch_constraints, project_sketch_design, radial_dimension_definition,
@@ -12721,6 +12721,18 @@ mod relation_tests {
         assert!(
             parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1110]),).is_none()
         );
+
+        let mut nested = Vec::new();
+        nested.extend_from_slice(&3u32.to_le_bytes());
+        nested.extend_from_slice(b"341");
+        nested.extend_from_slice(&229u32.to_le_bytes());
+        nested.extend_from_slice(&bytes);
+        let nested_end = nested.len();
+        let nested =
+            find_dimension_null_locus_pair(&nested, 0, nested_end, 1290, &HashSet::from([1109]))
+                .expect("null-locus frame following another indexed frame");
+        assert_eq!(nested.byte_offset, 11);
+        assert_eq!(nested.paired_byte_offset, 85);
 
         let mut axis_pair = pair;
         axis_pair.null_role = 14;
