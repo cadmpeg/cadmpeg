@@ -105,12 +105,27 @@ pub struct Exchange {
     pub signature: Option<Range<usize>>,
     /// DATA instances indexed across every DATA section.
     pub records: BTreeMap<u64, RawRecord>,
-    entity_ids: OnceLock<HashMap<String, Vec<u64>>>,
+    entity_ids: EntityIndex,
+}
+
+#[derive(Debug, Default)]
+struct EntityIndex(OnceLock<HashMap<String, Vec<u64>>>);
+
+impl Clone for EntityIndex {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl PartialEq for EntityIndex {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
 }
 
 impl Exchange {
     fn entity_ids(&self) -> &HashMap<String, Vec<u64>> {
-        self.entity_ids.get_or_init(|| {
+        self.entity_ids.0.get_or_init(|| {
             let mut entity_ids = HashMap::<String, Vec<u64>>::new();
             for (&id, record) in &self.records {
                 for partial in &record.partials {
@@ -332,7 +347,7 @@ impl Parser {
             data,
             signature,
             records,
-            entity_ids: OnceLock::new(),
+            entity_ids: EntityIndex::default(),
         })
     }
 
@@ -597,7 +612,16 @@ fn references(value: &Value, out: &mut Vec<u64>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{AnchorResolver, BTreeMap, Value};
+    use super::{parse, AnchorResolver, BTreeMap, Value};
+
+    #[test]
+    fn entity_index_is_not_part_of_exchange_equality() {
+        let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=POINT();ENDSEC;END-ISO-10303-21;";
+        let indexed = parse(source).unwrap();
+        let untouched = parse(source).unwrap();
+        assert_eq!(indexed.entities("POINT").count(), 1);
+        assert_eq!(indexed, untouched);
+    }
 
     #[test]
     fn anchor_budget_charges_only_resource_expansion() {
