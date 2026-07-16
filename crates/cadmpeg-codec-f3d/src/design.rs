@@ -4828,6 +4828,35 @@ fn exact_atomic_constraint(
                 .all(|entity| matches!(entity.geometry, Geometry::Line { .. })))
         .then(|| (entities[0].id.clone(), entities[1].id.clone()))
     };
+    let curves = || {
+        (entities.len() == 2
+            && entities.iter().all(|entity| {
+                matches!(
+                    entity.geometry,
+                    Geometry::Line { .. }
+                        | Geometry::Circle { .. }
+                        | Geometry::Arc { .. }
+                        | Geometry::Ellipse { .. }
+                        | Geometry::Nurbs { .. }
+                )
+            }))
+        .then(|| (entities[0].id.clone(), entities[1].id.clone()))
+    };
+    let equal_size_entities = || {
+        let [first, second] = entities else {
+            return None;
+        };
+        matches!(
+            (&first.geometry, &second.geometry),
+            (Geometry::Line { .. }, Geometry::Line { .. })
+                | (
+                    Geometry::Circle { .. } | Geometry::Arc { .. },
+                    Geometry::Circle { .. } | Geometry::Arc { .. }
+                )
+                | (Geometry::Ellipse { .. }, Geometry::Ellipse { .. })
+        )
+        .then(|| (first.id.clone(), second.id.clone()))
+    };
     match kind {
         SketchConstraintKind::Coincident if entities.len() >= 2 => Some(Definition::Coincident {
             entities: entities.iter().map(|entity| entity.id.clone()).collect(),
@@ -4887,19 +4916,16 @@ fn exact_atomic_constraint(
                 entity: entities[0].id.clone(),
             })
         }
-        SketchConstraintKind::Tangent if entities.len() == 2 => Some(Definition::Tangent {
-            first: entities[0].id.clone(),
-            second: entities[1].id.clone(),
-        }),
-        SketchConstraintKind::Curvature if entities.len() == 2 => Some(Definition::Curvature {
-            first: entities[0].id.clone(),
-            second: entities[1].id.clone(),
-        }),
+        SketchConstraintKind::Tangent => {
+            curves().map(|(first, second)| Definition::Tangent { first, second })
+        }
+        SketchConstraintKind::Curvature => {
+            curves().map(|(first, second)| Definition::Curvature { first, second })
+        }
         SketchConstraintKind::Midpoint => midpoint_constraint(entities),
-        SketchConstraintKind::Equal if entities.len() == 2 => Some(Definition::Equal {
-            first: entities[0].id.clone(),
-            second: entities[1].id.clone(),
-        }),
+        SketchConstraintKind::Equal => {
+            equal_size_entities().map(|(first, second)| Definition::Equal { first, second })
+        }
         SketchConstraintKind::Polygon
             if entities.len() >= 3
                 && entities
@@ -14680,7 +14706,11 @@ mod relation_tests {
         ));
         assert!(matches!(
             constraints[4].definition,
-            SketchConstraintDefinition::Curvature { .. }
+            SketchConstraintDefinition::Native {
+                ref native_kind,
+                ref entities,
+                ..
+            } if native_kind == "curvature" && entities.len() == 2
         ));
         let line = entities
             .iter()
@@ -14693,6 +14723,27 @@ mod relation_tests {
         assert!(matches!(
             exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point]),
             Some(SketchConstraintDefinition::Midpoint { .. })
+        ));
+        for kind in [
+            SketchConstraintKind::Tangent,
+            SketchConstraintKind::Curvature,
+            SketchConstraintKind::Equal,
+        ] {
+            assert!(exact_atomic_constraint(kind, &[line, point]).is_none());
+        }
+        let mut other_line = line.clone();
+        other_line.id = SketchEntityId("generated:line#other".into());
+        assert!(matches!(
+            exact_atomic_constraint(SketchConstraintKind::Tangent, &[line, &other_line]),
+            Some(SketchConstraintDefinition::Tangent { .. })
+        ));
+        assert!(matches!(
+            exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line]),
+            Some(SketchConstraintDefinition::Curvature { .. })
+        ));
+        assert!(matches!(
+            exact_atomic_constraint(SketchConstraintKind::Equal, &[line, &other_line]),
+            Some(SketchConstraintDefinition::Equal { .. })
         ));
     }
 
