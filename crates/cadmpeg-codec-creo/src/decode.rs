@@ -5614,14 +5614,6 @@ fn transfer_feature_extrusion_surfaces(
         let Some(order_table) = &definition.order_table else {
             continue;
         };
-        let tables = scan
-            .feature_entity_tables
-            .iter()
-            .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
-            .collect::<Vec<_>>();
-        let [table] = tables.as_slice() else {
-            continue;
-        };
         let points = resolved_section_points(definition);
         let solved = definition
             .trim_entities
@@ -5637,9 +5629,15 @@ fn transfer_feature_extrusion_surfaces(
         {
             let surface_id = match segment.kind {
                 crate::feature::FeatureSegmentKind::Line
-                | crate::feature::FeatureSegmentKind::Arc => order_table
-                    .internal_id(segment.external_id)
-                    .and_then(|_| generated_surface_id(table, segment.external_id)),
+                | crate::feature::FeatureSegmentKind::Arc => {
+                    order_table.internal_id(segment.external_id).and_then(|_| {
+                        generated_surface_id_for_feature(
+                            &scan.feature_entity_tables,
+                            feature_id,
+                            segment.external_id,
+                        )
+                    })
+                }
                 crate::feature::FeatureSegmentKind::Point => None,
             };
             let Some(surface_id) = surface_id else {
@@ -5690,7 +5688,11 @@ fn transfer_feature_extrusion_surfaces(
             let Some(external_id) = order_table.external_id(internal_id) else {
                 continue;
             };
-            let Some(native_surface_id) = generated_surface_id(table, external_id) else {
+            let Some(native_surface_id) = generated_surface_id_for_feature(
+                &scan.feature_entity_tables,
+                feature_id,
+                external_id,
+            ) else {
                 continue;
             };
             let Some(geometry) = extruded_geometry_surface(transform, &section_geometry) else {
@@ -5745,7 +5747,11 @@ fn transfer_feature_extrusion_surfaces(
             .filter_map(|spline| {
                 let internal_id = spline.entity_id?;
                 let external_id = order_table.external_id(internal_id)?;
-                let surface_id = generated_surface_id(table, external_id)?;
+                let surface_id = generated_surface_id_for_feature(
+                    &scan.feature_entity_tables,
+                    feature_id,
+                    external_id,
+                )?;
                 scan.surface_rows
                     .iter()
                     .any(|row| {
@@ -9331,21 +9337,24 @@ fn surface_kind_for_geometry(geometry: &SurfaceGeometry) -> Option<crate::surfac
     }
 }
 
-fn generated_surface_id(
-    table: &crate::feature::FeatureEntityTable,
+fn generated_surface_id_for_feature(
+    tables: &[crate::feature::FeatureEntityTable],
+    feature_id: u32,
     source_entity_id: u32,
 ) -> Option<u32> {
-    let mut matches = table
-        .entries
+    let mut matches = tables
         .iter()
-        .filter(|entry| entry.source_entity_id == Some(source_entity_id))
-        .map(|entry| entry.entity_id);
+        .filter(|table| table.feature_id == Some(feature_id))
+        .flat_map(|table| {
+            table
+                .entries
+                .iter()
+                .filter(|entry| entry.source_entity_id == Some(source_entity_id))
+                .filter(|entry| table.surface_ids.contains(&entry.entity_id))
+                .map(|entry| entry.entity_id)
+        });
     let surface_id = matches.next()?;
-    matches.next().is_none().then_some(())?;
-    table
-        .surface_ids
-        .contains(&surface_id)
-        .then_some(surface_id)
+    matches.next().is_none().then_some(surface_id)
 }
 
 fn saved_entity_is_generated_profile(
@@ -9358,67 +9367,64 @@ fn saved_entity_is_generated_profile(
     let Some(feature_id) = feature_id else {
         return false;
     };
-    let direct = tables
+    let direct = generated_surface_id_for_feature(tables, feature_id, source_entity_id)
+        .is_some_and(|surface_id| {
+            crate::surface::unique_surface_row(rows, surface_id)
+                .is_some_and(|row| row.feature_id == feature_id && row.kind == expected_kind)
+        });
+    if direct {
+        return true;
+    }
+    if expected_kind != crate::surface::SurfaceKind::Cylinder {
+        return false;
+    }
+    let mut blind_cylinders = tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
-        .flat_map(|table| &table.entries)
-        .filter(|entry| entry.source_entity_id == Some(source_entity_id))
-        .any(|entry| {
-            rows.iter().any(|row| {
-                row.id == entry.entity_id
-                    && row.feature_id == feature_id
-                    && row.kind == expected_kind
-            })
+        .filter_map(|table| {
+            let [rowless_cap, cap, profile, cylinder] = table.entries.as_slice() else {
+                return None;
+            };
+            ([
+                rowless_cap.class_id,
+                cap.class_id,
+                profile.class_id,
+                cylinder.class_id,
+            ] == [204, 203, 200, 200]
+                && profile.source_entity_id == Some(source_entity_id)
+                && cylinder.source_entity_id.is_none()
+                && table.non_surface_entity_ids.contains(&profile.entity_id)
+                && crate::surface::unique_surface_row(rows, cylinder.entity_id).is_some_and(
+                    |row| {
+                        row.feature_id == feature_id
+                            && row.kind == crate::surface::SurfaceKind::Cylinder
+                    },
+                ))
+            .then_some(cylinder.entity_id)
         });
-    direct
-        || (expected_kind == crate::surface::SurfaceKind::Cylinder
-            && tables
-                .iter()
-                .filter(|table| table.feature_id == Some(feature_id))
-                .any(|table| {
-                    let [rowless_cap, cap, profile, cylinder] = table.entries.as_slice() else {
-                        return false;
-                    };
-                    [
-                        rowless_cap.class_id,
-                        cap.class_id,
-                        profile.class_id,
-                        cylinder.class_id,
-                    ] == [204, 203, 200, 200]
-                        && profile.source_entity_id == Some(source_entity_id)
-                        && cylinder.source_entity_id.is_none()
-                        && table.non_surface_entity_ids.contains(&profile.entity_id)
-                        && rows.iter().any(|row| {
-                            row.id == cylinder.entity_id
-                                && row.feature_id == feature_id
-                                && row.kind == crate::surface::SurfaceKind::Cylinder
-                        })
-                }))
+    blind_cylinders.next().is_some() && blind_cylinders.next().is_none()
 }
 
-fn ordered_analytic_surface_id(
+fn ordered_analytic_surface_id_for_feature(
     surface_rows: &[crate::surface::SurfaceRow],
+    tables: &[crate::feature::FeatureEntityTable],
     feature_id: u32,
-    table: &crate::feature::FeatureEntityTable,
     order: &crate::feature::FeatureOrderTable,
     external_id: u32,
     geometry: &SurfaceGeometry,
 ) -> Option<u32> {
     order.internal_id(external_id)?;
-    let surface_id = generated_surface_id(table, external_id)?;
+    let surface_id = generated_surface_id_for_feature(tables, feature_id, external_id)?;
     let expected_kind = surface_kind_for_geometry(geometry)?;
-    surface_rows
-        .iter()
-        .any(|row| {
-            row.id == surface_id && row.feature_id == feature_id && row.kind == expected_kind
-        })
+    crate::surface::unique_surface_row(surface_rows, surface_id)
+        .is_some_and(|row| row.feature_id == feature_id && row.kind == expected_kind)
         .then_some(surface_id)
 }
 
-fn ordered_family_surface_bindings(
+fn ordered_family_surface_bindings_for_feature(
     surface_rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
-    table: &crate::feature::FeatureEntityTable,
+    tables: &[crate::feature::FeatureEntityTable],
     order: &crate::feature::FeatureOrderTable,
     external_ids: impl IntoIterator<Item = u32>,
     expected_kind: crate::surface::SurfaceKind,
@@ -9429,12 +9435,13 @@ fn ordered_family_surface_bindings(
         if order.internal_id(external_id).is_none() {
             return BTreeMap::new();
         }
-        let Some(surface_id) = generated_surface_id(table, external_id) else {
+        let Some(surface_id) = generated_surface_id_for_feature(tables, feature_id, external_id)
+        else {
             return BTreeMap::new();
         };
-        if !surface_rows.iter().any(|row| {
-            row.id == surface_id && row.feature_id == feature_id && row.kind == expected_kind
-        }) || !bound_surfaces.insert(surface_id)
+        if !crate::surface::unique_surface_row(surface_rows, surface_id)
+            .is_some_and(|row| row.feature_id == feature_id && row.kind == expected_kind)
+            || !bound_surfaces.insert(surface_id)
         {
             return BTreeMap::new();
         }
@@ -9490,15 +9497,6 @@ fn transfer_resolved_revolution_surfaces(
         let Some(axis) = resolved_revolution_axis(definition, transform) else {
             continue;
         };
-        let native_table = scan
-            .feature_entity_tables
-            .iter()
-            .filter(|table| table.feature_id == Some(feature_id) && !table.surface_ids.is_empty())
-            .collect::<Vec<_>>();
-        let native_table = match native_table.as_slice() {
-            [table] => Some(*table),
-            _ => None,
-        };
         let points = resolved_section_points(definition);
         let mut generating_ids = definition
             .trim_entities
@@ -9528,12 +9526,11 @@ fn transfer_resolved_revolution_surfaces(
         let arc_bindings = definition
             .order_table
             .as_ref()
-            .zip(native_table)
-            .map_or_else(BTreeMap::new, |(order, table)| {
-                ordered_family_surface_bindings(
+            .map_or_else(BTreeMap::new, |order| {
+                ordered_family_surface_bindings_for_feature(
                     &scan.surface_rows,
                     feature_id,
-                    table,
+                    &scan.feature_entity_tables,
                     order,
                     definition
                         .segments
@@ -9550,12 +9547,11 @@ fn transfer_resolved_revolution_surfaces(
         let spline_bindings = definition
             .order_table
             .as_ref()
-            .zip(native_table)
-            .map_or_else(BTreeMap::new, |(order, table)| {
-                ordered_family_surface_bindings(
+            .map_or_else(BTreeMap::new, |order| {
+                ordered_family_surface_bindings_for_feature(
                     &scan.surface_rows,
                     feature_id,
-                    table,
+                    &scan.feature_entity_tables,
                     order,
                     definition
                         .saved_section
@@ -9584,20 +9580,18 @@ fn transfer_resolved_revolution_surfaces(
                 continue;
             };
             let native_surface = match segment.kind {
-                crate::feature::FeatureSegmentKind::Line => definition
-                    .order_table
-                    .as_ref()
-                    .zip(native_table)
-                    .and_then(|(order, table)| {
-                        ordered_analytic_surface_id(
+                crate::feature::FeatureSegmentKind::Line => {
+                    definition.order_table.as_ref().and_then(|order| {
+                        ordered_analytic_surface_id_for_feature(
                             &scan.surface_rows,
+                            &scan.feature_entity_tables,
                             feature_id,
-                            table,
                             order,
                             segment.external_id,
                             &surface,
                         )
-                    }),
+                    })
+                }
                 crate::feature::FeatureSegmentKind::Arc => {
                     arc_bindings.get(&segment.external_id).copied()
                 }
@@ -9646,7 +9640,7 @@ fn transfer_resolved_revolution_surfaces(
             });
             transferred += 1;
         }
-        if let (Some(order), Some(table)) = (definition.order_table.as_ref(), native_table) {
+        if let Some(order) = definition.order_table.as_ref() {
             for (internal_id, section_geometry, offset) in definition
                 .saved_section
                 .iter()
@@ -9660,10 +9654,10 @@ fn transfer_resolved_revolution_surfaces(
                 else {
                     continue;
                 };
-                let Some(native_surface) = ordered_analytic_surface_id(
+                let Some(native_surface) = ordered_analytic_surface_id_for_feature(
                     &scan.surface_rows,
+                    &scan.feature_entity_tables,
                     feature_id,
-                    table,
                     order,
                     external_id,
                     &surface,
@@ -12213,11 +12207,42 @@ mod resolved_sketch_tests {
             radius: 2.0,
         };
         assert_eq!(
-            ordered_analytic_surface_id(&rows, 17, &table, &order, 8, &cylinder),
+            ordered_analytic_surface_id_for_feature(
+                &rows,
+                std::slice::from_ref(&table),
+                17,
+                &order,
+                8,
+                &cylinder,
+            ),
             Some(41)
         );
         assert_eq!(
-            ordered_analytic_surface_id(&rows, 17, &table, &order, 9, &cylinder),
+            ordered_analytic_surface_id_for_feature(
+                &rows,
+                std::slice::from_ref(&table),
+                17,
+                &order,
+                9,
+                &cylinder,
+            ),
+            None
+        );
+        let mut first_table = table.clone();
+        first_table.entry_ids = vec![41];
+        first_table.entries = vec![table.entries[1].clone()];
+        first_table.surface_ids = vec![41];
+        let mut second_table = table.clone();
+        second_table.entry_ids = vec![43];
+        second_table.entries = vec![table.entries[2].clone()];
+        second_table.surface_ids = vec![43];
+        assert_eq!(
+            generated_surface_id_for_feature(&[first_table.clone(), second_table], 17, 9),
+            Some(43)
+        );
+        first_table.entries[0].source_entity_id = Some(9);
+        assert_eq!(
+            generated_surface_id_for_feature(&[first_table, table.clone()], 17, 9),
             None
         );
         let torus = SurfaceGeometry::Torus {
@@ -12228,14 +12253,21 @@ mod resolved_sketch_tests {
             minor_radius: 1.0,
         };
         assert_eq!(
-            ordered_analytic_surface_id(&rows, 17, &table, &order, 9, &torus),
+            ordered_analytic_surface_id_for_feature(
+                &rows,
+                std::slice::from_ref(&table),
+                17,
+                &order,
+                9,
+                &torus,
+            ),
             Some(43)
         );
         assert_eq!(
-            ordered_family_surface_bindings(
+            ordered_family_surface_bindings_for_feature(
                 &rows,
                 17,
-                &table,
+                std::slice::from_ref(&table),
                 &order,
                 [9],
                 crate::surface::SurfaceKind::TorusOrSphere,

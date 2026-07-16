@@ -1162,6 +1162,12 @@ through `2π` at constant sweep offset.
 
 A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. The array's compact-integer count is not limited to a one-byte or 64-entry range. Each declared entry has an optional `f7 1e` prefix, a canonical entity-reference identifier, a compact entry class, a positional body, and an `e3` close within the bounded feature row. A class `200` entry carries its source section entity's external identifier immediately after the class when that lane is populated; a structural marker in that position leaves the source absent. The record close follows these typed compact lanes; an `e3` byte can be the low byte of their canonical two-byte form. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
 
+Generated carrier lookup spans every mixed generated-entity table owned by the
+feature. A source section entity binds a neutral carrier only when exactly one
+owned table entry carries that source identifier and its leading entity is a
+materialized surface in that table. Multiple owned tables are not ambiguous by
+themselves; duplicate source bindings across them are ambiguous.
+
 `edg_id_tab_ptr`, `lo_id_tab_ptr`, `bnd_type`, `used_bodies`, `geom_lists`,
 and `dtm_id_tab` declare feature-owned geometry tables. Each table retains its
 declared compact count and the entity-class identifier following its `f7`
