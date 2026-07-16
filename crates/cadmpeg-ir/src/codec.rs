@@ -224,6 +224,34 @@ mod sealed {
 /// enforcement — the language would otherwise permit overriding a provided
 /// method. Callers reach these methods on any `Codec` (including
 /// `dyn Codec`) by bringing [`CodecEntry`] into scope.
+///
+/// A codec cannot supply its own entry point: a manual `CodecEntry`
+/// implementation collides with the blanket impl and does not compile.
+///
+/// ```compile_fail
+/// use cadmpeg_ir::codec::{
+///     Codec, CodecEntry, CodecError, Confidence, ContainerSummary, DecodeOptions,
+///     DecodeResult, ReadSeek,
+/// };
+/// use cadmpeg_ir::decode::{DecodeContext, View};
+/// use cadmpeg_ir::InspectOptions;
+///
+/// struct Rogue;
+/// impl Codec for Rogue {
+///     fn id(&self) -> &'static str { "rogue" }
+///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
+///     fn inspect_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
+///         -> Result<ContainerSummary, CodecError> { unimplemented!() }
+///     fn decode_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
+///         -> Result<DecodeResult, CodecError> { unimplemented!() }
+/// }
+/// impl CodecEntry for Rogue {
+///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)
+///         -> Result<ContainerSummary, CodecError> { unimplemented!() }
+///     fn decode(&self, _: &mut dyn ReadSeek, _: &DecodeOptions)
+///         -> Result<DecodeResult, CodecError> { unimplemented!() }
+/// }
+/// ```
 pub trait CodecEntry: Codec + sealed::Sealed {
     /// Inspect the source under its own input limit, enforcing the root-input
     /// bound so an inspection cannot become an amplification vector.
