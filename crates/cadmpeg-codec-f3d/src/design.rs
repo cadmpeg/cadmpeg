@@ -8607,9 +8607,14 @@ pub(crate) fn edge_recipe_local_topology_references(
 ) -> Option<Vec<std::num::NonZeroU32>> {
     topology_recipe_references(
         std::iter::once(structure.root).chain(structure.sides.iter().flat_map(|side| {
-            [Some(side.first), Some(side.second), side.third]
-                .into_iter()
-                .flatten()
+            [
+                Some(side.header_value),
+                Some(side.first),
+                Some(side.second),
+                side.third,
+            ]
+            .into_iter()
+            .flatten()
         })),
         reference_count,
     )
@@ -13764,6 +13769,18 @@ mod relation_tests {
             )
         );
         assert!(super::edge_recipe_local_topology_references(&structured, 2).is_none());
+        let mut referenced_headers = structured.clone();
+        referenced_headers.sides[0].header_value = 2;
+        referenced_headers.sides[1].header_value = 3;
+        assert_eq!(
+            super::edge_recipe_local_topology_references(&referenced_headers, 3),
+            Some(
+                [2, 2, 2, 1, 3, 1, 3]
+                    .into_iter()
+                    .map(|value| std::num::NonZeroU32::new(value).unwrap())
+                    .collect()
+            )
+        );
         let wrap = super::edge_recipe_entries(&[1, 5, 1, 0, 1, 1, 1, 1]).unwrap();
         assert_eq!(wrap[0].topology_triplets[0].vertex_ordinal, 0);
         assert_eq!(wrap[0].topology_triplets[0].incident_edge_ordinal, 4);
