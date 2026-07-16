@@ -1096,8 +1096,10 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.result_candidate_faces.clear();
         operand.result_boundary_edge_slots.clear();
         operand.preceding_candidate_faces.clear();
+        operand.terminal_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
         operand.preceding_boundary_edge_slots.clear();
+        operand.terminal_boundary_edge_slots.clear();
         operand.changed_boundary_edge_slots.clear();
         operand.deleted_boundary_edge_slots.clear();
         operand.updated_boundary_edge_slots.clear();
@@ -1216,7 +1218,9 @@ fn bind_active_edge_operand_candidates(
     topologies: &[(i64, &AsmHistoricalTopology)],
 ) {
     let mut matches = topologies.iter().filter_map(|(state_id, topology)| {
-        let candidate_faces = faces_in_topology(&operand.candidate_faces, topology);
+        let terminal_faces =
+            terminal_edge_recipe_faces(&operand.candidate_faces, &operand.recipe_references);
+        let candidate_faces = faces_in_topology(&terminal_faces, topology);
         if topologies.len() != 1 && candidate_faces.is_empty() {
             return None;
         }
@@ -1245,12 +1249,34 @@ fn bind_active_edge_operand_candidates(
     if matches.next().is_some() {
         return;
     }
-    operand.preceding_candidate_faces = candidate_faces;
-    operand.preceding_boundary_edge_slots = boundary_edges;
+    operand.terminal_candidate_faces = candidate_faces;
+    operand.terminal_boundary_edge_slots = boundary_edges;
     operand.terminal_boundary_edge_contexts = contexts;
     operand.recipe_selectors = selectors;
     operand.recipe_state_id = Some(state_id);
     operand.resolved_edge_slot = edge;
+}
+
+fn terminal_edge_recipe_faces(
+    primary: &[cadmpeg_ir::ids::FaceId],
+    references: &[crate::records::DesignRecipeReference],
+) -> Vec<cadmpeg_ir::ids::FaceId> {
+    let mut faces = primary.to_vec();
+    faces.extend(
+        references
+            .iter()
+            .flat_map(|reference| {
+                if reference.candidate_faces.is_empty() {
+                    &reference.alternate_selector_faces
+                } else {
+                    &reference.candidate_faces
+                }
+            })
+            .cloned(),
+    );
+    faces.sort_by(|left, right| left.0.cmp(&right.0));
+    faces.dedup();
+    faces
 }
 
 fn treatment_radius_candidates(
@@ -2288,6 +2314,44 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 mod tests {
     use super::*;
     use crate::history_records::AsmHistoricalSurfaceRadius;
+
+    #[test]
+    fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
+        use cadmpeg_ir::ids::FaceId;
+
+        let reference =
+            |candidate_faces, alternate_selector_faces| crate::records::DesignRecipeReference {
+                selector: 1,
+                selector_offset: 0,
+                token: "1".into(),
+                token_offset: 0,
+                design_reference: 1,
+                design_reference_offset: 0,
+                candidate_faces,
+                candidate_edges: Vec::new(),
+                alternate_selector_faces,
+                alternate_selector_edges: Vec::new(),
+            };
+        assert_eq!(
+            terminal_edge_recipe_faces(
+                &[FaceId("face-b".into()), FaceId("face-a".into())],
+                &[
+                    reference(
+                        vec![FaceId("face-c".into())],
+                        vec![FaceId("ignored".into())],
+                    ),
+                    reference(Vec::new(), vec![FaceId("face-d".into())]),
+                    reference(vec![FaceId("face-a".into())], Vec::new()),
+                ],
+            ),
+            [
+                FaceId("face-a".into()),
+                FaceId("face-b".into()),
+                FaceId("face-c".into()),
+                FaceId("face-d".into()),
+            ]
+        );
+    }
 
     #[test]
     fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_edge() {

@@ -1094,6 +1094,10 @@ pub struct DesignEdgeOperand {
     /// owning edge-treatment feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub preceding_candidate_faces: Vec<FaceId>,
+    /// Candidate and effective prefix-reference faces in the terminal topology
+    /// used by a suppressed feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_candidate_faces: Vec<FaceId>,
     /// Preceding candidate faces deleted or updated by the owning feature's
     /// exact ASM state transition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1101,6 +1105,9 @@ pub struct DesignEdgeOperand {
     /// Stable edge slots on the preceding candidate-face boundaries.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub preceding_boundary_edge_slots: Vec<i64>,
+    /// Stable edge slots on terminal candidate-face boundaries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_boundary_edge_slots: Vec<i64>,
     /// Preceding boundary-edge slots deleted or updated by the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed_boundary_edge_slots: Vec<i64>,
