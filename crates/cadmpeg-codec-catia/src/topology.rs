@@ -1737,42 +1737,43 @@ where
     const MAX_STATES: usize = 4_096;
 
     fn search<F>(
-        unresolved: &[usize],
-        allowed_faces: &[Vec<usize>],
+        branches: &[(usize, Vec<usize>)],
         at: usize,
         assignment: &mut [[usize; 2]],
         states: &mut usize,
+        exhausted: &mut bool,
         solutions: &mut Vec<Vec<[usize; 2]>>,
         valid: &mut F,
     ) where
         F: FnMut(&[[usize; 2]]) -> bool,
     {
-        if *states >= MAX_STATES || solutions.len() > 1 {
+        if *exhausted || solutions.len() > 1 {
             return;
         }
-        *states += 1;
-        if at == unresolved.len() {
+        if at == branches.len() {
             if valid(assignment) && !solutions.iter().any(|solution| solution == assignment) {
                 solutions.push(assignment.to_vec());
             }
             return;
         }
-        let edge = unresolved[at];
-        for &face in &allowed_faces[edge] {
-            if face == assignment[edge][0] {
-                continue;
-            }
-            assignment[edge][1] = face;
+        if *states >= MAX_STATES {
+            *exhausted = true;
+            return;
+        }
+        *states += 1;
+        let (edge, options) = &branches[at];
+        for &face in options {
+            assignment[*edge][1] = face;
             search(
-                unresolved,
-                allowed_faces,
+                branches,
                 at + 1,
                 assignment,
                 states,
+                exhausted,
                 solutions,
                 valid,
             );
-            if *states >= MAX_STATES || solutions.len() > 1 {
+            if *exhausted || solutions.len() > 1 {
                 return;
             }
         }
@@ -1795,25 +1796,36 @@ where
     if unresolved.is_empty() {
         return Some(serialized.to_vec());
     }
-    if unresolved
-        .iter()
-        .any(|edge| allowed_faces[*edge].is_empty())
-    {
-        return None;
-    }
     let mut assignment = serialized.to_vec();
+    let mut branches = Vec::new();
+    for edge in unresolved {
+        let mut options = allowed_faces[edge]
+            .iter()
+            .copied()
+            .filter(|face| *face != assignment[edge][0])
+            .collect::<Vec<_>>();
+        options.sort_unstable();
+        options.dedup();
+        match options.as_slice() {
+            [] => return None,
+            [face] => assignment[edge][1] = *face,
+            _ => branches.push((edge, options)),
+        }
+    }
+    branches.sort_unstable_by_key(|(edge, options)| (options.len(), *edge));
     let mut states = 0;
+    let mut exhausted = false;
     let mut solutions = Vec::new();
     search(
-        &unresolved,
-        allowed_faces,
+        &branches,
         0,
         &mut assignment,
         &mut states,
+        &mut exhausted,
         &mut solutions,
         &mut valid,
     );
-    (states < MAX_STATES)
+    (!exhausted)
         .then(|| <[Vec<[usize; 2]>; 1]>::try_from(solutions).ok())
         .flatten()
         .map(|[solution]| solution)
@@ -10054,6 +10066,18 @@ mod motif_tests {
             |_| true,
         )
         .is_none());
+    }
+
+    #[test]
+    fn duplicate_face_slots_do_not_budget_forced_assignments() {
+        const EDGE_COUNT: usize = 5_000;
+        let serialized = vec![[0, 0]; EDGE_COUNT];
+        let allowed = vec![vec![1, 1]; EDGE_COUNT];
+
+        let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| true)
+            .expect("forced duplicate-face assignments");
+
+        assert_eq!(resolved, vec![[0, 1]; EDGE_COUNT]);
     }
 
     #[test]
