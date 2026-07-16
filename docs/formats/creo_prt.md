@@ -1140,6 +1140,15 @@ feature namespaces and need not be equal.
 datum namespace used by `gsec3d.plane_id`; they are distinct from
 `ActDatums.srf_array.geom_id` values.
 
+Within one `AllFeatur` stream, the named `dtm_id_tab` establishes the table
+class for following positional feature rows. A positional table begins
+`f8 <count> f7 <class> fb e2`. Its first entry begins
+`f7 <class + 1> <dtm_id> <dim_id>`. Each additional entry begins
+`[f1|f2] f7 <class> e2 <dtm_id> <dim_id>`. The datum and dimension identifiers
+use canonical reference-id encoding; `f6` is a null dimension identifier.
+Exactly `count` datum identifiers belong to the owning positional feature row.
+Table-class state does not cross an `AllFeatur` stream boundary.
+
 In `DEPDB_DATA`, section-level `dtm_id_tab` and `parent_table` records belong
 to the unique procedural recipe feature stored in the same section.
 

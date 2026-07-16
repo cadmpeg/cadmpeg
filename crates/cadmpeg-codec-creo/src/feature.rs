@@ -4437,6 +4437,7 @@ pub fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> {
         (b"dtm_id_tab", FeatureGeometryTableKind::DatumIds),
     ];
     let mut tables = Vec::new();
+    let mut datum_class_by_stream = BTreeMap::<usize, u32>::new();
     for row in rows {
         for &(label, kind) in FIELDS {
             let needle = [label, b"\0"].concat();
@@ -4460,11 +4461,83 @@ pub fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> {
                     entry_ids,
                     offset: row.body_offset + offset,
                 });
+                if kind == FeatureGeometryTableKind::DatumIds {
+                    datum_class_by_stream.insert(row.stream_offset, entity_class);
+                }
             }
+        }
+        let Some(&entity_class) = datum_class_by_stream.get(&row.stream_offset) else {
+            continue;
+        };
+        for cursor in 0..row.body.len() {
+            let Some((count, entry_ids)) =
+                positional_datum_geometry_table_at(&row.body, cursor, entity_class)
+            else {
+                continue;
+            };
+            tables.push(FeatureGeometryTable {
+                feature_id: row.feature_id,
+                kind: FeatureGeometryTableKind::DatumIds,
+                count,
+                entity_class,
+                entry_ids: Some(entry_ids),
+                offset: row.body_offset + cursor,
+            });
         }
     }
     tables.sort_by_key(|table| table.offset);
     tables
+}
+
+fn positional_datum_geometry_table_at(
+    body: &[u8],
+    cursor: usize,
+    entity_class: u32,
+) -> Option<(u32, Vec<u32>)> {
+    (body.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    let (count, after_count) = psb::compact_int(body, cursor + 1);
+    (after_count > cursor + 1 && body.get(after_count) == Some(&psb::token::ENTITY_REF))
+        .then_some(())?;
+    let (stored_class, mut cursor) = psb::reference_id(body, after_count + 1).ok()?;
+    (stored_class == entity_class).then_some(())?;
+    if body.get(cursor) == Some(&psb::token::ARRAY_CLOSE) {
+        cursor += 1;
+    }
+    if body.get(cursor) == Some(&0xe2) {
+        cursor += 1;
+    }
+
+    let capacity = bounded_len(u64::from(count), 1, body.len().saturating_sub(cursor))?;
+    let entry_class = entity_class.checked_add(1)?;
+    let mut entry_ids = Vec::with_capacity(capacity);
+    for index in 0..count {
+        if index == 0 {
+            (body.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let (stored_entry_class, after_class) = psb::reference_id(body, cursor + 1).ok()?;
+            (stored_entry_class == entry_class).then_some(())?;
+            cursor = after_class;
+        } else {
+            (body
+                .get(cursor)
+                .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2)))
+            .then_some(())?;
+            (body.get(cursor + 1) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let (continuation_class, after_class) = psb::reference_id(body, cursor + 2).ok()?;
+            (continuation_class == entity_class && body.get(after_class) == Some(&0xe2))
+                .then_some(())?;
+            cursor = after_class + 1;
+        }
+        let (entry_id, after_id) = psb::reference_id(body, cursor).ok()?;
+        entry_ids.push(entry_id);
+        cursor = after_id;
+        if body.get(cursor) == Some(&0xf6) {
+            cursor += 1;
+        } else {
+            let (_, after_dimension) = psb::reference_id(body, cursor).ok()?;
+            cursor = after_dimension;
+        }
+    }
+    Some((count, entry_ids))
 }
 
 fn geometry_table_at(
@@ -5633,6 +5706,54 @@ mod tests {
         assert_eq!(fields.len(), 1);
         assert_eq!(fields[0].offset, 101);
         assert_eq!(fields[0].name, "");
+    }
+
+    #[test]
+    fn positional_datum_table_replays_the_named_stream_schema() {
+        let row = |feature_id, stream_offset, body: Vec<u8>| FeatureRow {
+            feature_id,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(917),
+            stream_offset,
+            body,
+            body_offset: feature_id as usize * 100,
+            offset: feature_id as usize * 100 - 2,
+        };
+        let rows = [
+            row(
+                1,
+                10,
+                b"\xe0\x00dtm_id_tab\0\xf2\xf8\x01\xf7\x57\xfb\xe2\
+                  \xe0\x01dtm_id\0\x2a\xe0\x01dim_id\0\xf6"
+                    .to_vec(),
+            ),
+            row(
+                2,
+                10,
+                vec![
+                    0x00, 0xf8, 0x02, 0xf7, 0x57, 0xfb, 0xe2, 0xf7, 0x58, 0x80, 0x91, 0xf6, 0xf1,
+                    0xf7, 0x57, 0xe2, 0x80, 0x92, 0xf6, 0xe3,
+                ],
+            ),
+            row(
+                3,
+                11,
+                vec![
+                    0xf8, 0x01, 0xf7, 0x57, 0xfb, 0xe2, 0xf7, 0x58, 0x2b, 0xf6, 0xe3,
+                ],
+            ),
+        ];
+
+        let decoded = geometry_tables(&rows);
+
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].feature_id, 1);
+        assert_eq!(decoded[0].entry_ids, Some(vec![42]));
+        assert_eq!(decoded[1].feature_id, 2);
+        assert_eq!(decoded[1].count, 2);
+        assert_eq!(decoded[1].entity_class, 87);
+        assert_eq!(decoded[1].entry_ids, Some(vec![145, 146]));
+        assert_eq!(decoded[1].offset, 201);
     }
 
     #[test]
