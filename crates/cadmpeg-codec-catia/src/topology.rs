@@ -6939,9 +6939,6 @@ impl MeshSelectionSearch<'_> {
         }
         let remaining_merges = self.remaining_equation_merge_capacity(&mut measured)?;
         if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
-            if root_count.saturating_sub(self.vertex_points.len()) > 2 {
-                return None;
-            }
             measured.close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)?;
         }
         if root_count == self.vertex_points.len()
@@ -6989,10 +6986,9 @@ impl MeshSelectionSearch<'_> {
                 return;
             };
             if root_count.saturating_sub(remaining_merges) > self.vertex_points.len()
-                && (root_count.saturating_sub(self.vertex_points.len()) > 2
-                    || measured
-                        .close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)
-                        .is_none())
+                && measured
+                    .close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)
+                    .is_none()
             {
                 return;
             }
@@ -9861,6 +9857,43 @@ mod motif_tests {
         assert_eq!(assignment[&quotient.union.find(0)], 0);
         assert_eq!(assignment[&quotient.union.find(1)], 1);
         assert_eq!(assignment[&quotient.union.find(3)], 2);
+    }
+
+    #[test]
+    fn quotient_closes_more_than_two_independent_coordinate_roots() {
+        let all = Arc::new(HashSet::from_iter(0..9));
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(18),
+            domains: vec![all; 18],
+            members: (0..18).map(|node| vec![node]).collect(),
+        };
+        let mut candidates = Vec::new();
+        for component in 0..3 {
+            let node = component * 6;
+            let point = component * 3;
+            quotient
+                .merge(node + 1, node + 2)
+                .expect("shared first corner");
+            quotient
+                .merge(node + 3, node + 4)
+                .expect("shared second corner");
+            candidates.extend([
+                vec![[point, point + 1]],
+                vec![[point + 1, point + 2]],
+                vec![[point, point + 2]],
+            ]);
+        }
+
+        let assignment = quotient
+            .close_coordinate_roots(9, &candidates)
+            .expect("three independent coordinate closures");
+
+        assert_eq!(quotient.root_count(), 9);
+        assert_eq!(assignment.len(), 9);
+        for component in 0..3 {
+            let node = component * 6;
+            assert_eq!(quotient.union.find(node), quotient.union.find(node + 5));
+        }
     }
 
     #[test]
