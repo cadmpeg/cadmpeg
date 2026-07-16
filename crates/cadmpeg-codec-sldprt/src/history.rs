@@ -3618,7 +3618,21 @@ fn parse_length_mm(value: &str) -> Option<f64> {
     let (value, display_length) = value
         .strip_prefix(['R', 'r', '\u{2300}', '\u{00d8}'])
         .map_or((value, false), |value| (value.trim(), true));
-    for (suffix, scale) in [("mm", 1.0), ("cm", 10.0), ("in", 25.4), ("m", 1000.0)] {
+    for (suffix, scale) in [
+        ("uin", 25.4e-6),
+        ("mil", 0.0254),
+        ("mm", 1.0),
+        ("cm", 10.0),
+        ("in", 25.4),
+        ("ft", 304.8),
+        ("nm", 1.0e-6),
+        ("um", 1.0e-3),
+        ("µm", 1.0e-3),
+        ("μm", 1.0e-3),
+        ("Å", 1.0e-7),
+        ("A", 1.0e-7),
+        ("m", 1000.0),
+    ] {
         if let Some(number) = value.strip_suffix(suffix) {
             return number
                 .trim()
@@ -3735,7 +3749,7 @@ fn format_f64_literal(value: f64) -> String {
 
 #[cfg(test)]
 mod literal_tests {
-    use super::format_f64_literal;
+    use super::{format_f64_literal, parse_length_mm};
 
     #[test]
     fn native_scalar_literals_are_compact_and_bit_exact() {
@@ -3756,6 +3770,27 @@ mod literal_tests {
             format_f64_literal(7.745_183_829_698_638e-127),
             "7.745183829698638e-127"
         );
+    }
+
+    #[test]
+    fn solidworks_length_units_convert_to_millimeters() {
+        for (literal, expected) in [
+            ("1A", 1.0e-7),
+            ("1Å", 1.0e-7),
+            ("1nm", 1.0e-6),
+            ("1um", 1.0e-3),
+            ("1µm", 1.0e-3),
+            ("1μm", 1.0e-3),
+            ("1mm", 1.0),
+            ("1cm", 10.0),
+            ("1m", 1000.0),
+            ("1uin", 25.4e-6),
+            ("1mil", 0.0254),
+            ("1in", 25.4),
+            ("1ft", 304.8),
+        ] {
+            assert_eq!(parse_length_mm(literal), Some(expected), "{literal}");
+        }
     }
 }
 
