@@ -1759,6 +1759,113 @@ pub(crate) fn resolve_standard_edge_faces(
     resolve_edge_faces_from_runs(serialized, &runs)
 }
 
+fn unique_duplicate_face_assignment<F>(
+    serialized: &[[usize; 2]],
+    allowed_faces: &[Vec<usize>],
+    face_count: usize,
+    mut valid: F,
+) -> Option<Vec<[usize; 2]>>
+where
+    F: FnMut(&[[usize; 2]]) -> bool,
+{
+    const MAX_STATES: usize = 4_096;
+
+    fn search<F>(
+        unresolved: &[usize],
+        allowed_faces: &[Vec<usize>],
+        at: usize,
+        assignment: &mut [[usize; 2]],
+        states: &mut usize,
+        solutions: &mut Vec<Vec<[usize; 2]>>,
+        valid: &mut F,
+    ) where
+        F: FnMut(&[[usize; 2]]) -> bool,
+    {
+        if *states >= MAX_STATES || solutions.len() > 1 {
+            return;
+        }
+        *states += 1;
+        if at == unresolved.len() {
+            if valid(assignment) && !solutions.iter().any(|solution| solution == assignment) {
+                solutions.push(assignment.to_vec());
+            }
+            return;
+        }
+        let edge = unresolved[at];
+        for &face in &allowed_faces[edge] {
+            if face == assignment[edge][0] {
+                continue;
+            }
+            assignment[edge][1] = face;
+            search(
+                unresolved,
+                allowed_faces,
+                at + 1,
+                assignment,
+                states,
+                solutions,
+                valid,
+            );
+            if *states >= MAX_STATES || solutions.len() > 1 {
+                return;
+            }
+        }
+    }
+
+    if serialized.len() != allowed_faces.len()
+        || serialized.iter().flatten().any(|face| *face >= face_count)
+        || allowed_faces
+            .iter()
+            .flatten()
+            .any(|face| *face >= face_count)
+    {
+        return None;
+    }
+    let unresolved = serialized
+        .iter()
+        .enumerate()
+        .filter_map(|(edge, faces)| (faces[0] == faces[1]).then_some(edge))
+        .collect::<Vec<_>>();
+    if unresolved.is_empty() {
+        return Some(serialized.to_vec());
+    }
+    if unresolved
+        .iter()
+        .any(|edge| allowed_faces[*edge].is_empty())
+    {
+        return None;
+    }
+    let mut assignment = serialized.to_vec();
+    let mut states = 0;
+    let mut solutions = Vec::new();
+    search(
+        &unresolved,
+        allowed_faces,
+        0,
+        &mut assignment,
+        &mut states,
+        &mut solutions,
+        &mut valid,
+    );
+    (states < MAX_STATES)
+        .then(|| <[Vec<[usize; 2]>; 1]>::try_from(solutions).ok())
+        .flatten()
+        .map(|[solution]| solution)
+}
+
+/// Complete repeated standard edge-face slots when carrier incidence and a
+/// complete trim-boundary partition select one common assignment.
+pub(crate) fn resolve_standard_duplicate_edge_faces(
+    bytes: &[u8],
+    serialized: &[[usize; 2]],
+    allowed_faces: &[Vec<usize>],
+) -> Option<Vec<[usize; 2]>> {
+    let face_count = largest_fbb_run(bytes)?.1;
+    unique_duplicate_face_assignment(serialized, allowed_faces, face_count, |assignment| {
+        standard_mesh_boundary_assignments(bytes, assignment).is_some()
+    })
+}
+
 fn resolve_edge_faces_from_runs(
     serialized: &[[usize; 2]],
     runs: &[MeshEdgeRun],
@@ -7236,10 +7343,11 @@ mod motif_tests {
         parse_trim_chain, parse_trim_record, possible_face_choices, possible_face_equations,
         propagate_edge_port_points, prune_edge_candidates_by_port_domains, reconstruct_incidence,
         reconstruct_incidence_candidates, resolve_edge_faces_from_runs, standard_face_count,
-        unique_coordinate_bijection, uses_canonical_edge_direction_gauge, Boundary, CoedgeUse,
-        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun,
-        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
-        TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
+        unique_coordinate_bijection, unique_duplicate_face_assignment,
+        uses_canonical_edge_direction_gauge, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
+        FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun, MeshFaceBoundaryAssignment,
+        MeshQuotient, MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER,
+        MAX_FACE_EQUATION_CACHE_ENTRIES,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -8908,6 +9016,26 @@ mod motif_tests {
         .expect("unique face-closing slot assignment");
 
         assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
+    }
+
+    #[test]
+    fn duplicate_face_slot_requires_one_joint_carrier_and_mesh_assignment() {
+        let serialized = [[0, 0], [0, 1], [1, 1]];
+        let allowed = [vec![1, 2], Vec::new(), vec![0, 2]];
+        let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 3, |faces| {
+            faces == [[0, 2], [0, 1], [1, 0]]
+        })
+        .expect("one complete assignment");
+        assert_eq!(resolved, [[0, 2], [0, 1], [1, 0]]);
+
+        assert!(unique_duplicate_face_assignment(&serialized, &allowed, 3, |_| true).is_none());
+        assert!(unique_duplicate_face_assignment(
+            &serialized,
+            &[vec![3], Vec::new(), vec![0]],
+            3,
+            |_| true,
+        )
+        .is_none());
     }
 
     #[test]

@@ -4516,7 +4516,7 @@ fn attach_standard_topology(
         .iter()
         .map(|support| support.faces)
         .collect::<Vec<_>>();
-    let Some(edge_faces) = topology::resolve_standard_edge_faces(brep, &serialized_edge_faces)
+    let Some(mut edge_faces) = topology::resolve_standard_edge_faces(brep, &serialized_edge_faces)
     else {
         return false;
     };
@@ -4677,6 +4677,65 @@ fn attach_standard_topology(
         for (options, pair) in options.iter_mut().zip(pairs) {
             if let Some(pair) = pair {
                 *options = vec![*pair];
+            }
+        }
+    }
+    if let Some(options) = &mut endpoint_options {
+        let allowed_faces = supports
+            .iter()
+            .enumerate()
+            .map(|(edge, support)| {
+                if support.faces[0] != support.faces[1] {
+                    return Vec::new();
+                }
+                (0..face_count)
+                    .filter(|face| *face != support.faces[0])
+                    .filter(|face| {
+                        let Some(surface) = face_surface(ir, bindings, &surface_indices, *face)
+                        else {
+                            return false;
+                        };
+                        options[edge].iter().any(|pair| {
+                            pair.iter().all(|point| {
+                                ir.model.points.get(*point).is_some_and(|point| {
+                                    point_on_standard_face(
+                                        point.position,
+                                        &surface.geometry,
+                                        face_bounds.as_ref().and_then(|bounds| bounds[*face]),
+                                    )
+                                })
+                            })
+                        })
+                    })
+                    .collect()
+            })
+            .collect::<Vec<_>>();
+        if let Some(completed) =
+            topology::resolve_standard_duplicate_edge_faces(brep, &edge_faces, &allowed_faces)
+        {
+            edge_faces = completed;
+            for (edge, (support, faces)) in supports.iter_mut().zip(&edge_faces).enumerate() {
+                if support.faces == *faces {
+                    continue;
+                }
+                support.faces = *faces;
+                let Some(surface) = face_surface(ir, bindings, &surface_indices, faces[1]) else {
+                    return false;
+                };
+                options[edge].retain(|pair| {
+                    pair.iter().all(|point| {
+                        ir.model.points.get(*point).is_some_and(|point| {
+                            point_on_standard_face(
+                                point.position,
+                                &surface.geometry,
+                                face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]),
+                            )
+                        })
+                    })
+                });
+                if options[edge].is_empty() {
+                    return false;
+                }
             }
         }
     }
