@@ -1644,10 +1644,17 @@ pub(crate) fn resolve_active_edge_recipe_candidates(
     let incidence = corroborated_edge_intersection(selector_contexts, &[], false);
     let boundary_count = corroborated_edge_intersection(selector_contexts, &[], true);
     let common_triplet = corroborated_common_triplet_intersection(selector_contexts, &[]);
-    let proofs = [incidence, boundary_count, common_triplet]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+    let cross_clause_triplet =
+        corroborated_cross_clause_triplet_intersection(selector_contexts, &[]);
+    let proofs = [
+        incidence,
+        boundary_count,
+        common_triplet,
+        cross_clause_triplet,
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
     let edge = *proofs.first()?;
     proofs.iter().all(|proof| *proof == edge).then_some(edge)
 }
@@ -1771,11 +1778,19 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
     let boundary_count = corroborated_edge_intersection(selector_contexts, &shared_edge_sets, true);
     let common_triplet =
         corroborated_common_triplet_intersection(selector_contexts, &shared_edge_sets);
-    let proofs = [reference, incidence, boundary_count, common_triplet]
-        .into_iter()
-        .chain(extra_proofs)
-        .flatten()
-        .collect::<Vec<_>>();
+    let cross_clause_triplet =
+        corroborated_cross_clause_triplet_intersection(selector_contexts, &shared_edge_sets);
+    let proofs = [
+        reference,
+        incidence,
+        boundary_count,
+        common_triplet,
+        cross_clause_triplet,
+    ]
+    .into_iter()
+    .chain(extra_proofs)
+    .flatten()
+    .collect::<Vec<_>>();
     let edge = *proofs.first()?;
     proofs.iter().all(|proof| *proof == edge).then_some(edge)
 }
@@ -1784,7 +1799,7 @@ fn corroborated_common_triplet_intersection(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: &[&[i64]],
 ) -> Option<i64> {
-    let mut edge_sets = selector_contexts.iter().flat_map(|selector| {
+    let edge_sets = selector_contexts.iter().flat_map(|selector| {
         selector
             .clause_entries
             .iter()
@@ -1799,6 +1814,35 @@ fn corroborated_common_triplet_intersection(
                 (!common.is_empty()).then_some(common)
             })
     });
+    corroborated_edge_set_intersection(edge_sets, shared_edge_sets)
+}
+
+fn corroborated_cross_clause_triplet_intersection(
+    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    shared_edge_sets: &[&[i64]],
+) -> Option<i64> {
+    let edge_sets = selector_contexts.iter().flat_map(|selector| {
+        let [Some(left), Some(right)] = &selector.clause_triplet_edge_slots else {
+            return Vec::new();
+        };
+        left.iter()
+            .zip(right)
+            .filter_map(|(left, right)| {
+                let mut common = left.clone();
+                common.retain(|edge| right.contains(edge));
+                common.sort_unstable();
+                common.dedup();
+                (!common.is_empty()).then_some(common)
+            })
+            .collect::<Vec<_>>()
+    });
+    corroborated_edge_set_intersection(edge_sets, shared_edge_sets)
+}
+
+fn corroborated_edge_set_intersection(
+    mut edge_sets: impl Iterator<Item = Vec<i64>>,
+    shared_edge_sets: &[&[i64]],
+) -> Option<i64> {
     let mut candidates = edge_sets.next()?;
     for edges in edge_sets {
         candidates.retain(|candidate| edges.contains(candidate));
@@ -16573,6 +16617,27 @@ mod relation_tests {
         assert_eq!(super::unique_deleted_triplet_candidate(&[], &[17]), None);
         assert_eq!(
             resolved_edge_candidate_intersection(&[common], [&[19][..]]),
+            None
+        );
+        let mut cross_clause = selector(0, &[]);
+        cross_clause.clause_triplet_edge_slots =
+            [Some([vec![18], vec![17, 19]]), Some([vec![20], vec![17]])];
+        assert_eq!(
+            super::resolve_active_edge_recipe_candidates(&[cross_clause.clone()]),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(&[cross_clause.clone()], [&[17, 21][..]],),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(&[cross_clause.clone()], [&[18][..]]),
+            None
+        );
+        cross_clause.clause_triplet_edge_slots =
+            [Some([vec![18], vec![17]]), Some([vec![18], vec![17]])];
+        assert_eq!(
+            super::resolve_active_edge_recipe_candidates(&[cross_clause]),
             None
         );
     }
