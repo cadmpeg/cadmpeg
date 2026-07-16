@@ -3125,29 +3125,19 @@ fn saved_section_line_geometry(
     let order_table = definition.order_table.as_ref()?;
     let saved_section = definition.saved_section.as_ref()?;
     let internal_id = order_table
-        .rows
-        .iter()
-        .find(|row| row.external_id == segment.external_id)
-        .map(|row| row.internal_id)
+        .internal_id(segment.external_id)
         .or_else(|| {
             let segments = &definition.segments.as_ref()?.rows;
             let position = segments
                 .iter()
                 .position(|candidate| candidate.external_id == segment.external_id)?;
-            let previous = segments[..position].iter().rev().find_map(|candidate| {
-                order_table
-                    .rows
-                    .iter()
-                    .find(|row| row.external_id == candidate.external_id)
-                    .map(|row| row.internal_id)
-            })?;
-            let next = segments[position + 1..].iter().find_map(|candidate| {
-                order_table
-                    .rows
-                    .iter()
-                    .find(|row| row.external_id == candidate.external_id)
-                    .map(|row| row.internal_id)
-            })?;
+            let previous = segments[..position]
+                .iter()
+                .rev()
+                .find_map(|candidate| order_table.internal_id(candidate.external_id))?;
+            let next = segments[position + 1..]
+                .iter()
+                .find_map(|candidate| order_table.internal_id(candidate.external_id))?;
             let internal_id = previous.checked_add(1)?;
             (next == internal_id.checked_add(1)?
                 && saved_section.entities.iter().any(|entity| {
@@ -3197,6 +3187,9 @@ fn saved_section_line_geometry(
                 _ => None,
             }
         })?;
+    unique_saved_section_internal_ids(definition)
+        .contains(&internal_id)
+        .then_some(())?;
     let line = saved_section
         .entities
         .iter()
@@ -3224,10 +3217,10 @@ fn saved_section_arc_record<'a>(
     let internal_id = definition
         .order_table
         .as_ref()?
-        .rows
-        .iter()
-        .find(|row| row.external_id == segment.external_id)?
-        .internal_id;
+        .internal_id(segment.external_id)?;
+    unique_saved_section_internal_ids(definition)
+        .contains(&internal_id)
+        .then_some(())?;
     definition
         .saved_section
         .as_ref()?
@@ -13514,6 +13507,39 @@ mod resolved_sketch_tests {
             section_entity_external_ids(&definition),
             BTreeSet::from([42])
         );
+        let mut duplicate_order_row = definition.clone();
+        duplicate_order_row
+            .order_table
+            .as_mut()
+            .expect("order table")
+            .rows
+            .push(crate::feature::FeatureOrderRow {
+                external_id: 42,
+                internal_id: 4,
+                bitmask: 0,
+                offset: 11,
+            });
+        assert_eq!(
+            saved_section_line_geometry(&duplicate_order_row, &segment),
+            None
+        );
+        let mut duplicate_saved_line = definition.clone();
+        let duplicate = duplicate_saved_line
+            .saved_section
+            .as_ref()
+            .expect("saved section")
+            .entities[0]
+            .clone();
+        duplicate_saved_line
+            .saved_section
+            .as_mut()
+            .expect("saved section")
+            .entities
+            .push(duplicate);
+        assert_eq!(
+            saved_section_line_geometry(&duplicate_saved_line, &segment),
+            None
+        );
         assert_eq!(
             saved_section_external_id(
                 definition.order_table.as_ref().expect("order table"),
@@ -13766,6 +13792,39 @@ mod resolved_sketch_tests {
                 start_angle: Angle(std::f64::consts::PI),
                 end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
             })
+        );
+        let mut duplicate_order_row = definition.clone();
+        duplicate_order_row
+            .order_table
+            .as_mut()
+            .expect("order table")
+            .rows
+            .push(crate::feature::FeatureOrderRow {
+                external_id: 42,
+                internal_id: 4,
+                bitmask: 0,
+                offset: 11,
+            });
+        assert_eq!(
+            saved_section_arc_geometry(&duplicate_order_row, &segment),
+            None
+        );
+        let mut duplicate_saved_arc = definition.clone();
+        let duplicate = duplicate_saved_arc
+            .saved_section
+            .as_ref()
+            .expect("saved section")
+            .entities[0]
+            .clone();
+        duplicate_saved_arc
+            .saved_section
+            .as_mut()
+            .expect("saved section")
+            .entities
+            .push(duplicate);
+        assert_eq!(
+            saved_section_arc_geometry(&duplicate_saved_arc, &segment),
+            None
         );
 
         let mut trimmed = definition;
