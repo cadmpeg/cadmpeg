@@ -2027,19 +2027,36 @@ fn scan_partitions_allfeatur_positional_round_operands() {
 fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
-    let allfeatur =
-        b"\x04\xeb\x04lo_restore\0\xe0\x01direction\0\x00\xe0\x01direction2\0\x80\xa7".to_vec();
+    let allfeatur = b"\x04\xeb\x04lo_restore\0\xe0\x01direction\0\x00\
+        \xe0\x01direction2\0\x80\xa7\xe0\x01direction\0\x01"
+        .to_vec();
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.feature_loop_restore_directions.len(), 2);
+    assert_eq!(scan.feature_loop_restore_directions.len(), 3);
     assert_eq!(scan.feature_loop_restore_directions[0].value, 0);
     assert_eq!(scan.feature_loop_restore_directions[1].value, 167);
+    assert_eq!(scan.feature_loop_restore_directions[2].value, 1);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let records =
         &result.ir.native.namespace("creo").unwrap().arenas["feature_loop_restore_directions"];
     assert_eq!(records[0].fields["value"], 0);
     assert_eq!(records[1].fields["value"], 167);
+    assert_eq!(records[2].fields["value"], 1);
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("feature");
+    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } = &feature.definition
+    else {
+        panic!("native feature");
+    };
+    assert_eq!(parameters["loop_restore.direction"], "0");
+    assert_eq!(parameters["loop_restore.direction#2"], "1");
+    assert_eq!(parameters["loop_restore.direction2"], "167");
 }
 
 #[test]

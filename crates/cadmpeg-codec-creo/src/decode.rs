@@ -10486,7 +10486,11 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
             crate::feature::LoopRestoreDirectionLane::Primary => "direction",
             crate::feature::LoopRestoreDirectionLane::Secondary => "direction2",
         };
-        parameters.insert(format!("loop_restore.{name}"), direction.value.to_string());
+        insert_feature_parameter(
+            &mut parameters,
+            &format!("loop_restore.{name}"),
+            direction.value.to_string(),
+        );
     }
     if let Some(extent) =
         unique_feature_revolution_extent_kind(&scan.feature_revolution_extents, feature_id)
