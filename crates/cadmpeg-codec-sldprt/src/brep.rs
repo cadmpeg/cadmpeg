@@ -88,16 +88,38 @@ fn valid_direction(values: &[f64]) -> bool {
     norm3(values) > f64::EPSILON
 }
 
+fn orthogonal(left: &[f64], right: &[f64]) -> bool {
+    let scale = norm3(left) * norm3(right);
+    scale > f64::EPSILON
+        && (left[0] * right[0] + left[1] * right[1] + left[2] * right[2]).abs() <= 1.0e-9 * scale
+}
+
 fn valid_carrier_frame(tt: u8, values: &[f64]) -> bool {
     match tt {
         tag::LINE => valid_direction(&values[3..6]),
-        tag::CIRCLE | tag::ELLIPSE | tag::PLANE => {
-            valid_direction(&values[3..6]) && valid_direction(&values[6..9])
+        tag::CIRCLE | tag::ELLIPSE | tag::PLANE => orthogonal(&values[3..6], &values[6..9]),
+        tag::CYLINDER => orthogonal(&values[3..6], &values[7..10]),
+        tag::CONE => orthogonal(&values[3..6], &values[9..12]),
+        tag::SPHERE => orthogonal(&values[4..7], &values[7..10]),
+        tag::TORUS => orthogonal(&values[3..6], &values[8..11]),
+        _ => false,
+    }
+}
+
+fn valid_carrier_scalars(tt: u8, values: &[f64]) -> bool {
+    match tt {
+        tag::LINE | tag::PLANE => true,
+        tag::CIRCLE => values[9] > 0.0,
+        tag::ELLIPSE => values[9] >= values[10] && values[10] > 0.0,
+        tag::CYLINDER => values[6] > 0.0,
+        tag::CONE => {
+            values[6] >= 0.0
+                && values[7].abs() > f64::EPSILON
+                && values[8] > 0.0
+                && (values[7] * values[7] + values[8] * values[8] - 1.0).abs() <= 1.0e-9
         }
-        tag::CYLINDER => valid_direction(&values[3..6]) && valid_direction(&values[7..10]),
-        tag::CONE => valid_direction(&values[3..6]) && valid_direction(&values[9..12]),
-        tag::SPHERE => valid_direction(&values[4..7]) && valid_direction(&values[7..10]),
-        tag::TORUS => valid_direction(&values[3..6]) && valid_direction(&values[8..11]),
+        tag::SPHERE => values[3] > 0.0,
+        tag::TORUS => values[6] > values[7] && values[7] > 0.0,
         _ => false,
     }
 }
@@ -191,7 +213,7 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
     if vals.iter().any(|v| !v.is_finite() || v.abs() > 1e6) {
         return None;
     }
-    if !valid_carrier_frame(tt, &vals) {
+    if !valid_carrier_frame(tt, &vals) || !valid_carrier_scalars(tt, &vals) {
         return None;
     }
     let end = values_at + n * 8;
@@ -454,5 +476,44 @@ mod tests {
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
         assert!((major_radius - 2.2).abs() < 1e-12);
         assert!((minor_radius - 0.2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn rejects_nonorthogonal_analytic_frame() {
+        let bytes = compact_carrier(
+            tag::CIRCLE,
+            8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.002],
+        );
+
+        assert!(parse_carrier(&bytes, 0).is_none());
+    }
+
+    #[test]
+    fn rejects_invalid_analytic_radii() {
+        let ellipse = compact_carrier(
+            tag::ELLIPSE,
+            8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.001, 0.002],
+        );
+        let torus = compact_carrier(
+            tag::TORUS,
+            9,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 0.001, 1.0, 0.0, 0.0],
+        );
+
+        assert!(parse_carrier(&ellipse, 0).is_none());
+        assert!(parse_carrier(&torus, 0).is_none());
+    }
+
+    #[test]
+    fn rejects_invalid_cone_angle_pair() {
+        let bytes = compact_carrier(
+            tag::CONE,
+            8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 0.5, 0.5, 1.0, 0.0, 0.0],
+        );
+
+        assert!(parse_carrier(&bytes, 0).is_none());
     }
 }
