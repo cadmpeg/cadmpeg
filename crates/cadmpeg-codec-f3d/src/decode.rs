@@ -187,9 +187,6 @@ fn design_projection_gaps(ir: &CadIr) -> DesignProjectionGaps {
         | EdgeSelection::Historical { .. } => {}
     };
     for feature in &ir.model.features {
-        if feature.suppressed {
-            continue;
-        }
         match &feature.definition {
             FeatureDefinition::Native { .. } => gaps.native_features += 1,
             FeatureDefinition::Extrude {
@@ -254,7 +251,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr) {
     push(
         gaps.native_features,
         format!(
-            "{} active feature scope(s) retain native operation semantics because no complete neutral feature definition was resolved.",
+            "{} feature scope(s) retain native operation semantics because no complete neutral feature definition was resolved.",
             gaps.native_features
         ),
     );
@@ -2023,7 +2020,7 @@ mod tests {
                 native_constraints: 1,
                 profile_selections: 1,
                 face_selections: 1,
-                native_edge_selections: 1,
+                native_edge_selections: 2,
                 partially_resolved_edge_members: 0,
                 unresolved_edge_selections: 1,
             }
