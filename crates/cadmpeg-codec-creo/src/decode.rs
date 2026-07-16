@@ -8146,16 +8146,15 @@ fn section_skamp_constraints(
                 let entities = skamp
                     .items
                     .iter()
+                    .filter(|item| section_entities.contains(&item.entity_id))
                     .map(|item| {
-                        section_entities.contains(&item.entity_id).then(|| {
-                            SketchEntityId(format!(
-                                "creo:featdefs:sketch_entity#{}:{}",
-                                definition.id, item.entity_id
-                            ))
-                        })
+                        SketchEntityId(format!(
+                            "creo:featdefs:sketch_entity#{}:{}",
+                            definition.id, item.entity_id
+                        ))
                     })
-                    .collect::<Option<Vec<_>>>()?;
-                (!entities.is_empty()).then(|| SketchConstraintDefinition::Native {
+                    .collect::<Vec<_>>();
+                Some(SketchConstraintDefinition::Native {
                     native_kind: format!("creo:skamp:{}", skamp.kind),
                     entities,
                     parameter: None,
@@ -8329,15 +8328,44 @@ fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -
     let Some(order) = &definition.order_table else {
         return ids;
     };
+    let ambiguous_segment_ids = ambiguous_section_segment_external_ids(
+        definition
+            .segments
+            .iter()
+            .flat_map(|segments| &segments.rows),
+    );
+    let unique_saved_ids = unique_saved_section_internal_ids(definition);
     ids.extend(
         definition
             .saved_section
             .iter()
             .flat_map(|saved| &saved.entities)
-            .filter_map(saved_section_entity_geometry)
-            .filter_map(|(internal_id, _, _)| order.external_id(internal_id)),
+            .filter_map(saved_section_neutral_internal_id)
+            .filter_map(|internal_id| {
+                saved_section_external_id(
+                    order,
+                    &unique_saved_ids,
+                    &ambiguous_segment_ids,
+                    internal_id,
+                )
+            }),
     );
     ids
+}
+
+fn saved_section_neutral_internal_id(entity: &crate::feature::FeatureSavedEntity) -> Option<u32> {
+    if let Some((internal_id, _, _)) = saved_section_entity_geometry(entity) {
+        return Some(internal_id);
+    }
+    let crate::feature::FeatureSavedEntity::Spline(spline) = entity else {
+        return None;
+    };
+    let nurbs = saved_spline_nurbs(spline)?;
+    nurbs
+        .control_points
+        .iter()
+        .all(|point| point.z.abs() <= 1e-12)
+        .then_some(spline.entity_id?)
 }
 
 fn unique_section_segment_external_ids<'a>(
@@ -8352,6 +8380,54 @@ fn unique_section_segment_external_ids<'a>(
         .into_iter()
         .filter_map(|(external_id, count)| (count == 1).then_some(external_id))
         .collect()
+}
+
+fn ambiguous_section_segment_external_ids<'a>(
+    segments: impl IntoIterator<Item = &'a crate::feature::FeatureSegment>,
+) -> BTreeSet<u32> {
+    segments
+        .into_iter()
+        .fold(BTreeMap::new(), |mut counts, segment| {
+            *counts.entry(segment.external_id).or_insert(0usize) += 1;
+            counts
+        })
+        .into_iter()
+        .filter_map(|(external_id, count)| (count > 1).then_some(external_id))
+        .collect()
+}
+
+fn unique_saved_section_internal_ids(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeSet<u32> {
+    definition
+        .saved_section
+        .iter()
+        .flat_map(|saved| &saved.entities)
+        .filter_map(|entity| match entity {
+            crate::feature::FeatureSavedEntity::Line(line) => Some(line.entity_id),
+            crate::feature::FeatureSavedEntity::Arc(arc) => Some(arc.entity_id),
+            crate::feature::FeatureSavedEntity::Circle(circle) => Some(circle.entity_id),
+            crate::feature::FeatureSavedEntity::Spline(spline) => spline.entity_id,
+            crate::feature::FeatureSavedEntity::Dummy(dummy) => dummy.entity_id,
+        })
+        .fold(BTreeMap::new(), |mut counts, internal_id| {
+            *counts.entry(internal_id).or_insert(0usize) += 1;
+            counts
+        })
+        .into_iter()
+        .filter_map(|(internal_id, count)| (count == 1).then_some(internal_id))
+        .collect()
+}
+
+fn saved_section_external_id(
+    order: &crate::feature::FeatureOrderTable,
+    unique_saved_ids: &BTreeSet<u32>,
+    ambiguous_segment_ids: &BTreeSet<u32>,
+    internal_id: u32,
+) -> Option<u32> {
+    unique_saved_ids.contains(&internal_id).then_some(())?;
+    let external_id = order.external_id(internal_id)?;
+    (!ambiguous_segment_ids.contains(&external_id)).then_some(external_id)
 }
 
 fn section_segment_identity_suffix(
@@ -8614,6 +8690,7 @@ fn transfer_resolved_sketches(
             .as_ref()
             .map_or(&[][..], |segments| segments.rows.as_slice());
         let unique_segment_ids = unique_section_segment_external_ids(segments);
+        let ambiguous_segment_ids = ambiguous_section_segment_external_ids(segments);
         let points = resolved_section_points(definition);
         let solved = definition
             .trim_entities
@@ -8780,34 +8857,23 @@ fn transfer_resolved_sketches(
         }
         let mut saved_section_geometries = Vec::new();
         let mut generated_saved_geometries = Vec::new();
-        let saved_entity_id_counts = definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-            .filter_map(|entity| match entity {
-                crate::feature::FeatureSavedEntity::Line(line) => Some(line.entity_id),
-                crate::feature::FeatureSavedEntity::Arc(arc) => Some(arc.entity_id),
-                crate::feature::FeatureSavedEntity::Circle(circle) => Some(circle.entity_id),
-                crate::feature::FeatureSavedEntity::Spline(spline) => spline.entity_id,
-                crate::feature::FeatureSavedEntity::Dummy(dummy) => dummy.entity_id,
-            })
-            .fold(BTreeMap::new(), |mut counts, internal_id| {
-                *counts.entry(internal_id).or_insert(0usize) += 1;
-                counts
-            });
+        let unique_saved_ids = unique_saved_section_internal_ids(definition);
         for (internal_id, geometry, offset) in definition
             .saved_section
             .iter()
             .flat_map(|saved| &saved.entities)
             .filter_map(saved_section_entity_geometry)
         {
-            let unique_internal_id = saved_entity_id_counts.get(&internal_id) == Some(&1);
+            let unique_internal_id = unique_saved_ids.contains(&internal_id);
             let external_id = if unique_internal_id {
-                definition
-                    .order_table
-                    .as_ref()
-                    .and_then(|order| order.external_id(internal_id))
-                    .filter(|external_id| unique_segment_ids.contains(external_id))
+                definition.order_table.as_ref().and_then(|order| {
+                    saved_section_external_id(
+                        order,
+                        &unique_saved_ids,
+                        &ambiguous_segment_ids,
+                        internal_id,
+                    )
+                })
             } else {
                 None
             };
@@ -8882,7 +8948,7 @@ fn transfer_resolved_sketches(
             };
             let unique_internal_id = spline
                 .entity_id
-                .is_some_and(|id| saved_entity_id_counts.get(&id) == Some(&1));
+                .is_some_and(|id| unique_saved_ids.contains(&id));
             let suffix = if unique_internal_id {
                 spline
                     .entity_id
@@ -8892,11 +8958,14 @@ fn transfer_resolved_sketches(
                 format!("offset{}", spline.offset)
             };
             let external_id = if unique_internal_id {
-                definition
-                    .order_table
-                    .as_ref()
-                    .and_then(|order| order.external_id(spline.entity_id?))
-                    .filter(|external_id| unique_segment_ids.contains(external_id))
+                definition.order_table.as_ref().and_then(|order| {
+                    saved_section_external_id(
+                        order,
+                        &unique_saved_ids,
+                        &ambiguous_segment_ids,
+                        spline.entity_id?,
+                    )
+                })
             } else {
                 None
             };
@@ -13022,6 +13091,20 @@ mod resolved_sketch_tests {
         assert_eq!(
             section_entity_external_ids(&definition),
             BTreeSet::from([42])
+        );
+        assert_eq!(
+            saved_section_external_id(
+                definition.order_table.as_ref().expect("order table"),
+                &unique_saved_section_internal_ids(&definition),
+                &ambiguous_section_segment_external_ids(
+                    definition
+                        .segments
+                        .iter()
+                        .flat_map(|segments| &segments.rows)
+                ),
+                3,
+            ),
+            Some(42)
         );
         let mut constrained = definition.clone();
         constrained.segments = Some(crate::feature::FeatureSegmentTable {
