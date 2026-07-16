@@ -4809,6 +4809,17 @@ impl MeshQuotient {
         ) {
             const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
 
+            fn rollback(
+                assigned: &mut [Option<usize>],
+                point_uses: &mut [usize],
+                propagated: Vec<(usize, usize)>,
+            ) {
+                for (root, point) in propagated.into_iter().rev() {
+                    point_uses[point] -= 1;
+                    assigned[root] = None;
+                }
+            }
+
             if solutions.len() > 1 || *exhausted {
                 return;
             }
@@ -4832,31 +4843,66 @@ impl MeshQuotient {
                     .collect::<Vec<_>>()
             };
 
-            let remaining = assigned.iter().filter(|point| point.is_none()).count();
-            let unused = component_points
-                .iter()
-                .filter(|point| point_uses[**point] == 0)
-                .count();
-            if remaining < unused {
-                return;
-            }
-            let values = assigned
-                .iter()
-                .enumerate()
-                .filter(|(_, point)| point.is_none())
-                .map(|(root, _)| (root, viable_values(root, assigned)))
-                .collect::<Vec<_>>();
-            for &point in component_points {
-                if point_uses[point] == 0
-                    && !values.iter().any(|(_, values)| values.contains(&point))
-                {
-                    return;
+            let mut propagated = Vec::new();
+            let branch = loop {
+                let remaining = assigned.iter().filter(|point| point.is_none()).count();
+                let unused = component_points
+                    .iter()
+                    .filter(|point| point_uses[**point] == 0)
+                    .count();
+                if remaining < unused {
+                    break None;
                 }
-            }
-            let next = values
-                .into_iter()
-                .min_by_key(|(root, values)| (values.len(), *root));
-            let Some((root, values)) = next else {
+                let mut best = None;
+                let mut dead = false;
+                let mut progress = false;
+                let mut supported_unused = HashSet::new();
+                for root in 0..assigned.len() {
+                    if assigned[root].is_some() {
+                        continue;
+                    }
+                    let values = viable_values(root, assigned);
+                    if values.is_empty() {
+                        dead = true;
+                        break;
+                    }
+                    supported_unused.extend(
+                        values
+                            .iter()
+                            .copied()
+                            .filter(|point| point_uses[*point] == 0),
+                    );
+                    if let [point] = values.as_slice() {
+                        assigned[root] = Some(*point);
+                        point_uses[*point] += 1;
+                        propagated.push((root, *point));
+                        progress = true;
+                    } else if best
+                        .as_ref()
+                        .is_none_or(|(_, stored): &(usize, Vec<usize>)| values.len() < stored.len())
+                    {
+                        best = Some((root, values));
+                    }
+                }
+                if dead {
+                    break None;
+                }
+                if progress {
+                    continue;
+                }
+                if component_points
+                    .iter()
+                    .any(|point| point_uses[*point] == 0 && !supported_unused.contains(point))
+                {
+                    break None;
+                }
+                break Some(best);
+            };
+            let Some(branch) = branch else {
+                rollback(assigned, point_uses, propagated);
+                return;
+            };
+            let Some((root, values)) = branch else {
                 if component_points.iter().all(|point| point_uses[*point] > 0) {
                     solutions.push(
                         assigned
@@ -4866,15 +4912,15 @@ impl MeshQuotient {
                             .expect("complete coordinate assignment"),
                     );
                 }
+                rollback(assigned, point_uses, propagated);
                 return;
             };
-            if values.len() > 1 {
-                if *states >= MAX_COORDINATE_CLOSURE_STATES {
-                    *exhausted = true;
-                    return;
-                }
-                *states += 1;
+            if *states >= MAX_COORDINATE_CLOSURE_STATES {
+                *exhausted = true;
+                rollback(assigned, point_uses, propagated);
+                return;
             }
+            *states += 1;
             for point in values {
                 assigned[root] = Some(point);
                 point_uses[point] += 1;
@@ -4893,10 +4939,11 @@ impl MeshQuotient {
                 );
                 point_uses[point] -= 1;
                 assigned[root] = None;
-                if solutions.len() > 1 {
-                    return;
+                if solutions.len() > 1 || *exhausted {
+                    break;
                 }
             }
+            rollback(assigned, point_uses, propagated);
         }
 
         let mut roots = Vec::new();
@@ -5037,11 +5084,11 @@ impl MeshQuotient {
         for (&root, &point) in roots.iter().zip(&assignment) {
             if let Some(previous) = root_by_point.insert(point, root) {
                 let merged = self.merge(previous, root)?;
-                if !self.propagate_component_edge_domains(merged, edge_candidates) {
-                    return None;
-                }
                 root_by_point.insert(point, merged);
             }
+        }
+        if !self.edge_domains_viable(edge_candidates) {
+            return None;
         }
         self.point_assignment(point_count, edge_candidates)
     }
@@ -10039,7 +10086,7 @@ mod motif_tests {
 
     #[test]
     fn quotient_closure_does_not_budget_forced_component_depth() {
-        const ROOT_COUNT: usize = 300;
+        const ROOT_COUNT: usize = 10_000;
         let mut quotient = MeshQuotient {
             union: UnionFind::new(ROOT_COUNT),
             domains: vec![Arc::new(HashSet::from([0])); ROOT_COUNT],
