@@ -4747,9 +4747,9 @@ fn scan_partitions_multiple_depdb_recipe_rows() {
 }
 
 #[test]
-fn decode_retains_conflicting_depdb_recipe_schemas_as_native_history() {
+fn decode_retains_conflicting_depdb_recipe_families_as_native_history() {
     let depdb = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
-        \xf7\x50\x9f\x75\x83\x94\xf6\x9f\x73Profile 2\0\xf6\0cutextrude\0"
+        \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 2\0\xf6\0protrevolve\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes(data.clone());
@@ -4765,7 +4765,7 @@ fn decode_retains_conflicting_depdb_recipe_schemas_as_native_history() {
             .iter()
             .filter_map(|row| row.root_schema_class)
             .collect::<Vec<_>>(),
-        [917, 916]
+        [917, 917]
     );
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
@@ -4785,8 +4785,10 @@ fn decode_retains_conflicting_depdb_recipe_schemas_as_native_history() {
             .source_properties
             .get("featdefs_row_schema_classes")
             .map(String::as_str),
-        Some("916,917")
+        Some("917")
     );
+    assert!(!feature.source_properties.contains_key("recipe"));
+    assert_eq!(feature.source_tag, None);
 }
 
 #[test]

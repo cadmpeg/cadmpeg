@@ -7785,24 +7785,30 @@ fn feature_recipe(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<crate::feature::FeatureRecipeKind> {
-    let stored_recipe = current_feature_operation(&scan.feature_operations, feature_id)
-        .and_then(|operation| operation.recipe)
-        .map(crate::feature::FeatureRecipe::kind);
-    let schema_recipe =
-        feature_schema_class(scan, feature_id).and_then(|schema_class| match schema_class {
-            916 | 917 => Some(crate::feature::FeatureRecipeKind::Extrude),
-            _ => None,
-        });
-    stored_recipe.or(schema_recipe)
+    agreed_feature_recipe(&scan.feature_operation_states, feature_id)
+        .map(crate::feature::FeatureRecipe::kind)
 }
 
 fn feature_recipe_effect(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<crate::feature::FeatureRecipeEffect> {
-    current_feature_operation(&scan.feature_operations, feature_id)
-        .and_then(|operation| operation.recipe)
+    agreed_feature_recipe(&scan.feature_operation_states, feature_id)
         .map(crate::feature::FeatureRecipe::effect)
+}
+
+fn agreed_feature_recipe(
+    operations: &[crate::feature::FeatureOperation],
+    feature_id: u32,
+) -> Option<crate::feature::FeatureRecipe> {
+    let mut recipes = operations
+        .iter()
+        .filter(|operation| operation.feature_id == feature_id)
+        .filter_map(|operation| operation.recipe);
+    let recipe = recipes.next()?;
+    recipes
+        .all(|candidate| candidate == recipe)
+        .then_some(recipe)
 }
 
 fn current_feature_operation(
@@ -10615,9 +10621,7 @@ fn section_definition_for_history_feature(
 
 fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
-    if let Some(recipe) = current_feature_operation(&scan.feature_operations, feature_id)
-        .and_then(|operation| operation.recipe)
-    {
+    if let Some(recipe) = agreed_feature_recipe(&scan.feature_operation_states, feature_id) {
         properties.insert("recipe".to_string(), recipe.name().to_string());
     }
     let schema_class = feature_schema_class(scan, feature_id);
@@ -11232,7 +11236,9 @@ fn schema_feature_definition(
             spec: ChamferSpec::Unresolved { form: None },
         };
     }
-    if schema_class == 917 {
+    if schema_class == 917
+        && feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude)
+    {
         let definitions = scan
             .feature_definitions
             .iter()
@@ -13315,6 +13321,16 @@ mod resolved_sketch_tests {
             Some(917)
         );
         assert!(current_feature_operation(&[operation.clone(), operation.clone()], 6).is_none());
+        assert_eq!(
+            agreed_feature_recipe(&[operation.clone(), operation.clone()], 6),
+            Some(crate::feature::FeatureRecipe::ProtrudeExtrude)
+        );
+        let mut conflicting_recipe = operation.clone();
+        conflicting_recipe.recipe = Some(crate::feature::FeatureRecipe::ProtrudeRevolve);
+        assert_eq!(
+            agreed_feature_recipe(&[operation.clone(), conflicting_recipe], 6),
+            None
+        );
         let row = |schema_class, offset| crate::feature::FeatureRow {
             feature_id: 6,
             header: [0xeb, 0x04],
@@ -21000,9 +21016,9 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                 .display_name_stored
                 .then(|| format!("{} id {}", operation.kind, operation.feature_id))
         });
-        let source_tag = current_operation
-            .and_then(|operation| operation.recipe)
-            .map(|recipe| recipe.name().to_string());
+        let source_tag =
+            agreed_feature_recipe(&scan.feature_operation_states, operation.feature_id)
+                .map(|recipe| recipe.name().to_string());
         let native_ref = owning_feature_definition_ref(scan, operation.feature_id);
         if let Some(existing) = ir
             .model
