@@ -8008,6 +8008,7 @@ fn section_dimension_constraints(
         .segments
         .as_ref()
         .map_or(&[][..], |segments| segments.rows.as_slice());
+    let known_entities = section_entity_external_ids(definition);
     relations
         .rows
         .iter()
@@ -8056,6 +8057,9 @@ fn section_dimension_constraints(
                     let [segment] = matching.as_slice() else {
                         return None;
                     };
+                    known_entities
+                        .contains(&segment.external_id)
+                        .then_some(())?;
                     return Some(SketchConstraintDefinition::Radius {
                         entity: SketchEntityId(format!(
                             "creo:featdefs:sketch_entity#{}:{}",
@@ -8078,6 +8082,9 @@ fn section_dimension_constraints(
                                 })
                                 .collect::<Vec<_>>();
                             if let [measured] = matching.as_slice() {
+                                known_entities
+                                    .contains(&measured.external_id)
+                                    .then_some(())?;
                                 let entity = SketchEntityId(format!(
                                     "creo:featdefs:sketch_entity#{}:{}",
                                     definition.id, measured.external_id
@@ -15106,6 +15113,26 @@ mod resolved_sketch_tests {
             .expect("segments")
             .rows
             .push(duplicate);
+        assert!(matches!(
+            section_dimension_constraints(
+                &duplicate_measured_segment,
+                &SketchId("sketch".into())
+            )[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native {
+                ref native_kind,
+                ..
+            } if native_kind == "creo:relation:0"
+        ));
+        duplicate_measured_segment
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .last_mut()
+            .expect("duplicate")
+            .point_ids = [8, 9];
         assert!(matches!(
             section_dimension_constraints(
                 &duplicate_measured_segment,
