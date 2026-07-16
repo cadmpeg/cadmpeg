@@ -61,8 +61,10 @@ fn scale(vector: [f64; 3], factor: f64) -> [f64; 3] {
 }
 
 fn normalize(vector: [f64; 3]) -> Option<[f64; 3]> {
-    let magnitude = dot(vector, vector).sqrt();
-    (magnitude > 1e-12).then(|| scale(vector, magnitude.recip()))
+    let magnitude = vector
+        .iter()
+        .fold(0.0_f64, |norm, value| norm.hypot(*value));
+    (magnitude.is_finite() && magnitude > 1e-12).then(|| scale(vector, magnitude.recip()))
 }
 
 fn plane_equation(
@@ -98,9 +100,7 @@ fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<([f
     };
     let values: [f64; 12] = frame.decoded_values.clone()?.try_into().ok()?;
     let raw_normal: [f64; 3] = values[6..9].try_into().ok()?;
-    let magnitude = dot(raw_normal, raw_normal).sqrt();
-    (magnitude > 1e-12).then_some(())?;
-    let normal = scale(raw_normal, magnitude.recip());
+    let normal = normalize(raw_normal)?;
     let origin: [f64; 3] = values[9..12].try_into().ok()?;
     Some((normal, dot(normal, origin)))
 }
@@ -723,6 +723,15 @@ mod tests {
         FeatureParameterFrame, FeatureSection3d, FeatureSectionOrientation, FeatureSectionPoint,
         FeatureSegment, FeatureSegmentTable, FeatureVariableTable,
     };
+
+    #[test]
+    fn normalization_rejects_overflowed_feature_frame_vectors() {
+        assert_eq!(normalize([f64::MAX, f64::MAX, 0.0]), None);
+        let normalized = normalize([0.0, 3.0, 4.0]).expect("finite vector");
+        assert!(normalized[0].abs() < 1e-12);
+        assert!((normalized[1] - 0.6).abs() < 1e-12);
+        assert!((normalized[2] - 0.8).abs() < 1e-12);
+    }
 
     fn datum(id: u32, normal: [f64; 3], offset: f64) -> DatumPlane {
         DatumPlane {
