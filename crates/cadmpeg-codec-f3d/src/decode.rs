@@ -157,10 +157,18 @@ struct DesignProjectionGaps {
     unresolved_edge_selections: usize,
 }
 
-fn design_projection_gaps(ir: &CadIr) -> DesignProjectionGaps {
+fn design_projection_gaps<'a>(
+    ir: &CadIr,
+    source_lost_edge_reference_ids: impl IntoIterator<Item = &'a str>,
+) -> DesignProjectionGaps {
     use cadmpeg_ir::features::{EdgeSelection, Extent, ExtrudeStart, FaceSelection};
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
+    use std::collections::HashSet;
+
+    let source_lost_edge_reference_ids = source_lost_edge_reference_ids
+        .into_iter()
+        .collect::<HashSet<_>>();
 
     let mut gaps = DesignProjectionGaps {
         native_constraints: ir
@@ -180,7 +188,10 @@ fn design_projection_gaps(ir: &CadIr) -> DesignProjectionGaps {
         EdgeSelection::Native(_) => gaps.native_edge_selections += 1,
         EdgeSelection::Unresolved => gaps.unresolved_edge_selections += 1,
         EdgeSelection::HistoricalPartial { unresolved, .. } => {
-            gaps.partially_resolved_edge_members += unresolved.len();
+            gaps.partially_resolved_edge_members += unresolved
+                .iter()
+                .filter(|id| !source_lost_edge_reference_ids.contains(id.as_str()))
+                .count();
         }
         EdgeSelection::Edges(_)
         | EdgeSelection::Resolved { .. }
@@ -236,8 +247,14 @@ fn design_projection_gaps(ir: &CadIr) -> DesignProjectionGaps {
     gaps
 }
 
-fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr) {
-    let gaps = design_projection_gaps(ir);
+fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: &F3dNative) {
+    let gaps = design_projection_gaps(
+        ir,
+        native
+            .lost_edge_references
+            .iter()
+            .map(|reference| reference.id.as_str()),
+    );
     let mut push = |count: usize, message: String| {
         if count != 0 {
             report.losses.push(LossNote {
@@ -549,7 +566,7 @@ pub fn decode(
             native.act_root_components = act.root_components;
             report_unresolved_dimension_companions(&mut report, &native);
             report_unresolved_configuration_rules(&mut report, &native, &ir);
-            report_design_projection_gaps(&mut report, &ir);
+            report_design_projection_gaps(&mut report, &ir, &native);
             if !native.lost_edge_references.is_empty() {
                 report.losses.push(LossNote {
                     category: LossCategory::Attribute,
@@ -1978,6 +1995,21 @@ mod tests {
                         {
                             "edges": {"kind": "unresolved"},
                             "radius": {"kind": "constant", "radius": 2.0}
+                        },
+                        {
+                            "edges": {
+                                "kind": "historical_partial",
+                                "value": {
+                                    "state": "history-input",
+                                    "edges": [],
+                                    "unresolved": [
+                                        "native:edge-operand#1",
+                                        "f3d:test:lost-edge-reference#2"
+                                    ],
+                                    "native": "native:partial-edges"
+                                }
+                            },
+                            "radius": {"kind": "constant", "radius": 3.0}
                         }
                     ]
                 }
@@ -2014,14 +2046,14 @@ mod tests {
         );
 
         assert_eq!(
-            design_projection_gaps(&ir),
+            design_projection_gaps(&ir, ["f3d:test:lost-edge-reference#2"]),
             DesignProjectionGaps {
                 native_features: 1,
                 native_constraints: 1,
                 profile_selections: 1,
                 face_selections: 1,
                 native_edge_selections: 2,
-                partially_resolved_edge_members: 0,
+                partially_resolved_edge_members: 1,
                 unresolved_edge_selections: 1,
             }
         );
