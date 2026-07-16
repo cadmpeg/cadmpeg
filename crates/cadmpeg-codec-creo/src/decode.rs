@@ -4199,11 +4199,19 @@ fn trim_segment_id(
     };
     let segments = &segment_table.rows;
     let trim_rows = &definition.trim_entities.as_ref()?.rows;
-    if segments
+    let matching_segment_count = segments
         .iter()
-        .any(|segment| segment.external_id == row.external_id)
-    {
+        .filter(|segment| segment.external_id == row.external_id)
+        .count();
+    let matching_trim_count = trim_rows
+        .iter()
+        .filter(|trim| trim.external_id == row.external_id)
+        .count();
+    if matching_segment_count == 1 && matching_trim_count == 1 {
         return Some(row.external_id);
+    }
+    if matching_segment_count != 0 || matching_trim_count != 1 {
+        return None;
     }
     let unmatched_segments = segments
         .iter()
@@ -13642,6 +13650,24 @@ mod resolved_sketch_tests {
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
             })
         );
+        let trim = completed.trim_entities.as_ref().expect("trim table").rows[0].clone();
+        assert_eq!(trim_segment_id(&completed, &trim), Some(42));
+        let mut duplicate_segment = completed.clone();
+        duplicate_segment
+            .segments
+            .as_mut()
+            .expect("segment table")
+            .rows
+            .push(segment);
+        assert_eq!(trim_segment_id(&duplicate_segment, &trim), None);
+        let mut duplicate_trim = completed;
+        duplicate_trim
+            .trim_entities
+            .as_mut()
+            .expect("trim table")
+            .rows
+            .push(trim.clone());
+        assert_eq!(trim_segment_id(&duplicate_trim, &trim), None);
     }
 
     #[test]
