@@ -23,15 +23,16 @@ pub const MARKER: [u8; 6] = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00];
 /// the [`cadmpeg_ir::decode::ExpandWriter`] before finalize (§10 Phase 1B gate 2).
 const EXPAND_CHUNK: usize = 16 * 1024;
 
-/// Allocation charged per validated block admitted into the runtime space graph
-/// (§10 Phase 1A).
+/// Allocation charged per space-graph record admitted while scanning a block
+/// (§10 Phase 1A): once for the block's decompressed `Transform` space, and once
+/// for each Parasolid `Slice`/`Transform` stream it carries.
 ///
-/// Covers the fixed heap footprint each block adds: the space-graph record for
-/// its decompressed `Transform` space and the [`Block`] summary row. This rounds
-/// up rather than measuring the platform-internal layouts, which the codec cannot
-/// see; its purpose is to make the block count consume the input-proportional
-/// allocation budget so a file packed with minimal frames cannot grow the graph
-/// without a matching charge.
+/// Covers the fixed heap footprint each record adds. This rounds up rather than
+/// measuring the platform-internal layouts, which the codec cannot see; its
+/// purpose is to make the record count — blocks and their embedded streams, both
+/// untrusted counts the input does not bound byte-for-byte — consume the
+/// input-proportional allocation budget, so a payload packed with minimal frames
+/// or minimal stream headers cannot grow the graph without a matching charge.
 const PER_BLOCK_GRAPH_BYTES: u64 = 256;
 
 /// Bytes between a marker and its preamble in a block frame
@@ -256,14 +257,11 @@ pub fn scan_view(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<ContainerSca
             continue;
         }
         if let Some(raw) = admit_block(ctx, root, bytes, i)? {
-            // Each admitted block pushes a space-graph record and a summary row;
-            // bound that per-block footprint against the input-proportional
-            // allocation budget as blocks are admitted.
-            ctx.charge_alloc(
-                PER_BLOCK_GRAPH_BYTES,
-                "sldprt_container_block",
-                Some(root.location()),
-            )?;
+            // `admit_block` charges each block's space-graph records (the
+            // decompressed `Transform` space, each Parasolid stream) and its
+            // retained payload copy before registering them, so the per-block
+            // footprint is bounded by the allocation budget as blocks are
+            // admitted.
             i = raw.offset + BLOCK_HEADER_LEN + raw.preamble_len + raw.comp_sz as usize;
             blocks.push(raw.into_block());
             continue;
@@ -276,6 +274,15 @@ pub fn scan_view(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<ContainerSca
         i += 1;
     }
 
+    // The scan retains an owned copy of the whole source image for exact
+    // passthrough writing, a duplicate of the arena-resident root the input
+    // charge does not cover. Charge it against the allocation budget before it
+    // is retained so the retained copy is bounded by policy.
+    ctx.charge_alloc(
+        bytes.len() as u64,
+        "sldprt_source_image",
+        Some(root.location()),
+    )?;
     Ok(ContainerScan {
         source_image: bytes.to_vec(),
         version,
@@ -351,6 +358,14 @@ fn admit_block(
         // Not a valid block; dropping the writer registers no space.
         return Ok(None);
     }
+    // Charge the block's decompressed `Transform` space-graph record before
+    // `finalize` registers it, so the charge that bounds graph growth precedes
+    // the growth (a fuse here leaves the registry unchanged).
+    ctx.charge_alloc(
+        PER_BLOCK_GRAPH_BYTES,
+        "sldprt_container_block",
+        Some(root.location()),
+    )?;
     let (_space, view) = match writer.finalize() {
         Ok(pair) => pair,
         Err(e) => return probe_or_propagate(e),
@@ -361,14 +376,22 @@ fn admit_block(
         .get(off + BLOCK_HEADER_LEN..payload_start)
         .unwrap_or(&[]);
     let section = nibble_swap_name(preamble);
-    let located_streams = crate::parasolid::extract_streams_with_offsets(inflated);
-    register_parasolid_spaces(ctx, view, inflated, &located_streams)?;
+    let located_streams = collect_parasolid_streams(ctx, view, inflated)?;
     let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
     let ps_streams = located_streams
         .into_iter()
         .map(|(_, stream)| stream)
         .collect::<Vec<_>>();
     let ps_stream = ps_streams.first().cloned();
+    // The scan retains an owned copy of the decompressed payload for the IR and
+    // writer paths (`Block::payload`), a duplicate of the arena-resident space
+    // that the `decompressed_bytes` charge does not cover. Charge it against the
+    // allocation budget before it is retained so the retained half is bounded.
+    ctx.charge_alloc(
+        inflated.len() as u64,
+        "sldprt_block_payload",
+        Some(root.location()),
+    )?;
     let family = if ps_streams.is_empty() {
         payload_family(inflated)
     } else {
@@ -390,55 +413,124 @@ fn admit_block(
     }))
 }
 
-/// Map an expander error hit during the block probe: a fused `ResourceLimit` is
+/// Map an expander error hit during a probe: a fused `ResourceLimit` is
 /// unswallowable and propagates (§4.7); any other error means this marker hit is
 /// not a valid block, so the probe reports `NoMatch`.
-fn probe_or_propagate(e: CodecError) -> Result<Option<RawBlock>, CodecError> {
+fn probe_or_propagate<T>(e: CodecError) -> Result<Option<T>, CodecError> {
     match e {
         CodecError::ResourceLimit(_) => Err(e),
         _ => Ok(None),
     }
 }
 
-/// Register each nested Parasolid stream in the runtime space graph. A stream
-/// carried directly in the block payload is a `Slice` alias of the block's
-/// decompressed space; a wrapped stream whose bytes are a nested zlib member is a
-/// `Transform` derived space (§10 Phase 1C). Each nested read is framed as a view
-/// of the block space, never a raw length (§10 Phase 1B).
-fn register_parasolid_spaces(
+/// Register every Parasolid stream carried by a block and return each with its
+/// block-payload offset.
+///
+/// A stream lying directly in the payload is a zero-copy `Slice` of the block's
+/// decompressed space. When no direct stream is present but the transmit-wrapper
+/// magic is, each candidate zlib member is inflated through the charging
+/// expander ([`inflate_wrapped_stream`]) and registered as a `Transform` derived
+/// space (§10 Phase 1C). Every registered record is charged against the
+/// allocation budget before it is registered, so the graph cannot grow past the
+/// budget on a payload packed with minimal stream headers.
+fn collect_parasolid_streams(
     ctx: &DecodeContext<'_>,
     block: View<'_>,
     inflated: &[u8],
-    streams: &[(usize, Vec<u8>)],
-) -> Result<(), CodecError> {
-    for (offset, stream) in streams {
+) -> Result<Vec<(usize, Vec<u8>)>, CodecError> {
+    let mut located = crate::parasolid::direct_streams_with_offsets(inflated);
+    for (offset, stream) in &located {
         let Some(end) = offset.checked_add(stream.len()) else {
             continue;
         };
-        if inflated.get(*offset..end) == Some(stream.as_slice()) {
-            // Direct stream: a zero-copy Slice of the block space.
-            ctx.register_slice(
-                block,
-                ByteRange {
-                    start: *offset as u64,
-                    end: end as u64,
-                },
-            )?;
+        if inflated.get(*offset..end) != Some(stream.as_slice()) {
             continue;
         }
-        // Wrapped stream: the bytes at `offset` are a compressed member and
-        // `stream` is its decompression. Record it as a Transform whose input is
-        // the block region from the member offset, charging the decompressed
-        // bytes through the writer.
-        let Some(input) = block.child(*offset, block.end()) else {
-            continue;
-        };
-        let mut writer =
-            ctx.begin_derived_space(&[input], DerivedKind::Transform(TransformKind::Decompress))?;
-        writer.write(stream)?;
-        writer.finalize()?;
+        // Charge the per-stream space-graph record before registering it, so
+        // stream count consumes the input-proportional allocation budget.
+        ctx.charge_alloc(
+            PER_BLOCK_GRAPH_BYTES,
+            "sldprt_parasolid_stream",
+            Some(block.location()),
+        )?;
+        ctx.register_slice(
+            block,
+            ByteRange {
+                start: *offset as u64,
+                end: end as u64,
+            },
+        )?;
     }
-    Ok(())
+    if !located.is_empty() {
+        return Ok(located);
+    }
+    for offset in crate::parasolid::wrapped_member_offsets(inflated) {
+        if let Some(stream) = inflate_wrapped_stream(ctx, block, offset)? {
+            if located.iter().any(|(_, existing)| existing == &stream) {
+                continue;
+            }
+            located.push((offset, stream));
+        }
+    }
+    Ok(located)
+}
+
+/// Inflate a wrapped Parasolid zlib member through the charging expander.
+///
+/// The member is framed as a view of the block space from `offset`, never a raw
+/// length (§10 Phase 1B). Output streams through a `Transform` derived-space
+/// writer that charges `decompressed_bytes` per chunk under the per-expand and
+/// cumulative decompression ceilings, so a crafted deflate bomb fuses the
+/// context before the retained buffer grows unbounded. A member that does not
+/// inflate to a valid `PS\0\0` stream registers no space: the writer is dropped
+/// before finalize. Returns the inflated bytes only for a registered stream.
+fn inflate_wrapped_stream(
+    ctx: &DecodeContext<'_>,
+    block: View<'_>,
+    offset: usize,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    let Some(source) = block.child(offset, block.end()) else {
+        return Ok(None);
+    };
+    let mut writer = match ctx
+        .begin_derived_space(&[source], DerivedKind::Transform(TransformKind::Decompress))
+    {
+        Ok(writer) => writer,
+        Err(e) => return probe_or_propagate(e),
+    };
+    let mut decoder = flate2::read::ZlibDecoder::new(source.window());
+    let mut inflated = Vec::new();
+    let mut chunk = [0u8; EXPAND_CHUNK];
+    loop {
+        match decoder.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => {
+                // Charge before retaining, so a bomb fuses here rather than
+                // growing `inflated`.
+                if let Err(e) = writer.write(&chunk[..read]) {
+                    return probe_or_propagate(e);
+                }
+                inflated.extend_from_slice(&chunk[..read]);
+            }
+            // Truncation-tolerant: keep the decoded prefix when trailing input
+            // belongs to the next packed member.
+            Err(_) => break,
+        }
+    }
+    if !crate::parasolid::is_parasolid_stream(&inflated) {
+        // Not a Parasolid stream; dropping the writer registers no space.
+        return Ok(None);
+    }
+    // Charge the derived-space record before `finalize` registers it.
+    ctx.charge_alloc(
+        PER_BLOCK_GRAPH_BYTES,
+        "sldprt_parasolid_stream",
+        Some(block.location()),
+    )?;
+    if let Err(e) = writer.finalize() {
+        return probe_or_propagate(e);
+    }
+    Ok(Some(inflated))
 }
 
 /// Scan an in-memory `.sldprt` image.
