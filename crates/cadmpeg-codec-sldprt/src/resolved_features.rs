@@ -8257,8 +8257,8 @@ fn typed_marker_relation_definition_in_sketch(
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
         ArcAngle180, ArcAngle270, ArcAngle90, AtIntersection, Coincident, Collinear, Concentric,
-        Coradial, Equal, Fixed, Horizontal, HorizontalPoints, Midpoint, Parallel, Perpendicular,
-        Symmetric, Tangent, Vertical, VerticalPoints,
+        Coradial, Equal, Fixed, Horizontal, HorizontalPoints, MergePoints, Midpoint, Parallel,
+        Perpendicular, Symmetric, Tangent, Vertical, VerticalPoints,
     };
     let kind = match marker.kind {
         SketchInputKind::Relation(kind) => Some(kind),
@@ -8530,7 +8530,7 @@ fn typed_marker_relation_definition_in_sketch(
                 _ => unreachable!("relation kind was filtered above"),
             }
         }
-        Coincident => {
+        Coincident | MergePoints => {
             let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
                 return Some(native());
             };
@@ -12609,6 +12609,9 @@ mod profile_join_tests {
                 entity_ref: marker.id.clone(),
             })
             .to_vec();
+        let mut merge_points = coincident.clone();
+        merge_points.id = "merge-points".into();
+        merge_points.kind = SketchInputKind::Relation(SketchRelationKind::MergePoints);
         let mut midpoint = marker("midpoint", None);
         midpoint.kind = SketchInputKind::Relation(SketchRelationKind::Midpoint);
         midpoint.links = [(&first_marker, 1), (&line_marker, 3)]
@@ -12659,6 +12662,7 @@ mod profile_join_tests {
             ),
             (symmetry_axis_marker.id.as_str(), &symmetry_axis_marker),
             (coincident.id.as_str(), &coincident),
+            (merge_points.id.as_str(), &merge_points),
             (midpoint.id.as_str(), &midpoint),
             (arc_angle.id.as_str(), &arc_angle),
             (symmetric.id.as_str(), &symmetric),
@@ -12697,6 +12701,16 @@ mod profile_join_tests {
         assert!(matches!(
             typed_marker_relation_definition_in_sketch(
                 &coincident,
+                &sketch,
+                &[first.clone(), second.clone(), line.clone(), arc.clone()],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::CoincidentLoci { .. })
+        ));
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &merge_points,
                 &sketch,
                 &[first.clone(), second.clone(), line.clone(), arc.clone()],
                 &markers,
