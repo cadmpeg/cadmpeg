@@ -13718,6 +13718,24 @@ fn analytic_scanners_include_extended_reference_shifts_in_record_ownership() {
 }
 
 #[test]
+fn analytic_record_ownership_is_shared_across_carrier_families() {
+    let mut stream = vec![0; 158];
+    stream[1] = 0x1e;
+    put_vec3(&mut stream, 21, [0.0, 0.0, 0.0]);
+    put_vec3(&mut stream, 45, [1.0, 0.0, 0.0]);
+
+    stream[67] = 0;
+    stream[68] = 0x32;
+    put_vec3(&mut stream, 86, [0.0, 0.0, 0.0]);
+    put_vec3(&mut stream, 110, [0.0, 0.0, 1.0]);
+    put_vec3(&mut stream, 134, [1.0, 0.0, 0.0]);
+
+    assert_eq!(crate::geometry::curves(&stream).len(), 1);
+    assert!(crate::geometry::surfaces(&stream).is_empty());
+    assert!(crate::geometry::points(&stream).is_empty());
+}
+
+#[test]
 fn decode_assembly_reports_external_dependency() {
     let mut cur = Cursor::new(assembly_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();

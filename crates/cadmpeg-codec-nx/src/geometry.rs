@@ -62,84 +62,101 @@ const CURVE_TAGS: [(u8, usize); 3] = [
     (0x20, 107), // ellipse
 ];
 
+enum AnalyticRecord {
+    Point(DecodedPoint),
+    Surface(DecodedSurface),
+    Curve(DecodedCurve),
+}
+
 /// Decode validated point records in source order.
 ///
 /// Positions are returned in millimetres. Malformed and out-of-range candidates
 /// are skipped.
 pub fn points(stream: &[u8]) -> Vec<DecodedPoint> {
-    let mut out = Vec::new();
-    let mut occupied_end = 0usize;
-    let mut p = 0usize;
-    while p + 2 <= stream.len() {
-        if stream[p] == 0x00 && stream[p + 1] == 0x1d && p >= occupied_end {
-            if let Some((xyz, shift)) = SHIFTS.into_iter().find_map(|shift| {
-                read_vec3(stream, p + 16 + shift).and_then(|xyz| {
-                    (xyz.iter().all(|v| {
-                        v.is_finite() && v.abs() < 1.0e3 && (*v == 0.0 || v.abs() >= 1.0e-100)
-                    }) && xyz.iter().any(|v| *v != 0.0))
-                    .then_some((xyz, shift))
-                })
-            }) {
-                out.push(DecodedPoint {
-                    pos: p,
-                    position: mm_point(xyz),
-                });
-                occupied_end = p + 40 + shift; // POINT record length plus XMT expansion
-                p += 2;
-                continue;
-            }
-        }
-        p += 1;
-    }
-    out
+    analytic_records(stream)
+        .into_iter()
+        .filter_map(|record| match record {
+            AnalyticRecord::Point(point) => Some(point),
+            AnalyticRecord::Surface(_) | AnalyticRecord::Curve(_) => None,
+        })
+        .collect()
 }
 
 /// Decode validated analytic surface records in source order.
 pub fn surfaces(stream: &[u8]) -> Vec<DecodedSurface> {
-    let mut out = Vec::new();
-    let mut occupied_end = 0usize;
-    let mut p = 0usize;
-    while p + 2 <= stream.len() {
-        if stream[p] == 0x00 && p >= occupied_end {
-            if let Some((_, len)) = SURFACE_TAGS.iter().find(|(t, _)| *t == stream[p + 1]) {
-                if let Some((geom, shift)) = decode_surface(stream, p, stream[p + 1]) {
-                    out.push(DecodedSurface {
-                        pos: p,
-                        geometry: geom,
-                    });
-                    occupied_end = p + *len + shift;
-                    p += 2;
-                    continue;
-                }
-            }
-        }
-        p += 1;
-    }
-    out
+    analytic_records(stream)
+        .into_iter()
+        .filter_map(|record| match record {
+            AnalyticRecord::Surface(surface) => Some(surface),
+            AnalyticRecord::Point(_) | AnalyticRecord::Curve(_) => None,
+        })
+        .collect()
 }
 
 /// Decode validated analytic curve records in source order.
 pub fn curves(stream: &[u8]) -> Vec<DecodedCurve> {
+    analytic_records(stream)
+        .into_iter()
+        .filter_map(|record| match record {
+            AnalyticRecord::Curve(curve) => Some(curve),
+            AnalyticRecord::Point(_) | AnalyticRecord::Surface(_) => None,
+        })
+        .collect()
+}
+
+fn analytic_records(stream: &[u8]) -> Vec<AnalyticRecord> {
     let mut out = Vec::new();
-    let mut occupied_end = 0usize;
     let mut p = 0usize;
     while p + 2 <= stream.len() {
-        if stream[p] == 0x00 && p >= occupied_end {
-            if let Some((_, len)) = CURVE_TAGS.iter().find(|(t, _)| *t == stream[p + 1]) {
-                if let Some((geom, shift)) = decode_curve(stream, p, stream[p + 1]) {
-                    out.push(DecodedCurve {
-                        pos: p,
-                        geometry: geom,
-                    });
-                    occupied_end = p + *len + shift;
-                    p += 2;
-                    continue;
-                }
-            }
+        if stream[p] != 0x00 {
+            p += 1;
+            continue;
         }
-        p += 1;
+        let kind = stream[p + 1];
+        let candidate = if kind == 0x1d {
+            decode_point(stream, p)
+                .map(|(point, shift)| (AnalyticRecord::Point(point), p + 40 + shift))
+        } else if let Some((_, len)) = SURFACE_TAGS.iter().find(|(tag, _)| *tag == kind) {
+            decode_surface(stream, p, kind).map(|(geometry, shift)| {
+                (
+                    AnalyticRecord::Surface(DecodedSurface { pos: p, geometry }),
+                    p + *len + shift,
+                )
+            })
+        } else if let Some((_, len)) = CURVE_TAGS.iter().find(|(tag, _)| *tag == kind) {
+            decode_curve(stream, p, kind).map(|(geometry, shift)| {
+                (
+                    AnalyticRecord::Curve(DecodedCurve { pos: p, geometry }),
+                    p + *len + shift,
+                )
+            })
+        } else {
+            None
+        };
+        if let Some((record, end)) = candidate {
+            out.push(record);
+            p = end;
+        } else {
+            p += 1;
+        }
     }
     out
+}
+
+fn decode_point(stream: &[u8], p: usize) -> Option<(DecodedPoint, usize)> {
+    SHIFTS.into_iter().find_map(|shift| {
+        let xyz = read_vec3(stream, p + 16 + shift)?;
+        (xyz.iter().all(|value| {
+            value.is_finite() && value.abs() < 1.0e3 && (*value == 0.0 || value.abs() >= 1.0e-100)
+        }) && xyz.iter().any(|value| *value != 0.0))
+        .then_some((
+            DecodedPoint {
+                pos: p,
+                position: mm_point(xyz),
+            },
+            shift,
+        ))
+    })
 }
 
 /// Decode an analytic surface at tag position `p`, trying each candidate shift and
