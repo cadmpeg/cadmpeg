@@ -144,7 +144,6 @@ pub(crate) fn decode(
     };
     let mut warnings = Vec::new();
     let meshes = if minor >= 3 {
-        let budget_checkpoint = *mesh_budget;
         match read_mesh_cache(
             expand,
             data,
@@ -157,7 +156,9 @@ pub(crate) fn decode(
         ) {
             Ok(meshes) => meshes,
             Err(cache_error) => {
-                *mesh_budget = budget_checkpoint;
+                // The document budget is not rolled back: any buffer the cache
+                // inflated before failing is retained in the arena, so its
+                // charge must stand (see `mesh::MeshBudget`).
                 warnings.push(format!("extrusion mesh cache dropped: {cache_error}"));
                 reader.skip(reader.remaining())?;
                 Vec::new()

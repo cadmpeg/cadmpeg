@@ -481,7 +481,6 @@ impl<'a> DecodeContext<'a> {
                     continue;
                 };
                 let key = self.object_key(identity, source_order);
-                let budget_checkpoint = self.mesh_budget;
                 let decoded = crate::mesh::decode(
                     self.expand,
                     self.scan.data,
@@ -500,7 +499,6 @@ impl<'a> DecodeContext<'a> {
                         if self.commit_mesh(source_order, mesh) {
                             self.mark_decoded(source_order);
                         } else {
-                            self.mesh_budget = budget_checkpoint;
                             self.mark_failed(source_order);
                         }
                     }
@@ -1714,7 +1712,6 @@ impl<'a> DecodeContext<'a> {
             self.commit_unknown_surface(source_order);
             return;
         };
-        let budget_checkpoint = self.mesh_budget;
         let decoded = crate::extrusion::decode(
             self.expand,
             self.scan.data,
@@ -1732,7 +1729,6 @@ impl<'a> DecodeContext<'a> {
                 if self.commit_extrusion(source_order, extrusion) {
                     self.mark_decoded(source_order);
                 } else {
-                    self.mesh_budget = budget_checkpoint;
                     self.scan_warning(
                         source_order,
                         "extrusion candidate rejected atomically by IR validation",
@@ -1741,7 +1737,6 @@ impl<'a> DecodeContext<'a> {
                 }
             }
             Err(error) => {
-                self.mesh_budget = budget_checkpoint;
                 self.scan_warning(
                     source_order,
                     &format!("extrusion degraded and retained: {error}"),
@@ -2543,7 +2538,6 @@ impl<'a> DecodeContext<'a> {
         let association = self.source_association(identity);
         let key = self.object_key(identity, source_order);
         let unknown = self.unknowns[source_order].id.clone();
-        let budget_checkpoint = self.mesh_budget;
         let transfer = BrepTransferInput {
             expand: self.expand,
             data: self.scan.data,
@@ -2612,12 +2606,10 @@ impl<'a> DecodeContext<'a> {
                                 fallback_validation.expect_err("checked error")
                             ),
                         );
-                        self.mesh_budget = budget_checkpoint;
                     }
                 }
             }
             Err(error) => {
-                self.mesh_budget = budget_checkpoint;
                 self.scan_warning(
                     source_order,
                     &format!("Brep geometry/topology degraded: {error}"),
@@ -3085,7 +3077,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                 continue;
             };
             let id = format!("rhino:object:tessellation#{key}.{kind}-{index}");
-            let budget_checkpoint = *mesh_budget;
             match crate::mesh::decode(
                 expand,
                 data,
@@ -3113,7 +3104,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                     staged.tessellations.push(mesh.tessellation);
                 }
                 Err(error) => {
-                    *mesh_budget = budget_checkpoint;
                     staged
                         .warnings
                         .push(format!("invalid {kind} mesh cache slot {index}: {error}"));

@@ -7,6 +7,7 @@
 //! [`CHANNEL_CURVATURE`] is two `f64`, and [`CHANNEL_NGON_GROUP`] is the
 //! retained native grouping record. Channel data is never unit-scaled.
 
+use std::borrow::Cow;
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
@@ -96,7 +97,20 @@ const MAX_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
 const MAX_DOCUMENT_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
 
 /// Document-wide budget for retained decompressed mesh buffers.
-#[derive(Debug, Clone, Copy)]
+///
+/// The counter is monotonic: it records a buffer's bytes at the point they are
+/// retained — a compressed buffer once it inflates into the append-only session
+/// arena, a stored buffer once it is copied out — and never refunds them. The
+/// arena cannot free a finalized expansion, so a buffer that later proves
+/// malformed and is dropped still occupies memory for the rest of the session;
+/// refunding its charge would let the retained-byte total understate real
+/// retention and let a hostile document ratchet arena memory far past this cap
+/// while `used` returns to zero. The type is not `Copy` for that reason: the
+/// cheap `let checkpoint = *budget; ...; *budget = checkpoint` refund idiom no
+/// longer compiles. It derives `Clone` only because the enclosing rhino decode
+/// context does; that clone drives transactional instance expansion, which
+/// decodes no mesh buffers and so never charges the cloned budget.
+#[derive(Debug, Clone)]
 pub(crate) struct MeshBudget {
     used: usize,
     limit: usize,
@@ -116,15 +130,23 @@ impl MeshBudget {
         Self { used: 0, limit }
     }
 
-    fn charge(&mut self, bytes: usize) -> bool {
-        let Some(used) = self.used.checked_add(bytes) else {
-            return false;
-        };
-        if used > self.limit {
-            return false;
-        }
-        self.used = used;
-        true
+    /// Returns whether `bytes` more can be retained without exceeding the cap.
+    ///
+    /// A read-only admission check run before a buffer inflates, so a buffer
+    /// that would breach the cap is refused before it allocates.
+    fn has_room(&self, bytes: usize) -> bool {
+        self.used
+            .checked_add(bytes)
+            .is_some_and(|total| total <= self.limit)
+    }
+
+    /// Records `bytes` as permanently retained.
+    ///
+    /// Monotonic and never refunded. Call only after [`MeshBudget::has_room`]
+    /// admitted the same `bytes`, at the point retention becomes permanent, so
+    /// the sum never exceeds the cap and always reflects live arena bytes.
+    fn commit(&mut self, bytes: usize) {
+        self.used = self.used.saturating_add(bytes);
     }
 }
 
@@ -165,23 +187,14 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
 }
 
 /// Decodes one bounded `ON_Mesh` class-data payload.
+///
+/// Every decompressed buffer this reads is retained in the append-only session
+/// arena the instant it inflates, so `document_budget` records each buffer at
+/// retention and is never refunded when a channel is dropped or the whole mesh
+/// later fails (§10 Phase 1B). A refund would let the retained-byte total
+/// understate memory the arena cannot reclaim, so this decoder holds no budget
+/// checkpoint and neither do its callers.
 pub(crate) fn decode(
-    expand: MeshExpand<'_>,
-    data: &[u8],
-    range: Range<usize>,
-    archive: ArchiveVersion,
-    options: MeshDecodeOptions,
-    document_budget: &mut MeshBudget,
-) -> Result<DecodedMesh, GeometryError> {
-    let checkpoint = *document_budget;
-    let result = decode_inner(expand, data, range, archive, options, document_budget);
-    if result.is_err() {
-        *document_budget = checkpoint;
-    }
-    result
-}
-
-fn decode_inner(
     expand: MeshExpand<'_>,
     data: &[u8],
     range: Range<usize>,
@@ -299,9 +312,12 @@ fn decode_inner(
             archive,
         )?;
         if let Some(bytes) = surface {
-            decoded
-                .channels
-                .push(channel(CHANNEL_SURFACE_PARAMETERS, 16, vertex_count, bytes));
+            decoded.channels.push(channel(
+                CHANNEL_SURFACE_PARAMETERS,
+                16,
+                vertex_count,
+                bytes.into_owned(),
+            ));
         }
     }
     if major == 3 && minor >= 4 && writer_version.is_some_and(|version| version >= 200_606_010) {
@@ -547,16 +563,17 @@ fn read_compressed_channels(
                     .warnings
                     .push("normals channel contains nonfinite values".to_string()),
             },
-            2 => decoded
-                .channels
-                .push(channel(CHANNEL_UV, 8, vertices, bytes)),
-            3 => decoded
-                .channels
-                .push(channel(CHANNEL_CURVATURE, 16, vertices, bytes)),
-            4 => decoded
-                .channels
-                .push(channel(CHANNEL_COLOR, 4, vertices, bytes)),
-            _ => unreachable!(),
+            _ => {
+                let (kind, item_size) = match index {
+                    2 => (CHANNEL_UV, 8),
+                    3 => (CHANNEL_CURVATURE, 16),
+                    4 => (CHANNEL_COLOR, 4),
+                    _ => unreachable!(),
+                };
+                decoded
+                    .channels
+                    .push(channel(kind, item_size, vertices, bytes.into_owned()));
+            }
         }
     }
     if decoded.vertices.len() != vertices {
@@ -594,9 +611,14 @@ fn read_counted_raw(
 // The mesh-buffer reader threads the platform expander alongside its reader,
 // declared/expected sizes, warning sink, and the per-mesh plus per-document
 // decompression budgets it dual-enforces (§10 Phase 1B); all are load-bearing.
+//
+// A compressed buffer returns as `Cow::Borrowed` over the arena bytes
+// `finalize` already retained, so a parse-only channel (vertices, normals)
+// reads them in place instead of copying them out again; a channel that lives
+// on in the IR copies once with `into_owned`. A stored buffer is owned.
 #[allow(clippy::too_many_arguments)]
-fn read_buffer(
-    expand: MeshExpand<'_>,
+fn read_buffer<'a>(
+    expand: MeshExpand<'a>,
     reader: &mut BoundedReader<'_>,
     expected: usize,
     warnings: &mut Vec<String>,
@@ -604,8 +626,7 @@ fn read_buffer(
     decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
     archive: ArchiveVersion,
-) -> Result<Option<Vec<u8>>, GeometryError> {
-    let budget_checkpoint = *document_budget;
+) -> Result<Option<Cow<'a, [u8]>>, GeometryError> {
     let declared = reader.u32()? as usize;
     if declared == 0 {
         return Ok(None);
@@ -625,7 +646,13 @@ fn read_buffer(
                 "mesh cumulative buffer budget exceeded",
             )
         })?;
-    if !document_budget.charge(declared) {
+    // Admit `declared` against the document budget before inflating, so a buffer
+    // that would breach the cap is refused before it allocates. The paired
+    // `commit` runs only once the bytes are actually retained (below), so a
+    // buffer that fails to inflate leaves the counter untouched, while a buffer
+    // that inflates and is then dropped stays charged for the arena bytes it
+    // can no longer free.
+    if !document_budget.has_room(declared) {
         return Err(error(
             reader.position() - 4,
             "document mesh buffer budget exceeded",
@@ -633,10 +660,13 @@ fn read_buffer(
     }
     let crc = reader.u32()?;
     let method = reader.u8()?;
-    let (bytes, consumed) = match method {
+    let (bytes, consumed): (Cow<'a, [u8]>, usize) = match method {
         0 => {
             let mut input = reader.unread()?;
-            (input.take(declared)?.to_vec(), declared)
+            let stored = input.take(declared)?.to_vec();
+            // The stored bytes are retained the moment they are copied out.
+            document_budget.commit(declared);
+            (Cow::Owned(stored), declared)
         }
         1 => {
             let chunk = chunk_at(
@@ -670,7 +700,11 @@ fn read_buffer(
                 &reader.backing_bytes()[chunk.body.start..chunk.body.end],
                 "expansion source must alias the compressed chunk body"
             );
-            let (bytes, compressed) = inflate(expand, source, declared)?;
+            let (view, compressed) = inflate(expand, source, declared)?;
+            // `inflate` has finalized the output into the append-only arena;
+            // record the retention now, before any drop below, because the
+            // arena cannot reclaim those bytes even when the channel is dropped.
+            document_budget.commit(declared);
             if compressed != chunk.body.len() {
                 return Err(error(
                     chunk.body.start + compressed,
@@ -683,7 +717,10 @@ fn read_buffer(
             ) {
                 warnings.push(format!("{name} compressed chunk CRC mismatch"));
             }
-            (bytes, chunk.next_offset - reader.position())
+            (
+                Cow::Borrowed(view.window()),
+                chunk.next_offset - reader.position(),
+            )
         }
         _ => {
             return Err(error(
@@ -693,14 +730,14 @@ fn read_buffer(
         }
     };
     reader.skip(consumed)?;
+    // A dropped channel keeps its charge: the bytes are already retained (in the
+    // arena for method 1) and rolling the budget back would defeat the cap.
     if bytes.len() != expected {
         warnings.push(format!("{name} compressed-buffer size mismatch"));
-        *document_budget = budget_checkpoint;
         return Ok(None);
     }
     if crc32fast::hash(&bytes) != crc {
         warnings.push(format!("{name} compressed-buffer CRC mismatch"));
-        *document_budget = budget_checkpoint;
         return Ok(None);
     }
     Ok(Some(bytes))
@@ -746,13 +783,15 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
 /// and bounded by the decompression envelope, the writer rejects any output
 /// past `expected`, and `finalize` refuses a short stream — so no decompressed
 /// byte exists outside the writer and the derived `Transform` space registers
-/// only on a complete, exactly-sized inflate. Returns the decompressed bytes
-/// and the number of compressed input bytes consumed.
-fn inflate(
-    expand: MeshExpand<'_>,
+/// only on a complete, exactly-sized inflate. Returns the finalized arena view
+/// over the decompressed bytes — the caller reads them in place rather than
+/// copying them out a second time — and the number of compressed input bytes
+/// consumed.
+fn inflate<'a>(
+    expand: MeshExpand<'a>,
     source: View<'_>,
     expected: usize,
-) -> Result<(Vec<u8>, usize), GeometryError> {
+) -> Result<(View<'a>, usize), GeometryError> {
     let input = source.window();
     let base = source.start();
     let mut writer = expand
@@ -783,7 +822,7 @@ fn inflate(
             let (_space, view) = writer
                 .finalize()
                 .map_err(|refusal| expansion_refused(base, &refusal))?;
-            return Ok((view.window().to_vec(), source_offset));
+            return Ok((view, source_offset));
         }
         if consumed == 0 && produced == 0 {
             return Err(error(base, "truncated zlib buffer"));
@@ -879,15 +918,22 @@ fn read_mapping_tag(
     Ok(())
 }
 
-fn read_double_chunk(
-    expand: MeshExpand<'_>,
+/// A decoded double-vertex chunk: the declared vertex count, and the buffer
+/// bytes when it survived its size and CRC checks (an arena view for a
+/// compressed buffer, owned for a stored one). The count is returned even when
+/// the bytes are absent so the caller can distinguish a count mismatch from a
+/// dropped buffer.
+type DoubleVertexChunk<'a> = (usize, Option<Cow<'a, [u8]>>);
+
+fn read_double_chunk<'a>(
+    expand: MeshExpand<'a>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
     vertex_count: usize,
     decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
-) -> Result<(usize, Option<Vec<u8>>), GeometryError> {
+) -> Result<DoubleVertexChunk<'a>, GeometryError> {
     let chunk = chunk_at(
         reader.backing_bytes(),
         reader.position(),
@@ -1168,8 +1214,9 @@ mod tests {
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
-                .expect("buffer"),
-                Some(vec![1, 2, 3])
+                .expect("buffer")
+                .as_deref(),
+                Some(&[1, 2, 3][..])
             );
             assert_eq!(reader.u8().expect("adjacent"), 0xaa);
             assert!(warnings.is_empty());
@@ -1196,8 +1243,9 @@ mod tests {
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
-                .expect("buffer"),
-                Some(vec![4, 5, 6, 7])
+                .expect("buffer")
+                .as_deref(),
+                Some(&[4, 5, 6, 7][..])
             );
             assert_eq!(
                 read_buffer(
@@ -1210,14 +1258,15 @@ mod tests {
                     &mut document_budget,
                     ArchiveVersion::V8,
                 )
-                .expect("next"),
-                Some(vec![8])
+                .expect("next")
+                .as_deref(),
+                Some(&[8][..])
             );
         });
     }
 
     #[test]
-    fn crc_mismatch_consumes_boundary_drops_channel_and_rolls_back_budget() {
+    fn crc_mismatch_consumes_boundary_drops_channel_and_retains_budget_charge() {
         let mut bytes = buffer(&[1, 2], 0);
         bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
         with_expand(&bytes, |expand| {
@@ -1241,7 +1290,58 @@ mod tests {
             );
             assert_eq!(reader.remaining(), 0);
             assert_eq!(warnings.len(), 1);
-            assert_eq!(document_budget.used, 0);
+            // The buffer was committed at retention and the drop does not refund
+            // it: a rollback here is what would let arena memory outrun the cap.
+            assert_eq!(document_budget.used, 2);
+        });
+    }
+
+    #[test]
+    fn dropped_compressed_buffer_keeps_its_document_budget_charge() {
+        // A well-formed zlib buffer with a wrong stored CRC: it inflates into
+        // the append-only arena (retention is permanent), passes its size check,
+        // then fails its CRC check and is dropped. The document budget must keep
+        // counting the retained bytes — refunding is exactly what let a hostile
+        // document ratchet arena memory past the cap while `used` fell to zero.
+        // With the cap set to one buffer, a second such buffer is refused before
+        // it can inflate.
+        let mut bytes = buffer(&[1, 2, 3, 4], 1);
+        bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
+        let mut document_budget = MeshBudget::with_limit(4);
+        with_expand(&bytes, |expand| {
+            let mut warnings = Vec::new();
+            let mut first = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            assert_eq!(
+                read_buffer(
+                    expand,
+                    &mut first,
+                    4,
+                    &mut warnings,
+                    "first",
+                    &mut 0,
+                    &mut document_budget,
+                    ArchiveVersion::V8,
+                )
+                .expect("first buffer inflates then drops"),
+                None
+            );
+            assert_eq!(document_budget.used, 4);
+            assert_eq!(warnings.len(), 1);
+            let mut second = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            let refused = read_buffer(
+                expand,
+                &mut second,
+                4,
+                &mut warnings,
+                "second",
+                &mut 0,
+                &mut document_budget,
+                ArchiveVersion::V8,
+            );
+            assert!(
+                refused.is_err(),
+                "a dropped-but-retained buffer must still occupy the document cap"
+            );
         });
     }
 
@@ -1536,7 +1636,7 @@ mod tests {
                 ArchiveVersion::V8,
             )
             .expect("nested buffer");
-            assert_eq!(decoded, Some(vec![9, 8, 7, 6]));
+            assert_eq!(decoded.as_deref(), Some(&[9, 8, 7, 6][..]));
         });
     }
 
@@ -1566,7 +1666,7 @@ mod tests {
                 ArchiveVersion::V8,
             )
             .expect("first expansion");
-            assert_eq!(decoded, Some(vec![1, 2, 3]));
+            assert_eq!(decoded.as_deref(), Some(&[1, 2, 3][..]));
             assert!(!ctx.is_fused());
             let refused = read_buffer(
                 expand,
