@@ -1477,10 +1477,14 @@ fn datum_plane_records(scan: &ContainerScan) -> Vec<CreoDatumPlaneRecord> {
 fn feature_section_transform_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureSectionTransformRecord> {
-    scan.feature_section_transforms
+    let mut records = scan
+        .feature_section_transforms
         .iter()
         .map(|record| CreoFeatureSectionTransformRecord {
-            id: format!("creo:feature:section_transform#{}", record.definition_id),
+            id: format!(
+                "creo:feature:section_transform#{}:{}",
+                record.definition_id, record.offset
+            ),
             definition_id: record.definition_id,
             owner_feature_id: record.feature_id,
             origin: record.origin,
@@ -1490,7 +1494,10 @@ fn feature_section_transform_records(
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })
-        .collect()
+        .collect::<Vec<_>>();
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    records.dedup_by(|left, right| left.id == right.id);
+    records
 }
 
 fn feature_placement_instruction_records(
