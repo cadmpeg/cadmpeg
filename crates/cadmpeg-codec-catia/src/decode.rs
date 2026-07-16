@@ -2824,30 +2824,28 @@ fn transfer_e5_topology(
         .map(|record_id| (*record_id, EdgeId(format!("catia:e5:edge#{record_id}"))))
         .collect();
     let edge_curve_ids: HashMap<u32, CurveId> = edge_curve_plan
-        .iter()
-        .map(|(&record_id, (geometry, _))| {
-            let id = CurveId(format!("catia:e5:curve#{record_id}"));
-            annotate(
-                annotations,
-                &id,
-                "e5_0d_03",
-                0,
-                "lifted_boundary_curve",
-                Exactness::Derived,
-            );
-            annotations.derived(&id, "geometry");
-            ir.model.curves.push(Curve {
-                id: id.clone(),
-                geometry: geometry.clone(),
-                source_object: None,
-            });
-            (record_id, id)
-        })
+        .keys()
+        .map(|&record_id| (record_id, CurveId(format!("catia:e5:curve#{record_id}"))))
         .collect();
+    for (&record_id, (geometry, _)) in &edge_curve_plan {
+        let id = edge_curve_ids[&record_id].clone();
+        annotate(
+            annotations,
+            &id,
+            "e5_0d_03",
+            0,
+            "lifted_boundary_curve",
+            Exactness::Derived,
+        );
+        annotations.derived(&id, "geometry");
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry: geometry.clone(),
+            source_object: None,
+        });
+    }
     for (&record_id, context) in &intersection_plan {
-        let Some(curve) = edge_curve_ids.get(&record_id) else {
-            return false;
-        };
+        let curve = edge_curve_ids[&record_id].clone();
         let id = ProceduralCurveId(format!("catia:e5:intersection#{record_id}"));
         annotate(
             annotations,
@@ -2860,7 +2858,7 @@ fn transfer_e5_topology(
         annotations.derived(&id, "curve").derived(&id, "definition");
         ir.model.procedural_curves.push(ProceduralCurve {
             id,
-            curve: curve.clone(),
+            curve,
             definition: ProceduralCurveDefinition::Intersection {
                 context: context.clone(),
                 discontinuity_flag: false,
@@ -2872,9 +2870,7 @@ fn transfer_e5_topology(
         if intersection_plan.contains_key(&record_id) {
             continue;
         }
-        let Some(curve) = edge_curve_ids.get(&record_id) else {
-            return false;
-        };
+        let curve = edge_curve_ids[&record_id].clone();
         let id = ProceduralCurveId(format!("catia:e5:surface-curve#{record_id}"));
         annotate(
             annotations,
@@ -2887,7 +2883,7 @@ fn transfer_e5_topology(
         annotations.derived(&id, "curve").derived(&id, "definition");
         ir.model.procedural_curves.push(ProceduralCurve {
             id,
-            curve: curve.clone(),
+            curve,
             definition: ProceduralCurveDefinition::SurfaceCurve {
                 family: SurfaceCurveFamily::Parametric,
                 context: IntcurveSupportContext {
