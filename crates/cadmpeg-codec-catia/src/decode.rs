@@ -93,9 +93,26 @@ pub fn decode(
 fn finish_decode(
     scan: &ContainerScan,
     mut ir: CadIr,
-    report: DecodeReport,
+    mut report: DecodeReport,
 ) -> Result<DecodeResult, CodecError> {
-    CatiaNative::decode(&scan.data).store_owned(ir.native.namespace_mut("catia"))?;
+    let native = CatiaNative::decode(&scan.data);
+    let object_record_count = native
+        .object_graphs
+        .iter()
+        .map(|graph| graph.records.len())
+        .sum::<usize>();
+    if object_record_count != 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Blocking,
+            message: format!(
+                "CATIA native data retains {} design object(s) and {object_record_count} object-graph field record(s), but no neutral features, parameters, sketches, or history dependencies were transferred.",
+                native.design_objects.len()
+            ),
+            provenance: None,
+        });
+    }
+    native.store_owned(ir.native.namespace_mut("catia"))?;
     Ok(DecodeResult::new(ir, report))
 }
 

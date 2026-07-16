@@ -4682,6 +4682,12 @@ fn decode_retains_outer_object_graph_order_and_dependencies() {
             .map(|record| record.id.clone())
             .collect::<Vec<_>>()
     );
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::Other
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+            && loss.message.contains("1 design object(s)")
+            && loss.message.contains("2 object-graph field record(s)")
+    }));
     let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
     assert!(validation
         .findings
