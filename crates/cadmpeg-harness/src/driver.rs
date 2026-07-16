@@ -59,8 +59,6 @@ pub struct RunResult {
     pub oracles: BTreeMap<Oracle, OracleStatus>,
     /// Classified result label, when the child reported one.
     pub result_class: Option<String>,
-    /// Peak process allocation the child reported, when it reported one.
-    pub peak_alloc_bytes: Option<u64>,
     /// Wall-clock time the parent measured.
     pub elapsed: Duration,
     /// Whether the parent killed the child at the ceiling.
@@ -190,7 +188,6 @@ pub fn run_job(
         key,
         oracles,
         result_class: outcome.as_ref().map(|o| o.result_class.clone()),
-        peak_alloc_bytes: outcome.as_ref().map(|o| o.peak_alloc_bytes),
         elapsed,
         timed_out,
         stderr: String::from_utf8_lossy(&stderr).into_owned(),

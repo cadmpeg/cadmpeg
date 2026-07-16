@@ -20,15 +20,13 @@ pub const CODEC_IDS: &[&str] = &["f3d", "sldprt", "catia", "creo", "nx", "rhino"
 /// The machine-readable result the child writes to stdout.
 ///
 /// The parent driver fills the oracle verdicts around this; the child reports
-/// only what it can measure from inside its own process.
+/// only what it can measure from inside its own process. The determinism
+/// comparison runs entirely in-child (both runs share the process), so only
+/// its verdict crosses the pipe, not the per-run digests it compares.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunnerOutcome {
     /// Classified result label (see [`ResultClass::label`]).
     pub result_class: String,
-    /// Deterministic detail string (error `Display`, or the confidence).
-    pub result_detail: String,
-    /// Hex digest of the first run's canonical result.
-    pub digest: String,
     /// Whether the second run produced an identical class and digest.
     pub determinism_ok: bool,
     /// Peak process allocation observed by the runner's global allocator.
@@ -40,10 +38,6 @@ pub struct RunnerOutcome {
 pub struct ExecOutcome {
     /// Classified result of the operation.
     pub result_class: ResultClass,
-    /// Deterministic detail string.
-    pub result_detail: String,
-    /// Hex digest of the first run's canonical result.
-    pub digest: String,
     /// Whether the two runs agreed on class and digest.
     pub determinism_ok: bool,
 }
@@ -90,10 +84,10 @@ fn decode_digest(result: &DecodeResult) -> String {
 }
 
 /// The result of one single run: enough to classify and to compare for
-/// determinism.
+/// determinism. The digest is compared against the sibling run in-process and
+/// is never transmitted.
 struct RunOnce {
     class: ResultClass,
-    detail: String,
     digest: String,
 }
 
@@ -102,7 +96,6 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
     let Some(codec) = codec_for(codec_id) else {
         return RunOnce {
             class: ResultClass::Other,
-            detail: format!("unknown codec {codec_id}"),
             digest: sha256_hex(b"unknown-codec"),
         };
     };
@@ -112,7 +105,6 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
             let confidence = codec.detect(bytes);
             RunOnce {
                 class: ResultClass::from_confidence(confidence),
-                detail: confidence.to_string(),
                 digest: sha256_hex(format!("detect:{confidence}").as_bytes()),
             }
         }
@@ -124,7 +116,6 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
                         .unwrap_or_else(|error| format!("summary-json-error:{error}"));
                     RunOnce {
                         class: ResultClass::Ok,
-                        detail: String::new(),
                         digest: sha256_hex(json.as_bytes()),
                     }
                 }
@@ -140,7 +131,6 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
             match codec.decode(&mut reader, &options) {
                 Ok(result) => RunOnce {
                     class: ResultClass::Ok,
-                    detail: String::new(),
                     digest: decode_digest(&result),
                 },
                 Err(error) => error_run(&error),
@@ -153,13 +143,8 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
 /// and `Display` so an error path is compared for determinism like any other.
 fn error_run(error: &CodecError) -> RunOnce {
     let class = classify_error(error);
-    let detail = error.to_string();
-    let digest = sha256_hex(format!("err:{}:{detail}", class.label()).as_bytes());
-    RunOnce {
-        class,
-        detail,
-        digest,
-    }
+    let digest = sha256_hex(format!("err:{}:{error}", class.label()).as_bytes());
+    RunOnce { class, digest }
 }
 
 /// Run `op` twice and report the classified result and a determinism verdict.
@@ -173,8 +158,6 @@ pub fn execute(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u
     let determinism_ok = first.class == second.class && first.digest == second.digest;
     ExecOutcome {
         result_class: first.class,
-        result_detail: first.detail,
-        digest: first.digest,
         determinism_ok,
     }
 }

@@ -85,8 +85,6 @@ fn main() -> ExitCode {
 
     let outcome = RunnerOutcome {
         result_class: exec.result_class.label().to_owned(),
-        result_detail: exec.result_detail,
-        digest: exec.digest,
         determinism_ok: exec.determinism_ok,
         peak_alloc_bytes,
     };
