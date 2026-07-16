@@ -10154,6 +10154,34 @@ pub(crate) fn extrude_boolean_op(
     }
 }
 
+fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>> {
+    let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
+    let mut surfaces = BTreeSet::new();
+    for region_id in &body.regions {
+        let region = ir
+            .model
+            .regions
+            .iter()
+            .find(|region| region.id == *region_id && region.body == body.id)?;
+        for shell_id in &region.shells {
+            let shell = ir
+                .model
+                .shells
+                .iter()
+                .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
+            for face_id in &shell.faces {
+                let face = ir
+                    .model
+                    .faces
+                    .iter()
+                    .find(|face| face.id == *face_id && face.shell == shell.id)?;
+                surfaces.insert(face.surface.clone());
+            }
+        }
+    }
+    Some(surfaces)
+}
+
 pub(crate) fn blend_feature_definition(
     ir: &CadIr,
     outputs: &[BodyId],
@@ -10161,11 +10189,11 @@ pub(crate) fn blend_feature_definition(
     let [body] = outputs else {
         return None;
     };
-    let (prefix, _) = body.0.rsplit_once("body#")?;
+    let body_surfaces = body_surface_ids(ir, body)?;
     let mut surfaces = Vec::new();
     let mut laws = Vec::new();
     for procedural in &ir.model.procedural_surfaces {
-        if !procedural.surface.0.starts_with(prefix) {
+        if !body_surfaces.contains(&procedural.surface) {
             continue;
         }
         let ProceduralSurfaceDefinition::Blend {
@@ -10239,11 +10267,11 @@ pub(crate) fn offset_surface_feature_definition(
     let [body] = outputs else {
         return None;
     };
-    let (prefix, _) = body.0.rsplit_once("body#")?;
+    let body_surfaces = body_surface_ids(ir, body)?;
     let mut distance = None::<f64>;
     let mut supports = Vec::new();
     for procedural in &ir.model.procedural_surfaces {
-        if !procedural.surface.0.starts_with(prefix) {
+        if !body_surfaces.contains(&procedural.surface) {
             continue;
         }
         let ProceduralSurfaceDefinition::Offset {
@@ -10266,7 +10294,7 @@ pub(crate) fn offset_surface_feature_definition(
     supports.sort();
     Some((
         FeatureDefinition::OffsetSurface {
-            faces: FaceSelection::Native(format!("{prefix}offset-support-surfaces")),
+            faces: FaceSelection::Native(format!("{}:offset-support-surfaces", body.0)),
             distance: Length(distance),
         },
         supports,

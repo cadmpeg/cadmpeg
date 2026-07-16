@@ -26,6 +26,59 @@ use crate::NxCodec;
 
 const MAGIC: &[u8; 8] = b"SPLMSSTR";
 
+fn attach_test_body_surface(
+    ir: &mut cadmpeg_ir::document::CadIr,
+    body_id: &cadmpeg_ir::ids::BodyId,
+    surface: cadmpeg_ir::ids::SurfaceId,
+) {
+    use cadmpeg_ir::ids::{FaceId, RegionId, ShellId};
+    use cadmpeg_ir::topology::{Body, BodyKind, Face, Region, Sense, Shell};
+
+    let region_id = RegionId(format!("{}:region", body_id.0));
+    let shell_id = ShellId(format!("{}:shell", body_id.0));
+    if !ir.model.bodies.iter().any(|body| body.id == *body_id) {
+        ir.model.bodies.push(Body {
+            id: body_id.clone(),
+            kind: BodyKind::Solid,
+            regions: vec![region_id.clone()],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id.clone()],
+        });
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id,
+            faces: Vec::new(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+    }
+    let face_id = FaceId(format!("{}:face#{}", body_id.0, ir.model.faces.len()));
+    ir.model
+        .shells
+        .iter_mut()
+        .find(|shell| shell.id == shell_id)
+        .unwrap()
+        .faces
+        .push(face_id.clone());
+    ir.model.faces.push(Face {
+        id: face_id,
+        shell: shell_id,
+        surface,
+        sense: Sense::Forward,
+        loops: Vec::new(),
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+}
+
 #[test]
 fn display_jt_index_requires_every_declared_header() {
     use crate::container::{Container, DirEntry, Region};
@@ -2822,8 +2875,11 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         },
         cache_fit_tolerance: None,
     };
-    ir.model.procedural_surfaces.push(make_offset(0, 30.0));
-    ir.model.procedural_surfaces.push(make_offset(1, 30.0));
+    for ordinal in 0..2 {
+        let procedural = make_offset(ordinal, 30.0);
+        attach_test_body_surface(&mut ir, &output, procedural.surface.clone());
+        ir.model.procedural_surfaces.push(procedural);
+    }
 
     let (definition, supports) =
         crate::decode::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
@@ -2837,7 +2893,16 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         }
     ));
 
-    ir.model.procedural_surfaces.push(make_offset(2, -30.0));
+    ir.model.procedural_surfaces.push(make_offset(99, -40.0));
+    assert!(
+        crate::decode::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+            .is_some()
+    );
+    ir.model.procedural_surfaces.pop();
+
+    let conflicting = make_offset(2, -30.0);
+    attach_test_body_surface(&mut ir, &output, conflicting.surface.clone());
+    ir.model.procedural_surfaces.push(conflicting);
     assert!(crate::decode::offset_surface_feature_definition(&ir, &[output]).is_none());
 }
 
@@ -2863,16 +2928,17 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         },
         cache_fit_tolerance: None,
     };
-    ir.model.procedural_surfaces.push(make_blend(
-        0,
-        BlendRadiusLaw::Constant { signed_radius: 5.0 },
-    ));
-    ir.model.procedural_surfaces.push(make_blend(
+    let first = make_blend(0, BlendRadiusLaw::Constant { signed_radius: 5.0 });
+    attach_test_body_surface(&mut ir, &output, first.surface.clone());
+    ir.model.procedural_surfaces.push(first);
+    let second = make_blend(
         1,
         BlendRadiusLaw::Constant {
             signed_radius: -5.0,
         },
-    ));
+    );
+    attach_test_body_surface(&mut ir, &output, second.surface.clone());
+    ir.model.procedural_surfaces.push(second);
 
     let (definition, surfaces) =
         crate::decode::blend_feature_definition(&ir, std::slice::from_ref(&output))
@@ -2889,9 +2955,27 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     ));
 
     ir.model.procedural_surfaces.push(make_blend(
-        2,
-        BlendRadiusLaw::Constant { signed_radius: 7.0 },
+        99,
+        BlendRadiusLaw::Constant {
+            signed_radius: 17.0,
+        },
     ));
+    let (definition, _) =
+        crate::decode::blend_feature_definition(&ir, std::slice::from_ref(&output)).unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Fillet {
+            radius: RadiusSpec::Constant {
+                radius: cadmpeg_ir::features::Length(5.0)
+            },
+            ..
+        }
+    ));
+    ir.model.procedural_surfaces.pop();
+
+    let conflicting = make_blend(2, BlendRadiusLaw::Constant { signed_radius: 7.0 });
+    attach_test_body_surface(&mut ir, &output, conflicting.surface.clone());
+    ir.model.procedural_surfaces.push(conflicting);
     let (definition, _) = crate::decode::blend_feature_definition(&ir, &[output]).unwrap();
     assert!(matches!(
         definition,
@@ -2904,7 +2988,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     ));
     assert!(crate::decode::blend_feature_definition(&ir, &[]).is_none());
 
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    let conic = ProceduralSurface {
         id: ProceduralSurfaceId("nx:s4:blend-construction#3".into()),
         surface: SurfaceId("nx:s4:blend-surf#3".into()),
         definition: ProceduralSurfaceDefinition::Blend {
@@ -2915,7 +2999,13 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             native: None,
         },
         cache_fit_tolerance: None,
-    });
+    };
+    attach_test_body_surface(
+        &mut ir,
+        &BodyId("nx:s4:body#3".into()),
+        conic.surface.clone(),
+    );
+    ir.model.procedural_surfaces.push(conic);
     assert!(
         crate::decode::blend_feature_definition(&ir, &[BodyId("nx:s4:body#3".into())]).is_none()
     );

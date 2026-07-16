@@ -797,13 +797,15 @@ assign which side is retained, so the neutral retained side is unresolved.
 Bodies named by validated segment binding tuples exist at the start of retained feature history. A `SEW` or `TRIM BODY` body operand consumes that body image when the body's latest decoded writer precedes the operation. Boolean tool operands follow the same ordering rule. A later writer supersedes earlier consumption. Terminal body selection is applied only when every emitted partition has one unambiguous terminal status and at least one, but not every, emitted body remains terminal.
 
 An `OFFSET` operation with exactly one segment-bound output image resolves as a
-surface-offset feature when that image contains at least one OFFSET_SURF and
-every OFFSET_SURF construction in the image carries the same bit-exact signed
-distance. The distinct base-surface identities form the native face
-selection. An unbound output or multiple distance bit patterns leave the
-operation native.
+surface-offset feature when that body's region, shell, and face ownership graph
+contains at least one OFFSET_SURF and every owned OFFSET_SURF construction
+carries the same bit-exact signed distance. The distinct base-surface
+identities form the native face selection. Procedural surfaces in other bodies
+of the same stream do not participate. An unbound output, an incomplete
+ownership graph, or multiple owned distance bit patterns leave the operation
+native.
 
-A `BLEND` operation with exactly one segment-bound output image projects as a fillet when that image contains at least one BLEND_SURF and every BLEND_SURF has a circular cross-section. The output image's BLEND_SURF identities define the result set; the input-edge selection remains unresolved. When every construction has a finite nonzero constant radius with one common absolute bit pattern, that magnitude is the fillet radius. Multiple constant magnitudes retain constant-law form without assigning one radius. Exclusively linear or curve-driven laws retain variable-law form. Mixed laws retain an unresolved radius form. An unbound output, an image without BLEND_SURF, or any conic or polynomial blend cross-section leaves the operation native.
+A `BLEND` operation with exactly one segment-bound output image projects as a fillet when that body's region, shell, and face ownership graph contains at least one BLEND_SURF and every owned BLEND_SURF has a circular cross-section. Procedural surfaces in other bodies of the same stream do not participate. The output body's BLEND_SURF identities define the result set; the input-edge selection remains unresolved. When every construction has a finite nonzero constant radius with one common absolute bit pattern, that magnitude is the fillet radius. Multiple constant magnitudes retain constant-law form without assigning one radius. Exclusively linear or curve-driven laws retain variable-law form. Mixed laws retain an unresolved radius form. An unbound output, an incomplete ownership graph, a body without BLEND_SURF, or any owned conic or polynomial blend cross-section leaves the operation native.
 
 The structured extrusion branch begins `32 00 00` after its unique body-reference field, followed by one shifted-IEEE binary64 scalar. A counted fixed-width lane follows as `01, count:u8, (3d, extended_compact_index, 00)[count-1]`, where `count >= 2`. Each wrapped index uses exactly `80..fe, low:u8` and decodes as `(marker-80)*256+low`; direct and null forms are invalid in this lane. Two counted compact-index lanes follow, each framed `01, count:u8, index[count-1]` with `count >= 2`. Compact indices use `00..7f` as direct values, `80..fe, low:u8` as `(marker-80)*256+low`, and `ff` as null; null is invalid in these lanes. Indices in all three lanes address offset-only OM data blocks under the unique-resolution rule used by profile references. The branch ends `00 01, object_index, 00 00`, using the feature object-index form. The terminal object index equals the body object index anchoring the branch.
 
