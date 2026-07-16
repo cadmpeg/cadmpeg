@@ -9691,11 +9691,14 @@ fn attach_feature_operations(
         }
         for owner in parameter_owner_dependencies(
             &parameter_owners,
-            parameter_uses_by_operation
-                .get(label.id.as_str())
-                .into_iter()
-                .flatten()
-                .copied(),
+            feature_consumed_parameter_ids(
+                parameter_uses_by_operation
+                    .get(label.id.as_str())
+                    .map_or([].as_slice(), Vec::as_slice),
+                block_dimensions_by_operation
+                    .get(label.id.as_str())
+                    .copied(),
+            ),
         ) {
             if !dependencies.contains(&owner) {
                 dependencies.push(owner);
@@ -10202,15 +10205,12 @@ fn attach_feature_operations(
     }
 }
 
-pub(crate) fn parameter_owner_dependencies<'a>(
+pub(crate) fn parameter_owner_dependencies(
     parameter_owners: &BTreeMap<ParameterId, FeatureId>,
-    parameter_uses: impl IntoIterator<Item = &'a crate::native::FeatureParameterUse>,
+    parameter_ids: impl IntoIterator<Item = ParameterId>,
 ) -> Vec<FeatureId> {
     let mut dependencies = Vec::new();
-    for parameter_use in parameter_uses {
-        let Some(parameter_id) = expression_parameter_id(&parameter_use.expression) else {
-            continue;
-        };
+    for parameter_id in parameter_ids {
         let Some(owner) = parameter_owners.get(&parameter_id) else {
             continue;
         };
@@ -10219,6 +10219,22 @@ pub(crate) fn parameter_owner_dependencies<'a>(
         }
     }
     dependencies
+}
+
+pub(crate) fn feature_consumed_parameter_ids(
+    parameter_uses: &[&crate::native::FeatureParameterUse],
+    block_dimensions: Option<&crate::native::FeatureBlockDimensions>,
+) -> Vec<ParameterId> {
+    parameter_uses
+        .iter()
+        .filter_map(|parameter_use| expression_parameter_id(&parameter_use.expression))
+        .chain(
+            block_dimensions
+                .into_iter()
+                .flat_map(|dimensions| dimensions.expressions.iter())
+                .filter_map(|expression| expression_parameter_id(expression)),
+        )
+        .collect()
 }
 
 pub(crate) fn extrude_feature_definition(
