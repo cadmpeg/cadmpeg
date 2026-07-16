@@ -749,7 +749,17 @@ impl<'a> ParameterExpressionParser<'a> {
         } else if self.take('+') {
             self.unary()
         } else {
-            self.primary()
+            self.power()
+        }
+    }
+
+    fn power(&mut self) -> Option<ParameterValue> {
+        let base = self.primary()?;
+        self.skip_space();
+        if self.take('^') {
+            exponentiate_parameter_value(&base, &self.unary()?)
+        } else {
+            Some(base)
         }
     }
 
@@ -760,7 +770,20 @@ impl<'a> ParameterExpressionParser<'a> {
             self.skip_space();
             return self.take(')').then_some(value);
         }
-        let token = self.token()?;
+        let (token, quoted) = self.token()?;
+        if !quoted {
+            self.skip_space();
+            if self.take('(') {
+                let argument = self.sum()?;
+                self.skip_space();
+                return self
+                    .take(')')
+                    .then(|| apply_parameter_function(&token, &argument))?;
+            }
+            if token.eq_ignore_ascii_case("pi") {
+                return Some(ParameterValue::Real(std::f64::consts::PI));
+            }
+        }
         parse_parameter_literal(&token).or_else(|| {
             self.aliases
                 .get(&token)
@@ -769,7 +792,7 @@ impl<'a> ParameterExpressionParser<'a> {
         })
     }
 
-    fn token(&mut self) -> Option<String> {
+    fn token(&mut self) -> Option<(String, bool)> {
         let rest = &self.input[self.offset..];
         if rest.starts_with('"') {
             self.offset += 1;
@@ -781,7 +804,7 @@ impl<'a> ParameterExpressionParser<'a> {
                     self.offset += 2;
                 } else if rest.starts_with('"') {
                     self.offset += 1;
-                    return Some(value);
+                    return Some((value, true));
                 } else {
                     let character = rest.chars().next()?;
                     value.push(character);
@@ -791,14 +814,21 @@ impl<'a> ParameterExpressionParser<'a> {
             return None;
         }
         let start = self.offset;
+        let numeric = self.input[start..]
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_digit() || character == '.');
         while self.offset < self.input.len() {
             let character = self.input[self.offset..].chars().next()?;
-            if character.is_whitespace() || "+-*/()".contains(character) {
+            let exponent_sign = numeric
+                && matches!(character, '+' | '-')
+                && self.input[start..self.offset].ends_with(['e', 'E']);
+            if character.is_whitespace() || (!exponent_sign && "+-*/^()".contains(character)) {
                 break;
             }
             self.offset += character.len_utf8();
         }
-        (self.offset > start).then(|| self.input[start..self.offset].to_string())
+        (self.offset > start).then(|| (self.input[start..self.offset].to_string(), false))
     }
 
     fn skip_space(&mut self) {
@@ -909,6 +939,85 @@ fn multiply_parameter_values(
             real_parameter_value(&left)? * real_parameter_value(&right)?
         })),
     }
+}
+
+fn exponentiate_parameter_value(
+    base: &ParameterValue,
+    exponent: &ParameterValue,
+) -> Option<ParameterValue> {
+    let exponent = real_parameter_value(exponent)?;
+    Some(match base {
+        ParameterValue::Length(value) if exponent == 1.0 => ParameterValue::Length(*value),
+        ParameterValue::Angle(value) if exponent == 1.0 => ParameterValue::Angle(*value),
+        ParameterValue::Length(_) | ParameterValue::Angle(_) if exponent == 0.0 => {
+            ParameterValue::Real(1.0)
+        }
+        ParameterValue::Real(base) => ParameterValue::Real(base.powf(exponent)),
+        ParameterValue::Integer(base) => {
+            if exponent.fract() == 0.0 && (0.0..=f64::from(u32::MAX)).contains(&exponent) {
+                ParameterValue::Integer(base.checked_pow(exponent as u32)?)
+            } else {
+                ParameterValue::Real((*base as f64).powf(exponent))
+            }
+        }
+        ParameterValue::Length(_) | ParameterValue::Angle(_) | ParameterValue::Boolean(_) => {
+            return None;
+        }
+    })
+}
+
+fn apply_parameter_function(name: &str, argument: &ParameterValue) -> Option<ParameterValue> {
+    let name = name.to_ascii_lowercase();
+    Some(match name.as_str() {
+        "abs" => match argument {
+            ParameterValue::Length(Length(value)) => ParameterValue::Length(Length(value.abs())),
+            ParameterValue::Angle(Angle(value)) => ParameterValue::Angle(Angle(value.abs())),
+            ParameterValue::Real(value) => ParameterValue::Real(value.abs()),
+            ParameterValue::Integer(value) => ParameterValue::Integer(value.checked_abs()?),
+            ParameterValue::Boolean(_) => return None,
+        },
+        "sin" | "cos" | "tan" | "sec" | "cosec" | "cotan" => {
+            let ParameterValue::Angle(Angle(angle)) = argument else {
+                return None;
+            };
+            ParameterValue::Real(match name.as_str() {
+                "sin" => angle.sin(),
+                "cos" => angle.cos(),
+                "tan" => angle.tan(),
+                "sec" => angle.cos().recip(),
+                "cosec" => angle.sin().recip(),
+                "cotan" => angle.tan().recip(),
+                _ => unreachable!(),
+            })
+        }
+        "arcsin" | "arccos" | "atn" | "arcsec" | "arccosec" | "arccotan" => {
+            let value = real_parameter_value(argument)?;
+            ParameterValue::Angle(Angle(match name.as_str() {
+                "arcsin" => value.asin(),
+                "arccos" => value.acos(),
+                "atn" => value.atan(),
+                "arcsec" => value.recip().acos(),
+                "arccosec" => value.recip().asin(),
+                "arccotan" => value.recip().atan(),
+                _ => unreachable!(),
+            }))
+        }
+        "exp" => ParameterValue::Real(real_parameter_value(argument)?.exp()),
+        "log" => ParameterValue::Real(real_parameter_value(argument)?.ln()),
+        "sqr" => ParameterValue::Real(real_parameter_value(argument)?.sqrt()),
+        "int" => {
+            let value = real_parameter_value(argument)?.trunc();
+            if value < i64::MIN as f64 || value >= -(i64::MIN as f64) {
+                return None;
+            }
+            ParameterValue::Integer(value as i64)
+        }
+        "sgn" => {
+            let value = parameter_numeric_value(argument)?;
+            ParameterValue::Integer(if value < 0.0 { -1 } else { 1 })
+        }
+        _ => return None,
+    })
 }
 
 fn real_parameter_value(value: &ParameterValue) -> Option<f64> {

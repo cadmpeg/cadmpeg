@@ -8449,7 +8449,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Width">4mm</Dimension><Dimension Name="Copies">3</Dimension><Dimension Name="Double width">Width * 2</Dimension><Dimension Name="Per copy">&quot;Double width&quot; / Copies</Dimension><Dimension Name="Forward">Later + 1mm</Dimension><Dimension Name="Later">2mm</Dimension><Dimension Name="Invalid">Width + Copies</Dimension></Feature></Keywords>"#,
+        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Width">4mm</Dimension><Dimension Name="Copies">3</Dimension><Dimension Name="Double width">Width * 2</Dimension><Dimension Name="Per copy">&quot;Double width&quot; / Copies</Dimension><Dimension Name="Forward">Later + 1mm</Dimension><Dimension Name="Later">2mm</Dimension><Dimension Name="Scientific">1e-3 * Width</Dimension><Dimension Name="Power">2^3^2</Dimension><Dimension Name="Sine">sin(30deg)</Dimension><Dimension Name="Inverse sine">arcsin(0.5)</Dimension><Dimension Name="Absolute">abs(-2mm)</Dimension><Dimension Name="Root">sqr(9)</Dimension><Dimension Name="Pi">pi</Dimension><Dimension Name="Invalid">Width + Copies</Dimension><Dimension Name="Invalid area">Width^2</Dimension></Feature></Keywords>"#,
     ));
 
     let decoded = SldprtCodec
@@ -8471,7 +8471,30 @@ fn decode_evaluates_parameter_dependency_expressions() {
         Some(ParameterValue::Length(Length(8.0 / 3.0)))
     );
     assert_eq!(values["Forward"], Some(ParameterValue::Length(Length(3.0))));
+    assert_eq!(
+        values["Scientific"],
+        Some(ParameterValue::Length(Length(0.004)))
+    );
+    assert_eq!(values["Power"], Some(ParameterValue::Integer(512)));
+    assert!(
+        matches!(values["Sine"], Some(ParameterValue::Real(value)) if (value - 0.5).abs() < 1e-12)
+    );
+    assert!(matches!(
+        values["Inverse sine"],
+        Some(ParameterValue::Angle(cadmpeg_ir::features::Angle(value)))
+            if (value - std::f64::consts::FRAC_PI_6).abs() < 1e-12
+    ));
+    assert_eq!(
+        values["Absolute"],
+        Some(ParameterValue::Length(Length(2.0)))
+    );
+    assert_eq!(values["Root"], Some(ParameterValue::Real(3.0)));
+    assert_eq!(
+        values["Pi"],
+        Some(ParameterValue::Real(std::f64::consts::PI))
+    );
     assert_eq!(values["Invalid"], None);
+    assert_eq!(values["Invalid area"], None);
 }
 
 #[test]
