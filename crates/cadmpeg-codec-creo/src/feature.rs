@@ -681,6 +681,18 @@ pub struct FeatureVariableTable {
     pub offset: usize,
 }
 
+impl FeatureVariableTable {
+    /// Resolve a uniquely identified section point.
+    pub fn point(&self, point_id: u32) -> Option<&FeatureSectionPoint> {
+        let mut matches = self
+            .points
+            .iter()
+            .filter(|point| point.point_id == point_id);
+        let point = matches.next()?;
+        matches.next().is_none().then_some(point)
+    }
+}
+
 /// Defined positional segment family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureSegmentKind {
@@ -729,6 +741,18 @@ pub struct FeatureSegmentTable {
     pub rows: Vec<FeatureSegment>,
     /// Byte offset of the `segtab_ptr` label in the original stream.
     pub offset: usize,
+}
+
+impl FeatureSegmentTable {
+    /// Resolve a uniquely identified defining-sketch segment.
+    pub fn segment(&self, external_id: u32) -> Option<&FeatureSegment> {
+        let mut matches = self
+            .rows
+            .iter()
+            .filter(|segment| segment.external_id == external_id);
+        let segment = matches.next()?;
+        matches.next().is_none().then_some(segment)
+    }
 }
 
 /// Solved/trimmed section entity family.
@@ -2374,21 +2398,13 @@ fn entity_intersection(
 ) -> Option<[f64; 2]> {
     let segments = segments?;
     let variables = variables?;
-    let segment = |external_id| {
-        segments
-            .rows
-            .iter()
-            .find(|segment| segment.external_id == external_id)
-    };
     let point = |point_id| {
         variables
-            .points
-            .iter()
-            .find(|point| point.point_id == point_id)
+            .point(point_id)
             .and_then(|point| Some([point.u?, point.v?]))
     };
-    let first = segment(entity_ids[0])?;
-    let second = segment(entity_ids[1])?;
+    let first = segments.segment(entity_ids[0])?;
+    let second = segments.segment(entity_ids[1])?;
     let shared = first
         .point_ids
         .into_iter()
@@ -3910,10 +3926,10 @@ fn saved_positional_generated_entities(
         .rows
         .iter()
         .filter_map(|row| {
-            let segment = segments
-                .rows
-                .iter()
-                .find(|segment| segment.external_id == row.external_id)?;
+            (order_table.internal_id(row.external_id) == Some(row.internal_id)
+                && order_table.external_id(row.internal_id) == Some(row.external_id))
+            .then_some(())?;
+            let segment = segments.segment(row.external_id)?;
             Some((row.internal_id, segment))
         })
         .collect::<BTreeMap<_, _>>();
@@ -6644,6 +6660,18 @@ mod tests {
             entity_intersection([9, 10], Some(&segments), Some(&variables)),
             Some([3.0, 4.0])
         );
+
+        let mut duplicate_segments = segments.clone();
+        duplicate_segments.rows.push(segments.rows[0].clone());
+        assert!(duplicate_segments.segment(9).is_none());
+        assert!(
+            entity_intersection([9, 10], Some(&duplicate_segments), Some(&variables)).is_none()
+        );
+
+        let mut duplicate_points = variables.clone();
+        duplicate_points.points.push(variables.points[0].clone());
+        assert!(duplicate_points.point(2).is_none());
+        assert!(entity_intersection([9, 10], Some(&segments), Some(&duplicate_points)).is_none());
     }
 
     #[test]

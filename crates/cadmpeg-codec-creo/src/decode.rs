@@ -3575,9 +3575,18 @@ pub(crate) fn resolved_section_points(
     let Some(variables) = &definition.variables else {
         return BTreeMap::new();
     };
+    let mut point_counts = BTreeMap::new();
+    for point in &variables.points {
+        *point_counts.entry(point.point_id).or_insert(0usize) += 1;
+    }
+    let ambiguous_point_ids = point_counts
+        .iter()
+        .filter_map(|(point_id, count)| (*count > 1).then_some(*point_id))
+        .collect::<BTreeSet<_>>();
     let mut points = variables
         .points
         .iter()
+        .filter(|point| !ambiguous_point_ids.contains(&point.point_id))
         .map(|point| (point.point_id, [point.u, point.v]))
         .collect::<BTreeMap<_, _>>();
     let segments = definition
@@ -3585,6 +3594,12 @@ pub(crate) fn resolved_section_points(
         .iter()
         .flat_map(|table| &table.rows)
         .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
+        .filter(|segment| {
+            segment
+                .point_ids
+                .iter()
+                .all(|point_id| !ambiguous_point_ids.contains(point_id))
+        })
         .collect::<Vec<_>>();
     let coincident_point_pairs = definition
         .relations
@@ -3594,7 +3609,7 @@ pub(crate) fn resolved_section_points(
             let [first, second] = skamp.items.as_slice() else {
                 return None;
             };
-            match skamp.kind {
+            let pair = match skamp.kind {
                 0 => Some([
                     section_skamp_endpoint_point_id(definition, first)?,
                     section_skamp_endpoint_point_id(definition, second)?,
@@ -3613,7 +3628,10 @@ pub(crate) fn resolved_section_points(
                     }
                 }
                 _ => None,
-            }
+            }?;
+            pair.iter()
+                .all(|point_id| !ambiguous_point_ids.contains(point_id))
+                .then_some(pair)
         })
         .collect::<Vec<_>>();
     let point_on_line_coordinates = definition
@@ -3621,12 +3639,20 @@ pub(crate) fn resolved_section_points(
         .iter()
         .flat_map(|table| &table.skamps)
         .filter_map(|skamp| section_skamp_point_on_line(definition, skamp))
+        .filter(|(first, second, _)| {
+            !ambiguous_point_ids.contains(first) && !ambiguous_point_ids.contains(second)
+        })
         .collect::<Vec<_>>();
     let symmetric_point_constraints = definition
         .relations
         .iter()
         .flat_map(|table| &table.skamps)
         .filter_map(|skamp| section_skamp_axis_symmetry(definition, skamp))
+        .filter(|(axis, first, second, _)| {
+            [axis, first, second]
+                .into_iter()
+                .all(|point_id| !ambiguous_point_ids.contains(point_id))
+        })
         .collect::<Vec<_>>();
     let signed_dimensions = definition
         .relations
@@ -4137,8 +4163,8 @@ fn section_axis_line_carrier(
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
-    let points = &definition.variables.as_ref()?.points;
-    let endpoint = |id| points.iter().find(|point| point.point_id == id);
+    let variables = definition.variables.as_ref()?;
+    let endpoint = |id| variables.point(id);
     let [first, second] = segment.point_ids.map(endpoint);
     let (Some(first), Some(second)) = (first, second) else {
         return None;
@@ -4430,11 +4456,7 @@ fn resolved_trim_vertex_coordinates(
         let Some(external_id) = trim_segment_id(definition, trim) else {
             continue;
         };
-        let Some(segment) = segments
-            .rows
-            .iter()
-            .find(|segment| segment.external_id == external_id)
-        else {
+        let Some(segment) = segments.segment(external_id) else {
             continue;
         };
         let Some(([center_u, center_v], radius)) = saved_section_arc_carrier(definition, segment)
@@ -4488,10 +4510,7 @@ fn resolved_trim_vertex_coordinates(
             continue;
         };
         let geometry = |external_id| {
-            let segment = segments
-                .rows
-                .iter()
-                .find(|segment| segment.external_id == external_id)?;
+            let segment = segments.segment(external_id)?;
             section_segment_intersection_carrier(definition, &radii, points, segment)
         };
         let (Some(first), Some(second)) = (geometry(*first_id), geometry(*second_id)) else {
@@ -4523,11 +4542,7 @@ fn resolved_trim_vertex_coordinates(
             let Some(external_id) = trim_segment_id(definition, trim) else {
                 continue;
             };
-            let Some(segment) = segments
-                .rows
-                .iter()
-                .find(|segment| segment.external_id == external_id)
-            else {
+            let Some(segment) = segments.segment(external_id) else {
                 continue;
             };
             let Some(SketchGeometry::Line { start, end }) =
@@ -8774,9 +8789,8 @@ fn resolved_profile_chains(
             }
             let arc_orientation_reversed = definition
                 .segments
-                .iter()
-                .flat_map(|table| &table.rows)
-                .find(|segment| segment.external_id == external_id)
+                .as_ref()
+                .and_then(|table| table.segment(external_id))
                 .is_some_and(|segment| {
                     segment.kind == crate::feature::FeatureSegmentKind::Arc
                         && segment.arc_orientation == Some(0)
@@ -15526,6 +15540,20 @@ mod resolved_sketch_tests {
         assert_eq!(coincident_points.get(&4), Some(&[3.0, 9.0]));
         assert_eq!(coincident_points.get(&6), Some(&[3.0, 9.0]));
         assert_eq!(coincident_points.get(&8), Some(&[2.0, 2.0]));
+        let mut ambiguous_definition = coincident_definition.clone();
+        let duplicate = ambiguous_definition
+            .variables
+            .as_ref()
+            .and_then(|table| table.point(5))
+            .cloned()
+            .expect("point 5");
+        ambiguous_definition
+            .variables
+            .as_mut()
+            .expect("variables")
+            .points
+            .push(duplicate);
+        assert!(!resolved_section_points(&ambiguous_definition).contains_key(&5));
         let mut saved_definition = definition;
         saved_definition.order_table = Some(crate::feature::FeatureOrderTable {
             declared_count: 1,

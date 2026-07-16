@@ -298,24 +298,11 @@ fn feature_generated_plane_equation(
         return None;
     };
     let segments = definition.segments.as_ref()?;
-    let segments = segments
-        .rows
-        .iter()
-        .filter(|segment| segment.external_id == id && segment.kind == FeatureSegmentKind::Line)
-        .collect::<Vec<_>>();
-    let [segment] = segments.as_slice() else {
-        return None;
-    };
+    let segment = segments.segment(id)?;
+    (segment.kind == FeatureSegmentKind::Line).then_some(())?;
     let variables = definition.variables.as_ref()?;
     let point = |point_id| {
-        let points = variables
-            .points
-            .iter()
-            .filter(|point| point.point_id == point_id)
-            .collect::<Vec<_>>();
-        let [point] = points.as_slice() else {
-            return None;
-        };
+        let point = variables.point(point_id)?;
         Some([point.u?, point.v?])
     };
     let start = point(segment.point_ids[0])?;
@@ -519,10 +506,7 @@ fn circular_profile_aligned_origin(
     let profile_internal_id = definition
         .order_table
         .as_ref()?
-        .rows
-        .iter()
-        .find(|row| row.external_id == profile_external_id)?
-        .internal_id;
+        .internal_id(profile_external_id)?;
     let circles = definition
         .saved_section
         .iter()
