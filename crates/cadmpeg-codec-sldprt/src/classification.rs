@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural classification of native feature-history objects.
+//!
+//! Migrated (doc section 10 Phase 2): deterministic string-to-enum and
+//! record-shape mapping over already-typed [`Feature`] values. No hostile-byte
+//! read path, so it graduates with the module-level deny and no
+//! `req_*`/`BoundedCount` obligations.
+#![deny(clippy::disallowed_methods)]
 
 use crate::records::Feature;
 use crate::records::{FeatureInputClassRole, FeatureInputRelationFamily};

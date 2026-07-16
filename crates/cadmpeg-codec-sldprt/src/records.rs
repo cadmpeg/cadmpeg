@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SolidWorks` parametric construction-history records.
+//!
+//! Migrated (doc section 10 Phase 2): a pure data model plus deterministic
+//! serde and native-code mapping. It owns no hostile-byte read path, so it
+//! graduates with the module-level deny and no `req_*`/`BoundedCount`
+//! obligations.
+#![deny(clippy::disallowed_methods)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

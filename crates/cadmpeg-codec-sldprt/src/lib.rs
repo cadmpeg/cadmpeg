@@ -65,6 +65,14 @@
 //! [`CodecError::NotImplemented`]: cadmpeg_ir::CodecError::NotImplemented
 //! [`DecodeOptions::container_only`]: cadmpeg_ir::DecodeOptions::container_only
 
+// Ungraduated crate: legacy leaf modules still call `Vec::with_capacity` /
+// `iter::repeat_n` from untrusted counts (doc section 8.2). The crate root
+// allows `disallowed_methods` while each migrated parser module opts back into
+// `#![deny(clippy::disallowed_methods)]`, so the ratchet holds module by module
+// and a half-migrated crate cannot backslide. Inert until the workspace-root
+// `clippy.toml` method list lands (see `parser-manifest.toml` shared requests).
+#![allow(clippy::disallowed_methods)]
+
 mod annotations;
 mod appearance;
 pub mod brep;
