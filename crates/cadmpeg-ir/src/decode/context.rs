@@ -479,6 +479,52 @@ impl<'a> DecodeContext<'a> {
         Ok(writer)
     }
 
+    /// Registers a stored (uncompressed) child range as a [`SpaceOrigin::Slice`]
+    /// space that borrows the parent bytes without copying, returning the new
+    /// space id and a view whose coordinates are absolute within it.
+    ///
+    /// `range` is expressed in the parent view's own space coordinates and must
+    /// lie within the parent window; a range that escapes the parent is refused
+    /// here, at the request site, exactly as [`View::child`] refuses. No bytes
+    /// are copied and no counter is charged: a slice is an alias of input that
+    /// was already accounted for when its parent space was admitted, so it
+    /// neither grows the input basis nor consumes the allocation budget. It is
+    /// the archive-entry counterpart of [`DecodeContext::begin_expand`] —
+    /// stored ZIP entries take this path, compressed ones take the expander.
+    /// Registration still refuses on a fused context so a stored entry cannot be
+    /// admitted after a refusal.
+    pub fn register_slice<'v>(
+        &self,
+        parent: View<'v>,
+        range: ByteRange,
+    ) -> Result<(SpaceId, View<'v>), CodecError> {
+        if let Some(limit) = self.fuse.get() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
+        let start = usize::try_from(range.start).ok();
+        let end = usize::try_from(range.end).ok();
+        let child = start
+            .zip(end)
+            .and_then(|(start, end)| parent.child(start, end))
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "stored slice [{}, {}) escapes parent space {}",
+                    range.start,
+                    range.end,
+                    parent.space().index()
+                ))
+            })?;
+        let length = range.end - range.start;
+        let space = self.spaces.register(
+            length,
+            SpaceOrigin::Slice {
+                parent: parent.space(),
+                range,
+            },
+        );
+        Ok((space, View::over_space(child.window(), space)))
+    }
+
     // --- depth --------------------------------------------------------------
 
     /// Enters one recursion level, returning a guard that releases it on drop.

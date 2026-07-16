@@ -416,6 +416,56 @@ fn derived_space_registers_only_on_finalize_and_fuses_on_refusal() {
 }
 
 #[test]
+fn register_slice_aliases_a_stored_entry_without_copying() {
+    // A stored archive entry becomes a Slice space that borrows the parent bytes
+    // and re-bases their coordinates to zero, charging nothing: the bytes were
+    // already accounted for when the parent space was admitted.
+    let bytes: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let basis_before = ctx.input_basis();
+
+    let (space, view) = ctx
+        .register_slice(root, ByteRange { start: 2, end: 6 })
+        .unwrap();
+
+    assert_eq!(space.index(), 1);
+    assert_eq!(view.space(), space);
+    // The slice window is the parent subrange, re-based so offset zero is its
+    // first byte.
+    assert_eq!(view.window(), &[2, 3, 4, 5]);
+    assert_eq!(view.position(), 0);
+    assert_eq!(view.start(), 0);
+    // Aliasing input neither charges the allocation budget nor grows the basis.
+    assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 0);
+    assert_eq!(ctx.input_basis(), basis_before);
+    match ctx.space_origin(space).unwrap() {
+        SpaceOrigin::Slice { parent, range } => {
+            assert_eq!(parent, SpaceId::ROOT);
+            assert_eq!(range, ByteRange { start: 2, end: 6 });
+        }
+        other => panic!("expected Slice origin, got {other:?}"),
+    }
+}
+
+#[test]
+fn register_slice_refuses_a_range_escaping_the_parent() {
+    // A slice past the parent window is refused at the request site, never
+    // clamped, and registers no space.
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    match ctx.register_slice(root, ByteRange { start: 4, end: 9 }) {
+        Err(CodecError::Malformed(_)) => {}
+        other => panic!("expected Malformed refusal, got {other:?}"),
+    }
+    assert_eq!(ctx.spaces_len(), 1, "a refused slice registers no space");
+}
+
+#[test]
 fn derived_concat_refuses_transform_writes() {
     // A Concat space assembles from its declared inputs; a caller cannot inject
     // bytes unrelated to the recorded segments through `write`.
