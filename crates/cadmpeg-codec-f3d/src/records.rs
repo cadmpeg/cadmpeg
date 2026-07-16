@@ -1080,6 +1080,9 @@ pub struct DesignEdgeOperand {
     /// Standard two-side structure decoded from the recipe program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recipe_structure: Option<DesignEdgeRecipeStructure>,
+    /// Ordered nonzero local topology references from the root and side scalar runs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local_topology_references: Vec<NonZeroU32>,
     /// Active solved faces carrying the recipe's persistent Design reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_faces: Vec<FaceId>,

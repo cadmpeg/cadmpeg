@@ -1218,8 +1218,14 @@ fn bind_active_edge_operand_candidates(
     topologies: &[(i64, &AsmHistoricalTopology)],
 ) {
     let mut matches = topologies.iter().filter_map(|(state_id, topology)| {
-        let terminal_faces =
-            terminal_edge_recipe_faces(&operand.candidate_faces, &operand.recipe_references);
+        let terminal_faces = terminal_edge_recipe_faces(
+            &operand.candidate_faces,
+            &operand.recipe_references,
+            operand
+                .recipe_structure
+                .as_ref()
+                .map(|_| operand.local_topology_references.as_slice()),
+        );
         let candidate_faces = faces_in_topology(&terminal_faces, topology);
         if topologies.len() != 1 && candidate_faces.is_empty() {
             return None;
@@ -1260,11 +1266,21 @@ fn bind_active_edge_operand_candidates(
 fn terminal_edge_recipe_faces(
     primary: &[cadmpeg_ir::ids::FaceId],
     references: &[crate::records::DesignRecipeReference],
+    local_topology_references: Option<&[std::num::NonZeroU32]>,
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
     let mut faces = primary.to_vec();
-    faces.extend(
-        references
+    let selected_references = match local_topology_references {
+        Some(ordinals) => ordinals
             .iter()
+            .filter_map(|ordinal| {
+                references.get(usize::try_from(ordinal.get()).ok()?.checked_sub(1)?)
+            })
+            .collect::<Vec<_>>(),
+        None => references.iter().collect(),
+    };
+    faces.extend(
+        selected_references
+            .into_iter()
             .flat_map(|reference| {
                 if reference.candidate_faces.is_empty() {
                     &reference.alternate_selector_faces
@@ -2343,11 +2359,31 @@ mod tests {
                     reference(Vec::new(), vec![FaceId("face-d".into())]),
                     reference(vec![FaceId("face-a".into())], Vec::new()),
                 ],
+                None,
             ),
-            [
+            vec![
                 FaceId("face-a".into()),
                 FaceId("face-b".into()),
                 FaceId("face-c".into()),
+                FaceId("face-d".into()),
+            ]
+        );
+        assert_eq!(
+            terminal_edge_recipe_faces(
+                &[FaceId("face-b".into()), FaceId("face-a".into())],
+                &[
+                    reference(
+                        vec![FaceId("face-c".into())],
+                        vec![FaceId("ignored".into())],
+                    ),
+                    reference(Vec::new(), vec![FaceId("face-d".into())]),
+                    reference(vec![FaceId("face-e".into())], Vec::new()),
+                ],
+                Some(&[std::num::NonZeroU32::new(2).unwrap()]),
+            ),
+            vec![
+                FaceId("face-a".into()),
+                FaceId("face-b".into()),
                 FaceId("face-d".into()),
             ]
         );

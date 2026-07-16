@@ -8495,7 +8495,16 @@ fn parse_edge_operand(
     if recipe_program.get(0..7) != Some(&[-1, -1, 2, 0, -1, 1, -1]) {
         return None;
     }
-    let recipe_structure = edge_recipe_structure(&recipe_program);
+    let (recipe_structure, local_topology_references) = match edge_recipe_structure(&recipe_program)
+    {
+        Some(structure) => {
+            match edge_recipe_local_topology_references(&structure, recipe_references.len()) {
+                Some(references) => (Some(structure), references),
+                None => (None, Vec::new()),
+            }
+        }
+        None => (None, Vec::new()),
+    };
     Some(DesignEdgeOperand {
         id: format!(
             "f3d:{}:design-edge-operand#{}",
@@ -8518,6 +8527,7 @@ fn parse_edge_operand(
         recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
         recipe_program,
         recipe_structure,
+        local_topology_references,
         candidate_faces: Vec::new(),
         result_candidate_faces: Vec::new(),
         result_boundary_edge_slots: Vec::new(),
@@ -8545,6 +8555,20 @@ pub(crate) fn edge_recipe_structure(
     program: &[i32],
 ) -> Option<crate::records::DesignEdgeRecipeStructure> {
     edge_recipe_structure_tail(program.get(7..)?)
+}
+
+pub(crate) fn edge_recipe_local_topology_references(
+    structure: &crate::records::DesignEdgeRecipeStructure,
+    reference_count: usize,
+) -> Option<Vec<std::num::NonZeroU32>> {
+    topology_recipe_references(
+        std::iter::once(structure.root).chain(structure.sides.iter().flat_map(|side| {
+            [Some(side.first), Some(side.second), side.third]
+                .into_iter()
+                .flatten()
+        })),
+        reference_count,
+    )
 }
 
 fn edge_recipe_structure_tail(
@@ -8626,11 +8650,19 @@ pub(crate) fn face_recipe_local_topology_references(
                 .into_iter()
                 .flatten()
         }));
+    topology_recipe_references(words, node_count)
+}
+
+fn topology_recipe_references(
+    words: impl IntoIterator<Item = i32>,
+    reference_count: usize,
+) -> Option<Vec<std::num::NonZeroU32>> {
     words
+        .into_iter()
         .filter(|word| *word != 0)
         .map(|word| {
             let ordinal = std::num::NonZeroU32::new(u32::try_from(word).ok()?)?;
-            (usize::try_from(ordinal.get()).ok()? <= node_count).then_some(ordinal)
+            (usize::try_from(ordinal.get()).ok()? <= reference_count).then_some(ordinal)
         })
         .collect()
 }
@@ -13678,6 +13710,16 @@ mod relation_tests {
             structured.sides[1].entries[0].topology_triplets[1].middle,
             1
         );
+        assert_eq!(
+            super::edge_recipe_local_topology_references(&structured, 3),
+            Some(
+                [2, 2, 1, 1, 3]
+                    .into_iter()
+                    .map(|value| std::num::NonZeroU32::new(value).unwrap())
+                    .collect()
+            )
+        );
+        assert!(super::edge_recipe_local_topology_references(&structured, 2).is_none());
         let wrap = super::edge_recipe_entries(&[1, 5, 1, 0, 1, 1, 1, 1]).unwrap();
         assert_eq!(wrap[0].topology_triplets[0].vertex_ordinal, 0);
         assert_eq!(wrap[0].topology_triplets[0].incident_edge_ordinal, 4);
