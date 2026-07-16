@@ -82,9 +82,7 @@ pub mod records;
 pub mod sab;
 mod writer;
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder,
-};
+use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
@@ -242,11 +240,10 @@ impl Codec for F3dCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let mut reader = std::io::Cursor::new(root.window());
-        let scan = container::scan(&mut reader)?;
+        let scan = container::scan(ctx, root)?;
         Ok(container::summarize(&scan))
     }
 
@@ -255,12 +252,7 @@ impl Codec for F3dCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        let options = DecodeOptions {
-            container_only: ctx.container_only(),
-            policy: *ctx.policy(),
-        };
-        let mut reader = std::io::Cursor::new(root.window());
-        decode::decode(&mut reader, &options)
+        decode::decode(ctx, root)
     }
 }
 

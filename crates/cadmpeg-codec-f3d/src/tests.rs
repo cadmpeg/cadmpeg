@@ -7,12 +7,23 @@
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::InspectOptions;
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
 use crate::asm_header;
 use crate::container::{self, role};
+
+/// Run the container scan over `bytes` under a default context, invoking the
+/// closure with the scan. The arena, context, and root view are held for the
+/// closure's duration so the scan's borrows stay valid.
+fn with_scan<T>(bytes: &[u8], body: impl FnOnce(&DecodeContext<'_>, View<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    body(&ctx, root)
+}
 use crate::F3dCodec;
 
 /// Build a synthetic ASM `BinaryFile8` BREP stream: a spec-shaped header
@@ -8891,15 +8902,16 @@ fn smb_only_is_reported_as_construction_snapshot() {
     // With no .smbh present, only the .smb construction snapshot remains; it must
     // be selected as a fallback but flagged as non-authoritative ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)).
     let f3d = synthetic_f3d(false);
-    let mut cur = Cursor::new(f3d);
-    let scan = container::scan(&mut cur).unwrap();
-    let active = container::select_active_brep(&scan).unwrap();
-    assert!(!active.is_smbh);
-    let summary = container::summarize(&scan);
-    assert!(summary
-        .notes
-        .iter()
-        .any(|n| n.contains("construction snapshot")));
+    with_scan(&f3d, |ctx, root| {
+        let scan = container::scan(ctx, root).unwrap();
+        let active = container::select_active_brep(&scan).unwrap();
+        assert!(!active.is_smbh);
+        let summary = container::summarize(&scan);
+        assert!(summary
+            .notes
+            .iter()
+            .any(|n| n.contains("construction snapshot")));
+    });
 }
 
 #[test]
@@ -16549,32 +16561,31 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     zip.write_all(&bulk).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
 
-    let mut cursor = Cursor::new(bytes);
-    let scan = container::scan(&mut cursor).unwrap();
-    let visibility = crate::design::decode_body_visibility(
-        &mut cursor,
-        &scan,
-        "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
-    )
-    .unwrap();
-    assert_eq!(
-        visibility.get(&3).map(|item| item.visible),
-        Some(true),
-        "flag 0 decodes visible"
-    );
-    assert_eq!(
-        visibility.get(&6).map(|item| item.visible),
-        Some(false),
-        "flag 1 decodes hidden"
-    );
+    with_scan(&bytes, |ctx, root| {
+        let scan = container::scan(ctx, root).unwrap();
+        let visibility = crate::design::decode_body_visibility(
+            &scan,
+            "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+        )
+        .unwrap();
+        assert_eq!(
+            visibility.get(&3).map(|item| item.visible),
+            Some(true),
+            "flag 0 decodes visible"
+        );
+        assert_eq!(
+            visibility.get(&6).map(|item| item.visible),
+            Some(false),
+            "flag 1 decodes hidden"
+        );
 
-    let other = crate::design::decode_body_visibility(
-        &mut cursor,
-        &scan,
-        "FusionAssetName[Active]/Breps.BlobParts/BREP.other.smbh",
-    )
-    .unwrap();
-    assert!(other.is_empty(), "bindings for other blobs do not apply");
+        let other = crate::design::decode_body_visibility(
+            &scan,
+            "FusionAssetName[Active]/Breps.BlobParts/BREP.other.smbh",
+        )
+        .unwrap();
+        assert!(other.is_empty(), "bindings for other blobs do not apply");
+    });
 }
 
 fn lp_utf16_bytes(value: &str) -> Vec<u8> {

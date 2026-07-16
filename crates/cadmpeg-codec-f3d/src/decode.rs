@@ -12,7 +12,8 @@
 
 use crate::native::F3dNative;
 use cadmpeg_ir::annotations::AnnotationBuilder;
-use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, DecodeResult};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
@@ -24,14 +25,11 @@ use crate::brep::{self, Brep};
 use crate::container::{self, BrepFacts, ContainerScan};
 use crate::{asm_header, materials, sab};
 
-/// Decode a `.f3d` reader into a document and its loss report.
-pub fn decode(
-    reader: &mut dyn ReadSeek,
-    options: &DecodeOptions,
-) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan(reader)?;
+/// Decode a `.f3d` root view into a document and its loss report.
+pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
+    let scan = container::scan(ctx, root)?;
 
-    if options.container_only {
+    if ctx.container_only() {
         let mut ir = build_metadata_ir(&scan)?;
         populate_annotations(&mut ir, &scan, &F3dNative::default(), None);
         preserve_source_image(&scan, &mut ir)?;
@@ -42,10 +40,9 @@ pub fn decode(
     // `try_decode_brep` returns `Some` after producing carriers or points.
     // A framed stream with no geometry uses the metadata-only path.
     if let Some(active) = container::select_active_brep(&scan).cloned() {
-        if let Some((mut brep, mut report)) = try_decode_brep(reader, &scan, &active)? {
-            let decoded_materials = materials::decode_with_bodies(reader, &scan, &brep.body_keys)?;
-            let body_visibility =
-                crate::design::decode_body_visibility(reader, &scan, &active.name)?;
+        if let Some((mut brep, mut report)) = try_decode_brep(&scan, &active)? {
+            let decoded_materials = materials::decode_with_bodies(&scan, &brep.body_keys)?;
+            let body_visibility = crate::design::decode_body_visibility(&scan, &active.name)?;
             let mut body_visibilities = Vec::new();
             for body in &mut brep.bodies {
                 if let Some((asm_body_key, visibility)) =
@@ -74,33 +71,29 @@ pub fn decode(
             if let Some(history) = decode_asm_history(&scan, &active)? {
                 native.asm_histories.push(history);
             }
-            native.construction_recipes = crate::design::decode_recipes(reader, &scan)?;
-            native.persistent_references =
-                crate::design::decode_persistent_references(reader, &scan)?;
-            native.lost_edge_references =
-                crate::design::decode_lost_edge_references(reader, &scan)?;
+            native.construction_recipes = crate::design::decode_recipes(&scan)?;
+            native.persistent_references = crate::design::decode_persistent_references(&scan)?;
+            native.lost_edge_references = crate::design::decode_lost_edge_references(&scan)?;
             native.design_material_assignments =
-                crate::materials::decode_design_assignments(reader, &scan)?;
-            native.design_objects = crate::design::decode_objects(reader, &scan)?;
-            native.design_entity_headers = crate::design::decode_entity_headers(reader, &scan)?;
+                crate::materials::decode_design_assignments(&scan)?;
+            native.design_objects = crate::design::decode_objects(&scan)?;
+            native.design_entity_headers = crate::design::decode_entity_headers(&scan)?;
             native.design_record_headers =
-                crate::design::decode_record_headers(reader, &scan, &native.design_entity_headers)?;
+                crate::design::decode_record_headers(&scan, &native.design_entity_headers)?;
             let sketch_relations = {
                 crate::design::decode_sketch_relations(
-                    reader,
                     &scan,
                     &native.design_record_headers,
                     &native.design_entity_headers,
                 )?
             };
             native.sketch_relations = sketch_relations;
-            extend_related_design_records(reader, &scan, &mut native)?;
-            native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
-            native.sketch_curve_identities =
-                crate::design::decode_sketch_curve_identities(reader, &scan)?;
-            native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
+            extend_related_design_records(&scan, &mut native)?;
+            native.sketch_points = crate::design::decode_sketch_points(&scan)?;
+            native.sketch_curve_identities = crate::design::decode_sketch_curve_identities(&scan)?;
+            native.design_body_members = crate::design::decode_body_members(&scan)?;
             native.design_configurations = crate::design::decode_configurations(&scan)?;
-            let act = crate::act::decode(reader, &scan)?;
+            let act = crate::act::decode(&scan)?;
             native.act_entities = act.entities;
             native.act_guids = act.guids;
             native.act_root_components = act.root_components;
@@ -157,34 +150,32 @@ pub fn decode(
             native.asm_histories.push(history);
         }
     }
-    native.construction_recipes = crate::design::decode_recipes(reader, &scan)?;
-    native.persistent_references = crate::design::decode_persistent_references(reader, &scan)?;
-    native.lost_edge_references = crate::design::decode_lost_edge_references(reader, &scan)?;
-    native.design_material_assignments =
-        crate::materials::decode_design_assignments(reader, &scan)?;
-    native.design_objects = crate::design::decode_objects(reader, &scan)?;
-    native.design_entity_headers = crate::design::decode_entity_headers(reader, &scan)?;
+    native.construction_recipes = crate::design::decode_recipes(&scan)?;
+    native.persistent_references = crate::design::decode_persistent_references(&scan)?;
+    native.lost_edge_references = crate::design::decode_lost_edge_references(&scan)?;
+    native.design_material_assignments = crate::materials::decode_design_assignments(&scan)?;
+    native.design_objects = crate::design::decode_objects(&scan)?;
+    native.design_entity_headers = crate::design::decode_entity_headers(&scan)?;
     native.design_record_headers =
-        crate::design::decode_record_headers(reader, &scan, &native.design_entity_headers)?;
+        crate::design::decode_record_headers(&scan, &native.design_entity_headers)?;
     let sketch_relations = {
         crate::design::decode_sketch_relations(
-            reader,
             &scan,
             &native.design_record_headers,
             &native.design_entity_headers,
         )?
     };
     native.sketch_relations = sketch_relations;
-    extend_related_design_records(reader, &scan, &mut native)?;
-    native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
-    native.sketch_curve_identities = crate::design::decode_sketch_curve_identities(reader, &scan)?;
-    native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
+    extend_related_design_records(&scan, &mut native)?;
+    native.sketch_points = crate::design::decode_sketch_points(&scan)?;
+    native.sketch_curve_identities = crate::design::decode_sketch_curve_identities(&scan)?;
+    native.design_body_members = crate::design::decode_body_members(&scan)?;
     native.design_configurations = crate::design::decode_configurations(&scan)?;
-    let act = crate::act::decode(reader, &scan)?;
+    let act = crate::act::decode(&scan)?;
     native.act_entities = act.entities;
     native.act_guids = act.guids;
     native.act_root_components = act.root_components;
-    let decoded_materials = materials::decode(reader, &scan)?;
+    let decoded_materials = materials::decode(&scan)?;
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
     native.store(ir.native.namespace_mut("f3d"))?;
@@ -202,8 +193,8 @@ fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) -> Result<(), Cod
             id: UnknownId(id.into()),
             offset: 0,
             byte_len: scan.source_image.len() as u64,
-            sha256: sha256_hex(&scan.source_image),
-            data: Some(scan.source_image.clone()),
+            sha256: sha256_hex(scan.source_image),
+            data: Some(scan.source_image.to_vec()),
             links: Vec::new(),
         },
     )?;
@@ -378,7 +369,6 @@ fn decode_asm_history(
 }
 
 fn extend_related_design_records(
-    reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     native: &mut F3dNative,
 ) -> Result<(), CodecError> {
@@ -394,7 +384,7 @@ fn extend_related_design_records(
         .map(|record| record.record_index)
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
-        crate::design::decode_related_record_headers(reader, scan, &indices)?
+        crate::design::decode_related_record_headers(scan, &indices)?
             .into_iter()
             .filter(|record| !existing.contains(&record.record_index)),
     );
@@ -408,7 +398,6 @@ fn extend_related_design_records(
 /// is not a decodable `BinaryFile4`/`BinaryFile8` SAB, or frames but yields no
 /// geometry (leaving the caller to fall back to the container-metadata IR).
 fn try_decode_brep(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     active: &BrepFacts,
 ) -> Result<Option<(Brep, DecodeReport)>, CodecError> {

@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use crate::records::{ActEntity, ActGuid, ActRootComponent};
-use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{lp_u32_bytes_at, u32_at, utf16le_at};
 
 use crate::container::{role, ContainerScan};
@@ -15,7 +15,7 @@ pub struct DecodedAct {
     pub root_components: Vec<ActRootComponent>,
 }
 
-pub fn decode(_reader: &mut dyn ReadSeek, scan: &ContainerScan) -> Result<DecodedAct, CodecError> {
+pub fn decode(scan: &ContainerScan) -> Result<DecodedAct, CodecError> {
     let mut entities = Vec::new();
     let mut guids = Vec::new();
     let mut root_components = Vec::new();

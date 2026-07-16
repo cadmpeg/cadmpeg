@@ -13,7 +13,7 @@ use crate::records::{
     DesignRecordHeader, LostEdgeReference, PersistentReference, PersistentReferenceKind,
     SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
 };
-use cadmpeg_ir::codec::{CodecError, ReadSeek};
+use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{
     f64_at, f64s_at, lp_u32_bytes_at, u32_at, u32_at as read_u32, u64_at as read_u64, utf16le_at,
 };
@@ -83,10 +83,7 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
 /// `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`,
 /// `vertex_recipe_data`) from each design `BulkStream` entry in `scan`.
 /// `recipe_index` is assigned per `(kind, design_id)` group in stream order.
-pub fn decode_recipes(
-    _reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-) -> Result<Vec<ConstructionRecipe>, CodecError> {
+pub fn decode_recipes(scan: &ContainerScan) -> Result<Vec<ConstructionRecipe>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -104,7 +101,6 @@ pub fn decode_recipes(
 /// `IntrinsicMetaTypeuint64`) from every design `BulkStream` entry in `scan`,
 /// sorted by stream offset.
 pub fn decode_persistent_references(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<PersistentReference>, CodecError> {
     let mut out = Vec::new();
@@ -185,7 +181,6 @@ pub fn decode_persistent_references(
 /// `BulkStream` entry in `scan`: the ASCII literal, a `u32` length of `3`, a
 /// three-digit class tag, and a `u32` record index.
 pub fn decode_lost_edge_references(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<LostEdgeReference>, CodecError> {
     let mut out = Vec::new();
@@ -244,10 +239,7 @@ pub fn decode_lost_edge_references(
 /// entity IDs it owns, its self GUID, an optional parent GUID, and a
 /// revision. Records whose type name does not match a known
 /// [`DesignObjectKind`] are skipped.
-pub fn decode_objects(
-    _reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-) -> Result<Vec<DesignObject>, CodecError> {
+pub fn decode_objects(scan: &ContainerScan) -> Result<Vec<DesignObject>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -342,13 +334,10 @@ pub fn decode_objects(
 /// [§8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): a three-digit class tag, an entity suffix, a UTF-16LE entity ID
 /// whose numeric suffix must match the header's entity suffix, and, for
 /// sketch-typed entities, the trailing reference-list header.
-pub fn decode_entity_headers(
-    reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-) -> Result<Vec<DesignEntityHeader>, CodecError> {
+pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHeader>, CodecError> {
     let mut out = Vec::new();
     let mut object_kinds = HashMap::new();
-    for object in decode_objects(reader, scan)? {
+    for object in decode_objects(scan)? {
         for entity_id in object.entity_ids {
             object_kinds.entry(entity_id).or_insert(object.kind);
         }
@@ -454,7 +443,6 @@ pub fn decode_entity_headers(
 /// class tag, for each record index named by any [`DesignEntityHeader`] in
 /// `entities`.
 pub fn decode_record_headers(
-    reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
@@ -463,7 +451,7 @@ pub fn decode_record_headers(
         .flat_map(|entity| &entity.reference_indices)
         .copied()
         .collect::<std::collections::HashSet<_>>();
-    decode_headers_for_indices(reader, scan, &wanted)
+    decode_headers_for_indices(scan, &wanted)
 }
 
 /// Decode the indexed dynamic-class record headers ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)) named by
@@ -471,7 +459,6 @@ pub fn decode_record_headers(
 /// headers referenced by records other than [`DesignEntityHeader`] (for
 /// example, sketch relation records).
 pub fn decode_related_record_headers(
-    reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     indices: &[u32],
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
@@ -479,11 +466,10 @@ pub fn decode_related_record_headers(
         .iter()
         .copied()
         .collect::<std::collections::HashSet<_>>();
-    decode_headers_for_indices(reader, scan, &wanted)
+    decode_headers_for_indices(scan, &wanted)
 }
 
 fn decode_headers_for_indices(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     wanted: &std::collections::HashSet<u32>,
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
@@ -538,7 +524,6 @@ fn decode_headers_for_indices(
 /// and return-member list. `records` supplies the byte offsets and class tags
 /// (typically from [`decode_related_record_headers`]).
 pub fn decode_sketch_relations(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
@@ -644,10 +629,7 @@ pub(crate) fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>,
 /// `BulkStream` entry in `scan`: the persistent point id, a paired record
 /// reference, and the sketch `(u, v)` coordinates, converted centimetre→
 /// millimetre. Records whose scaled coordinates are non-finite are skipped.
-pub fn decode_sketch_points(
-    _reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-) -> Result<Vec<SketchPoint>, CodecError> {
+pub fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
     let mut out = Vec::new();
     let mut emitted = std::collections::HashSet::new();
     for entry in scan
@@ -749,7 +731,6 @@ fn decode_sketch_point_variant(
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
 pub fn decode_sketch_curve_identities(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
@@ -1149,10 +1130,7 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 /// suffix and flags. The decode is rejected (no members returned for that
 /// stream) unless the declared count is fully consumed and immediately
 /// followed by a zero byte.
-pub fn decode_body_members(
-    _reader: &mut dyn ReadSeek,
-    scan: &ContainerScan,
-) -> Result<Vec<DesignBodyMember>, CodecError> {
+pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>, CodecError> {
     let mut out = Vec::new();
     let mut prefix = Vec::new();
     prefix.extend_from_slice(&10u32.to_le_bytes());
@@ -1449,7 +1427,6 @@ pub(crate) struct DecodedBodyVisibility {
 }
 
 pub(crate) fn decode_body_visibility(
-    _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     active_brep_entry: &str,
 ) -> Result<HashMap<u64, DecodedBodyVisibility>, CodecError> {
