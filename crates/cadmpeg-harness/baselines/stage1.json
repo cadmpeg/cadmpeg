@@ -1,0 +1,439 @@
+{
+  "envelope_version": "envelope-v1",
+  "peak_envelope_bytes": 1073741824,
+  "wall_clock_ms": 10000,
+  "entries": {
+    "catia|catia_container/standard_nested|container-only|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "catia|catia_container/standard_nested|container-only|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "catia|catia_container/standard_nested|detect|desktop-v1": {
+      "result_class": "detect_high",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "catia|catia_container/standard_nested|detect|service-v1": {
+      "result_class": "detect_high",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "catia|catia_container/standard_nested|full-decode|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "catia|catia_container/standard_nested|full-decode|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "catia|catia_container/standard_nested|inspect|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "catia|catia_container/standard_nested|inspect|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "creo|creo_container/minimal_prt|container-only|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "creo|creo_container/minimal_prt|container-only|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "creo|creo_container/minimal_prt|detect|desktop-v1": {
+      "result_class": "detect_high",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "creo|creo_container/minimal_prt|detect|service-v1": {
+      "result_class": "detect_high",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "creo|creo_container/minimal_prt|full-decode|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "creo|creo_container/minimal_prt|full-decode|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "creo|creo_container/minimal_prt|inspect|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "creo|creo_container/minimal_prt|inspect|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "f3d|f3d_container/full_f3d_with_smbh|container-only|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "f3d|f3d_container/full_f3d_with_smbh|container-only|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "f3d|f3d_container/full_f3d_with_smbh|detect|desktop-v1": {
+      "result_class": "detect_high",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "f3d|f3d_container/full_f3d_with_smbh|detect|service-v1": {
+      "result_class": "detect_high",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "f3d|f3d_container/full_f3d_with_smbh|full-decode|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "f3d|f3d_container/full_f3d_with_smbh|full-decode|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "f3d|f3d_container/full_f3d_with_smbh|inspect|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "f3d|f3d_container/full_f3d_with_smbh|inspect|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "nx|nx_container/single_part|container-only|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "nx|nx_container/single_part|container-only|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "nx|nx_container/single_part|detect|desktop-v1": {
+      "result_class": "detect_high",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "nx|nx_container/single_part|detect|service-v1": {
+      "result_class": "detect_high",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "nx|nx_container/single_part|full-decode|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "nx|nx_container/single_part|full-decode|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "nx|nx_container/single_part|inspect|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "nx|nx_container/single_part|inspect|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "rhino|rhino_container/archive_50|container-only|desktop-v1": {
+      "result_class": "malformed",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "rhino|rhino_container/archive_50|container-only|service-v1": {
+      "result_class": "malformed",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "rhino|rhino_container/archive_50|detect|desktop-v1": {
+      "result_class": "detect_high",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "rhino|rhino_container/archive_50|detect|service-v1": {
+      "result_class": "detect_high",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "rhino|rhino_container/archive_50|full-decode|desktop-v1": {
+      "result_class": "malformed",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "rhino|rhino_container/archive_50|full-decode|service-v1": {
+      "result_class": "malformed",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "rhino|rhino_container/archive_50|inspect|desktop-v1": {
+      "result_class": "malformed",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "rhino|rhino_container/archive_50|inspect|service-v1": {
+      "result_class": "malformed",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "sldprt|sldprt_container/synthetic_sldprt|container-only|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "sldprt|sldprt_container/synthetic_sldprt|container-only|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "sldprt|sldprt_container/synthetic_sldprt|detect|desktop-v1": {
+      "result_class": "detect_no",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "sldprt|sldprt_container/synthetic_sldprt|detect|service-v1": {
+      "result_class": "detect_no",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "sldprt|sldprt_container/synthetic_sldprt|full-decode|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "sldprt|sldprt_container/synthetic_sldprt|full-decode|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "sldprt|sldprt_container/synthetic_sldprt|inspect|desktop-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    },
+    "sldprt|sldprt_container/synthetic_sldprt|inspect|service-v1": {
+      "result_class": "ok",
+      "oracles": {
+        "determinism": "pass",
+        "no_panic": "pass",
+        "peak_alloc": "pass",
+        "wall_clock": "pass"
+      }
+    }
+  }
+}
