@@ -8168,6 +8168,13 @@ fn attach_native_object_model(
             });
         }
     }
+    attach_expression_parameters(
+        ir,
+        &expressions,
+        &expression_declarations,
+        &feature_parameter_uses,
+        annotations,
+    );
     attach_feature_operations(
         ir,
         &FeatureOperationSources {
@@ -8215,13 +8222,6 @@ fn attach_native_object_model(
             simple_hole_construction_groups: &feature_simple_hole_construction_groups,
             body_bindings: &segment_body_bindings,
         },
-        annotations,
-    );
-    attach_expression_parameters(
-        ir,
-        &expressions,
-        &expression_declarations,
-        &feature_parameter_uses,
         annotations,
     );
     attach_block_dimension_parameter_consumers(ir, &feature_block_dimensions, annotations);
@@ -9598,6 +9598,12 @@ fn attach_feature_operations(
             .or_default()
             .push(value);
     }
+    let parameter_owners = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
+        .collect::<BTreeMap<_, _>>();
     for (ordinal, label) in labels.iter().enumerate() {
         let key = label.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let id = FeatureId(format!("nx:feature-history:feature#{key}"));
@@ -9681,6 +9687,18 @@ fn attach_feature_operations(
             let dependency = FeatureId(format!("nx:feature-history:feature#{sketch_key}"));
             if !dependencies.contains(&dependency) {
                 dependencies.push(dependency);
+            }
+        }
+        for owner in parameter_owner_dependencies(
+            &parameter_owners,
+            parameter_uses_by_operation
+                .get(label.id.as_str())
+                .into_iter()
+                .flatten()
+                .copied(),
+        ) {
+            if !dependencies.contains(&owner) {
+                dependencies.push(owner);
             }
         }
         let mut source_properties = BTreeMap::new();
@@ -10182,6 +10200,25 @@ fn attach_feature_operations(
             last_body_writer.insert(canonical_body(*body), id);
         }
     }
+}
+
+pub(crate) fn parameter_owner_dependencies<'a>(
+    parameter_owners: &BTreeMap<ParameterId, FeatureId>,
+    parameter_uses: impl IntoIterator<Item = &'a crate::native::FeatureParameterUse>,
+) -> Vec<FeatureId> {
+    let mut dependencies = Vec::new();
+    for parameter_use in parameter_uses {
+        let Some(parameter_id) = expression_parameter_id(&parameter_use.expression) else {
+            continue;
+        };
+        let Some(owner) = parameter_owners.get(&parameter_id) else {
+            continue;
+        };
+        if !dependencies.contains(owner) {
+            dependencies.push(owner.clone());
+        }
+    }
+    dependencies
 }
 
 pub(crate) fn extrude_feature_definition(

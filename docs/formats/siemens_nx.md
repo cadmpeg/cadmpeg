@@ -847,6 +847,7 @@ use. Its occurrences retain ascending source-offset order, including repeated
 slots. A feature's ordered source content merges its payload strings and every
 parameter-use occurrence by absolute source offset; repeated consumption emits
 the same parameter identity at each serialized position.
+Each expression table is one equations feature that precedes operation features. An operation with one or more resolved parameter uses depends once on each equations feature owning those parameters, in first-use order.
 
 A source-native feature definition retains every resolved parameter use as `parameter_name -> exact_expression_text` when all referenced expression records exist and their names are unique within the operation. A missing expression record or duplicate parameter name rejects the definition-level parameter map atomically without rejecting the exact parameter-use relations. Typed neutral feature definitions retain their operation-specific parameter fields instead of this source-native map.
 

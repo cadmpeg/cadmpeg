@@ -1862,6 +1862,54 @@ fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
 }
 
 #[test]
+fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
+    let expression = crate::native::Expression {
+        id: "nx:test:expression#20".to_string(),
+        object_id: Some(20),
+        record: None,
+        declaration: None,
+        name: "p20".to_string(),
+        parameter_index: Some(20),
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: "5".to_string(),
+        value: Some(5.0),
+        source_entry: "part".to_string(),
+        source_table: "table".to_string(),
+        source_offset: 20,
+    };
+    let parameter_use = crate::native::FeatureParameterUse {
+        id: "use".to_string(),
+        operation_label: "nx:feature-history:operation-label#1-2".to_string(),
+        expression: expression.id.clone(),
+        bindings: vec!["binding".to_string()],
+        source_offsets: vec![30],
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    crate::decode::attach_expression_parameters(
+        &mut ir,
+        &[expression],
+        &[],
+        std::slice::from_ref(&parameter_use),
+        &mut annotations,
+    );
+    let parameter_owners = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
+        .collect();
+    let dependencies = crate::decode::parameter_owner_dependencies(
+        &parameter_owners,
+        [&parameter_use, &parameter_use],
+    );
+
+    assert_eq!(ir.model.features[0].ordinal, 0);
+    assert_eq!(dependencies, [ir.model.parameters[0].owner.clone()]);
+}
+
+#[test]
 fn nx_feature_source_content_orders_parameter_occurrences_with_text() {
     let text = crate::native::FeaturePayloadString {
         id: "text".into(),
