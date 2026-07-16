@@ -285,14 +285,19 @@ pub(crate) fn build(
     let mut global_line_index = 0_usize;
     for (index, line) in scan.lines.iter().enumerate() {
         let owner = format!("iges:physical:card#{}", index + 1);
-        if terminated || line.payload.len() != 80 {
+        if terminated || line.payload.len() != 80 || line.section.is_none() {
+            let meaning = if terminated {
+                "post_terminate_bytes"
+            } else {
+                "noncanonical_physical_record"
+            };
             push(
                 &mut spans,
                 line.offset,
                 line.offset + line.payload.len() as u64,
                 ByteSpanClass::Opaque,
                 &owner,
-                "post_terminate_bytes",
+                meaning,
                 Some(&owner),
             );
         } else {

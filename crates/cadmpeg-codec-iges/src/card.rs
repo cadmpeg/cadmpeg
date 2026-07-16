@@ -164,10 +164,10 @@ fn physical_lines(source: &[u8]) -> Result<Vec<PhysicalLine>, CodecError> {
             None => (source.len(), LineEnding::None, source.len()),
         };
         let payload = source[start..payload_end].to_vec();
-        let section = (!terminated)
+        let section = (!terminated && payload.len() == CARD_WIDTH)
             .then(|| payload.get(72).copied().and_then(Section::parse))
             .flatten();
-        let sequence = (!terminated && payload.len() >= CARD_WIDTH)
+        let sequence = (!terminated && payload.len() == CARD_WIDTH)
             .then(|| sequence(&payload))
             .flatten();
         lines.push(PhysicalLine {
@@ -192,12 +192,9 @@ fn validate_card_order(lines: &[PhysicalLine]) -> Result<(), CodecError> {
         if terminated {
             continue;
         }
-        let current = line.section.ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "IGES card at offset {} has no recognized section marker",
-                line.offset
-            ))
-        })?;
+        let Some(current) = line.section else {
+            continue;
+        };
         let current_sequence = line.sequence.ok_or_else(|| {
             CodecError::Malformed(format!(
                 "IGES card at offset {} has an invalid sequence field",
@@ -424,6 +421,28 @@ pub(crate) fn summarize(scan: &CardScan) -> ContainerSummary {
             compressed_size: size,
             uncompressed_size: size,
             attributes: BTreeMap::from([("records".into(), post_terminate.len().to_string())]),
+        });
+    }
+    let noncanonical = scan
+        .lines
+        .iter()
+        .take_while(|line| line.section != Some(Section::Terminate))
+        .filter(|line| line.section.is_none())
+        .collect::<Vec<_>>();
+    if !noncanonical.is_empty() {
+        let size = noncanonical.iter().fold(0_u64, |size, line| {
+            size.saturating_add(
+                u64::try_from(line.payload.len()).unwrap_or(u64::MAX)
+                    + u64::try_from(line.line_ending().len()).unwrap_or(u64::MAX),
+            )
+        });
+        entries.push(ContainerEntry {
+            name: "noncanonical-physical-records".into(),
+            role: "retained-opaque-records".into(),
+            compression: "none".into(),
+            compressed_size: size,
+            uncompressed_size: size,
+            attributes: BTreeMap::from([("records".into(), noncanonical.len().to_string())]),
         });
     }
     ContainerSummary {
