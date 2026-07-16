@@ -174,6 +174,23 @@ impl CadIr {
         namespace.set_arena("unknowns", records)
     }
 
+    /// Replace the reserved `unknowns` arena for `format`, consuming the records.
+    ///
+    /// Codecs retaining large source populations should use this form to avoid
+    /// keeping typed and generic native copies alive at the same time.
+    pub fn set_native_unknowns_owned(&mut self, format: &str, records: Vec<UnknownRecord>) {
+        let namespace = self.native.namespace_mut(format);
+        if namespace.version == 0 {
+            namespace.version = 1;
+        }
+        let mut converted = records
+            .into_iter()
+            .map(UnknownRecord::into_native_record)
+            .collect::<Vec<_>>();
+        converted.sort_by(|left, right| left.id.cmp(&right.id));
+        namespace.arenas.insert("unknowns".into(), converted);
+    }
+
     /// Append one record to the reserved `unknowns` arena for `format`.
     pub fn push_native_unknown(
         &mut self,

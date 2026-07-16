@@ -713,9 +713,8 @@ impl<'a> Builder<'a> {
                     .emit("STYLED_ITEM", &format!("'color',({style}),{face}")),
             );
         }
-        let bindings = ir.model.appearance_bindings.clone();
         let mut direct_unstyled = BTreeSet::new();
-        for binding in bindings {
+        for binding in &ir.model.appearance_bindings {
             if self.written_appearance_bindings.contains(&binding.id) {
                 continue;
             }
@@ -1035,14 +1034,15 @@ impl<'a> Builder<'a> {
             ),
         );
 
-        let products = self.ir.model.products.clone();
-        let occurrences = self.ir.model.occurrences.clone();
+        let ir = self.ir;
+        let products = &ir.model.products;
+        let occurrences = &ir.model.occurrences;
         let occurrence_products = occurrences
             .iter()
             .map(|occurrence| (occurrence.id.clone(), occurrence.product.clone()))
             .collect::<HashMap<OccurrenceId, ProductId>>();
         let mut product_origins = HashMap::<ProductId, Ref>::new();
-        for product in &products {
+        for product in products {
             product_origins.insert(
                 product.id.clone(),
                 geometry::placement(
@@ -1055,7 +1055,7 @@ impl<'a> Builder<'a> {
         }
         let mut representation_placements = HashMap::<ProductId, Vec<Ref>>::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
-        for occurrence in &occurrences {
+        for occurrence in occurrences {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
                 continue;
             };
@@ -1134,11 +1134,11 @@ impl<'a> Builder<'a> {
                 &format!("{shape},{representation}"),
             );
             definitions.insert(product.id.clone(), definition);
-            representations.insert(product.id, representation);
+            representations.insert(product.id.clone(), representation);
         }
 
         for occurrence in occurrences {
-            let OccurrenceParent::Occurrence { occurrence: parent } = occurrence.parent else {
+            let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
                 if !is_identity(&occurrence.transform.rows) {
                     self.loss(
                         LossCategory::Topology,
@@ -1151,7 +1151,7 @@ impl<'a> Builder<'a> {
                 }
                 continue;
             };
-            let Some(parent_product) = occurrence_products.get(&parent) else {
+            let Some(parent_product) = occurrence_products.get(parent) else {
                 self.loss(
                     LossCategory::Topology,
                     Severity::Warning,
@@ -1570,9 +1570,9 @@ impl<'a> Builder<'a> {
             return;
         }
 
-        let meshes = self.ir.model.tessellations.clone();
+        let ir = self.ir;
         let mut representation_items = Vec::new();
-        for mesh in meshes {
+        for mesh in &ir.model.tessellations {
             if mesh.vertices.is_empty()
                 || mesh.triangles.is_empty()
                 || mesh
@@ -2900,9 +2900,13 @@ impl Codec for StepCodec {
         let decoded = reader::decode_exchange(&bytes, &DecodeOptions::default(), &exchange)?;
         let opaque_offsets = decoded
             .ir
-            .native_unknowns("step")?
-            .iter()
-            .map(|record| record.offset as usize)
+            .native
+            .namespace("step")
+            .and_then(|namespace| namespace.arenas.get("unknowns"))
+            .into_iter()
+            .flatten()
+            .filter_map(|record| record.fields.get("offset")?.as_u64())
+            .map(|offset| offset as usize)
             .collect::<std::collections::BTreeSet<_>>();
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),

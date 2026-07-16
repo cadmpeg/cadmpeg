@@ -190,7 +190,7 @@ pub(super) fn decode_exchange(
                 .collect(),
         });
     }
-    ir.set_native_unknowns("step", &opaque)?;
+    ir.set_native_unknowns_owned("step", opaque);
     let accounting = byte_accounting(input.len(), exchange, &typed_records);
     if let Some(source) = &mut ir.source {
         source
