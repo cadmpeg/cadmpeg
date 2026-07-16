@@ -298,6 +298,7 @@ fn orient_direct_support_curve(
         (
             SurfaceGeometry::Cylinder { .. }
             | SurfaceGeometry::Cone { .. }
+            | SurfaceGeometry::Sphere { .. }
             | SurfaceGeometry::Torus { .. },
             CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. },
         ) => orient_conic_interval(pcurve, surface, &uv, &mut curve),
@@ -339,6 +340,16 @@ fn orient_conic_interval(
             constant_coordinate(control_points, |point| point.v)?;
             monotone_coordinate(control_points, |point| point.u)?;
             (uv[1].u - uv[0].u) * ratio.signum()
+        }
+        SurfaceGeometry::Sphere { .. } => {
+            if constant_coordinate(control_points, |point| point.u).is_some() {
+                monotone_coordinate(control_points, |point| point.v)?;
+                uv[1].v - uv[0].v
+            } else {
+                constant_coordinate(control_points, |point| point.v)?;
+                monotone_coordinate(control_points, |point| point.u)?;
+                uv[1].u - uv[0].u
+            }
         }
         SurfaceGeometry::Torus { .. } => {
             if constant_coordinate(control_points, |point| point.u).is_some() {
@@ -1177,6 +1188,39 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
                 })
             }
         }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            if let Some(u) = constant_coordinate(controls, |point| point.u) {
+                let tangent = cross(*axis, *ref_direction);
+                let radial = Vector3::new(
+                    ref_direction.x * u.cos() + tangent.x * u.sin(),
+                    ref_direction.y * u.cos() + tangent.y * u.sin(),
+                    ref_direction.z * u.cos() + tangent.z * u.sin(),
+                );
+                let sign = radius.signum();
+                (sign != 0.0).then_some(())?;
+                Some(CurveGeometry::Circle {
+                    center: *center,
+                    axis: cross(radial, *axis),
+                    ref_direction: scale(radial, sign),
+                    radius: radius.abs(),
+                })
+            } else {
+                let v = constant_coordinate(controls, |point| point.v)?;
+                let latitude_radius = radius * v.cos();
+                (latitude_radius.abs() > 1e-12 * (1.0 + radius.abs())).then_some(())?;
+                Some(CurveGeometry::Circle {
+                    center: translate(*center, *axis, radius * v.sin()),
+                    axis: *axis,
+                    ref_direction: scale(*ref_direction, latitude_radius.signum()),
+                    radius: latitude_radius.abs(),
+                })
+            }
+        }
         SurfaceGeometry::Nurbs(surface) => {
             if let Some(u) = constant_coordinate(controls, |point| point.u) {
                 crate::geometry::nurbs_surface_isocurve(surface, u, true).map(CurveGeometry::Nurbs)
@@ -1185,7 +1229,7 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
                 crate::geometry::nurbs_surface_isocurve(surface, v, false).map(CurveGeometry::Nurbs)
             }
         }
-        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Unknown { .. } => None,
     }
 }
 
@@ -2483,6 +2527,73 @@ mod occurrence_tests {
                 .1,
             None,
         );
+    }
+
+    #[test]
+    fn sphere_isoparametric_supports_lift_to_oriented_circles() {
+        let sphere = SurfaceGeometry::Sphere {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 4.0,
+        };
+        let latitude = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, 2.0), Point2::new(1.0, 2.0)],
+            weights: None,
+            periodic: false,
+        };
+        let circle = lift_pcurve(&latitude, &sphere).expect("southern latitude");
+        let (circle, range) =
+            orient_direct_support_curve(&latitude, &sphere, circle, [0.0, 1.0], false)
+                .expect("oriented southern latitude");
+        assert_eq!(range, Some([0.0, 1.0]));
+        assert!(matches!(
+            circle,
+            CurveGeometry::Circle { ref_direction, radius, .. }
+                if ref_direction == Vector3::new(-1.0, 0.0, 0.0)
+                    && (radius - 4.0 * 2.0_f64.cos().abs()).abs() < 1e-12
+        ));
+
+        let meridian = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.4, -1.0), Point2::new(0.4, 1.5)],
+            weights: None,
+            periodic: false,
+        };
+        let circle = lift_pcurve(&meridian, &sphere).expect("sphere meridian");
+        let (circle, range) =
+            orient_direct_support_curve(&meridian, &sphere, circle, [0.0, 1.0], true)
+                .expect("reversed sphere meridian");
+        assert!(range.is_some_and(|range| (range[1] - range[0] - 2.5).abs() < 1e-12));
+        assert!(matches!(circle, CurveGeometry::Circle { radius, .. } if radius == 4.0));
+
+        let negative_sphere = SurfaceGeometry::Sphere {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: -4.0,
+        };
+        let circle = lift_pcurve(&meridian, &negative_sphere).expect("signed sphere meridian");
+        let (circle, range) =
+            orient_direct_support_curve(&meridian, &negative_sphere, circle, [0.0, 1.0], false)
+                .expect("oriented signed sphere meridian");
+        assert!(range.is_some_and(|range| (range[1] - range[0] - 2.5).abs() < 1e-12));
+        assert!(matches!(circle, CurveGeometry::Circle { radius, .. } if radius == 4.0));
+
+        let pole = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![
+                Point2::new(0.0, std::f64::consts::FRAC_PI_2),
+                Point2::new(1.0, std::f64::consts::FRAC_PI_2),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        assert_eq!(lift_pcurve(&pole, &sphere), None);
     }
 
     #[test]
