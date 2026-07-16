@@ -4492,8 +4492,10 @@ fn section_xyz_in_model(
 }
 
 fn normalized(vector: [f64; 3]) -> Option<[f64; 3]> {
-    let magnitude = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
-    (magnitude > 1e-12).then(|| vector.map(|value| value / magnitude))
+    let magnitude = vector
+        .iter()
+        .fold(0.0_f64, |norm, value| norm.hypot(*value));
+    (magnitude.is_finite() && magnitude > 1e-12).then(|| vector.map(|value| value / magnitude))
 }
 
 fn feature_plane_equations(scan: &ContainerScan, feature_id: u32) -> Vec<([f64; 3], [f64; 3])> {
@@ -11418,6 +11420,12 @@ fn extrusion_extent_and_direction(
 #[cfg(test)]
 mod resolved_sketch_tests {
     use super::*;
+
+    #[test]
+    fn normalization_rejects_overflowed_finite_vectors() {
+        assert_eq!(normalized([f64::MAX, f64::MAX, 0.0]), None);
+        assert_eq!(normalized([3.0, 4.0, 0.0]), Some([0.6, 0.8, 0.0]));
+    }
 
     #[test]
     fn dependency_reconciliation_preserves_typed_history_edges() {
