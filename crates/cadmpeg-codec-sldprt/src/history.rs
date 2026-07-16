@@ -3843,6 +3843,12 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::DatumPlaneUnresolved => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved reference-plane construction",
+                    feature.id
+                )));
+            }
             FeatureDefinition::DatumOffsetPlane {
                 reference,
                 distance,
@@ -4178,6 +4184,12 @@ pub fn sync_neutral_features(
                         .unwrap_or_default(),
                     properties,
                 )
+            }
+            FeatureDefinition::DatumCoordinateSystemUnresolved => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved coordinate-system construction",
+                    feature.id
+                )));
             }
             FeatureDefinition::EquationCurve {
                 parameter,
@@ -6990,10 +7002,12 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::TreeNode { .. } => "Feature",
         FeatureDefinition::DatumPrincipalPlane { .. } => "Feature",
         FeatureDefinition::DatumPlane { .. } => "ReferencePlane",
+        FeatureDefinition::DatumPlaneUnresolved => "ReferencePlane",
         FeatureDefinition::DatumOffsetPlane { .. } => "Feature",
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",
         FeatureDefinition::DatumPoint { .. } => "ReferencePoint",
         FeatureDefinition::DatumCoordinateSystem { .. } => "CoordinateSystem",
+        FeatureDefinition::DatumCoordinateSystemUnresolved => "CoordinateSystem",
         FeatureDefinition::Block { .. } => "Block",
         FeatureDefinition::EquationCurve { .. } => "EquationDrivenCurve",
         FeatureDefinition::ProjectedCurve { .. } => "ProjectedCurve",

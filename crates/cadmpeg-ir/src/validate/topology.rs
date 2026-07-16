@@ -1997,8 +1997,10 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::TreeNode { .. }
             | FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlane { .. }
+            | FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }
+            | FeatureDefinition::DatumCoordinateSystemUnresolved
             | FeatureDefinition::Native { .. } => {}
             FeatureDefinition::DatumOffsetPlane {
                 reference,

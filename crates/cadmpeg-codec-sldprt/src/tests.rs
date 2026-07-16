@@ -3100,6 +3100,12 @@ fn encoder_writes_source_less_datum_features() {
         decoded.ir.model.features[2].definition,
         FeatureDefinition::DatumPoint { .. }
     ));
+
+    ir.model.features[0].definition = FeatureDefinition::DatumPlaneUnresolved;
+    let error = SldprtCodec.encode(&ir, &mut Vec::new()).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("has unresolved reference-plane construction"));
 }
 
 #[test]

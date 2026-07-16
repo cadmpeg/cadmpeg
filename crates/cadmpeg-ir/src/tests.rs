@@ -635,6 +635,21 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 }
 
 #[test]
+fn unresolved_datum_families_round_trip_through_json() {
+    use crate::features::FeatureDefinition;
+
+    let definitions = [
+        FeatureDefinition::DatumPlaneUnresolved,
+        FeatureDefinition::DatumCoordinateSystemUnresolved,
+    ];
+    let json = serde_json::to_string(&definitions).unwrap();
+    assert_eq!(
+        serde_json::from_str::<[FeatureDefinition; 2]>(&json).unwrap(),
+        definitions
+    );
+}
+
+#[test]
 fn feature_history_rejects_dangling_and_forward_dependencies() {
     use crate::features::{
         BooleanOp, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,

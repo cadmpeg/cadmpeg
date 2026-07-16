@@ -10742,6 +10742,8 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
         };
     }
     match kind {
+        "DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
+        "DATUM_CSYS" => FeatureDefinition::DatumCoordinateSystemUnresolved,
         "SKETCH" => FeatureDefinition::Sketch {
             space: SketchSpace::Unresolved,
             sketch: None,

@@ -285,6 +285,8 @@ pub enum FeatureDefinition {
         /// In-plane u-axis.
         u_axis: Vector3,
     },
+    /// Constructed reference-plane family whose model-space frame is unresolved.
+    DatumPlaneUnresolved,
     /// Reference plane offset from another datum plane.
     DatumOffsetPlane {
         /// Source plane, when its feature reference is available.
@@ -316,6 +318,8 @@ pub enum FeatureDefinition {
         /// Unit z-axis.
         z_axis: Vector3,
     },
+    /// Constructed coordinate-system family whose model-space frame is unresolved.
+    DatumCoordinateSystemUnresolved,
     /// Rectangular solid primitive constructed from three local dimensions.
     Block {
         /// Ordered local x, y, and z dimensions.

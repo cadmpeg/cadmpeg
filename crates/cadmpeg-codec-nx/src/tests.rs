@@ -2699,7 +2699,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
 }
 
 #[test]
-fn nx_sketch_operation_retains_an_unresolved_coordinate_space() {
+fn nx_named_operation_families_preserve_unresolved_semantics() {
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("SKETCH", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::Sketch {
@@ -2749,8 +2749,11 @@ fn nx_sketch_operation_retains_an_unresolved_coordinate_space() {
     ));
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("DATUM_PLANE", &[], None, None, None),
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
-            if kind == "DATUM_PLANE"
+        cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
+    ));
+    assert!(matches!(
+        crate::decode::non_boolean_feature_definition("DATUM_CSYS", &[], None, None, None),
+        cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystemUnresolved
     ));
     assert!(matches!(
         crate::decode::non_boolean_feature_definition(

@@ -881,6 +881,8 @@ The logical payload formed by the first two resolved `DATUM_CSYS` blocks uses th
 
 The first two resolved datum-coordinate-system blocks form one logical object payload in serialized lane order. Their bytewise concatenation is authoritative: fields may cross the source-block boundary. The reconstructed payload retains its exact length and hash, both block identities, payload-relative block starts, exact block lengths, and absolute source offsets. The other six construction lanes remain independently bounded records.
 
+The `DATUM_CSYS` operation label establishes a coordinate-system feature family. Its neutral construction remains unresolved until the payload fields establish a complete model-space frame.
+
 An object-payload scalar-pair frame is `08 02 03 01, branch, c0 45 04 00 80 86 02 00 03, shifted-f64, 00, shifted-f64`, where `branch` is `03 01` or `81 02 01`. Each complete occurrence in a reconstructed datum-coordinate-system or sketch payload is retained in payload order. Both values are finite. The typed frame preserves its owning logical payload, exact discriminator including the branch, payload-relative discriminator and scalar offsets, and their exact absolute source offsets across source-block boundaries. A preceding `6d 00 f0` prefix belongs to the containing record and does not create a second pair.
 
 Each sketch feature links its ordered typed coordinate-pair records by payload ordinal. Source-block boundaries do not delimit sketch entities and cannot assign coordinate ownership; a coordinate frame crossing a block boundary remains one field in the owning logical sketch payload.
@@ -909,6 +911,8 @@ A terminal datum-plane object-index lane is `01, declared_count:u8, compact_inde
 A datum-plane object scalar-pair frame is `6d 00 f0 08 02 03 01 03 01 c0 45 04 00 80 86 02 00 03, shifted-f64, 00, shifted-f64`. Each occurrence in the reconstructed logical payload is independent and ordered by payload offset. Both scalars are finite. The native record retains the frame offset, both scalar offsets and values, and their exact absolute source offsets across source-block boundaries.
 
 A datum-plane descriptor block is exactly 40 bytes: `lowercase_hex_identity, 3f 41, compact_schema_index, ff 02 01, printable_label`, where the identity and label are nonempty and the compact index is non-null. Descriptor references resolve within the operation-selected offset store. The typed descriptor retains its owning plane header, descriptor-lane ordinal, resolved block, identity, exact delimiter-prefixed suffix, schema index, label, and absolute block offset. Malformed framing or a non-40-byte block leaves the descriptor untyped.
+
+The `DATUM_PLANE` operation label establishes a reference-plane feature family. Its neutral construction remains unresolved until the payload fields establish a complete model-space plane frame.
 
 **Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cross-stream bridge (RMFastLoad ↔ UG_PART OM ↔ EXTREFSTREAM). Equal handle values group their ordered distinct bounded OM records, offset-store control blocks, and indexed EXTREFSTREAM records under one native handle identity. A second family is a four-byte big-endian word whose high nibble is `0xC` and low 28 bits are the reference value. Both tokens remain within one externally bounded record and occur as `(e0-handle, c-ref)` pairs.
 
