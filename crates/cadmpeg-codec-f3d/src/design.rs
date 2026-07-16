@@ -5942,19 +5942,49 @@ fn clamped_nurbs(degree: u32, knots: &[f64]) -> bool {
             .all(|knot| knot.to_bits() == knots[knots.len() - 1].to_bits())
 }
 
-fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
-    expression
-        .split(|character: char| {
-            !(character.is_alphanumeric() || matches!(character, '_' | '"' | '$' | '°' | 'µ'))
-        })
-        .filter(|token| {
-            !token.is_empty()
-                && token
-                    .chars()
-                    .next()
-                    .is_some_and(|character| character.is_alphabetic() || character == '_')
-        })
-        .map(str::to_owned)
+fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> {
+    let identifier_character = |character: char| {
+        character.is_alphanumeric() || matches!(character, '_' | '"' | '$' | '°' | 'µ')
+    };
+    let mut identifiers = Vec::new();
+    let mut start = None;
+    for (offset, character) in expression
+        .char_indices()
+        .chain(std::iter::once((expression.len(), '\0')))
+    {
+        if identifier_character(character) {
+            start.get_or_insert(offset);
+            continue;
+        }
+        let Some(token_start) = start.take() else {
+            continue;
+        };
+        let token = &expression[token_start..offset];
+        if !token
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_alphabetic() || character == '_')
+        {
+            continue;
+        }
+        let next = expression[offset..]
+            .chars()
+            .find(|character| !character.is_whitespace());
+        if next == Some('(') {
+            continue;
+        }
+        let previous = expression[..token_start]
+            .chars()
+            .rev()
+            .find(|character| !character.is_whitespace());
+        if matches!(token, "mm" | "cm" | "m" | "in" | "ft" | "deg" | "rad")
+            && previous.is_some_and(|character| character.is_ascii_digit() || character == ')')
+        {
+            continue;
+        }
+        identifiers.push(token.to_owned());
+    }
+    identifiers.into_iter()
 }
 
 fn json_scalar_text(value: &serde_json::Value) -> String {
@@ -16152,7 +16182,7 @@ mod relation_tests {
         let name = "Width$µ°\"A";
         assert_eq!(
             expression_identifiers(&format!("{name} / 2 + sin(30 deg)")).collect::<Vec<_>>(),
-            [name, "sin", "deg"]
+            [name]
         );
         let parameter = |record_index, source_ordinal, expression: &str, name: &str| {
             let mut parameter = parse_design_parameter(&parameter_record(
@@ -16172,7 +16202,11 @@ mod relation_tests {
         let (_, projected) = project_parameter_design(
             &[
                 parameter(20, 0, "10 mm", name),
-                parameter(21, 1, &format!("{name} / 2"), "Half"),
+                parameter(21, 1, "1", "sin"),
+                parameter(22, 2, "1", "deg"),
+                parameter(23, 3, "1", "mm"),
+                parameter(24, 4, &format!("{name} / 2 + sin(30 deg) + 10 mm"), "Half"),
+                parameter(25, 5, "mm + 1", "BareUnitName"),
             ],
             &[],
             &[],
@@ -16191,6 +16225,15 @@ mod relation_tests {
             .find(|parameter| parameter.name == "Half")
             .expect("dependent parameter");
         assert_eq!(half.dependencies, [source.id.clone()]);
+        let millimetres = projected
+            .iter()
+            .find(|parameter| parameter.name == "mm")
+            .expect("bare unit-named parameter");
+        let bare_unit_name = projected
+            .iter()
+            .find(|parameter| parameter.name == "BareUnitName")
+            .expect("consumer of bare unit-named parameter");
+        assert_eq!(bare_unit_name.dependencies, [millimetres.id.clone()]);
     }
 
     #[test]
