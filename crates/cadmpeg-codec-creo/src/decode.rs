@@ -7651,13 +7651,20 @@ fn current_feature_operation(
 }
 
 fn feature_schema_class(scan: &ContainerScan, feature_id: u32) -> Option<u32> {
-    if let Some(schema_class) = current_feature_operation(&scan.feature_operations, feature_id)
+    resolved_feature_schema_class(&scan.feature_operations, &scan.feature_rows, feature_id)
+}
+
+fn resolved_feature_schema_class(
+    operations: &[crate::feature::FeatureOperation],
+    rows: &[crate::feature::FeatureRow],
+    feature_id: u32,
+) -> Option<u32> {
+    if let Some(schema_class) = current_feature_operation(operations, feature_id)
         .and_then(|operation| operation.root_schema_class)
     {
         return Some(schema_class);
     }
-    let classes = scan
-        .feature_rows
+    let classes = rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
         .filter_map(|row| row.root_schema_class)
@@ -12979,6 +12986,23 @@ mod resolved_sketch_tests {
             Some(917)
         );
         assert!(current_feature_operation(&[operation.clone(), operation], 6).is_none());
+        let row = |schema_class, offset| crate::feature::FeatureRow {
+            feature_id: 6,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(schema_class),
+            stream_offset: 0,
+            body: Vec::new(),
+            body_offset: offset + 1,
+            offset,
+        };
+        assert_eq!(
+            resolved_feature_schema_class(&[], &[row(917, 20), row(917, 30)], 6),
+            Some(917)
+        );
+        assert_eq!(
+            resolved_feature_schema_class(&[], &[row(913, 20), row(914, 30)], 6),
+            None
+        );
     }
 
     #[test]
@@ -20481,12 +20505,26 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             native_ref,
         });
     }
-    for row in &scan.feature_rows {
-        let id = IrFeatureId(format!("creo:model:feature#{}", row.feature_id));
+    let row_feature_ids = scan
+        .feature_rows
+        .iter()
+        .map(|row| row.feature_id)
+        .collect::<BTreeSet<_>>();
+    for feature_id in row_feature_ids {
+        let id = IrFeatureId(format!("creo:model:feature#{feature_id}"));
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
-        let Some(schema_class) = row.root_schema_class else {
+        let Some(schema_class) = feature_schema_class(scan, feature_id) else {
+            continue;
+        };
+        let Some(offset) = scan
+            .feature_rows
+            .iter()
+            .filter(|row| row.feature_id == feature_id)
+            .map(|row| row.offset)
+            .min()
+        else {
             continue;
         };
         let kind = schema_operation_kind(schema_class).unwrap_or("Native Feature");
@@ -20494,28 +20532,28 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             &mut annotations,
             &id,
             "AllFeatur",
-            row.offset as u64,
+            offset as u64,
             "schema_feature_operation",
             Exactness::ByteExact,
         );
-        let definition = schema_feature_definition(scan, &ir, row.feature_id, schema_class, kind);
-        let parameters = feature_parameters(scan, row.feature_id);
-        let mut source_properties = feature_source_properties(scan, row.feature_id);
+        let definition = schema_feature_definition(scan, &ir, feature_id, schema_class, kind);
+        let parameters = feature_parameters(scan, feature_id);
+        let mut source_properties = feature_source_properties(scan, feature_id);
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         ir.model.features.push(Feature {
             id,
             ordinal: ir.model.features.len() as u64,
-            name: Some(format!("{kind} id {}", row.feature_id)),
+            name: Some(format!("{kind} id {feature_id}")),
             suppressed: false,
             parent: None,
-            dependencies: feature_dependencies(scan, &ir, row.feature_id),
+            dependencies: feature_dependencies(scan, &ir, feature_id),
             source_properties,
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
-            outputs: feature_output_bodies(scan, &ir, row.feature_id),
+            outputs: feature_output_bodies(scan, &ir, feature_id),
             definition,
-            native_ref: owning_feature_definition_ref(scan, row.feature_id),
+            native_ref: owning_feature_definition_ref(scan, feature_id),
         });
     }
     link_feature_sketch_history(scan, &mut ir);
