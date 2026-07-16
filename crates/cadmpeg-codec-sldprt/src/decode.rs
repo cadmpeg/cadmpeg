@@ -88,7 +88,8 @@ pub fn decode(
 fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     use cadmpeg_ir::features::{
         BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, Extent,
-        FaceSelection, FeatureDefinition, PathRef, PatternKind, ProfileRef, RadiusSpec,
+        FaceSelection, FeatureDefinition, FeatureSourceContent, PathRef, PatternKind, ProfileRef,
+        RadiusSpec,
     };
     use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry, SpatialSketchGeometry};
 
@@ -389,6 +390,53 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             severity: Severity::Warning,
             message: format!(
                 "{incoherent_feature_edges} feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; {duplicate_feature_ordinals} feature record(s) share regeneration ordinals."
+            ),
+            provenance: None,
+        });
+    }
+    let parameter_owners = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (&parameter.id, &parameter.owner))
+        .collect::<BTreeMap<_, _>>();
+    let features_by_id = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (&feature.id, feature))
+        .collect::<BTreeMap<_, _>>();
+    let incoherent_feature_content = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            let mut parameters = std::collections::HashSet::new();
+            let mut children = std::collections::HashSet::new();
+            feature.source_content.iter().any(|content| match content {
+                FeatureSourceContent::Text(_) => false,
+                FeatureSourceContent::Parameter(parameter) => {
+                    !parameters.insert(parameter)
+                        || parameter_owners
+                            .get(parameter)
+                            .is_none_or(|owner| *owner != &feature.id)
+                }
+                FeatureSourceContent::Feature(child) => {
+                    !children.insert(child)
+                        || features_by_id.get(child).is_none_or(|child| {
+                            child.ordinal <= feature.ordinal
+                                || child.parent.as_ref() != Some(&feature.id)
+                        })
+                }
+            })
+        })
+        .count();
+    if incoherent_feature_content > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{incoherent_feature_content} feature record(s) contain missing, repeated, misowned, or structurally inconsistent source-content references."
             ),
             provenance: None,
         });
@@ -2148,8 +2196,9 @@ mod design_loss_tests {
     };
     use cadmpeg_ir::features::{
         Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length,
-        ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
+        FeatureTreeNodeRole, Length, ParameterId, ParameterPmi, ParameterValue,
+        PmiDimensionSubtype,
     };
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -2425,13 +2474,22 @@ mod design_loss_tests {
             .push(feature(first.clone(), 0, None, vec![second.clone()]));
         ir.model
             .features
-            .push(feature(second, 1, None, vec![first]));
+            .push(feature(second, 1, Some(first.clone()), vec![first]));
         ir.model.features.push(feature(
             FeatureId("third".into()),
             1,
             Some(missing),
             Vec::new(),
         ));
+        ir.model.features[0].source_content = vec![
+            FeatureSourceContent::Feature(FeatureId("second".into())),
+            FeatureSourceContent::Feature(FeatureId("second".into())),
+        ];
+        ir.model.features[1].source_content =
+            vec![FeatureSourceContent::Feature(FeatureId("third".into()))];
+        ir.model.features[2].source_content = vec![FeatureSourceContent::Parameter(ParameterId(
+            "missing-parameter".into(),
+        ))];
         let mut report = DecodeReport {
             format: "sldprt".into(),
             container_only: false,
@@ -2445,6 +2503,10 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "2 feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; 2 feature record(s) share regeneration ordinals."
+        }));
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "3 feature record(s) contain missing, repeated, misowned, or structurally inconsistent source-content references."
         }));
     }
 
