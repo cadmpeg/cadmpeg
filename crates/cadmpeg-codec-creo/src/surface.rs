@@ -94,6 +94,17 @@ pub(crate) fn unique_surface_row(rows: &[SurfaceRow], id: u32) -> Option<&Surfac
     matches.next().is_none().then_some(row)
 }
 
+/// Return rows whose native surface identifier occurs exactly once.
+pub(crate) fn uniquely_identified_rows(rows: &[SurfaceRow]) -> Vec<&SurfaceRow> {
+    let mut counts = BTreeMap::<u32, usize>::new();
+    for row in rows {
+        *counts.entry(row.id).or_default() += 1;
+    }
+    rows.iter()
+        .filter(|row| counts.get(&row.id) == Some(&1))
+        .collect()
+}
+
 /// Named scalar parameters from one surface-family prototype.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfacePrototype {
@@ -2193,6 +2204,29 @@ mod tests {
             7, 0x24, 4, 0x01, 0, 0, // second id 7
         ];
         assert!(rows(&duplicate_ids).is_empty());
+    }
+
+    #[test]
+    fn unique_surface_projection_excludes_every_collided_identity() {
+        let row = |id, offset| SurfaceRow {
+            id,
+            type_byte: 0x22,
+            kind: SurfaceKind::Plane,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset,
+        };
+        let rows = [row(7, 10), row(8, 20), row(7, 30)];
+
+        assert_eq!(
+            uniquely_identified_rows(&rows)
+                .iter()
+                .map(|row| row.id)
+                .collect::<Vec<_>>(),
+            [8]
+        );
     }
 
     #[test]

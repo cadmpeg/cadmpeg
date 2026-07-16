@@ -17442,6 +17442,14 @@ fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
     }
     candidates
         .into_iter()
+        .filter(|(id, _)| {
+            scan.surface_rows
+                .iter()
+                .filter(|row| row.id == *id)
+                .take(2)
+                .count()
+                < 2
+        })
         .filter_map(|(id, candidates)| agreed_plane(&candidates).map(|plane| (id, plane)))
         .collect()
 }
@@ -17451,7 +17459,7 @@ fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEqu
         .into_iter()
         .map(|(id, plane)| (id, CarrierEquation::Plane(plane)))
         .collect::<BTreeMap<_, _>>();
-    for row in &scan.surface_rows {
+    for row in crate::surface::uniquely_identified_rows(&scan.surface_rows) {
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
         let Some(surface) = ir.model.surfaces.iter().find(|surface| surface.id == id) else {
             continue;
