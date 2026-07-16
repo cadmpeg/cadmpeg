@@ -125,6 +125,24 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         });
     }
 
+    let incomplete_history_references = ir
+        .native
+        .namespace("sldprt")
+        .and_then(|namespace| crate::native::SldprtNative::load(namespace).ok())
+        .map_or(0, |native| {
+            crate::history::incomplete_history_reference_features(&native.feature_histories)
+        });
+    if incomplete_history_references > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_history_references} feature history record(s) contain duplicate identities or unresolved parent, dependency, dimension, or child references."
+            ),
+            provenance: None,
+        });
+    }
+
     let native_constraints = ir
         .model
         .sketch_constraints

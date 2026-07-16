@@ -24,6 +24,18 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 
+const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
+    "Profile",
+    "Path",
+    "Profiles",
+    "Guides",
+    "Seeds",
+    "Dependency",
+    "Dependencies",
+    "ParentFeatures",
+    "DissectableChildren",
+];
+
 pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureHistory> {
     scan.blocks
         .iter()
@@ -269,14 +281,13 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
     histories
         .iter()
         .flat_map(|history| {
-            let by_source = history
-                .features
+            let source_bindings = unique_source_bindings(history);
+            let by_source = source_bindings
                 .iter()
-                .filter_map(|feature| {
-                    feature
-                        .source_id
-                        .as_deref()
-                        .map(|source| (source, neutral_feature_id(&feature.id)))
+                .filter_map(|(source, binding)| {
+                    binding
+                        .as_ref()
+                        .map(|(_, neutral)| (*source, neutral.clone()))
                 })
                 .collect::<HashMap<_, _>>();
             let by_native = history
@@ -284,14 +295,10 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                 .iter()
                 .map(|feature| (feature.id.as_str(), neutral_feature_id(&feature.id)))
                 .collect::<HashMap<_, _>>();
-            let native_by_source = history
-                .features
+            let native_by_source = source_bindings
                 .iter()
-                .filter_map(|feature| {
-                    feature
-                        .source_id
-                        .as_deref()
-                        .map(|source| (source, feature.id.as_str()))
+                .filter_map(|(source, binding)| {
+                    binding.as_ref().map(|(native, _)| (*source, *native))
                 })
                 .collect::<HashMap<_, _>>();
             history
@@ -323,6 +330,78 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                 })
         })
         .collect()
+}
+
+fn unique_source_bindings(history: &FeatureHistory) -> HashMap<&str, Option<(&str, FeatureId)>> {
+    let mut bindings = HashMap::new();
+    for feature in &history.features {
+        let Some(source) = feature.source_id.as_deref() else {
+            continue;
+        };
+        let binding = (feature.id.as_str(), neutral_feature_id(&feature.id));
+        bindings
+            .entry(source)
+            .and_modify(|existing| *existing = None)
+            .or_insert(Some(binding));
+    }
+    bindings
+}
+
+pub(crate) fn incomplete_history_reference_features(histories: &[FeatureHistory]) -> usize {
+    histories
+        .iter()
+        .map(|history| {
+            let sources = unique_source_bindings(history);
+            let native_ids = history
+                .features
+                .iter()
+                .map(|feature| feature.id.as_str())
+                .collect::<HashSet<_>>();
+            history
+                .features
+                .iter()
+                .filter(|feature| {
+                    let duplicate_source = feature
+                        .source_id
+                        .as_deref()
+                        .is_some_and(|source| sources.get(source).is_some_and(Option::is_none));
+                    let parent_requested =
+                        feature.tree_parent.is_some() || feature.parent_source_id.is_some();
+                    let parent_resolved = feature
+                        .tree_parent
+                        .as_deref()
+                        .is_some_and(|parent| native_ids.contains(parent))
+                        || feature
+                            .parent_source_id
+                            .as_deref()
+                            .is_some_and(|source| sources.get(source).is_some_and(Option::is_some));
+                    let incomplete_content = feature.content.iter().any(|item| match item {
+                        FeatureContent::Feature(child) => !native_ids.contains(child.as_str()),
+                        FeatureContent::Dimension(name) => !feature.parameters.contains_key(name),
+                        FeatureContent::Text(_) => false,
+                    });
+                    let unresolved_dependency = FEATURE_REFERENCE_PROPERTIES
+                        .iter()
+                        .filter_map(|name| feature.properties.get(*name))
+                        .flat_map(|value| {
+                            value.split(|character: char| {
+                                character == ',' || character == ';' || character.is_whitespace()
+                            })
+                        })
+                        .filter(|reference| !reference.is_empty())
+                        .any(|reference| {
+                            sources.get(reference).and_then(Option::as_ref).is_none_or(
+                                |(_, dependency)| dependency == &neutral_feature_id(&feature.id),
+                            )
+                        });
+                    duplicate_source
+                        || (parent_requested && !parent_resolved)
+                        || incomplete_content
+                        || unresolved_dependency
+                })
+                .count()
+        })
+        .sum()
 }
 
 fn project_feature_content(
@@ -387,20 +466,9 @@ fn project_feature_dependencies(
     feature: &Feature,
     by_source: &HashMap<&str, FeatureId>,
 ) -> Vec<FeatureId> {
-    const REFERENCE_PROPERTIES: &[&str] = &[
-        "Profile",
-        "Path",
-        "Profiles",
-        "Guides",
-        "Seeds",
-        "Dependency",
-        "Dependencies",
-        "ParentFeatures",
-        "DissectableChildren",
-    ];
     let owner = neutral_feature_id(&feature.id);
     let mut seen = std::collections::HashSet::new();
-    REFERENCE_PROPERTIES
+    FEATURE_REFERENCE_PROPERTIES
         .iter()
         .filter_map(|name| feature.properties.get(*name))
         .flat_map(|value| {
@@ -680,6 +748,61 @@ fn expression_identifier_tokens(expression: &str) -> Vec<ExpressionIdentifier> {
         }
     }
     identifiers
+}
+
+#[cfg(test)]
+mod history_reference_tests {
+    use super::*;
+
+    fn feature(id: &str, source_id: Option<&str>, ordinal: u32) -> Feature {
+        Feature {
+            id: id.into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: source_id.map(str::to_string),
+            parent_source_id: None,
+            ordinal,
+            name: id.into(),
+            kind: "Custom".into(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn ambiguous_and_missing_history_references_do_not_bind_arbitrarily() {
+        let first = feature("first", Some("1"), 0);
+        let second = feature("second", Some("1"), 1);
+        let mut dependent = feature("dependent", Some("2"), 2);
+        dependent.properties.insert("Dependency".into(), "1".into());
+        let mut malformed = feature("malformed", Some("3"), 3);
+        malformed.parent_source_id = Some("missing".into());
+        malformed
+            .content
+            .push(FeatureContent::Feature("missing-child".into()));
+        malformed
+            .content
+            .push(FeatureContent::Dimension("D1".into()));
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![first, second, dependent, malformed],
+        };
+
+        let projected = project_features(std::slice::from_ref(&history));
+
+        assert!(projected[2].dependencies.is_empty());
+        assert_eq!(incomplete_history_reference_features(&[history]), 4);
+    }
 }
 
 /// Bind a uniquely identified native sketch history node to solved sketch geometry.
