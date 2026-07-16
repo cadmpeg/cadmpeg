@@ -4793,6 +4793,189 @@ impl MeshQuotient {
         }
     }
 
+    fn close_coordinate_roots(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+    ) -> Option<HashMap<usize, usize>> {
+        fn pair_supported(candidates: &[[usize; 2]], left: usize, right: usize) -> bool {
+            candidates.is_empty()
+                || candidates
+                    .iter()
+                    .any(|pair| same_unordered_pair(*pair, [left, right]))
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn walk(
+            domains: &[Vec<usize>],
+            edges: &[[usize; 2]],
+            root_edges: &[Vec<usize>],
+            edge_candidates: &[Vec<[usize; 2]>],
+            assigned: &mut [Option<usize>],
+            point_uses: &mut [usize],
+            solutions: &mut Vec<Vec<usize>>,
+            states: &mut usize,
+            exhausted: &mut bool,
+        ) {
+            const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
+
+            if solutions.len() > 1 || *exhausted {
+                return;
+            }
+            *states += 1;
+            if *states > MAX_COORDINATE_CLOSURE_STATES {
+                *exhausted = true;
+                return;
+            }
+            let viable_values = |root: usize, assigned: &[Option<usize>]| {
+                domains[root]
+                    .iter()
+                    .copied()
+                    .filter(|point| {
+                        root_edges[root].iter().all(|edge| {
+                            let [left, right] = edges[*edge];
+                            let other = if left == root { right } else { left };
+                            assigned[other].is_none_or(|other_point| {
+                                pair_supported(&edge_candidates[*edge], *point, other_point)
+                            })
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            };
+
+            let remaining = assigned.iter().filter(|point| point.is_none()).count();
+            let unused = point_uses.iter().filter(|uses| **uses == 0).count();
+            if remaining < unused {
+                return;
+            }
+            let values = assigned
+                .iter()
+                .enumerate()
+                .filter(|(_, point)| point.is_none())
+                .map(|(root, _)| (root, viable_values(root, assigned)))
+                .collect::<Vec<_>>();
+            for (point, uses) in point_uses.iter().enumerate() {
+                if *uses == 0 && !values.iter().any(|(_, values)| values.contains(&point)) {
+                    return;
+                }
+            }
+            let next = values
+                .into_iter()
+                .min_by_key(|(root, values)| (values.len(), *root));
+            let Some((root, values)) = next else {
+                if point_uses.iter().all(|uses| *uses > 0) {
+                    solutions.push(
+                        assigned
+                            .iter()
+                            .copied()
+                            .collect::<Option<Vec<_>>>()
+                            .expect("complete coordinate assignment"),
+                    );
+                }
+                return;
+            };
+            for point in values {
+                assigned[root] = Some(point);
+                point_uses[point] += 1;
+                walk(
+                    domains,
+                    edges,
+                    root_edges,
+                    edge_candidates,
+                    assigned,
+                    point_uses,
+                    solutions,
+                    states,
+                    exhausted,
+                );
+                point_uses[point] -= 1;
+                assigned[root] = None;
+                if solutions.len() > 1 {
+                    return;
+                }
+            }
+        }
+
+        let mut roots = Vec::new();
+        for node in 0..self.union.len() {
+            if self.union.find(node) == node {
+                roots.push(node);
+            }
+        }
+        if roots.len() < point_count {
+            return None;
+        }
+        if roots.len() == point_count {
+            return self.point_assignment(point_count, edge_candidates);
+        }
+        let root_indices = roots
+            .iter()
+            .enumerate()
+            .map(|(index, root)| (*root, index))
+            .collect::<HashMap<_, _>>();
+        let edges = edge_candidates
+            .iter()
+            .enumerate()
+            .map(|(edge, _)| {
+                Some([
+                    *root_indices.get(&self.union.find(edge * 2))?,
+                    *root_indices.get(&self.union.find(edge * 2 + 1))?,
+                ])
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let mut root_edges = vec![Vec::new(); roots.len()];
+        for (edge, [left, right]) in edges.iter().copied().enumerate() {
+            root_edges[left].push(edge);
+            if right != left {
+                root_edges[right].push(edge);
+            }
+        }
+        let domains = roots
+            .iter()
+            .map(|root| {
+                self.domains[*root]
+                    .iter()
+                    .copied()
+                    .filter(|point| *point < point_count)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        if domains.iter().any(Vec::is_empty) {
+            return None;
+        }
+        let mut solutions = Vec::new();
+        let mut states = 0;
+        let mut exhausted = false;
+        walk(
+            &domains,
+            &edges,
+            &root_edges,
+            edge_candidates,
+            &mut vec![None; roots.len()],
+            &mut vec![0; point_count],
+            &mut solutions,
+            &mut states,
+            &mut exhausted,
+        );
+        if exhausted {
+            return None;
+        }
+        let [assignment] = solutions.as_slice() else {
+            return None;
+        };
+        let mut root_by_point = HashMap::new();
+        for (&root, &point) in roots.iter().zip(assignment) {
+            if let Some(previous) = root_by_point.insert(point, root) {
+                let merged = self.merge(previous, root)?;
+                if !self.propagate_component_edge_domains(merged, edge_candidates) {
+                    return None;
+                }
+                root_by_point.insert(point, merged);
+            }
+        }
+        self.point_assignment(point_count, edge_candidates)
+    }
+
     fn assignment_has_option(
         &self,
         assignment: &MeshFaceBoundaryAssignment,
@@ -6738,7 +6921,7 @@ impl MeshSelectionSearch<'_> {
         }
         let remaining_merges = self.remaining_equation_merge_capacity(&mut measured)?;
         if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
-            return None;
+            measured.close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)?;
         }
         if root_count == self.vertex_points.len()
             && !measured.point_assignment_exists(self.vertex_points.len(), self.edge_candidates)
@@ -6784,7 +6967,11 @@ impl MeshSelectionSearch<'_> {
             else {
                 return;
             };
-            if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
+            if root_count.saturating_sub(remaining_merges) > self.vertex_points.len()
+                && measured
+                    .close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)
+                    .is_none()
+            {
                 return;
             }
             if root_count == self.vertex_points.len()
@@ -6866,7 +7053,7 @@ impl MeshSelectionSearch<'_> {
         let Some((_, supported, _, _, _, face)) = next else {
             let mut quotient = measured.clone();
             let Some(root_points) =
-                quotient.point_assignment(self.vertex_points.len(), self.edge_candidates)
+                quotient.close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)
             else {
                 return;
             };
@@ -9624,6 +9811,45 @@ mod motif_tests {
         assert!(quotient.merge_singleton_coordinate_roots(&[Vec::new(), Vec::new()]));
         assert_eq!(quotient.root_count(), 3);
         assert_eq!(quotient.union.find(0), quotient.union.find(2));
+    }
+
+    #[test]
+    fn quotient_closes_coordinate_roots_forced_by_joint_edge_pairs() {
+        let all = Arc::new(HashSet::from([0, 1, 2]));
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(6),
+            domains: vec![all.clone(); 6],
+            members: (0..6).map(|node| vec![node]).collect(),
+        };
+        quotient.merge(1, 2).expect("shared first corner");
+        quotient.merge(3, 4).expect("shared second corner");
+        let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+
+        let assignment = quotient
+            .close_coordinate_roots(3, &candidates)
+            .expect("unique joint coordinate closure");
+
+        assert_eq!(quotient.root_count(), 3);
+        assert_eq!(quotient.union.find(0), quotient.union.find(5));
+        assert_eq!(assignment[&quotient.union.find(0)], 0);
+        assert_eq!(assignment[&quotient.union.find(1)], 1);
+        assert_eq!(assignment[&quotient.union.find(3)], 2);
+    }
+
+    #[test]
+    fn quotient_does_not_guess_an_ambiguous_coordinate_closure() {
+        let all = Arc::new(HashSet::from([0, 1]));
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: vec![all.clone(); 4],
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        quotient.merge(1, 2).expect("shared middle corner");
+
+        assert!(quotient
+            .close_coordinate_roots(2, &[vec![[0, 1]], vec![[0, 1]]])
+            .is_none());
+        assert_eq!(quotient.root_count(), 3);
     }
 
     #[test]
