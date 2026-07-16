@@ -10168,9 +10168,9 @@ pub(crate) fn extrude_boolean_op(
     }
 }
 
-fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>> {
+fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
     let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
-    let mut surfaces = BTreeSet::new();
+    let mut faces = Vec::new();
     for region_id in &body.regions {
         let region = ir
             .model
@@ -10189,11 +10189,20 @@ fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>>
                     .faces
                     .iter()
                     .find(|face| face.id == *face_id && face.shell == shell.id)?;
-                surfaces.insert(face.surface.clone());
+                faces.push(face);
             }
         }
     }
-    Some(surfaces)
+    Some(faces)
+}
+
+fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>> {
+    Some(
+        body_faces(ir, body_id)?
+            .into_iter()
+            .map(|face| face.surface.clone())
+            .collect(),
+    )
 }
 
 pub(crate) fn blend_feature_definition(
@@ -10438,7 +10447,7 @@ pub(crate) fn block_placement(
     let [body] = outputs else {
         return None;
     };
-    let body_surfaces = body_surface_ids(ir, body)?;
+    let faces = body_faces(ir, body)?;
     let surface_geometry = ir
         .model
         .surfaces
@@ -10446,12 +10455,7 @@ pub(crate) fn block_placement(
         .map(|surface| (&surface.id, &surface.geometry))
         .collect::<BTreeMap<_, _>>();
     let mut bands = Vec::<PlaneBand>::new();
-    for face in ir
-        .model
-        .faces
-        .iter()
-        .filter(|face| body_surfaces.contains(&face.surface))
-    {
+    for face in faces {
         let Some(SurfaceGeometry::Plane { origin, normal, .. }) =
             surface_geometry.get(&face.surface).copied()
         else {
@@ -10715,14 +10719,11 @@ pub(crate) fn simple_hole_diameters(
         .collect::<BTreeMap<_, _>>();
     let mut diameters = BTreeMap::new();
     for (body, operations) in operations_by_body {
-        let Some(body_surfaces) = body_surface_ids(ir, &body) else {
+        let Some(body_faces) = body_faces(ir, &body) else {
             return BTreeMap::new();
         };
-        let radii = ir
-            .model
-            .faces
-            .iter()
-            .filter(|face| body_surfaces.contains(&face.surface))
+        let radii = body_faces
+            .into_iter()
             .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
             .filter_map(|face| match surfaces.get(&face.surface)? {
                 SurfaceGeometry::Cylinder { radius, .. } if radius.is_finite() && *radius > 0.0 => {
@@ -10812,14 +10813,12 @@ pub(crate) fn simple_hole_chamfers(
     let angular_tolerance = ir.tolerances.angular.max(1e-12);
     let mut treatments = BTreeMap::new();
     for (body, operations) in operations_by_body {
-        let Some(body_surfaces) = body_surface_ids(ir, &body) else {
+        let Some(body_faces) = body_faces(ir, &body) else {
             return BTreeMap::new();
         };
-        let bores = ir
-            .model
-            .faces
+        let bores = body_faces
             .iter()
-            .filter(|face| body_surfaces.contains(&face.surface))
+            .copied()
             .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
             .filter_map(|face| match surfaces.get(&face.surface)? {
                 SurfaceGeometry::Cylinder {
@@ -10844,11 +10843,8 @@ pub(crate) fn simple_hole_chamfers(
         let mut cone_counts = vec![0usize; bores.len()];
         let mut outer_radii = Vec::new();
         let mut included_angles = Vec::new();
-        for face in ir
-            .model
-            .faces
-            .iter()
-            .filter(|face| body_surfaces.contains(&face.surface))
+        for face in body_faces
+            .into_iter()
             .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
         {
             let Some(SurfaceGeometry::Cone {

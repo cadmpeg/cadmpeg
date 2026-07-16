@@ -2784,6 +2784,34 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
             ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
         ])
     );
+    let mut shared_carrier = ir.clone();
+    shared_carrier.model.faces.push(Face {
+        id: FaceId("unowned-shared-cylinder-face".into()),
+        shell: ShellId("unowned-shell".into()),
+        surface: SurfaceId("surface-0".into()),
+        sense: Sense::Reversed,
+        loops: vec![
+            LoopId("unowned-loop-a".into()),
+            LoopId("unowned-loop-b".into()),
+        ],
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    assert_eq!(
+        crate::decode::simple_hole_diameters(
+            &shared_carrier,
+            &templates,
+            std::slice::from_ref(&group),
+            &outputs,
+        ),
+        crate::decode::simple_hole_diameters(
+            &ir,
+            &templates,
+            std::slice::from_ref(&group),
+            &outputs,
+        )
+    );
 
     let mut distinct = ir.clone();
     distinct.model.shells[0].faces.pop();
