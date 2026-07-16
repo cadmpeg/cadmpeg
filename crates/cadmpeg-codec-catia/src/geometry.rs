@@ -18,9 +18,117 @@ use std::{
 
 use cadmpeg_ir::be::f32_at as f32_be;
 use cadmpeg_ir::eval::nurbs_surface_partials;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, NurbsCurve, NurbsSurface, ProceduralCurveDefinition, SurfaceGeometry,
+};
 use cadmpeg_ir::le::{f64_at, u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
+
+/// Angle-parameterized degree-1 cache for an exact circular helix.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CircularHelixCache {
+    /// Piecewise-linear curve cache on the construction's angle interval.
+    pub curve: NurbsCurve,
+    /// Maximum radial sagitta deviation in model length units.
+    pub fit_tolerance: f64,
+}
+
+/// Fit a circular helix with a bounded angle-parameterized polyline cache.
+pub(crate) fn circular_helix_cache(
+    construction: &ProceduralCurveDefinition,
+    requested_tolerance: f64,
+) -> Option<CircularHelixCache> {
+    let ProceduralCurveDefinition::Helix {
+        angle_range,
+        center,
+        major,
+        minor,
+        pitch,
+        apex_factor,
+        ..
+    } = construction
+    else {
+        return None;
+    };
+    let radius = major.norm();
+    let frame_finite = [center.x, center.y, center.z]
+        .into_iter()
+        .chain(
+            [major, minor, pitch]
+                .into_iter()
+                .flat_map(|vector| [vector.x, vector.y, vector.z]),
+        )
+        .all(f64::is_finite);
+    let major_minor_dot = major.x * minor.x + major.y * minor.y + major.z * minor.z;
+    if !requested_tolerance.is_finite()
+        || requested_tolerance <= 0.0
+        || !frame_finite
+        || !radius.is_finite()
+        || radius <= f64::EPSILON
+        || (radius - minor.norm()).abs() > 1e-9 * (1.0 + radius)
+        || major_minor_dot.abs() > 1e-9 * (1.0 + radius * radius)
+        || *apex_factor != 0.0
+    {
+        return None;
+    }
+    let sweep = angle_range[1] - angle_range[0];
+    if !sweep.is_finite() || sweep <= 0.0 {
+        return None;
+    }
+    let relative_tolerance = requested_tolerance / radius;
+    let max_step = if relative_tolerance < 1e-6 {
+        2.0 * (2.0 * relative_tolerance).sqrt()
+    } else {
+        2.0 * (1.0 - relative_tolerance).clamp(-1.0, 1.0).acos()
+    };
+    let segment_count = (sweep / max_step).ceil().max(1.0);
+    if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+        return None;
+    }
+    let segment_count = segment_count as usize;
+    let step = sweep / segment_count as f64;
+    let samples = (0..=segment_count)
+        .map(|index| {
+            let parameter = angle_range[0] + index as f64 * step;
+            Some((parameter, circular_helix_point(construction, parameter)?))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let fit_tolerance = 2.0 * radius * (step * 0.25).sin().powi(2);
+    let mut knots = Vec::with_capacity(samples.len() + 2);
+    knots.push(angle_range[0]);
+    knots.extend(samples.iter().map(|(parameter, _)| *parameter));
+    knots.push(angle_range[1]);
+    Some(CircularHelixCache {
+        curve: NurbsCurve {
+            degree: 1,
+            knots,
+            control_points: samples.into_iter().map(|(_, point)| point).collect(),
+            weights: None,
+            periodic: false,
+        },
+        fit_tolerance,
+    })
+}
+
+fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) -> Option<Point3> {
+    let ProceduralCurveDefinition::Helix {
+        angle_range,
+        center,
+        major,
+        minor,
+        pitch,
+        ..
+    } = construction
+    else {
+        return None;
+    };
+    let revolution_fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
+    Some(Point3::new(
+        center.x + major.x * angle.cos() + minor.x * angle.sin() + pitch.x * revolution_fraction,
+        center.y + major.y * angle.cos() + minor.y * angle.sin() + pitch.y * revolution_fraction,
+        center.z + major.z * angle.cos() + minor.z * angle.sin() + pitch.z * revolution_fraction,
+    ))
+}
 
 /// The standard-nested plane bounds record. Its three-byte tag is the bridge to
 /// the matching `SurfacicReps` plane marker.

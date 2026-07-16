@@ -350,69 +350,13 @@ fn lift_cylinder_helix(
         apex_factor: 0.0,
         axis: *axis,
     };
-    let cache_radius = radius.abs();
-    let relative_tolerance = FIT_TOLERANCE / cache_radius;
-    let max_step = if relative_tolerance < 1e-6 {
-        2.0 * (2.0 * relative_tolerance).sqrt()
-    } else {
-        2.0 * (1.0 - relative_tolerance).clamp(-1.0, 1.0).acos()
-    };
-    let segment_count = (sweep / max_step).ceil().max(1.0);
-    if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
-        return None;
-    }
-    let segment_count = segment_count as usize;
-    let step = sweep / segment_count as f64;
-    let samples = (0..=segment_count)
-        .map(|index| {
-            let parameter = index as f64 * step;
-            Some((parameter, helix_point(&construction, parameter)?))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let cache_fit_tolerance = 2.0 * cache_radius * (step * 0.25).sin().powi(2);
-    let mut knots = Vec::with_capacity(samples.len() + 2);
-    knots.push(0.0);
-    knots.extend(samples.iter().map(|(parameter, _)| *parameter));
-    knots.push(sweep);
+    let cache = crate::geometry::circular_helix_cache(&construction, FIT_TOLERANCE)?;
     Some(ZeroDirectCurve {
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots,
-            control_points: samples.into_iter().map(|(_, point)| point).collect(),
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(cache.curve),
         parameter_range: Some([0.0, sweep]),
         construction: Some(construction),
-        cache_fit_tolerance: Some(cache_fit_tolerance),
+        cache_fit_tolerance: Some(cache.fit_tolerance),
     })
-}
-
-fn helix_point(construction: &ProceduralCurveDefinition, angle: f64) -> Option<Point3> {
-    let ProceduralCurveDefinition::Helix {
-        center,
-        major,
-        minor,
-        pitch,
-        ..
-    } = construction
-    else {
-        return None;
-    };
-    Some(Point3::new(
-        center.x
-            + major.x * angle.cos()
-            + minor.x * angle.sin()
-            + pitch.x * angle / std::f64::consts::TAU,
-        center.y
-            + major.y * angle.cos()
-            + minor.y * angle.sin()
-            + pitch.y * angle / std::f64::consts::TAU,
-        center.z
-            + major.z * angle.cos()
-            + minor.z * angle.sin()
-            + pitch.z * angle / std::f64::consts::TAU,
-    ))
 }
 
 fn orient_direct_support_curve(

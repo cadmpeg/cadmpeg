@@ -37,6 +37,14 @@ struct SurfacePlan {
     revolution: Option<RevolutionPlan>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct HelixPlan {
+    definition: ProceduralCurveDefinition,
+    cache: NurbsCurve,
+    parameter_range: [f64; 2],
+    fit_tolerance: f64,
+}
+
 /// Transfer a complete B5 graph. Returns `false` without mutation when any
 /// referenced face, pcurve, edge endpoint, or loop chain remains unresolved.
 pub(crate) fn transfer(
@@ -130,7 +138,7 @@ fn transfer_complete(
 
     let mut pcurve_plan = BTreeMap::new();
     let mut edge_curve_plan = HashMap::<u32, CurveGeometry>::new();
-    let mut edge_procedural_plan = HashMap::<u32, ProceduralCurveDefinition>::new();
+    let mut edge_helix_plan = HashMap::<u32, HelixPlan>::new();
     let mut edge_support_plan = HashMap::<u32, Vec<(u32, u32, [f64; 2])>>::new();
     let mut loop_senses = BTreeMap::new();
     let mut edge_ids = BTreeSet::new();
@@ -169,10 +177,19 @@ fn transfer_complete(
             let Some(knots) = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities) else {
                 return false;
             };
+            let Some(degree) = usize::try_from(pcurve.degree).ok() else {
+                return false;
+            };
             let Some(parameter_range) = knots
-                .first()
+                .get(degree)
                 .copied()
-                .zip(knots.last().copied())
+                .zip(
+                    knots
+                        .len()
+                        .checked_sub(degree + 1)
+                        .and_then(|index| knots.get(index))
+                        .copied(),
+                )
                 .map(|(start, end)| [start, end])
                 .filter(|range| range[0].is_finite() && range[0] < range[1])
             else {
@@ -194,7 +211,10 @@ fn transfer_complete(
                 periodic: false,
             };
             if pcurve_plan
-                .insert(pcurve_id, (geometry, cylinder_reparameterized))
+                .insert(
+                    pcurve_id,
+                    (geometry, cylinder_reparameterized, parameter_range),
+                )
                 .is_some()
             {
                 return false;
@@ -215,8 +235,34 @@ fn transfer_complete(
             });
             if let Some(geometry) = lifted {
                 edge_curve_plan.entry(edge_id).or_insert(geometry);
-            } else if let Some(definition) = cylinder_helix(pcurve, surface) {
-                edge_procedural_plan.entry(edge_id).or_insert(definition);
+            } else {
+                let endpoint_indices = graph.edge_vertices[&edge_id];
+                let (Some(edge_start), Some(edge_end)) = (
+                    b5_vertex_point(graph, endpoint_indices[0]),
+                    b5_vertex_point(graph, endpoint_indices[1]),
+                ) else {
+                    return false;
+                };
+                let Some(helix) = cylinder_helix(pcurve, surface, edge_start, edge_end) else {
+                    edge_ids.insert(edge_id);
+                    continue;
+                };
+                if edge_helix_plan
+                    .get(&edge_id)
+                    .is_some_and(|existing| existing != &helix)
+                {
+                    return false;
+                }
+                if edge_curve_plan
+                    .get(&edge_id)
+                    .is_some_and(|existing| existing != &CurveGeometry::Nurbs(helix.cache.clone()))
+                {
+                    return false;
+                }
+                edge_curve_plan
+                    .entry(edge_id)
+                    .or_insert_with(|| CurveGeometry::Nurbs(helix.cache.clone()));
+                edge_helix_plan.entry(edge_id).or_insert(helix);
             }
             edge_ids.insert(edge_id);
         }
@@ -392,7 +438,7 @@ fn transfer_complete(
     }
 
     let mut pcurve_ids = HashMap::new();
-    for (&object_id, (geometry, cylinder_reparameterized)) in &pcurve_plan {
+    for (&object_id, (geometry, cylinder_reparameterized, parameter_range)) in &pcurve_plan {
         let id = PcurveId(format!("catia:b5:pcurve#{object_id}"));
         annotate(
             annotations,
@@ -404,12 +450,13 @@ fn transfer_complete(
         if *cylinder_reparameterized {
             annotations.derived(&id, "geometry.control_points");
         }
+        annotations.derived(&id, "parameter_range");
         pcurve_ids.insert(object_id, id.clone());
         ir.model.pcurves.push(Pcurve {
             id,
             geometry: geometry.clone(),
             wrapper_reversed: None,
-            parameter_range: None,
+            parameter_range: Some(*parameter_range),
             fit_tolerance: None,
             native_tail_flags: None,
         });
@@ -444,9 +491,18 @@ fn transfer_complete(
             geometry,
             source_object: None,
         });
-        let procedural = edge_procedural_plan
-            .remove(&edge_id)
-            .map(|definition| ("helix", "cylinder_parametric_helix", definition))
+        let helix = edge_helix_plan.remove(&edge_id);
+        let edge_range = helix.as_ref().map(|plan| plan.parameter_range);
+        let edge_tolerance = helix.as_ref().map(|plan| plan.fit_tolerance);
+        let procedural = helix
+            .as_ref()
+            .map(|plan| {
+                (
+                    "helix",
+                    "cylinder_parametric_helix",
+                    plan.definition.clone(),
+                )
+            })
             .or_else(|| {
                 b5_edge_support_definition(
                     edge_support_plan.get(&edge_id)?,
@@ -466,11 +522,14 @@ fn transfer_complete(
             annotations
                 .derived(&procedural_id, "curve")
                 .derived(&procedural_id, "definition");
+            if edge_tolerance.is_some() {
+                annotations.derived(&procedural_id, "cache_fit_tolerance");
+            }
             ir.model.procedural_curves.push(ProceduralCurve {
                 id: procedural_id,
                 curve: curve_id.clone(),
                 definition,
-                cache_fit_tolerance: None,
+                cache_fit_tolerance: edge_tolerance,
             });
         }
         annotate(
@@ -481,14 +540,20 @@ fn transfer_complete(
             Exactness::ByteExact,
         );
         annotations.derived(&id, "start").derived(&id, "end");
+        if edge_range.is_some() {
+            annotations.derived(&id, "param_range");
+        }
+        if edge_tolerance.is_some() {
+            annotations.derived(&id, "tolerance");
+        }
         edge_id_map.insert(edge_id, id.clone());
         ir.model.edges.push(Edge {
             id,
             curve: Some(curve_id),
             start: VertexId(format!("catia:b5:vertex#{}", endpoints[0])),
             end: VertexId(format!("catia:b5:vertex#{}", endpoints[1])),
-            param_range: None,
-            tolerance: None,
+            param_range: edge_range,
+            tolerance: edge_tolerance,
         });
     }
 
@@ -655,7 +720,7 @@ fn transfer_complete(
 
 fn transfer_vertex_tolerances(
     graph: &B5Graph,
-    pcurves: &BTreeMap<u32, (PcurveGeometry, bool)>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
     surfaces: &BTreeMap<u32, SurfacePlan>,
 ) -> BTreeMap<usize, f64> {
     let mut tolerances = graph.vertex_tolerances.clone();
@@ -664,18 +729,12 @@ fn transfer_vertex_tolerances(
             continue;
         };
         for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
-            let (Some((pcurve, _)), Some(&vertices)) =
+            let (Some((pcurve, _, parameter_range)), Some(&vertices)) =
                 (pcurves.get(&pcurve_id), graph.edge_vertices.get(&edge_id))
             else {
                 continue;
             };
-            let PcurveGeometry::Nurbs { knots, .. } = pcurve else {
-                continue;
-            };
-            let (Some(&start), Some(&end)) = (knots.first(), knots.last()) else {
-                continue;
-            };
-            let Some(lifted) = [start, end]
+            let Some(lifted) = (*parameter_range)
                 .map(|parameter| {
                     let uv = pcurve_uv(pcurve, parameter)?;
                     let point = surface_point(&surface.geometry, uv.u, uv.v)?;
@@ -686,13 +745,11 @@ fn transfer_vertex_tolerances(
             else {
                 continue;
             };
-            let coordinates = vertices.map(|vertex| {
-                if vertex < graph.vertex_points.len() {
-                    graph.vertex_points[vertex]
-                } else {
-                    graph.logical_vertex_points[vertex - graph.vertex_points.len()]
-                }
-            });
+            let [Some(first), Some(second)] = vertices.map(|vertex| b5_vertex_point(graph, vertex))
+            else {
+                continue;
+            };
+            let coordinates = [first, second];
             let forward = [
                 distance(coordinates[0], lifted[0]),
                 distance(coordinates[1], lifted[1]),
@@ -717,6 +774,15 @@ fn transfer_vertex_tolerances(
         }
     }
     tolerances
+}
+
+fn b5_vertex_point(graph: &B5Graph, vertex: usize) -> Option<[f64; 3]> {
+    graph.vertex_points.get(vertex).copied().or_else(|| {
+        vertex
+            .checked_sub(graph.vertex_points.len())
+            .and_then(|index| graph.logical_vertex_points.get(index))
+            .copied()
+    })
 }
 
 fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
@@ -928,7 +994,14 @@ fn cylinder_point(
     )
 }
 
-fn cylinder_helix(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<ProceduralCurveDefinition> {
+fn cylinder_helix(
+    pcurve: &B5Pcurve,
+    surface: &B5Surface,
+    edge_start: [f64; 3],
+    edge_end: [f64; 3],
+) -> Option<HelixPlan> {
+    const FIT_TOLERANCE: f64 = 1e-4;
+
     let B5Surface::Cylinder {
         origin,
         reference_x,
@@ -942,24 +1015,55 @@ fn cylinder_helix(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<ProceduralCu
         return None;
     }
     let mut endpoints = [pcurve.control_points[0], pcurve.control_points[1]];
-    let mut angles = [endpoints[0][0] / radius, endpoints[1][0] / radius];
-    if angles[0] == angles[1] || endpoints[0][1] == endpoints[1][1] {
+    let lifted = endpoints.map(|uv| cylinder_point(*origin, *reference_x, *axis, *radius, uv));
+    let forward_error = distance(lifted[0], edge_start).max(distance(lifted[1], edge_end));
+    let reverse_error = distance(lifted[1], edge_start).max(distance(lifted[0], edge_end));
+    if (forward_error - reverse_error).abs() <= 1e-12
+        || forward_error.min(reverse_error) > POINT_TOLERANCE
+    {
         return None;
     }
-    if angles[0] > angles[1] {
+    if reverse_error < forward_error {
         endpoints.swap(0, 1);
-        angles.swap(0, 1);
     }
-    let rise_per_radian = (endpoints[1][1] - endpoints[0][1]) / (angles[1] - angles[0]);
+    let angles = [endpoints[0][0] / radius, endpoints[1][0] / radius];
+    let delta_angle = angles[1] - angles[0];
+    let delta_height = endpoints[1][1] - endpoints[0][1];
+    if delta_angle.abs() <= 1e-12 || delta_height.abs() <= 1e-12 {
+        return None;
+    }
     let reference_y = cross(*axis, *reference_x);
-    Some(ProceduralCurveDefinition::Helix {
-        angle_range: angles,
+    let radial = add(
+        scale(*reference_x, angles[0].cos()),
+        scale(reference_y, angles[0].sin()),
+    );
+    let tangent = cross(*axis, radial);
+    let sweep = delta_angle.abs();
+    let definition = ProceduralCurveDefinition::Helix {
+        angle_range: [0.0, sweep],
         center: point3(add(*origin, scale(*axis, endpoints[0][1]))),
-        major: vector(scale(*reference_x, *radius)),
-        minor: vector(scale(reference_y, *radius)),
-        pitch: vector(scale(*axis, rise_per_radian * 2.0 * std::f64::consts::PI)),
+        major: vector(scale(radial, *radius)),
+        minor: vector(scale(tangent, radius * delta_angle.signum())),
+        pitch: vector(scale(
+            *axis,
+            delta_height / sweep * 2.0 * std::f64::consts::PI,
+        )),
         apex_factor: 0.0,
         axis: vector(*axis),
+    };
+    let cache = crate::geometry::circular_helix_cache(&definition, FIT_TOLERANCE)?;
+    let cache_start = cache.curve.control_points.first()?;
+    let cache_end = cache.curve.control_points.last()?;
+    if distance([cache_start.x, cache_start.y, cache_start.z], edge_start) > POINT_TOLERANCE
+        || distance([cache_end.x, cache_end.y, cache_end.z], edge_end) > POINT_TOLERANCE
+    {
+        return None;
+    }
+    Some(HelixPlan {
+        definition,
+        cache: cache.curve,
+        parameter_range: [0.0, sweep],
+        fit_tolerance: cache.fit_tolerance,
     })
 }
 
@@ -1077,7 +1181,7 @@ fn surface_parameter_bounds(graph: &B5Graph, surface_id: u32) -> Option<[[f64; 2
 fn b5_edge_support_definition(
     supports: &[(u32, u32, [f64; 2])],
     surface_ids: &HashMap<u32, SurfaceId>,
-    pcurves: &BTreeMap<u32, (PcurveGeometry, bool)>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
 ) -> Option<(&'static str, &'static str, ProceduralCurveDefinition)> {
     const PARAMETER_TOLERANCE: f64 = 1e-9;
 
@@ -1569,8 +1673,8 @@ mod tests {
             direction: Point2::new(1.0, 0.0),
         };
         let pcurves = BTreeMap::from([
-            (20, (pcurve_20.clone(), false)),
-            (21, (pcurve_21.clone(), false)),
+            (20, (pcurve_20.clone(), false, [2.0, 4.0])),
+            (21, (pcurve_21.clone(), false, [2.0, 4.0])),
         ]);
         let (_, _, one_sided) =
             b5_edge_support_definition(&[(10, 20, [2.0, 4.0])], &surfaces, &pcurves)
@@ -1721,6 +1825,7 @@ mod tests {
                     periodic: false,
                 },
                 false,
+                [0.0, 1.0],
             ),
         )]);
         let surfaces = BTreeMap::from([(
@@ -1997,19 +2102,37 @@ mod tests {
             axis: [0.0, 0.0, 1.0],
             radius: 2.0,
         };
-        let Some(ProceduralCurveDefinition::Helix {
+        let end = [2.0 * 2.0_f64.cos(), 2.0 * 2.0_f64.sin(), 7.0];
+        let Some(plan) = cylinder_helix(&pcurve, &cylinder, [2.0, 0.0, 3.0], end) else {
+            panic!("degree-one cylinder helix");
+        };
+        let ProceduralCurveDefinition::Helix {
             angle_range,
             center,
             pitch,
             apex_factor,
             ..
-        }) = cylinder_helix(&pcurve, &cylinder)
+        } = &plan.definition
         else {
-            panic!("degree-one cylinder helix");
+            unreachable!();
         };
-        assert_eq!(angle_range, [0.0, 2.0]);
-        assert_eq!(center, Point3::new(0.0, 0.0, 3.0));
+        assert_eq!(*angle_range, [0.0, 2.0]);
+        assert_eq!(*center, Point3::new(0.0, 0.0, 3.0));
         assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1e-12);
-        assert_eq!(apex_factor, 0.0);
+        assert_eq!(*apex_factor, 0.0);
+        assert_eq!(plan.parameter_range, [0.0, 2.0]);
+        assert!(plan.fit_tolerance <= 1e-4);
+        assert_eq!(
+            plan.cache.control_points.first(),
+            Some(&Point3::new(2.0, 0.0, 3.0))
+        );
+
+        let reversed = cylinder_helix(&pcurve, &cylinder, end, [2.0, 0.0, 3.0])
+            .expect("reversed physical edge helix");
+        let ProceduralCurveDefinition::Helix { center, pitch, .. } = reversed.definition else {
+            unreachable!();
+        };
+        assert_eq!(center, Point3::new(0.0, 0.0, 7.0));
+        assert!((pitch.z + 4.0 * std::f64::consts::PI).abs() < 1e-12);
     }
 }

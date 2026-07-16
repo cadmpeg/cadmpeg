@@ -5108,6 +5108,12 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     }));
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.pcurves.len(), 3);
+    assert!(result
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .all(|pcurve| pcurve.parameter_range == Some([0.0, 1.0])));
     assert!(result.report.losses.iter().all(|loss| {
         !matches!(
             loss.category,
