@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Read-only IGES 5.3 Fixed ASCII codec.
+//!
+//! Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! for the declared Fixed ASCII mechanical/document envelope.
 
 mod byte_ledger;
 mod card;

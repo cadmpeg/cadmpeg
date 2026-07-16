@@ -45,7 +45,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | Rhino `.3dm` (V3/V4)                       | **L1 tested**  | metadata and bounded object-record retention                                                          |
 | Rhino `.3dm` (V1/V2 and archive 5)         | **L0 tested**  | header-only inspection; decode is rejected                                                            |
 | STEP AP214                                 | translation    | partial B-rep export with explicit loss reporting                                                     |
-| IGES 5.3 Fixed ASCII mechanical/document  | unscored       | read implementation and cumulative L0–L8 tests                                                        |
+| IGES 5.3 Fixed ASCII mechanical/document  | **L8 tested**  | read only                                                                                              |
 
 Each current score applies to the envelope described in its profile.
 
@@ -56,7 +56,7 @@ Each current score applies to the envelope described in its profile.
 - **Partial:** cadmpeg transfers a typed subset and reports or preserves the remainder.
 - **Complete:** the domain satisfies its declared semantics and validation tests across the envelope.
 
-Every current profile contains incomplete domains. Current claims rely on code, fixtures, and explicit loss paths.
+Profiles state complete and incomplete domains independently. Current claims rely on code, fixtures, and explicit loss paths.
 
 Entity provenance and domain status measure different properties. `byte_exact`, `derived`, `inferred`, and `unknown` describe how cadmpeg obtained one IR value.
 
@@ -69,13 +69,13 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 - **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.
 - **Creo Parametric `.prt` (L1 claimed):** container navigation, derived datum planes, and prototype geometry inspection. Read only.
 - **STEP AP214 (translation):** partial B-rep export with explicit loss reporting.
-- **IGES 5.3 Fixed ASCII mechanical/document profile (unscored):** read-only target envelope with fixed-card framing, geometry, topology, product records, presentation records, and complete byte accounting. No score is claimed before the cumulative gates pass.
+- **IGES 5.3 Fixed ASCII mechanical/document profile (L8 tested):** complete read-only fixed-card framing, geometry, topology, product records, presentation records, and byte accounting for the declared envelope.
 
 ## IGES
 
 **Model:** IGES 5.3 entity graph
 
-**Ladder: unscored for the IGES 5.3 Fixed ASCII mechanical/document envelope.** Compressed ASCII, Binary, pre-5.3 Fixed ASCII, and extensions are separate envelopes and do not inherit this score.
+**Ladder: L8 tested for the IGES 5.3 Fixed ASCII mechanical/document envelope.** Compressed ASCII, Binary, pre-5.3 Fixed ASCII, and extensions are separate envelopes and do not inherit this score.
 
 ### Envelopes
 
