@@ -413,6 +413,50 @@ impl<'a> DecodeContext<'a> {
         })
     }
 
+    /// Begins assembling a derived space from several input extents.
+    ///
+    /// The multi-input sibling of [`DecodeContext::begin_expand`]: catia
+    /// concatenates extents into a logical stream, iges assembles parameter
+    /// cards, OLE storages splice sectors, and a dictionary-preset
+    /// decompression draws on two inputs at once. `begin_expand` is the
+    /// single-source [`SpaceOrigin::Transform`] special case with
+    /// `decompressed_bytes` semantics; this builder covers the multi-input
+    /// [`SpaceOrigin::Concat`] and [`SpaceOrigin::Transform`] origins and
+    /// charges each write to `alloc_bytes` — the reassembled bytes are a fresh
+    /// heap copy, not new decompressed content, so they do not grow the input
+    /// basis and are not double-counted against the source extents' spaces.
+    ///
+    /// The output space registers only on successful [`DerivedWriter::finalize`]
+    /// — an incomplete space never escapes.
+    pub fn begin_derived_space(
+        &self,
+        inputs: &[View<'_>],
+        kind: DerivedKind,
+    ) -> Result<DerivedWriter<'_, 'a>, CodecError> {
+        if let Some(limit) = self.fuse.get() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
+        let segments = inputs
+            .iter()
+            .map(|view| SourceSpan {
+                space: view.space(),
+                range: ByteRange {
+                    start: view.start() as u64,
+                    end: view.end() as u64,
+                },
+            })
+            .collect();
+        let location = inputs.first().map(|view| view.location());
+        Ok(DerivedWriter {
+            ctx: self,
+            kind,
+            segments,
+            location,
+            buffer: Vec::new(),
+            written: 0,
+        })
+    }
+
     // --- depth --------------------------------------------------------------
 
     /// Enters one recursion level, returning a guard that releases it on drop.
@@ -557,6 +601,12 @@ impl<'a> DecodeContext<'a> {
     #[cfg(test)]
     pub(crate) fn spaces_len(&self) -> usize {
         self.spaces.len()
+    }
+
+    /// Returns a registered space's derivation origin.
+    #[cfg(test)]
+    pub(crate) fn space_origin(&self, id: SpaceId) -> Option<SpaceOrigin> {
+        self.spaces.origin(id)
     }
 
     /// Returns how many committed tickets remain unresolved.
@@ -745,6 +795,21 @@ pub enum ExpandSpec {
     Unknown,
 }
 
+/// How a multi-input derived space assembles its output bytes.
+///
+/// The [`DecodeContext::begin_derived_space`] counterpart to
+/// [`ExpandSpec`]'s size contract: it names the origin the finalized space
+/// records, not a size bound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DerivedKind {
+    /// The output is the ordered concatenation of the input extents, recorded
+    /// as [`SpaceOrigin::Concat`].
+    Concat,
+    /// The output is a transform of the named input extents, recorded as
+    /// [`SpaceOrigin::Transform`] with the given kind.
+    Transform(TransformKind),
+}
+
 /// Writes decompressed output under incremental charging.
 #[derive(Debug)]
 pub struct ExpandWriter<'ctx, 'a> {
@@ -831,6 +896,73 @@ impl<'a> ExpandWriter<'_, 'a> {
             },
         );
         self.ctx.budget.grow_input_basis(length);
+        Ok((space, View::over_space(bytes, space)))
+    }
+
+    /// Returns how many bytes have been written so far.
+    pub fn written(&self) -> u64 {
+        self.written
+    }
+}
+
+/// Assembles a multi-input derived space under incremental `alloc_bytes`
+/// charging.
+///
+/// Each [`DerivedWriter::write`] charges before the bytes are retained;
+/// [`DerivedWriter::finalize`] stores the assembled buffer in the arena and
+/// registers the space with the [`DerivedKind`]'s origin. Dropping the writer
+/// without finalizing registers nothing.
+#[derive(Debug)]
+pub struct DerivedWriter<'ctx, 'a> {
+    ctx: &'ctx DecodeContext<'a>,
+    kind: DerivedKind,
+    segments: Vec<SourceSpan>,
+    location: Option<SourceLocation>,
+    buffer: Vec<u8>,
+    written: u64,
+}
+
+impl<'a> DerivedWriter<'_, 'a> {
+    /// Appends assembled output, charging `alloc_bytes` before it is retained.
+    pub fn write(&mut self, data: &[u8]) -> Result<(), CodecError> {
+        let len = data.len() as u64;
+        self.ctx.charge(
+            ResourceDimension::AllocBytes,
+            LimitScope::Global,
+            len,
+            "derived_write",
+            self.location,
+        )?;
+        self.buffer.try_reserve(data.len()).map_err(|_| {
+            self.ctx.fuse(
+                ResourceDimension::AllocBytes,
+                ResourceFailure::AllocationFailed,
+                LimitScope::Global,
+                len,
+                "derived_write",
+                self.location,
+            )
+        })?;
+        self.buffer.extend_from_slice(data);
+        self.written = self.written.saturating_add(len);
+        Ok(())
+    }
+
+    /// Finalizes the assembly: stores the output in the arena and registers the
+    /// derived space with its `Concat` or `Transform` origin.
+    pub fn finalize(self) -> Result<(SpaceId, View<'a>), CodecError> {
+        let length = self.written;
+        let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
+        let origin = match self.kind {
+            DerivedKind::Concat => SpaceOrigin::Concat {
+                segments: self.segments,
+            },
+            DerivedKind::Transform(kind) => SpaceOrigin::Transform {
+                inputs: self.segments,
+                kind,
+            },
+        };
+        let space = self.ctx.spaces.register(length, origin);
         Ok((space, View::over_space(bytes, space)))
     }
 

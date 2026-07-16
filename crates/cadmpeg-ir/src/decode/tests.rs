@@ -297,6 +297,117 @@ fn expand_finalize_registers_space_and_grows_input_basis() {
 }
 
 #[test]
+fn derived_space_concats_multiple_extents_and_charges_alloc() {
+    // Two disjoint extents of the root are reassembled into one logical stream.
+    let bytes: &[u8] = &[10, 11, 12, 13, 20, 21, 22, 23, 24, 25];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    let first = root.child(0, 4).unwrap();
+    let second = root.child(6, 10).unwrap();
+    let basis_before = ctx.input_basis();
+
+    let mut writer = ctx
+        .begin_derived_space(&[first, second], DerivedKind::Concat)
+        .unwrap();
+    writer.write(first.window()).unwrap();
+    writer.write(second.window()).unwrap();
+    assert_eq!(writer.written(), 8);
+    let (space, view) = writer.finalize().unwrap();
+
+    assert_eq!(space.index(), 1);
+    assert_eq!(view.space(), space);
+    assert_eq!(view.window(), &[10, 11, 12, 13, 22, 23, 24, 25]);
+    assert_eq!(ctx.spaces_len(), 2);
+
+    // Each write charges alloc_bytes for the assembled copy.
+    assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 8);
+
+    // Reassembling existing bytes does not grow the input basis: the source
+    // extents are already accounted for in their own spaces.
+    assert_eq!(ctx.input_basis(), basis_before);
+
+    match ctx.space_origin(space).unwrap() {
+        SpaceOrigin::Concat { segments } => {
+            assert_eq!(segments.len(), 2);
+            assert_eq!(segments[0].space, SpaceId::ROOT);
+            assert_eq!(segments[0].range, ByteRange { start: 0, end: 4 });
+            assert_eq!(segments[1].range, ByteRange { start: 6, end: 10 });
+        }
+        other => panic!("expected Concat origin, got {other:?}"),
+    }
+}
+
+#[test]
+fn derived_space_records_a_multi_input_transform() {
+    // A dictionary-preset decompression is a genuine multi-input transform:
+    // one extent is the dictionary, another the compressed data, and the
+    // finalized space records both inputs under a Transform origin.
+    let bytes: &[u8] = &[0xAA, 0xBB, 0xCC, 0xDD, 0x01, 0x02, 0x03, 0x04];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    let dictionary = root.child(0, 4).unwrap();
+    let data = root.child(4, 8).unwrap();
+
+    let mut writer = ctx
+        .begin_derived_space(
+            &[dictionary, data],
+            DerivedKind::Transform(TransformKind::Decompress),
+        )
+        .unwrap();
+    writer.write(&[1, 2, 3, 4, 5, 6]).unwrap();
+    let (space, view) = writer.finalize().unwrap();
+
+    assert_eq!(view.window(), &[1, 2, 3, 4, 5, 6]);
+    assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 6);
+    match ctx.space_origin(space).unwrap() {
+        SpaceOrigin::Transform { inputs, kind } => {
+            assert_eq!(kind, TransformKind::Decompress);
+            assert_eq!(inputs.len(), 2);
+            assert_eq!(inputs[0].range, ByteRange { start: 0, end: 4 });
+            assert_eq!(inputs[1].range, ByteRange { start: 4, end: 8 });
+        }
+        other => panic!("expected Transform origin, got {other:?}"),
+    }
+}
+
+#[test]
+fn derived_space_registers_only_on_finalize_and_fuses_on_refusal() {
+    let bytes: &[u8] = &[0u8; 16];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    // A writer dropped without finalizing registers no space.
+    {
+        let mut abandoned = ctx
+            .begin_derived_space(&[root], DerivedKind::Concat)
+            .unwrap();
+        abandoned.write(&[1, 2, 3]).unwrap();
+    }
+    assert_eq!(ctx.spaces_len(), 1, "an unfinalized space never registers");
+
+    // A write past the alloc allowance fuses the context.
+    let arena2 = DecodeArena::new();
+    let tight = tight(|limits| limits.max_alloc_bytes = 4);
+    let (ctx2, root2) = DecodeContext::from_root_bytes(bytes, &arena2, &tight).unwrap();
+    let mut writer = ctx2
+        .begin_derived_space(&[root2], DerivedKind::Concat)
+        .unwrap();
+    writer.write(&[0u8; 4]).unwrap();
+    match writer.write(&[0u8; 1]) {
+        Err(CodecError::ResourceLimit(limit)) => {
+            assert_eq!(limit.dimension, ResourceDimension::AllocBytes);
+        }
+        other => panic!("expected AllocBytes ResourceLimit, got {other:?}"),
+    }
+    assert!(ctx2.is_fused());
+}
+
+#[test]
 fn transaction_rolls_back_position_but_not_charges() {
     let bytes: &[u8] = &[1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0];
     let arena = DecodeArena::new();

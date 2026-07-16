@@ -123,4 +123,13 @@ impl SpaceRegistry {
     pub(crate) fn len(&self) -> usize {
         self.records.borrow().len()
     }
+
+    /// Returns a registered space's derivation origin, if it exists.
+    #[cfg(test)]
+    pub(crate) fn origin(&self, id: SpaceId) -> Option<SpaceOrigin> {
+        self.records
+            .borrow()
+            .get(id.index() as usize)
+            .map(|record| record.origin.clone())
+    }
 }
