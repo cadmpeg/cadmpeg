@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP representation units, placements, and geometry carriers.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -388,30 +388,63 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|curve| curve.id.clone())
         .collect::<BTreeSet<_>>();
-    loop {
-        let ready = pending_composites
-            .iter()
-            .filter_map(|&id| {
-                composite_curve(exchange.records.get(&id)?, exchange, &decoded_curve_ids)
-                    .map(|definition| (id, definition))
-            })
-            .collect::<Vec<_>>();
-        if ready.is_empty() {
-            break;
+    let mut decoded_curve_steps = decoded_curve_ids
+        .iter()
+        .filter_map(|id| id.0.rsplit('#').next()?.parse::<u64>().ok())
+        .collect::<BTreeSet<_>>();
+    let mut unresolved = HashMap::<u64, usize>::new();
+    let mut dependents = HashMap::<u64, Vec<u64>>::new();
+    let mut ready = VecDeque::new();
+    for &id in &pending_composites {
+        let Some(dependencies) = exchange
+            .records
+            .get(&id)
+            .and_then(|record| composite_dependencies(record, exchange))
+        else {
+            continue;
+        };
+        let mut count = 0;
+        for dependency in dependencies {
+            if decoded_curve_steps.contains(&dependency) {
+                continue;
+            }
+            count += 1;
+            dependents.entry(dependency).or_default().push(id);
         }
-        for (id, (segments, self_intersect)) in ready {
-            typed.extend(segments.iter().map(|(id, _)| *id));
-            ir.model.curves.push(Curve {
-                id: CurveId(format!("step:data:curve#{id}")),
-                geometry: CurveGeometry::Composite {
-                    segments: segments.into_iter().map(|(_, segment)| segment).collect(),
-                    self_intersect,
-                },
-                source_object: None,
-            });
-            typed.insert(id);
-            pending_composites.remove(&id);
-            decoded_curve_ids.insert(CurveId(format!("step:data:curve#{id}")));
+        unresolved.insert(id, count);
+        if count == 0 {
+            ready.push_back(id);
+        }
+    }
+    while let Some(id) = ready.pop_front() {
+        let Some((segments, self_intersect)) = exchange
+            .records
+            .get(&id)
+            .and_then(|record| composite_curve(record, exchange, &decoded_curve_ids))
+        else {
+            continue;
+        };
+        typed.extend(segments.iter().map(|(id, _)| *id));
+        ir.model.curves.push(Curve {
+            id: CurveId(format!("step:data:curve#{id}")),
+            geometry: CurveGeometry::Composite {
+                segments: segments.into_iter().map(|(_, segment)| segment).collect(),
+                self_intersect,
+            },
+            source_object: None,
+        });
+        typed.insert(id);
+        pending_composites.remove(&id);
+        decoded_curve_ids.insert(CurveId(format!("step:data:curve#{id}")));
+        decoded_curve_steps.insert(id);
+        for dependent in dependents.get(&id).into_iter().flatten() {
+            let Some(count) = unresolved.get_mut(dependent) else {
+                continue;
+            };
+            *count -= 1;
+            if *count == 0 {
+                ready.push_back(*dependent);
+            }
         }
     }
     for id in pending_composites {
@@ -1213,6 +1246,23 @@ fn composite_curve(
             .get(offset + 1)
             .and_then(logical_value)?,
     ))
+}
+
+fn composite_dependencies(record: &RawRecord, exchange: &Exchange) -> Option<Vec<u64>> {
+    let complex = record.partials.len() > 1;
+    let composite = record.partial("COMPOSITE_CURVE")?;
+    let offset = usize::from(!complex);
+    composite
+        .parameters
+        .get(offset)?
+        .list()?
+        .iter()
+        .map(|value| {
+            let segment = exchange.records.get(&value.reference()?)?;
+            (segment.simple_name() == Some("COMPOSITE_CURVE_SEGMENT"))
+                .then(|| segment.parameter(2)?.reference())?
+        })
+        .collect()
 }
 
 fn logical_value(value: &Value) -> Option<Option<bool>> {
