@@ -5566,8 +5566,11 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
         .collect()
 }
 
-fn feature_history_links(container: &Container) -> Vec<SegmentOmLink> {
+fn feature_history_sections(container: &Container) -> Vec<(usize, SegmentOmLink)> {
     canonical_feature_history_links(segment_om_links(container))
+        .into_iter()
+        .enumerate()
+        .collect()
 }
 
 pub(crate) fn canonical_feature_history_links(
@@ -5592,7 +5595,7 @@ pub(crate) fn canonical_feature_history_links(
 pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLabel> {
     let sections = container.om_sections();
     let mut labels = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5603,11 +5606,11 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         labels.extend(section.operation_labels().into_iter().enumerate().map(
             |(ordinal, label)| FeatureOperationLabel {
-                id: format!("nx:feature-history:operation-label#{section_key}-{ordinal}"),
+                id: format!("nx:feature-history:operation-label#{section_key}-{ordinal:010}"),
                 section_link: link.id.clone(),
                 ordinal: ordinal as u32,
                 value: label.value.to_string(),
@@ -5623,7 +5626,7 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
 pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOperation> {
     let sections = container.om_sections();
     let mut operations = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5634,7 +5637,7 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let labels = section.operation_labels();
         for operation in section.boolean_operations() {
@@ -5650,9 +5653,9 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
                 crate::om::BooleanOperationKind::Intersect => FeatureBooleanKind::Intersect,
             };
             let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{ordinal}");
+                format!("nx:feature-history:operation-label#{section_key}-{ordinal:010}");
             operations.push(FeatureBooleanOperation {
-                id: format!("nx:feature-history:boolean#{section_key}-{ordinal}"),
+                id: format!("nx:feature-history:boolean#{section_key}-{ordinal:010}"),
                 operation_label,
                 kind,
                 target_object_index: operation.target,
@@ -5668,7 +5671,7 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
 pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationRecord> {
     let sections = container.om_sections();
     let mut records = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5679,7 +5682,7 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let labels = section.operation_labels();
         records.extend(
@@ -5691,9 +5694,11 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
                         .iter()
                         .position(|label| label.offset == record.label.offset)?;
                     let operation_label =
-                        format!("nx:feature-history:operation-label#{section_key}-{ordinal}");
+                        format!("nx:feature-history:operation-label#{section_key}-{ordinal:010}");
                     Some(FeatureOperationRecord {
-                        id: format!("nx:feature-history:operation-record#{section_key}-{ordinal}"),
+                        id: format!(
+                            "nx:feature-history:operation-record#{section_key}-{ordinal:010}"
+                        ),
                         operation_label,
                         ordinal: ordinal as u32,
                         byte_len: record.bytes.len() as u64,
@@ -5713,7 +5718,7 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
 pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadString> {
     let sections = container.om_sections();
     let mut strings = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5724,18 +5729,19 @@ pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadStrin
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
-            let operation_record =
-                format!("nx:feature-history:operation-record#{section_key}-{operation_ordinal}");
+            let operation_record = format!(
+                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+            );
             strings.extend(
                 crate::om::operation_payload_strings(record)
                     .into_iter()
                     .enumerate()
                     .map(|(ordinal, value)| FeaturePayloadString {
                         id: format!(
-                            "nx:feature-history:payload-string#{section_key}-{operation_ordinal}-{ordinal}"
+                            "nx:feature-history:payload-string#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                         ),
                         operation_record: operation_record.clone(),
                         ordinal: ordinal as u32,
@@ -5792,7 +5798,7 @@ pub fn feature_simple_hole_repeated_scalar_lanes(
 ) -> Vec<FeatureSimpleHoleRepeatedScalarLane> {
     let sections = container.om_sections();
     let mut pairs = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5803,7 +5809,7 @@ pub fn feature_simple_hole_repeated_scalar_lanes(
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(pair) = crate::om::simple_hole_repeated_scalar_lane(record) else {
@@ -5811,10 +5817,10 @@ pub fn feature_simple_hole_repeated_scalar_lanes(
             };
             pairs.push(FeatureSimpleHoleRepeatedScalarLane {
                 id: format!(
-                    "nx:feature-history:simple-hole-repeated-scalar-lane#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:simple-hole-repeated-scalar-lane#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 values: pair.values,
                 first_witness_offsets: pair.witness_offsets[0]
@@ -5843,7 +5849,7 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
         .map(|block| block.id)
         .collect::<BTreeSet<_>>();
     let mut references = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5854,11 +5860,11 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let prefixes = inputs
                 .iter()
                 .filter(|input| input.operation_label == operation_label)
@@ -5892,7 +5898,7 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
             };
             references.push(FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
                 id: format!(
-                    "nx:feature-history:simple-hole-repeated-scalar-lane-block-references#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:simple-hole-repeated-scalar-lane-block-references#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label,
                 first_data_blocks,
@@ -5985,7 +5991,7 @@ pub(crate) fn parse_simple_hole_template(
 pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReference> {
     let sections = container.om_sections();
     let mut references = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -5996,13 +6002,13 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, reference) in section.operation_body_references() {
             let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{ordinal}");
+                format!("nx:feature-history:operation-label#{section_key}-{ordinal:010}");
             references.push(FeatureBodyReference {
-                id: format!("nx:feature-history:body-reference#{section_key}-{ordinal}"),
+                id: format!("nx:feature-history:body-reference#{section_key}-{ordinal:010}"),
                 operation_label,
                 body_object_index: reference.object_index,
                 source_offset: entry_offset + reference.offset as u64,
@@ -6018,7 +6024,7 @@ pub fn feature_body_reference_occurrences(
 ) -> Vec<FeatureBodyReferenceOccurrence> {
     let sections = container.om_sections();
     let mut references = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -6029,18 +6035,18 @@ pub fn feature_body_reference_occurrences(
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             references.extend(
                 crate::om::operation_body_references(record)
                     .into_iter()
                     .enumerate()
                     .map(|(ordinal, reference)| FeatureBodyReferenceOccurrence {
                         id: format!(
-                            "nx:feature-history:body-reference-occurrence#{section_key}-{operation_ordinal}-{ordinal}"
+                            "nx:feature-history:body-reference-occurrence#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                         ),
                         operation_label: operation_label.clone(),
                         ordinal: ordinal as u32,
@@ -6210,7 +6216,7 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut inputs = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -6221,7 +6227,7 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, label) in section.operation_labels().into_iter().enumerate() {
             for (input_slot, object_index) in label.object_indices.into_iter().enumerate() {
@@ -6231,11 +6237,12 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
                 let Some(data_block) = unique_offset_data_block(&indexed, object_index) else {
                     continue;
                 };
-                let operation_label =
-                    format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+                let operation_label = format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                );
                 inputs.push(FeatureInputBlock {
                     id: format!(
-                        "nx:feature-history:input-block#{section_key}-{operation_ordinal}-{input_slot}"
+                        "nx:feature-history:input-block#{section_key}-{operation_ordinal:010}-{input_slot:010}"
                     ),
                     operation_label,
                     input_slot: input_slot as u8,
@@ -6279,7 +6286,7 @@ pub fn feature_input_block_identity_groups(
         .enumerate()
         .map(
             |(ordinal, (data_block, members))| FeatureInputBlockIdentityGroup {
-                id: format!("nx:feature-history:input-block-identity-group#{ordinal}"),
+                id: format!("nx:feature-history:input-block-identity-group#{ordinal:010}"),
                 data_block: data_block.to_string(),
                 input_blocks: members.iter().map(|member| member.id.clone()).collect(),
                 operation_labels: members
@@ -6302,7 +6309,7 @@ pub fn feature_datum_csys_constructions(
     let sections = container.om_sections();
     let inputs = feature_input_blocks(container);
     let mut constructions = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -6313,14 +6320,14 @@ pub fn feature_datum_csys_constructions(
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(field) = crate::om::datum_csys_references(record) else {
                 continue;
             };
             let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let input_prefixes = inputs
                 .iter()
                 .filter(|input| input.operation_label == operation_label)
@@ -6359,7 +6366,7 @@ pub fn feature_datum_csys_constructions(
             }
             constructions.push(FeatureDatumCsysConstruction {
                 id: format!(
-                    "nx:feature-history:datum-csys-construction#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:datum-csys-construction#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label,
                 control: field.control,
@@ -6393,7 +6400,7 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
     let sections = container.om_sections();
     let inputs = feature_input_blocks(container);
     let mut headers = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -6404,7 +6411,7 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(header) = crate::om::datum_plane_payload_header(record) else {
@@ -6427,7 +6434,7 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
                 }))
                 .collect::<Vec<_>>();
             let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let input_prefixes = inputs
                 .iter()
                 .filter(|input| input.operation_label == operation_label)
@@ -6466,7 +6473,7 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
                 });
             headers.push(FeatureDatumPlaneHeader {
                 id: format!(
-                    "nx:feature-history:datum-plane-header#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:datum-plane-header#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label,
                 control: header.control,
@@ -6606,7 +6613,7 @@ pub fn feature_datum_csys_payload_scalar_pairs(
                 .enumerate()
                 .filter_map(|(ordinal, pair)| {
                     Some(FeatureDatumCsysPayloadScalarPair {
-                        id: format!("{}-scalar-pair-{ordinal}", payload.id),
+                        id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         datum_csys_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
@@ -6655,7 +6662,7 @@ pub fn feature_datum_csys_payload_fixed_pairs(
                 .enumerate()
                 .filter_map(|(ordinal, pair)| {
                     Some(FeatureDatumCsysPayloadFixedPair {
-                        id: format!("{}-fixed-pair-{ordinal}", payload.id),
+                        id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         datum_csys_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
@@ -6705,7 +6712,7 @@ pub fn feature_datum_csys_payload_scalars(
                 .enumerate()
                 .filter_map(|(ordinal, scalar)| {
                     Some(FeatureDatumCsysPayloadScalar {
-                        id: format!("{}-scalar-{ordinal}", payload.id),
+                        id: format!("{}-scalar-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         datum_csys_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
@@ -6812,7 +6819,7 @@ pub fn feature_datum_plane_payload_scalar_pairs(
                 .enumerate()
                 .filter_map(|(ordinal, pair)| {
                     Some(FeatureDatumPlanePayloadScalarPair {
-                        id: format!("{}-scalar-pair-{ordinal}", payload.id),
+                        id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         datum_plane_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
@@ -6848,7 +6855,7 @@ pub fn feature_datum_plane_descriptors(
                     let (bytes, source_offset) = blocks.get(data_block)?.to_owned();
                     let descriptor = crate::om::datum_plane_descriptor_block(bytes)?;
                     Some(FeatureDatumPlaneDescriptor {
-                        id: format!("{}-descriptor-{ordinal}", header.id),
+                        id: format!("{}-descriptor-{ordinal:010}", header.id),
                         operation_label: header.operation_label.clone(),
                         datum_plane_header: header.id.clone(),
                         ordinal: ordinal as u32,
@@ -7118,7 +7125,7 @@ pub fn feature_sketch_payload_coordinate_pairs(
                 .enumerate()
                 .filter_map(|(ordinal, pair)| {
                     Some(FeatureSketchPayloadCoordinatePair {
-                        id: format!("{}-coordinate-pair-{ordinal}", payload.id),
+                        id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
@@ -7167,7 +7174,7 @@ pub fn feature_sketch_payload_fixed_pairs(
                 .enumerate()
                 .filter_map(|(ordinal, pair)| {
                     Some(FeatureSketchPayloadFixedPair {
-                        id: format!("{}-fixed-pair-{ordinal}", payload.id),
+                        id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
@@ -7272,7 +7279,7 @@ pub fn feature_sketch_payload_scalars(
                             .expect("field lies in joined payload");
                         FeatureSketchPayloadScalar {
                             id: format!(
-                                "nx:feature-history:sketch-payload-scalar#{}-{ordinal}",
+                                "nx:feature-history:sketch-payload-scalar#{}-{ordinal:010}",
                                 construction_payload
                                     .rsplit_once('#')
                                     .map_or("unknown", |(_, key)| key)
@@ -7331,7 +7338,7 @@ pub fn feature_sketch_payload_names(
                         .expect("field lies in joined payload");
                     FeatureSketchPayloadName {
                         id: format!(
-                            "nx:feature-history:sketch-payload-name#{}-{ordinal}",
+                            "nx:feature-history:sketch-payload-name#{}-{ordinal:010}",
                             construction_payload
                                 .rsplit_once('#')
                                 .map_or("unknown", |(_, key)| key)
@@ -7389,7 +7396,7 @@ pub fn feature_sketch_payload_named_records(
             record_fixed_pairs.sort_by_key(|pair| pair.payload_offset);
             records.push(FeatureSketchPayloadNamedRecord {
                 id: format!(
-                    "nx:feature-history:sketch-payload-record#{}-{ordinal}",
+                    "nx:feature-history:sketch-payload-record#{}-{ordinal:010}",
                     payload
                         .id
                         .rsplit_once('#')
@@ -7932,7 +7939,7 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut references = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -7943,21 +7950,21 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(decoded) = crate::om::sketch_payload_references(record) else {
                 continue;
             };
             let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let declared_count = decoded.declared_count;
             let terminal_ordinal = decoded.references.len() - 1;
             references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, reference)| {
                 let data_block = unique_offset_data_block(&indexed, reference.object_index);
                 FeatureSketchReference {
                     id: format!(
-                        "nx:feature-history:sketch-reference#{section_key}-{operation_ordinal}-{ordinal}"
+                        "nx:feature-history:sketch-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
                     operation_label: operation_label.clone(),
                     ordinal: ordinal as u32,
@@ -7980,7 +7987,7 @@ pub fn feature_extrude_profile_references(
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut references = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -7991,19 +7998,19 @@ pub fn feature_extrude_profile_references(
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(decoded) = crate::om::extrude_profile_references(record) else {
                 continue;
             };
             let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let witnessed = decoded.witnessed;
             references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, reference)| {
                 FeatureExtrudeProfileReference {
                     id: format!(
-                        "nx:feature-history:extrude-profile-reference#{section_key}-{operation_ordinal}-{ordinal}"
+                        "nx:feature-history:extrude-profile-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
                     operation_label: operation_label.clone(),
                     ordinal: ordinal as u32,
@@ -8022,7 +8029,7 @@ pub fn feature_extrude_profile_references(
 pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtrudePayloadHeader> {
     let sections = container.om_sections();
     let mut headers = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8033,7 +8040,7 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(header) = crate::om::extrude_payload_header(record) else {
@@ -8041,10 +8048,10 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
             };
             headers.push(FeatureExtrudePayloadHeader {
                 id: format!(
-                    "nx:feature-history:extrude-payload-header#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:extrude-payload-header#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 scalars: header.scalars,
                 source_offset: entry_offset + header.offset as u64,
@@ -8058,7 +8065,7 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
 pub fn feature_extrude_payload_footers(container: &Container) -> Vec<FeatureExtrudePayloadFooter> {
     let sections = container.om_sections();
     let mut footers = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8069,7 +8076,7 @@ pub fn feature_extrude_payload_footers(container: &Container) -> Vec<FeatureExtr
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(footer) = crate::om::extrude_payload_footer(record) else {
@@ -8077,10 +8084,10 @@ pub fn feature_extrude_payload_footers(container: &Container) -> Vec<FeatureExtr
             };
             footers.push(FeatureExtrudePayloadFooter {
                 id: format!(
-                    "nx:feature-history:extrude-payload-footer#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:extrude-payload-footer#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 type_indices: footer.type_indices,
                 mode_indices: footer.mode_indices,
@@ -8099,7 +8106,7 @@ pub fn feature_extrude_payload_scalar_triples(
 ) -> Vec<FeatureExtrudePayloadScalarTriple> {
     let sections = container.om_sections();
     let mut triples = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8110,7 +8117,7 @@ pub fn feature_extrude_payload_scalar_triples(
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(triple) = crate::om::extrude_payload_scalar_triple(record) else {
@@ -8127,10 +8134,10 @@ pub fn feature_extrude_payload_scalar_triples(
             };
             triples.push(FeatureExtrudePayloadScalarTriple {
                 id: format!(
-                    "nx:feature-history:extrude-payload-scalar-triple#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:extrude-payload-scalar-triple#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 values: triple.scalars.map(|scalar| scalar.value),
                 encodings: triple.scalars.map(|scalar| encoding(scalar.encoding)),
@@ -8149,7 +8156,7 @@ pub fn feature_operation_body_scalar_triples(
 ) -> Vec<FeatureOperationBodyScalarTriple> {
     let sections = container.om_sections();
     let mut triples = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8160,7 +8167,7 @@ pub fn feature_operation_body_scalar_triples(
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             for triple in crate::om::operation_body_scalar_triples(record) {
@@ -8175,11 +8182,11 @@ pub fn feature_operation_body_scalar_triples(
                 };
                 triples.push(FeatureOperationBodyScalarTriple {
                     id: format!(
-                        "nx:feature-history:operation-body-scalar-triple#{section_key}-{operation_ordinal}-{}",
+                        "nx:feature-history:operation-body-scalar-triple#{section_key}-{operation_ordinal:010}-{}",
                         triple.body_reference_ordinal
                     ),
                     operation_label: format!(
-                        "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                        "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                     ),
                     body_reference_ordinal: triple.body_reference_ordinal,
                     body_object_index: triple.body_object_index,
@@ -8200,7 +8207,7 @@ pub fn feature_operation_body_scalar_triples(
 pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOperationBodyMember> {
     let sections = container.om_sections();
     let mut members = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8211,7 +8218,7 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             members.extend(
@@ -8219,11 +8226,11 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
                     .into_iter()
                     .map(|member| FeatureOperationBodyMember {
                         id: format!(
-                            "nx:feature-history:operation-body-member#{section_key}-{operation_ordinal}-{}-{}",
+                            "nx:feature-history:operation-body-member#{section_key}-{operation_ordinal:010}-{}-{}",
                             member.body_reference_ordinal, member.ordinal
                         ),
                         operation_label: format!(
-                            "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                            "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                         ),
                         body_reference_ordinal: member.body_reference_ordinal,
                         body_object_index: member.body_object_index,
@@ -8285,7 +8292,7 @@ pub fn feature_operation_body_11_continuations(
 ) -> Vec<FeatureOperationBody11Continuation> {
     let sections = container.om_sections();
     let mut continuations = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8296,7 +8303,7 @@ pub fn feature_operation_body_11_continuations(
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             continuations.extend(
@@ -8304,11 +8311,11 @@ pub fn feature_operation_body_11_continuations(
                     .into_iter()
                     .map(|continuation| FeatureOperationBody11Continuation {
                         id: format!(
-                            "nx:feature-history:trim-body-11-continuation#{section_key}-{operation_ordinal}-{}",
+                            "nx:feature-history:trim-body-11-continuation#{section_key}-{operation_ordinal:010}-{}",
                             continuation.body_reference_ordinal
                         ),
                         operation_label: format!(
-                            "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                            "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                         ),
                         body_reference_ordinal: continuation.body_reference_ordinal,
                         body_object_index: continuation.body_object_index,
@@ -8331,7 +8338,7 @@ pub fn feature_operation_body_reference_lanes(
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut lanes = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8342,7 +8349,7 @@ pub fn feature_operation_body_reference_lanes(
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             for lane in crate::om::operation_body_reference_lanes(record) {
@@ -8365,11 +8372,11 @@ pub fn feature_operation_body_reference_lanes(
                     .collect();
                 lanes.push(FeatureOperationBodyReferenceLane {
                     id: format!(
-                        "nx:feature-history:operation-body-reference-lane#{section_key}-{operation_ordinal}-{}",
+                        "nx:feature-history:operation-body-reference-lane#{section_key}-{operation_ordinal:010}-{}",
                         lane.body_reference_ordinal
                     ),
                     operation_label: format!(
-                        "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                        "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                     ),
                     body_reference_ordinal: lane.body_reference_ordinal,
                     body_object_index: lane.body_object_index,
@@ -8465,7 +8472,7 @@ pub fn feature_extrude_payload_32_branches(
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut branches = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8476,7 +8483,7 @@ pub fn feature_extrude_payload_32_branches(
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(branch) = crate::om::extrude_payload_32_branch(record) else {
@@ -8493,10 +8500,10 @@ pub fn feature_extrude_payload_32_branches(
             let second_data_blocks = resolve(&branch.second_indices);
             branches.push(FeatureExtrudePayload32Branch {
                 id: format!(
-                    "nx:feature-history:extrude-payload-32-branch#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:extrude-payload-32-branch#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 body_object_index: branch.body_object_index,
                 scalar: branch.scalar,
@@ -8578,7 +8585,7 @@ pub fn feature_block_construction_references(
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut references = Vec::new();
-    for link in feature_history_links(container) {
+    for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span
@@ -8589,7 +8596,7 @@ pub fn feature_block_construction_references(
         }) else {
             continue;
         };
-        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
             let Some(field) = crate::om::block_construction_references(record) else {
@@ -8599,10 +8606,10 @@ pub fn feature_block_construction_references(
             references.extend(field.references.into_iter().enumerate().map(
                 |(ordinal, reference)| FeatureBlockConstructionReference {
                     id: format!(
-                        "nx:feature-history:block-construction-reference#{section_key}-{operation_ordinal}-{ordinal}"
+                        "nx:feature-history:block-construction-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
                     operation_label: format!(
-                        "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                        "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                     ),
                     control: field.control,
                     ordinal: ordinal as u32,

@@ -1580,6 +1580,36 @@ fn segment_om_record_area_payload() -> Vec<u8> {
     payload
 }
 
+fn multi_section_feature_history_payload() -> Vec<u8> {
+    let mut early = size_framed_om_section_with_record_area();
+    let name = early
+        .windows(b"UNITE".len())
+        .position(|window| window == b"UNITE")
+        .expect("operation label");
+    early[name..name + b"BLOCK".len()].copy_from_slice(b"BLOCK");
+    let late = size_framed_om_section_with_record_area();
+    let index_byte_len = 36_u32;
+    let early_offset = index_byte_len;
+    let late_offset = early_offset + early.len() as u32;
+    let mut payload = Vec::new();
+    for word in [
+        late_offset,
+        early_offset,
+        11,
+        1,
+        1,
+        index_byte_len,
+        early_offset,
+        9,
+        11,
+    ] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.extend_from_slice(&early);
+    payload.extend_from_slice(&late);
+    payload
+}
+
 fn segment_om_record_area_with_input_store_payload() -> Vec<u8> {
     let mut payload = segment_om_record_area_payload();
     let mut store = offset_only_indexed_om_section();
@@ -2410,6 +2440,23 @@ fn size_framed_om_section_with_record_area() -> Vec<u8> {
     bytes.extend_from_slice(&14u32.to_le_bytes());
     bytes.extend_from_slice(&44u32.to_le_bytes());
     bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0feature-records\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x01\x82\x40\x90\x17\xd3\xff\x03\x07UNITE\0\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x42\x00\x01\x03\x90\x19\x4c\x7f\x00\x01\x02\x10\x90\x19\x42\xff");
+    let payload_len = (bytes.len() - 16) as u32;
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    bytes
+}
+
+fn size_framed_om_section_with_repeated_operations(count: usize) -> Vec<u8> {
+    let section = size_framed_om_section_with_record_area();
+    let operation = section
+        .windows(15)
+        .position(|window| {
+            window == b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff"
+        })
+        .expect("operation marker");
+    let mut bytes = section[..operation].to_vec();
+    for _ in 0..count {
+        bytes.extend_from_slice(&section[operation..]);
+    }
     let payload_len = (bytes.len() - 16) as u32;
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
     bytes
@@ -3835,6 +3882,78 @@ fn feature_history_links_follow_unique_physical_section_order() {
             .collect::<Vec<_>>(),
         [("duplicate", 100), ("late", 300)]
     );
+}
+
+#[test]
+fn decode_orders_and_deduplicates_linked_feature_history_sections() {
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        multi_section_feature_history_payload(),
+    )]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let namespace = result.ir.native.namespace("nx").unwrap();
+    let links = namespace
+        .arena_as::<crate::native::SegmentOmLink>("segment_om_links")
+        .unwrap();
+    assert_eq!(links.len(), 4);
+    let labels = namespace
+        .arena_as::<crate::native::FeatureOperationLabel>("feature_operation_labels")
+        .unwrap();
+    assert_eq!(
+        labels
+            .iter()
+            .map(|label| (label.value.as_str(), label.ordinal))
+            .collect::<Vec<_>>(),
+        [("BLOCK", 0), ("UNITE", 0)]
+    );
+    assert_ne!(labels[0].section_link, labels[1].section_link);
+    let records = namespace
+        .arena_as::<crate::native::FeatureOperationRecord>("feature_operation_records")
+        .unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].operation_label, labels[0].id);
+    assert_eq!(records[1].operation_label, labels[1].id);
+    assert_eq!(
+        result
+            .ir
+            .model
+            .features
+            .iter()
+            .map(|feature| feature.name.as_deref())
+            .collect::<Vec<_>>(),
+        [Some("BLOCK"), Some("UNITE")]
+    );
+}
+
+#[test]
+fn decoded_feature_ids_preserve_double_digit_operation_order() {
+    let section = size_framed_om_section_with_repeated_operations(12);
+    let mut payload = Vec::new();
+    for word in [24_u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.extend_from_slice(&section);
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let labels = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::FeatureOperationLabel>("feature_operation_labels")
+        .unwrap();
+
+    assert_eq!(
+        labels.iter().map(|label| label.ordinal).collect::<Vec<_>>(),
+        (0..12).collect::<Vec<_>>()
+    );
+    assert!(labels
+        .windows(2)
+        .all(|pair| pair[0].id.as_str() < pair[1].id.as_str()));
 }
 
 #[test]
