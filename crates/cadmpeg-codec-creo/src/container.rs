@@ -1447,7 +1447,7 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
-        let mut recipe_operations = feature::operations(payload)
+        let mut recipe_operations = feature::operation_states(payload)
             .into_iter()
             .filter(|operation| operation.recipe.is_some())
             .collect::<Vec<_>>();

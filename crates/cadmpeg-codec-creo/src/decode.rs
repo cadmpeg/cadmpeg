@@ -7817,23 +7817,35 @@ fn current_feature_operation(
 }
 
 fn feature_schema_class(scan: &ContainerScan, feature_id: u32) -> Option<u32> {
-    resolved_feature_schema_class(&scan.feature_operations, &scan.feature_rows, feature_id)
+    resolved_feature_schema_class_from_classes(
+        &scan.feature_operations,
+        feature_row_schema_classes(scan, feature_id),
+        feature_id,
+    )
 }
 
-fn resolved_feature_schema_class(
+fn resolved_feature_schema_class_from_classes(
     operations: &[crate::feature::FeatureOperation],
-    rows: &[crate::feature::FeatureRow],
+    classes: BTreeSet<u32>,
     feature_id: u32,
 ) -> Option<u32> {
-    if let Some(schema_class) = current_feature_operation(operations, feature_id)
-        .and_then(|operation| operation.root_schema_class)
-    {
-        return Some(schema_class);
+    if !classes.is_empty() {
+        let mut classes = classes.into_iter();
+        let schema_class = classes.next()?;
+        return classes.next().is_none().then_some(schema_class);
     }
-    let classes = row_feature_schema_classes(rows, feature_id);
-    let mut classes = classes.into_iter();
-    let schema_class = classes.next()?;
-    classes.next().is_none().then_some(schema_class)
+    current_feature_operation(operations, feature_id)
+        .and_then(|operation| operation.root_schema_class)
+}
+
+fn feature_row_schema_classes(scan: &ContainerScan, feature_id: u32) -> BTreeSet<u32> {
+    row_feature_schema_classes(&scan.feature_rows, feature_id)
+        .into_iter()
+        .chain(row_feature_schema_classes(
+            &scan.depdb_recipe_rows,
+            feature_id,
+        ))
+        .collect()
 }
 
 fn row_feature_schema_classes(
@@ -10608,11 +10620,26 @@ fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<
     {
         properties.insert("recipe".to_string(), recipe.name().to_string());
     }
-    if let Some(schema_class) = feature_schema_class(scan, feature_id) {
+    let schema_class = feature_schema_class(scan, feature_id);
+    if let Some(schema_class) = schema_class {
         properties.insert(
             "featdefs_schema_class".to_string(),
             schema_class.to_string(),
         );
+    }
+    let row_schema_classes = feature_row_schema_classes(scan, feature_id);
+    if !row_schema_classes.is_empty() {
+        properties.insert(
+            "featdefs_row_schema_classes".to_string(),
+            row_schema_classes
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+    }
+    if schema_class.is_none() && !row_schema_classes.is_empty() {
+        properties.insert("featdefs_schema_state".to_string(), "ambiguous".to_string());
     }
     properties
 }
@@ -13287,7 +13314,7 @@ mod resolved_sketch_tests {
                 .and_then(|current| current.root_schema_class),
             Some(917)
         );
-        assert!(current_feature_operation(&[operation.clone(), operation], 6).is_none());
+        assert!(current_feature_operation(&[operation.clone(), operation.clone()], 6).is_none());
         let row = |schema_class, offset| crate::feature::FeatureRow {
             feature_id: 6,
             header: [0xeb, 0x04],
@@ -13298,11 +13325,27 @@ mod resolved_sketch_tests {
             offset,
         };
         assert_eq!(
-            resolved_feature_schema_class(&[], &[row(917, 20), row(917, 30)], 6),
+            resolved_feature_schema_class_from_classes(
+                &[],
+                row_feature_schema_classes(&[row(917, 20), row(917, 30)], 6),
+                6,
+            ),
             Some(917)
         );
         assert_eq!(
-            resolved_feature_schema_class(&[], &[row(913, 20), row(914, 30)], 6),
+            resolved_feature_schema_class_from_classes(
+                &[],
+                row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
+                6,
+            ),
+            None
+        );
+        assert_eq!(
+            resolved_feature_schema_class_from_classes(
+                std::slice::from_ref(&operation),
+                row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
+                6,
+            ),
             None
         );
         assert_eq!(

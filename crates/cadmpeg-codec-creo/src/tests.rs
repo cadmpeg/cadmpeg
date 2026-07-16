@@ -4747,6 +4747,49 @@ fn scan_partitions_multiple_depdb_recipe_rows() {
 }
 
 #[test]
+fn decode_retains_conflicting_depdb_recipe_schemas_as_native_history() {
+    let depdb = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
+        \xf7\x50\x9f\x75\x83\x94\xf6\x9f\x73Profile 2\0\xf6\0cutextrude\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
+    let scan = container::scan_bytes(data.clone());
+
+    assert_eq!(scan.feature_operation_states.len(), 2);
+    assert_eq!(scan.depdb_recipe_rows.len(), 2);
+    assert!(scan
+        .depdb_recipe_rows
+        .iter()
+        .all(|row| row.feature_id == 8053));
+    assert_eq!(
+        scan.depdb_recipe_rows
+            .iter()
+            .filter_map(|row| row.root_schema_class)
+            .collect::<Vec<_>>(),
+        [917, 916]
+    );
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#8053")
+        .expect("native feature");
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Native { .. }
+    ));
+    assert_eq!(
+        feature
+            .source_properties
+            .get("featdefs_row_schema_classes")
+            .map(String::as_str),
+        Some("916,917")
+    );
+}
+
+#[test]
 fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
     let mut depdb = b"gsec2d_ptr\0\xe0\x0aname\0S2D0002\0\
         var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2"

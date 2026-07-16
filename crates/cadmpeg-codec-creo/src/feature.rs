@@ -117,8 +117,8 @@ struct FeatureRecipeBinding {
     offset: usize,
 }
 
-fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeBinding> {
-    let mut bindings = BTreeMap::new();
+fn recipe_bindings(payload: &[u8]) -> Vec<(u32, FeatureRecipeBinding)> {
+    let mut bindings = Vec::new();
     for marker in 0..payload.len() {
         if payload.get(marker) != Some(&psb::token::ENTITY_REF) {
             continue;
@@ -153,7 +153,7 @@ fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeBinding> {
             .iter()
             .find(|(name, _)| payload.get(recipe_start..recipe_start + name.len()) == Some(*name))
         {
-            bindings.insert(
+            bindings.push((
                 feature_id,
                 FeatureRecipeBinding {
                     recipe: *recipe,
@@ -161,7 +161,7 @@ fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeBinding> {
                     parent_feature_id,
                     offset: marker,
                 },
-            );
+            ));
         }
     }
     bindings
@@ -177,6 +177,13 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             || matches!(byte, b' ' | b'_' | b'-' | b'/' | b'(' | b')')
     };
     let bound_recipes = recipe_bindings(payload);
+    let recipe_binding_counts = bound_recipes.iter().fold(
+        BTreeMap::<u32, usize>::new(),
+        |mut counts, (feature_id, _)| {
+            *counts.entry(*feature_id).or_default() += 1;
+            counts
+        },
+    );
     let mut result = Vec::new();
     for separator in 0..payload.len().saturating_sub(4) {
         let Some(separator_bytes) = SEPARATORS.iter().find(|candidate| {
@@ -219,7 +226,15 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             .rposition(|byte| *byte == 0xe3)
             .map_or(0, |position| position + 1);
         let record = &payload[record_start..offset];
-        let bound_recipe = bound_recipes.get(&feature_id).copied();
+        let matching_recipes = bound_recipes
+            .iter()
+            .filter(|(candidate, _)| *candidate == feature_id)
+            .map(|(_, binding)| *binding)
+            .collect::<Vec<_>>();
+        let bound_recipe = match matching_recipes.as_slice() {
+            [binding] => Some(*binding),
+            _ => None,
+        };
         let recipe = bound_recipe.map(|binding| binding.recipe).or_else(|| {
             FEATURE_RECIPES.iter().copied().find_map(|(name, recipe)| {
                 record
@@ -253,15 +268,19 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             state_offset,
         });
     }
-    for (feature_id, binding) in &bound_recipes {
-        if result
-            .iter()
-            .any(|operation| operation.feature_id == *feature_id)
+    for (feature_id, binding) in bound_recipes {
+        if recipe_binding_counts.get(&feature_id) == Some(&1)
+            && result.iter().any(|operation| {
+                operation.feature_id == feature_id
+                    && operation.recipe == Some(binding.recipe)
+                    && operation.root_schema_class == Some(binding.root_schema_class)
+                    && operation.parent_feature_id == Some(binding.parent_feature_id)
+            })
         {
             continue;
         }
         result.push(FeatureOperation {
-            feature_id: *feature_id,
+            feature_id,
             kind: match binding.recipe.kind() {
                 FeatureRecipeKind::Extrude => "Extrude",
                 FeatureRecipeKind::Revolve => "Revolve",
@@ -7108,6 +7127,32 @@ mod tests {
         assert_eq!(operations[1].recipe, Some(FeatureRecipe::ProtrudeExtrude));
         assert_eq!(operations[1].root_schema_class, Some(917));
         assert_eq!(operations[1].parent_feature_id, Some(8051));
+    }
+
+    #[test]
+    fn preserves_competing_depdb_recipe_bindings() {
+        let payload = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
+            \xf7\x50\x9f\x75\x83\x94\xf6\x9f\x73Profile 2\0\xf6\0cutextrude\0";
+
+        let states = operation_states(payload);
+        assert_eq!(states.len(), 2);
+        assert_eq!(states[0].feature_id, 8053);
+        assert_eq!(states[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
+        assert_eq!(states[0].root_schema_class, Some(917));
+        assert_eq!(states[1].feature_id, 8053);
+        assert_eq!(states[1].recipe, Some(FeatureRecipe::CutExtrude));
+        assert_eq!(states[1].root_schema_class, Some(916));
+
+        let current = operations(payload);
+        assert_eq!(current.len(), 1);
+        assert_eq!(current[0], states[1]);
+
+        let repeated = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
+            \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 2\0\xf6\0protextrude\0";
+        let repeated_states = operation_states(repeated);
+        assert_eq!(repeated_states.len(), 2);
+        assert_eq!(repeated_states[0].recipe, repeated_states[1].recipe);
+        assert_ne!(repeated_states[0].offset, repeated_states[1].offset);
     }
 
     #[test]
