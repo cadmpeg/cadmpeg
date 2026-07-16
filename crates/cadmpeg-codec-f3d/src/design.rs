@@ -4267,7 +4267,7 @@ pub fn project_dimension_constraints(
                 parameter.evaluated_value,
                 parameter_id,
             )
-            .map(|_| (scope.to_owned(), pair.governing_companion_record_index))
+            .map(|_| (scope.to_owned(), pair.companion_record_index))
         })
         .collect::<HashSet<_>>();
     let parameterized_offset_companions = groups
@@ -11317,14 +11317,14 @@ mod relation_tests {
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConfiguration, DesignConfigurationKind,
         DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-        DesignConstructionPersistentIdentity, DesignDimensionLocusPair,
-        DesignDimensionRecipeRecord, DesignEntityHeader, DesignExtrudeExtent,
-        DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
-        DesignExtrudeProfileOperand, DesignExtrudeStart, DesignObjectKind, DesignParameter,
-        DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-        DesignRecipeReference, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
-        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-        SketchPoint, SketchRelation, SketchRelationOperand,
+        DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
+        DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignEntityHeader,
+        DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole,
+        DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart, DesignObjectKind,
+        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+        DesignParameterScope, DesignRecipeReference, DesignRecordHeader, DesignSketchPlacement,
+        LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
+        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
@@ -15182,6 +15182,157 @@ mod relation_tests {
             Some(SketchConstraintDefinition::Coincident { .. })
         ));
         assert!(exact_counted_dimension_relation(&[&outside_arc, &arc]).is_none());
+    }
+
+    #[test]
+    fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
+        let stream = "f3d:A";
+        let placement = DesignSketchPlacement {
+            id: format!("{stream}:design-sketch-placement#0"),
+            scope_record_index: 10,
+            entity_id: "0_100".into(),
+            entity_suffix: 100,
+            byte_offset: 0,
+            class_tag: "356".into(),
+            record_index: 11,
+            frame_length: 201,
+            transform: identity_matrix(),
+            transform_offset: None,
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 201,
+        };
+        let parameter = DesignParameter {
+            id: format!("{stream}:design-parameter#20"),
+            byte_offset: 0,
+            class_tag: "305".into(),
+            record_index: 20,
+            prefix_value: 0,
+            prefix_value_offset: 0,
+            source_ordinal: 4,
+            owner_record_index: Some(21),
+            expression: "2 mm".into(),
+            expression_offset: 0,
+            source_kind: "Linear Dimension-4".into(),
+            source_kind_offset: 0,
+            kind: DesignParameterKind::Dimension,
+            unit: Some("mm".into()),
+            unit_offset: Some(0),
+            name: "d4".into(),
+            name_offset: 0,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 0,
+        };
+        let owner = DesignParameterOwner {
+            id: format!("{stream}:design-parameter-owner#21"),
+            byte_offset: 0,
+            class_tag: "292".into(),
+            record_index: 21,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 0,
+            parameter_record_index: 20,
+            owned_ordinal: 0,
+            variant: 0,
+            companion_record_index: 22,
+        };
+        let pair = DesignDimensionLocusPair {
+            id: format!("{stream}:design-dimension-locus-pair#30"),
+            companion_record_index: 99,
+            governing_companion_record_index: 22,
+            byte_offset: 30,
+            class_tag: "277".into(),
+            record_index: 30,
+            frame_length: 100,
+            opaque_index: 0,
+            opaque_index_offset: 65,
+            first_geometry_record_index: 40,
+            first_geometry_reference_offset: 70,
+            first_role: 0,
+            first_role_offset: 80,
+            second_geometry_record_index: 41,
+            second_geometry_reference_offset: 85,
+            second_role: 0,
+            second_role_offset: 95,
+            paired_class_tag: "273".into(),
+            paired_byte_offset: 130,
+        };
+        let group = DesignDimensionLocusGroup {
+            id: format!("{stream}:design-dimension-locus-group#140"),
+            companion_record_index: 99,
+            byte_offset: 140,
+            class_tag: "277".into(),
+            record_index: 31,
+            frame_length: 100,
+            loci: vec![DesignDimensionLocus {
+                geometry_record_index: 40,
+                geometry_reference_offset: 170,
+                role: 0,
+                role_offset: 180,
+            }],
+            owner_reference: 100,
+            owner_reference_offset: 185,
+            owner_role: 0,
+            owner_role_offset: 195,
+            state: 0,
+            state_offset: 199,
+            constraint_kinds: Vec::new(),
+            unknown_constraint_bits: 0,
+            return_members: vec![40],
+            return_member_offsets: vec![210],
+            next_class_tag: "273".into(),
+            next_record_index: 32,
+            next_byte_offset: 240,
+        };
+        let point = |record_index, y| SketchPoint {
+            id: format!("{stream}:sketch-point#{record_index}"),
+            record_index,
+            owner_reference: Some(100),
+            class_tag: "300".into(),
+            byte_offset: 0,
+            coordinate_offset: 0,
+            entity_genesis: None,
+            persistent_id: u64::from(record_index),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, y),
+            raw_bytes: Vec::new(),
+        };
+        let points = [point(40, 0.0), point(41, 2.0)];
+        let sketch = neutral_sketch_id(&placement);
+        let entities = points
+            .iter()
+            .map(|point| SketchEntity {
+                id: SketchEntityId(format!("point-{}", point.record_index)),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: Some(point.id.clone()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: point.coordinates,
+                },
+            })
+            .collect::<Vec<_>>();
+
+        let constraints = project_dimension_constraints(
+            &[placement],
+            &[parameter],
+            &[owner],
+            &[pair],
+            &[group],
+            &[],
+            &[],
+            &[],
+            &points,
+            &[],
+            &entities,
+        );
+
+        assert_eq!(constraints.len(), 1);
+        assert!(matches!(
+            constraints[0].definition,
+            SketchConstraintDefinition::VerticalDistance { .. }
+        ));
     }
 
     #[test]
