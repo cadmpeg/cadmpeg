@@ -4764,6 +4764,35 @@ impl MeshQuotient {
         true
     }
 
+    fn merge_singleton_coordinate_roots(&mut self, edge_candidates: &[Vec<[usize; 2]>]) -> bool {
+        loop {
+            let mut root_by_point = HashMap::new();
+            let mut merge = None;
+            for node in 0..self.union.len() {
+                let root = self.union.find(node);
+                if root != node || self.domains[root].len() != 1 {
+                    continue;
+                }
+                let Some(&point) = self.domains[root].iter().next() else {
+                    return false;
+                };
+                if let Some(previous) = root_by_point.insert(point, root) {
+                    merge = Some((previous, root));
+                    break;
+                }
+            }
+            let Some((left, right)) = merge else {
+                return true;
+            };
+            let Some(root) = self.merge(left, right) else {
+                return false;
+            };
+            if !self.propagate_component_edge_domains(root, edge_candidates) {
+                return false;
+            }
+        }
+    }
+
     fn assignment_has_option(
         &self,
         assignment: &MeshFaceBoundaryAssignment,
@@ -6700,6 +6729,9 @@ impl MeshSelectionSearch<'_> {
         if !self.propagate_forced_face_equations_from(&mut measured, Some(changed_edges)) {
             return None;
         }
+        if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
+            return None;
+        }
         let root_count = measured.root_count();
         if root_count < self.vertex_points.len() {
             return None;
@@ -6739,6 +6771,9 @@ impl MeshSelectionSearch<'_> {
         let mut measured = quotient.clone();
         if !prepared {
             if !self.propagate_forced_face_equations_from(&mut measured, changed_edges) {
+                return;
+            }
+            if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
                 return;
             }
             let root_count = measured.root_count();
@@ -9573,6 +9608,22 @@ mod motif_tests {
         assert!(mesh_edge_points_compatible(true, &[[2, 2]], [2, 2]));
         assert!(!mesh_edge_points_compatible(false, &[[2, 2]], [2, 2]));
         assert!(!mesh_edge_points_compatible(true, &[[1, 1]], [2, 2]));
+    }
+
+    #[test]
+    fn quotient_merges_roots_forced_to_one_coordinate_identity() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: [0, 1, 0, 2]
+                .into_iter()
+                .map(|point| Arc::new(HashSet::from([point])))
+                .collect(),
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+
+        assert!(quotient.merge_singleton_coordinate_roots(&[Vec::new(), Vec::new()]));
+        assert_eq!(quotient.root_count(), 3);
+        assert_eq!(quotient.union.find(0), quotient.union.find(2));
     }
 
     #[test]
