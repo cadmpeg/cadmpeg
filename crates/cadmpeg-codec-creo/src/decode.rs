@@ -10046,6 +10046,20 @@ fn resolved_feature_dimension_parameter(
         })
 }
 
+fn resolved_unique_feature_dimension_parameter<'a>(
+    definitions: &'a [crate::feature::FeatureDefinition],
+    definition: &crate::feature::FeatureDefinition,
+    ordinal: usize,
+) -> Option<(&'a crate::feature::FeatureDimension, ParameterId)> {
+    let definition = unique_feature_definition(definitions, definition.id)?;
+    resolved_feature_dimension_parameter(
+        definition.id,
+        definition.owner_feature_id?,
+        definition.dimensions.as_ref()?,
+        ordinal,
+    )
+}
+
 fn transfer_feature_dimensions(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -10069,10 +10083,9 @@ fn transfer_feature_dimensions(
             continue;
         };
         for ordinal in 0..table.rows.len() {
-            let Some((dimension, id)) = resolved_feature_dimension_parameter(
-                definition.id,
-                owner_feature_id,
-                table,
+            let Some((dimension, id)) = resolved_unique_feature_dimension_parameter(
+                &scan.feature_definitions,
+                definition,
                 ordinal,
             ) else {
                 continue;
@@ -14003,20 +14016,58 @@ mod resolved_sketch_tests {
             rows: vec![dimension.clone()],
             offset: 9,
         };
+        let mut definition = crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: Some(40),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: Some(table.clone()),
+            relations: None,
+            saved_section: None,
+            offset: 8,
+        };
         assert_eq!(
-            resolved_feature_dimension_parameter(917, 40, &table, 0),
+            resolved_unique_feature_dimension_parameter(
+                std::slice::from_ref(&definition),
+                &definition,
+                0,
+            ),
             Some((
                 &dimension,
                 ParameterId("creo:featdefs:parameter#917:40:3".to_string())
             ))
         );
         table.rows.push(dimension);
+        definition.dimensions = Some(table);
         assert_eq!(
-            resolved_feature_dimension_parameter(917, 40, &table, 0),
+            resolved_unique_feature_dimension_parameter(
+                std::slice::from_ref(&definition),
+                &definition,
+                0,
+            ),
             None
         );
         assert_eq!(
-            resolved_feature_dimension_parameter(917, 40, &table, 1),
+            resolved_unique_feature_dimension_parameter(
+                std::slice::from_ref(&definition),
+                &definition,
+                1,
+            ),
+            None
+        );
+        assert_eq!(
+            resolved_unique_feature_dimension_parameter(
+                &[definition.clone(), definition.clone()],
+                &definition,
+                0,
+            ),
             None
         );
     }
