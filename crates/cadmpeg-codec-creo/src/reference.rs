@@ -27,11 +27,11 @@ pub struct ReferenceLine {
 
 fn coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
     if data.get(offset) == Some(&0x18)
-        && scalar::decode_tabulated_cylinder_second_coordinate(data, offset + 1, cache).is_some()
+        && scalar::decode_model_reference_coordinate(data, offset + 1, cache).is_some()
     {
         return Some((0.0, offset + 1));
     }
-    scalar::decode_tabulated_cylinder_second_coordinate(data, offset, cache)
+    scalar::decode_model_reference_coordinate(data, offset, cache)
 }
 
 fn scalar_suffix(row: &[u8], count: usize, cache: &ScalarCache) -> Option<Vec<f64>> {

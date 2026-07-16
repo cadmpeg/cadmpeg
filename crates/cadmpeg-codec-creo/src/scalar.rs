@@ -399,6 +399,23 @@ pub fn decode_named_local_system_coordinate(
     decode_tabulated_cylinder_second_coordinate(data, offset, cache)
 }
 
+/// Decode one coordinate in a model-reference entity row.
+///
+/// The `0xed` form stores a complete big-endian IEEE-754 value in the eight
+/// bytes following the opener. Other coordinates use the signed DICT lane
+/// shared with tabulated-cylinder control points.
+pub fn decode_model_reference_coordinate(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0xed) {
+        let raw: [u8; 8] = data.get(offset + 1..offset + 9)?.try_into().ok()?;
+        return Some((f64::from_be_bytes(raw), offset + 9));
+    }
+    decode_tabulated_cylinder_second_coordinate(data, offset, cache)
+}
+
 /// Decode a complete twelve-slot support frame using the local-system macro
 /// language shared by feature definitions and curve-equation entities.
 pub fn decode_explicit_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
@@ -584,6 +601,20 @@ fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decodes_model_reference_wrapped_ieee_coordinate() {
+        let data = [0xed, 0x3b, 0xbc, 0xea, 0x89, 0x1b, 0xc2, 0xbd, 0x60];
+        let cache = ScalarCache::default();
+        assert_eq!(
+            decode_model_reference_coordinate(&data, 0, &cache),
+            Some((f64::from_be_bytes(data[1..].try_into().unwrap()), 9))
+        );
+        assert_eq!(
+            decode_model_reference_coordinate(&data[..8], 0, &cache),
+            None
+        );
+    }
 
     #[test]
     fn decodes_counted_double_xar_dictionary() {

@@ -1225,6 +1225,8 @@ model-coordinate cross-section plane carrier; it is not a material model face.
 ### 8.1 Scalar and datum tokens
 
 A `0x99` DICT prefix maps to IEEE prefix `40 0E` in positive reads and `C0 0E` in the mirrored saved-section lane.
+Model-reference coordinate rows encode `ed <bytes8>` as the big-endian
+IEEE-754 value `<bytes8>`.
 In the saved-section scalar lane, `dd` maps to IEEE prefix `40 0c`; its six
 payload bytes are the remaining IEEE bytes.
 In the same lane, `b3`, `cb`, and `d6` map to IEEE prefixes `bf e0`, `bf f8`,
