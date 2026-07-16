@@ -9817,31 +9817,15 @@ fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> 
     {
         return None;
     }
-    let digits = at + 1;
-    let mut end = digits;
-    while bytes.get(end).is_some_and(u8::is_ascii_digit) {
-        end += 1;
-    }
-    if end == digits {
-        return None;
-    }
-    if bytes.get(end) == Some(&b'_') {
-        end += 1;
-        let qualifier = end;
-        while bytes
-            .get(end)
-            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
-        {
-            end += 1;
-        }
-        if end == qualifier {
-            return None;
-        }
-    }
-    (!bytes
+    let mut end = at + 1;
+    while bytes
         .get(end)
-        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_'))
-    .then_some(end)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+    {
+        end += 1;
+    }
+    let name = std::str::from_utf8(bytes.get(at..end)?).ok()?;
+    crate::om::parameter_name_parts(name).map(|_| end)
 }
 
 /// Length-framed class definition from an NX OM type registry.

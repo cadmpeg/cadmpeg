@@ -2437,15 +2437,7 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
         let Ok(value) = std::str::from_utf8(raw) else {
             continue;
         };
-        let parameter = if value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-        {
-            parameter_name(value)
-        } else {
-            (None, None)
-        };
-        let (Some(parameter_index), qualifier) = parameter else {
+        let Some((parameter_index, qualifier)) = parameter_name_parts(value) else {
             if evaluate_constant_expression(value).is_some() {
                 literals.push(value);
             }
@@ -3265,7 +3257,8 @@ fn numeric_expression_at(
         return None;
     }
     let value_text = value_tail.strip_suffix("; ")?;
-    let (parameter_index, qualifier) = parameter_name(name);
+    let (parameter_index, qualifier) = parameter_name_parts(name)
+        .map_or((None, None), |(index, qualifier)| (Some(index), qualifier));
     let value = evaluate_constant_expression(value_text);
     Some(NumericExpression {
         object_id,
@@ -3406,19 +3399,16 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
     (parser.at == parser.bytes.len() && value.is_finite()).then_some(value)
 }
 
-fn parameter_name(name: &str) -> (Option<u32>, Option<&str>) {
-    let Some(tail) = name.strip_prefix('p') else {
-        return (None, None);
-    };
+/// Parse one complete canonical `p<decimal>[_qualifier]` parameter name.
+pub(crate) fn parameter_name_parts(name: &str) -> Option<(u32, Option<&str>)> {
+    let tail = name.strip_prefix('p')?;
     let digit_count = tail.bytes().take_while(u8::is_ascii_digit).count();
     if digit_count == 0 {
-        return (None, None);
+        return None;
     }
-    let Ok(index) = tail[..digit_count].parse() else {
-        return (None, None);
-    };
+    let index = tail[..digit_count].parse().ok()?;
     match &tail[digit_count..] {
-        "" => (Some(index), None),
+        "" => Some((index, None)),
         suffix => {
             let qualifier = suffix.strip_prefix('_').filter(|qualifier| {
                 !qualifier.is_empty()
@@ -3426,11 +3416,7 @@ fn parameter_name(name: &str) -> (Option<u32>, Option<&str>) {
                         .bytes()
                         .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
             });
-            if qualifier.is_some() {
-                (Some(index), qualifier)
-            } else {
-                (None, None)
-            }
+            qualifier.map(|qualifier| (index, Some(qualifier)))
         }
     }
 }
