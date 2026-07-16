@@ -1258,12 +1258,13 @@ fn source_meta(scan: &ContainerScan, block: &Block, header: &StreamHeader) -> So
         );
     }
     attributes.insert("block_count".to_string(), scan.blocks.len().to_string());
+    let active_block = container::select_active_parasolid(scan).map_or(block, |(active, _)| active);
     attributes.insert(
         "active_parasolid_block".to_string(),
-        block
+        active_block
             .section
             .clone()
-            .unwrap_or_else(|| format!("block@{}", block.offset)),
+            .unwrap_or_else(|| format!("block@{}", active_block.offset)),
     );
     attributes.insert("parasolid_schema".to_string(), header.schema.clone());
     attributes.insert(
@@ -1747,6 +1748,39 @@ fn assign_configuration_bodies(
             *is_assigned = true;
         }
     }
+    let active_name = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("sw_configuration_name"));
+    let active_index = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("active_parasolid_block"))
+        .and_then(|section| crate::container::configuration_index(section))
+        .and_then(|index| u32::try_from(index).ok());
+    if let (Some(active_name), Some(active_index)) = (active_name, active_index) {
+        let matches = ir
+            .model
+            .configurations
+            .iter()
+            .enumerate()
+            .filter(|(position, configuration)| {
+                !assigned[*position]
+                    && configuration.source_index.is_none()
+                    && &configuration.name == active_name
+            })
+            .map(|(position, _)| position)
+            .collect::<Vec<_>>();
+        if matches.len() == 1 {
+            if let Some(bodies) = partition_map.remove(&active_index) {
+                let position = matches[0];
+                let configuration = &mut ir.model.configurations[position];
+                configuration.source_index = Some(active_index);
+                configuration.bodies = bodies;
+                assigned[position] = true;
+            }
+        }
+    }
     for (configuration, is_assigned) in ir.model.configurations.iter_mut().zip(&mut assigned) {
         if *is_assigned || configuration.source_index.is_some() {
             continue;
@@ -1757,21 +1791,6 @@ fn assign_configuration_bodies(
             configuration.bodies = bodies;
             *is_assigned = true;
         }
-    }
-
-    let mut unassigned = (0..ir.model.configurations.len())
-        .filter(|position| {
-            !assigned[*position] && ir.model.configurations[*position].source_index.is_none()
-        })
-        .collect::<Vec<_>>();
-    unassigned.sort_by_key(|position| ir.model.configurations[*position].ordinal);
-    if unassigned.len() == partition_map.len() {
-        for (position, (source_index, bodies)) in unassigned.into_iter().zip(&partition_map) {
-            let configuration = &mut ir.model.configurations[position];
-            configuration.source_index = Some(*source_index);
-            configuration.bodies.clone_from(bodies);
-        }
-        partition_map.clear();
     }
 
     for (source_index, bodies) in partition_map {
@@ -2181,7 +2200,7 @@ mod design_loss_tests {
     }
 
     #[test]
-    fn configuration_partitions_preserve_explicit_source_identity() {
+    fn configuration_partitions_require_explicit_source_identity() {
         let mut ir = CadIr::empty(Units::default());
         let configuration = |id: &str, ordinal, source_index| DesignConfiguration {
             id: ConfigurationId(id.into()),
@@ -2215,8 +2234,11 @@ mod design_loss_tests {
 
         assert_eq!(ir.model.configurations[0].source_index, Some(5));
         assert_eq!(ir.model.configurations[0].bodies, vec![first, second]);
-        assert_eq!(ir.model.configurations[1].source_index, Some(7));
-        assert_eq!(ir.model.configurations[1].bodies, vec![third]);
+        assert_eq!(ir.model.configurations[1].source_index, None);
+        assert!(ir.model.configurations[1].bodies.is_empty());
+        assert_eq!(ir.model.configurations[2].source_index, Some(7));
+        assert_eq!(ir.model.configurations[2].bodies, vec![third]);
+        assert!(ir.model.configurations[2].native_ref.is_none());
     }
 
     #[test]
