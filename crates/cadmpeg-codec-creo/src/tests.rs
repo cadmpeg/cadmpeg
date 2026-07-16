@@ -3113,6 +3113,49 @@ fn decode_transfers_equation_verified_model_reference_circles() {
 }
 
 #[test]
+fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
+    let payload = b"ent_list(conic)\0\xf2\xf7\x0e\xe2\x2b\xe3\
+        \x2b\x1e\xe2\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\x01\
+        \xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\x0f\xe4\x43\xf0\x00\xe4\
+        \xe4\x0f\x0f\x0f\xe4\x0f\x0f\x0f\xe4\x0f\x0f\x0f\
+        \xe2\x2c\xf7\x10\xe3\xe0\x00ent_list(text)\0"
+        .to_vec();
+    let data = build_prt("c", &[("MdlRefInfo", payload)]);
+    let scan = container::scan_bytes(data.clone());
+    assert_eq!(scan.reference_conics.len(), 1);
+    assert_eq!(scan.reference_ellipses.len(), 1);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    assert!(result.ir.model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Ellipse {
+            major_radius: 1.0,
+            minor_radius: 1.0,
+            ..
+        }
+    )));
+    let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_ellipses"][0];
+    assert_eq!(record.fields["major_radius"], 1.0);
+    assert_eq!(record.fields["minor_radius"], 1.0);
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes["transferred_reference_ellipse_count"],
+        "1"
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("Transferred 1 elliptical reference carrier")
+    }));
+    assert_annotation(
+        &result.ir,
+        &record.id,
+        "creo:MdlRefInfo",
+        scan.reference_ellipses[0].offset as u64,
+        "reference_ellipse_carrier",
+        Exactness::Derived,
+    );
+}
+
+#[test]
 fn scan_reads_declared_geomlists_body_count() {
     let scan = container::scan_bytes(build_prt(
         "c",

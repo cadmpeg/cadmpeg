@@ -609,6 +609,18 @@ struct CreoReferenceConicRecord {
     offset: usize,
 }
 
+#[derive(Serialize)]
+struct CreoReferenceEllipseRecord {
+    id: String,
+    source_conic_id: String,
+    center: [f64; 3],
+    axis: [f64; 3],
+    major_direction: [f64; 3],
+    major_radius: f64,
+    minor_radius: f64,
+    offset: usize,
+}
+
 fn expanded_section_records(scan: &ContainerScan) -> Vec<CreoExpandedSectionRecord> {
     scan.expanded_sections
         .iter()
@@ -19366,6 +19378,35 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("reference_conics", &records)?;
     }
+    if !scan.reference_ellipses.is_empty() {
+        let records = scan
+            .reference_ellipses
+            .iter()
+            .map(|ellipse| CreoReferenceEllipseRecord {
+                id: format!("creo:mdl_ref_info:ellipse_carrier#{}", ellipse.offset),
+                source_conic_id: format!("creo:mdl_ref_info:conic_record#{}", ellipse.offset),
+                center: ellipse.center,
+                axis: ellipse.axis,
+                major_direction: ellipse.major_direction,
+                major_radius: ellipse.major_radius,
+                minor_radius: ellipse.minor_radius,
+                offset: ellipse.offset,
+            })
+            .collect::<Vec<_>>();
+        for record in &records {
+            annotate(
+                &mut annotations,
+                &record.id,
+                "MdlRefInfo",
+                record.offset as u64,
+                "reference_ellipse_carrier",
+                Exactness::Derived,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("reference_ellipses", &records)?;
+    }
     for line in &scan.reference_lines {
         let direction = std::array::from_fn(|axis| line.end[axis] - line.start[axis]);
         let Some(direction) = normalized(direction) else {
@@ -20698,6 +20739,22 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         scan.surface_prototype_records.len().to_string(),
     );
     attributes.insert(
+        "decoded_reference_line_count".to_string(),
+        scan.reference_lines.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_reference_circle_count".to_string(),
+        scan.reference_circles.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_reference_conic_count".to_string(),
+        scan.reference_conics.len().to_string(),
+    );
+    attributes.insert(
+        "transferred_reference_ellipse_count".to_string(),
+        scan.reference_ellipses.len().to_string(),
+    );
+    attributes.insert(
         "decoded_tabulated_cylinder_curve_replay_count".to_string(),
         scan.tabulated_cylinder_curve_replays.len().to_string(),
     );
@@ -21209,6 +21266,18 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             message: format!(
                 "Transferred {} circular reference carrier(s) from MdlRefInfo rows whose stored center, radius, and endpoints satisfy the circle equation; byte-exact endpoints remain attached as native circle records.",
                 scan.reference_circles.len()
+            ),
+            provenance: None,
+        });
+    }
+
+    if !container_only && !scan.reference_ellipses.is_empty() {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {} elliptical reference carrier(s) from MdlRefInfo conic rows whose frame, coefficient radii, and antipodal endpoints satisfy one ellipse equation; the source conic records remain byte-exact native records.",
+                scan.reference_ellipses.len()
             ),
             provenance: None,
         });
