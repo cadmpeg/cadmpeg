@@ -10326,6 +10326,29 @@ fn resolved_unique_feature_dimension_parameter<'a>(
     )
 }
 
+fn feature_dimension_parameter_layout(keys: &[(u32, u32, u32)]) -> Option<Vec<(u32, String)>> {
+    let mut name_counts = BTreeMap::new();
+    for &(owner_feature_id, _, external_id) in keys {
+        *name_counts
+            .entry((owner_feature_id, external_id))
+            .or_insert(0usize) += 1;
+    }
+    let mut next_ordinals = BTreeMap::<u32, u32>::new();
+    keys.iter()
+        .map(|&(owner_feature_id, definition_id, external_id)| {
+            let ordinal = next_ordinals.entry(owner_feature_id).or_default();
+            let assigned = *ordinal;
+            *ordinal = ordinal.checked_add(1)?;
+            let name = if name_counts.get(&(owner_feature_id, external_id)) == Some(&1) {
+                format!("d{external_id}")
+            } else {
+                format!("d{definition_id}_{external_id}")
+            };
+            Some((assigned, name))
+        })
+        .collect()
+}
+
 fn transfer_feature_dimensions(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -10337,6 +10360,7 @@ fn transfer_feature_dimensions(
         .iter()
         .map(|feature| feature.id.clone())
         .collect::<BTreeSet<_>>();
+    let mut candidates = Vec::new();
     for definition in &scan.feature_definitions {
         let Some(owner_feature_id) = definition.owner_feature_id else {
             continue;
@@ -10348,67 +10372,86 @@ fn transfer_feature_dimensions(
         let Some(table) = &definition.dimensions else {
             continue;
         };
-        for ordinal in 0..table.rows.len() {
+        for source_ordinal in 0..table.rows.len() {
             let Some((dimension, id)) = resolved_unique_feature_dimension_parameter(
                 &scan.feature_definitions,
                 definition,
-                ordinal,
+                source_ordinal,
             ) else {
                 continue;
             };
-            let value = dimension
-                .value
-                .expect("resolved feature dimension has a defined value");
-            annotate(
-                annotations,
-                &id.0,
-                "FeatDefs",
-                dimension.offset as u64,
-                "section_dimension",
-                Exactness::Derived,
-            );
-            let mut properties = BTreeMap::from([
-                (
-                    "dimension_type".to_string(),
-                    dimension.dimension_type.to_string(),
-                ),
-                (
-                    "direction_byte".to_string(),
-                    dimension.direction_byte.to_string(),
-                ),
-            ]);
-            if let Some(auxiliary) = dimension.auxiliary_value {
-                properties.insert("auxiliary_value".to_string(), auxiliary.to_string());
-            }
-            let expression = value.to_string();
-            let value = match dimension.value_unit {
-                crate::feature::DimensionUnit::Radians => ParameterValue::Angle(Angle(value)),
-                crate::feature::DimensionUnit::Millimeters => ParameterValue::Length(Length(value)),
-                crate::feature::DimensionUnit::SchemaDefined => ParameterValue::Real(value),
-            };
-            ir.model.parameters.push(DesignParameter {
-                id: id.clone(),
-                owner: owner.clone(),
-                ordinal: ordinal as u32,
-                name: format!("d{}", dimension.external_id),
-                expression,
-                display: (dimension.dimension_type == 0x03).then_some(DimensionDisplay::Radius),
-                value: Some(value),
-                dependencies: Vec::new(),
-                properties,
-                pmi: None,
-                native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
-            });
-            if let Some(feature) = ir
-                .model
-                .features
-                .iter_mut()
-                .find(|feature| feature.id == owner)
-            {
-                feature
-                    .source_content
-                    .push(FeatureSourceContent::Parameter(id));
-            }
+            candidates.push((owner_feature_id, definition, source_ordinal, dimension, id));
+        }
+    }
+    candidates.sort_by_key(|(owner, definition, source_ordinal, _, _)| {
+        (*owner, definition.offset, definition.id, *source_ordinal)
+    });
+    let keys = candidates
+        .iter()
+        .map(|(owner, definition, _, dimension, _)| (*owner, definition.id, dimension.external_id))
+        .collect::<Vec<_>>();
+    let Some(layout) = feature_dimension_parameter_layout(&keys) else {
+        return;
+    };
+    for ((owner_feature_id, definition, source_ordinal, dimension, id), (ordinal, name)) in
+        candidates.into_iter().zip(layout)
+    {
+        let owner = IrFeatureId(format!("creo:model:feature#{owner_feature_id}"));
+        let value = dimension
+            .value
+            .expect("resolved feature dimension has a defined value");
+        annotate(
+            annotations,
+            &id.0,
+            "FeatDefs",
+            dimension.offset as u64,
+            "section_dimension",
+            Exactness::Derived,
+        );
+        let mut properties = BTreeMap::from([
+            ("definition_id".to_string(), definition.id.to_string()),
+            ("source_ordinal".to_string(), source_ordinal.to_string()),
+            ("external_id".to_string(), dimension.external_id.to_string()),
+            (
+                "dimension_type".to_string(),
+                dimension.dimension_type.to_string(),
+            ),
+            (
+                "direction_byte".to_string(),
+                dimension.direction_byte.to_string(),
+            ),
+        ]);
+        if let Some(auxiliary) = dimension.auxiliary_value {
+            properties.insert("auxiliary_value".to_string(), auxiliary.to_string());
+        }
+        let expression = value.to_string();
+        let value = match dimension.value_unit {
+            crate::feature::DimensionUnit::Radians => ParameterValue::Angle(Angle(value)),
+            crate::feature::DimensionUnit::Millimeters => ParameterValue::Length(Length(value)),
+            crate::feature::DimensionUnit::SchemaDefined => ParameterValue::Real(value),
+        };
+        ir.model.parameters.push(DesignParameter {
+            id: id.clone(),
+            owner: owner.clone(),
+            ordinal,
+            name,
+            expression,
+            display: (dimension.dimension_type == 0x03).then_some(DimensionDisplay::Radius),
+            value: Some(value),
+            dependencies: Vec::new(),
+            properties,
+            pmi: None,
+            native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+        });
+        if let Some(feature) = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.id == owner)
+        {
+            feature
+                .source_content
+                .push(FeatureSourceContent::Parameter(id));
         }
     }
 }
@@ -14466,6 +14509,20 @@ mod resolved_sketch_tests {
         assert_eq!(
             feature_dimension_parameter_id(917, 40, 3).0,
             "creo:featdefs:parameter#917:40:3"
+        );
+        assert_eq!(
+            feature_dimension_parameter_layout(&[
+                (40, 917, 3),
+                (40, 1104, 3),
+                (40, 1104, 4),
+                (41, 1200, 3),
+            ]),
+            Some(vec![
+                (0, "d917_3".to_string()),
+                (1, "d1104_3".to_string()),
+                (2, "d4".to_string()),
+                (0, "d3".to_string()),
+            ])
         );
         let dimension = crate::feature::FeatureDimension {
             dimension_type: 2,
