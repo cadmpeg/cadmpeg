@@ -3887,22 +3887,62 @@ pub fn bind_edge_port_candidates(
     if ports.len() != candidates.len() || candidates.iter().any(Vec::is_empty) {
         return None;
     }
-    let mut search = PortCandidateSearch {
-        ports,
-        candidates,
-        port_points: HashMap::new(),
-        point_ports: HashMap::new(),
-        edge_pairs: vec![None; ports.len()],
-        solution: None,
-        solution_key: None,
-        ambiguous: false,
-        exhausted: false,
-        states: 0,
-    };
-    search.search();
-    (!search.ambiguous && !search.exhausted)
-        .then_some(search.solution)
-        .flatten()
+    let mut dependencies = UnionFind::new(ports.len());
+    let mut edge_by_port = HashMap::new();
+    let mut edge_by_point = HashMap::new();
+    for edge in 0..ports.len() {
+        for port in ports[edge] {
+            if let Some(previous) = edge_by_port.insert(port, edge) {
+                dependencies.union(previous, edge);
+            }
+        }
+        for point in candidates[edge].iter().flatten() {
+            if let Some(previous) = edge_by_point.insert(*point, edge) {
+                dependencies.union(previous, edge);
+            }
+        }
+    }
+    let mut components = HashMap::<usize, Vec<usize>>::new();
+    for edge in 0..ports.len() {
+        components
+            .entry(dependencies.find(edge))
+            .or_default()
+            .push(edge);
+    }
+    let mut components = components.into_values().collect::<Vec<_>>();
+    components.sort_by_key(|component| component[0]);
+    let mut solution = vec![None; ports.len()];
+    for component in components {
+        let component_ports = component
+            .iter()
+            .map(|edge| ports[*edge])
+            .collect::<Vec<_>>();
+        let component_candidates = component
+            .iter()
+            .map(|edge| candidates[*edge].clone())
+            .collect::<Vec<_>>();
+        let mut search = PortCandidateSearch {
+            ports: &component_ports,
+            candidates: &component_candidates,
+            port_points: HashMap::new(),
+            point_ports: HashMap::new(),
+            edge_pairs: vec![None; component.len()],
+            solution: None,
+            solution_key: None,
+            ambiguous: false,
+            exhausted: false,
+            states: 0,
+        };
+        search.search();
+        if search.ambiguous || search.exhausted {
+            return None;
+        }
+        let component_solution = search.solution?;
+        for (&edge, pair) in component.iter().zip(component_solution) {
+            solution[edge] = Some(pair);
+        }
+    }
+    solution.into_iter().collect()
 }
 
 pub(crate) fn same_unordered_pair(left: [usize; 2], right: [usize; 2]) -> bool {
@@ -8240,11 +8280,12 @@ mod motif_tests {
         parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, possible_face_choices,
         possible_face_equations, propagate_edge_port_points, prune_edge_candidates_by_port_domains,
         prune_mesh_endpoint_pair_support, reconstruct_incidence, reconstruct_incidence_candidates,
-        resolve_edge_faces_from_runs, standard_face_count, unique_coordinate_bijection,
-        unique_duplicate_face_assignment, uses_canonical_edge_direction_gauge, Boundary, CoedgeUse,
-        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun,
-        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
-        TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
+        resolve_edge_faces_from_runs, same_unordered_pair, standard_face_count,
+        unique_coordinate_bijection, unique_duplicate_face_assignment,
+        uses_canonical_edge_direction_gauge, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
+        FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun, MeshFaceBoundaryAssignment,
+        MeshQuotient, MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER,
+        MAX_FACE_EQUATION_CACHE_ENTRIES,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -10345,6 +10386,29 @@ mod motif_tests {
         let ports = [[10, 11]];
         let candidates = [vec![[0, 1], [2, 3]]];
         assert_eq!(bind_edge_port_candidates(&ports, &candidates), None);
+    }
+
+    #[test]
+    fn native_edge_identities_bind_independent_components_with_local_budgets() {
+        const COMPONENT_COUNT: usize = 100;
+        let ports = (0..COMPONENT_COUNT)
+            .map(|component| {
+                let port = u32::try_from(component * 2).expect("bounded port identity");
+                [port, port + 1]
+            })
+            .collect::<Vec<_>>();
+        let candidates = (0..COMPONENT_COUNT)
+            .map(|component| vec![[component * 2, component * 2 + 1]])
+            .collect::<Vec<_>>();
+
+        let solution =
+            bind_edge_port_candidates(&ports, &candidates).expect("independent port components");
+
+        assert_eq!(solution.len(), COMPONENT_COUNT);
+        assert!(solution
+            .iter()
+            .zip(&candidates)
+            .all(|(pair, candidates)| same_unordered_pair(*pair, candidates[0])));
     }
 
     #[test]
