@@ -7930,6 +7930,58 @@ fn line_orientation_definition(
     }
 }
 
+fn reconcile_constraint_entity_references(
+    definition: &mut SketchConstraintDefinition,
+    emitted: &BTreeSet<SketchEntityId>,
+) -> bool {
+    let locus_emitted = |locus: &SketchLocus| match locus {
+        SketchLocus::Entity(entity)
+        | SketchLocus::Start(entity)
+        | SketchLocus::End(entity)
+        | SketchLocus::Center(entity) => emitted.contains(entity),
+    };
+    match definition {
+        SketchConstraintDefinition::Native { entities, .. } => {
+            entities.retain(|entity| emitted.contains(entity));
+            true
+        }
+        SketchConstraintDefinition::Coincident { entities }
+        | SketchConstraintDefinition::Distance { entities, .. } => {
+            entities.iter().all(|entity| emitted.contains(entity))
+        }
+        SketchConstraintDefinition::CoincidentLoci { loci } => loci.iter().all(locus_emitted),
+        SketchConstraintDefinition::SameCoordinate { first, second, .. }
+        | SketchConstraintDefinition::TangentLoci { first, second }
+        | SketchConstraintDefinition::DistanceLoci { first, second, .. }
+        | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
+        | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
+            locus_emitted(first) && locus_emitted(second)
+        }
+        SketchConstraintDefinition::Midpoint { point, entity } => {
+            locus_emitted(point) && emitted.contains(entity)
+        }
+        SketchConstraintDefinition::Symmetric {
+            first,
+            second,
+            axis,
+        } => locus_emitted(first) && locus_emitted(second) && emitted.contains(axis),
+        SketchConstraintDefinition::Concentric { first, second }
+        | SketchConstraintDefinition::Collinear { first, second }
+        | SketchConstraintDefinition::Parallel { first, second }
+        | SketchConstraintDefinition::Perpendicular { first, second }
+        | SketchConstraintDefinition::Tangent { first, second }
+        | SketchConstraintDefinition::Equal { first, second }
+        | SketchConstraintDefinition::Angle { first, second, .. } => {
+            emitted.contains(first) && emitted.contains(second)
+        }
+        SketchConstraintDefinition::Horizontal { entity }
+        | SketchConstraintDefinition::Vertical { entity }
+        | SketchConstraintDefinition::Fixed { entity }
+        | SketchConstraintDefinition::Radius { entity, .. }
+        | SketchConstraintDefinition::Diameter { entity, .. } => emitted.contains(entity),
+    }
+}
+
 fn relation_incidence(
     definition: &crate::feature::FeatureDefinition,
     relation_id: u32,
@@ -9363,6 +9415,10 @@ fn transfer_resolved_sketches(
                 }),
             });
         }
+        let emitted_entity_ids = entities
+            .iter()
+            .map(|entity| entity.id.clone())
+            .collect::<BTreeSet<_>>();
         let mut constraints = segments
             .iter()
             .filter_map(|segment| {
@@ -9371,7 +9427,12 @@ fn transfer_resolved_sketches(
                     definition.id,
                     section_segment_identity_suffix(&unique_segment_ids, segment)
                 ));
-                let constraint_definition = line_orientation_definition(segment, entity)?;
+                let mut constraint_definition = line_orientation_definition(segment, entity)?;
+                reconcile_constraint_entity_references(
+                    &mut constraint_definition,
+                    &emitted_entity_ids,
+                )
+                .then_some(())?;
                 let id = SketchConstraintId(format!(
                     "creo:featdefs:sketch_constraint#{}:verhor:{}",
                     definition.id,
@@ -9393,7 +9454,13 @@ fn transfer_resolved_sketches(
                 })
             })
             .collect::<Vec<_>>();
-        for (constraint, offset) in section_dimension_constraints(definition, &sketch_id) {
+        for (mut constraint, offset) in section_dimension_constraints(definition, &sketch_id) {
+            if !reconcile_constraint_entity_references(
+                &mut constraint.definition,
+                &emitted_entity_ids,
+            ) {
+                continue;
+            }
             annotate(
                 annotations,
                 &constraint.id.0,
@@ -9404,7 +9471,13 @@ fn transfer_resolved_sketches(
             );
             constraints.push(constraint);
         }
-        for (constraint, offset) in section_skamp_constraints(definition, &sketch_id) {
+        for (mut constraint, offset) in section_skamp_constraints(definition, &sketch_id) {
+            if !reconcile_constraint_entity_references(
+                &mut constraint.definition,
+                &emitted_entity_ids,
+            ) {
+                continue;
+            }
             if constraints
                 .iter()
                 .any(|existing| existing.definition == constraint.definition)
@@ -13212,6 +13285,53 @@ mod resolved_sketch_tests {
                 end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
             })
         );
+    }
+
+    #[test]
+    fn sketch_constraints_require_every_referenced_entity_to_be_emitted() {
+        let first = SketchEntityId("first".to_string());
+        let second = SketchEntityId("second".to_string());
+        let emitted = BTreeSet::from([first.clone()]);
+
+        let mut horizontal = SketchConstraintDefinition::Horizontal {
+            entity: first.clone(),
+        };
+        assert!(reconcile_constraint_entity_references(
+            &mut horizontal,
+            &emitted
+        ));
+        let mut parallel = SketchConstraintDefinition::Parallel {
+            first: first.clone(),
+            second: second.clone(),
+        };
+        assert!(!reconcile_constraint_entity_references(
+            &mut parallel,
+            &emitted
+        ));
+        let mut distance = SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Start(first.clone()),
+            second: SketchLocus::Center(second.clone()),
+            parameter: ParameterId("distance".to_string()),
+        };
+        assert!(!reconcile_constraint_entity_references(
+            &mut distance,
+            &emitted
+        ));
+        let mut native = SketchConstraintDefinition::Native {
+            native_kind: "creo:test".to_string(),
+            entities: vec![first.clone(), second],
+            parameter: None,
+            operands: Vec::new(),
+        };
+        assert!(reconcile_constraint_entity_references(
+            &mut native,
+            &emitted
+        ));
+        assert!(matches!(
+            native,
+            SketchConstraintDefinition::Native { entities, .. }
+                if entities == vec![first]
+        ));
     }
 
     #[test]
