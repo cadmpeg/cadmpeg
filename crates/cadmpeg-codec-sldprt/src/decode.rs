@@ -346,6 +346,53 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+    let feature_positions = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (&feature.id, feature.ordinal))
+        .collect::<BTreeMap<_, _>>();
+    let incoherent_feature_edges = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            let parent_incoherent = feature.parent.as_ref().is_some_and(|parent| {
+                feature_positions
+                    .get(parent)
+                    .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+            });
+            let mut dependencies = std::collections::HashSet::new();
+            parent_incoherent
+                || feature.dependencies.iter().any(|dependency| {
+                    !dependencies.insert(dependency)
+                        || feature_positions
+                            .get(dependency)
+                            .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                })
+        })
+        .count();
+    let mut feature_ordinal_counts = BTreeMap::new();
+    for feature in &ir.model.features {
+        *feature_ordinal_counts
+            .entry(feature.ordinal)
+            .or_insert(0usize) += 1;
+    }
+    let duplicate_feature_ordinals = feature_ordinal_counts
+        .values()
+        .filter(|count| **count > 1)
+        .copied()
+        .sum::<usize>();
+    if incoherent_feature_edges > 0 || duplicate_feature_ordinals > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{incoherent_feature_edges} feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; {duplicate_feature_ordinals} feature record(s) share regeneration ordinals."
+            ),
+            provenance: None,
+        });
+    }
 
     let unresolved_output_scopes = ir
         .model
@@ -2347,6 +2394,57 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "1 parameter record(s) have empty names; 2 parameter record(s) share owner-local names; 2 parameter record(s) share owner-local ordinals."
+        }));
+    }
+
+    #[test]
+    fn incoherent_feature_graph_is_reported_as_design_loss() {
+        let mut ir = CadIr::empty(Units::default());
+        let first = FeatureId("first".into());
+        let second = FeatureId("second".into());
+        let missing = FeatureId("missing".into());
+        let feature = |id, ordinal, parent, dependencies| Feature {
+            id,
+            ordinal,
+            name: None,
+            suppressed: false,
+            parent,
+            dependencies,
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+            },
+            native_ref: None,
+        };
+        ir.model
+            .features
+            .push(feature(first.clone(), 0, None, vec![second.clone()]));
+        ir.model
+            .features
+            .push(feature(second, 1, None, vec![first]));
+        ir.model.features.push(feature(
+            FeatureId("third".into()),
+            1,
+            Some(missing),
+            Vec::new(),
+        ));
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "2 feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; 2 feature record(s) share regeneration ordinals."
         }));
     }
 
