@@ -212,7 +212,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
-                "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved or ambiguous parameter references."
+                "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved, ambiguous, or malformed parameter references."
             ),
             provenance: None,
         });
@@ -2182,10 +2182,23 @@ mod design_loss_tests {
         });
         ir.model.parameters.push(DesignParameter {
             id: ParameterId("bare-reference".into()),
-            owner,
+            owner: owner.clone(),
             ordinal: 2,
             name: "D2".into(),
             expression: "D99 + 1".into(),
+            display: None,
+            value: Some(cadmpeg_ir::features::ParameterValue::Real(1.0)),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        ir.model.parameters.push(DesignParameter {
+            id: ParameterId("malformed-reference".into()),
+            owner,
+            ordinal: 3,
+            name: "D3".into(),
+            expression: "\"D0@Boss-Extrude1".into(),
             display: None,
             value: Some(cadmpeg_ir::features::ParameterValue::Real(1.0)),
             dependencies: Vec::new(),
@@ -2205,7 +2218,7 @@ mod design_loss_tests {
 
         assert!(report.losses.iter().any(|loss| {
             loss.message
-                == "1 parameter(s) lack an evaluated scalar; 2 parameter expression(s) contain unresolved or ambiguous parameter references."
+                == "1 parameter(s) lack an evaluated scalar; 3 parameter expression(s) contain unresolved, ambiguous, or malformed parameter references."
         }));
     }
 

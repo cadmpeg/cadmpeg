@@ -664,15 +664,18 @@ pub(crate) fn parameters_with_unresolved_references(
     parameters
         .iter()
         .filter(|parameter| {
-            expression_identifier_tokens(&parameter.expression)
-                .into_iter()
-                .filter(definite_parameter_reference)
-                .any(|identifier| {
-                    aliases
-                        .get(&identifier.value)
-                        .and_then(Clone::clone)
-                        .is_none_or(|dependency| dependency == parameter.id)
-                })
+            let parsed = expression_identifier_tokens(&parameter.expression);
+            parsed.unclosed_quote
+                || parsed
+                    .identifiers
+                    .into_iter()
+                    .filter(definite_parameter_reference)
+                    .any(|identifier| {
+                        aliases
+                            .get(&identifier.value)
+                            .and_then(Clone::clone)
+                            .is_none_or(|dependency| dependency == parameter.id)
+                    })
         })
         .count()
 }
@@ -687,8 +690,14 @@ fn definite_parameter_reference(identifier: &ExpressionIdentifier) -> bool {
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
     expression_identifier_tokens(expression)
+        .identifiers
         .into_iter()
         .map(|token| token.value)
+}
+
+struct ParsedExpressionIdentifiers {
+    identifiers: Vec<ExpressionIdentifier>,
+    unclosed_quote: bool,
 }
 
 struct ExpressionIdentifier {
@@ -698,7 +707,7 @@ struct ExpressionIdentifier {
     quoted: bool,
 }
 
-fn expression_identifier_tokens(expression: &str) -> Vec<ExpressionIdentifier> {
+fn expression_identifier_tokens(expression: &str) -> ParsedExpressionIdentifiers {
     let mut identifiers = Vec::new();
     let mut at = 0;
     while at < expression.len() {
@@ -722,16 +731,22 @@ fn expression_identifier_tokens(expression: &str) -> Vec<ExpressionIdentifier> {
                     cursor += character.len_utf8();
                 }
             }
-            if closed && !value.is_empty() {
-                identifiers.push(ExpressionIdentifier {
-                    start: at,
-                    end: cursor,
-                    value,
-                    quoted: true,
-                });
+            if closed {
+                if !value.is_empty() {
+                    identifiers.push(ExpressionIdentifier {
+                        start: at,
+                        end: cursor,
+                        value,
+                        quoted: true,
+                    });
+                }
                 at = cursor;
                 continue;
             }
+            return ParsedExpressionIdentifiers {
+                identifiers,
+                unclosed_quote: true,
+            };
         }
 
         let Some(character) = rest.chars().next() else {
@@ -755,7 +770,10 @@ fn expression_identifier_tokens(expression: &str) -> Vec<ExpressionIdentifier> {
             at += character.len_utf8();
         }
     }
-    identifiers
+    ParsedExpressionIdentifiers {
+        identifiers,
+        unclosed_quote: false,
+    }
 }
 
 #[cfg(test)]
@@ -4179,7 +4197,7 @@ fn rewrite_renamed_parameter_references(
         if aliases.is_empty() {
             continue;
         }
-        let tokens = expression_identifier_tokens(&parameter.expression);
+        let tokens = expression_identifier_tokens(&parameter.expression).identifiers;
         let mut rewritten = String::with_capacity(parameter.expression.len());
         let mut copied = 0;
         for token in tokens {
