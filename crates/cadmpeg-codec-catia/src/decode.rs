@@ -2190,6 +2190,35 @@ mod chart_tests {
     }
 
     #[test]
+    fn cylinder_generator_direction_requires_compatible_support_axes() {
+        let cylinder = |axis| SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis,
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        };
+        let containing_plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let transverse_plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let axial = cylinder(Vector3::new(0.0, 0.0, 1.0));
+        let oblique = cylinder(Vector3::new(0.0, 1.0, 0.0));
+
+        assert_eq!(
+            intersection_line_direction(&containing_plane, &axial),
+            Some(Vector3::new(0.0, 0.0, 1.0))
+        );
+        assert!(intersection_line_direction(&transverse_plane, &axial).is_none());
+        assert!(intersection_line_direction(&axial, &oblique).is_none());
+    }
+
+    #[test]
     fn unknown_surface_does_not_reject_endpoint_candidates() {
         assert!(point_on_known_surface(
             Point3::new(100.0, -50.0, 7.0),
@@ -5687,6 +5716,8 @@ fn unique_native_identity_points(
 }
 
 fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) -> Option<Vector3> {
+    const ANGULAR_TOLERANCE: f64 = 1e-9;
+
     match (left, right) {
         (
             SurfaceGeometry::Plane { normal: left, .. },
@@ -5695,9 +5726,19 @@ fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) 
             let direction = cross_vector(*left, *right);
             (axis_dot(direction, direction) > f64::EPSILON).then_some(direction)
         }
-        (SurfaceGeometry::Plane { .. }, SurfaceGeometry::Cylinder { axis, .. })
-        | (SurfaceGeometry::Cylinder { axis, .. }, SurfaceGeometry::Plane { .. })
-        | (SurfaceGeometry::Cylinder { axis, .. }, SurfaceGeometry::Cylinder { .. }) => Some(*axis),
+        (SurfaceGeometry::Plane { normal, .. }, SurfaceGeometry::Cylinder { axis, .. })
+        | (SurfaceGeometry::Cylinder { axis, .. }, SurfaceGeometry::Plane { normal, .. }) => {
+            (axis_dot(*normal, *axis).abs() <= ANGULAR_TOLERANCE).then_some(*axis)
+        }
+        (
+            SurfaceGeometry::Cylinder {
+                axis: left_axis, ..
+            },
+            SurfaceGeometry::Cylinder {
+                axis: right_axis, ..
+            },
+        ) => (vector_norm(cross_vector(*left_axis, *right_axis)) <= ANGULAR_TOLERANCE)
+            .then_some(*left_axis),
         _ => None,
     }
 }
