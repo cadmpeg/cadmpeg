@@ -67,6 +67,13 @@
 //! carrier bytes needed for passthrough remain available as
 //! [`cadmpeg_ir::unknown::UnknownRecord`] values.
 
+// Ungraduated crate: the legacy leaf modules still hold `Vec::with_capacity`
+// and friends. The crate root allows the disallowed-methods ratchet (doc
+// section 8.2) so migrated modules can re-`deny` it at module scope and cannot
+// backslide while the crate stays half-migrated. Delete this once every parser
+// module has graduated.
+#![allow(clippy::disallowed_methods)]
+
 mod act;
 pub mod asm_header;
 pub mod brep;

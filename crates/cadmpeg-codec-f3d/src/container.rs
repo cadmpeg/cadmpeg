@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![deny(clippy::disallowed_methods)]
 //! Scan and classify the ZIP container inside a `.f3d` file.
 //!
 //! [`scan`] retains the source archive, enumerates each entry, reads ASM headers
@@ -291,7 +292,9 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         Some(root.location()),
     )?;
 
-    let mut entries = Vec::with_capacity(archive.len());
+    // Charged above; `Vec::new` + `push` is the migrated accumulation spelling
+    // (doc section 8), so no disallowed reservation reaches the deny lint.
+    let mut entries = Vec::new();
     let mut breps = Vec::new();
     let mut asset_folder = None;
     let mut inflated_entries = BTreeMap::new();

@@ -1,0 +1,200 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Per-module migration manifest for `cadmpeg-codec-f3d` (doc section 8.6 /
+# 10 Phase 2). One `[[module]]` entry per source module that reads or shapes
+# untrusted `.f3d` bytes. `status` is `migrated` or `legacy`; a `legacy`
+# module records why it has not graduated in `legacy_reason`. `charges` names
+# the budget dimensions the module drives; `cost_model` states the charge
+# shape (never a flat unit per iteration). `window_egress` lists the audited
+# `View::window()` raw-byte egress sites the module keeps, cross-referenced by
+# the section 8.8 ratchet. `ledger_level` is the section 6.1 record-accounting
+# level (0 everywhere: f3d is L1-ready but does not serialize a ledger until
+# Phase 3).
+#
+# Ordering follows doc section 10 Phase 2: count-framed / container framing
+# first, then the pure record model, then the irregular marker probes and
+# graph traversals still awaiting leaf migration.
+
+# ---------------------------------------------------------------------------
+# Container framing and pipeline orchestration. Migrated in Phase 1 to consume
+# the session root `View`, route inflation through `begin_expand`, and charge
+# alloc/work before touching an untrusted entry count. Graduated here with
+# module-level `#[deny(clippy::disallowed_methods)]`; the one bounded entry
+# accumulator was converted to the `Vec::new` + `push` migrated spelling.
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/container.rs"
+status = "migrated"
+input_spaces = ["source", "entry:*"]
+fuzz_targets = ["f3d_container"]
+charges = ["alloc_bytes", "work", "decompressed_bytes"]
+cost_model = "alloc_bytes = PER_ENTRY_GRAPH_BYTES per central-directory entry charged before reservation; decompressed_bytes charged per ExpandWriter::write over each inflated entry; work charged per entry classification scan"
+window_egress = [
+    "scan: source-image slice for the container SHA-256 digest",
+    "admit_entry buffer: inflated entry bytes handed to the legacy sab/brep/design/materials leaf parsers pending their Phase-2 View migration",
+]
+ledger_level = 0
+
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/decode.rs"
+status = "migrated"
+input_spaces = ["source"]
+fuzz_targets = ["f3d_container"]
+charges = []
+cost_model = "orchestration only: navigates the root View and dispatches to container/sab/brep; all hostile-byte charging is delegated to the modules it calls (container charges alloc/work/decompressed at the framing boundary)"
+window_egress = []
+ledger_level = 0
+
+# ---------------------------------------------------------------------------
+# Pure record model. Struct definitions plus deterministic serde and id
+# derivation; no hostile-byte read path of their own, so they graduate with
+# the deny lint and no `req_*`/`BoundedCount`/`DepthGuard` obligations (same
+# basis as `cadmpeg-ir/src/unknown.rs`).
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/records.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["f3d_container"]
+charges = []
+cost_model = "no budget charge; data model and serde only, no untrusted byte reads"
+window_egress = []
+ledger_level = 0
+
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/native.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["f3d_container"]
+charges = []
+cost_model = "no budget charge; native namespace assembly over already-decoded records, no untrusted byte reads"
+window_egress = []
+ledger_level = 0
+
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/history_records.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["f3d_container"]
+charges = []
+cost_model = "no budget charge; ASM history record shapes and serde only, no untrusted byte reads"
+window_egress = []
+ledger_level = 0
+
+# ---------------------------------------------------------------------------
+# Leaf decoders still on the legacy free-function read path. Each consumes a
+# `&[u8]` inflated-entry slice through `cadmpeg_ir::{read,le,be}` (themselves
+# migrated primitive probes) but has not yet moved its count-framed loops to
+# `exact_vec`/`read_counted`/`BoundedCount`, its recursion to `DepthGuard`, or
+# its committed reads to the `req_*` mirror. They remain reachable and
+# truncation-tested through the full-decode `f3d_container` fuzz target and the
+# named leaf targets; they carry no module-level deny lint yet.
+
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/sab.rs"
+status = "legacy"
+legacy_reason = "SAB record framer with a nested marker-probe walk (9 depth-parameter sites). The recursion must move to ctx.descend()/DepthGuard and the per-record leaf reads to View + req_* mirrors before graduation; migrating framing without the depth guard would leave the highest-risk recursion site uncovered. High-risk recursion site, scheduled next."
+input_spaces = ["entry:*"]
+fuzz_targets = ["f3d_sab_frame", "f3d_container"]
+charges = []
+cost_model = "target: work per record marker examined and nodes+edges per framing walk; depth gauge via DepthGuard"
+window_egress = []
+ledger_level = 0
+
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/brep.rs"
+status = "legacy"
+legacy_reason = "Topology builder with count-framed loops over vertices/edges/coedges/faces and three Vec::with_capacity reservations sized from decoded counts. Counts need BoundedCount + exact_vec/read_counted before graduation. High-risk count site."
+input_spaces = ["entry:*"]
+fuzz_targets = ["f3d_container"]
+charges = []
+cost_model = "target: alloc_bytes via exact_vec per topology count; work per record scanned"
+window_egress = []
+ledger_level = 0
+
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/nurbs.rs"
+status = "legacy"
+legacy_reason = "Cached spline-carrier decoder: the largest remaining surface (knot/control-point count loops, repeat_n-style knot expansion, per-cache recursion, 23 disallowed reservation calls). Requires BoundedCount for every knot/pole count, exact_vec/read_counted for the count-framed vectors, alloc_unfloored plus the existing codec-local caps for weight streams, and DepthGuard on the cache recursion. Highest-risk count/recursion site; largest migration unit."
+input_spaces = ["entry:*"]
+fuzz_targets = ["f3d_nurbs_curves", "f3d_nurbs_surfaces", "f3d_nurbs_pcurves", "f3d_container"]
+charges = []
+cost_model = "target: alloc_bytes via exact_vec/alloc_unfloored per knot and control-point count; work per candidate scan; depth via DepthGuard on cache recursion"
+window_egress = []
+ledger_level = 0
+
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/design.rs"
+status = "legacy"
+legacy_reason = "Design-record decoder with count-framed link/member loops and 5 disallowed reservation calls. Counts need BoundedCount + exact_vec and committed reads the req_* mirror before graduation."
+input_spaces = ["entry:*"]
+fuzz_targets = ["f3d_container"]
+charges = []
+cost_model = "target: alloc_bytes via exact_vec per record count; work per record scanned"
+window_egress = []
+ledger_level = 0
+
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/materials.rs"
+status = "legacy"
+legacy_reason = "Appearance/material record decoder, partially View-aware but still holding 8 disallowed reservation calls and count-framed property loops off the req_* mirror. Needs exact_vec/BoundedCount and req_* on the committed reads before graduation."
+input_spaces = ["entry:*"]
+fuzz_targets = ["f3d_container"]
+charges = []
+cost_model = "target: alloc_bytes via exact_vec per property/binding count; work per record scanned"
+window_egress = []
+ledger_level = 0
+
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/history.rs"
+status = "legacy"
+legacy_reason = "Construction-history walk over inflated `.smb`/`.smbh` history slices via legacy `&[u8]` reads. Committed reads must move to the req_* mirror and the delta-state/bulletin-board walk charge work before graduation. Additionally blocked on `sab.rs`: `decode_history_records` calls `sab::frame`, which returns records as `&[u8]` offsets, and history then egresses raw bytes via `bytes[record.offset..record.offset + record.len].to_vec()` (per-record `raw_bytes`) and `bytes[start..limit].to_vec()` (the `opaque_history_payload` fallback). Those raw-byte egress sites must be eliminated or recorded in `window_egress` when it graduates, which requires `sab::frame` to hand back `View`s first. Lower risk (no unbounded reservation) but not yet migrated."
+input_spaces = ["entry:*"]
+fuzz_targets = ["f3d_container"]
+charges = []
+cost_model = "target: work per delta-state record examined"
+window_egress = []
+ledger_level = 0
+
+# ---------------------------------------------------------------------------
+# Migrated leaf decoder. `act.rs` graduated ahead of the count-framed topology
+# leaves: it is the smallest self-contained marker-probe module (single caller,
+# no cross-module coupling to the still-legacy `brep`/`nurbs` graph), so it
+# migrates in isolation without threading a `View` through the legacy leaves.
+# It carries `#![deny(clippy::disallowed_methods)]`; the surrounding legacy
+# leaves below do not yet.
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/act.rs"
+status = "migrated"
+input_spaces = ["entry:*"]
+fuzz_targets = ["f3d_container"]
+charges = ["alloc_bytes", "work"]
+cost_model = "work charged once per stream pass in each of the three whole-stream scans, proportional to the bytes examined (`win_len`, doubled for `decode_table` to cover the ACTTable marker search and the trailing GUID scan); alloc_bytes charged via exact_vec over the ACTTable count under a BoundedCount physical-floor proof, via grow_vec for the entity/guid/root-component accumulators, and via charge_alloc per merged `by_key` graph node (untrusted-count-tracked map growth)"
+window_egress = []
+ledger_level = 0
+# Migrated per doc section 10 Phase 2: hostile reads go through `View` at
+# entry-relative offsets (`seek_rel`), the count-framed `ACTTable` loop reserves
+# through `exact_vec` under `View::counted`, accumulators use `grow_vec`, and
+# every marker scan charges work per byte examined. Reached and truncation-
+# tested through `f3d_container` plus the dedicated
+# `truncation_at_act_record_boundaries_is_deterministic_and_never_panics` test,
+# which also asserts deterministic output across cuts. No `req_*` obligation:
+# every ACT read is an optional marker probe (`Option`), never a committed
+# required read, so classification stays pre-commit `NoMatch` per section 3.3.
+# Module carries `#![deny(clippy::disallowed_methods)]`; the domain caps
+# (`MAX_TABLE_ENTRIES`, 1024-unit UTF-16, 128-byte ASCII, 8-channel groups)
+# stay as format facts and defense in depth alongside the budget.
+
+# ---------------------------------------------------------------------------
+# Remaining legacy leaf. `asm_header.rs` reads through `View` at its callers'
+# boundary only after the still-legacy `brep`/`container` slices migrate; it is
+# entangled with them (called from `brep::decode` and `container::scan` over
+# `&[u8]`), so it does not carry the deny lint yet.
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/asm_header.rs"
+status = "legacy"
+legacy_reason = "ASM B-rep header parser over fixed-width `&[u8]` fields via `cadmpeg_ir::{le,be}`. No untrusted count or recursion (lowest risk); every field read is already an `Option`-returning probe (`u32_at`/`u64_at`), so there is no committed req_* obligation. The real graduation obligation is charging work for the two full-window scans (`first_delta_state_offset` `windows` walk and the `read_string_region`/`record_stream_start` tag walk) through a threaded `View`. Blocked because `parse`/`record_stream_start`/`first_delta_state_offset`/`has_asm_magic` are called with `&[u8]` from the `writer.rs` encoder fixpoint suite, `brep::decode`, `container::scan`, and `decode.rs`; requiring a `DecodeContext`/`View` ripples into the encoder and dozens of tests, so it cannot graduate until those decode callers thread a `View`. Reachable and truncation-tested through the dedicated f3d_asm_header target."
+input_spaces = ["entry:*"]
+fuzz_targets = ["f3d_asm_header", "f3d_container"]
+charges = []
+cost_model = "target: fixed-width committed reads via req_* mirror; no count or scan charge"
+window_egress = []
+ledger_level = 0

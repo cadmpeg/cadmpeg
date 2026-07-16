@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![deny(clippy::disallowed_methods)]
 //! Fusion ASM construction-history record shapes.
 
 use schemars::JsonSchema;
