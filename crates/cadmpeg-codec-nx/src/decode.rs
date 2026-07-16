@@ -9982,7 +9982,7 @@ fn attach_feature_operations(
             .get(label.id.as_str())
             .map(|dimensions| dimensions.values);
         let block_placement =
-            block_dimension_values.and_then(|dimensions| block_placement(ir, dimensions));
+            block_dimension_values.and_then(|dimensions| block_placement(ir, dimensions, &outputs));
         let sew_projection = (label.value == "SEW")
             .then(|| {
                 sew_body_feature_definition(
@@ -10404,7 +10404,11 @@ pub(crate) fn simple_hole_native_properties(
     properties
 }
 
-pub(crate) fn block_placement(ir: &CadIr, dimensions: [f64; 3]) -> Option<Transform> {
+pub(crate) fn block_placement(
+    ir: &CadIr,
+    dimensions: [f64; 3],
+    outputs: &[BodyId],
+) -> Option<Transform> {
     #[derive(Clone, Copy)]
     struct PlaneBand {
         normal: Vector3,
@@ -10431,118 +10435,104 @@ pub(crate) fn block_placement(ir: &CadIr, dimensions: [f64; 3]) -> Option<Transf
     {
         return None;
     }
-    let region_bodies = ir
-        .model
-        .regions
-        .iter()
-        .map(|region| (&region.id, &region.body))
-        .collect::<BTreeMap<_, _>>();
-    let shell_bodies = ir
-        .model
-        .shells
-        .iter()
-        .filter_map(|shell| Some((&shell.id, *region_bodies.get(&shell.region)?)))
-        .collect::<BTreeMap<_, _>>();
+    let [body] = outputs else {
+        return None;
+    };
+    let body_surfaces = body_surface_ids(ir, body)?;
     let surface_geometry = ir
         .model
         .surfaces
         .iter()
         .map(|surface| (&surface.id, &surface.geometry))
         .collect::<BTreeMap<_, _>>();
-    let mut candidates = Vec::new();
-    for body in &ir.model.bodies {
-        let mut bands = Vec::<PlaneBand>::new();
-        for face in ir.model.faces.iter().filter(|face| {
-            shell_bodies
-                .get(&face.shell)
-                .is_some_and(|owner| **owner == body.id)
-        }) {
-            let Some(SurfaceGeometry::Plane { origin, normal, .. }) =
-                surface_geometry.get(&face.surface).copied()
-            else {
-                continue;
-            };
-            let Some(normal) = canonical_normal(*normal, angular_tolerance) else {
-                continue;
-            };
-            let offset = normal.x * origin.x + normal.y * origin.y + normal.z * origin.z;
-            let existing = bands
-                .iter_mut()
-                .find(|band| (1.0 - dot_vector(band.normal, normal)).abs() <= angular_tolerance);
-            if let Some(band) = existing {
-                band.minimum = band.minimum.min(offset);
-                band.maximum = band.maximum.max(offset);
-            } else {
-                bands.push(PlaneBand {
-                    normal,
-                    minimum: offset,
-                    maximum: offset,
-                });
-            }
-        }
-        if bands.len() != 3
-            || bands.iter().any(|band| {
-                !band.minimum.is_finite()
-                    || !band.maximum.is_finite()
-                    || band.maximum - band.minimum <= linear_tolerance
-            })
-            || (0..3).any(|first| {
-                (first + 1..3).any(|second| {
-                    dot_vector(bands[first].normal, bands[second].normal).abs() > angular_tolerance
-                })
-            })
-        {
-            continue;
-        }
-        let permutations = [
-            [0usize, 1usize, 2usize],
-            [0, 2, 1],
-            [1, 0, 2],
-            [1, 2, 0],
-            [2, 0, 1],
-            [2, 1, 0],
-        ];
-        let matches = permutations
-            .into_iter()
-            .filter(|permutation| {
-                (0..3).all(|axis| {
-                    let band = bands[permutation[axis]];
-                    ((band.maximum - band.minimum) - dimensions[axis]).abs() <= linear_tolerance
-                })
-            })
-            .collect::<Vec<_>>();
-        let [permutation] = matches.as_slice() else {
+    let mut bands = Vec::<PlaneBand>::new();
+    for face in ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| body_surfaces.contains(&face.surface))
+    {
+        let Some(SurfaceGeometry::Plane { origin, normal, .. }) =
+            surface_geometry.get(&face.surface).copied()
+        else {
             continue;
         };
-        let ordered = permutation.map(|index| bands[index]);
-        let origin = Point3::new(
-            ordered
-                .iter()
-                .map(|band| band.minimum * band.normal.x)
-                .sum(),
-            ordered
-                .iter()
-                .map(|band| band.minimum * band.normal.y)
-                .sum(),
-            ordered
-                .iter()
-                .map(|band| band.minimum * band.normal.z)
-                .sum(),
-        );
-        let [x_axis, y_axis, z_axis] = ordered.map(|band| band.normal);
-        candidates.push(Transform {
-            rows: [
-                [x_axis.x, y_axis.x, z_axis.x, origin.x],
-                [x_axis.y, y_axis.y, z_axis.y, origin.y],
-                [x_axis.z, y_axis.z, z_axis.z, origin.z],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        });
+        let Some(normal) = canonical_normal(*normal, angular_tolerance) else {
+            continue;
+        };
+        let offset = normal.x * origin.x + normal.y * origin.y + normal.z * origin.z;
+        let existing = bands
+            .iter_mut()
+            .find(|band| (1.0 - dot_vector(band.normal, normal)).abs() <= angular_tolerance);
+        if let Some(band) = existing {
+            band.minimum = band.minimum.min(offset);
+            band.maximum = band.maximum.max(offset);
+        } else {
+            bands.push(PlaneBand {
+                normal,
+                minimum: offset,
+                maximum: offset,
+            });
+        }
     }
-    let [placement] = candidates.as_slice() else {
+    if bands.len() != 3
+        || bands.iter().any(|band| {
+            !band.minimum.is_finite()
+                || !band.maximum.is_finite()
+                || band.maximum - band.minimum <= linear_tolerance
+        })
+        || (0..3).any(|first| {
+            (first + 1..3).any(|second| {
+                dot_vector(bands[first].normal, bands[second].normal).abs() > angular_tolerance
+            })
+        })
+    {
+        return None;
+    }
+    let permutations = [
+        [0usize, 1usize, 2usize],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    let matches = permutations
+        .into_iter()
+        .filter(|permutation| {
+            (0..3).all(|axis| {
+                let band = bands[permutation[axis]];
+                ((band.maximum - band.minimum) - dimensions[axis]).abs() <= linear_tolerance
+            })
+        })
+        .collect::<Vec<_>>();
+    let [permutation] = matches.as_slice() else {
         return None;
     };
-    Some(*placement)
+    let ordered = permutation.map(|index| bands[index]);
+    let origin = Point3::new(
+        ordered
+            .iter()
+            .map(|band| band.minimum * band.normal.x)
+            .sum(),
+        ordered
+            .iter()
+            .map(|band| band.minimum * band.normal.y)
+            .sum(),
+        ordered
+            .iter()
+            .map(|band| band.minimum * band.normal.z)
+            .sum(),
+    );
+    let [x_axis, y_axis, z_axis] = ordered.map(|band| band.normal);
+    Some(Transform {
+        rows: [
+            [x_axis.x, y_axis.x, z_axis.x, origin.x],
+            [x_axis.y, y_axis.y, z_axis.y, origin.y],
+            [x_axis.z, y_axis.z, z_axis.z, origin.z],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    })
 }
 
 #[cfg(test)]

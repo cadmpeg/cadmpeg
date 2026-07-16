@@ -2530,15 +2530,17 @@ fn nx_block_placement_requires_one_ordered_planar_extent_bijection() {
             _ => unreachable!(),
         }
     }
+    let output = ir.model.bodies[0].id.clone();
 
     assert_eq!(
-        crate::decode::block_placement(&ir, dimensions),
+        crate::decode::block_placement(&ir, dimensions, std::slice::from_ref(&output)),
         Some(cadmpeg_ir::transform::Transform::identity())
     );
     assert_eq!(
-        crate::decode::block_placement(&ir, [10.0, 10.0, 30.0]),
+        crate::decode::block_placement(&ir, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
         None
     );
+    assert_eq!(crate::decode::block_placement(&ir, dimensions, &[]), None);
 }
 
 #[test]
