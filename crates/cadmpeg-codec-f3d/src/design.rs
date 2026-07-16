@@ -3882,68 +3882,91 @@ pub fn project_sketch_constraints(
             ))
         })
         .collect::<HashMap<_, _>>();
+    let native_operand = |scope: &str, field: &str, record_index: u32| {
+        let (family, native_ref) = if let Some(native_ref) =
+            point_native_refs.get(&(scope, record_index)).copied()
+        {
+            ("point", Some(native_ref))
+        } else if let Some(native_ref) = curve_native_refs.get(&(scope, record_index)).copied() {
+            ("curve", Some(native_ref))
+        } else {
+            ("record", None)
+        };
+        SketchNativeOperand {
+            native_kind: format!("{field}_{family}"),
+            object_index: record_index,
+            native_ref: native_ref
+                .filter(|_| !projected.contains_key(&(scope, record_index)))
+                .map(str::to_owned),
+        }
+    };
 
-    let mut constraints = relations
-        .iter()
-        .filter_map(|relation| {
-            let scope = native_stream(&relation.id)?;
-            let sketch = sketches.get(&(scope, relation.owner_reference))?.clone();
-            let member_entities = relation
+    let projected_constraints = relations.iter().filter_map(|relation| {
+        let scope = native_stream(&relation.id)?;
+        let sketch = sketches.get(&(scope, relation.owner_reference))?.clone();
+        let member_entities = relation
+            .members
+            .iter()
+            .filter_map(|record_index| projected.get(&(scope, *record_index)).copied())
+            .collect::<Vec<_>>();
+        let exact = relation.unknown_constraint_bits == 0
+            && relation.constraint_kinds.len() == 1
+            && member_entities.len() == relation.members.len();
+        let native_entities = || {
+            relation
                 .members
                 .iter()
-                .filter_map(|record_index| projected.get(&(scope, *record_index)).copied())
-                .collect::<Vec<_>>();
-            let exact = relation.unknown_constraint_bits == 0
-                && relation.constraint_kinds.len() == 1
-                && member_entities.len() == relation.members.len();
-            let definition = (if exact {
-                let kind = relation.constraint_kinds[0];
-                let loci = if kind == SketchConstraintKind::Coincident {
-                    exact_coincident_loci(&member_entities)
-                } else {
-                    None
-                };
-                loci.or_else(|| exact_atomic_constraint(kind, &member_entities))
+                .chain(&relation.auxiliary_references)
+                .chain(&relation.return_members)
+                .filter_map(|record_index| {
+                    projected
+                        .get(&(scope, *record_index))
+                        .map(|entity| entity.id.clone())
+                })
+                .collect()
+        };
+        let definition = (if exact {
+            let kind = relation.constraint_kinds[0];
+            let loci = if kind == SketchConstraintKind::Coincident {
+                exact_coincident_loci(&member_entities)
             } else {
                 None
-            })
-            .or_else(|| exact_offset_constraint(relation, scope, &projected))
-            .unwrap_or_else(|| Definition::Native {
-                native_kind: relation_kind_name(relation),
-                entities: member_entities
-                    .iter()
-                    .map(|entity| entity.id.clone())
-                    .collect(),
-                parameter: None,
-                operands: relation
-                    .resolved_members
-                    .iter()
-                    .filter_map(|operand| {
-                        let record_index = relation_operand_index(operand);
-                        (!projected.contains_key(&(scope, record_index))).then(|| {
-                            SketchNativeOperand {
-                                native_kind: relation_operand_kind(operand).into(),
-                                object_index: record_index,
-                                native_ref: point_native_refs
-                                    .get(&(scope, record_index))
-                                    .copied()
-                                    .or_else(|| {
-                                        curve_native_refs.get(&(scope, record_index)).copied()
-                                    })
-                                    .map(str::to_owned),
-                            }
-                        })
-                    })
-                    .collect(),
-            });
-            Some(SketchConstraint {
-                id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
-                sketch,
-                definition,
-                native_ref: Some(relation.id.clone()),
-            })
+            };
+            loci.or_else(|| exact_atomic_constraint(kind, &member_entities))
+        } else {
+            None
         })
-        .collect::<Vec<_>>();
+        .or_else(|| exact_offset_constraint(relation, scope, &projected))
+        .unwrap_or_else(|| Definition::Native {
+            native_kind: relation_kind_name(relation),
+            entities: native_entities(),
+            parameter: None,
+            operands: relation
+                .members
+                .iter()
+                .map(|record_index| native_operand(scope, "member", *record_index))
+                .chain(
+                    relation
+                        .auxiliary_references
+                        .iter()
+                        .map(|record_index| native_operand(scope, "auxiliary", *record_index)),
+                )
+                .chain(
+                    relation
+                        .return_members
+                        .iter()
+                        .map(|record_index| native_operand(scope, "return", *record_index)),
+                )
+                .collect(),
+        });
+        Some(SketchConstraint {
+            id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
+            sketch,
+            definition,
+            native_ref: Some(relation.id.clone()),
+        })
+    });
+    let mut constraints = projected_constraints.collect::<Vec<_>>();
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
 }
@@ -5876,22 +5899,6 @@ fn sketch_points_close(first: Point2, second: Point2) -> bool {
             .max(second.u.abs())
             .max(second.v.abs());
     (first.u - second.u).abs() <= scale * 1.0e-9 && (first.v - second.v).abs() <= scale * 1.0e-9
-}
-
-fn relation_operand_index(operand: &SketchRelationOperand) -> u32 {
-    match operand {
-        SketchRelationOperand::Point { record_index, .. }
-        | SketchRelationOperand::Curve { record_index, .. }
-        | SketchRelationOperand::Record { record_index } => *record_index,
-    }
-}
-
-fn relation_operand_kind(operand: &SketchRelationOperand) -> &'static str {
-    match operand {
-        SketchRelationOperand::Point { .. } => "point",
-        SketchRelationOperand::Curve { .. } => "curve",
-        SketchRelationOperand::Record { .. } => "record",
-    }
 }
 
 fn relation_kind_name(relation: &SketchRelation) -> String {
@@ -14725,6 +14732,16 @@ mod relation_tests {
         curvature.id = "f3d:native:relation#704".into();
         curvature.state = 0x200;
         curvature.constraint_kinds = vec![SketchConstraintKind::Curvature];
+        let mut horizontal_point = relation(
+            701,
+            175,
+            SketchRelationOperand::Point {
+                record_index: 175,
+                persistent_id: 10,
+            },
+        );
+        horizontal_point.auxiliary_references = vec![999];
+        horizontal_point.return_members = vec![175, 175];
         let constraints = project_sketch_constraints(
             &placements,
             &points,
@@ -14739,14 +14756,7 @@ mod relation_tests {
                         secondary_id: 0,
                     },
                 ),
-                relation(
-                    701,
-                    175,
-                    SketchRelationOperand::Point {
-                        record_index: 175,
-                        persistent_id: 10,
-                    },
-                ),
+                horizontal_point,
                 curve_point_coincidence,
                 midpoint,
                 curvature,
@@ -14764,7 +14774,16 @@ mod relation_tests {
                 ref entities,
                 ref operands,
                 ..
-            } if native_kind == "horizontal" && entities.len() == 1 && operands.is_empty()
+            } if native_kind == "horizontal"
+                && entities.len() == 3
+                && entities.iter().all(|entity| entity == &entities[0])
+                && operands.iter().map(|operand| (operand.native_kind.as_str(), operand.object_index)).collect::<Vec<_>>()
+                    == [
+                        ("member_point", 175),
+                        ("auxiliary_record", 999),
+                        ("return_point", 175),
+                        ("return_point", 175),
+                    ]
         ));
         assert!(matches!(
             constraints[2].definition,
@@ -14780,7 +14799,7 @@ mod relation_tests {
                 ref native_kind,
                 ref entities,
                 ..
-            } if native_kind == "curvature" && entities.len() == 2
+            } if native_kind == "curvature" && entities.len() == 3
         ));
         let line = entities
             .iter()

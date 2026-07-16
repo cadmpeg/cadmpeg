@@ -193,10 +193,10 @@ pub enum SketchLocus {
     Center(SketchEntityId),
 }
 
-/// One unresolved operand retained from a native sketch relation.
+/// One ordered operand retained from a native sketch relation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchNativeOperand {
-    /// Source-native operand family.
+    /// Source-native operand field and family.
     pub native_kind: String,
     /// Source-native object index.
     pub object_index: u32,
