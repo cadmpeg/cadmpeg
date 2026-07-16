@@ -1588,8 +1588,9 @@ contribute coordinates.
 An `ent_list(arc_z)` positional row uses the same repeated-identifier and
 `e2` body framing. Its explicit scalar form stores `center.xyz`, positive
 `radius`, `end1.xyz`, and `end2.xyz` consecutively after the fixed row prefix.
-Both endpoints have the center's Z coordinate and lie at the stored radius.
+Both endpoints lie at the stored radius. For non-antipodal endpoints, their
+ordered radial vectors define the circle-plane normal by their cross product.
 A compressed diameter form omits the explicit center; its endpoint distance is
-twice the radius and their midpoint is the center. The first endpoint defines
-the reference direction and the model Z axis is the circle normal. The later
-parameter and axis fields do not alter this carrier equation.
+twice the radius, their midpoint is the center, and their shared model Z value
+selects the model-Z plane. The first endpoint defines the reference direction.
+The later parameter fields do not alter this carrier equation.

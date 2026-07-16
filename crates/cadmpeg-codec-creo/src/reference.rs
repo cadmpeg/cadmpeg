@@ -25,13 +25,15 @@ pub struct ReferenceLine {
     pub offset: usize,
 }
 
-/// One model-Z circular reference entity reconstructed from a positional row.
+/// One circular reference entity reconstructed from a positional row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReferenceCircle {
     /// Circle center in model coordinates.
     pub center: [f64; 3],
     /// Positive circle radius.
     pub radius: f64,
+    /// Unit circle-plane normal.
+    pub axis: [f64; 3],
     /// First stored endpoint.
     pub start: [f64; 3],
     /// Second stored endpoint.
@@ -47,6 +49,17 @@ fn coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, u
         return Some((0.0, offset + 1));
     }
     scalar::decode_model_reference_coordinate(data, offset, cache)
+}
+
+fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x18)
+        && (scalar::decode_tabulated_cylinder_first_coordinate(data, offset + 1, cache).is_some()
+            || scalar::decode_model_reference_coordinate(data, offset + 1, cache).is_some())
+    {
+        return Some((0.0, offset + 1));
+    }
+    scalar::decode_tabulated_cylinder_first_coordinate(data, offset, cache)
+        .or_else(|| scalar::decode_model_reference_coordinate(data, offset, cache))
 }
 
 fn scalar_suffix(row: &[u8], count: usize, cache: &ScalarCache) -> Option<Vec<f64>> {
@@ -246,13 +259,13 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
         let mut cursor = start;
         let mut values = Vec::with_capacity(count);
         while values.len() < count {
-            let (value, next) = coordinate(body, cursor, cache)?;
+            let (value, next) = arc_z_coordinate(body, cursor, cache)?;
             values.push(value);
             cursor = next;
         }
         Some(values)
     };
-    let valid_circle = |center: [f64; 3], radius: f64, first: [f64; 3], second: [f64; 3]| {
+    let explicit_axis = |center: [f64; 3], radius: f64, first: [f64; 3], second: [f64; 3]| {
         let first_delta = std::array::from_fn::<_, 3, _>(|axis| first[axis] - center[axis]);
         let second_delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - center[axis]);
         let first_distance = first_delta
@@ -262,6 +275,14 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
             .iter()
             .fold(0.0_f64, |norm, value| norm.hypot(*value));
         let scale = radius.max(first_distance).max(second_distance).max(1.0);
+        let normal = [
+            first_delta[1] * second_delta[2] - first_delta[2] * second_delta[1],
+            first_delta[2] * second_delta[0] - first_delta[0] * second_delta[2],
+            first_delta[0] * second_delta[1] - first_delta[1] * second_delta[0],
+        ];
+        let normal_length = normal
+            .iter()
+            .fold(0.0_f64, |norm, value| norm.hypot(*value));
         (radius.is_finite()
             && radius > 0.0
             && center
@@ -271,11 +292,11 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
                 .all(|value| value.is_finite())
             && first_distance.is_finite()
             && second_distance.is_finite()
-            && first_delta[2].abs() <= 1e-10 * scale
-            && second_delta[2].abs() <= 1e-10 * scale
             && (first_distance - radius).abs() <= 1e-9 * scale
-            && (second_distance - radius).abs() <= 1e-9 * scale)
-            .then_some(())
+            && (second_distance - radius).abs() <= 1e-9 * scale
+            && normal_length.is_finite()
+            && normal_length > 1e-12 * scale * scale)
+            .then(|| normal.map(|value| value / normal_length))
     };
     let explicit = (0..body.len()).filter_map(|start| {
         let values = scalar_run(start, 10)?;
@@ -283,10 +304,11 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
         let radius = values[3].abs();
         let first: [f64; 3] = values[4..7].try_into().ok()?;
         let second: [f64; 3] = values[7..10].try_into().ok()?;
-        valid_circle(center, radius, first, second)?;
+        let axis = explicit_axis(center, radius, first, second)?;
         Some(ReferenceCircle {
             center,
             radius,
+            axis,
             start: first,
             end: second,
             offset: start,
@@ -312,6 +334,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
             .then_some(ReferenceCircle {
                 center,
                 radius,
+                axis: [0.0, 0.0, 1.0],
                 start: first,
                 end: second,
                 offset: start,
@@ -478,5 +501,20 @@ mod tests {
         assert_eq!(circle.radius, 2.0);
         assert_eq!(circle.start, [5.5, 10.0, -4.0]);
         assert_eq!(circle.end, [3.5, 8.0, -4.0]);
+    }
+
+    #[test]
+    fn decodes_arc_z_positive_full_width_coordinate_rows() {
+        let body = b"\x48\x3e\x00\x93\x3b\x57\xbb\x8a\x68\xf5\
+            \x8c\x6e\x94\xe1\x50\xe8\xf6\x9a\x54\x2f\x35\xcd\x11\x56\
+            \x48\x3e\x00\x2d\x19\x9e\xd7\x77\x97\xfd\xfc\
+            \x9b\xa7\x3d\x24\xb6\x7b\x09\x48\x3e\x00\
+            \x9f\x6b\xf0\x6f\x95\x50\xb9\xa0\xff\x43\xd5\xa5\xa5\x6c";
+        let cache = ScalarCache::from_section(body);
+        let circle = arc_z_fields(body, &cache).expect("general arc");
+        assert_eq!(circle.center[0], -30.0);
+        assert_eq!(circle.start[0], -30.0);
+        assert_eq!(circle.end[0], -30.0);
+        assert!((circle.axis[0].abs() - 1.0).abs() < 1e-12);
     }
 }
