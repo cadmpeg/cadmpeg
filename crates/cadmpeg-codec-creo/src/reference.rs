@@ -91,8 +91,11 @@ pub fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
             } else if payload.get(end) == Some(&0xe3) {
                 end
             } else {
-                continue;
+                end
             };
+            if start >= end {
+                continue;
+            }
             let Some(values) = scalar_suffix(&payload[start..end], 6, &cache) else {
                 continue;
             };
@@ -144,7 +147,7 @@ mod tests {
         let payload = b"ent_list(line)\0\xe0\x00entity(line)\0\xf1\xe3\xf7\x11\
             \xf6\xe2\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\x02\
             \x18\x41\x93\x8a\x07\xa0\xe6\xf8\x55\x8c\x3e\x32\xfb\x7f\x13\x0b\
-            \x18\x93\x27\x14\x0f\x41\xcd\xf1\x8c\x3e\x32\xfb\x7f\x13\x0b\xe3\
+            \x18\x93\x27\x14\x0f\x41\xcd\xf1\x8c\x3e\x32\xfb\x7f\x13\x0b\
             \xe0\x00entity(text)\0";
         assert_eq!(lines(payload).len(), 1);
     }

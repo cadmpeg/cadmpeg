@@ -1564,8 +1564,9 @@ Strip triangles alternate winding: `[i,i+1,i+2]`, then `[i,i+2,i+1]`.
 
 `MdlRefInfo` stores finite model-space reference lines under an
 `ent_list(line)` prototype. The prototype declares `end1 f8 03` and `end2 f8
-03`; each following `entity(line)` positional row ends at `e3` and carries six
-scalar slots as `end1.xyz` followed by `end2.xyz`. The row prefix and display
+03`; each following `entity(line)` positional row carries six scalar slots as
+`end1.xyz` followed by `end2.xyz`. Intermediate rows end at `e3`; the terminal
+row ends at the following named entity record. The row prefix and display
 attributes precede this six-slot suffix. The suffix uses the section-local
 scalar cache and the signed coordinate DICT lane. `18` immediately before a
 complete coordinate token is a standalone zero slot. A positional row defines
