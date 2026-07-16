@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Siemens NX object-model records retained in the native namespace.
+#![deny(clippy::disallowed_methods)]
 
 use serde::{Deserialize, Serialize};
 

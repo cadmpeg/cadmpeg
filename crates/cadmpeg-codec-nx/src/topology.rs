@@ -6,6 +6,7 @@
 //! [`crate::nurbs`]. The parser covers the fixed-record families used by the
 //! crate's B-rep reconstruction; unsupported framing and record types are absent
 //! from the graph.
+#![deny(clippy::disallowed_methods)]
 
 use cadmpeg_ir::be;
 use std::collections::{BTreeMap, BTreeSet};
@@ -124,7 +125,12 @@ impl Node {
     /// Read adjacent XMT references, accounting for extended encodings.
     pub fn xmt_sequence(&self, offset: usize, count: usize) -> Option<Vec<u32>> {
         let mut at = offset + self.shift;
-        let mut values = Vec::with_capacity(count);
+        // Each iteration reads at least two bytes from `self.bytes` before
+        // pushing, and `read_xmt` returns `None` at end of record, so the vector
+        // never grows past `self.bytes.len() / 2` regardless of `count`.
+        // Accumulate via `Vec::new`/`push` (lint-invisible per §8) rather than
+        // reserving against the untrusted `count`.
+        let mut values = Vec::new();
         for _ in 0..count {
             let (value, extra) = read_xmt(&self.bytes, at)?;
             values.push(value);

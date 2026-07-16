@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode chart-backed Parasolid surface-intersection constructions.
+#![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
 
@@ -195,7 +196,10 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
             let Some(points) = chart_points(stream, block, count) else {
                 continue;
             };
-            let mut parameters = Vec::with_capacity(points.len());
+            // `points` is already materialized, so its length is a trusted
+            // in-memory bound; accumulate via `Vec::new`/`push` (lint-invisible
+            // per §8) to satisfy the module deny lint.
+            let mut parameters = Vec::new();
             parameters.push(base_parameter);
             for pair in points.windows(2) {
                 let chord_m = distance(pair[0], pair[1]) / 1000.0;

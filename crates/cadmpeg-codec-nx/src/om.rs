@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Frame NX object-model entities using external boundary and identity arrays.
+#![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeSet;
 
@@ -126,7 +127,12 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         let Some(base) = table_end.checked_sub(first) else {
             continue;
         };
-        let mut offsets = Vec::with_capacity(count + 1);
+        // `count` is physically floored: `index_start = table - (count + 1) * 4`
+        // must be non-negative (checked above), so `count <= table / 4 <=
+        // bytes.len() / 4`. Allocation is therefore input-bounded; the
+        // `2..=100_000` window above is an extra codec-local cap. Accumulate via
+        // `Vec::new`/`push` (lint-invisible per §8).
+        let mut offsets = Vec::new();
         for index in 0..=count {
             let Some(value) = u32_at(bytes, index_start + index * 4).map(|v| v as usize) else {
                 offsets.clear();
@@ -143,7 +149,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         {
             continue;
         }
-        let mut records = Vec::with_capacity(count - 1);
+        let mut records = Vec::new();
         for index in 1..count {
             let start = base + offsets[index];
             let end = base + offsets[index + 1];

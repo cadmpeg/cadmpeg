@@ -5,6 +5,7 @@
 //! valid zlib headers. An inflated `PS 00 00` prologue identifies Parasolid
 //! neutral-binary data and supplies its subtype and optional `SCH_` schema token.
 //! Other inflated payloads are classified as [`StreamKind::Preview`].
+#![deny(clippy::disallowed_methods)]
 
 use std::io::Read;
 

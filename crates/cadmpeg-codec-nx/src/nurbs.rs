@@ -5,6 +5,7 @@
 //! their stream-scoped references. Control points are converted from metres to
 //! millimetres. Invalid references, dimensions, knots, control points, and
 //! weights cause the affected carrier to be omitted.
+#![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
 
@@ -62,7 +63,7 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
             if !(stride == 3 || stride == 4) || payload.values.len() != poles * stride {
                 return None;
             }
-            let mut control_points = Vec::with_capacity(poles);
+            let mut control_points = Vec::new();
             let mut weights = (stride == 4).then(Vec::new);
             for pole in payload.values.chunks_exact(stride) {
                 let weight = if stride == 4 { pole[3] } else { 1.0 };
@@ -126,7 +127,7 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
             if !(stride == 3 || stride == 4) || control.values.len() != descriptor.poles * stride {
                 return None;
             }
-            let mut control_points = Vec::with_capacity(descriptor.poles);
+            let mut control_points = Vec::new();
             let mut weights = (stride == 4).then(Vec::new);
             for pole in control.values.chunks_exact(stride) {
                 let weight = if stride == 4 { pole[3] } else { 1.0 };
@@ -333,14 +334,31 @@ fn records(bytes: &[u8], tag: u8, min_len: usize) -> Vec<(usize, u16)> {
         .collect()
 }
 
+/// Codec-local ceiling on the total expanded knot count (§4.4 zero-floor
+/// defense in depth). Multiplicities are attacker-controlled `u16` values with
+/// no physical input floor of their own, so a hostile record can request a knot
+/// vector of `distinct.len() * 65535` entries out of a few input bytes. This cap
+/// bounds the `repeat_n`-style expansion (class A) independently of input size;
+/// it is an algorithm fact retained as defense in depth, not a resource policy.
+const MAX_KNOT_ENTRIES: usize = 1 << 20;
+
 fn expand_knots(distinct: &[f64], multiplicities: &[u16]) -> Option<Vec<f64>> {
     if distinct.len() != multiplicities.len() || !distinct.windows(2).all(|pair| pair[0] <= pair[1])
     {
         return None;
     }
+    // Accumulate through `Vec::new`/`push` (lint-invisible per §8) with an
+    // explicit running cap instead of `repeat_n`, so the expansion cannot commit
+    // memory proportional to an untrusted multiplicity sum.
     let mut out = Vec::new();
     for (&value, &count) in distinct.iter().zip(multiplicities) {
-        out.extend(std::iter::repeat_n(value, count as usize));
+        let count = count as usize;
+        if out.len().saturating_add(count) > MAX_KNOT_ENTRIES {
+            return None;
+        }
+        for _ in 0..count {
+            out.push(value);
+        }
     }
     Some(out)
 }
