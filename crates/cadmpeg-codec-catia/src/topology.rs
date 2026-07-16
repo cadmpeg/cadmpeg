@@ -677,8 +677,9 @@ pub fn parse_standard_endpoints_with_edge_classes(
     )
 }
 
-/// Intersect every endpoint port's geometric domains and remove edge endpoint
-/// pairs that cannot satisfy either orientation of the resulting port domains.
+/// Collapse equal endpoint identities and propagate correlated edge-pair
+/// support to a fixpoint. Only serialized pairs supported by both resulting
+/// port domains are retained.
 #[must_use]
 pub fn prune_edge_candidates_by_port_domains(
     edge_ports: &[[u32; 2]],
@@ -687,49 +688,53 @@ pub fn prune_edge_candidates_by_port_domains(
     if edge_ports.len() != edge_candidates.len() || edge_candidates.iter().any(Vec::is_empty) {
         return None;
     }
-    let mut vertex_by_port = HashMap::new();
-    for port in edge_ports.iter().flatten() {
-        let next = vertex_by_port.len();
-        vertex_by_port.entry(*port).or_insert(next);
+    let mut domains = Vec::with_capacity(edge_candidates.len() * 2);
+    for candidates in edge_candidates {
+        let domain = Arc::new(candidates.iter().flatten().copied().collect::<HashSet<_>>());
+        domains.push(domain.clone());
+        domains.push(domain);
     }
-    let all_points = edge_candidates
-        .iter()
-        .flatten()
-        .flatten()
-        .copied()
-        .collect::<HashSet<_>>();
-    let mut domains = vec![all_points; vertex_by_port.len()];
-    for (ports, candidates) in edge_ports.iter().zip(edge_candidates) {
-        let endpoint_domain = candidates.iter().flatten().copied().collect::<HashSet<_>>();
-        for port in ports {
-            let vertex = vertex_by_port[port];
-            domains[vertex].retain(|point| endpoint_domain.contains(point));
-            if domains[vertex].is_empty() {
-                return None;
+    let mut quotient = MeshQuotient {
+        union: UnionFind::new(edge_candidates.len() * 2),
+        domains,
+        members: (0..edge_candidates.len() * 2)
+            .map(|node| vec![node])
+            .collect(),
+    };
+    let mut node_by_port = HashMap::new();
+    for (edge, ports) in edge_ports.iter().enumerate() {
+        for (endpoint, port) in ports.iter().copied().enumerate() {
+            let node = edge * 2 + endpoint;
+            if let Some(&previous) = node_by_port.get(&port) {
+                quotient.merge(previous, node)?;
+            } else {
+                node_by_port.insert(port, node);
             }
         }
     }
-    edge_ports
+    if !quotient.edge_domains_viable(edge_candidates) {
+        return None;
+    }
+    edge_candidates
         .iter()
-        .zip(edge_candidates)
-        .map(|(ports, candidates)| {
-            let left = &domains[vertex_by_port[&ports[0]]];
-            let right = &domains[vertex_by_port[&ports[1]]];
-            let mut filtered = if ports[0] == ports[1] {
-                left.intersection(right)
-                    .copied()
-                    .map(|point| [point, point])
-                    .collect::<Vec<_>>()
-            } else {
-                candidates
-                    .iter()
-                    .copied()
-                    .filter(|pair| {
-                        (left.contains(&pair[0]) && right.contains(&pair[1]))
-                            || (left.contains(&pair[1]) && right.contains(&pair[0]))
-                    })
-                    .collect::<Vec<_>>()
-            };
+        .enumerate()
+        .map(|(edge, candidates)| {
+            let left = quotient.union.find(edge * 2);
+            let right = quotient.union.find(edge * 2 + 1);
+            let mut filtered = candidates
+                .iter()
+                .copied()
+                .filter(|pair| {
+                    if left == right {
+                        pair[0] == pair[1] && quotient.domains[left].contains(&pair[0])
+                    } else {
+                        (quotient.domains[left].contains(&pair[0])
+                            && quotient.domains[right].contains(&pair[1]))
+                            || (quotient.domains[left].contains(&pair[1])
+                                && quotient.domains[right].contains(&pair[0]))
+                    }
+                })
+                .collect::<Vec<_>>();
             for pair in &mut filtered {
                 pair.sort_unstable();
             }
@@ -9921,10 +9926,25 @@ mod motif_tests {
     #[test]
     fn equal_endpoint_ports_produce_closed_edge_candidates() {
         let ports = [[10, 10], [10, 11]];
-        let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 4]]];
+        let candidates = [vec![[0, 0], [1, 1], [2, 2]], vec![[1, 3], [2, 4]]];
         assert_eq!(
             prune_edge_candidates_by_port_domains(&ports, &candidates),
             Some(vec![vec![[1, 1], [2, 2]], vec![[1, 3], [2, 4]]])
+        );
+        assert_eq!(
+            prune_edge_candidates_by_port_domains(&[[10, 10]], &[vec![[0, 1], [0, 2]]]),
+            None
+        );
+    }
+
+    #[test]
+    fn endpoint_port_domains_propagate_pair_correlation_to_a_fixpoint() {
+        let ports = [[10, 11], [11, 12], [12, 13]];
+        let candidates = [vec![[0, 1], [2, 3]], vec![[1, 4], [3, 5]], vec![[4, 6]]];
+
+        assert_eq!(
+            prune_edge_candidates_by_port_domains(&ports, &candidates),
+            Some(vec![vec![[0, 1]], vec![[1, 4]], vec![[4, 6]]])
         );
     }
 
