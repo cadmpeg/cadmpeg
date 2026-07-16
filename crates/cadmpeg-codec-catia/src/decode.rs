@@ -11,7 +11,8 @@
 //! Partial paths preserve the reconstructed B-rep stream or complete file as an
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
 
-use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
+use cadmpeg_ir::codec::{CodecError, DecodeResult};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
@@ -38,17 +39,15 @@ use crate::native::CatiaNative;
 use crate::topology;
 use crate::variant::Variant;
 
-/// Decodes a `.CATPart` reader into an IR document and decode report.
+/// Decodes a `.CATPart` session root view into an IR document and decode report.
 ///
-/// When [`DecodeOptions::container_only`] is set, the result contains source
-/// metadata and container diagnostics without entity decoding.
-pub fn decode(
-    reader: &mut dyn ReadSeek,
-    options: &DecodeOptions,
-) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan(reader)?;
+/// Consumes the session root [`View`] directly (§10 Phase 1A). When the context
+/// is in container-only mode, the result contains source metadata and container
+/// diagnostics without entity decoding.
+pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
+    let scan = container::scan_view(ctx, root)?;
 
-    if options.container_only {
+    if ctx.container_only() {
         let ir = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
         return Ok(DecodeResult::new(ir, report));
@@ -87,11 +86,11 @@ pub fn decode(
 }
 
 fn finish_decode(
-    scan: &ContainerScan,
+    scan: &ContainerScan<'_>,
     mut ir: CadIr,
     report: DecodeReport,
 ) -> Result<DecodeResult, CodecError> {
-    CatiaNative::decode(&scan.data).store(ir.native.namespace_mut("catia"))?;
+    CatiaNative::decode(scan.data).store(ir.native.namespace_mut("catia"))?;
     Ok(DecodeResult::new(ir, report))
 }
 
@@ -109,9 +108,9 @@ fn annotate(
     annotations.exactness(id, exactness);
 }
 
-fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
-    let decoded = geometry::zero_entity_surfaces(&scan.data);
-    let points = geometry::vertices(&scan.data);
+fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
+    let decoded = geometry::zero_entity_surfaces(scan.data);
+    let points = geometry::vertices(scan.data);
     if decoded.is_empty() && points.is_empty() {
         return None;
     }
@@ -194,13 +193,13 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
 /// decoded rather than being assigned speculatively.
-fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
-    let stream_range = container::e5_record_stream(&scan.data)?;
+fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
+    let stream_range = container::e5_record_stream(scan.data)?;
     let stream = &scan.data[stream_range];
     let circles = geometry::e5_circles(stream);
     let surfaces = geometry::e5_surfaces(stream);
     let topology = crate::e5::parse_topology(stream);
-    let points = geometry::vertices(&scan.data);
+    let points = geometry::vertices(scan.data);
     if circles.is_empty() && surfaces.is_empty() && points.is_empty() {
         return None;
     }
@@ -759,15 +758,15 @@ fn point_distance(a: Point3, b: Point3) -> f64 {
     ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
 }
 
-fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
-    let b5_graph = crate::b5::parse(&scan.data);
-    let mut surfaces: Vec<(usize, u32, SurfaceGeometry, &str)> = geometry::a8_surfaces(&scan.data)
+fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
+    let b5_graph = crate::b5::parse(scan.data);
+    let mut surfaces: Vec<(usize, u32, SurfaceGeometry, &str)> = geometry::a8_surfaces(scan.data)
         .into_iter()
-        .chain(geometry::a5_surfaces(&scan.data))
+        .chain(geometry::a5_surfaces(scan.data))
         .map(|surface| (surface.pos, surface.object_id, surface.geometry, "freeform"))
         .collect();
     surfaces.extend(
-        geometry::b2_cylinders(&scan.data)
+        geometry::b2_cylinders(scan.data)
             .into_iter()
             .filter_map(|surface| {
                 surface
@@ -776,7 +775,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
             }),
     );
     surfaces.extend(
-        geometry::b2_embedded_cylinders(&scan.data)
+        geometry::b2_embedded_cylinders(scan.data)
             .into_iter()
             .filter_map(|surface| {
                 surface
@@ -785,7 +784,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
                     .map(|geometry| (surface.pos, surface.object_id, geometry, "b2_03_60"))
             }),
     );
-    surfaces.extend(geometry::b2_cones(&scan.data).into_iter().map(|surface| {
+    surfaces.extend(geometry::b2_cones(scan.data).into_iter().map(|surface| {
         (
             surface.pos,
             0,
@@ -878,8 +877,8 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
 /// Decode the standard-nested vertex cloud and analytic surface carriers. Returns
 /// `None` when the reconstructed stream yields neither vertices nor surfaces, so
 /// the caller falls back to the container-metadata path.
-fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
-    let brep = scan.brep.as_ref()?;
+fn try_decode_standard(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
+    let brep = scan.brep_bytes()?;
     let points = geometry::vertices(brep);
     let prefixes = geometry::surface_prefixes(brep);
     let planes: HashMap<u32, geometry::PlaneParams> = geometry::plane_params(brep)
@@ -995,7 +994,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             annotations.derived(&shell.id, "free_vertices");
         }
     }
-    append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data);
+    append_freeform_surface_pools(&mut ir, &mut annotations, scan.data);
     link_payload_carriers(&mut ir, &mut annotations).ok()?;
     ir.annotations = annotations.build();
 
@@ -1631,7 +1630,7 @@ impl TypedCounts {
     }
 }
 
-fn source_meta(scan: &ContainerScan) -> SourceMeta {
+fn source_meta(scan: &ContainerScan<'_>) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert("variant".to_string(), scan.variant.token().to_string());
     attributes.insert("file_size".to_string(), scan.data.len().to_string());
@@ -1646,7 +1645,7 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
             dir.descriptors.len().to_string(),
         );
     }
-    if let Some(brep) = &scan.brep {
+    if let Some(brep) = scan.brep_bytes() {
         attributes.insert("brep_stream_len".to_string(), brep.len().to_string());
         attributes.insert("brep_stream_sha256".to_string(), sha256_hex(brep));
         attributes.insert("fbb_runs".to_string(), scan.census.fbb_runs.to_string());
@@ -1662,7 +1661,7 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
 }
 
 fn build_geometry_report(
-    scan: &ContainerScan,
+    scan: &ContainerScan<'_>,
     vertex_count: usize,
     typed: &TypedCounts,
     plane_faces: usize,
@@ -1752,14 +1751,14 @@ fn build_geometry_report(
     }
 }
 
-fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
+fn build_metadata_ir(scan: &ContainerScan<'_>) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
 
     // Preserve the reconstructed BREP stream (or, absent one, the whole file) as
     // an unknown passthrough so no recognized data is silently dropped.
-    if let Some(brep) = &scan.brep {
+    if let Some(brep) = scan.brep_bytes() {
         let id = UnknownId("catia:payload:unknown#brep-stream".to_string());
         annotate(
             &mut annotations,
@@ -1776,7 +1775,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                 offset: 0,
                 byte_len: brep.len() as u64,
                 sha256: sha256_hex(brep),
-                data: Some(brep.clone()),
+                data: Some(brep.to_vec()),
                 links: Vec::new(),
             },
         )?;
@@ -1790,12 +1789,12 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
 fn preserve_raw_payload(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    scan: &ContainerScan,
+    scan: &ContainerScan<'_>,
     id: &str,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let (bytes, stream) = match scan.brep.as_ref() {
-        Some(brep) => (brep.as_slice(), "MainDataStream+SurfacicReps"),
-        None => (scan.data.as_slice(), "CATPart"),
+    let (bytes, stream) = match scan.brep_bytes() {
+        Some(brep) => (brep, "MainDataStream+SurfacicReps"),
+        None => (scan.data, "CATPart"),
     };
     let id = UnknownId(id.to_string());
     annotate(
@@ -1847,7 +1846,7 @@ fn link_payload_carriers(
     Ok(())
 }
 
-fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
+fn build_container_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let mut losses = vec![LossNote {
         category: LossCategory::Geometry,

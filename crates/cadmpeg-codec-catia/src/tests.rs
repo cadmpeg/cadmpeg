@@ -16,6 +16,18 @@ use cadmpeg_ir::InspectOptions;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
+/// Drive [`crate::container::scan_view`] over a fixture under a default session,
+/// so tests observe the registered `Concat` BREP derived space and the physical
+/// extent spans exactly as `decode` and `inspect` do.
+fn with_scan<R>(bytes: &[u8], f: impl FnOnce(&crate::container::ContainerScan<'_>) -> R) -> R {
+    use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan_view(&ctx, root).unwrap();
+    f(&scan)
+}
+
 fn assert_every_entity_has_v1_annotation(ir: &CadIr) {
     let mut entity_count = 0;
     macro_rules! check {
@@ -1493,18 +1505,19 @@ fn detect_high_on_outer_magic() {
 #[test]
 fn scan_parses_directory_and_identifies_standard() {
     let f = standard_catpart();
-    let scan = crate::container::scan_bytes(f);
-    assert_eq!(scan.variant, Variant::StandardNested);
-    let dir = scan.inner.expect("inner directory");
-    assert!(dir.descriptors.iter().any(|d| d.name == "MainDataStream"));
-    assert!(dir.descriptors.iter().any(|d| d.name == "SurfacicReps"));
-    let brep = scan.brep.expect("reconstructed brep stream");
-    // The BREP stream is MainDataStream followed by SurfacicReps.
-    assert!(brep.windows(3).any(|w| w == [0x05, 0x08, 0x01]));
-    assert!(brep.windows(3).any(|w| w == [0x00, 0x33, 0x33]));
-    assert!(scan.census.fbb_runs >= 2);
-    assert!(scan.census.edge_delimiters >= 1);
-    assert_eq!(scan.census.vertex_markers, 3);
+    with_scan(&f, |scan| {
+        assert_eq!(scan.variant, Variant::StandardNested);
+        let dir = scan.inner.as_ref().expect("inner directory");
+        assert!(dir.descriptors.iter().any(|d| d.name == "MainDataStream"));
+        assert!(dir.descriptors.iter().any(|d| d.name == "SurfacicReps"));
+        let brep = scan.brep_bytes().expect("reconstructed brep stream");
+        // The BREP stream is MainDataStream followed by SurfacicReps.
+        assert!(brep.windows(3).any(|w| w == [0x05, 0x08, 0x01]));
+        assert!(brep.windows(3).any(|w| w == [0x00, 0x33, 0x33]));
+        assert!(scan.census.fbb_runs >= 2);
+        assert!(scan.census.edge_delimiters >= 1);
+        assert_eq!(scan.census.vertex_markers, 3);
+    });
 }
 
 #[test]
@@ -1641,7 +1654,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
 #[test]
 fn decode_fbb_only_transfers_shared_vertices_and_carriers() {
     assert_eq!(
-        crate::container::scan_bytes(fbb_only_catpart()).variant,
+        crate::container::scan_bytes(&fbb_only_catpart()).variant,
         Variant::FbbOnly
     );
     let mut cur = Cursor::new(fbb_only_catpart());
@@ -1655,7 +1668,7 @@ fn decode_fbb_only_transfers_shared_vertices_and_carriers() {
 #[test]
 fn decode_zero_entity_falls_back_to_metadata() {
     let f = zero_entity_catpart();
-    let scan = crate::container::scan_bytes(f.clone());
+    let scan = crate::container::scan_bytes(&f);
     assert_eq!(scan.variant, Variant::ZeroEntity);
     assert!(scan.inner.is_none());
 
@@ -3023,7 +3036,7 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
 #[test]
 fn decode_float_packed_stream_transfers_a8_nurbs() {
     assert_eq!(
-        crate::container::scan_bytes(a8_catpart()).variant,
+        crate::container::scan_bytes(&a8_catpart()).variant,
         Variant::FloatPackedInnerNoFbb
     );
     let mut cur = Cursor::new(a8_catpart());
@@ -3042,7 +3055,7 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     crate::b5::parse(&stream).expect("generated B5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
-        crate::container::scan_bytes(file.clone()).variant,
+        crate::container::scan_bytes(&file).variant,
         Variant::FloatPackedInnerNoFbb
     );
 
@@ -3069,7 +3082,7 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
 #[test]
 fn decode_inner_no_directory_transfers_a8_nurbs() {
     assert_eq!(
-        crate::container::scan_bytes(inner_no_directory_a8_catpart()).variant,
+        crate::container::scan_bytes(&inner_no_directory_a8_catpart()).variant,
         Variant::InnerNoDirectory
     );
     let mut cur = Cursor::new(inner_no_directory_a8_catpart());
@@ -3085,7 +3098,7 @@ fn decode_inner_no_directory_transfers_a8_nurbs() {
 #[test]
 fn decode_inner_no_directory_transfers_b2_cylinder() {
     assert_eq!(
-        crate::container::scan_bytes(inner_no_directory_b2_catpart()).variant,
+        crate::container::scan_bytes(&inner_no_directory_b2_catpart()).variant,
         Variant::InnerNoDirectory
     );
     let mut cur = Cursor::new(inner_no_directory_b2_catpart());
@@ -3100,7 +3113,8 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
 
 #[test]
 fn decode_e5_stream_transfers_circle_carrier() {
-    let scan = crate::container::scan_bytes(e5_catpart());
+    let f = e5_catpart();
+    let scan = crate::container::scan_bytes(&f);
     assert_eq!(scan.variant, Variant::E5Stream);
     let mut cur = Cursor::new(e5_catpart());
     let result = CatiaCodec
@@ -3130,7 +3144,7 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     crate::e5::parse_topology(&stream).expect("generated E5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
-        crate::container::scan_bytes(file.clone()).variant,
+        crate::container::scan_bytes(&file).variant,
         Variant::E5Stream
     );
 

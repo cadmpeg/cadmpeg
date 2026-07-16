@@ -61,9 +61,7 @@ pub mod value_block;
 pub mod variant;
 pub mod zero_entity;
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult,
-};
+use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 
 /// The CATIA V5 `.CATPart` codec.
@@ -85,11 +83,10 @@ impl Codec for CatiaCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let mut reader = std::io::Cursor::new(root.window());
-        let scan = container::scan(&mut reader)?;
+        let scan = container::scan_view(ctx, root)?;
         Ok(container::summarize(&scan))
     }
 
@@ -98,12 +95,7 @@ impl Codec for CatiaCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        let options = DecodeOptions {
-            container_only: ctx.container_only(),
-            policy: *ctx.policy(),
-        };
-        let mut reader = std::io::Cursor::new(root.window());
-        decode::decode(&mut reader, &options)
+        decode::decode(ctx, root)
     }
 }
 
