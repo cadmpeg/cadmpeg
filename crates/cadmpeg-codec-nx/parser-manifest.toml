@@ -14,16 +14,19 @@
 # byte they read was already charged as `decompressed_bytes` at expand time and
 # the whole stream length is finite, so their allocations are bounded by the
 # already-charged inflated length. `charges` names the budget dimensions the
-# module drives directly; a leaf scanner with no threaded context charges
-# nothing itself and relies on the enclosing stream-level charges plus its
-# stated allocation bound. `cost_model` states the allocation/scan bound (never a
+# module drives directly. The geometry/topology/NURBS/deltas/intersection/
+# object-model leaf scanners thread no context, so they charge nothing and stay
+# `legacy` with reasons: their allocations rest on structural bounds
+# (already-charged inflated length plus codec-local caps), not on a budget
+# charge, until the `decode.rs` bridge threads a `DecodeContext` in Phase 3D.
+# `cost_model` states the allocation/scan bound (never a
 # flat unit per iteration). `window_egress` lists the audited `View::window()`
 # sites the module keeps, cross-referenced by the section 8.8 ratchet (crate
 # ceiling 3: one in `decode.rs`, two in `parasolid.rs`). `ledger_level` is 0
 # across the crate: NX is L0 (no byte ledger) per doc section 6.1.
 
 # ---------------------------------------------------------------------------
-# Count-framed loops (migrated first per the Phase 2 order).
+# Count-framed loops. Legacy until the leaf scanners thread a context (Phase 3D).
 
 # Object-model section framing. `indexed_sections` reads an entity-index array
 # and object-id table whose element count is physically floored:
@@ -36,7 +39,8 @@
 # slices. Carries the module deny lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/om.rs"
-status = "migrated"
+status = "legacy"
+legacy_reason = "Reads hostile bytes on raw `&[u8]` (not a `View`) and threads no `DecodeContext`, so it uses no `BoundedCount`/`read_counted`/`exact_vec`/`grow_vec` and its `charges` is empty: the count-framed reservations and zero-floor knot expansion grow with only structural bounds (index-array floor, materialized-payload length, codec-local caps), and every scan pass over the inflated stream is uncharged work. Blocked on the legacy `decode.rs` bridge that hands the leaves a raw `root.window()` image instead of a threaded context; deferred to Phase 3D. The `cost_model` below states the current structural allocation/scan bound, not a budget charge."
 input_spaces = ["parasolid_stream"]
 fuzz_targets = ["nx_om"]
 charges = []
@@ -56,7 +60,8 @@ ledger_level = 0
 # `checked_div` framing. Carries the module deny lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/nurbs.rs"
-status = "migrated"
+status = "legacy"
+legacy_reason = "Reads hostile bytes on raw `&[u8]` (not a `View`) and threads no `DecodeContext`, so it uses no `BoundedCount`/`read_counted`/`exact_vec`/`grow_vec` and its `charges` is empty: the count-framed reservations and zero-floor knot expansion grow with only structural bounds (index-array floor, materialized-payload length, codec-local caps), and every scan pass over the inflated stream is uncharged work. Blocked on the legacy `decode.rs` bridge that hands the leaves a raw `root.window()` image instead of a threaded context; deferred to Phase 3D. The `cost_model` below states the current structural allocation/scan bound, not a budget charge."
 input_spaces = ["parasolid_stream"]
 fuzz_targets = ["nx_nurbs_curves", "nx_nurbs_surfaces"]
 charges = []
@@ -71,7 +76,8 @@ ledger_level = 0
 # Carries the module deny lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/intersection.rs"
-status = "migrated"
+status = "legacy"
+legacy_reason = "Reads hostile bytes on raw `&[u8]` (not a `View`) and threads no `DecodeContext`, so it uses no `BoundedCount`/`read_counted`/`exact_vec`/`grow_vec` and its `charges` is empty: the count-framed reservations and zero-floor knot expansion grow with only structural bounds (index-array floor, materialized-payload length, codec-local caps), and every scan pass over the inflated stream is uncharged work. Blocked on the legacy `decode.rs` bridge that hands the leaves a raw `root.window()` image instead of a threaded context; deferred to Phase 3D. The `cost_model` below states the current structural allocation/scan bound, not a budget charge."
 input_spaces = ["parasolid_stream"]
 fuzz_targets = ["nx_intersection"]
 charges = []
@@ -90,7 +96,8 @@ ledger_level = 0
 # `with_capacity`, no untrusted reservation. Carries the module deny lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/geometry.rs"
-status = "migrated"
+status = "legacy"
+legacy_reason = "Reads hostile bytes on raw `&[u8]` (not a `View`) and threads no `DecodeContext`, so it uses no `BoundedCount`/`read_counted`/`exact_vec`/`grow_vec` and its `charges` is empty: the count-framed reservations and zero-floor knot expansion grow with only structural bounds (index-array floor, materialized-payload length, codec-local caps), and every scan pass over the inflated stream is uncharged work. Blocked on the legacy `decode.rs` bridge that hands the leaves a raw `root.window()` image instead of a threaded context; deferred to Phase 3D. The `cost_model` below states the current structural allocation/scan bound, not a budget charge."
 input_spaces = ["parasolid_stream"]
 fuzz_targets = ["nx_geometry_points", "nx_geometry_curves", "nx_geometry_surfaces"]
 charges = []
@@ -104,7 +111,8 @@ ledger_level = 0
 # bounds-checked. Carries the module deny lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/deltas.rs"
-status = "migrated"
+status = "legacy"
+legacy_reason = "Reads hostile bytes on raw `&[u8]` (not a `View`) and threads no `DecodeContext`, so it uses no `BoundedCount`/`read_counted`/`exact_vec`/`grow_vec` and its `charges` is empty: the count-framed reservations and zero-floor knot expansion grow with only structural bounds (index-array floor, materialized-payload length, codec-local caps), and every scan pass over the inflated stream is uncharged work. Blocked on the legacy `decode.rs` bridge that hands the leaves a raw `root.window()` image instead of a threaded context; deferred to Phase 3D. The `cost_model` below states the current structural allocation/scan bound, not a budget charge."
 input_spaces = ["parasolid_stream"]
 fuzz_targets = ["nx_deltas"]
 charges = []
@@ -126,7 +134,8 @@ ledger_level = 0
 # lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/topology.rs"
-status = "migrated"
+status = "legacy"
+legacy_reason = "Reads hostile bytes on raw `&[u8]` (not a `View`) and threads no `DecodeContext`, so it uses no `BoundedCount`/`read_counted`/`exact_vec`/`grow_vec` and its `charges` is empty: the count-framed reservations and zero-floor knot expansion grow with only structural bounds (index-array floor, materialized-payload length, codec-local caps), and every scan pass over the inflated stream is uncharged work. Blocked on the legacy `decode.rs` bridge that hands the leaves a raw `root.window()` image instead of a threaded context; deferred to Phase 3D. The `cost_model` below states the current structural allocation/scan bound, not a budget charge."
 input_spaces = ["parasolid_stream"]
 fuzz_targets = ["nx_topology"]
 charges = []
@@ -216,7 +225,13 @@ ledger_level = 0
 # Codec entry and container summary. Not a byte parser: implements the `Codec`
 # trait and builds `ContainerSummary` from an already-decoded `Scan`. Reads no
 # untrusted framing directly; delegates to `decode`/`parasolid`. Listed for
-# completeness. Carries no disallowed accumulation method.
+# completeness. Carries no disallowed accumulation method. Unlike the per-file
+# leaf modules it does NOT carry `#![deny(clippy::disallowed_methods)]`: the
+# attribute at the crate root is crate-wide and would break the still-`legacy`
+# `container.rs`/`decode.rs` (and the count-framed leaf scanners) that
+# legitimately call the ratcheted methods, so lib.rs's freedom from disallowed
+# accumulation is held by review discipline, not by the lint, until the crate
+# can deny the method list workspace-wide.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/lib.rs"
 status = "migrated"
