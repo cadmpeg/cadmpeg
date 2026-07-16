@@ -575,6 +575,14 @@ struct CreoPrimitiveScalarArrayRecord {
     values: Vec<f64>,
 }
 
+#[derive(Debug, Serialize)]
+struct CreoReferenceLineRecord {
+    id: String,
+    start: [f64; 3],
+    end: [f64; 3],
+    offset: usize,
+}
+
 fn expanded_section_records(scan: &ContainerScan) -> Vec<CreoExpandedSectionRecord> {
     scan.expanded_sections
         .iter()
@@ -19227,6 +19235,63 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
     preserve_passthrough_sections(scan, &mut ir, &mut annotations)?;
+    if !scan.reference_lines.is_empty() {
+        let records = scan
+            .reference_lines
+            .iter()
+            .map(|line| CreoReferenceLineRecord {
+                id: format!("creo:mdl_ref_info:line_record#{}", line.offset),
+                start: line.start,
+                end: line.end,
+                offset: line.offset,
+            })
+            .collect::<Vec<_>>();
+        for record in &records {
+            annotate(
+                &mut annotations,
+                &record.id,
+                "MdlRefInfo",
+                record.offset as u64,
+                "reference_line_record",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("reference_lines", &records)?;
+    }
+    for line in &scan.reference_lines {
+        let direction = std::array::from_fn(|axis| line.end[axis] - line.start[axis]);
+        let Some(direction) = normalized(direction) else {
+            continue;
+        };
+        let prefix = format!("creo:mdl_ref_info:line#{}", line.offset);
+        let id = CurveId(prefix);
+        annotate(
+            &mut annotations,
+            &id,
+            "MdlRefInfo",
+            line.offset as u64,
+            "reference_line",
+            Exactness::Derived,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(line.start[0], line.start[1], line.start[2]),
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("MdlRefInfo:{}", line.offset),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+    }
     for strip in &scan.primitive_triangle_strips {
         let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
         let mut triangles = Vec::new();
@@ -20942,6 +21007,19 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
                 "Transferred {} exact model-space construction datum plane carrier(s) from ActDatums; \
                  these are unbounded reference planes, not model B-rep faces.",
                 scan.datum_planes.len()
+            ),
+            provenance: None,
+        });
+    }
+
+    if !container_only && !scan.reference_lines.is_empty() {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {} finite model-space reference line carrier(s) from MdlRefInfo; \
+                 their byte-exact endpoints remain attached as native line records.",
+                scan.reference_lines.len()
             ),
             provenance: None,
         });

@@ -59,6 +59,7 @@ pub mod feature;
 pub mod placement;
 pub mod primdata;
 pub mod psb;
+pub mod reference;
 pub mod scalar;
 pub mod surface;
 pub mod topology;

@@ -73,6 +73,7 @@ PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology ma
 | `ActDatums`                      | Active datum-plane geometry under `act_datum_geoms → srf_array`.                                                     |
 | `DEPDB_DATA`                     | Persistence data used by DEPDB-layout parts, including embedded geometry namespaces and feature-definition records.  |
 | `FamilyInf`                      | Family-table driver pointer for configurations.                                                                       |
+| `MdlRefInfo`                     | Model-space reference entities, including finite line endpoints.                                                       |
 | `NeuPrtSld` and display sections | Material, appearance, display, and tessellation data.                                                                |
 | `THMB_IMG_MAIN`                  | JPEG thumbnail. The payload begins with `FF D8 FF` and does not contain model geometry.                              |
 
@@ -1558,3 +1559,15 @@ differences are triangle-strip lengths and each is at least three.
 normal-position tuples and transfers its first three tuple values as vertex
 normals.
 Strip triangles alternate winding: `[i,i+1,i+2]`, then `[i,i+2,i+1]`.
+
+### 8.5 Model reference lines
+
+`MdlRefInfo` stores finite model-space reference lines under an
+`ent_list(line)` prototype. The prototype declares `end1 f8 03` and `end2 f8
+03`; each following `entity(line)` positional row ends at `e3` and carries six
+scalar slots as `end1.xyz` followed by `end2.xyz`. The row prefix and display
+attributes precede this six-slot suffix. The suffix uses the section-local
+scalar cache and the signed coordinate DICT lane. `18` immediately before a
+complete coordinate token is a standalone zero slot. A positional row defines
+a line only when exactly six finite scalars consume the complete suffix. The two
+endpoint positions are model coordinates in the active principal length unit.

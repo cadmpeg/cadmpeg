@@ -30,6 +30,7 @@ use crate::feature::{
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
 use crate::psb;
+use crate::reference::{self, ReferenceLine};
 use crate::surface::{
     self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceParameterRecord,
     SurfacePrototype, SurfacePrototypeRecord, SurfaceRow, TabulatedCylinderCurveReplay,
@@ -195,6 +196,8 @@ pub struct ContainerScan {
     pub primitive_scalar_arrays: Vec<PrimitiveScalarArray>,
     /// Complete named position-only triangle strips from expanded primitive data.
     pub primitive_triangle_strips: Vec<PrimitiveTriangleStrip>,
+    /// Complete model-space line entities from `MdlRefInfo`.
+    pub reference_lines: Vec<ReferenceLine>,
     /// Identified layout family.
     pub layout: Layout,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
@@ -1540,6 +1543,22 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         .filter(|section| section.name == "SolidPrimdata")
         .flat_map(|section| primdata::triangle_strips(&section.data))
         .collect();
+    let reference_lines = sections
+        .iter()
+        .filter(|section| section.name == "MdlRefInfo")
+        .flat_map(|section| {
+            let end = section
+                .offset
+                .saturating_add(section.length)
+                .min(data.len());
+            reference::lines(&data[section.offset..end])
+                .into_iter()
+                .map(move |mut line| {
+                    line.offset += section.offset;
+                    line
+                })
+        })
+        .collect();
     let layout = identify_layout(&sections);
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
@@ -1692,6 +1711,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         double_xar_tables,
         primitive_scalar_arrays,
         primitive_triangle_strips,
+        reference_lines,
         layout,
         census,
         principal_unit,
