@@ -585,6 +585,138 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
 }
 
 #[test]
+fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
+    use crate::native::{
+        DisplayJtBaseNodeData, DisplayJtCompressedElement, DisplayJtPolygonMesh,
+        DisplayJtShapeLodBinding, DisplayJtShapeLodElement, DisplayJtTriStripShapeNode,
+        DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates,
+    };
+
+    let mesh = DisplayJtPolygonMesh {
+        id: "native-mesh".into(),
+        topology: "topology".into(),
+        coordinate_header: "coordinate-header".into(),
+        polygons: vec![vec![0, 1, 2], vec![2, 1, 0, 2]],
+        polygon_groups: vec![4, -1],
+        polygon_flags: vec![0, 0],
+        source_offset: 80,
+    };
+    let coordinates = DisplayJtVertexCoordinates {
+        id: "coordinates".into(),
+        header: "coordinate-header".into(),
+        points_m: vec![[0.0, 0.0, 0.0], [0.001, 0.0, 0.0], [0.0, 0.002, 0.0]],
+        coordinate_hash: 0,
+        byte_len: 4,
+        source_offset: 90,
+    };
+    let header = DisplayJtVertexCoordinateArrayHeader {
+        id: "coordinate-header".into(),
+        element: "shape-element".into(),
+        unique_vertex_count: 3,
+        component_count: 3,
+        component_ranges: [[0.0, 0.0]; 3],
+        component_quantization_bits: [0; 3],
+        compressed_components_byte_len: 4,
+        compressed_components_sha256: "00".repeat(32),
+        source_offset: 60,
+    };
+    let shape_element = DisplayJtShapeLodElement {
+        id: "shape-element".into(),
+        segment: "shape-segment".into(),
+        ordinal: 0,
+        object_type_id: vec![0; 16],
+        object_base_type: 4,
+        object_id: 7,
+        body_byte_len: 0,
+        body_sha256: "00".repeat(32),
+        source_offset: 100,
+    };
+    let binding = DisplayJtShapeLodBinding {
+        id: "binding".into(),
+        scene_segment: "scene-segment".into(),
+        table_version: 1,
+        shape_node_object_id: 9,
+        key_object_id: 1,
+        key: "JT_LLPROP_SHAPEIMPL".into(),
+        value_object_id: 2,
+        state_flags: 0,
+        property_version: 1,
+        shape_segment: "shape-segment".into(),
+        payload_object_id: 7,
+        reserved_value: 1,
+        source_offset: 110,
+    };
+    let base = DisplayJtBaseNodeData {
+        id: "base".into(),
+        element: "scene-element".into(),
+        object_type_id: vec![0; 16],
+        object_id: 9,
+        version: 1,
+        flags: 0,
+        attribute_object_ids: Vec::new(),
+        family_data_byte_len: 0,
+        family_data_sha256: "00".repeat(32),
+        source_offset: 120,
+    };
+    let compressed = DisplayJtCompressedElement {
+        id: "scene-element".into(),
+        segment: "scene-segment".into(),
+        segment_type: 1,
+        ordinal: 0,
+        object_type_id: vec![0; 16],
+        object_base_type: 2,
+        object_id: 9,
+        body_byte_len: 0,
+        body_sha256: "00".repeat(32),
+        inflated_offset: 0,
+        source_offset: 120,
+    };
+    let node = DisplayJtTriStripShapeNode {
+        id: "shape-node".into(),
+        base_node: "base".into(),
+        object_id: 9,
+        reserved_bounds: [[0.0; 3]; 2],
+        untransformed_bounds: [[0.0; 3]; 2],
+        area: 0.0,
+        vertex_count_range: [0, 0],
+        node_count_range: [0, 0],
+        polygon_count_range: [0, 0],
+        memory_byte_len: 0,
+        compression_level: 0.0,
+        vertex_version: 1,
+        vertex_bindings: 2,
+        vertex_quantization_bits: 0,
+        normal_quantization_factor: 0,
+        texture_quantization_bits: 0,
+        color_quantization_bits: 0,
+        version_2_vertex_bindings: None,
+        source_offset: 120,
+    };
+
+    let tessellations =
+        crate::decode::display_jt_tessellations(crate::decode::DisplayJtTessellationInputs {
+            meshes: &[mesh],
+            coordinates: &[coordinates],
+            coordinate_headers: &[header],
+            shape_elements: &[shape_element],
+            bindings: &[binding],
+            shape_nodes: &[node],
+            base_nodes: &[base],
+            compressed_elements: &[compressed],
+        })
+        .expect("complete scene binding");
+    assert_eq!(tessellations.len(), 1);
+    assert!((tessellations[0].0.vertices[1].x - 1.0).abs() < 1e-6);
+    assert!((tessellations[0].0.vertices[2].y - 2.0).abs() < 1e-6);
+    assert_eq!(tessellations[0].0.triangles, vec![[0, 1, 2]]);
+    assert_eq!(
+        tessellations[0].0.source_object.as_ref().unwrap().object_id,
+        "shape-node"
+    );
+    assert_eq!(tessellations[0].1, 120);
+}
+
+#[test]
 fn jt9_topology_bounds_variable_high_degree_lane_count() {
     fn representation(high_degree_lanes: usize, topological_vertices: u32) -> Vec<u8> {
         let mut bytes = vec![0; (21 + high_degree_lanes + 2) * 4];

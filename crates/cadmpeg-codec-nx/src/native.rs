@@ -300,7 +300,7 @@ pub struct DisplayJtVertexCoordinateArrayHeader {
     pub source_offset: u64,
 }
 
-/// Lossless model-space coordinates decoded from one JT 9 vertex array.
+/// Model-space coordinates decoded from one JT 9 vertex array.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DisplayJtVertexCoordinates {
     /// Globally unique coordinate-array identity.
@@ -311,9 +311,9 @@ pub struct DisplayJtVertexCoordinates {
     pub points_m: Vec<[f32; 3]>,
     /// Combined hash serialized after the component vectors.
     pub coordinate_hash: u32,
-    /// Complete byte length of the six component packets and hash.
+    /// Complete byte length of the component packets and hash.
     pub byte_len: u32,
-    /// Absolute source offset of the first exponent packet.
+    /// Absolute source offset of the first component packet.
     pub source_offset: u64,
 }
 

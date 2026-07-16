@@ -39,6 +39,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -53,6 +54,115 @@ use crate::parasolid::{self, Stream, StreamKind};
 use crate::topology::{Graph, Node};
 
 pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
+
+#[derive(Clone, Copy)]
+pub(crate) struct DisplayJtTessellationInputs<'a> {
+    pub(crate) meshes: &'a [crate::native::DisplayJtPolygonMesh],
+    pub(crate) coordinates: &'a [crate::native::DisplayJtVertexCoordinates],
+    pub(crate) coordinate_headers: &'a [crate::native::DisplayJtVertexCoordinateArrayHeader],
+    pub(crate) shape_elements: &'a [crate::native::DisplayJtShapeLodElement],
+    pub(crate) bindings: &'a [crate::native::DisplayJtShapeLodBinding],
+    pub(crate) shape_nodes: &'a [crate::native::DisplayJtTriStripShapeNode],
+    pub(crate) base_nodes: &'a [crate::native::DisplayJtBaseNodeData],
+    pub(crate) compressed_elements: &'a [crate::native::DisplayJtCompressedElement],
+}
+
+pub(crate) fn display_jt_tessellations(
+    inputs: DisplayJtTessellationInputs<'_>,
+) -> Option<Vec<(Tessellation, u64)>> {
+    let DisplayJtTessellationInputs {
+        meshes,
+        coordinates,
+        coordinate_headers,
+        shape_elements,
+        bindings,
+        shape_nodes,
+        base_nodes,
+        compressed_elements,
+    } = inputs;
+    let mut tessellations = Vec::new();
+    for mesh in meshes {
+        let coordinate_header = coordinate_headers
+            .iter()
+            .find(|header| header.id == mesh.coordinate_header)?;
+        let coordinates = coordinates
+            .iter()
+            .find(|coordinates| coordinates.header == coordinate_header.id)?;
+        let shape_element = shape_elements
+            .iter()
+            .find(|element| element.id == coordinate_header.element)?;
+        let mut matching_bindings = bindings.iter().filter(|binding| {
+            binding.shape_segment == shape_element.segment
+                && binding.payload_object_id == shape_element.object_id
+        });
+        let binding = matching_bindings.next()?;
+        if matching_bindings.next().is_some() {
+            return None;
+        }
+        let mut matching_nodes = shape_nodes.iter().filter(|node| {
+            if node.object_id != binding.shape_node_object_id {
+                return false;
+            }
+            let Some(base) = base_nodes.iter().find(|base| base.id == node.base_node) else {
+                return false;
+            };
+            compressed_elements
+                .iter()
+                .find(|element| element.id == base.element)
+                .is_some_and(|element| element.segment == binding.scene_segment)
+        });
+        let shape_node = matching_nodes.next()?;
+        if matching_nodes.next().is_some() {
+            return None;
+        }
+        let mut triangles = Vec::new();
+        for (polygon, &group) in mesh.polygons.iter().zip(&mesh.polygon_groups) {
+            if group < 0 {
+                continue;
+            }
+            let triangle: [u32; 3] = polygon.as_slice().try_into().ok()?;
+            triangles.push(triangle);
+        }
+        if triangles.is_empty() {
+            return None;
+        }
+        tessellations.push((
+            Tessellation {
+                id: format!(
+                    "nx:display-jt:tessellation#{}-{}",
+                    shape_element.source_offset, shape_element.object_id
+                ),
+                body: None,
+                source_object: Some(SourceObjectAssociation {
+                    format: "nx".to_string(),
+                    object_id: shape_node.id.clone(),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+                vertices: coordinates
+                    .points_m
+                    .iter()
+                    .map(|point| {
+                        Point3::new(
+                            f64::from(point[0]) * 1000.0,
+                            f64::from(point[1]) * 1000.0,
+                            f64::from(point[2]) * 1000.0,
+                        )
+                    })
+                    .collect(),
+                triangles,
+                strip_lengths: Vec::new(),
+                normals: Vec::new(),
+                channels: Vec::new(),
+            },
+            shape_node.source_offset,
+        ));
+    }
+    Some(tessellations)
+}
 
 /// Parsed container data shared by inspection and entity decoding.
 pub struct Scan {
@@ -808,6 +918,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         &counts,
         !ir.model.faces.is_empty(),
         ir.model.bodies.len() > 1 && !active_body_selection,
+        ir.model.tessellations.len(),
     );
     Some((ir, report))
 }
@@ -6255,6 +6366,7 @@ fn build_geometry_report(
     counts: &Counts,
     has_topology: bool,
     has_unresolved_sub_bodies: bool,
+    tessellation_count: usize,
 ) -> DecodeReport {
     let mut losses = Vec::new();
 
@@ -6280,6 +6392,17 @@ fn build_geometry_report(
         ),
         provenance: None,
     });
+
+    if tessellation_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Decoded {tessellation_count} embedded JT display tessellation(s) with scene-node ownership, model-space coordinates, and topological triangle connectivity."
+            ),
+            provenance: None,
+        });
+    }
 
     if !has_topology {
         losses.push(LossNote {
@@ -6528,6 +6651,17 @@ fn attach_native_object_model(
         &display_jt_segments,
         &display_jt_documents,
     );
+    let display_jt_tessellations = display_jt_tessellations(DisplayJtTessellationInputs {
+        meshes: &display_jt_polygon_meshes,
+        coordinates: &display_jt_vertex_coordinates,
+        coordinate_headers: &display_jt_coordinate_array_headers,
+        shape_elements: &display_jt_shape_lod_elements,
+        bindings: &display_jt_shape_lod_bindings,
+        shape_nodes: &display_jt_tri_strip_shape_nodes,
+        base_nodes: &display_jt_base_node_data,
+        compressed_elements: &display_jt_compressed_elements,
+    })
+    .unwrap_or_default();
     let feature_datum_csys_constructions =
         crate::native::feature_datum_csys_constructions(&scan.container);
     let feature_datum_csys_payloads = crate::native::feature_datum_csys_payloads(
@@ -6877,6 +7011,13 @@ fn attach_native_object_model(
         return Ok(());
     }
     let annotation_stream = annotations.stream("nx:container");
+    for (tessellation, source_offset) in display_jt_tessellations {
+        annotations
+            .note(&tessellation.id, annotation_stream, source_offset)
+            .tag("DISPLAY_JT_TESSELLATION");
+        annotations.exactness(&tessellation.id, Exactness::Derived);
+        ir.model.tessellations.push(tessellation);
+    }
     for index in &display_jt_indices {
         annotations
             .note(&index.id, annotation_stream, index.source_offset)

@@ -55,8 +55,9 @@
 //!
 //! Ordered feature-operation records, body dependencies, Boolean operations,
 //! sketch record lanes, and numeric expressions transfer from the NX object
-//! model. Complete design history, assembly occurrence placement, materials,
-//! appearances, entity-owned attributes, tessellation, and `.prt` writing are not supported.
+//! model. Embedded JT coordinates and triangle connectivity transfer as canonical
+//! tessellations. Complete design history, assembly occurrence placement, materials,
+//! appearances, tessellation channels, entity-owned attributes, and `.prt` writing are not supported.
 //! Part attributes transfer as document attributes. The public submodules
 //! expose the lower-level container, stream, geometry, NURBS, intersection, and
 //! topology decoders; applications that need a complete IR entry point should
