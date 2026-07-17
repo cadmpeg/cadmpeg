@@ -2105,6 +2105,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     let mut sketch_point_identities = HashSet::new();
+    let mut sketch_geometry_records = HashSet::new();
     for point in &native.sketch_points {
         if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
             findings.push(Finding {
@@ -2124,6 +2125,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 entity: Some(point.id.clone()),
             });
         }
+        if !sketch_geometry_records.insert((design_stream(&point.id), point.record_index)) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion sketch geometry aliases another typed indexed record".into(),
+                entity: Some(point.id.clone()),
+            });
+        }
     }
     let mut sketch_curve_identities = HashSet::new();
     for curve in &native.sketch_curve_identities {
@@ -2138,6 +2147,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: "Fusion sketch curve has an invalid persistent identity".into(),
+                entity: Some(curve.id.clone()),
+            });
+        }
+        if !sketch_geometry_records.insert((design_stream(&curve.id), curve.record_index)) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion sketch geometry aliases another typed indexed record".into(),
                 entity: Some(curve.id.clone()),
             });
         }

@@ -8478,6 +8478,29 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
 }
 
 #[test]
+fn validation_rejects_aliased_sketch_geometry_records() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut ir = decoded.ir;
+    let curve_id = {
+        let mut native = f3d_native_mut(&mut ir);
+        let point_record_index = native.sketch_points[0].record_index;
+        native.sketch_curve_identities[0].record_index = point_record_index;
+        native.sketch_curve_identities[0].id.clone()
+    };
+
+    assert!(crate::validate_native(&ir).iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::NativeLinks
+            && finding.entity.as_deref() == Some(curve_id.as_str())
+            && finding
+                .message
+                .contains("aliases another typed indexed record")
+    }));
+}
+
+#[test]
 fn validation_rejects_duplicate_design_entity_suffixes() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
