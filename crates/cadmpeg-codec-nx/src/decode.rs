@@ -24,7 +24,7 @@ use cadmpeg_ir::features::{
     ConfigurationId, DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceSelection,
     Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleForm,
     HoleKind, Length, ParameterId, ParameterValue, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
-    RibConstruction, RibDraft, SketchSpace,
+    RibConstruction, RibDraft, SketchSpace, ThickenSide,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -10431,9 +10431,10 @@ pub(crate) fn offset_surface_feature_definition(
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
     let (body, distance, supports) = owned_offset_surface_data(ir, outputs)?;
     let native = format!("{}:offset-support-surfaces", body.0);
+    let (faces, _) = support_face_projection(ir, &supports, native);
     Some((
         FeatureDefinition::OffsetSurface {
-            faces: support_face_selection(ir, &supports, native),
+            faces,
             distance: Some(Length(distance)),
         },
         supports,
@@ -10484,17 +10485,29 @@ pub(crate) fn thicken_feature_definition(
         return None;
     }
     let native = format!("{}:thicken-support-surfaces", body.0);
+    let (faces, senses) = support_face_projection(ir, &supports, native);
+    let side = senses.and_then(|senses| {
+        let (first, rest) = senses.split_first()?;
+        let first = thicken_side(distance, *first);
+        rest.iter()
+            .all(|sense| thicken_side(distance, *sense) == first)
+            .then_some(first)
+    });
     Some((
         FeatureDefinition::Thicken {
-            faces: support_face_selection(ir, &supports, native),
+            faces,
             thickness: Some(Length(distance.abs())),
-            side: None,
+            side,
         },
         supports,
     ))
 }
 
-fn support_face_selection(ir: &CadIr, supports: &[SurfaceId], native: String) -> FaceSelection {
+fn support_face_projection(
+    ir: &CadIr,
+    supports: &[SurfaceId],
+    native: String,
+) -> (FaceSelection, Option<Vec<Sense>>) {
     let faces = supports
         .iter()
         .map(|support| {
@@ -10503,19 +10516,33 @@ fn support_face_selection(ir: &CadIr, supports: &[SurfaceId], native: String) ->
                 .faces
                 .iter()
                 .filter(|face| face.surface == *support)
-                .map(|face| face.id.clone())
                 .collect::<Vec<_>>();
             let [face] = matches.as_slice() else {
                 return None;
             };
-            Some(face.clone())
+            Some((face.id.clone(), face.sense))
         })
         .collect::<Option<Vec<_>>>();
     match faces {
-        Some(faces) if faces.iter().collect::<BTreeSet<_>>().len() == faces.len() => {
-            FaceSelection::Resolved { faces, native }
+        Some(faces)
+            if faces
+                .iter()
+                .map(|(face, _)| face)
+                .collect::<BTreeSet<_>>()
+                .len()
+                == faces.len() =>
+        {
+            let (faces, senses): (Vec<_>, Vec<_>) = faces.into_iter().unzip();
+            (FaceSelection::Resolved { faces, native }, Some(senses))
         }
-        _ => FaceSelection::Native(native),
+        _ => (FaceSelection::Native(native), None),
+    }
+}
+
+fn thicken_side(distance: f64, sense: Sense) -> ThickenSide {
+    match (distance.is_sign_positive(), sense) {
+        (true, Sense::Forward) | (false, Sense::Reversed) => ThickenSide::Forward,
+        (true, Sense::Reversed) | (false, Sense::Forward) => ThickenSide::Reverse,
     }
 }
 

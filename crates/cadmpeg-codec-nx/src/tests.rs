@@ -3531,7 +3531,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 
 #[test]
 fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
@@ -3583,8 +3583,27 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         definition,
         FeatureDefinition::Thicken {
             faces: FaceSelection::Resolved { faces, .. },
+            side: Some(ThickenSide::Reverse),
             ..
         } if faces.len() == 2
+    ));
+
+    ir.model
+        .faces
+        .iter_mut()
+        .find(|face| face.surface == SurfaceId("nx:s4:nurbs-surf#1".into()))
+        .expect("second support face")
+        .sense = cadmpeg_ir::topology::Sense::Reversed;
+    let (definition, _) =
+        crate::decode::thicken_feature_definition(&ir, std::slice::from_ref(&output))
+            .expect("mixed support senses preserve thicken semantics");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Thicken {
+            faces: FaceSelection::Resolved { .. },
+            side: None,
+            ..
+        }
     ));
 
     ir.model.procedural_surfaces.push(make_offset(99, 40.0));
