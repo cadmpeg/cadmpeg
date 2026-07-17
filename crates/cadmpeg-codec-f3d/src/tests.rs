@@ -16997,3 +16997,73 @@ mod fidelity {
         assert_eq!(json(&f3d), json(&f3d));
     }
 }
+
+/// Every container entry the decode walks issues a record ticket that
+/// `finish` resolves, so `Check::TransferAccounting` (§6.2) passes in both
+/// decode modes over a geometry archive and a metadata-fallback archive alike.
+///
+/// The trait-level `decode` runs `finish`, which validates the resolved
+/// disposition table against the ledger and the report's losses; a `Malformed`
+/// error in strict mode or a degraded-loss report in salvage mode would mean an
+/// unresolved or inconsistent ticket. A successful decode in strict mode is the
+/// strongest per-record accounting assertion the engine offers.
+#[test]
+fn transfer_accounting_passes_in_both_modes() {
+    fn options(mode: DecodeMode) -> DecodeOptions {
+        DecodeOptions {
+            container_only: false,
+            policy: DecodePolicy {
+                mode,
+                limits: ResourceLimits::default(),
+            },
+        }
+    }
+
+    for fixture in [
+        f3d_with_smbh_and_protein(&synthetic_geometry_smbh()),
+        synthetic_f3d(true),
+        synthetic_f3d(false),
+    ] {
+        for mode in [DecodeMode::Strict, DecodeMode::Salvage] {
+            let result = F3dCodec
+                .decode(&mut Cursor::new(fixture.clone()), &options(mode))
+                .unwrap_or_else(|e| panic!("{mode:?} decode failed transfer accounting: {e:?}"));
+            // A strict decode never carries an auto-drop or accounting-violation
+            // loss note: those are the salvage-only degrade spellings.
+            if mode == DecodeMode::Strict {
+                assert!(
+                    !result
+                        .report
+                        .losses
+                        .iter()
+                        .any(|loss| loss.message.contains("transfer accounting")
+                            || loss.message.contains("auto-dropped")),
+                    "strict decode surfaced an accounting degrade note"
+                );
+            }
+        }
+    }
+}
+
+/// A metadata-fallback archive with a preview asset resolves its untransferred
+/// records honestly: the active B-rep stream drops against the blocking geometry
+/// loss and the preview drops against a distinct appended note, so no walked
+/// record is silently lost.
+#[test]
+fn metadata_fallback_drops_are_accounted() {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(synthetic_f3d(true)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!result.report.geometry_transferred);
+    assert!(
+        result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("thumbnail.png")),
+        "the walked preview asset must carry its own drop note"
+    );
+}
