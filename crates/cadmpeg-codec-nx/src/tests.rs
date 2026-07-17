@@ -2788,6 +2788,21 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         FeatureDefinition, HoleKind, PatternKind, RibDraft,
     };
 
+    for (kind, op) in [
+        ("UNITE", BooleanOp::Join),
+        ("SUBTRACT", BooleanOp::Cut),
+        ("INTERSECT", BooleanOp::Intersect),
+    ] {
+        assert_eq!(
+            crate::decode::non_boolean_feature_definition(kind, &[], None, None, None),
+            FeatureDefinition::Combine {
+                target: BodySelection::Unresolved,
+                tools: BodySelection::Unresolved,
+                op,
+            }
+        );
+    }
+
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None),
         FeatureDefinition::Hole {

@@ -139,6 +139,11 @@ operation-header index encoding, and contains no null indices. The target list
 contains exactly one reference. The tool list contains at least one reference
 and preserves tool order.
 
+Each of these labels projects as a neutral combine with join, cut, or intersect
+semantics respectively. A complete Boolean header supplies the target and
+ordered tool selections. An absent or invalid header leaves both selections
+unresolved without discarding the operation family or Boolean kind.
+
 A body-affecting operation record contains exactly one primary-body field
 `01 02 10 body_object_index ff`. The object index uses the operation-header
 encoding. Operations sharing the index form one ordered body lineage. An

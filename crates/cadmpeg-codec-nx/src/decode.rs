@@ -10741,6 +10741,18 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             placement: block_placement,
         };
     }
+    if let Some(op) = match kind {
+        "UNITE" => Some(BooleanOp::Join),
+        "SUBTRACT" => Some(BooleanOp::Cut),
+        "INTERSECT" => Some(BooleanOp::Intersect),
+        _ => None,
+    } {
+        return FeatureDefinition::Combine {
+            target: BodySelection::Unresolved,
+            tools: BodySelection::Unresolved,
+            op,
+        };
+    }
     match kind {
         "DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
         "DATUM_CSYS" => FeatureDefinition::DatumCoordinateSystemUnresolved,
