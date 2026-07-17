@@ -7,7 +7,8 @@ This document records F3D semantics that the format specification does not yet d
 - The payload grammars for `crv_crv_v_bl_spl_sur`, `crv_srf_v_bl_spl_sur`, `sfcv_free_bl_spl_sur`, `VBL_OFFSURF` / `offsetvbsur`, and `skin_spl_sur2` are undefined. A valid final solved cache supplies the exact face shape while the complete construction record remains opaque. Cacheless occurrences cannot select the existing variable-blend, skin, or offset layouts without subtype-specific field boundaries.
 - The basic surface record names `offset` and `sur-sur-int` are registered carrier names, but their record payloads and exact-geometry relations are undefined. They remain unknown surface carriers unless a spline subtype supplies a solved cache and construction graph.
 - Variable-arity algebraic `readLaw` operators `MIN`, `MAX`, and `STEP` have no defined serialized child-count or terminating delimiter. Their recursive boundaries cannot yet be decoded or written losslessly inside law, net, skin, and sweep payloads.
-- The semantic role of the Boolean between the secondary and tertiary pcurves in a modern variable-blend support side is unresolved.
+- The semantic role of the integer between the secondary and tertiary pcurves in a variable-blend support side is unresolved.
+- Whether the six integers between a variable-blend cache fit tolerance and the tail Boolean are three counted discontinuity arrays followed by three integers or six plain integers is unresolved when every count and value is zero. The semantic roles of that tail Boolean and of the three integers that follow it are also unresolved.
 
 ## Container, header, and design records
 
