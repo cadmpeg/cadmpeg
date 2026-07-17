@@ -322,6 +322,10 @@ pub struct DecodedMaterials {
     pub bindings: Vec<AppearanceBinding>,
     /// Per-face appearance assignments awaiting the BREP face-attribute join.
     pub face_assignments: Vec<FaceAppearanceAssignment>,
+    /// Appearance-id to originating `.protein` entry name, first writer wins.
+    /// Lets record accounting attribute each appearance to the single archive
+    /// that decoded it instead of the flattened union (§6.2).
+    pub appearance_origins: BTreeMap<String, String>,
 }
 
 /// Decode `.protein` assets and Design and ACT assignments without ASM body
@@ -347,6 +351,7 @@ pub fn decode_with_bodies<'a, S: std::hash::BuildHasher>(
     body_keys: &std::collections::HashMap<BodyId, u64, S>,
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
+    let mut appearance_origins: BTreeMap<String, String> = BTreeMap::new();
     for entry in scan
         .entries
         .iter()
@@ -371,6 +376,11 @@ pub fn decode_with_bodies<'a, S: std::hash::BuildHasher>(
                     appearance.category = category.clone();
                 }
             }
+        }
+        for appearance in &appearances {
+            appearance_origins
+                .entry(appearance.id.0.clone())
+                .or_insert_with(|| entry.name.clone());
         }
         out.extend(appearances);
     }
@@ -447,6 +457,7 @@ pub fn decode_with_bodies<'a, S: std::hash::BuildHasher>(
         appearances: out,
         bindings,
         face_assignments,
+        appearance_origins,
     })
 }
 

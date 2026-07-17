@@ -41,7 +41,14 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         preserve_source_image(&scan, &mut ir)?;
         let mut report = build_container_report(&scan, true);
         report.source_fidelity = Some(build_source_fidelity(&scan)?);
-        account_records(ctx, source_space, &scan, &ir, &mut report);
+        account_records(
+            ctx,
+            source_space,
+            &scan,
+            &ir,
+            &std::collections::BTreeMap::new(),
+            &mut report,
+        );
         return Ok(DecodeResult::new(ir, report));
     }
 
@@ -147,7 +154,14 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             );
             preserve_source_image(&scan, &mut ir)?;
             report.source_fidelity = Some(build_source_fidelity(&scan)?);
-            account_records(ctx, source_space, &scan, &ir, &mut report);
+            account_records(
+                ctx,
+                source_space,
+                &scan,
+                &ir,
+                &decoded_materials.appearance_origins,
+                &mut report,
+            );
             return Ok(DecodeResult::new(ir, report));
         }
     }
@@ -193,7 +207,14 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     preserve_source_image(&scan, &mut ir)?;
     let mut report = build_container_report(&scan, false);
     report.source_fidelity = Some(build_source_fidelity(&scan)?);
-    account_records(ctx, source_space, &scan, &ir, &mut report);
+    account_records(
+        ctx,
+        source_space,
+        &scan,
+        &ir,
+        &decoded_materials.appearance_origins,
+        &mut report,
+    );
     Ok(DecodeResult::new(ir, report))
 }
 
@@ -224,6 +245,7 @@ fn account_records(
     source_space: SpaceId,
     scan: &ContainerScan,
     ir: &CadIr,
+    appearance_origins: &std::collections::BTreeMap<String, String>,
     report: &mut DecodeReport,
 ) {
     use container::role;
@@ -242,6 +264,14 @@ fn account_records(
             continue;
         }
         let role_label = container::classify(&entry.name);
+        // Every admitted entry carries a data offset (`admit_entry` refuses those
+        // without one), so it is always tiled into `layout`; a miss is a scan
+        // invariant break, surfaced in debug builds rather than mislocated to 0.
+        debug_assert!(
+            offsets.contains_key(entry.name.as_str()),
+            "container entry {} absent from scan layout",
+            entry.name
+        );
         let location = SourceLocation {
             space: source_space,
             offset: offsets.get(entry.name.as_str()).copied().unwrap_or(0),
@@ -273,15 +303,22 @@ fn account_records(
                 }
             }
             role::PROTEIN => {
-                if !ir.model.appearances.is_empty() {
-                    RecordDisposition::Typed {
-                        outputs: ir
-                            .model
-                            .appearances
-                            .iter()
-                            .map(|appearance| appearance.id.0.clone())
-                            .collect(),
-                    }
+                // Attribute only the appearances this archive decoded, keyed by the
+                // per-entry origin map, so multiple `.protein` archives never each
+                // claim the flattened union (§6.2). An archive that decoded nothing
+                // resolves via its material loss, not a borrowed transfer.
+                let outputs: Vec<String> = ir
+                    .model
+                    .appearances
+                    .iter()
+                    .filter(|appearance| {
+                        appearance_origins.get(&appearance.id.0).map(String::as_str)
+                            == Some(entry.name.as_str())
+                    })
+                    .map(|appearance| appearance.id.0.clone())
+                    .collect();
+                if !outputs.is_empty() {
+                    RecordDisposition::Typed { outputs }
                 } else if !material_note_taken {
                     match find_loss(report, LossCategory::Material, |_| true) {
                         Some(loss) => {
