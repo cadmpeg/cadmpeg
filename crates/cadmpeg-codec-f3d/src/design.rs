@@ -1067,6 +1067,20 @@ fn design_angle_unit(unit: &str) -> bool {
     matches!(unit, "deg" | "rad")
 }
 
+fn design_dimension_unit(parameter: &DesignParameter) -> bool {
+    let unit = parameter.unit.as_deref();
+    if parameter.source_kind.starts_with("Linear Dimension")
+        || parameter.source_kind.starts_with("Radius Dimension")
+        || parameter.source_kind.starts_with("Diameter Dimension")
+    {
+        return unit.is_some_and(design_length_unit);
+    }
+    if parameter.source_kind.starts_with("Angular Dimension") {
+        return unit.is_some_and(design_angle_unit);
+    }
+    false
+}
+
 /// Count parameters whose unit token has no settled neutral quantity kind.
 pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> usize {
     parameters
@@ -4287,11 +4301,15 @@ pub fn project_dimension_constraints(
             .collect(),
     };
     let exact_definition = |scope: &str,
-                            source_kind: &str,
+                            source_parameter: &DesignParameter,
                             indices: &[u32],
-                            evaluated_value: f64,
                             parameter: cadmpeg_ir::features::ParameterId|
      -> Option<Definition> {
+        if !design_dimension_unit(source_parameter) {
+            return None;
+        }
+        let source_kind = source_parameter.source_kind.as_str();
+        let evaluated_value = source_parameter.evaluated_value;
         let entities = indices
             .iter()
             .map(|record_index| projected.get(&(scope, *record_index)).copied())
@@ -4379,6 +4397,9 @@ pub fn project_dimension_constraints(
                                   parameter: &DesignParameter,
                                   parameter_id: cadmpeg_ir::features::ParameterId|
      -> Option<Definition> {
+        if !design_dimension_unit(parameter) {
+            return None;
+        }
         let entities = group
             .loci
             .iter()
@@ -4404,13 +4425,7 @@ pub fn project_dimension_constraints(
                 .iter()
                 .map(|locus| locus.geometry_record_index)
                 .collect::<Vec<_>>();
-            return exact_definition(
-                scope,
-                &parameter.source_kind,
-                &indices,
-                parameter.evaluated_value,
-                parameter_id,
-            );
+            return exact_definition(scope, parameter, &indices, parameter_id);
         }
         if parameter.source_kind.starts_with("Linear Dimension") {
             if group.state == 0x20 && group.unknown_constraint_bits == 0 {
@@ -4470,14 +4485,8 @@ pub fn project_dimension_constraints(
                 pair.first_geometry_record_index,
                 pair.second_geometry_record_index,
             ];
-            exact_definition(
-                scope,
-                &parameter.source_kind,
-                &indices,
-                parameter.evaluated_value,
-                parameter_id,
-            )
-            .map(|_| (scope.to_owned(), pair.companion_record_index))
+            exact_definition(scope, parameter, &indices, parameter_id)
+                .map(|_| (scope.to_owned(), pair.companion_record_index))
         })
         .collect::<HashSet<_>>();
     let parameterized_offset_companions = groups
@@ -4529,25 +4538,19 @@ pub fn project_dimension_constraints(
             ];
             let sketch = sketch_for_geometry(scope, &indices)?;
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair");
-            let definition = exact_definition(
-                scope,
-                &parameter.source_kind,
-                &indices,
-                parameter.evaluated_value,
-                parameter_id.clone(),
-            )
-            .unwrap_or_else(|| {
-                native_definition(
-                    scope,
-                    &parameter.source_kind,
-                    None,
-                    &[
-                        ("first_locus", Some(pair.first_role), indices[0]),
-                        ("second_locus", Some(pair.second_role), indices[1]),
-                    ],
-                    parameter_id,
-                )
-            });
+            let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
+                .unwrap_or_else(|| {
+                    native_definition(
+                        scope,
+                        &parameter.source_kind,
+                        None,
+                        &[
+                            ("first_locus", Some(pair.first_role), indices[0]),
+                            ("second_locus", Some(pair.second_role), indices[1]),
+                        ],
+                        parameter_id,
+                    )
+                });
             Some(SketchConstraint {
                 id: constraint_id,
                 sketch,
@@ -4603,20 +4606,22 @@ pub fn project_dimension_constraints(
             let indices = [pair.geometry_record_index];
             let sketch = sketch_for_geometry(scope, &indices)?;
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "null-pair");
-            if let Some(entity) = projected.get(&(scope, pair.geometry_record_index)) {
-                if let Some(definition) = null_locus_dimension_definition(
-                    pair,
-                    entity,
-                    &parameter.source_kind,
-                    parameter.evaluated_value,
-                    parameter_id.clone(),
-                ) {
-                    return Some(SketchConstraint {
-                        id: constraint_id,
-                        sketch,
-                        definition,
-                        native_ref: Some(pair.id.clone()),
-                    });
+            if design_dimension_unit(parameter) {
+                if let Some(entity) = projected.get(&(scope, pair.geometry_record_index)) {
+                    if let Some(definition) = null_locus_dimension_definition(
+                        pair,
+                        entity,
+                        &parameter.source_kind,
+                        parameter.evaluated_value,
+                        parameter_id.clone(),
+                    ) {
+                        return Some(SketchConstraint {
+                            id: constraint_id,
+                            sketch,
+                            definition,
+                            native_ref: Some(pair.id.clone()),
+                        });
+                    }
                 }
             }
             let operands = vec![
@@ -4701,7 +4706,9 @@ pub fn project_dimension_constraints(
             let sketch = sketches_by_scope
                 .get(&(scope.as_str(), owner.scope_record_index))?
                 .clone();
-            let linear_candidates = if parameter.source_kind.starts_with("Linear Dimension") {
+            let linear_candidates = if parameter.source_kind.starts_with("Linear Dimension")
+                && design_dimension_unit(parameter)
+            {
                 recipe_linear_dimension_candidates(
                     entities,
                     &sketch,
@@ -15643,6 +15650,38 @@ mod relation_tests {
 
     #[test]
     fn dimension_proofs_require_the_evaluated_measurement() {
+        let dimension = |source_kind: &str, unit: &str| {
+            parse_design_parameter(&parameter_record(
+                Some(44),
+                "value",
+                source_kind,
+                Some(unit),
+                "d1",
+                1.0,
+            ))
+            .expect("generated dimension parameter is canonical")
+        };
+        assert!(super::design_dimension_unit(&dimension(
+            "Linear Dimension-2",
+            "mm"
+        )));
+        assert!(!super::design_dimension_unit(&dimension(
+            "Linear Dimension-2",
+            "deg"
+        )));
+        assert!(super::design_dimension_unit(&dimension(
+            "Angular Dimension-2",
+            "rad"
+        )));
+        assert!(!super::design_dimension_unit(&dimension(
+            "Angular Dimension-2",
+            "mm"
+        )));
+        assert!(!super::design_dimension_unit(&dimension(
+            "Radius Dimension-2",
+            "native-unit"
+        )));
+
         let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
             id: SketchEntityId(id.into()),
             sketch: SketchId("generated:sketch#0".into()),
