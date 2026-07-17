@@ -71,6 +71,8 @@ enum Token {
     Ref,
     Tolerance,
     Sense,
+    OffsetDiscriminator,
+    Boolean,
     Position,
     Vector,
     Scalar,
@@ -240,6 +242,18 @@ const COMPACT_TWO_REFS: &[Token] = &[
     Token::Ref,
     Token::Ref,
 ];
+const OFFSET_SURFACE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::OffsetDiscriminator,
+    Token::Boolean,
+    Token::Ref,
+    Token::Scalar,
+];
 const COMPOSITE_CURVE: &[Token] = &[
     Token::Ref,
     Token::Ref,
@@ -325,7 +339,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
-        if matches!(kind, 12..=19 | 29..=32 | 50..=54 | 124 | 134)
+        if matches!(kind, 12..=19 | 29..=32 | 50..=54 | 60 | 124 | 134)
             && crate::topology::Graph::parse(&record.canonical_bytes)
                 .get(kind, record.xmt)
                 .is_some()
@@ -459,6 +473,16 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
                 canonical_bytes.push(*stream.get(at)?);
                 at += 1;
             }
+            Token::OffsetDiscriminator => {
+                matches!(stream.get(at), Some(b'V' | b'I' | b'U')).then_some(())?;
+                canonical_bytes.push(*stream.get(at)?);
+                at += 1;
+            }
+            Token::Boolean => {
+                matches!(stream.get(at), Some(0 | 1)).then_some(())?;
+                canonical_bytes.push(*stream.get(at)?);
+                at += 1;
+            }
             Token::Position => {
                 let xyz = be::vec3_at(stream, at)?;
                 xyz.iter().all(|value| value.is_finite()).then_some(())?;
@@ -527,6 +551,7 @@ fn family_name(kind: u16) -> Option<&'static str> {
         52 => "CONE",
         53 => "SPHERE",
         54 => "TORUS",
+        60 => "OFFSET_SURF",
         38 => "INTERSECTION",
         124 => "B_SURFACE",
         134 => "B_CURVE",
@@ -554,6 +579,7 @@ fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
         52 => CONE,
         53 => SPHERE,
         54 => TORUS,
+        60 => OFFSET_SURFACE,
         38 => COMPOSITE_CURVE,
         124 => COMPACT_TWO_REFS,
         134 => COMPACT_TWO_REFS,

@@ -377,7 +377,7 @@ Lengths are logical, before escape/large-index shifts. Each code is a Parasolid 
 |   15 | LOOP    |     16 |   53 | SPHERE        | 99         |
 |   16 | EDGE    |     32 |   54 | TORUS         | 107        |
 |   17 | FIN     |     23 |   56 | BLEND_SURF    | 66 + shift |
-|   18 | VERTEX  |     28 |   60 | OFFSET_SURF   | 39         |
+|   18 | VERTEX  |     28 |   60 | OFFSET_SURF   | 31         |
 |   19 | REGION  |     16 |  124 | B_SURFACE     | 23         |
 |   29 | POINT   |     40 |  133 | TRIMMED_CURVE | 85 + shift |
 |   30 | LINE    |     67 |  134 | B_CURVE       | 23         |

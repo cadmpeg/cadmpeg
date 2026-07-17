@@ -7002,7 +7002,7 @@ fn build_geometry_report(
             message: format!(
                 "{} Parasolid deltas stream(s) were paired with the preceding equal-schema partition \
                  in validated UG_PART segment order. Exact-key \
-                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, B_SURFACE, and B_CURVE full records and compact \
+                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, OFFSET_SURF, B_SURFACE, and B_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
                  each key. Validated partition topology remained authoritative, including any \
                  point, curve, or surface carrier still referenced by surviving topology. \

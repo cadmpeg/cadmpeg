@@ -9173,7 +9173,7 @@ fn offset_surface_topology_partition_stream() -> Vec<u8> {
         .expect("face record");
     put_ref(&mut stream, face + 26, 12);
 
-    let mut offset = record(60, 39);
+    let mut offset = record(60, 31);
     put_ref(&mut offset, 2, 12);
     offset[18] = b'+';
     offset[19] = b'V';
@@ -9203,6 +9203,23 @@ fn nx_offset_surface_accepts_unbounded_representable_distance() {
 
     put_f64(&mut stream, offset + 23, f64::MAX);
     assert!(crate::topology::offset_surfaces(&stream).is_empty());
+}
+
+#[test]
+fn offset_surface_envelope_does_not_consume_the_following_record() {
+    let mut stream = offset_surface_topology_partition_stream();
+    let offset_end = stream.len();
+    let mut point = record(29, 40);
+    put_ref(&mut point, 2, 20);
+    put_vec3(&mut point, 16, [0.001, 0.002, 0.003]);
+    stream.extend(point);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(
+        graph.get(60, 12).map(crate::topology::Node::end),
+        Some(offset_end)
+    );
+    assert!(graph.get(29, 20).is_some());
 }
 
 fn surface_curve_topology_partition_stream() -> Vec<u8> {
@@ -9974,6 +9991,25 @@ fn deltas_plane_partition_stream() -> Vec<u8> {
     for value in [0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0] {
         stream.extend_from_slice(&value.to_be_bytes());
     }
+    stream
+}
+
+fn deltas_offset_surface_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&60u16.to_be_bytes());
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&907u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    stream.extend_from_slice(b"V");
+    stream.push(1);
+    stream.extend_from_slice(&6u16.to_be_bytes());
+    stream.push(1);
+    stream.extend_from_slice(&0.004_5f64.to_be_bytes());
     stream
 }
 
@@ -12388,6 +12424,35 @@ fn deltas_intersection_normalizes_before_partition_style_decode() {
 }
 
 #[test]
+fn deltas_offset_surface_normalizes_exact_record_envelope() {
+    let stream = deltas_offset_surface_partition_stream();
+    let record = crate::deltas::walk(&stream).records.remove(0);
+    assert_eq!(record.canonical_bytes.len(), 31);
+    assert_eq!(
+        crate::topology::offset_surfaces(&record.canonical_bytes)[0].distance,
+        4.5
+    );
+
+    let mut invalid_status = stream.clone();
+    let offset = invalid_status
+        .windows(4)
+        .position(|window| window == [0, 60, 0, 12])
+        .expect("OFFSET_SURF record");
+    invalid_status[offset + 28] = 0;
+    assert!(!crate::deltas::walk(&invalid_status)
+        .records
+        .iter()
+        .any(|record| record.kind == 60));
+
+    let mut truncated = stream;
+    truncated.pop();
+    assert!(!crate::deltas::walk(&truncated)
+        .records
+        .iter()
+        .any(|record| record.kind == 60));
+}
+
+#[test]
 fn merged_deltas_full_record_replaces_partition_node() {
     let partition = topology_partition_stream();
     let mut deltas = status_framed_deltas_point_stream();
@@ -12587,6 +12652,35 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
         result.ir.model.faces[0].surface,
         result.ir.model.surfaces[0].id
     );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
+    let partition = offset_surface_topology_partition_stream();
+    let deltas = deltas_offset_surface_partition_stream();
+    let census = crate::deltas::walk(&deltas);
+    assert_eq!(census.full_counts.get("OFFSET_SURF"), Some(&1));
+    let merged = crate::deltas::merge_full_records(&partition, &deltas);
+    assert_eq!(
+        crate::topology::offset_surfaces(&merged)
+            .iter()
+            .map(|surface| surface.distance)
+            .collect::<Vec<_>>(),
+        [4.5]
+    );
+    let file = prt_with_streams(&[&partition, &deltas]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let [procedural] = result.ir.model.procedural_surfaces.as_slice() else {
+        panic!("one offset surface");
+    };
+    let ProceduralSurfaceDefinition::Offset { distance, .. } = procedural.definition else {
+        panic!("offset surface");
+    };
+    assert_eq!(distance, 4.5);
+    assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
