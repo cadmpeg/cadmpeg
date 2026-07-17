@@ -3157,29 +3157,13 @@ fn blend_surface_frame(
     depth: usize,
 ) -> Option<BlendSurfaceFrame> {
     (depth < 32).then_some(())?;
-    let (supports, spine, radius, reversed) = blend_surface_definition(ir, surface)?;
+    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
     let center = model_curve_point(ir, &spine, u)?;
     let tangent = model_curve_tangent(ir, &spine, u)?;
-    let first = spine_contact_direction(
-        ir,
-        &supports[0],
-        &spine,
-        u,
-        center,
-        (radius, reversed[0]),
-        depth + 1,
-    )
-    .or_else(|| surface_contact_direction(ir, &supports[0], center, depth + 1))?;
-    let second = spine_contact_direction(
-        ir,
-        &supports[1],
-        &spine,
-        u,
-        center,
-        (radius, reversed[1]),
-        depth + 1,
-    )
-    .or_else(|| surface_contact_direction(ir, &supports[1], center, depth + 1))?;
+    let first = spine_contact_direction(ir, &supports[0], &spine, u, center, radius, depth + 1)
+        .or_else(|| surface_contact_direction(ir, &supports[0], center, depth + 1))?;
+    let second = spine_contact_direction(ir, &supports[1], &spine, u, center, radius, depth + 1)
+        .or_else(|| surface_contact_direction(ir, &supports[1], center, depth + 1))?;
     Some((center, tangent, first, second, radius))
 }
 
@@ -3189,18 +3173,10 @@ fn spine_contact_direction(
     spine: &CurveId,
     parameter: f64,
     center: Point3,
-    contact: (f64, bool),
+    radius: f64,
     depth: usize,
 ) -> Option<Vector3> {
-    let contact = spine_contact_point(
-        ir,
-        support,
-        spine,
-        parameter,
-        contact.0,
-        contact.1,
-        depth + 1,
-    )?;
+    let contact = spine_contact_point(ir, support, spine, parameter, radius, depth + 1)?;
     unit_vector(Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
@@ -3216,14 +3192,13 @@ fn blend_boundary_point(
     depth: usize,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    let (supports, spine, radius, reversed) = blend_surface_definition(ir, surface)?;
+    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
     spine_contact_point(
         ir,
         supports.get(boundary)?,
         &spine,
         parameter,
         radius,
-        *reversed.get(boundary)?,
         depth + 1,
     )
 }
@@ -3236,7 +3211,7 @@ fn blend_boundary_parameter(
     depth: usize,
 ) -> Option<f64> {
     (depth < 32).then_some(())?;
-    let (supports, spine, radius, reversed) = blend_surface_definition(ir, surface)?;
+    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
     let support = supports.get(boundary)?;
     let carrier = ir
         .model
@@ -3248,14 +3223,7 @@ fn blend_boundary_parameter(
         SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, support, point, None),
         geometry => analytic_surface_parameters(geometry, point),
     }?;
-    let pcurve = spine_contact_pcurve(
-        ir,
-        support,
-        &spine,
-        radius,
-        *reversed.get(boundary)?,
-        depth + 1,
-    )?;
+    let pcurve = spine_contact_pcurve(ir, support, &spine, radius, depth + 1)?;
     closest_pcurve_parameter(pcurve, uv)
 }
 
@@ -3268,7 +3236,7 @@ fn blend_boundary_parameter_from_support_pcurve(
     point: Point3,
     fit_tolerance: f64,
 ) -> Option<Point2> {
-    let (supports, spine, radius, reversed) = blend_surface_definition(ir, blend)?;
+    let (supports, spine, radius, _) = blend_surface_definition(ir, blend)?;
     let boundary = supports
         .iter()
         .position(|candidate| parameterization_equivalent_surfaces(ir, candidate, support))?;
@@ -3281,7 +3249,7 @@ fn blend_boundary_parameter_from_support_pcurve(
         return None;
     }
     let support_uv = pcurve_uv(support_pcurve, curve_parameter)?;
-    let contact_pcurve = spine_contact_pcurve(ir, support, &spine, radius, reversed[boundary], 0)?;
+    let contact_pcurve = spine_contact_pcurve(ir, support, &spine, radius, 0)?;
     let parameter = closest_pcurve_parameter(contact_pcurve, support_uv)?;
     blend_boundary_point(ir, blend, parameter, boundary, 0)
         .filter(|candidate| point_distance(*candidate, point) <= fit_tolerance)
@@ -3391,11 +3359,10 @@ fn spine_contact_point(
     spine: &CurveId,
     parameter: f64,
     radius: f64,
-    reversed: bool,
     depth: usize,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    let pcurve = spine_contact_pcurve(ir, support, spine, radius, reversed, depth + 1)?;
+    let pcurve = spine_contact_pcurve(ir, support, spine, radius, depth + 1)?;
     let uv = pcurve_uv(pcurve, parameter)?;
     decoded_surface_point_inner(ir, support, uv.u, uv.v, depth + 1)
 }
@@ -3405,7 +3372,6 @@ fn spine_contact_pcurve<'a>(
     support: &SurfaceId,
     spine: &CurveId,
     radius: f64,
-    reversed: bool,
     depth: usize,
 ) -> Option<&'a PcurveGeometry> {
     (depth < 32).then_some(())?;
@@ -3423,7 +3389,7 @@ fn spine_contact_pcurve<'a>(
         let side_surface = side.surface.as_ref()?;
         let pcurve = side.pcurve.as_ref()?;
         let offset = constant_surface_offset_between(ir, support, side_surface, depth + 1)?;
-        if !blend_contact_offset_matches(0.0, offset, radius, reversed) {
+        if !blend_contact_offset_matches(0.0, offset, radius) {
             return None;
         }
         Some(pcurve)
@@ -3493,7 +3459,7 @@ fn blend_surface_offset(
                             depth + 1,
                         )
                         .is_some_and(|carrier_distance| {
-                            blend_contact_offset_matches(0.0, carrier_distance, magnitude, false)
+                            blend_contact_offset_matches(0.0, carrier_distance, magnitude)
                         })
                 })
         })
@@ -3670,7 +3636,6 @@ pub(crate) fn blend_contact_offset_matches(
     support_offset: f64,
     spine_side_offset: f64,
     radius: f64,
-    _reversed: bool,
 ) -> bool {
     let actual = (spine_side_offset - support_offset).abs();
     let expected = radius.abs();
