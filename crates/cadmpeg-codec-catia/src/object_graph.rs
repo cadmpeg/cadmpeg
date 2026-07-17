@@ -543,6 +543,12 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     let tagged_reference = bytes[at] == 0x81;
                     let tagged_atom = bytes[at] == 0x80;
                     let value_at = at + usize::from(tagged_reference || tagged_atom);
+                    if (tagged_reference || tagged_atom)
+                        && (value_at >= bytes.len() || bytes[value_at] == 0xfe)
+                    {
+                        at = value_at;
+                        break;
+                    }
                     let Some((value, consumed)) = atom(bytes, value_at) else {
                         break;
                     };
