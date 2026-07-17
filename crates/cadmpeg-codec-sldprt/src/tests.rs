@@ -11328,6 +11328,63 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
 }
 
 #[test]
+fn decode_does_not_globalize_configuration_local_combine_selection() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+
+    fn append_body_path(payload: &mut Vec<u8>, local_id: u32) {
+        payload.extend_from_slice(&1u32.to_le_bytes());
+        payload.extend_from_slice(&[0, 3, 0, 0]);
+        payload.extend_from_slice(&[0; 4]);
+        payload.extend_from_slice(&[
+            0x66, 0x80, 0, 0, 0x10, 0, 0, 0, 0x2b, 0x80, 0x02, 0, 0, 0, 0, 0,
+        ]);
+        payload.extend_from_slice(&[0, 0]);
+        payload.extend_from_slice(&[0x32, 0x80, 0, 0]);
+        payload.extend_from_slice(&[1; 12]);
+        payload.extend_from_slice(&local_id.to_le_bytes());
+    }
+
+    fn combine_payload(has_selection: bool) -> Vec<u8> {
+        let mut payload =
+            resolved_feature_classes_with_ids(&[("moCombineBodies_c", "Combine", 119)]);
+        if has_selection {
+            append_body_path(&mut payload, 6);
+            append_body_path(&mut payload, 7);
+        }
+        payload
+    }
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Feature Name="Combine" Type="Localized" id="119"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &combine_payload(true),
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-1-ResolvedFeatures",
+        &combine_payload(false),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Combine {
+            target: BodySelection::Unresolved,
+            tools: BodySelection::Unresolved,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_delete_and_keep_body() {
     use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, FeatureDefinition};
 

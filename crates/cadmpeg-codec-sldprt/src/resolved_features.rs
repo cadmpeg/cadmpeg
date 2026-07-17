@@ -6571,6 +6571,7 @@ pub(crate) fn enrich_history_combine_selections(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
+    let mut selections = HashMap::<String, Vec<Option<(String, String, Option<String>)>>>::new();
     for lane in lanes {
         let mut objects = histories
             .iter()
@@ -6583,7 +6584,6 @@ pub(crate) fn enrich_history_combine_selections(
             })
             .collect::<Vec<_>>();
         objects.sort_unstable_by_key(|object| object.0);
-        let mut selections = HashMap::new();
         for (index, (start, feature_id)) in objects.iter().enumerate() {
             let Some(feature) = histories
                 .iter()
@@ -6610,36 +6610,52 @@ pub(crate) fn enrich_history_combine_selections(
                     compact_body_path_at(&lane.native_payload, marker).map(|_| marker)
                 })
                 .collect::<Vec<_>>();
-            if let [target, tools] = paths.as_slice() {
+            let selection = if let [target, tools] = paths.as_slice() {
                 let operation = compact_combine_operation_at(&lane.native_payload, start);
-                selections.insert(feature_id.clone(), (*target, *tools, operation));
-            }
-        }
-        let lane_key = lane
-            .id
-            .rsplit_once('#')
-            .map_or(lane.id.as_str(), |(_, key)| key);
-        for feature in histories
-            .iter_mut()
-            .flat_map(|history| &mut history.features)
-        {
-            let Some(&(target, tools, operation)) = selections.get(&feature.id) else {
-                continue;
+                let lane_key = lane
+                    .id
+                    .rsplit_once('#')
+                    .map_or(lane.id.as_str(), |(_, key)| key);
+                Some((
+                    format!("sldprt:feature-input:body-path:{lane_key}:{target}"),
+                    format!("sldprt:feature-input:body-path:{lane_key}:{tools}"),
+                    operation.map(str::to_string),
+                ))
+            } else {
+                None
             };
+            selections
+                .entry(feature_id.clone())
+                .or_default()
+                .push(selection);
+        }
+    }
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        let Some(votes) = selections.get(&feature.id) else {
+            continue;
+        };
+        let Some(Some(first)) = votes.first() else {
+            continue;
+        };
+        if !votes.iter().all(|vote| vote.as_ref() == Some(first)) {
+            continue;
+        }
+        feature
+            .properties
+            .entry("Target".into())
+            .or_insert_with(|| first.0.clone());
+        feature
+            .properties
+            .entry("Tools".into())
+            .or_insert_with(|| first.1.clone());
+        if let Some(operation) = &first.2 {
             feature
                 .properties
-                .entry("Target".into())
-                .or_insert_with(|| format!("sldprt:feature-input:body-path:{lane_key}:{target}"));
-            feature
-                .properties
-                .entry("Tools".into())
-                .or_insert_with(|| format!("sldprt:feature-input:body-path:{lane_key}:{tools}"));
-            if let Some(operation) = operation {
-                feature
-                    .properties
-                    .entry("Operation".into())
-                    .or_insert_with(|| operation.into());
-            }
+                .entry("Operation".into())
+                .or_insert_with(|| operation.clone());
         }
     }
 }
