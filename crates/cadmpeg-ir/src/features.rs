@@ -1017,6 +1017,33 @@ pub struct GeneratedFaceRef {
     pub local_id: String,
 }
 
+/// Persistent identity of a vertex in one regenerated feature result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GeneratedVertexRef {
+    /// Feature whose regenerated result owns the vertex.
+    pub feature: FeatureId,
+    /// Feature-local persistent vertex identity.
+    pub local_id: String,
+}
+
+/// Vertex operand resolved by the decoder or retained in native form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum VertexSelection {
+    /// Selection exists semantically but its operand is not resolved.
+    Unresolved,
+    /// Vertex in an intermediate regenerated feature result, paired with the
+    /// format-native selection required for rewrite.
+    Generated {
+        /// Feature-local vertex identity.
+        vertex: GeneratedVertexRef,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
+    /// Format-native selection reference.
+    Native(String),
+}
+
 /// Face operands resolved by the decoder or retained in native form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
@@ -1156,6 +1183,18 @@ pub enum Extent {
     ToFace {
         /// Face terminating the operation.
         face: FaceSelection,
+    },
+    /// Extends until it reaches a target vertex.
+    ToVertex {
+        /// Vertex terminating the operation.
+        vertex: VertexSelection,
+    },
+    /// Extends to a fixed offset from a target face.
+    OffsetFromFace {
+        /// Face the termination is measured from.
+        face: FaceSelection,
+        /// Offset distance from the face.
+        offset: Length,
     },
     /// Fixed angular extent.
     Angle {

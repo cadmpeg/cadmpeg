@@ -14,7 +14,7 @@ use cadmpeg_ir::features::{
     ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
     RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
     ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode,
-    TrimRegion, VariableRadius, WrapMode,
+    TrimRegion, VariableRadius, VertexSelection, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1888,7 +1888,7 @@ pub fn bind_topology_selections(
                 profile, extent, ..
             } => {
                 resolve_profile_ref(profile, &face_ids);
-                if let Extent::ToFace { face } = extent {
+                if let Extent::ToFace { face } | Extent::OffsetFromFace { face, .. } = extent {
                     resolve_face_selection(face, &face_ids);
                 }
             }
@@ -2467,6 +2467,25 @@ fn project_extrude(
         Some("ThroughNext") => Extent::ThroughNext,
         Some("ToFace") => Extent::ToFace {
             face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
+        },
+        Some("ToVertex") => Extent::ToVertex {
+            vertex: VertexSelection::Native(feature.properties.get("Vertex")?.clone()),
+        },
+        Some("OffsetFromFace") => match length("Depth").or_else(|| {
+            if feature.parameters.contains_key("Depth") || feature.parameters.contains_key("D1") {
+                return None;
+            }
+            let mut values = feature.parameters.values();
+            let sole = values.next().filter(|_| values.next().is_none())?;
+            parse_positive_length_mm(sole)
+                .or_else(|| parse_positive_dimension_length_mm(sole))
+                .map(Length)
+        }) {
+            Some(offset) => Extent::OffsetFromFace {
+                face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
+                offset,
+            },
+            None => Extent::Unresolved,
         },
         Some(_) => return None,
     };
@@ -4077,6 +4096,17 @@ fn face_selection_value(selection: &FaceSelection) -> Option<String> {
     }
 }
 
+fn vertex_selection_value(selection: &VertexSelection) -> Option<String> {
+    match selection {
+        VertexSelection::Native(native) | VertexSelection::Generated { native, .. }
+            if !native.trim().is_empty() =>
+        {
+            Some(native.clone())
+        }
+        _ => None,
+    }
+}
+
 fn edge_selection_value(selection: &EdgeSelection) -> Option<String> {
     match selection {
         EdgeSelection::Native(native)
@@ -4903,6 +4933,10 @@ fn validate_compact_surface_selection_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
+    enum SelectionSlot<'a> {
+        Face(&'a FaceSelection),
+        Vertex(&'a VertexSelection),
+    }
     let Some(native) = native else { return Ok(()) };
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputSurfaceSelection>>::new();
     for selection in native
@@ -4926,12 +4960,18 @@ fn validate_compact_surface_selection_edits(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let faces = match &feature.definition {
-            FeatureDefinition::Thicken { faces, .. } => faces,
+        let slot = match &feature.definition {
+            FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
             FeatureDefinition::Extrude {
-                extent: cadmpeg_ir::features::Extent::ToFace { face },
+                extent:
+                    cadmpeg_ir::features::Extent::ToFace { face }
+                    | cadmpeg_ir::features::Extent::OffsetFromFace { face, .. },
                 ..
-            } => face,
+            } => SelectionSlot::Face(face),
+            FeatureDefinition::Extrude {
+                extent: cadmpeg_ir::features::Extent::ToVertex { vertex },
+                ..
+            } => SelectionSlot::Vertex(vertex),
             _ => continue,
         };
         let native =
@@ -4941,17 +4981,41 @@ fn validate_compact_surface_selection_edits(
             .as_deref()
             .and_then(|producer| feature_ids_by_native.get(producer))
             .zip(selection.components.last());
-        let expected = match generated {
-            Some((feature, component)) => FaceSelection::Generated {
-                faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
-                    feature: feature.clone(),
-                    local_id: component.local_id.to_string(),
-                }],
-                native,
-            },
-            None => FaceSelection::Native(native),
+        let changed = match slot {
+            SelectionSlot::Face(faces) => {
+                let expected = match generated {
+                    Some((feature, component)) => FaceSelection::Generated {
+                        faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                            feature: feature.clone(),
+                            local_id: component.local_id.to_string(),
+                        }],
+                        native,
+                    },
+                    None => FaceSelection::Native(native),
+                };
+                faces != &expected
+            }
+            // Edge-endpoint references keep the endpoint selector native.
+            SelectionSlot::Vertex(VertexSelection::Native(value))
+                if value.starts_with("sldprt:feature-input:edge-endpoint-ref:") =>
+            {
+                false
+            }
+            SelectionSlot::Vertex(vertex) => {
+                let expected = match generated {
+                    Some((feature, component)) => VertexSelection::Generated {
+                        vertex: cadmpeg_ir::features::GeneratedVertexRef {
+                            feature: feature.clone(),
+                            local_id: component.local_id.to_string(),
+                        },
+                        native,
+                    },
+                    None => VertexSelection::Native(native),
+                };
+                vertex != &expected
+            }
         };
-        if faces != &expected {
+        if changed {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a compact surface selection",
                 feature.id
@@ -6895,6 +6959,7 @@ pub fn sync_neutral_features(
                     parameters.remove("Draft");
                     properties.remove("Direction");
                     properties.remove("Face");
+                    properties.remove("Vertex");
                 }
                 match extent {
                     Extent::Unresolved => {}
@@ -6934,9 +6999,24 @@ pub fn sync_neutral_features(
                         properties.insert("EndCondition".into(), "ToFace".into());
                         properties.insert("Face".into(), selection);
                     }
-                    Extent::ToFace { .. } => {
+                    Extent::ToVertex { vertex } if vertex_selection_value(vertex).is_some() => {
+                        let selection = vertex_selection_value(vertex).expect("guarded above");
+                        properties.insert("EndCondition".into(), "ToVertex".into());
+                        properties.insert("Vertex".into(), selection);
+                    }
+                    Extent::OffsetFromFace { face, offset }
+                        if face_selection_value(face).is_some() =>
+                    {
+                        let selection = face_selection_value(face).expect("guarded above");
+                        properties.insert("EndCondition".into(), "OffsetFromFace".into());
+                        properties.insert("Face".into(), selection);
+                        parameters.insert("Depth".into(), format_length_mm(offset.0));
+                    }
+                    Extent::ToFace { .. }
+                    | Extent::ToVertex { .. }
+                    | Extent::OffsetFromFace { .. } => {
                         return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses an unsupported extrusion face selection",
+                            "SLDPRT feature {} uses an unsupported extrusion termination selection",
                             feature.id
                         )));
                     }

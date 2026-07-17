@@ -2315,10 +2315,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 Extent::TwoSidedAngles { first, second } => {
                     first.0.is_finite() && first.0 > 0.0 && second.0.is_finite() && second.0 > 0.0
                 }
+                Extent::OffsetFromFace { offset, .. } => offset.0.is_finite() && offset.0 > 0.0,
                 Extent::Unresolved
                 | Extent::ThroughAll
                 | Extent::ThroughNext
-                | Extent::ToFace { .. } => true,
+                | Extent::ToFace { .. }
+                | Extent::ToVertex { .. } => true,
             };
             if !valid_magnitude {
                 findings.push(Finding {
@@ -2328,7 +2330,22 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     entity: Some(feature.id.0.clone()),
                 });
             }
-            if let Extent::ToFace { face } = extent {
+            if let Extent::ToVertex {
+                vertex: crate::features::VertexSelection::Generated { vertex, native },
+            } = extent
+            {
+                if native.trim().is_empty()
+                    || vertex.local_id.trim().is_empty()
+                    || !feature.dependencies.contains(&vertex.feature)
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "generated termination vertex is invalid",
+                    );
+                }
+            }
+            if let Extent::ToFace { face } | Extent::OffsetFromFace { face, .. } = extent {
                 match face {
                     FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
                         check_ids(

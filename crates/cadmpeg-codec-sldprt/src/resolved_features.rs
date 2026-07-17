@@ -365,8 +365,9 @@ mod marker_tests {
         compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
         compact_body_state_ids, compact_combine_operation_at, compact_edge_component_path_at,
         compact_edge_selection_at, compact_extrusion_mid_plane_at,
-        compact_extrusion_through_all_at, compact_extrusion_through_next_at,
-        compact_extrusion_to_face_at, compact_general_curve_ref_at, compact_line_chain_addresses,
+        compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
+        compact_extrusion_through_next_at, compact_extrusion_to_face_at,
+        compact_extrusion_to_vertex_at, compact_general_curve_ref_at, compact_line_chain_addresses,
         compact_line_region_addresses, compact_profile_reference_plane_source,
         compact_reference_plane_source, compact_single_face_reference_path_at,
         compact_surface_selection_at, complete_ordered_compact_line_profile,
@@ -377,8 +378,8 @@ mod marker_tests {
         ordered_compact_line_profile, ordered_rectangle_corners, principal_sketch_frame,
         resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         solved_tangent, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
-        SCALAR_HEADER,
+        unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
+        COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -1159,6 +1160,7 @@ mod marker_tests {
     #[test]
     fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
         let mut payload = vec![0; 200];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
         payload[4] = 1;
         payload[18] = 4;
         payload[30..33].copy_from_slice(&[1, 1, 0]);
@@ -1188,6 +1190,7 @@ mod marker_tests {
     #[test]
     fn compact_extrusion_through_next_shares_the_traversal_tail() {
         let mut payload = vec![0; 104];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
         payload[4] = 1;
         payload[18] = 2;
         payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
@@ -1215,6 +1218,7 @@ mod marker_tests {
         };
 
         let mut payload = vec![0; 26];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
         payload[4] = 1;
         payload[18] = 6;
         payload.extend_from_slice(&[0x6a, 0x81]);
@@ -1229,11 +1233,135 @@ mod marker_tests {
         assert!(!compact_extrusion_mid_plane_at(&payload, 0));
 
         let mut payload = vec![0; 26];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
         payload[4] = 1;
         payload[18] = 6;
         payload.extend_from_slice(b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c");
         dimension_tail(&mut payload);
         assert!(compact_extrusion_mid_plane_at(&payload, 0));
+    }
+
+    #[test]
+    fn end_spec_headers_require_the_anchor_class_identity() {
+        let mut payload = vec![0; 104];
+        payload[4] = 1;
+        payload[18] = 1;
+        payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
+        payload[92] = 1;
+        // Header-shaped run without a class token or declaration at the anchor
+        // is a fillet edge-set impostor, not an end spec.
+        assert!(!compact_extrusion_through_all_at(&payload, 0));
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+        assert!(compact_extrusion_through_all_at(&payload, 0));
+        payload[..2].copy_from_slice(&[0xff, 0xff]);
+        assert!(!compact_extrusion_through_all_at(&payload, 0));
+
+        let mut payload = vec![0; 15];
+        payload.extend_from_slice(&vec![0; 104]);
+        payload[15 + 4] = 1;
+        payload[15 + 18] = 1;
+        payload[15 + 30..15 + 34].copy_from_slice(&[1, 0, 0, 1]);
+        payload[15 + 92] = 1;
+        assert!(!compact_extrusion_through_all_at(&payload, 15));
+        payload[..17].copy_from_slice(b"\xff\xff\x01\x00\x0b\x00moEndSpec_c");
+        assert!(compact_extrusion_through_all_at(&payload, 15));
+    }
+
+    fn selection_vector_tail(payload: &mut Vec<u8>, entries: &[u32]) -> usize {
+        payload.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+        payload.extend_from_slice(&[0, 2, 0, 0]);
+        payload.extend_from_slice(&[0, 0, 0, 0]);
+        let marker = payload.len();
+        payload.extend_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        payload.extend_from_slice(&[0, 0]);
+        for local_id in entries {
+            payload.extend_from_slice(&[0x32, 0x80, 0, 0]);
+            payload.extend_from_slice(&[1; 12]);
+            payload.extend_from_slice(&local_id.to_le_bytes());
+        }
+        marker
+    }
+
+    #[test]
+    fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
+        // Variant A, repeated-token form.
+        let mut payload = vec![0; 30];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+        payload[4] = 1;
+        payload[18] = 3;
+        payload.extend_from_slice(&[0x82, 0x92, 0x2b, 0x80, 2, 0, 0, 0, 0, 0, 0]);
+        payload.extend_from_slice(&[0; 12]);
+        let marker = selection_vector_tail(&mut payload, &[4, 7]);
+        let (found, kind) = compact_extrusion_to_vertex_at(&payload, 0).unwrap();
+        assert_eq!(found, marker);
+        assert_eq!(kind, CompactPointReferenceKind::Point);
+        let path = compact_single_face_reference_path_at(&payload, marker).unwrap();
+        assert_eq!(path.last().unwrap().local_id, 7);
+
+        // A to-face selector byte is not a point reference.
+        payload[38] = 0x40;
+        assert_eq!(compact_extrusion_to_vertex_at(&payload, 0), None);
+        payload[38] = 0;
+        payload[18] = 4;
+        assert_eq!(compact_extrusion_to_vertex_at(&payload, 0), None);
+        payload[18] = 3;
+
+        // Variant B, edge endpoint reference.
+        let mut payload = vec![0; 30];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+        payload[4] = 1;
+        payload[18] = 3;
+        payload.extend_from_slice(b"\xff\xff\x01\x00\x0f\x00moEndPointRef_w");
+        payload.extend_from_slice(b"\xff\xff\x01\x00\x0c\x00moCompEdge_c");
+        payload.extend_from_slice(&[0xcb, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
+        payload.extend_from_slice(&[0; 12]);
+        let marker = selection_vector_tail(&mut payload, &[2]);
+        let (found, kind) = compact_extrusion_to_vertex_at(&payload, 0).unwrap();
+        assert_eq!(found, marker);
+        assert_eq!(kind, CompactPointReferenceKind::EdgeEndpoint);
+    }
+
+    #[test]
+    fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
+        let mut payload = vec![0; 26];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+        payload[4] = 1;
+        payload[18] = 5;
+        payload.extend_from_slice(&[0x6a, 0x81]);
+        let block = payload.len();
+        payload.resize(block + 16, 0);
+        payload[block + 9] = 0x20;
+        payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
+        payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+        payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+        payload.extend_from_slice(&[0; 40]);
+        payload.extend_from_slice(&[1, 1, 0]);
+        payload.extend_from_slice(b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w");
+        payload.extend_from_slice(&[0xf2, 0x82, 0xe6, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
+        payload.extend_from_slice(&[0; 8]);
+        let marker = selection_vector_tail(&mut payload, &[9]);
+        let end = payload.len();
+        assert_eq!(
+            compact_extrusion_offset_from_face_at(&payload, 0, end),
+            Some(marker)
+        );
+
+        // Wrong code or a missing face-reference anchor yields no detection.
+        payload[18] = 6;
+        assert_eq!(
+            compact_extrusion_offset_from_face_at(&payload, 0, end),
+            None
+        );
+        payload[18] = 5;
+        let anchor = payload
+            .windows(3)
+            .position(|window| window == [1, 1, 0])
+            .unwrap();
+        payload[anchor] = 0;
+        assert_eq!(
+            compact_extrusion_offset_from_face_at(&payload, 0, end),
+            None
+        );
     }
 
     #[test]
@@ -3477,9 +3605,18 @@ fn compact_surface_selections(
                     .collect()
             }),
             NativeClassKind::Extrusion => (start..end.saturating_sub(103))
-                .filter_map(|offset| compact_extrusion_to_face_at(&lane.native_payload, offset))
+                .filter_map(|offset| {
+                    compact_extrusion_to_face_at(&lane.native_payload, offset)
+                        .or_else(|| {
+                            compact_extrusion_to_vertex_at(&lane.native_payload, offset)
+                                .map(|(marker, _)| marker)
+                        })
+                        .or_else(|| {
+                            compact_extrusion_offset_from_face_at(&lane.native_payload, offset, end)
+                        })
+                })
                 .filter_map(|marker| {
-                    compact_single_face_reference_path_at(&lane.native_payload, marker)
+                    compact_termination_reference_path_at(&lane.native_payload, marker)
                         .map(|ids| (marker, ids))
                 })
                 .collect(),
@@ -3541,7 +3678,7 @@ pub(crate) fn compact_surface_reference_at(
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
     compact_surface_selection_at(payload, marker)
-        .or_else(|| compact_single_face_reference_path_at(payload, marker))
+        .or_else(|| compact_termination_reference_path_at(payload, marker))
 }
 
 fn repeated_edge_selections(
@@ -6473,6 +6610,10 @@ pub(crate) fn project_compact_surface_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
 ) {
+    enum SelectionSlot<'a> {
+        Face(&'a mut cadmpeg_ir::features::FaceSelection),
+        Vertex(&'a mut cadmpeg_ir::features::VertexSelection),
+    }
     let feature_ids_by_native = features
         .iter()
         .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
@@ -6493,35 +6634,75 @@ pub(crate) fn project_compact_surface_selections(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let faces = match &mut feature.definition {
-            FeatureDefinition::Thicken { faces, .. } => faces,
+        let slot = match &mut feature.definition {
+            FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
             FeatureDefinition::Extrude {
-                extent: cadmpeg_ir::features::Extent::ToFace { face },
+                extent:
+                    cadmpeg_ir::features::Extent::ToFace { face }
+                    | cadmpeg_ir::features::Extent::OffsetFromFace { face, .. },
                 ..
-            } => face,
+            } => SelectionSlot::Face(face),
+            FeatureDefinition::Extrude {
+                extent: cadmpeg_ir::features::Extent::ToVertex { vertex },
+                ..
+            } => SelectionSlot::Vertex(vertex),
             _ => continue,
         };
-        if matches!(
-            faces,
-            cadmpeg_ir::features::FaceSelection::Unresolved
-                | cadmpeg_ir::features::FaceSelection::Native(_)
-        ) {
-            let native = compact_surface_selection_value(&selection.components);
-            let generated = selection
-                .terminal_feature_ref
-                .as_ref()
-                .and_then(|producer| feature_ids_by_native.get(producer))
-                .zip(selection.components.last());
-            *faces = match generated {
-                Some((feature, component)) => cadmpeg_ir::features::FaceSelection::Generated {
-                    faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
-                        feature: feature.clone(),
-                        local_id: component.local_id.to_string(),
-                    }],
-                    native,
-                },
-                None => cadmpeg_ir::features::FaceSelection::Native(native),
-            };
+        let native = compact_surface_selection_value(&selection.components);
+        let generated = selection
+            .terminal_feature_ref
+            .as_ref()
+            .and_then(|producer| feature_ids_by_native.get(producer))
+            .zip(selection.components.last());
+        match slot {
+            SelectionSlot::Face(faces) => {
+                if matches!(
+                    faces,
+                    cadmpeg_ir::features::FaceSelection::Unresolved
+                        | cadmpeg_ir::features::FaceSelection::Native(_)
+                ) {
+                    *faces = match generated {
+                        Some((feature, component)) => {
+                            cadmpeg_ir::features::FaceSelection::Generated {
+                                faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                                    feature: feature.clone(),
+                                    local_id: component.local_id.to_string(),
+                                }],
+                                native,
+                            }
+                        }
+                        None => cadmpeg_ir::features::FaceSelection::Native(native),
+                    };
+                }
+            }
+            SelectionSlot::Vertex(vertex) => {
+                // Edge-endpoint references keep the endpoint selector native.
+                let retain_native = matches!(
+                    &*vertex,
+                    cadmpeg_ir::features::VertexSelection::Native(value)
+                        if value.starts_with("sldprt:feature-input:edge-endpoint-ref:")
+                );
+                if !retain_native
+                    && matches!(
+                        vertex,
+                        cadmpeg_ir::features::VertexSelection::Unresolved
+                            | cadmpeg_ir::features::VertexSelection::Native(_)
+                    )
+                {
+                    *vertex = match generated {
+                        Some((feature, component)) => {
+                            cadmpeg_ir::features::VertexSelection::Generated {
+                                vertex: cadmpeg_ir::features::GeneratedVertexRef {
+                                    feature: feature.clone(),
+                                    local_id: component.local_id.to_string(),
+                                },
+                                native,
+                            }
+                        }
+                        None => cadmpeg_ir::features::VertexSelection::Native(native),
+                    };
+                }
+            }
         }
         for producer in selection
             .producer_feature_refs
@@ -6590,10 +6771,24 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .get(end_index)
                 .and_then(|object| usize::try_from(object.0).ok())
                 .unwrap_or(lane.native_payload.len());
+            let lane_key = lane
+                .id
+                .rsplit_once('#')
+                .map_or(lane.id.as_str(), |(_, key)| key);
             let candidates = (start..end.saturating_sub(103))
                 .filter_map(|offset| {
                     if compact_extrusion_mid_plane_at(&lane.native_payload, offset) {
                         return Some(("Symmetric".to_string(), None));
+                    }
+                    if let Some(reference) =
+                        compact_extrusion_offset_from_face_at(&lane.native_payload, offset, end)
+                    {
+                        return Some((
+                            "OffsetFromFace".to_string(),
+                            Some(format!(
+                                "sldprt:feature-input:single-face-ref:{lane_key}:{reference}"
+                            )),
+                        ));
                     }
                     if has_depth {
                         return None;
@@ -6602,13 +6797,22 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         Some(("ThroughAll".to_string(), None))
                     } else if compact_extrusion_through_next_at(&lane.native_payload, offset) {
                         Some(("ThroughNext".to_string(), None))
+                    } else if let Some((reference, kind)) =
+                        compact_extrusion_to_vertex_at(&lane.native_payload, offset)
+                    {
+                        let prefix = match kind {
+                            CompactPointReferenceKind::Point => "point-ref",
+                            CompactPointReferenceKind::EdgeEndpoint => "edge-endpoint-ref",
+                        };
+                        Some((
+                            "ToVertex".to_string(),
+                            Some(format!(
+                                "sldprt:feature-input:{prefix}:{lane_key}:{reference}"
+                            )),
+                        ))
                     } else {
                         compact_extrusion_to_face_at(&lane.native_payload, offset).map(
                             |reference| {
-                                let lane_key = lane
-                                    .id
-                                    .rsplit_once('#')
-                                    .map_or(lane.id.as_str(), |(_, key)| key);
                                 (
                                     "ToFace".to_string(),
                                     Some(format!(
@@ -6649,9 +6853,14 @@ pub(crate) fn enrich_history_extrusion_terminations(
             .properties
             .insert("EndCondition".into(), first.0.clone());
         if let Some(reference) = &first.1 {
+            let key = if first.0 == "ToVertex" {
+                "Vertex"
+            } else {
+                "Face"
+            };
             feature
                 .properties
-                .entry("Face".into())
+                .entry(key.into())
                 .or_insert_with(|| reference.clone());
         }
     }
@@ -7254,13 +7463,15 @@ fn compact_extrusion_traversal_tail_at(payload: &[u8], offset: usize) -> bool {
 }
 
 pub(crate) fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> bool {
-    if !compact_extrusion_end_spec_header(payload, offset, 6)
-        || payload.get(offset + 22..offset + 26) != Some(&[0, 0, 0, 0])
-    {
-        return false;
-    }
+    compact_extrusion_end_spec_header(payload, offset, 6)
+        && payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
+        && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()
+}
+
+/// Validate the owned dimension child at `child` and return the offset just
+/// past its fixed tail.
+fn compact_extrusion_dimension_child_at(payload: &[u8], child: usize) -> Option<usize> {
     let declaration = b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c";
-    let child = offset + 26;
     let block = if payload.get(child..child + declaration.len()) == Some(declaration) {
         child + declaration.len()
     } else if payload
@@ -7269,9 +7480,9 @@ pub(crate) fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> b
     {
         child + 2
     } else {
-        return false;
+        return None;
     };
-    payload.get(block..block + 16).is_some_and(|bytes| {
+    (payload.get(block..block + 16).is_some_and(|bytes| {
         bytes
             .iter()
             .enumerate()
@@ -7282,7 +7493,101 @@ pub(crate) fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> b
             .is_some_and(|byte| *byte == 1 || *byte == 3)
         && payload.get(block + 21..block + 25) == Some(&[0xff, 0xff, 0xff, 0xff])
         && payload.get(block + 25..block + 31) == Some(&[0, 0, 0, 0, 0, 0])
-        && payload.get(block + 31..block + 33) == Some(&[0x80, 0xbf])
+        && payload.get(block + 31..block + 33) == Some(&[0x80, 0xbf]))
+    .then_some(block + 33)
+}
+
+/// Form of the point reference owned by an up-to-vertex end spec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CompactPointReferenceKind {
+    /// Direct vertex reference; the final path entry's component id is the
+    /// feature-local vertex id.
+    Point,
+    /// Edge endpoint reference; the path selects an edge and the endpoint
+    /// selector stays native.
+    EdgeEndpoint,
+}
+
+pub(crate) fn compact_extrusion_to_vertex_at(
+    payload: &[u8],
+    offset: usize,
+) -> Option<(usize, CompactPointReferenceKind)> {
+    if !compact_extrusion_end_spec_header(payload, offset, 3)
+        || payload.get(offset + 22..offset + 30) != Some(&[0, 0, 0, 0, 0, 0, 0, 0])
+    {
+        return None;
+    }
+    let child = offset + 30;
+    let point_declaration = b"\xff\xff\x01\x00\x0c\x00moPointRef_w";
+    let endpoint_declaration = b"\xff\xff\x01\x00\x0f\x00moEndPointRef_w";
+    let point_body_at = |body: usize| {
+        payload.get(body + 1).is_some_and(|byte| byte & 0x80 != 0)
+            && payload
+                .get(body + 2..body + 4)
+                .is_some_and(|bytes| bytes == [0xa9, 0x80] || bytes == [0x2b, 0x80])
+            && payload.get(body + 4..body + 9) == Some(&[2, 0, 0, 0, 0])
+    };
+    let kind = if (payload.get(child..child + point_declaration.len()) == Some(point_declaration)
+        && point_body_at(child + point_declaration.len()))
+        || point_body_at(child)
+    {
+        CompactPointReferenceKind::Point
+    } else if payload.get(child..child + endpoint_declaration.len()) == Some(endpoint_declaration) {
+        let edge_declaration = b"\xff\xff\x01\x00\x0c\x00moCompEdge_c";
+        let inner = child + endpoint_declaration.len();
+        let body = inner + edge_declaration.len();
+        if payload.get(inner..inner + edge_declaration.len()) != Some(edge_declaration)
+            || payload.get(body + 1).is_none_or(|byte| byte & 0x80 == 0)
+            || payload.get(body + 2..body + 7) != Some(&[2, 0, 0, 0, 0x40])
+        {
+            return None;
+        }
+        CompactPointReferenceKind::EdgeEndpoint
+    } else {
+        return None;
+    };
+    (child..child.saturating_add(240))
+        .find(|marker| compact_termination_reference_at(payload, *marker))
+        .map(|marker| (marker, kind))
+}
+
+pub(crate) fn compact_extrusion_offset_from_face_at(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+) -> Option<usize> {
+    if !compact_extrusion_end_spec_header(payload, offset, 5)
+        || payload.get(offset + 22..offset + 26) != Some(&[0, 0, 0, 0])
+    {
+        return None;
+    }
+    let resume = compact_extrusion_dimension_child_at(payload, offset + 26)?;
+    let declaration = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
+    let end = end.min(payload.len());
+    for anchor in resume..end.saturating_sub(3) {
+        if payload.get(anchor..anchor + 3) != Some(&[1, 1, 0]) {
+            continue;
+        }
+        let child = anchor + 3;
+        let body = if payload.get(child..child + declaration.len()) == Some(declaration) {
+            child + declaration.len()
+        } else {
+            child
+        };
+        // The reference body opens with lane tokens followed by the selector.
+        let Some(open) = (body + 2..body + 9).find(|cursor| {
+            payload.get(cursor - 1).is_some_and(|byte| byte & 0x80 != 0)
+                && payload.get(*cursor..cursor + 7) == Some(&[2, 0, 0, 0, 0x40, 0, 0])
+        }) else {
+            continue;
+        };
+        if let Some(marker) = (open..open.saturating_add(200))
+            .find(|marker| compact_termination_reference_at(payload, *marker))
+        {
+            return Some(marker);
+        }
+    }
+    None
 }
 
 pub(crate) fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> {
@@ -7314,8 +7619,22 @@ pub(crate) fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Opt
         .find(|marker| compact_single_face_reference_at(payload, *marker))
 }
 
+/// End-spec children carry their class at the anchor: either a lane-scoped
+/// class token or a direct `moEndSpec_c` declaration ending at the anchor.
+/// Header-shaped runs without this identity belong to fillet edge-set records.
+fn compact_end_spec_identity_at(payload: &[u8], offset: usize) -> bool {
+    payload
+        .get(offset..offset + 2)
+        .is_some_and(|bytes| bytes[1] & 0x80 != 0 && bytes != [0xff, 0xff])
+        || offset
+            .checked_sub(15)
+            .and_then(|start| payload.get(start..offset + 2))
+            == Some(b"\xff\xff\x01\x00\x0b\x00moEndSpec_c".as_slice())
+}
+
 fn compact_extrusion_end_spec_header(payload: &[u8], offset: usize, code: u32) -> bool {
-    payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+    compact_end_spec_identity_at(payload, offset)
+        && payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
         && payload
             .get(offset + 12..offset + 16)
             .and_then(|bytes| bytes.try_into().ok())
@@ -7356,6 +7675,94 @@ fn compact_single_face_reference_path_at(
             (payload.get(end..end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]))
                 .then_some(components)
         })
+}
+
+fn compact_termination_reference_at(payload: &[u8], marker: usize) -> bool {
+    compact_termination_reference_path_at(payload, marker).is_some()
+}
+
+/// Decode the component path of an up-to-vertex or offset-from-face
+/// termination reference. These vectors share the single-face-reference
+/// grammar and may additionally carry a leading identifier-less component
+/// cell, `a0 86 01 00` filler words, or an `01 00 00 00` slot word between
+/// counted entries.
+pub(crate) fn compact_termination_reference_path_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    if let Some(components) = compact_single_face_reference_path_at(payload, marker) {
+        return Some(components);
+    }
+    let count = marker.checked_sub(12).and_then(|offset| {
+        Some(u32::from_le_bytes(
+            payload.get(offset..offset + 4)?.try_into().ok()?,
+        ))
+    })?;
+    let count = usize::try_from(count)
+        .ok()
+        .filter(|count| (1..=64).contains(count))?;
+    if payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+        || payload.get(marker - 8..marker - 4) != Some(&[0, 2, 0, 0])
+        || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
+    {
+        return None;
+    }
+    let entry_at = |offset: usize| -> Option<FeatureInputComponentPathEntry> {
+        let instance = payload.get(offset..offset + 4)?;
+        if instance[0..2] == [0, 0]
+            || instance[0..2] == [0xff, 0xff]
+            || instance[2..4] != [0, 0]
+            || payload.get(offset + 4..offset + 6)? == [0, 0]
+        {
+            return None;
+        }
+        Some(FeatureInputComponentPathEntry {
+            instance: u16::from_le_bytes(instance[0..2].try_into().ok()?),
+            type_signature: payload.get(offset + 4..offset + 16)?.try_into().ok()?,
+            local_id: u32::from_le_bytes(payload.get(offset + 16..offset + 20)?.try_into().ok()?),
+        })
+    };
+    let mut cursor = marker + 18;
+    // A leading identifier-less cell repeats the first counted entry's
+    // signature immediately after its own.
+    if entry_at(cursor).is_some()
+        && entry_at(cursor + 16).is_some()
+        && payload.get(cursor + 20..cursor + 32) == payload.get(cursor + 4..cursor + 16)
+    {
+        cursor += 16;
+    }
+    let mut entries = Vec::new();
+    while entries.len() < count {
+        if let Some(entry) = entry_at(cursor) {
+            entries.push(entry);
+            cursor += 20;
+            continue;
+        }
+        let gap = [4usize, 8].into_iter().find(|gap| {
+            let filler_ok = match gap {
+                4 => matches!(
+                    payload.get(cursor..cursor + 4),
+                    Some([0, 0, 0, 0] | [0xa0, 0x86, 0x01, 0x00])
+                ),
+                8 => matches!(
+                    payload.get(cursor..cursor + 8),
+                    Some(
+                        [0, 0, 0, 0, 0, 0, 0, 0]
+                            | [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]
+                            | [0xa0, 0x86, 0x01, 0x00, 0, 0, 0, 0]
+                            | [0x01, 0x00, 0x00, 0x00, 0, 0, 0, 0]
+                    )
+                ),
+                _ => false,
+            };
+            filler_ok && entry_at(cursor + gap).is_some()
+        });
+        match gap {
+            Some(gap) => cursor += gap,
+            None => break,
+        }
+    }
+    (!entries.is_empty()).then_some(entries)
 }
 
 pub(crate) fn compact_surface_selection_value(
