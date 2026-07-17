@@ -11893,6 +11893,42 @@ fn decode_rejects_repeated_nx_arrangement_terminators_atomically() {
 }
 
 #[test]
+fn decode_rejects_duplicate_nx_configuration_stream_paths_atomically() {
+    let arrangements =
+        br#"<Arrangements><Arrangement Default="YES" Name="Model"/></Arrangements>"#.to_vec();
+    let attributes = br#"<UgAttributes version="4"><Attribute owner="part" pdmBased="false" utf8title="NX_Arrangement" utf8value="Model" version="3" type="StringAttributeType"/></UgAttributes>"#.to_vec();
+    let file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        ("/Root/part/arrangements", arrangements.clone()),
+        ("/Root/part/arrangements", arrangements.clone()),
+        ("/Root/part/attrs", attributes.clone()),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir.model.configurations.is_empty());
+
+    let file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        ("/Root/part/arrangements", arrangements),
+        ("/Root/part/attrs", attributes.clone()),
+        ("/Root/part/attrs", attributes),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.model.configurations.len(), 1);
+    assert!(!result.ir.model.configurations[0].active);
+    assert!(result.ir.model.configurations[0].bodies.is_unresolved());
+    assert!(result.ir.native.namespace("nx").is_none_or(|namespace| {
+        namespace
+            .arena_as::<crate::native::PartAttribute>("part_attributes")
+            .unwrap()
+            .is_empty()
+    }));
+}
+
+#[test]
 fn parasolid_extraction_classifies_partition_and_schema() {
     let f = single_part_prt();
     let streams = parasolid::extract_streams(&f);

@@ -10483,6 +10483,15 @@ pub fn external_reference_records(container: &Container) -> Vec<ExternalReferenc
 
 /// Decode the explicit NX arrangement table.
 pub fn configurations(container: &Container) -> Vec<Configuration> {
+    if container
+        .entries
+        .iter()
+        .filter(|entry| entry.name == "/Root/part/arrangements")
+        .count()
+        != 1
+    {
+        return Vec::new();
+    }
     container
         .entries
         .iter()
@@ -10568,6 +10577,15 @@ pub fn configuration_attribute_uses(
 
 /// Decode the typed part-attribute XML stream atomically.
 pub fn part_attributes(container: &Container) -> Vec<PartAttribute> {
+    if container
+        .entries
+        .iter()
+        .filter(|entry| entry.name == "/Root/part/attrs")
+        .count()
+        != 1
+    {
+        return Vec::new();
+    }
     container
         .entries
         .iter()
