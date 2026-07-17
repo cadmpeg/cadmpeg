@@ -36,7 +36,10 @@ mod topology;
 
 use annotations_native::{check_annotations, check_native_links};
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
-use geometry_consistency::{check_edge_endpoint_consistency, check_pcurve_surface_consistency};
+use geometry_consistency::{
+    check_edge_endpoint_consistency, check_pcurve_surface_consistency,
+    check_procedural_support_consistency,
+};
 use geometry_payloads::{check_bounds, check_tessellations, check_unknown_payloads};
 use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
 use sketches::check_sketches;
@@ -72,6 +75,7 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_parameter_domains(ir, &mut findings);
     check_edge_endpoint_consistency(ir, &mut findings);
     check_pcurve_surface_consistency(ir, &mut findings);
+    check_procedural_support_consistency(ir, &mut findings);
     check_bounds(ir, &mut findings);
     check_tessellations(ir, &mut findings);
     check_subds(ir, &mut findings);

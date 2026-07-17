@@ -1950,6 +1950,35 @@ pub struct IntcurveSupportSide {
     /// UV curve on `surface`, absent for the native `nullbs` sentinel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcurve: Option<PcurveGeometry>,
+    /// Ordered native pcurve interval corresponding affinely to the support
+    /// context's solved-curve interval. Absence means both use the same
+    /// parameter directly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve_parameter_range: Option<[f64; 2]>,
+}
+
+impl IntcurveSupportSide {
+    /// Map one solved-curve parameter into this side's pcurve parameter.
+    ///
+    /// Returns `None` when this side has no pcurve or when an explicit affine
+    /// mapping is paired with a zero-width solved interval.
+    #[must_use]
+    pub fn pcurve_parameter(
+        &self,
+        solved_parameter_range: [f64; 2],
+        parameter: f64,
+    ) -> Option<f64> {
+        self.pcurve.as_ref()?;
+        let Some(pcurve_range) = self.pcurve_parameter_range else {
+            return Some(parameter);
+        };
+        let solved_span = solved_parameter_range[1] - solved_parameter_range[0];
+        if solved_span == 0.0 {
+            return None;
+        }
+        let fraction = (parameter - solved_parameter_range[0]) / solved_span;
+        Some(pcurve_range[0] + fraction * (pcurve_range[1] - pcurve_range[0]))
+    }
 }
 
 /// Shared prefix carried by surface-related native intcurve constructions.

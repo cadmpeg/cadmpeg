@@ -3142,6 +3142,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     cadmpeg_ir::geometry::IntcurveSupportSide {
                                         surface: surfaces[side].clone(),
                                         pcurve: pcurves[side].clone(),
+                                        pcurve_parameter_range: None,
                                     }
                                 }),
                                 parameter_range: embedded.parameter_range,
@@ -3184,6 +3185,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     cadmpeg_ir::geometry::IntcurveSupportSide {
                                         surface: surfaces[side].clone(),
                                         pcurve: pcurves[side].clone(),
+                                        pcurve_parameter_range: None,
                                     }
                                 }),
                                 parameter_range: embedded.parameter_range,
@@ -3223,6 +3225,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     cadmpeg_ir::geometry::IntcurveSupportSide {
                                         surface: Some(surface_ids[side].clone()),
                                         pcurve: Some(pcurves[side].clone()),
+                                        pcurve_parameter_range: None,
                                     }
                                 }),
                                 parameter_range: embedded.parameter_range,
@@ -3232,6 +3235,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             third: cadmpeg_ir::geometry::IntcurveSupportSide {
                                 surface: Some(surface_ids[2].clone()),
                                 pcurve: Some(pcurves[2].clone()),
+                                pcurve_parameter_range: None,
                             },
                         }
                     } else if let Some((family, embedded)) = procedural.8 {
@@ -3269,6 +3273,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     cadmpeg_ir::geometry::IntcurveSupportSide {
                                         surface: surfaces[side].clone(),
                                         pcurve: pcurves[side].clone(),
+                                        pcurve_parameter_range: None,
                                     }
                                 }),
                                 parameter_range: embedded.parameter_range,
@@ -3317,6 +3322,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     cadmpeg_ir::geometry::IntcurveSupportSide {
                                         surface: support_ids[side].clone(),
                                         pcurve: pcurves[side].clone(),
+                                        pcurve_parameter_range: None,
                                     }
                                 }),
                                 parameter_range: embedded.context.parameter_range,
@@ -3367,6 +3373,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     cadmpeg_ir::geometry::IntcurveSupportSide {
                                         surface: support_ids[side].clone(),
                                         pcurve: pcurves[side].clone(),
+                                        pcurve_parameter_range: None,
                                     }
                                 }),
                                 parameter_range: embedded.context.parameter_range,
@@ -3417,6 +3424,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     cadmpeg_ir::geometry::IntcurveSupportSide {
                                         surface: support_ids[side].clone(),
                                         pcurve: pcurves[side].clone(),
+                                        pcurve_parameter_range: None,
                                     }
                                 }),
                                 parameter_range: embedded.parameter_range,
@@ -3499,6 +3507,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     cadmpeg_ir::geometry::IntcurveSupportSide {
                                         surface: surfaces[side].clone(),
                                         pcurve: pcurves[side].clone(),
+                                        pcurve_parameter_range: None,
                                     }
                                 }),
                                 parameter_range: embedded.parameter_range,
@@ -3633,6 +3642,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     cadmpeg_ir::geometry::IntcurveSupportSide {
                                         surface: surfaces[side].clone(),
                                         pcurve: pcurves[side].clone(),
+                                        pcurve_parameter_range: None,
                                     }
                                 }),
                                 parameter_range: embedded.context.parameter_range,

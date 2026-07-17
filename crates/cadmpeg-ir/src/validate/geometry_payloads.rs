@@ -1634,10 +1634,14 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::ThreeSurfaceIntersection { context, .. } =
+        if let ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } =
             &procedural.definition
         {
-            if !support_context_is_finite(context) {
+            if !support_context_is_finite(context)
+                || !support_side_mapping_is_finite(third)
+                || (third.pcurve_parameter_range.is_some()
+                    && context.parameter_range[0] == context.parameter_range[1])
+            {
                 bounds_err(
                     findings,
                     &procedural.id.0,
@@ -1799,11 +1803,71 @@ fn support_context_is_finite(context: &crate::geometry::IntcurveSupportContext) 
         .iter()
         .all(|value| value.is_finite())
         && context.parameter_range[0] <= context.parameter_range[1]
+        && (context.parameter_range[0] != context.parameter_range[1]
+            || context
+                .sides
+                .iter()
+                .all(|side| side.pcurve_parameter_range.is_none()))
+        && context.sides.iter().all(support_side_mapping_is_finite)
         && context
             .discontinuities
             .iter()
             .flatten()
             .all(|value| value.is_finite())
+}
+
+fn support_side_mapping_is_finite(side: &crate::geometry::IntcurveSupportSide) -> bool {
+    side.pcurve_parameter_range.is_none_or(|range| {
+        side.pcurve.is_some() && range.iter().all(|value| value.is_finite()) && range[0] != range[1]
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::support_context_is_finite;
+    use crate::geometry::{IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry};
+    use crate::math::Point2;
+
+    fn context(pcurve: bool, pcurve_parameter_range: Option<[f64; 2]>) -> IntcurveSupportContext {
+        IntcurveSupportContext {
+            sides: [
+                IntcurveSupportSide {
+                    surface: None,
+                    pcurve: pcurve.then_some(PcurveGeometry::Line {
+                        origin: Point2::new(0.0, 0.0),
+                        direction: Point2::new(1.0, 0.0),
+                    }),
+                    pcurve_parameter_range,
+                },
+                IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                    pcurve_parameter_range: None,
+                },
+            ],
+            parameter_range: [0.0, 1.0],
+            discontinuities: std::array::from_fn(|_| Vec::new()),
+        }
+    }
+
+    #[test]
+    fn support_pcurve_mapping_requires_a_finite_nonzero_pcurve_interval() {
+        let mapped = context(true, Some([5.0, 2.0]));
+        assert!(support_context_is_finite(&mapped));
+        assert_eq!(
+            mapped.sides[0].pcurve_parameter(mapped.parameter_range, 0.25),
+            Some(4.25)
+        );
+        assert!(!support_context_is_finite(&context(
+            false,
+            Some([5.0, 2.0])
+        )));
+        assert!(!support_context_is_finite(&context(true, Some([2.0, 2.0]))));
+        assert!(!support_context_is_finite(&context(
+            true,
+            Some([f64::NAN, 2.0])
+        )));
+    }
 }
 
 pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], dir: &str) {

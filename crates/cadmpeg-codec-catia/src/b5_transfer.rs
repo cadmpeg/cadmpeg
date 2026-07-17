@@ -226,12 +226,11 @@ fn transfer_complete(
             ));
             let supports = edge_support_plan.entry(edge_id).or_default();
             let support_range = edge_pcurve_parameters(graph, edge_id, pcurve_id)
-                .and_then(|parameters| ordered_subrange(parameters, parameter_range))
+                .and_then(|parameters| bounded_occurrence_range(parameters, parameter_range))
                 .unwrap_or(parameter_range);
-            if !supports
-                .iter()
-                .any(|(surface, pcurve, _)| *surface == loop_.surface && *pcurve == pcurve_id)
-            {
+            if !supports.iter().any(|(surface, pcurve, range)| {
+                *surface == loop_.surface && *pcurve == pcurve_id && *range == support_range
+            }) {
                 supports.push((loop_.surface, pcurve_id, support_range));
             }
             let lifted = lifted_curve_geometry(pcurve, surface).or_else(|| {
@@ -611,6 +610,7 @@ fn transfer_complete(
                     edge_support_plan.get(&edge_id)?,
                     &surface_ids,
                     &pcurve_plan,
+                    edge_range,
                 )
             });
         if let Some((kind, tag, definition)) = procedural {
@@ -953,6 +953,15 @@ fn edge_pcurve_parameters(graph: &B5Graph, edge: u32, pcurve: u32) -> Option<[f6
 }
 
 fn ordered_subrange(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
+    let parameters = bounded_occurrence_range(parameters, domain)?;
+    Some(if parameters[0] < parameters[1] {
+        parameters
+    } else {
+        [parameters[1], parameters[0]]
+    })
+}
+
+fn bounded_occurrence_range(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
     const PARAMETER_TOLERANCE: f64 = 1e-9;
 
     if !parameters.into_iter().all(f64::is_finite)
@@ -964,12 +973,7 @@ fn ordered_subrange(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> 
     {
         return None;
     }
-    let parameters = parameters.map(|parameter| parameter.clamp(domain[0], domain[1]));
-    Some(if parameters[0] < parameters[1] {
-        parameters
-    } else {
-        [parameters[1], parameters[0]]
-    })
+    Some(parameters.map(|parameter| parameter.clamp(domain[0], domain[1])))
 }
 
 fn oriented_line_plan(
@@ -1630,26 +1634,34 @@ fn b5_edge_support_definition(
     supports: &[(u32, u32, [f64; 2])],
     surface_ids: &HashMap<u32, SurfaceId>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+    solved_parameter_range: Option<[f64; 2]>,
 ) -> Option<(&'static str, &'static str, ProceduralCurveDefinition)> {
-    const PARAMETER_TOLERANCE: f64 = 1e-9;
-
     let ([first] | [first, _]) = supports else {
         return None;
     };
-    let parameter_range = first.2;
-    if supports.iter().skip(1).any(|support| {
-        (support.2[0] - parameter_range[0]).abs() > PARAMETER_TOLERANCE
-            || (support.2[1] - parameter_range[1]).abs() > PARAMETER_TOLERANCE
+    if supports.iter().any(|(_, pcurve, range)| {
+        pcurves
+            .get(pcurve)
+            .is_none_or(|(_, _, domain)| bounded_occurrence_range(*range, *domain).is_none())
     }) {
         return None;
     }
+    let parameter_range = solved_parameter_range.unwrap_or_else(|| {
+        if first.2[0] < first.2[1] && supports.iter().skip(1).all(|support| support.2 == first.2) {
+            first.2
+        } else {
+            [0.0, 1.0]
+        }
+    });
     let mut sides = std::array::from_fn(|_| IntcurveSupportSide {
         surface: None,
         pcurve: None,
+        pcurve_parameter_range: None,
     });
-    for (side, (surface, pcurve, _)) in sides.iter_mut().zip(supports) {
+    for (side, (surface, pcurve, support_range)) in sides.iter_mut().zip(supports) {
         side.surface = Some(surface_ids.get(surface)?.clone());
         side.pcurve = Some(pcurves.get(pcurve)?.0.clone());
+        side.pcurve_parameter_range = (*support_range != parameter_range).then_some(*support_range);
     }
     let context = IntcurveSupportContext {
         sides,
@@ -2058,11 +2070,12 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::{
-        b5_edge_support_definition, body_kind_if_owned, cylinder_helix, cylinder_point,
-        edge_pcurve_parameters, isocurve_endpoint_parameters, lifted_curve_geometry,
-        merge_curve_plan, neutral_pcurve_point, ordered_subrange, oriented_circle_plan,
-        oriented_line_plan, oriented_nurbs_range, rational_arc, revolution_surface, revolve_nurbs,
-        transfer, transfer_vertex_tolerances, CurvePlan, SurfacePlan,
+        b5_edge_support_definition, body_kind_if_owned, bounded_occurrence_range, cylinder_helix,
+        cylinder_point, edge_pcurve_parameters, isocurve_endpoint_parameters,
+        lifted_curve_geometry, merge_curve_plan, neutral_pcurve_point, ordered_subrange,
+        oriented_circle_plan, oriented_line_plan, oriented_nurbs_range, rational_arc,
+        revolution_surface, revolve_nurbs, transfer, transfer_vertex_tolerances, CurvePlan,
+        SurfacePlan,
     };
     use crate::b5::{
         loop_chain_senses, B5Face, B5Graph, B5Loop, B5ParameterIncidence, B5Pcurve, B5Profile,
@@ -2090,6 +2103,10 @@ mod tests {
         assert!(ordered_subrange([2.0, 2.0], [0.0, 10.0]).is_none());
         assert!(ordered_subrange([-2e-9, 8.0], [0.0, 10.0]).is_none());
         assert!(ordered_subrange([2.0, 12.0], [0.0, 10.0]).is_none());
+        assert_eq!(
+            bounded_occurrence_range([8.0, 2.0], [0.0, 10.0]),
+            Some([8.0, 2.0])
+        );
     }
 
     #[test]
@@ -2291,10 +2308,10 @@ mod tests {
         };
         let pcurves = BTreeMap::from([
             (20, (pcurve_20.clone(), false, [2.0, 4.0])),
-            (21, (pcurve_21.clone(), false, [2.0, 4.0])),
+            (21, (pcurve_21.clone(), false, [2.0, 5.0])),
         ]);
         let (_, _, one_sided) =
-            b5_edge_support_definition(&[(10, 20, [2.0, 4.0])], &surfaces, &pcurves)
+            b5_edge_support_definition(&[(10, 20, [2.0, 4.0])], &surfaces, &pcurves, None)
                 .expect("one-sided surface curve");
         assert!(matches!(
             one_sided,
@@ -2309,6 +2326,7 @@ mod tests {
             &[(10, 20, [2.0, 4.0]), (11, 21, [2.0, 4.0])],
             &surfaces,
             &pcurves,
+            None,
         )
         .expect("two-sided intersection");
         assert!(matches!(
@@ -2317,13 +2335,35 @@ mod tests {
                 if context.parameter_range == [2.0, 4.0]
                     && context.sides[1].surface == Some(surfaces[&11].clone())
                     && context.sides[1].pcurve == Some(pcurve_21)
+                    && context.sides.iter().all(|side| side.pcurve_parameter_range.is_none())
         ));
-        assert!(b5_edge_support_definition(
-            &[(10, 20, [2.0, 4.0]), (11, 21, [2.0, 5.0])],
+        let (_, _, independently_parameterized) = b5_edge_support_definition(
+            &[(10, 20, [2.0, 4.0]), (11, 21, [5.0, 2.0])],
             &surfaces,
             &pcurves,
+            None,
         )
-        .is_none());
+        .expect("independently parameterized intersection");
+        assert!(matches!(
+            independently_parameterized,
+            ProceduralCurveDefinition::Intersection { context, .. }
+                if context.parameter_range == [0.0, 1.0]
+                    && context.sides[0].pcurve_parameter_range == Some([2.0, 4.0])
+                    && context.sides[1].pcurve_parameter_range == Some([5.0, 2.0])
+        ));
+        let (_, _, distance_parameterized) = b5_edge_support_definition(
+            &[(10, 20, [2.0, 4.0])],
+            &surfaces,
+            &pcurves,
+            Some([0.0, 8.0]),
+        )
+        .expect("distance-parameterized surface curve");
+        assert!(matches!(
+            distance_parameterized,
+            ProceduralCurveDefinition::SurfaceCurve { context, .. }
+                if context.parameter_range == [0.0, 8.0]
+                    && context.sides[0].pcurve_parameter_range == Some([2.0, 4.0])
+        ));
     }
 
     #[test]

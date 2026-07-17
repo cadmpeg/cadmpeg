@@ -650,6 +650,7 @@ fn transfer_zero_entity_topology(
                     IntcurveSupportSide {
                         surface: Some(SurfaceId(format!("catia:zero-entity:surf#{surface_index}"))),
                         pcurve: support.pcurve.clone(),
+                        pcurve_parameter_range: None,
                     }
                 });
                 let procedural_id =
@@ -2944,6 +2945,7 @@ fn transfer_e5_topology(
                 sides: [left, right].map(|side| IntcurveSupportSide {
                     surface: Some(side.0.clone()),
                     pcurve: Some(side.1.clone()),
+                    pcurve_parameter_range: None,
                 }),
                 parameter_range: left.3,
                 discontinuities: std::array::from_fn(|_| Vec::new()),
@@ -3084,10 +3086,12 @@ fn transfer_e5_topology(
                         IntcurveSupportSide {
                             surface: Some(surface.clone()),
                             pcurve: Some(pcurve.clone()),
+                            pcurve_parameter_range: None,
                         },
                         IntcurveSupportSide {
                             surface: None,
                             pcurve: None,
+                            pcurve_parameter_range: None,
                         },
                     ],
                     parameter_range: *range,
@@ -3734,6 +3738,7 @@ fn e5_occurrence_intersection_context(
         sides: [left, right].map(|side| IntcurveSupportSide {
             surface: Some(side.0.clone()),
             pcurve: Some(side.1.clone()),
+            pcurve_parameter_range: None,
         }),
         parameter_range: left.2,
         discontinuities: std::array::from_fn(|_| Vec::new()),
@@ -6530,6 +6535,7 @@ fn build_standard_edge_curve(
             IntcurveSupportSide {
                 surface,
                 pcurve: None,
+                pcurve_parameter_range: None,
             }
         });
         if sides.iter().all(|side| side.surface.is_some()) && sides[0].surface != sides[1].surface {
