@@ -4564,7 +4564,7 @@ fn saved_section(
     entities.extend(saved_dummy_entities(payload, table, table_end));
     entities.extend(saved_spline_entities(payload, start, end, cache));
     entities.sort_by_key(saved_entity_offset);
-    (!entities.is_empty()).then_some(FeatureSavedSection {
+    Some(FeatureSavedSection {
         entities,
         offset: table,
     })
@@ -7371,6 +7371,24 @@ mod tests {
         };
         assert_eq!(line.entity_id, 3);
         assert_eq!(line.references, [196]);
+    }
+
+    #[test]
+    fn saved_section_retains_an_empty_named_table() {
+        let payload = b"\xe0\0p_saved_result\0\xe0\x02local_sys\0";
+
+        let section = saved_section(
+            payload,
+            0,
+            payload.len(),
+            &scalar::ScalarCache::default(),
+            None,
+            None,
+        )
+        .expect("saved section header");
+
+        assert_eq!(section.offset, 0);
+        assert!(section.entities.is_empty());
     }
 
     #[test]

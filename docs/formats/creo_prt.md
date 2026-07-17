@@ -1521,7 +1521,11 @@ The positional `vert_tab.chains` opener uses the same bucket-count framing.
 Each populated entry begins with `f7 <entry_class>` and stores two incident
 `ent_tab.ext_id` values, one trim-vertex identifier, and a terminal zero.
 
-`p_saved_result` contains evaluated section entities and does not define the authoritative solved trim topology. Saved line rows may contain `f0 f7 <ref>`, `f1 f7 <ref>`, or bare `f7 <ref>` references between their identity, attribute, and coordinate fields.
+`p_saved_result` contains evaluated section entities and does not define the
+authoritative solved trim topology. Its named table remains present when no
+entity row is complete. Saved line rows may contain `f0 f7 <ref>`,
+`f1 f7 <ref>`, or bare `f7 <ref>` references between their identity, attribute,
+and coordinate fields.
 The line prototype can close with `f1 e3`; positional line rows follow that
 close. Within saved-section three-scalar coordinate fields, `18 e5` expands to
 the coordinate triple `[0, 1, 0]`. In a saved-line coordinate row, `41` occupies
