@@ -1532,6 +1532,8 @@ attributes, and ordered coordinate prefix when a structural boundary occurs
 before all six endpoint-coordinate slots.
 Named saved arcs and circles retain their identity and each decoded scalar
 field when later center, radius, endpoint, or parameter fields are absent.
+Positional saved arcs retain their uniquely joined identity and ordered
+12-slot scalar prefix at a structural row boundary.
 The line prototype can close with `f1 e3`; positional line rows follow that
 close. Within saved-section three-scalar coordinate fields, `18 e5` expands to
 the coordinate triple `[0, 1, 0]`. In a saved-line coordinate row, `41` occupies

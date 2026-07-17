@@ -4263,6 +4263,9 @@ fn saved_positional_generated_entities(
         let mut cursor = after_id + header_size + 1;
         let mut values = Vec::with_capacity(value_count);
         while cursor < row_end && values.len() < value_count {
+            if payload.get(cursor) == Some(&0xe3) {
+                break;
+            }
             if payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
                 values.extend([Some(0.0), Some(1.0), Some(0.0)]);
                 cursor += 2;
@@ -4301,7 +4304,13 @@ fn saved_positional_generated_entities(
             cursor = next;
         }
         if values.len() != value_count {
-            continue;
+            if segment.kind != FeatureSegmentKind::Arc
+                || values.len() > value_count
+                || (cursor != row_end && payload.get(cursor) != Some(&0xe3))
+            {
+                continue;
+            }
+            values.resize(value_count, None);
         }
         match segment.kind {
             FeatureSegmentKind::Line => {
@@ -7706,6 +7715,60 @@ mod tests {
         .expect("positional saved section");
         assert_eq!(section.entities.len(), 1);
         assert_eq!(section.offset, 1);
+    }
+
+    #[test]
+    fn saved_arc_replay_retains_a_structurally_terminated_scalar_prefix() {
+        let mut payload = vec![0xe3, 7, 0xe2];
+        payload.extend([0x0f; 6]);
+        payload.push(0xe3);
+        let order = FeatureOrderTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![FeatureOrderRow {
+                external_id: 42,
+                internal_id: 7,
+                bitmask: 0,
+                offset: 0,
+            }],
+            offset: 0,
+        };
+        let segments = FeatureSegmentTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![FeatureSegment {
+                kind: FeatureSegmentKind::Arc,
+                directions: [None; 3],
+                point_ids: [1, 2],
+                center_id: Some(3),
+                arc_orientation: Some(0),
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 42,
+                offset: 0,
+            }],
+            offset: 0,
+        };
+
+        let entities = saved_positional_generated_entities(
+            &payload,
+            0,
+            payload.len(),
+            &scalar::ScalarCache::default(),
+            Some(&order),
+            Some(&segments),
+        );
+
+        let [FeatureSavedEntity::Arc(arc)] = entities.as_slice() else {
+            panic!("expected saved arc");
+        };
+        assert_eq!(arc.entity_id, 7);
+        assert_eq!(arc.center, [Some(0.0); 3]);
+        assert_eq!(arc.radius, Some(0.0));
+        assert_eq!(arc.endpoints[0], [Some(0.0), Some(0.0), None]);
+        assert_eq!(arc.endpoints[1], [None; 3]);
+        assert_eq!(arc.parameters, [None; 2]);
     }
 
     #[test]
