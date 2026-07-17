@@ -765,6 +765,8 @@ identifier under the same arity rules as `segtab` lines.
 A complete saved line whose two endpoints share exactly one section coordinate
 supplies that fixed-coordinate orientation to its connected type-five/type-seven
 line component.
+For type-three and type-nine point-on-line incidences, that same complete saved
+line coordinate supplies the missing coordinate of the selected `segtab` point.
 
 The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;

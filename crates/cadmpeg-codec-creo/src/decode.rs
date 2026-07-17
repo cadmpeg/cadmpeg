@@ -3776,6 +3776,13 @@ pub(crate) fn resolved_section_points(
             !ambiguous_point_ids.contains(first) && !ambiguous_point_ids.contains(second)
         })
         .collect::<Vec<_>>();
+    let saved_point_on_line_coordinates = definition
+        .relations
+        .iter()
+        .flat_map(|table| &table.skamps)
+        .filter_map(|skamp| section_skamp_saved_point_on_line(definition, skamp))
+        .filter(|(point_id, _, _)| !ambiguous_point_ids.contains(point_id))
+        .collect::<Vec<_>>();
     let symmetric_point_constraints = definition
         .relations
         .iter()
@@ -3921,6 +3928,13 @@ pub(crate) fn resolved_section_points(
                 _ => {}
             }
         }
+        for &(point_id, coordinate, value) in &saved_point_on_line_coordinates {
+            let point = points.get(&point_id).copied().unwrap_or([None, None]);
+            if point[coordinate].is_none() {
+                points.entry(point_id).or_insert([None, None])[coordinate] = Some(value);
+                changed = true;
+            }
+        }
         for &(axis_point_id, first_id, second_id, fixed_coordinate) in &symmetric_point_constraints
         {
             let [axis, first, second] = [axis_point_id, first_id, second_id]
@@ -3972,6 +3986,13 @@ fn section_line_fixed_coordinate(
 ) -> Option<usize> {
     let segment = unique_section_skamp_segment(definition, segment.external_id)?;
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    section_line_entity_fixed_coordinate(definition, segment.external_id)
+}
+
+fn section_line_entity_fixed_coordinate(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+) -> Option<usize> {
     let mut adjacency = BTreeMap::<u32, Vec<(u32, usize)>>::new();
     for skamp in definition.relations.iter().flat_map(|table| &table.skamps) {
         let (parity, first, second) = match (skamp.kind, skamp.items.as_slice()) {
@@ -3992,8 +4013,8 @@ fn section_line_fixed_coordinate(
             .or_default()
             .push((first.entity_id, parity));
     }
-    let mut parities = BTreeMap::from([(segment.external_id, 0usize)]);
-    let mut pending = std::collections::VecDeque::from([segment.external_id]);
+    let mut parities = BTreeMap::from([(entity_id, 0usize)]);
+    let mut pending = std::collections::VecDeque::from([entity_id]);
     while let Some(entity_id) = pending.pop_front() {
         let parity = parities[&entity_id];
         for &(neighbor, edge_parity) in adjacency.get(&entity_id).into_iter().flatten() {
@@ -4104,6 +4125,64 @@ fn section_skamp_point_on_line(
     }?;
     let coordinate = section_line_fixed_coordinate(definition, pair.0)?;
     Some((pair.0.point_ids[0], pair.1, coordinate))
+}
+
+fn section_skamp_saved_point_on_line(
+    definition: &crate::feature::FeatureDefinition,
+    skamp: &crate::feature::FeatureSkamp,
+) -> Option<(u32, usize, f64)> {
+    let [first, second] = skamp.items.as_slice() else {
+        return None;
+    };
+    let (line_item, point_id) = match skamp.kind {
+        3 => [(first, second), (second, first)]
+            .into_iter()
+            .find_map(|(line_item, point_item)| {
+                if line_item.sense != 0 {
+                    return None;
+                }
+                Some((
+                    line_item,
+                    section_skamp_selected_point_id(definition, point_item)?,
+                ))
+            }),
+        9 => [(first, second), (second, first)]
+            .into_iter()
+            .find_map(|(line_item, point_item)| {
+                if line_item.sense != 0
+                    || point_item.sense != 0
+                    || !section_skamp_is_point(definition, point_item)
+                {
+                    return None;
+                }
+                Some((
+                    line_item,
+                    unique_section_skamp_segment(definition, point_item.entity_id)?.point_ids[0],
+                ))
+            }),
+        _ => None,
+    }?;
+    if definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.rows)
+        .any(|segment| segment.external_id == line_item.entity_id)
+    {
+        return None;
+    }
+    let crate::feature::FeatureSavedEntity::Line(line) =
+        section_saved_entity(definition, line_item.entity_id)?
+    else {
+        return None;
+    };
+    let coordinate = section_line_entity_fixed_coordinate(definition, line_item.entity_id)?;
+    let [Some(first), Some(second)] =
+        [line.endpoints[0][coordinate], line.endpoints[1][coordinate]]
+    else {
+        return None;
+    };
+    let scale = first.abs().max(second.abs()).max(1.0);
+    ((first - second).abs() <= 1e-9 * scale).then_some((point_id, coordinate, first))
 }
 
 fn section_skamp_axis_symmetry(
@@ -16552,6 +16631,41 @@ mod resolved_sketch_tests {
         assert_eq!(
             section_line_fixed_coordinate(&saved_definition, segment),
             Some(1)
+        );
+        saved_definition
+            .variables
+            .as_mut()
+            .expect("variables")
+            .points
+            .push(crate::feature::FeatureSectionPoint {
+                point_id: 4,
+                u: Some(3.0),
+                v: None,
+            });
+        saved_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps = vec![crate::feature::FeatureSkamp {
+            id: 32,
+            kind: 9,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 14,
+                    sense: 0,
+                },
+            ],
+            offset: 87,
+        }];
+        assert_eq!(
+            resolved_section_points(&saved_definition).get(&4),
+            Some(&[3.0, 1.0])
         );
         let mut duplicate_saved = saved_definition
             .saved_section
