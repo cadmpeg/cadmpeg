@@ -174,7 +174,6 @@ fn standard_counted_vertex_table_excludes_incidental_markers() {
     bytes.extend_from_slice(&le_f32(20.0));
     bytes.extend_from_slice(&le_f32(30.0));
 
-    assert_eq!(crate::geometry::direct_vertices(&bytes).len(), 5);
     assert_eq!(
         crate::topology::standard_vertex_points(&bytes)
             .unwrap()
@@ -207,6 +206,42 @@ fn zero_entity_vertices_exclude_framed_payload_markers() {
     let mut malformed = vec![0xa9, 0x03, 0x10, 0xff, 0x05, 0x08, 0x01];
     malformed.extend_from_slice(&[0; 12]);
     assert!(crate::zero_entity::unframed_vertices(&malformed).is_empty());
+}
+
+#[test]
+fn object_stream_vertices_exclude_framed_payload_markers() {
+    let mut bytes = vec![0xb2, 0x03, 0x06, 0x10, 0x05];
+    bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+    for value in [90.0f32, 91.0, 92.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+    bytes.push(0);
+    bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+    for value in [1.0f32, 2.0, 3.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+
+    assert_eq!(
+        crate::geometry::object_stream_vertices(&bytes),
+        [cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)]
+    );
+    assert!(crate::geometry::object_stream_vertices(&bytes[5..]).is_empty());
+
+    let mut b5 = Vec::new();
+    let mut payload = vec![0x05, 0x08, 0x01];
+    for value in [90.0f32, 91.0, 92.0] {
+        payload.extend_from_slice(&le_f32(value));
+    }
+    append_b5_record(&mut b5, 0x06, 1, &payload);
+    append_b5_record(&mut b5, 0x06, 2, &[]);
+    b5.extend_from_slice(&[0x05, 0x08, 0x01]);
+    for value in [4.0f32, 5.0, 6.0] {
+        b5.extend_from_slice(&le_f32(value));
+    }
+    assert_eq!(
+        crate::geometry::object_stream_vertices(&b5),
+        [cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)]
+    );
 }
 
 #[test]

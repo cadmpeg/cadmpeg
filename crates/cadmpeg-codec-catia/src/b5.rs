@@ -295,6 +295,15 @@ pub struct B5Record {
     pub payload: Vec<u8>,
 }
 
+#[derive(Clone, Copy)]
+struct ObjectFrame {
+    start: usize,
+    end: usize,
+    family: u8,
+    class: u8,
+    object_id: u32,
+}
+
 /// A resolved `b5 03 5f` face node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B5Face {
@@ -1956,24 +1965,15 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
     let recurse: fn(&[u8]) -> Vec<B5Record> = records;
     let mut records = Vec::new();
     let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
-    let mut position = 0;
-    while position + 8 <= bytes.len() {
-        let Some((end, _, _, _)) = object_frame(bytes, position) else {
-            position += 1;
-            continue;
-        };
-        let start = position;
-        let mut at = position;
-        let mut run = Vec::new();
-        while let Some((next, family, class, object_id)) = object_frame(bytes, at) {
-            run.push((at, next, family, class, object_id));
-            at = next;
-        }
-        if run.len() < 2 {
-            position = start + 1;
-            continue;
-        }
-        for (record_start, record_end, family, class, object_id) in run {
+    for run in object_runs(bytes) {
+        for frame in run {
+            let ObjectFrame {
+                start: record_start,
+                end: record_end,
+                family,
+                class,
+                object_id,
+            } = frame;
             if family == 0xa8 {
                 let payload = record_start + 11;
                 for mut child in recurse(&bytes[payload..record_end]) {
@@ -2014,7 +2014,6 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
                 payload,
             });
         }
-        position = at.max(end);
     }
     let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
     let mut candidates = HashMap::<u32, Option<B5Record>>::new();
@@ -2062,6 +2061,48 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
     isolated.sort_unstable_by_key(|record| record.offset);
     records.extend(isolated);
     records
+}
+
+/// Return complete byte ranges for length-closed B5/A8 record runs. A lone
+/// frame-like candidate does not establish an object-stream record.
+#[must_use]
+pub(crate) fn framed_ranges(bytes: &[u8]) -> Vec<std::ops::Range<usize>> {
+    object_runs(bytes)
+        .into_iter()
+        .flatten()
+        .map(|frame| frame.start..frame.end)
+        .collect()
+}
+
+fn object_runs(bytes: &[u8]) -> Vec<Vec<ObjectFrame>> {
+    let mut runs = Vec::new();
+    let mut position = 0usize;
+    while position + 8 <= bytes.len() {
+        let Some((first_end, _, _, _)) = object_frame(bytes, position) else {
+            position += 1;
+            continue;
+        };
+        let start = position;
+        let mut at = position;
+        let mut run = Vec::new();
+        while let Some((end, family, class, object_id)) = object_frame(bytes, at) {
+            run.push(ObjectFrame {
+                start: at,
+                end,
+                family,
+                class,
+                object_id,
+            });
+            at = end;
+        }
+        if run.len() < 2 {
+            position = start + 1;
+            continue;
+        }
+        runs.push(run);
+        position = at.max(first_end);
+    }
+    runs
 }
 
 fn record_references(record: &B5Record) -> Vec<u32> {

@@ -341,18 +341,7 @@ pub fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
     }
 }
 
-/// Read unframed-layout `05 08 01` vertices as `(x, y, z)` in millimetres.
-///
-/// Non-finite and out-of-range candidates are filtered (real part coordinates sit
-/// well under 10 metres, and the 3-byte signature occurs incidentally in packed
-/// sub-streams). Standard and FBB topology paths do not use this scan; their
-/// vertices come only from the declared counted table. E5 uses
-/// [`e5_vertices`], which excludes framed-record payloads.
-pub fn direct_vertices(brep: &[u8]) -> Vec<Point3> {
-    scan_vertex_records(brep)
-}
-
-fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
+pub(crate) fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
     let mut out = Vec::new();
     let mut p = 0usize;
     while p + 15 <= bytes.len() {
@@ -1734,7 +1723,7 @@ pub fn a5_native_edge_graph(data: &[u8]) -> Option<A5NativeEdgeGraph> {
 /// coincide with serialized `05 08 01` vertices at single-precision tolerance.
 #[must_use]
 pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
-    let points = direct_vertices(data);
+    let points = object_stream_vertices(data);
     let standalone = b2_cylinders(data);
     let embedded = b2_embedded_cylinders(data);
     let circles = b2_circles(data);
@@ -3334,6 +3323,35 @@ pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
         records.push(candidate);
     }
     records
+}
+
+/// Read `05 08 01` coordinate rows outside every length-closed consolidated
+/// A/B or B5/A8 record. Marker-like bytes inside record payloads are not
+/// vertices.
+#[must_use]
+pub(crate) fn object_stream_vertices(data: &[u8]) -> Vec<Point3> {
+    let mut ranges = consolidated_records(data)
+        .into_iter()
+        .map(|record| record.range)
+        .chain(crate::b5::framed_ranges(data))
+        .collect::<Vec<_>>();
+    if ranges.is_empty() {
+        return Vec::new();
+    }
+    ranges.sort_unstable_by_key(|range| (range.start, range.end));
+    let mut vertices = Vec::new();
+    let mut region_start = 0usize;
+    for range in ranges {
+        if range.end <= region_start {
+            continue;
+        }
+        if range.start > region_start {
+            vertices.extend(scan_vertex_records(&data[region_start..range.start]));
+        }
+        region_start = region_start.max(range.end);
+    }
+    vertices.extend(scan_vertex_records(&data[region_start..]));
+    vertices
 }
 
 fn a_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {

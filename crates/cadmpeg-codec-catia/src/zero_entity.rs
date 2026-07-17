@@ -1635,14 +1635,14 @@ pub fn unframed_vertices(bytes: &[u8]) -> Vec<Point3> {
     let mut region_start = 0usize;
     for record in &records {
         if region_start <= record.offset {
-            vertices.extend(crate::geometry::direct_vertices(
+            vertices.extend(crate::geometry::scan_vertex_records(
                 &bytes[region_start..record.offset],
             ));
         }
         let logical_len = support_logical_len(record.tag).unwrap_or(record.bytes.len());
         region_start = record.offset.saturating_add(logical_len).min(bytes.len());
     }
-    vertices.extend(crate::geometry::direct_vertices(&bytes[region_start..]));
+    vertices.extend(crate::geometry::scan_vertex_records(&bytes[region_start..]));
     vertices
 }
 
