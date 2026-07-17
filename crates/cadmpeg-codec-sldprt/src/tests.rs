@@ -17825,6 +17825,25 @@ fn decode_preserves_configuration_local_parameter_values() {
         radius: Length(75.0),
     };
 
+    let mut conflicting = edited.clone();
+    update_sldprt_native(&mut conflicting, |native| {
+        let lane = native
+            .feature_input_lanes
+            .iter_mut()
+            .find(|lane| lane.configuration.as_deref() == Some("1"))
+            .unwrap();
+        let scalar = &mut lane.scalars[0];
+        scalar.value = 0.060;
+        let offset = usize::try_from(scalar.offset).unwrap();
+        lane.native_payload[offset..offset + 8].copy_from_slice(&0.060f64.to_le_bytes());
+    });
+    let error = SldprtCodec
+        .write_preserved(&conflicting, &mut Vec::new())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("conflicting neutral and native SLDPRT configuration design-state edits"));
+
     let mut encoded = Vec::new();
     SldprtCodec.write_preserved(&edited, &mut encoded).unwrap();
     let regenerated = SldprtCodec

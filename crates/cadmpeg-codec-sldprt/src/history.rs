@@ -5055,6 +5055,38 @@ fn sync_configuration_design_state(
             "SLDPRT configuration design state requires retained feature-input lanes".into(),
         ));
     };
+    let mut current_projection = ir.clone();
+    project_configuration_design_states(
+        &mut current_projection,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+        &native.pmi_dimensions,
+    );
+    let current_parameter_hash =
+        configuration_parameter_value_hash(&current_projection.model.configurations);
+    let current_feature_hash =
+        configuration_feature_state_hash(&current_projection.model.configurations);
+    let current_matches = current_parameter_hash
+        == configuration_parameter_value_hash(&ir.model.configurations)
+        && current_feature_hash == configuration_feature_state_hash(&ir.model.configurations);
+    if current_matches {
+        return Ok(());
+    }
+    let native_design_state_changed = ir.source.as_ref().is_some_and(|source| {
+        source
+            .attributes
+            .get("sldprt_configuration_parameter_values_sha256")
+            .is_some_and(|baseline| baseline != &current_parameter_hash)
+            || source
+                .attributes
+                .get("sldprt_configuration_feature_states_sha256")
+                .is_some_and(|baseline| baseline != &current_feature_hash)
+    });
+    if native_design_state_changed {
+        return Err(CodecError::Malformed(
+            "conflicting neutral and native SLDPRT configuration design-state edits".into(),
+        ));
+    }
     patch_configuration_parameter_scalars(ir, native)?;
 
     let mut projected = ir.clone();
