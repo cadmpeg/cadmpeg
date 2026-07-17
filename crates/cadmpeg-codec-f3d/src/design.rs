@@ -2139,6 +2139,19 @@ fn project_extrude(
                 && group.scope_record_index == scope.record_index
         })
         .collect::<Vec<_>>();
+    let profile_groups = scope_groups
+        .iter()
+        .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Profile))
+        .copied()
+        .collect::<Vec<_>>();
+    if !profile_groups.is_empty()
+        && !matches!(
+            profile_groups.as_slice(),
+            [group] if group.members.as_slice() == [profile.record_index]
+        )
+    {
+        return None;
+    }
     let face_groups = scope_groups
         .iter()
         .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Faces))
@@ -17344,6 +17357,29 @@ mod relation_tests {
                 ..
             }
         ));
+
+        let mut profile_group = body_group.clone();
+        profile_group.id = "f3d:Design/BulkStream.dat:operand-group#104".into();
+        profile_group.record_index = 104;
+        profile_group.extrude_role = Some(DesignExtrudeOperandRole::Profile);
+        profile_group.role = 0x0000_0041_0000_0000;
+        assert!(project_extrude(
+            &scope,
+            &[(0, &along), (1, &taper)],
+            &[body_group.clone(), profile_group.clone()],
+            &[],
+            std::slice::from_ref(&placement),
+        )
+        .is_none());
+        profile_group.members = vec![100];
+        assert!(project_extrude(
+            &scope,
+            &[(0, &along), (1, &taper)],
+            &[body_group.clone(), profile_group],
+            &[],
+            std::slice::from_ref(&placement),
+        )
+        .is_some());
 
         let mut face_group = body_group.clone();
         face_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
