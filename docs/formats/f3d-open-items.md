@@ -33,7 +33,6 @@ This document records F3D semantics that the format specification does not yet d
 - The indexed parameter companion has a fixed prefix, an owner backlink, a Unix-epoch microsecond timestamp, an exact owned interval, and an ordered set of contained construction recipes. Dimension-owned recipes resolve to their immediate indexed-record containers. Whether the timestamp denotes parameter creation or last modification is unresolved, and the operation grammar relating recipe records in non-locus companion variants is unresolved.
 - The semantics of nonzero member-role values in sketch-relation member runs are unresolved beyond discriminating input from generated members.
 - The `0x80000000` sketch-relation constraint bit grouping spline entities is unresolved.
-- The record class carrying the `0x20000000000` text-path relation is unresolved.
 - Whether `EntityGenesis`-form sketch coordinate values follow the document display unit or are fixed at ten times the centimetre value is unresolved.
 - The placement of an `EntityGenesis`-form sketch that has no Sketch parameter scope is unresolved; such sketches decode their geometry, relations, and owners but project no neutral sketch.
 - In the `EntityGenesis`-form placement record class, the role of the f64-shaped field ending at primary-record offset 45, the record referenced at offset 57 of the 362-byte WorkPlane variant, and the shared tail fields of the 213- and 341-byte sketch placement forms are unresolved.
