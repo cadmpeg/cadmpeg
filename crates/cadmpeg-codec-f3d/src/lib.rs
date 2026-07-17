@@ -77,7 +77,6 @@
 mod act;
 pub mod asm_header;
 pub mod brep;
-mod builder;
 pub mod container;
 pub mod decode;
 pub mod design;

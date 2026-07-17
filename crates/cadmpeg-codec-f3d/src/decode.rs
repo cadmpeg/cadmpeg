@@ -118,7 +118,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 // Lost parametric edge references are an attribute concept the
                 // decode cannot replay: route the omission through the Phase-4B
                 // builder module so it is not a bare silent push.
-                crate::builder::omit(
+                cadmpeg_ir::transfer::omit(
                     &mut report.losses,
                     LossNote {
                         code: LossCode::AttributesNotTransferred,
@@ -398,7 +398,7 @@ fn account_records(
                 // report entry cannot be skipped, then backs its `Dropped`
                 // disposition (§6.2).
                 let loss = untransferred_asset_loss(role_label, &entry.name);
-                crate::builder::omit(&mut report.losses, loss.clone());
+                cadmpeg_ir::transfer::omit(&mut report.losses, loss.clone());
                 RecordDisposition::Dropped { loss }
             }
             _ => RecordDisposition::Structural,
@@ -821,18 +821,20 @@ fn source_and_tolerances(scan: &ContainerScan, active: &BrepFacts) -> (SourceMet
 
 /// Loss report for a successful geometry decode.
 ///
-/// Every note is constructed through the [`crate::builder`] Phase-4B module
-/// (§10): a concept the decode did not carry into typed IR goes through
-/// [`crate::builder::omit`] so the omission cannot be reached without recording
-/// its note, while a reduction that survives approximately (spline/procedural
-/// forms solved into cached NURBS carriers) or an informational census goes
-/// through [`crate::builder::reduce`]. This function routes every note through
-/// that module rather than the bare `losses.push` spelling; the guarantee is
-/// that the builder is the one construction path used on the geometry path, not
-/// a type error against `Vec::push` (the platform `Builder` cannot ban the
+/// Every note is constructed through the shared platform helpers (doc §6.2,
+/// §10 Phase 4B): a concept the decode did not carry into typed IR goes through
+/// [`cadmpeg_ir::transfer::omit`] so the omission cannot be reached without
+/// recording its note, while a reduction that survives approximately
+/// (spline/procedural forms solved into cached NURBS carriers) or an
+/// informational census goes through [`cadmpeg_ir::transfer::reduce`]. Both
+/// resolve through the platform [`Builder`](cadmpeg_ir::transfer::Builder) into
+/// the report's loss channel. This function routes every note through those
+/// helpers rather than the bare `losses.push` spelling; the guarantee is that
+/// the platform builder is the one construction path used on the geometry path,
+/// not a type error against `Vec::push` (the platform `Builder` cannot ban the
 /// method). A direct push would compile — review keeps it out.
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
-    use crate::builder::{omit, reduce};
+    use cadmpeg_ir::transfer::{omit, reduce};
 
     let s = &decoded.stats;
     let mut losses: Vec<LossNote> = Vec::new();
@@ -1055,7 +1057,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     // the Phase-4B builder module as an omission (§10) so no drop is silent;
     // retained source bytes remain available for native replay.
     let mut losses: Vec<LossNote> = Vec::new();
-    crate::builder::omit(
+    cadmpeg_ir::transfer::omit(
         &mut losses,
         LossNote {
             code: LossCode::GeometryNotTransferred,
@@ -1069,7 +1071,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             provenance: None,
         },
     );
-    crate::builder::omit(
+    cadmpeg_ir::transfer::omit(
         &mut losses,
         LossNote {
             code: LossCode::TopologyNotTransferred,
@@ -1081,7 +1083,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             provenance: None,
         },
     );
-    crate::builder::omit(
+    cadmpeg_ir::transfer::omit(
         &mut losses,
         LossNote {
             code: LossCode::MaterialNotTransferred,
@@ -1095,7 +1097,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     );
 
     if container::select_active_brep(scan).is_none() {
-        crate::builder::omit(
+        cadmpeg_ir::transfer::omit(
             &mut losses,
             LossNote {
                 code: LossCode::MissingGeometryStream,

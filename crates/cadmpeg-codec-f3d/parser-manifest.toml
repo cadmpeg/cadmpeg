@@ -8,8 +8,9 @@
 # shape (never a flat unit per iteration). `window_egress` lists the audited
 # `View::window()` raw-byte egress sites the module keeps, cross-referenced by
 # the section 8.8 ratchet. `ledger_level` is the section 6.1 record-accounting
-# level (0 everywhere: f3d is L1-ready but does not serialize a ledger until
-# Phase 3).
+# level: `fidelity.rs` serializes the L1 source-fidelity ledger (level 1, doc
+# section 10 Phase 3C); every byte-parser module stays at level 0 because it
+# reads untrusted bytes without emitting a ledger of its own.
 #
 # Ordering follows doc section 10 Phase 2: count-framed / container framing
 # first, then the pure record model, then the irregular marker probes and
@@ -34,33 +35,24 @@ window_egress = [
 ]
 ledger_level = 0
 
+# Phase-4B typed lossy construction (doc section 6.2 / 10 Phase 4B) lives on the
+# orchestration path: `decode.rs` constructs every f3d incomplete-transfer note
+# through the shared platform helpers `cadmpeg_ir::transfer::{omit, reduce}` —
+# `omit` resolves an unsupported-concept-to-omission through `Transfer::omitted`,
+# `reduce` records an accountable reduction or census through the platform
+# `Builder` — so the bare `losses.push` spelling that would let a drop go
+# unrecorded is not written on the transfer path. Its `semantic_builder` flag is
+# the section 7 capability signal that gates the `no_silent_fallback` stage-2
+# oracle for f3d.
 [[module]]
 path = "crates/cadmpeg-codec-f3d/src/decode.rs"
 status = "migrated"
-input_spaces = ["source"]
-fuzz_targets = ["f3d_container"]
-charges = []
-cost_model = "orchestration only: navigates the root View and dispatches to container/sab/brep; all hostile-byte charging is delegated to the modules it calls (container charges alloc/work/decompressed at the framing boundary)"
-window_egress = []
-ledger_level = 0
-
-# ---------------------------------------------------------------------------
-# Phase-4B typed lossy construction (doc section 6.2 / 10 Phase 4B). The single
-# construction path for f3d's incomplete-transfer notes: `omit` resolves an
-# unsupported-concept-to-omission through `Transfer::omitted`, `reduce` records
-# an accountable reduction or census through the platform `Builder`. `decode.rs`
-# routes every geometry- and container-report loss through this module, so the
-# bare `losses.push` spelling that would let a drop go unrecorded is not written
-# on the transfer path. Its `semantic_builder` flag is the section 7 capability
-# signal that gates the `no_silent_fallback` stage-2 oracle for f3d.
-[[module]]
-path = "crates/cadmpeg-codec-f3d/src/builder.rs"
-status = "migrated"
 semantic_builder = true
-input_spaces = []
+record_tickets = true
+input_spaces = ["source"]
 fuzz_targets = ["f3d_container", "f3d_decode_modes"]
 charges = []
-cost_model = "no budget charge; constructs and resolves loss notes through the typed builder, no untrusted byte reads"
+cost_model = "orchestration only: navigates the root View and dispatches to container/sab/brep; all hostile-byte charging is delegated to the modules it calls (container charges alloc/work/decompressed at the framing boundary); constructs the incomplete-transfer loss notes through the shared platform typed builder with no untrusted byte read of its own"
 window_egress = []
 ledger_level = 0
 

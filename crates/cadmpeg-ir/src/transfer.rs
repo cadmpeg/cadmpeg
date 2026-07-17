@@ -159,6 +159,24 @@ impl<'s, S: LossSink> Builder<'s, S> {
     }
 }
 
+/// Record an omission: a source concept that produced no typed IR entity.
+///
+/// The note drains through [`Transfer::omitted`], which records it and yields
+/// [`None`] — the omission cannot be reached without surrendering the note, so
+/// it is never silent.
+pub fn omit<S: LossSink>(sink: &mut S, note: LossNote) {
+    let omitted: Option<()> = Builder::new(sink).take(Transfer::omitted(note));
+    debug_assert!(omitted.is_none(), "an omission transfer yields no value");
+}
+
+/// Record an accountable reduction or informational census: the form was
+/// transferred, but only approximately (a solved carrier), or the note reports
+/// a count with no content lost. The value already lives in the IR, so the note
+/// is a standalone census threaded through the shared sink.
+pub fn reduce<S: LossSink>(sink: &mut S, note: LossNote) {
+    Builder::new(sink).record_loss(note);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +224,22 @@ mod tests {
         assert_eq!(value, None);
         assert_eq!(sink.len(), 1);
         assert_eq!(sink[0].code, LossCode::UnsupportedObjectFamily);
+    }
+
+    #[test]
+    fn omit_records_the_note_through_the_typed_builder() {
+        let mut losses: Vec<LossNote> = Vec::new();
+        omit(&mut losses, note(LossCode::GeometryNotTransferred));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code, LossCode::GeometryNotTransferred);
+    }
+
+    #[test]
+    fn reduce_records_the_census_note() {
+        let mut losses: Vec<LossNote> = Vec::new();
+        reduce(&mut losses, note(LossCode::ProceduralReduced));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code, LossCode::ProceduralReduced);
     }
 
     #[test]
