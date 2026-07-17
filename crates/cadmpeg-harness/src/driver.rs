@@ -13,7 +13,7 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::execute::RunnerOutcome;
+use crate::execute::{ReportSummary, RunnerOutcome};
 use crate::model::{Operation, PolicyProfile};
 use crate::oracle::{Oracle, OracleLimits, OracleStatus};
 
@@ -59,6 +59,14 @@ pub struct RunResult {
     pub oracles: BTreeMap<Oracle, OracleStatus>,
     /// Classified result label, when the child reported one.
     pub result_class: Option<String>,
+    /// Peak process allocation the child measured, when it reported an outcome.
+    /// Retained as a measured value beside the [`Oracle::PeakAlloc`] pass/fail
+    /// verdict so a large regression that stays inside the envelope is still
+    /// visible to the performance ratchet (doc §10 Phase 2 performance gate).
+    pub peak_alloc_bytes: Option<u64>,
+    /// The child's decode-report summary, when the operation ran a successful
+    /// decode. The §7 stage-2 report oracles judge this.
+    pub report: Option<ReportSummary>,
     /// Wall-clock time the parent measured.
     pub elapsed: Duration,
     /// Whether the parent killed the child at the ceiling.
@@ -188,6 +196,8 @@ pub fn run_job(
         key,
         oracles,
         result_class: outcome.as_ref().map(|o| o.result_class.clone()),
+        peak_alloc_bytes: outcome.as_ref().map(|o| o.peak_alloc_bytes),
+        report: outcome.as_ref().and_then(|o| o.report.clone()),
         elapsed,
         timed_out,
         stderr: String::from_utf8_lossy(&stderr).into_owned(),

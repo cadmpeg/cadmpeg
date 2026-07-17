@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use cadmpeg_harness::baseline::{regressions, run_matrix, Baseline};
+use cadmpeg_harness::baseline::{perf_regressions, regressions, run_matrix, Baseline};
 use cadmpeg_harness::fixtures::{default_corpus_root, gate_fixtures};
 use cadmpeg_harness::oracle::OracleLimits;
 
@@ -61,6 +61,23 @@ fn regression_gate() {
         regressions.is_empty(),
         "oracle regressions against committed baseline:\n{}",
         regressions
+            .iter()
+            .map(|r| format!(
+                "  {} [{}] {} -> {}",
+                r.key, r.dimension, r.baseline, r.current
+            ))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+
+    // The performance ratchet: an order-of-magnitude slowdown or heap growth
+    // that stays inside the absolute envelope still fails, requiring a re-bless
+    // (explicit review) to clear — doc §10 Phase 2 performance gate.
+    let perf = perf_regressions(&baseline, &results);
+    assert!(
+        perf.is_empty(),
+        "measured performance regressions against committed baseline (re-bless with `cargo test -p cadmpeg-harness --test gate -- --ignored bless_baselines` after reviewing):\n{}",
+        perf
             .iter()
             .map(|r| format!(
                 "  {} [{}] {} -> {}",

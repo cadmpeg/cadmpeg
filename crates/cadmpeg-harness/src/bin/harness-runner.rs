@@ -87,6 +87,7 @@ fn main() -> ExitCode {
         result_class: exec.result_class.label().to_owned(),
         determinism_ok: exec.determinism_ok,
         peak_alloc_bytes,
+        report: exec.report,
     };
 
     match serde_json::to_string(&outcome) {

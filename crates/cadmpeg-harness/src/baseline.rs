@@ -20,7 +20,8 @@ use crate::fixtures::Fixture;
 use crate::model::{Operation, PolicyProfile, ENVELOPE_VERSION};
 use crate::oracle::{Oracle, OracleLimits, OracleStatus};
 
-/// One baseline entry: the classified result and each oracle's verdict.
+/// One baseline entry: the classified result, each oracle's verdict, and the
+/// measured performance values the pass/fail oracles were derived from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BaselineRecord {
     /// Classified result label. A gated ratchet dimension beside the oracle
@@ -28,6 +29,19 @@ pub struct BaselineRecord {
     pub result_class: String,
     /// Oracle label to verdict label.
     pub oracles: BTreeMap<String, String>,
+    /// Measured wall-clock milliseconds the parent observed for this run. `0`
+    /// when the run broke before it could be timed, or when read from a baseline
+    /// blessed before measured values were recorded. [`perf_regressions`] gates a
+    /// significant increase against this value even while the pass/fail
+    /// [`Oracle::WallClock`] verdict stays green inside the envelope.
+    #[serde(default)]
+    pub wall_clock_ms: u64,
+    /// Measured peak process allocation in bytes. `0` when the child reported no
+    /// outcome, or when read from a pre-measurement baseline. [`perf_regressions`]
+    /// gates a significant increase against this value even while
+    /// [`Oracle::PeakAlloc`] stays green inside the envelope.
+    #[serde(default)]
+    pub peak_alloc_bytes: u64,
 }
 
 /// A committed set of baselines plus the envelopes that produced them.
@@ -62,6 +76,8 @@ impl Baseline {
                         .clone()
                         .unwrap_or_else(|| "unknown".to_owned()),
                     oracles,
+                    wall_clock_ms: result.elapsed.as_millis() as u64,
+                    peak_alloc_bytes: result.peak_alloc_bytes.unwrap_or(0),
                 },
             );
         }
@@ -230,6 +246,93 @@ pub fn regressions(baseline: &Baseline, current: &[RunResult]) -> Vec<Regression
     out
 }
 
+/// The factor by which a measured performance value must exceed its blessed
+/// baseline to count as a significant regression.
+///
+/// The pass/fail [`Oracle::WallClock`]/[`Oracle::PeakAlloc`] verdicts only fire
+/// at the far process-safety envelope (1 GiB peak, 10 s wall); a safety refactor
+/// that makes a codec 50x slower or 100x hungrier stays green under them. Gating
+/// the *measured* value against its blessed value catches that class. The factor
+/// is deliberately loose so ordinary machine-to-machine variance and allocator
+/// noise do not trip it — only an order-of-magnitude regression does — matching
+/// doc §10's "significant regressions require explicit review".
+pub const PERF_REGRESSION_FACTOR: u64 = 4;
+
+/// Absolute wall-clock floor below which a ratio is not judged. A run measured
+/// in single-digit milliseconds crosses [`PERF_REGRESSION_FACTOR`] on scheduler
+/// jitter alone; the floor suppresses that noise.
+pub const PERF_WALL_FLOOR_MS: u64 = 250;
+
+/// Absolute peak-allocation floor below which a ratio is not judged, suppressing
+/// large ratios between two small heaps.
+pub const PERF_PEAK_FLOOR_BYTES: u64 = 16 * 1024 * 1024;
+
+/// One measured performance value that regressed past the ratchet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PerfRegression {
+    /// Baseline entry key.
+    pub key: String,
+    /// The measured dimension (`wall_clock_ms` or `peak_alloc_bytes`).
+    pub dimension: String,
+    /// The blessed measured value.
+    pub baseline: u64,
+    /// The current measured value.
+    pub current: u64,
+}
+
+/// Judge one measured dimension against its blessed value under the ratchet.
+fn perf_exceeds(baseline: u64, current: u64, floor: u64) -> bool {
+    // A zero baseline is "not recorded" (a pre-measurement bless or a broken
+    // run), and a current at or below the noise floor is never judged.
+    baseline != 0 && current > floor && current > baseline.saturating_mul(PERF_REGRESSION_FACTOR)
+}
+
+/// Every measured performance value in `current` that regressed past the
+/// ratchet against its blessed baseline entry.
+///
+/// This is the automated half of the doc §10 Phase 2 performance gate: the
+/// pass/fail oracles hold the absolute envelope, this holds each run to the
+/// order of magnitude it was blessed at. A regression here means the codec got
+/// dramatically slower or hungrier on a fixture without crossing the envelope,
+/// and requires an explicit re-bless (the reviewer's sign-off) to clear.
+/// Entries whose blessed measured values are `0` (blessed before measured
+/// values were recorded, or a broken run) are skipped, so an old baseline keeps
+/// gating its oracle verdicts while its performance ratchet lies dormant until a
+/// re-bless populates the measured values.
+pub fn perf_regressions(baseline: &Baseline, current: &[RunResult]) -> Vec<PerfRegression> {
+    let current_by_key: BTreeMap<String, &RunResult> = current
+        .iter()
+        .map(|result| (result.key.joined(), result))
+        .collect();
+
+    let mut out = Vec::new();
+    for (key, record) in &baseline.entries {
+        let Some(result) = current_by_key.get(key) else {
+            continue;
+        };
+        let current_wall = result.elapsed.as_millis() as u64;
+        if perf_exceeds(record.wall_clock_ms, current_wall, PERF_WALL_FLOOR_MS) {
+            out.push(PerfRegression {
+                key: key.clone(),
+                dimension: "wall_clock_ms".to_owned(),
+                baseline: record.wall_clock_ms,
+                current: current_wall,
+            });
+        }
+        if let Some(current_peak) = result.peak_alloc_bytes {
+            if perf_exceeds(record.peak_alloc_bytes, current_peak, PERF_PEAK_FLOOR_BYTES) {
+                out.push(PerfRegression {
+                    key: key.clone(),
+                    dimension: "peak_alloc_bytes".to_owned(),
+                    baseline: record.peak_alloc_bytes,
+                    current: current_peak,
+                });
+            }
+        }
+    }
+    out
+}
+
 /// Run the full operation × profile matrix over `fixtures`, one child process
 /// per cell.
 pub fn run_matrix(
@@ -272,6 +375,10 @@ mod tests {
     }
 
     fn all_pass_result(codec: &str, class: &str) -> RunResult {
+        perf_result(codec, class, 0, 0)
+    }
+
+    fn perf_result(codec: &str, class: &str, wall_ms: u64, peak: u64) -> RunResult {
         let key = RunKey::new(
             codec,
             "fixture",
@@ -286,7 +393,9 @@ mod tests {
             key,
             oracles,
             result_class: Some(class.to_owned()),
-            elapsed: Duration::from_millis(0),
+            peak_alloc_bytes: Some(peak),
+            report: None,
+            elapsed: Duration::from_millis(wall_ms),
             timed_out: false,
             stderr: String::new(),
         }
@@ -333,5 +442,48 @@ mod tests {
         let baseline = baseline_from(&all_pass_result("sldprt", "ok"));
         let current = vec![all_pass_result("sldprt", "ok")];
         assert!(regressions(&baseline, &current).is_empty());
+    }
+
+    fn baseline_with(result: &RunResult) -> Baseline {
+        Baseline::from_results(std::slice::from_ref(result), &limits(1 << 30, 10_000))
+    }
+
+    #[test]
+    fn an_order_of_magnitude_slowdown_inside_the_envelope_regresses() {
+        // Blessed at 300 ms; a 3 s run stays green under the 10 s wall-clock
+        // oracle yet is a 10x regression — the class the ratchet must catch.
+        let baseline = baseline_with(&perf_result("nx", "ok", 300, 32 << 20));
+        let current = vec![perf_result("nx", "ok", 3_000, 32 << 20)];
+        let regs = perf_regressions(&baseline, &current);
+        assert_eq!(regs.len(), 1);
+        assert_eq!(regs[0].dimension, "wall_clock_ms");
+    }
+
+    #[test]
+    fn a_hundredfold_peak_growth_inside_the_envelope_regresses() {
+        let baseline = baseline_with(&perf_result("nx", "ok", 300, 20 << 20));
+        let current = vec![perf_result("nx", "ok", 300, 2_000 << 20)];
+        let regs = perf_regressions(&baseline, &current);
+        assert_eq!(regs.len(), 1);
+        assert_eq!(regs[0].dimension, "peak_alloc_bytes");
+    }
+
+    #[test]
+    fn noise_under_the_floor_does_not_regress() {
+        // 2 ms blessed, 40 ms current: a 20x ratio, but both below the wall
+        // floor, so scheduler jitter cannot trip the ratchet.
+        let baseline = baseline_with(&perf_result("nx", "ok", 2, 1 << 20));
+        let current = vec![perf_result("nx", "ok", 40, 4 << 20)];
+        assert!(perf_regressions(&baseline, &current).is_empty());
+    }
+
+    #[test]
+    fn a_pre_measurement_baseline_has_a_dormant_perf_ratchet() {
+        // Zero measured values (an old bless) are "not recorded": the ratchet
+        // stays dormant rather than treating every current value as infinite
+        // regression.
+        let baseline = baseline_with(&perf_result("nx", "ok", 0, 0));
+        let current = vec![perf_result("nx", "ok", 9_000, 900 << 20)];
+        assert!(perf_regressions(&baseline, &current).is_empty());
     }
 }

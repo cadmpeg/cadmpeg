@@ -31,6 +31,57 @@ pub struct RunnerOutcome {
     pub determinism_ok: bool,
     /// Peak process allocation observed by the runner's global allocator.
     pub peak_alloc_bytes: u64,
+    /// A compact summary of the produced
+    /// [`DecodeReport`](cadmpeg_ir::DecodeReport) when the operation ran a decode
+    /// that succeeded, so the parent can judge the §7 stage-2 report properties
+    /// without the full IR crossing the pipe. `None` for detection, a failed
+    /// decode, or a broken run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<ReportSummary>,
+}
+
+/// The decode-report facts the parent stage-2 oracles judge, extracted in-child
+/// from a successful decode's [`DecodeReport`](cadmpeg_ir::DecodeReport).
+///
+/// The stage-1 wire protocol carried only the classified result and process
+/// measurements; the §7 stage-2 oracles judge the report itself. Serializing
+/// this compact summary — not the full report or IR — lets those oracles run in
+/// the parent without inflating the pipe or coupling the harness to the IR
+/// schema beyond the few facts it gates on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReportSummary {
+    /// Total loss notes.
+    pub losses: usize,
+    /// Loss notes at or above `Error` severity.
+    pub error_losses: usize,
+    /// A source-fidelity ledger is present (the codec adopted container
+    /// accounting, §10 Phase 3C).
+    pub ledger_present: bool,
+    /// The present ledger passes
+    /// [`SourceFidelity::validate`](cadmpeg_ir::source_fidelity::SourceFidelity::validate).
+    /// `true` when no ledger is present, so absence never reads as an invalid
+    /// ledger.
+    pub ledger_valid: bool,
+    /// Opaque retention degraded from recoverable to accounted under a salvage
+    /// budget; the report invariant pairs it with a loss note.
+    pub retention_degraded: bool,
+}
+
+impl ReportSummary {
+    /// Extract the judged facts from a successful decode's report.
+    fn from_report(report: &cadmpeg_ir::DecodeReport) -> ReportSummary {
+        let (ledger_present, ledger_valid) = match &report.source_fidelity {
+            Some(fidelity) => (true, fidelity.validate().is_ok()),
+            None => (false, true),
+        };
+        ReportSummary {
+            losses: report.losses.len(),
+            error_losses: report.error_count(),
+            ledger_present,
+            ledger_valid,
+            retention_degraded: report.retention_degraded,
+        }
+    }
 }
 
 /// The in-process outcome before the allocator peak is attached.
@@ -40,6 +91,8 @@ pub struct ExecOutcome {
     pub result_class: ResultClass,
     /// Whether the two runs agreed on class and digest.
     pub determinism_ok: bool,
+    /// The report summary of the first run, when it was a successful decode.
+    pub report: Option<ReportSummary>,
 }
 
 /// Construct a codec by id, or `None` for an unknown id.
@@ -89,6 +142,8 @@ fn decode_digest(result: &DecodeResult) -> String {
 struct RunOnce {
     class: ResultClass,
     digest: String,
+    /// The report summary, present only for a successful decode.
+    report: Option<ReportSummary>,
 }
 
 /// Perform one operation once against `bytes`.
@@ -97,6 +152,7 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
         return RunOnce {
             class: ResultClass::Other,
             digest: sha256_hex(b"unknown-codec"),
+            report: None,
         };
     };
 
@@ -106,6 +162,7 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
             RunOnce {
                 class: ResultClass::from_confidence(confidence),
                 digest: sha256_hex(format!("detect:{confidence}").as_bytes()),
+                report: None,
             }
         }
         Operation::Inspect => {
@@ -120,6 +177,7 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
                     RunOnce {
                         class: ResultClass::Ok,
                         digest: sha256_hex(json.as_bytes()),
+                        report: None,
                     }
                 }
                 Err(error) => error_run(&error),
@@ -135,6 +193,7 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
                 Ok(result) => RunOnce {
                     class: ResultClass::Ok,
                     digest: decode_digest(&result),
+                    report: Some(ReportSummary::from_report(&result.report)),
                 },
                 Err(error) => error_run(&error),
             }
@@ -147,7 +206,11 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
 fn error_run(error: &CodecError) -> RunOnce {
     let class = classify_error(error);
     let digest = sha256_hex(format!("err:{}:{error}", class.label()).as_bytes());
-    RunOnce { class, digest }
+    RunOnce {
+        class,
+        digest,
+        report: None,
+    }
 }
 
 /// Run `op` twice and report the classified result and a determinism verdict.
@@ -162,5 +225,6 @@ pub fn execute(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u
     ExecOutcome {
         result_class: first.class,
         determinism_ok,
+        report: first.report,
     }
 }

@@ -27,7 +27,8 @@
 //!   check the gate test runs against committed baselines.
 //! - [`stage2`] resolves the §7 stage-2 capability matrix per codec from its
 //!   `parser-manifest.toml`: which oracle rows gate, and the runtime predicates
-//!   for the byte-accounting and disposition rows.
+//!   ([`judge_report`](stage2::CodecStage2Status::judge_report)) that judge a
+//!   decode's report against the byte-accounting and no-silent-fallback rows.
 //!
 //! # Oracles
 //!
@@ -47,9 +48,12 @@
 //!
 //! # Running the full sweep
 //!
-//! The fast gate covers the curated base fixtures so `cargo test` stays quick.
-//! The exhaustive truncation and mutation sweep across every discovered fixture
-//! is behind an ignored test:
+//! The fast gate covers the curated base fixtures so `cargo test` stays quick,
+//! and a bounded `sweep_smoke` touches every discovered fixture through a small
+//! prefix of its truncation cases so the sweep pipeline itself runs in the fast
+//! gate. The exhaustive truncation and mutation sweep across every discovered
+//! fixture — the calibration source for the peak envelope and the run counts the
+//! phase gates cite — is behind an ignored test that a scheduled CI job runs:
 //!
 //! ```text
 //! cargo test -p cadmpeg-harness --test sweep -- --ignored --nocapture

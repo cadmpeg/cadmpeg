@@ -80,6 +80,23 @@ twice determinism check, identical classified result). No significant
 regression to flag under doc section 10; the outcome is recorded in
 `docs/architecture.md`.
 
+## Automated significant-regression ratchet
+
+The pass/fail `wall_clock` and `peak_alloc` oracles fire only at the far
+process-safety envelope (10 s, 1 GiB), so a safety refactor that makes a codec
+an order of magnitude slower or hungrier while staying inside the envelope
+passes every oracle. `baseline::perf_regressions` closes that gap: each baseline
+entry records the *measured* wall-clock milliseconds and peak allocation, and the
+regression gate fails when a current run exceeds its blessed measured value by
+more than `PERF_REGRESSION_FACTOR` (4x), above absolute noise floors
+(`PERF_WALL_FLOOR_MS` = 250 ms, `PERF_PEAK_FLOOR_BYTES` = 16 MiB). A regression
+here requires an explicit re-bless — the section 10 "significant regressions
+require explicit review" sign-off — to clear. An entry blessed before measured
+values were recorded carries `0` and keeps a dormant ratchet until re-blessed, so
+the oracle-verdict ratchet keeps gating in the meantime. The factor is loose by
+design: it tolerates machine-to-machine variance and allocator noise while still
+catching the order-of-magnitude regression the envelope oracles miss.
+
 ## Re-run
 
 `cargo test -p cadmpeg-harness --test gate` runs the fast regression gate
