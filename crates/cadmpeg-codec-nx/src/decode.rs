@@ -10727,8 +10727,14 @@ pub(crate) fn block_placement(
     dimensions: [f64; 3],
     outputs: &[BodyId],
 ) -> Option<Transform> {
-    #[derive(Clone, Copy)]
+    #[derive(Clone)]
     struct PlaneBand {
+        normal: Vector3,
+        offsets: Vec<f64>,
+    }
+
+    #[derive(Clone, Copy)]
+    struct PlaneExtent {
         normal: Vector3,
         minimum: f64,
         maximum: f64,
@@ -10768,32 +10774,23 @@ pub(crate) fn block_placement(
         let Some(SurfaceGeometry::Plane { origin, normal, .. }) =
             surface_geometry.get(&face.surface).copied()
         else {
-            continue;
+            return None;
         };
-        let Some(normal) = canonical_normal(*normal, angular_tolerance) else {
-            continue;
-        };
+        let normal = canonical_normal(*normal, angular_tolerance)?;
         let offset = normal.x * origin.x + normal.y * origin.y + normal.z * origin.z;
         let existing = bands
             .iter_mut()
             .find(|band| (1.0 - dot_vector(band.normal, normal)).abs() <= angular_tolerance);
         if let Some(band) = existing {
-            band.minimum = band.minimum.min(offset);
-            band.maximum = band.maximum.max(offset);
+            band.offsets.push(offset);
         } else {
             bands.push(PlaneBand {
                 normal,
-                minimum: offset,
-                maximum: offset,
+                offsets: vec![offset],
             });
         }
     }
     if bands.len() != 3
-        || bands.iter().any(|band| {
-            !band.minimum.is_finite()
-                || !band.maximum.is_finite()
-                || band.maximum - band.minimum <= linear_tolerance
-        })
         || (0..3).any(|first| {
             (first + 1..3).any(|second| {
                 dot_vector(bands[first].normal, bands[second].normal).abs() > angular_tolerance
@@ -10802,6 +10799,32 @@ pub(crate) fn block_placement(
     {
         return None;
     }
+    let bands = bands
+        .into_iter()
+        .map(|mut band| {
+            band.offsets.sort_by(f64::total_cmp);
+            let mut clusters = Vec::<[f64; 2]>::new();
+            for offset in band.offsets {
+                if !offset.is_finite() {
+                    return None;
+                }
+                match clusters.last_mut() {
+                    Some(cluster) if offset - cluster[0] <= linear_tolerance => {
+                        cluster[1] = offset;
+                    }
+                    _ => clusters.push([offset, offset]),
+                }
+            }
+            let [minimum, maximum] = clusters.as_slice() else {
+                return None;
+            };
+            (maximum[1] - minimum[0] > linear_tolerance).then_some(PlaneExtent {
+                normal: band.normal,
+                minimum: minimum[0],
+                maximum: maximum[1],
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
     let permutations = [
         [0usize, 1usize, 2usize],
         [0, 2, 1],

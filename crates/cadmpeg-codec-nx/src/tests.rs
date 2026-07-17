@@ -2968,6 +2968,51 @@ fn nx_block_placement_requires_one_ordered_planar_extent_bijection() {
         crate::decode::block_placement(&ir, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
         None
     );
+
+    let mut stepped = ir.clone();
+    let mut intermediate_surface = stepped
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| {
+            matches!(
+                &surface.geometry,
+                SurfaceGeometry::Plane { normal, .. } if normal.x.abs() > 0.5
+            )
+        })
+        .expect("x-normal plane")
+        .clone();
+    intermediate_surface.id = cadmpeg_ir::ids::SurfaceId("intermediate-plane".into());
+    let SurfaceGeometry::Plane { origin, .. } = &mut intermediate_surface.geometry else {
+        unreachable!()
+    };
+    origin.x = 5.0;
+    stepped.model.surfaces.push(intermediate_surface);
+    let mut intermediate_face = stepped.model.faces.first().expect("cube face").clone();
+    intermediate_face.id = cadmpeg_ir::ids::FaceId("intermediate-face".into());
+    intermediate_face.surface = cadmpeg_ir::ids::SurfaceId("intermediate-plane".into());
+    intermediate_face.loops.clear();
+    stepped.model.shells[0]
+        .faces
+        .push(intermediate_face.id.clone());
+    stepped.model.faces.push(intermediate_face);
+    assert_eq!(
+        crate::decode::block_placement(&stepped, dimensions, std::slice::from_ref(&output)),
+        None
+    );
+
+    let mut nonplanar = ir.clone();
+    nonplanar.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
+        center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 1.0,
+    };
+    assert_eq!(
+        crate::decode::block_placement(&nonplanar, dimensions, std::slice::from_ref(&output)),
+        None
+    );
+
     assert_eq!(crate::decode::block_placement(&ir, dimensions, &[]), None);
 }
 
