@@ -1541,8 +1541,7 @@ fn ellipse_to_nurbs(
     major: [f64; 3],
     ratio: f64,
 ) -> Option<NurbsCurve> {
-    let length =
-        (major[0] * major[0] + major[1] * major[1] + major[2] * major[2]).sqrt();
+    let length = (major[0] * major[0] + major[1] * major[1] + major[2] * major[2]).sqrt();
     (length.is_finite() && length > 0.0).then_some(())?;
     let minor_direction = [
         normal[1] * major[2] - normal[2] * major[1],
@@ -1570,7 +1569,9 @@ fn ellipse_to_nurbs(
     let w = std::f64::consts::FRAC_1_SQRT_2;
     Some(NurbsCurve {
         degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0],
+        knots: vec![
+            0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0,
+        ],
         control_points: vec![
             at(1.0, 0.0),
             at(1.0, 1.0),
@@ -1875,6 +1876,60 @@ fn decode_loft_section(
     Some(entries)
 }
 
+fn decode_revision_loft(
+    span: &[u8],
+    mut position: usize,
+    int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
+) -> Option<DecodedProceduralSurface> {
+    let (active_bytes, tables) = resolver?;
+    let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    (revision > 0).then_some(())?;
+    let sections = [
+        decode_revision_loft_section(span, &mut position, int_width, active_bytes, tables)?,
+        decode_revision_loft_section(span, &mut position, int_width, active_bytes, tables)?,
+    ];
+    let parameter_ranges = [
+        [
+            take_optional_range_value(span, &mut position)??,
+            take_optional_range_value(span, &mut position)??,
+        ],
+        [
+            take_optional_range_value(span, &mut position)??,
+            take_optional_range_value(span, &mut position)??,
+        ],
+    ];
+    let mut flags = [false; 4];
+    for flag in &mut flags {
+        *flag = take_bool(span, &mut position)?;
+    }
+    let ints = [
+        take_tagged_int(span, &mut position, 0x04, int_width)?,
+        take_tagged_int(span, &mut position, 0x04, int_width)?,
+    ];
+    let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
+        decode_revision_surface_tail(span, &mut position, int_width)?;
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
+            sections,
+            revision_form: Some(cadmpeg_ir::geometry::LoftRevisionForm {
+                revision,
+                flags,
+                ints,
+                tail_enum,
+                discontinuities,
+                tail_flag,
+            }),
+            parameter_ranges,
+            closures: [0, 0],
+            singularities: [0, 0],
+            mode: 0,
+            bridge: Vec::new(),
+        }),
+        cache_fit_tolerance: Some(fit_tolerance),
+    })
+}
+
 fn decode_loft_spl_sur(
     record_bytes: &[u8],
     int_width: usize,
@@ -1895,53 +1950,12 @@ fn decode_loft_spl_sur(
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
-    if span.get(position) == Some(&0x04) {
-        let (active_bytes, tables) = resolver?;
-        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
-        (revision > 0).then_some(())?;
-        let sections = [
-            decode_revision_loft_section(span, &mut position, int_width, active_bytes, tables)?,
-            decode_revision_loft_section(span, &mut position, int_width, active_bytes, tables)?,
-        ];
-        let parameter_ranges = [
-            [
-                take_optional_range_value(span, &mut position)??,
-                take_optional_range_value(span, &mut position)??,
-            ],
-            [
-                take_optional_range_value(span, &mut position)??,
-                take_optional_range_value(span, &mut position)??,
-            ],
-        ];
-        let mut flags = [false; 4];
-        for flag in &mut flags {
-            *flag = take_bool(span, &mut position)?;
+    if span.get(position) == Some(&0x04)
+        && first_construction_subtype(record_bytes).as_deref() == Some("loft_spl_sur")
+    {
+        if let Some(decoded) = decode_revision_loft(span, position, int_width, resolver) {
+            return Some(decoded);
         }
-        let ints = [
-            take_tagged_int(span, &mut position, 0x04, int_width)?,
-            take_tagged_int(span, &mut position, 0x04, int_width)?,
-        ];
-        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
-            decode_revision_surface_tail(span, &mut position, int_width)?;
-        return Some(DecodedProceduralSurface {
-            definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
-                sections,
-                revision_form: Some(cadmpeg_ir::geometry::LoftRevisionForm {
-                    revision,
-                    flags,
-                    ints,
-                    tail_enum,
-                    discontinuities,
-                    tail_flag,
-                }),
-                parameter_ranges,
-                closures: [0, 0],
-                singularities: [0, 0],
-                mode: 0,
-                bridge: Vec::new(),
-            }),
-            cache_fit_tolerance: Some(fit_tolerance),
-        });
     }
     let sections = [
         decode_loft_section(span, &mut position, int_width)?,
@@ -2783,6 +2797,7 @@ fn decode_sweep_spl_sur(
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04) {
+        (first_construction_subtype(record_bytes).as_deref() == Some("sweep_sur")).then_some(())?;
         return decode_revision_sweep_sur(span, position, int_width, resolver?);
     }
     let primary_kind = take_tagged_int(span, &mut position, 0x15, int_width)?;
@@ -3184,6 +3199,8 @@ fn decode_taper_spl_sur(
     if span.get(position) == Some(&0x04) {
         // Revision-gated form, stored by the orthogonal subtype.
         (kind == 1).then_some(())?;
+        (first_construction_subtype(record_bytes).as_deref() == Some("ortho_spl_sur"))
+            .then_some(())?;
         let (active_bytes, tables) = resolver?;
         let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
         (revision > 0).then_some(())?;
@@ -3369,6 +3386,8 @@ fn decode_off_spl_sur(
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04) {
+        (first_construction_subtype(record_bytes).as_deref() == Some("off_spl_sur"))
+            .then_some(())?;
         let (active_bytes, tables) = resolver?;
         let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
         (revision > 0).then_some(())?;

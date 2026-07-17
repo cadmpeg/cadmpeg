@@ -7461,9 +7461,10 @@ fn native_skin_profile_data(
     target: &CadIr,
     data: &cadmpeg_ir::geometry::LoftProfileData,
 ) -> Result<(), CodecError> {
-    let surface_id = data.surface.as_ref().ok_or_else(|| {
-        CodecError::Malformed("skin profiles require a support surface".into())
-    })?;
+    let surface_id = data
+        .surface
+        .as_ref()
+        .ok_or_else(|| CodecError::Malformed("skin profiles require a support surface".into()))?;
     let surface = target
         .model
         .surfaces

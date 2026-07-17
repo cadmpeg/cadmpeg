@@ -1991,6 +1991,216 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
         .any(|curve| curve.id == round_trip_base));
 }
 
+fn t_str(b: &mut Vec<u8>, s: &str) {
+    b.push(0x07);
+    b.push(u8::try_from(s.len()).expect("short string"));
+    b.extend_from_slice(s.as_bytes());
+}
+
+fn push_revision_surface_tail(surface: &mut Vec<u8>) {
+    surface.push(0x15);
+    surface.extend_from_slice(&0i64.to_le_bytes());
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(surface, 0.002);
+    for _ in 0..6 {
+        t_long(surface, 0);
+    }
+    surface.push(0x0b);
+}
+
+/// Replace record 9 of the mixed stream with a revision-gated spline-surface
+/// record whose subtype body is built by `body`.
+fn synthetic_revision_surface_smbh(subtype: &str, body: impl FnOnce(&mut Vec<u8>)) -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, subtype);
+    t_long(&mut surface, 23100);
+    body(&mut surface);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
+fn scrubbed_definition(definition: &cadmpeg_ir::geometry::ProceduralSurfaceDefinition) -> String {
+    let text = serde_json::to_string(definition).expect("definition JSON");
+    let mut out = String::with_capacity(text.len());
+    let mut in_index = false;
+    for c in text.chars() {
+        if in_index && c.is_ascii_digit() {
+            continue;
+        }
+        in_index = c == '#';
+        out.push(c);
+    }
+    out
+}
+
+fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &str) {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("revision surface decode");
+    let procedural = result
+        .ir
+        .model
+        .procedural_surfaces
+        .first()
+        .expect("revision surface construction");
+    let expected = scrubbed_definition(&procedural.definition);
+    let kind = serde_json::to_value(&procedural.definition).expect("kind")["kind"]
+        .as_str()
+        .expect("kind string")
+        .to_string();
+    assert_eq!(kind, expected_kind);
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less revision surface encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less revision surface round trip");
+    let actual = scrubbed_definition(
+        &round_trip
+            .ir
+            .model
+            .procedural_surfaces
+            .first()
+            .expect("round-trip construction")
+            .definition,
+    );
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn generated_revision_offset_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("off_spl_sur", |surface| {
+        t_ident(surface, "spline");
+        surface.extend_from_slice(&generated_surface_block());
+        surface.push(0x0a);
+        t_dbl(surface, -1.0);
+        surface.push(0x0b);
+        surface.push(0x0a);
+        t_dbl(surface, 2.0);
+        surface.push(0x0b);
+        t_dbl(surface, 0.3);
+        for flag in [false, true, false, false] {
+            surface.push(if flag { 0x0a } else { 0x0b });
+        }
+        push_revision_surface_tail(surface);
+    });
+    assert_revision_surface_round_trip(smbh, "offset");
+}
+
+#[test]
+fn generated_revision_orthogonal_taper_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("ortho_spl_sur", |surface| {
+        t_ident(surface, "spline");
+        surface.extend_from_slice(&generated_surface_block());
+        surface.extend_from_slice(&[0x0b; 4]);
+        surface.extend_from_slice(&generated_curve_block());
+        surface.push(0x0a);
+        t_dbl(surface, -1.0);
+        surface.push(0x0a);
+        t_dbl(surface, 2.0);
+        surface.extend_from_slice(&generated_pcurve_block());
+        t_dbl(surface, 0.5);
+        push_revision_surface_tail(surface);
+        surface.push(0x0a);
+    });
+    assert_revision_surface_round_trip(smbh, "taper");
+}
+
+#[test]
+fn generated_revision_sweep_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("sweep_sur", |surface| {
+        surface.push(0x0b);
+        t_long(surface, -1);
+        surface.extend_from_slice(&generated_curve_block());
+        surface.extend_from_slice(&[0x0b, 0x0b]);
+        surface.push(0x0a);
+        t_dbl(surface, 0.0);
+        surface.push(0x0a);
+        t_dbl(surface, 1.0);
+        surface.push(0x0b);
+        t_pos(surface, [1.0, 2.0, 3.0]);
+        t_vec(surface, [0.0, 0.0, 1.0]);
+        t_vec(surface, [1.0, 0.0, 0.0]);
+        t_vec(surface, [0.0, 1.0, 0.0]);
+        t_long(surface, 1);
+        surface.push(0x0b);
+        surface.extend_from_slice(&generated_curve_block());
+        surface.extend_from_slice(&[0x0b, 0x0b]);
+        surface.push(0x0a);
+        t_dbl(surface, 0.0);
+        surface.push(0x0a);
+        t_dbl(surface, 0.5);
+        t_dbl(surface, 0.0);
+        surface.push(0x0b);
+        t_str(surface, "MTRAIL(EDGE1)");
+        t_long(surface, 1);
+        t_str(surface, "EDGE");
+        surface.extend_from_slice(&generated_curve_block());
+        surface.extend_from_slice(&[0x0b, 0x0b]);
+        t_dbl(surface, 0.0);
+        t_dbl(surface, 1.0);
+        surface.push(0x0b);
+        push_revision_surface_tail(surface);
+    });
+    assert_revision_surface_round_trip(smbh, "sweep");
+}
+
+#[test]
+fn generated_revision_loft_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
+        t_long(surface, 1);
+        t_dbl(surface, 0.0);
+        t_long(surface, 1);
+        t_long(surface, 1);
+        surface.extend_from_slice(&generated_curve_block());
+        surface.extend_from_slice(&[0x0b, 0x0b]);
+        t_ident(surface, "null_surface");
+        t_ident(surface, "nullbs");
+        surface.push(0x0b);
+        t_long(surface, -1);
+        t_long(surface, 213);
+        t_long(surface, 1);
+        t_long(surface, 1);
+        for value in [0.0, 1.0, 0.25, 0.75, 0.5, 1.5] {
+            t_dbl(surface, value);
+        }
+        surface.push(0x0b);
+        t_ident(surface, "null_curve");
+        t_long(surface, 0);
+        t_long(surface, -1);
+        t_long(surface, 0);
+        for value in [0.0, 1.0, 0.0, 1.0] {
+            surface.push(0x0a);
+            t_dbl(surface, value);
+        }
+        surface.extend_from_slice(&[0x0b; 4]);
+        t_long(surface, 0);
+        t_long(surface, 0);
+        push_revision_surface_tail(surface);
+    });
+    assert_revision_surface_round_trip(smbh, "loft");
+}
+
 fn synthetic_geometry_with_deformable_curve_smbh(mode: i64) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -12618,6 +12828,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         let procedural = result.ir.model.procedural_surfaces.first().unwrap();
         let ProceduralSurfaceDefinition::Offset {
             support,
+            revision_form: _,
             distance,
             u_sense,
             v_sense,
@@ -12746,6 +12957,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             .expect("taper surface decode");
         let ProceduralSurfaceDefinition::Taper {
             support,
+            revision_form: _,
             reference,
             pcurve,
             parameter,
@@ -12837,6 +13049,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .expect("loft surface decode");
         let ProceduralSurfaceDefinition::Loft {
             sections,
+            revision_form: _,
             parameter_ranges,
             closures,
             singularities,
@@ -12898,6 +13111,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .expect("source-less loft round trip");
         let ProceduralSurfaceDefinition::Loft {
             sections,
+            revision_form: _,
             parameter_ranges,
             closures,
             singularities,

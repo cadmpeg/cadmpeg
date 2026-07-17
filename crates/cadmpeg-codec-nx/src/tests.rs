@@ -1839,6 +1839,7 @@ fn decode_emits_offset_surface_construction() {
         u_sense,
         v_sense,
         extension_flags,
+        revision_form: _,
     } = &procedural.definition
     else {
         panic!("offset definition");
