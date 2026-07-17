@@ -54,6 +54,10 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
     for pair in &native.design_dimension_locus_pairs {
         typed.insert((
             crate::design::native_stream(&pair.id).unwrap_or("f3d:design"),
+            pair.companion_record_index,
+        ));
+        typed.insert((
+            crate::design::native_stream(&pair.id).unwrap_or("f3d:design"),
             pair.governing_companion_record_index,
         ));
     }
@@ -64,6 +68,10 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
         ));
     }
     for pair in &native.design_dimension_null_locus_pairs {
+        typed.insert((
+            crate::design::native_stream(&pair.id).unwrap_or("f3d:design"),
+            pair.companion_record_index,
+        ));
         typed.insert((
             crate::design::native_stream(&pair.id).unwrap_or("f3d:design"),
             pair.governing_companion_record_index,
@@ -2676,6 +2684,9 @@ mod tests {
                 paired_byte_offset: 378,
             });
         assert_eq!(unresolved_dimension_companion_count(&native), 0);
+        native.design_dimension_locus_pairs[0].companion_record_index = 30;
+        native.design_dimension_locus_pairs[0].governing_companion_record_index = 99;
+        assert_eq!(unresolved_dimension_companion_count(&native), 0);
 
         native.design_dimension_locus_pairs.clear();
         native
@@ -2698,6 +2709,9 @@ mod tests {
                 paired_class_tag: "259".into(),
                 paired_byte_offset: 378,
             });
+        assert_eq!(unresolved_dimension_companion_count(&native), 0);
+        native.design_dimension_null_locus_pairs[0].companion_record_index = 30;
+        native.design_dimension_null_locus_pairs[0].governing_companion_record_index = 99;
         assert_eq!(unresolved_dimension_companion_count(&native), 0);
     }
 
