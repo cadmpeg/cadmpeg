@@ -119,6 +119,103 @@ fn src_modules(dir: &Path) -> Vec<String> {
     modules
 }
 
+/// Parses every `fuzz_targets = [...]` array in a manifest into the flat set of
+/// target names it names. Arrays are single-line in these manifests, so a line
+/// parser suffices without a TOML dependency.
+fn manifest_fuzz_targets(manifest: &Path) -> BTreeSet<String> {
+    let text = fs::read_to_string(manifest).expect("manifest is readable");
+    let mut targets = BTreeSet::new();
+    for line in text.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix("fuzz_targets") else {
+            continue;
+        };
+        let value = rest
+            .trim_start()
+            .strip_prefix('=')
+            .expect("manifest fuzz_targets row is `fuzz_targets = [...]`")
+            .trim();
+        let inner = value
+            .strip_prefix('[')
+            .and_then(|v| v.strip_suffix(']'))
+            .expect("fuzz_targets value is a single-line array");
+        for name in inner.split(',') {
+            let name = name.trim().trim_matches('"');
+            if !name.is_empty() {
+                targets.insert(name.to_string());
+            }
+        }
+    }
+    targets
+}
+
+/// The set of fuzz targets registered as `[[bin]]` entries in the
+/// `cadmpeg-fuzz` manifest whose path is under `fuzz_targets/` — the seed
+/// generators (`src/bin/*`) are excluded, so this is exactly the runnable
+/// fuzz-target set `cargo fuzz run` accepts.
+fn registered_fuzz_targets(root: &Path) -> BTreeSet<String> {
+    let text = fs::read_to_string(root.join("crates/cadmpeg-fuzz/Cargo.toml"))
+        .expect("fuzz manifest is readable");
+    let mut registered = BTreeSet::new();
+    let mut pending_name: Option<String> = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if line == "[[bin]]" || line.starts_with('[') && line != "[[bin]]" {
+            pending_name = None;
+        }
+        if let Some(rest) = line.strip_prefix("name") {
+            if let Some(eq) = rest.trim_start().strip_prefix('=') {
+                pending_name = Some(eq.trim().trim_matches('"').to_string());
+            }
+        } else if let Some(rest) = line.strip_prefix("path") {
+            if let Some(eq) = rest.trim_start().strip_prefix('=') {
+                let path = eq.trim().trim_matches('"');
+                if path.starts_with("fuzz_targets/") {
+                    if let Some(name) = pending_name.take() {
+                        registered.insert(name);
+                    }
+                }
+            }
+        }
+    }
+    registered
+}
+
+/// Doc section 7 reachability / Phase 2 exit gate item 4: every manifest
+/// `fuzz_targets` entry must resolve to a registered fuzz target. Commit
+/// `c203b937` exists because sldprt manifest entries once named unregistered
+/// targets; without this guard a renamed or dropped `[[bin]]` turns every
+/// citing manifest entry into a dangling reachability claim that CI still
+/// passes.
+#[test]
+fn every_manifest_fuzz_target_is_registered() {
+    let root = workspace_root();
+    let registered = registered_fuzz_targets(&root);
+    assert!(
+        !registered.is_empty(),
+        "no registered fuzz targets parsed from crates/cadmpeg-fuzz/Cargo.toml"
+    );
+
+    let mut violations = Vec::new();
+    for (crate_name, crate_dir) in codec_crates(&root) {
+        for target in manifest_fuzz_targets(&crate_dir.join("parser-manifest.toml")) {
+            if !registered.contains(&target) {
+                violations.push(format!(
+                    "{crate_name}: parser-manifest.toml names fuzz target `{target}` with no \
+                     matching `[[bin]]` in crates/cadmpeg-fuzz/Cargo.toml; register the target \
+                     or fix the entry"
+                ));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "manifest fuzz-target reachability violated:\n{}",
+        violations.join("\n")
+    );
+}
+
 #[test]
 fn every_decoder_module_is_manifested() {
     let root = workspace_root();
