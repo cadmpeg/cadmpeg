@@ -147,13 +147,18 @@ fn issue_stream_tickets(
     ir: &CadIr,
     report: &mut DecodeReport,
 ) {
+    // One pass over the model buckets every `nx:s{index}:` id by its stream
+    // index, so accounting is O(streams + entities) rather than rescanning the
+    // whole model per stream (which is O(streams x entities) over two
+    // input-proportional dimensions, an uncharged resource-growth surface).
+    let mut outputs_by_stream = stream_output_buckets(ir);
     for (si, stream) in scan.streams.iter().enumerate() {
         let location = SourceLocation {
             space: source.space,
             offset: stream.file_offset as u64,
         };
         let ticket = ctx.commit_record(location, RecordKind(stream.kind.label()));
-        let outputs = stream_outputs(ir, si);
+        let outputs = outputs_by_stream.remove(&si).unwrap_or_default();
         if outputs.is_empty() {
             let loss = stream_drop_note(si, stream);
             report.losses.push(loss.clone());
@@ -164,58 +169,27 @@ fn issue_stream_tickets(
     }
 }
 
-/// Collect the surviving IR model entity ids a stream contributed, identified by
-/// its `nx:s{index}:` id prefix. Read after pruning, so every id resolves in the
-/// model and a `Typed` disposition never names an absent entity.
-fn stream_outputs(ir: &CadIr, stream_index: usize) -> Vec<String> {
-    let prefix = format!("nx:s{stream_index}:");
-    let model = &ir.model;
-    let mut outputs = Vec::new();
-    let mut take = |id: &str| {
-        if id.starts_with(&prefix) {
-            outputs.push(id.to_string());
+/// Bucket every surviving IR model entity id by the stream index encoded in its
+/// `nx:s{index}:` prefix, in one linear pass over the model. Read after pruning,
+/// so every id resolves in the model and a `Typed` disposition never names an
+/// absent entity. Ids without the stream prefix are ignored.
+fn stream_output_buckets(ir: &CadIr) -> std::collections::HashMap<usize, Vec<String>> {
+    let mut buckets: std::collections::HashMap<usize, Vec<String>> =
+        std::collections::HashMap::new();
+    for id in ir.model.entity_ids() {
+        if let Some(index) = parse_stream_index(&id) {
+            buckets.entry(index).or_default().push(id);
         }
-    };
-    for entity in &model.points {
-        take(&entity.id.0);
     }
-    for entity in &model.vertices {
-        take(&entity.id.0);
-    }
-    for entity in &model.surfaces {
-        take(&entity.id.0);
-    }
-    for entity in &model.curves {
-        take(&entity.id.0);
-    }
-    for entity in &model.procedural_surfaces {
-        take(&entity.id.0);
-    }
-    for entity in &model.procedural_curves {
-        take(&entity.id.0);
-    }
-    for entity in &model.bodies {
-        take(&entity.id.0);
-    }
-    for entity in &model.regions {
-        take(&entity.id.0);
-    }
-    for entity in &model.shells {
-        take(&entity.id.0);
-    }
-    for entity in &model.faces {
-        take(&entity.id.0);
-    }
-    for entity in &model.loops {
-        take(&entity.id.0);
-    }
-    for entity in &model.coedges {
-        take(&entity.id.0);
-    }
-    for entity in &model.edges {
-        take(&entity.id.0);
-    }
-    outputs
+    buckets
+}
+
+/// Parse the stream index `N` from an id of the form `nx:s{N}:...`; `None` for
+/// any id that does not carry the stream-scoped prefix.
+fn parse_stream_index(id: &str) -> Option<usize> {
+    let rest = id.strip_prefix("nx:s")?;
+    let end = rest.find(':')?;
+    rest[..end].parse().ok()
 }
 
 /// The accountable loss note for a stream that produced no surviving typed
