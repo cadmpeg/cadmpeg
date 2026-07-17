@@ -3,7 +3,8 @@
 //!
 //! The scanners recognize points; planes, cylinders, cones, spheres, and tori;
 //! and lines, circles, and ellipses. They validate record bounds, finite values,
-//! model scale, radii, and direction vectors before returning a carrier.
+//! plausible scanner magnitudes, radii, and direction vectors before returning a
+//! carrier.
 //!
 //! Parasolid stores these fields as big-endian metre values. Returned coordinates
 //! and radii are in millimetres; unit vectors and curve parameters are unchanged.
@@ -66,6 +67,12 @@ enum AnalyticRecord {
     Point(DecodedPoint),
     Surface(DecodedSurface),
     Curve(DecodedCurve),
+}
+
+#[derive(Clone, Copy)]
+enum DecodeContext {
+    Scanner,
+    Graph,
 }
 
 /// Decode validated point records in source order.
@@ -165,11 +172,11 @@ fn decode_surface(stream: &[u8], p: usize, kind: u8) -> Option<(SurfaceGeometry,
     for sh in SHIFTS {
         let b = p + sh;
         let geom = match kind {
-            0x32 => plane(stream, b),
-            0x33 => cylinder(stream, b),
-            0x34 => cone(stream, b),
-            0x35 => sphere(stream, b),
-            0x36 => torus(stream, b),
+            0x32 => plane(stream, b, DecodeContext::Scanner),
+            0x33 => cylinder(stream, b, DecodeContext::Scanner),
+            0x34 => cone(stream, b, DecodeContext::Scanner),
+            0x35 => sphere(stream, b, DecodeContext::Scanner),
+            0x36 => torus(stream, b, DecodeContext::Scanner),
             _ => None,
         };
         if let Some(geometry) = geom {
@@ -184,9 +191,9 @@ fn decode_curve(stream: &[u8], p: usize, kind: u8) -> Option<(CurveGeometry, usi
     for sh in SHIFTS {
         let b = p + sh;
         let geom = match kind {
-            0x1e => line(stream, b),
-            0x1f => circle(stream, b),
-            0x20 => ellipse(stream, b),
+            0x1e => line(stream, b, DecodeContext::Scanner),
+            0x1f => circle(stream, b, DecodeContext::Scanner),
+            0x20 => ellipse(stream, b, DecodeContext::Scanner),
             _ => None,
         };
         if let Some(geometry) = geom {
@@ -204,11 +211,11 @@ pub(crate) fn decode_surface_record(
 ) -> Option<SurfaceGeometry> {
     let b = shift;
     match kind {
-        0x32 => plane(record, b),
-        0x33 => cylinder(record, b),
-        0x34 => cone(record, b),
-        0x35 => sphere(record, b),
-        0x36 => torus(record, b),
+        0x32 => plane(record, b, DecodeContext::Graph),
+        0x33 => cylinder(record, b, DecodeContext::Graph),
+        0x34 => cone(record, b, DecodeContext::Graph),
+        0x35 => sphere(record, b, DecodeContext::Graph),
+        0x36 => torus(record, b, DecodeContext::Graph),
         _ => None,
     }
 }
@@ -217,20 +224,20 @@ pub(crate) fn decode_surface_record(
 pub(crate) fn decode_curve_record(record: &[u8], kind: u8, shift: usize) -> Option<CurveGeometry> {
     let b = shift;
     match kind {
-        0x1e => line(record, b),
-        0x1f => circle(record, b),
-        0x20 => ellipse(record, b),
+        0x1e => line(record, b, DecodeContext::Graph),
+        0x1f => circle(record, b, DecodeContext::Graph),
+        0x20 => ellipse(record, b, DecodeContext::Graph),
         _ => None,
     }
 }
 
 // --- Surface decoders (offsets from the common header, [§5.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#51-ownership-graph) / [§6.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#61-analytic-curves-and-surfaces)) ---
 
-fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
+fn plane(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> {
     let origin = read_vec3(s, b + 19)?;
     let normal = read_vec3(s, b + 43)?;
     let x_axis = read_vec3(s, b + 67)?;
-    if !is_orthonormal_frame(normal, x_axis) || !model_scale(origin) {
+    if !is_orthonormal_frame(normal, x_axis) || !valid_position(origin, context) {
         return None;
     }
     Some(SurfaceGeometry::Plane {
@@ -240,12 +247,15 @@ fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     })
 }
 
-fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
+fn cylinder(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> {
     let origin = read_vec3(s, b + 19)?;
     let axis = read_vec3(s, b + 43)?;
     let radius = read_f64(s, b + 67)?;
     let x_axis = read_vec3(s, b + 75)?;
-    if !is_orthonormal_frame(axis, x_axis) || !model_scale(origin) || !in_radius(radius) {
+    if !is_orthonormal_frame(axis, x_axis)
+        || !valid_position(origin, context)
+        || !valid_radius(radius, context)
+    {
         return None;
     }
     Some(SurfaceGeometry::Cylinder {
@@ -256,7 +266,7 @@ fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     })
 }
 
-fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
+fn cone(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> {
     let origin = read_vec3(s, b + 19)?;
     let axis = read_vec3(s, b + 43)?;
     let radius = read_f64(s, b + 67)?;
@@ -264,8 +274,8 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let cos_half = read_f64(s, b + 83)?;
     let x_axis = read_vec3(s, b + 91)?;
     if !is_orthonormal_frame(axis, x_axis)
-        || !model_scale(origin)
-        || !(0.0..=1.0e3).contains(&radius)
+        || !valid_position(origin, context)
+        || !valid_cone_radius(radius, context)
     {
         return None;
     }
@@ -289,12 +299,15 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     })
 }
 
-fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
+fn sphere(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> {
     let center = read_vec3(s, b + 19)?;
     let radius = read_f64(s, b + 43)?;
     let axis = read_vec3(s, b + 51)?;
     let x_axis = read_vec3(s, b + 75)?;
-    if !is_orthonormal_frame(axis, x_axis) || !model_scale(center) || !in_radius(radius) {
+    if !is_orthonormal_frame(axis, x_axis)
+        || !valid_position(center, context)
+        || !valid_radius(radius, context)
+    {
         return None;
     }
     Some(SurfaceGeometry::Sphere {
@@ -305,18 +318,18 @@ fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     })
 }
 
-fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
+fn torus(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> {
     let center = read_vec3(s, b + 19)?;
     let axis = read_vec3(s, b + 43)?;
     let major = read_f64(s, b + 67)?;
     let minor = read_f64(s, b + 75)?;
     let x_axis = read_vec3(s, b + 83)?;
-    // A horn torus (major == minor) is valid; both radii must be positive and in
-    // range. `major` may be zero only for degenerate records, which are rejected.
+    // A horn torus (major == minor) is valid; both radii must be positive and
+    // finite. A zero major radius is degenerate and rejected.
     if !is_orthonormal_frame(axis, x_axis)
-        || !model_scale(center)
-        || !in_radius(major)
-        || !in_radius(minor)
+        || !valid_position(center, context)
+        || !valid_radius(major, context)
+        || !valid_radius(minor, context)
     {
         return None;
     }
@@ -331,10 +344,10 @@ fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
 
 // --- Curve decoders ---
 
-fn line(s: &[u8], b: usize) -> Option<CurveGeometry> {
+fn line(s: &[u8], b: usize, context: DecodeContext) -> Option<CurveGeometry> {
     let origin = read_vec3(s, b + 19)?;
     let direction = read_vec3(s, b + 43)?;
-    if !is_unit(direction) || !model_scale(origin) {
+    if !is_unit(direction) || !valid_position(origin, context) {
         return None;
     }
     Some(CurveGeometry::Line {
@@ -343,12 +356,15 @@ fn line(s: &[u8], b: usize) -> Option<CurveGeometry> {
     })
 }
 
-fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
+fn circle(s: &[u8], b: usize, context: DecodeContext) -> Option<CurveGeometry> {
     let center = read_vec3(s, b + 19)?;
     let normal = read_vec3(s, b + 43)?;
     let x_axis = read_vec3(s, b + 67)?;
     let radius = read_f64(s, b + 91)?;
-    if !is_orthonormal_frame(normal, x_axis) || !model_scale(center) || !in_radius(radius) {
+    if !is_orthonormal_frame(normal, x_axis)
+        || !valid_position(center, context)
+        || !valid_radius(radius, context)
+    {
         return None;
     }
     Some(CurveGeometry::Circle {
@@ -359,16 +375,16 @@ fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
     })
 }
 
-fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
+fn ellipse(s: &[u8], b: usize, context: DecodeContext) -> Option<CurveGeometry> {
     let center = read_vec3(s, b + 19)?;
     let normal = read_vec3(s, b + 43)?;
     let x_axis = read_vec3(s, b + 67)?;
     let major = read_f64(s, b + 91)?;
     let minor = read_f64(s, b + 99)?;
-    if !is_orthonormal_frame(normal, x_axis) || !model_scale(center) {
+    if !is_orthonormal_frame(normal, x_axis) || !valid_position(center, context) {
         return None;
     }
-    if !in_radius(major) || !in_radius(minor) || minor > major + 1.0e-9 {
+    if !valid_radius(major, context) || !valid_radius(minor, context) || minor > major + 1.0e-9 {
         return None;
     }
     Some(CurveGeometry::Ellipse {
@@ -398,14 +414,26 @@ fn is_orthonormal_frame(axis: [f64; 3], x_axis: [f64; 3]) -> bool {
         && (axis[0] * x_axis[0] + axis[1] * x_axis[1] + axis[2] * x_axis[2]).abs() < 1.0e-6
 }
 
-/// An origin/centre is model-scale when finite and under one kilometre in metres.
-fn model_scale(v: [f64; 3]) -> bool {
-    v.iter().all(|c| c.is_finite() && c.abs() < 1.0e3)
+fn valid_position(v: [f64; 3], context: DecodeContext) -> bool {
+    v.iter().all(|coordinate| {
+        coordinate.is_finite()
+            && (*coordinate * 1000.0).is_finite()
+            && (matches!(context, DecodeContext::Graph) || coordinate.abs() < 1.0e3)
+    })
 }
 
-/// Return whether a metre radius is finite and within the accepted model range.
-fn in_radius(r: f64) -> bool {
-    r.is_finite() && r > 1.0e-9 && r < 1.0e3
+fn valid_radius(radius: f64, context: DecodeContext) -> bool {
+    radius.is_finite()
+        && (radius * 1000.0).is_finite()
+        && radius > 0.0
+        && (matches!(context, DecodeContext::Graph) || (radius > 1.0e-9 && radius < 1.0e3))
+}
+
+fn valid_cone_radius(radius: f64, context: DecodeContext) -> bool {
+    radius.is_finite()
+        && (radius * 1000.0).is_finite()
+        && radius >= 0.0
+        && (matches!(context, DecodeContext::Graph) || radius <= 1.0e3)
 }
 
 fn mm_point(v: [f64; 3]) -> Point3 {

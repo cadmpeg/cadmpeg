@@ -310,11 +310,7 @@ impl Node {
         read_sequence_at(&self.bytes, &mut at, 4)?;
         let xyz = be::vec3_at(&self.bytes, at)?;
         xyz.iter()
-            .all(|value| {
-                value.is_finite()
-                    && value.abs() < 1.0e3
-                    && (*value == 0.0 || value.abs() >= 1.0e-100)
-            })
+            .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
             .then(|| Point3::new(xyz[0] * 1000.0, xyz[1] * 1000.0, xyz[2] * 1000.0))
     }
 

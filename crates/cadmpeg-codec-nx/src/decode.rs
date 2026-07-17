@@ -1413,7 +1413,15 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
 
 pub(crate) fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
     let mut semantic = topology_streams(scan);
-    for (partition, deltas) in paired_delta_streams(scan) {
+    let pairs = paired_delta_streams(scan);
+    let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
+    for (delta, stream) in scan.streams.iter().enumerate() {
+        if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
+            semantic[delta]
+                .extend_from_slice(&crate::deltas::procedural_residual(&stream.inflated));
+        }
+    }
+    for (partition, deltas) in pairs {
         for delta in deltas {
             semantic[partition].extend_from_slice(&crate::deltas::procedural_residual(
                 &scan.streams[delta].inflated,
@@ -1430,7 +1438,17 @@ pub(crate) fn topology_streams(scan: &Scan) -> Vec<Vec<u8>> {
         .iter()
         .map(|stream| stream.inflated.clone())
         .collect::<Vec<_>>();
-    for (partition, deltas) in paired_delta_streams(scan) {
+    let pairs = paired_delta_streams(scan);
+    let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
+    for (delta, stream) in scan.streams.iter().enumerate() {
+        if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
+            let census = crate::deltas::walk(&stream.inflated);
+            if !census.records.is_empty() || !census.tombstones.is_empty() {
+                semantic[delta] = crate::deltas::merge_full_records(&[], &stream.inflated);
+            }
+        }
+    }
+    for (partition, deltas) in pairs {
         for delta in deltas {
             semantic[partition] =
                 crate::deltas::merge_full_records(&semantic[partition], &semantic[delta]);

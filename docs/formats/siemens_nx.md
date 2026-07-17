@@ -392,6 +392,8 @@ Type 38 is the XT `INTERSECTION` node. Delta-stream `0x5a` records use the `inte
 
 A deltas stream is a schema-framed incremental edit log paired with a partition. Both declare the same schema token. Records are not length-prefixed; they self-delimit by typed decode (valid record ends on a plausible next-record tag). Two record forms:
 
+Status-framed fixed records are normalized by removing each reference status byte before fixed-record graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition; its non-fixed procedural residual remains a separate semantic lane.
+
 **Full record:**
 
 ```text
@@ -502,7 +504,7 @@ Body-shape SHELL validation: invariant/ref predicate passes; `body_ref` and `reg
 
 ## 6. Geometry carriers
 
-All geometric doubles are meters → ×1000 for mm. Directions and axes are unit vectors (not scaled); angular parameters are radians; linear curve parameters are meters of arc length.
+All geometric doubles are finite binary64 values in meters → ×1000 for mm, and their converted millimeter values are finite. The format imposes no model-magnitude bound. Directions and axes are unit vectors (not scaled); angular parameters are radians; linear curve parameters are meters of arc length.
 
 ### 6.1 Analytic curves and surfaces
 
@@ -523,7 +525,7 @@ Every analytic normal or axis and its x-axis are finite unit vectors with an abs
 
 An extended leading reference shifts the analytic payload and record end by the same decoded byte count. Bytes before that shifted end remain owned by the record and cannot open another analytic carrier.
 
-Validity gates: CONE has finite nonzero `sin_half` and `cos_half` satisfying `sin_half² + cos_half² ≈ 1`; SPHERE has `radius > 0` and unit axis; a horn torus has `major == minor`.
+Validity gates: CIRCLE, ELLIPSE, CYLINDER, SPHERE, and TORUS radii are positive. CONE reference radius is nonnegative and has finite nonzero `sin_half` and `cos_half` satisfying `sin_half² + cos_half² ≈ 1`; SPHERE has a unit axis; a horn torus has `major == minor`.
 
 **OFFSET_SURF (60):** discriminator byte `+19` (`V`/`I`/`U`), `true_offset:u8 +20` (`0`/`1`), base surface ref `+21`, finite `offset_distance:f64 +23` (meters). Surface `P = base(u,v) + offset_distance · unit_normal(u,v)`. The format imposes no magnitude bound on the finite distance. There is no scale field at `+31` (that position lands in the next record). For a B_SURFACE base, the unit normal comes from the rational quotient rule:
 

@@ -14764,6 +14764,53 @@ fn cylinder_gate_rejects_denormal_radius() {
 }
 
 #[test]
+fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
+    let mut cylinder = record(0x33, 99);
+    put_vec3(&mut cylinder, 19, [1_001.0, 0.0, 0.0]);
+    put_vec3(&mut cylinder, 43, [0.0, 0.0, 1.0]);
+    put_f64(&mut cylinder, 67, f64::from_bits(1));
+    put_vec3(&mut cylinder, 75, [1.0, 0.0, 0.0]);
+
+    assert!(crate::geometry::surfaces(&cylinder).is_empty());
+    let geometry =
+        crate::geometry::decode_surface_record(&cylinder, 0x33, 0).expect("graph-owned cylinder");
+    let SurfaceGeometry::Cylinder { origin, radius, .. } = geometry else {
+        panic!("cylinder")
+    };
+    assert_eq!(origin.x, 1_001_000.0);
+    assert_eq!(radius, f64::from_bits(1) * 1000.0);
+
+    put_f64(&mut cylinder, 67, f64::INFINITY);
+    assert!(crate::geometry::decode_surface_record(&cylinder, 0x33, 0).is_none());
+}
+
+#[test]
+fn graph_owned_point_has_no_scanner_magnitude_limit() {
+    let mut stream = topology_partition_stream();
+    let point = stream
+        .windows(4)
+        .position(|window| window == [0, 29, 0, 11])
+        .expect("point record");
+    put_vec3(&mut stream, point + 16, [1_001.0, f64::from_bits(1), 0.0]);
+
+    assert!(crate::geometry::points(&stream).is_empty());
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(
+        graph
+            .get(29, 11)
+            .and_then(crate::topology::Node::point_position),
+        Some(cadmpeg_ir::math::Point3::new(
+            1_001_000.0,
+            f64::from_bits(1) * 1000.0,
+            0.0,
+        ))
+    );
+
+    put_vec3(&mut stream, point + 16, [f64::INFINITY, 0.0, 0.0]);
+    assert!(crate::topology::Graph::parse(&stream).get(29, 11).is_none());
+}
+
+#[test]
 fn analytic_frame_gate_rejects_nonorthogonal_reference_direction() {
     let mut plane = record(0x32, 91);
     put_vec3(&mut plane, 19, [0.0, 0.0, 0.0]);
