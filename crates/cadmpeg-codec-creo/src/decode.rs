@@ -12043,15 +12043,25 @@ fn schema_feature_definition(
     if schema_class == 911 {
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
         let solved = simple_hole_geometry(scan, feature_id);
+        let face_selection = |surface_id| {
+            let native = format!("creo:visibgeom:surface#{surface_id}");
+            let face = FaceId(format!("creo:visibgeom:face#{surface_id}"));
+            if ir.model.faces.iter().any(|candidate| candidate.id == face) {
+                FaceSelection::Resolved {
+                    faces: vec![face],
+                    native,
+                }
+            } else {
+                FaceSelection::Native(native)
+            }
+        };
         let (face, position, direction, diameter, extent, bottom) = solved.map_or_else(
             || {
                 placement.map_or(
                     (None, None, None, None, None, None),
                     |(entry_surface_id, direction, extent)| {
                         (
-                            Some(FaceSelection::Native(format!(
-                                "creo:visibgeom:surface#{entry_surface_id}"
-                            ))),
+                            Some(face_selection(entry_surface_id)),
                             None,
                             Some(Vector3::new(direction[0], direction[1], direction[2])),
                             None,
@@ -12066,10 +12076,7 @@ fn schema_feature_definition(
                     unreachable!("simple hole helper returns a cylinder")
                 };
                 (
-                    Some(FaceSelection::Native(format!(
-                        "creo:visibgeom:surface#{}",
-                        hole.entry_surface_id
-                    ))),
+                    Some(face_selection(hole.entry_surface_id)),
                     Some(origin),
                     Some(Vector3::new(
                         hole.direction[0],

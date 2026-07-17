@@ -1115,6 +1115,8 @@ Projecting the second origin minus the first origin onto the first unit normal
 gives the signed blind depth; its magnitude is the hole depth and its sign
 orients the hole axis from the entry plane toward the termination plane. The
 first plane row is the hole's native placement-face selection.
+When that surface is a transferred B-rep face, the surface identifier selects
+the face with the same native identifier.
 
 A class-911 simple-hole generated table has four entries in the order entry
 plane, termination plane, first cylinder use, and second cylinder use. Both
