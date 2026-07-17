@@ -242,7 +242,7 @@ ledger_level = 1
 # ---------------------------------------------------------------------------
 # Record-ticket issuance (doc section 6.2 / 10 Phase 3D). Not a byte parser:
 # issues and resolves the decode's `RecordTicket`s at the section 3.3 commit
-# boundary from already-scanned `ContainerScan` facts and the built `CadIr`, so
+# boundary from the root view location and the built `CadIr`, so
 # `Check::TransferAccounting` can prove per-record conservation against the L1
 # ledger. No hostile read, no `.window()` egress, and no budget charge of its
 # own. Emits the resolved disposition table.
