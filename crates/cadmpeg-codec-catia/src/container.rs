@@ -228,6 +228,19 @@ pub struct Extent {
     pub flags: u32,
 }
 
+impl Extent {
+    /// Absolute file range `inner + phys_off .. inner + phys_off + phys_len`,
+    /// or `None` when it is empty or escapes `data_len`. Every extent consumer
+    /// (space registration, BREP range list, logical-stream reconstruction)
+    /// routes through this one arithmetic so their in-range checks cannot
+    /// diverge.
+    fn abs_range(&self, inner: usize, data_len: usize) -> Option<Range<usize>> {
+        let start = inner.checked_add(self.phys_off as usize)?;
+        let end = start.checked_add(self.phys_len as usize)?;
+        (start < end && end <= data_len).then_some(start..end)
+    }
+}
+
 /// One catalogued logical stream.
 #[derive(Debug, Clone)]
 pub struct Descriptor {
@@ -371,14 +384,18 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
             if let Some((extents, cum)) = parse_extents(dirbuf, o, k, inner, file_len) {
                 if cum > 0 && o >= 0x50 {
                     let ds = o - 0x50;
-                    let logical_length = u32_be(dirbuf, ds + 0x0c).unwrap_or(0);
-                    if logical_length as usize == cum {
-                        descriptors.push(Descriptor {
-                            name: descriptor_name(dirbuf, ds),
-                            desc_offset: ds,
-                            logical_length,
-                            extents,
-                        });
+                    // Reject the descriptor when the logical-length field reads
+                    // out of range rather than substituting 0, so a directory
+                    // truncated at `ds + 0x0c` cannot be admitted as a stream.
+                    if let Some(logical_length) = u32_be(dirbuf, ds + 0x0c) {
+                        if logical_length as usize == cum {
+                            descriptors.push(Descriptor {
+                                name: descriptor_name(dirbuf, ds),
+                                desc_offset: ds,
+                                logical_length,
+                                extents,
+                            });
+                        }
                     }
                 }
             }
@@ -472,10 +489,8 @@ pub fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: u
     // `extend_from_slice` grows the buffer without a disallowed reservation.
     let mut out = Vec::new();
     for e in &descriptor.extents {
-        let start = inner + e.phys_off as usize;
-        let end = start + e.phys_len as usize;
-        if end <= data.len() {
-            out.extend_from_slice(&data[start..end]);
+        if let Some(range) = e.abs_range(inner, data.len()) {
+            out.extend_from_slice(&data[range]);
         }
     }
     out
@@ -510,10 +525,8 @@ pub(crate) fn brep_extent_ranges(data: &[u8], dir: &InnerDir) -> Option<Vec<Rang
     let mut ranges = Vec::new();
     for descriptor in [main, surf] {
         for e in &descriptor.extents {
-            let start = dir.inner + e.phys_off as usize;
-            let end = start + e.phys_len as usize;
-            if end <= data.len() {
-                ranges.push(start..end);
+            if let Some(range) = e.abs_range(dir.inner, data.len()) {
+                ranges.push(range);
             }
         }
     }
@@ -674,20 +687,25 @@ fn register_extent_spaces(
         "catia_container_extents",
         Some(root.location()),
     )?;
-    let len = root.window().len() as u64;
+    let len = root.window().len();
     for descriptor in &dir.descriptors {
         for e in &descriptor.extents {
-            let start = (dir.inner as u64) + u64::from(e.phys_off);
-            let end = start + u64::from(e.phys_len);
             // Skip any extent that escapes the file rather than clamping it to
             // the file end. `brep_extent_ranges` and `reconstruct_logical_stream`
-            // drop an out-of-range extent, so clamping here would register a
-            // byte range the reconstructed BREP stream does not contain — a
-            // guard/read disagreement. Both paths now apply the same policy.
-            if end > len || start >= end {
+            // drop an out-of-range extent through the same `Extent::abs_range`
+            // arithmetic, so clamping here would register a byte range the
+            // reconstructed BREP stream does not contain — a guard/read
+            // disagreement. All paths now apply one shared policy.
+            let Some(range) = e.abs_range(dir.inner, len) else {
                 continue;
-            }
-            ctx.register_slice(root, ByteRange { start, end })?;
+            };
+            ctx.register_slice(
+                root,
+                ByteRange {
+                    start: range.start as u64,
+                    end: range.end as u64,
+                },
+            )?;
         }
     }
     Ok(())

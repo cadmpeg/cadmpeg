@@ -2917,6 +2917,13 @@ fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeomet
     }
     let pole_count = (u_count as usize).checked_mul(v_count as usize)?;
     let grid = after_v_mults.checked_add(3)?;
+    // Validate the payload holds the whole pole grid before reserving, matching
+    // the sibling parser: without this the reservation is committed from the
+    // declared (up to 16.7M) pole count before the per-pole `f64_point` bounds
+    // check can reject a truncated grid.
+    if grid.checked_add(pole_count.checked_mul(24)?)? > data.len() {
+        return None;
+    }
     let mut control_points = Vec::with_capacity(pole_count);
     for pole in 0..pole_count {
         control_points.push(f64_point(data, grid.checked_add(pole.checked_mul(24)?)?)?);

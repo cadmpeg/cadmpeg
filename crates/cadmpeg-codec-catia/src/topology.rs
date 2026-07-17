@@ -310,7 +310,12 @@ fn parse_fbb_edge_tables(bytes: &[u8], mut position: usize) -> Option<(Vec<EdgeR
             if arity < 2 {
                 return None;
             }
-            let mut handles = Vec::with_capacity(arity);
+            // Each handle consumes three bytes, so the remaining input caps the
+            // legitimate arity; bound the reservation to it rather than trusting
+            // the uncapped `parse_count` value, which would otherwise commit a
+            // multi-gigabyte allocation before the per-handle `?` bail runs.
+            let mut handles =
+                Vec::with_capacity(arity.min(bytes.len().saturating_sub(position) / 3));
             for _ in 0..arity {
                 handles.push(u32::from_be_bytes([
                     0,
@@ -418,7 +423,11 @@ fn parse_vertex_table(bytes: &[u8], mut position: usize) -> Option<Vec<[f64; 3]>
     }
     position += 2;
     let count = parse_count(bytes, &mut position)?;
-    let mut points = Vec::with_capacity(count);
+    // Each point consumes a 3-byte tag plus 12 payload bytes; bound the
+    // reservation to what the remaining input could hold so an uncapped
+    // `parse_count` cannot commit a huge allocation before the per-point `?`
+    // bail runs.
+    let mut points = Vec::with_capacity(count.min(bytes.len().saturating_sub(position) / 15));
     for _ in 0..count {
         if bytes.get(position..position + 3)? != [0x05, 0x08, 0x01] {
             return None;
@@ -499,7 +508,11 @@ fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRec
     }
 
     let legacy_42 = kind == 0x42 && b == 2 && width == 2;
-    let mut lengths = Vec::with_capacity(b + c);
+    // Each length token consumes at least one byte via `parse_count`, so the
+    // remaining input caps the count; `b` and `c` come from uncapped
+    // `parse_count` and are unbounded, so bound the reservation to what could be
+    // read rather than committing `b + c` capacity up front.
+    let mut lengths = Vec::with_capacity((b + c).min(bytes.len().saturating_sub(position)));
     if !legacy_42 {
         for _ in 0..b + c {
             lengths.push(parse_count(bytes, &mut position)?);
