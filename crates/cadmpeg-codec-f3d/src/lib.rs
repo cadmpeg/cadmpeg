@@ -343,7 +343,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let mut scope_ordinals = HashSet::new();
     for scope in &native.design_parameter_scopes {
         let native_stream = design_stream(&scope.id);
-        let family = design::design_feature_family(&scope.kind);
         let unique_index = scope_indices.insert((native_stream, scope.record_index));
         let entity_link = match (
             scope.entity_id.as_deref(),
@@ -362,10 +361,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             ),
             _ => Some(false),
         };
-        let extrude_profile_link = match (&scope.extrude_profile, family) {
-            (None, Some(design::DesignFeatureFamily::Extrude)) => false,
+        let extrude_profile_link = match (&scope.extrude_profile, scope.kind.as_str()) {
+            (None, "Extrude") => false,
             (None, _) => true,
-            (Some(_), family) if family != Some(design::DesignFeatureFamily::Extrude) => false,
+            (Some(_), kind) if kind != "Extrude" => false,
             (Some(profile), _) => {
                 let header = records_by_index.get(&(native_stream, profile.record_index));
                 let entity = entities_by_suffix.get(&(native_stream, profile.entity_suffix));
@@ -401,7 +400,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .all(|byte| byte.is_ascii_digit())
             && !scope.kind.is_empty()
             && match (
-                family,
+                scope.kind.as_str(),
                 scope.extrude_operation,
                 scope.extrude_operation_offset,
                 scope.extrude_extent,
@@ -412,7 +411,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 scope.extrude_start_offset,
             ) {
                 (
-                    Some(design::DesignFeatureFamily::Extrude),
+                    "Extrude",
                     Some(_),
                     Some(operation_offset),
                     Some(_),
@@ -432,7 +431,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         && direction_reversed_offset == operation_offset.saturating_add(12)
                         && extent_offsets[1] < scope.reference_count_offset
                 }
-                (Some(design::DesignFeatureFamily::Extrude), _, _, _, _, _, _, _, _) => false,
+                ("Extrude", _, _, _, _, _, _, _, _) => false,
                 (_, None, None, None, None, None, None, None, None) => true,
                 _ => false,
             }
@@ -456,8 +455,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && scope.reference_count_offset > scope.byte_offset
             && scope.reference_count_offset < scope.kind_offset
             && !scope.reference_members.is_empty()
-            && (family != Some(design::DesignFeatureFamily::Sketch)
-                || scope.reference_members.len() == 1)
+            && (scope.kind != "Sketch" || scope.reference_members.len() == 1)
             && scope.reference_members.len() == scope.reference_member_offsets.len()
             && scope.reference_member_offsets.first()
                 == Some(&scope.reference_count_offset.saturating_add(5))
@@ -477,9 +475,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .iter()
                 .all(|record_index| record_indices.contains(&(native_stream, *record_index)))
             && record_indices.contains(&(native_stream, scope.record_index))
-            && entity_link.unwrap_or(family != Some(design::DesignFeatureFamily::Sketch))
+            && entity_link.unwrap_or(scope.kind != "Sketch")
             && extrude_profile_link
-            && (family != Some(design::DesignFeatureFamily::Sketch)
+            && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;
         if !valid {
@@ -509,8 +507,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                design::design_feature_family(&scope.kind)
-                    == Some(design::DesignFeatureFamily::Extrude)
+                scope.kind == "Extrude"
                     && usize::try_from(group.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
@@ -578,9 +575,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                let family = design::design_feature_family(&scope.kind);
-                let role_is_valid = match family {
-                    Some(design::DesignFeatureFamily::Extrude) => match group.extrude_role {
+                let role_is_valid = match scope.kind.as_str() {
+                    "Extrude" => match group.extrude_role {
                         Some(records::DesignExtrudeOperandRole::Bodies) => {
                             group.role == 0x0000_0008_0000_0000 && group.extrude_face_role.is_none()
                         }
@@ -596,19 +592,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         }
                         None => false,
                     },
-                    Some(
-                        design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
-                    ) => group.extrude_role.is_none() && group.extrude_face_role.is_none(),
+                    "Fillet" | "Chamfer" => {
+                        group.extrude_role.is_none() && group.extrude_face_role.is_none()
+                    }
                     _ => false,
                 };
-                matches!(
-                    family,
-                    Some(
-                        design::DesignFeatureFamily::Extrude
-                            | design::DesignFeatureFamily::Fillet
-                            | design::DesignFeatureFamily::Chamfer
-                    )
-                ) && role_is_valid
+                matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer")
+                    && role_is_valid
                     && usize::try_from(group.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
@@ -658,16 +648,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
-    for scope in native.design_parameter_scopes.iter().filter(|scope| {
-        matches!(
-            design::design_feature_family(&scope.kind),
-            Some(
-                design::DesignFeatureFamily::Extrude
-                    | design::DesignFeatureFamily::Fillet
-                    | design::DesignFeatureFamily::Chamfer
-            )
-        )
-    }) {
+    for scope in native
+        .design_parameter_scopes
+        .iter()
+        .filter(|scope| matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer"))
+    {
         let native_stream = design_stream(&scope.id);
         if !operand_group_scopes.contains(&(native_stream, scope.record_index)) {
             findings.push(Finding {
@@ -677,8 +662,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 entity: Some(scope.id.clone()),
             });
         }
-        if design::design_feature_family(&scope.kind) == Some(design::DesignFeatureFamily::Extrude)
-        {
+        if scope.kind == "Extrude" {
             let mut profile_groups =
                 native
                     .design_construction_operand_groups
@@ -852,25 +836,26 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let tangency_weight = assignment
             .tangency_weight_parameter_record_index
             .and_then(|record_index| parameters_by_index.get(&(native_stream, record_index)));
-        let valid = scope.is_some_and(|scope| {
-            design::design_feature_family(&scope.kind) == Some(design::DesignFeatureFamily::Fillet)
-        }) && group.is_some_and(|group| {
-            group.scope_record_index == assignment.scope_record_index
-                && group.members == assignment.edge_operand_record_indices
-        }) && radius.is_some_and(|parameter| {
-            parameter.source_kind == "Radius"
-                && parameter.unit.as_deref() == Some("mm")
-                && parameter.evaluated_value > 0.0
-                && parameter.evaluated_value.is_finite()
-        }) && assignment
-            .tangency_weight_parameter_record_index
-            .is_none_or(|_| {
-                tangency_weight.is_some_and(|parameter| {
-                    parameter.source_kind == "TangencyWeight"
-                        && parameter.unit.is_none()
-                        && parameter.evaluated_value.is_finite()
-                })
+        let valid = scope.is_some_and(|scope| scope.kind == "Fillet")
+            && group.is_some_and(|group| {
+                group.scope_record_index == assignment.scope_record_index
+                    && group.members == assignment.edge_operand_record_indices
             })
+            && radius.is_some_and(|parameter| {
+                parameter.source_kind == "Radius"
+                    && parameter.unit.as_deref() == Some("mm")
+                    && parameter.evaluated_value > 0.0
+                    && parameter.evaluated_value.is_finite()
+            })
+            && assignment
+                .tangency_weight_parameter_record_index
+                .is_none_or(|_| {
+                    tangency_weight.is_some_and(|parameter| {
+                        parameter.source_kind == "TangencyWeight"
+                            && parameter.unit.is_none()
+                            && parameter.evaluated_value.is_finite()
+                    })
+                })
             && fillet_radius_group_records.insert((native_stream, assignment.group_record_index))
             && fillet_radius_group_slots.insert((
                 native_stream,
@@ -891,10 +876,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let native_stream = design_stream(&group.id);
         let is_fillet = scopes_by_index
             .get(&(native_stream, group.scope_record_index))
-            .is_some_and(|scope| {
-                design::design_feature_family(&scope.kind)
-                    == Some(design::DesignFeatureFamily::Fillet)
-            });
+            .is_some_and(|scope| scope.kind == "Fillet");
         if is_fillet && !fillet_radius_group_records.contains(&(native_stream, group.record_index))
         {
             findings.push(Finding {
@@ -1220,15 +1202,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                matches!(
-                    design::design_feature_family(&scope.kind),
-                    Some(
-                        design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer
-                    )
-                ) && usize::try_from(operand.scope_reference_ordinal)
-                    .ok()
-                    .and_then(|ordinal| scope.reference_members.get(ordinal))
-                    == Some(&operand.record_index)
+                matches!(scope.kind.as_str(), "Fillet" | "Chamfer")
+                    && usize::try_from(operand.scope_reference_ordinal)
+                        .ok()
+                        .and_then(|ordinal| scope.reference_members.get(ordinal))
+                        == Some(&operand.record_index)
             })
             && header.is_some_and(|header| {
                 header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
@@ -1269,12 +1247,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
-    for scope in native.design_parameter_scopes.iter().filter(|scope| {
-        matches!(
-            design::design_feature_family(&scope.kind),
-            Some(design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer)
-        )
-    }) {
+    for scope in native
+        .design_parameter_scopes
+        .iter()
+        .filter(|scope| matches!(scope.kind.as_str(), "Fillet" | "Chamfer"))
+    {
         let native_stream = design_stream(&scope.id);
         if !edge_operand_scopes.contains(&(native_stream, scope.record_index)) {
             findings.push(Finding {
@@ -1389,8 +1366,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                design::design_feature_family(&scope.kind)
-                    == Some(design::DesignFeatureFamily::Extrude)
+                scope.kind == "Extrude"
                     && usize::try_from(operand.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
@@ -1547,8 +1523,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && (compact || explicit)
             && design::valid_sketch_transform(&placement.transform)
             && scope.is_some_and(|scope| {
-                design::design_feature_family(&scope.kind)
-                    == Some(design::DesignFeatureFamily::Sketch)
+                scope.kind == "Sketch"
                     && scope.entity_id.as_deref() == Some(placement.entity_id.as_str())
                     && scope.entity_suffix == Some(placement.entity_suffix)
             })

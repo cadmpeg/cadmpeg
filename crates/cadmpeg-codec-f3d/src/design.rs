@@ -7979,7 +7979,7 @@ pub fn decode_parameter_scopes(
             let Some(mut scope) = parse_parameter_scope(bytes, &header) else {
                 continue;
             };
-            if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch) {
+            if scope.kind == "Sketch" {
                 let start = usize::try_from(scope.byte_offset).ok();
                 let end = usize::try_from(scope.paired_byte_offset).ok();
                 let frame = start
@@ -8068,12 +8068,10 @@ pub fn decode_edge_operands(
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| {
-        matches!(
-            design_feature_family(&scope.kind),
-            Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
-        )
-    }) {
+    for scope in scopes
+        .iter()
+        .filter(|scope| matches!(scope.kind.as_str(), "Fillet" | "Chamfer"))
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -8281,10 +8279,7 @@ pub fn bind_extrude_profiles(
         .iter()
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
-    for scope in scopes
-        .iter_mut()
-        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude))
-    {
+    for scope in scopes.iter_mut().filter(|scope| scope.kind == "Extrude") {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -8325,10 +8320,7 @@ pub fn decode_extrude_selection_groups(
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes
-        .iter()
-        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude))
-    {
+    for scope in scopes.iter().filter(|scope| scope.kind == "Extrude") {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -8371,16 +8363,10 @@ pub fn decode_construction_operand_groups(
         .filter_map(|h| Some(((native_stream(&h.id)?, h.record_index), h)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| {
-        matches!(
-            design_feature_family(&scope.kind),
-            Some(
-                DesignFeatureFamily::Extrude
-                    | DesignFeatureFamily::Fillet
-                    | DesignFeatureFamily::Chamfer
-            )
-        )
-    }) {
+    for scope in scopes
+        .iter()
+        .filter(|scope| matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer"))
+    {
         let scope_group_start = out.len();
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -8408,7 +8394,7 @@ pub fn decode_construction_operand_groups(
                 out.push(group);
             }
         }
-        if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
+        if scope.kind == "Extrude" {
             assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
         }
     }
@@ -8450,10 +8436,7 @@ pub fn decode_fillet_radius_groups(
         })
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes
-        .iter()
-        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Fillet))
-    {
+    for scope in scopes.iter().filter(|scope| scope.kind == "Fillet") {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -8550,7 +8533,7 @@ fn parse_construction_operand_group(
     }
     let identity_record_index = u32_at(bytes, position + 7)?;
     let role = read_u64(bytes, position + 17)?;
-    let extrude_role = if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
+    let extrude_role = if scope.kind == "Extrude" {
         Some(match role {
             0x0000_0008_0000_0000 => DesignExtrudeOperandRole::Bodies,
             0x0000_0041_0000_0000 => DesignExtrudeOperandRole::Profile,
@@ -9727,9 +9710,7 @@ fn parse_parameter_scope(
     else {
         return None;
     };
-    if design_feature_family(kind) == Some(DesignFeatureFamily::Sketch)
-        && reference_members.len() != 1
-    {
+    if kind == "Sketch" && reference_members.len() != 1 {
         return None;
     }
     let (
@@ -9741,7 +9722,7 @@ fn parse_parameter_scope(
         extrude_direction_reversed_offset,
         extrude_start,
         extrude_start_offset,
-    ) = if design_feature_family(kind) == Some(DesignFeatureFamily::Extrude) {
+    ) = if kind == "Extrude" {
         let direct_offset = start.checked_add(28)?;
         let referenced_offset = start.checked_add(38)?;
         let operation_offset = if bytes.get(start.checked_add(25)?) == Some(&1)
@@ -9839,10 +9820,7 @@ pub fn decode_sketch_placements(
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignSketchPlacement>, CodecError> {
     let mut out = Vec::new();
-    for scope in scopes
-        .iter()
-        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch))
-    {
+    for scope in scopes.iter().filter(|scope| scope.kind == "Sketch") {
         let (Some(entity_id), Some(entity_suffix)) =
             (scope.entity_id.as_deref(), scope.entity_suffix)
         else {
@@ -13871,6 +13849,41 @@ mod relation_tests {
         assert_eq!(companion.payload_byte_offset, 58);
         assert_eq!(companion.payload_byte_length, 7);
         assert_eq!(companion.owned_recipe_ids, [recipe.id]);
+    }
+
+    #[test]
+    fn localized_sketch_scope_retains_its_generic_reference_table() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"301");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        for record_index in [55u32, 56] {
+            bytes.push(1);
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        lp_utf16(&mut bytes, "Esquisse");
+        let mut tail = [0; 78];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[31..35].copy_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&tail);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"261");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        let header = DesignRecordHeader {
+            id: "generated:scope-header#0".into(),
+            record_index: 12,
+            class_tag: "301".into(),
+            byte_offset: 0,
+        };
+
+        let scope = parse_parameter_scope(&bytes, &header).expect("localized Sketch scope");
+        assert_eq!(scope.kind, "Esquisse");
+        assert_eq!(scope.reference_members, [55, 56]);
+        assert!(scope.entity_id.is_none());
     }
 
     #[test]
