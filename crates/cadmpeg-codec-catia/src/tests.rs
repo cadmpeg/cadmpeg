@@ -4506,7 +4506,7 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
 fn outer_object_graph_uses_the_unique_length_closing_child_frame() {
     let records = [
         object_graph_record(
-            &[0x04, 0x7c, 0x0a, 0xff, 0xff, 0xff, 0xff, 0x01, 0x82, 0x83],
+            &[0x04, 0x01, 0x7c, 0x0a, 0xff, 0xff, 0xff, 0xff, 0x82, 0x83],
             &[0xfe],
         ),
         object_graph_record(&[0x04, 0x01, 0x82, 0x84], &[0xfe]),
@@ -4583,6 +4583,21 @@ fn outer_object_graph_does_not_promote_unassigned_head_bytes() {
             crate::object_graph::HeadToken::Literal(0xe4),
         ]
     );
+}
+
+#[test]
+fn outer_object_graph_requires_the_head_separator_for_relations() {
+    let bytes =
+        object_graph_from_records(&[object_graph_record(&[0x04, 0x82, 0x83, 0x84], &[0xfe])]);
+    let graph = crate::object_graph::parse(&bytes).expect("retained malformed head");
+
+    assert_eq!(graph.records[0].owner_ref, None);
+    assert_eq!(graph.records[0].class_ref, None);
+    assert_eq!(graph.records[0].storage_ref, None);
+    assert!(graph.records[0]
+        .head
+        .iter()
+        .any(|token| matches!(token, crate::object_graph::HeadToken::Reference(2))));
 }
 
 #[test]

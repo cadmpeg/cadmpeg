@@ -391,13 +391,17 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             return None;
         }
         let head = decode_head(&data[head_start..child]);
-        let references: Vec<u32> = head
-            .iter()
-            .filter_map(|token| match token {
-                HeadToken::Reference(value) => Some(*value),
-                _ => None,
-            })
-            .collect();
+        let references: Vec<u32> = if matches!(head.get(1), Some(HeadToken::Separator)) {
+            head[2..]
+                .iter()
+                .filter_map(|token| match token {
+                    HeadToken::Reference(value) => Some(*value),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let payload = decode_payload(&data[child + 6..record_end])?;
         let subtype = classify(&payload.fields);
         records.push(ObjectRecord {
