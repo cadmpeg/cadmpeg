@@ -1634,7 +1634,7 @@ fn variable_table(
             trailing.push(field);
             cursor = next;
         }
-        rows.push(FeatureVariableRow {
+        let row = FeatureVariableRow {
             variable_type,
             key,
             value,
@@ -1644,11 +1644,19 @@ fn variable_table(
             uvar_id: trailing.get(2).copied(),
             dimension_driven,
             offset: row_offset,
-        });
-        let delimiter = payload[cursor..end].iter().position(|&byte| byte == 0xe2)?;
+        };
+        let Some(delimiter) = payload[cursor..end].iter().position(|&byte| byte == 0xe2) else {
+            break;
+        };
         cursor += delimiter + 1;
+        rows.push(row);
     }
-    variable_table_from_rows(declared_count, entity_ref, rows, table)
+    Some(variable_table_from_rows(
+        declared_count,
+        entity_ref,
+        rows,
+        table,
+    ))
 }
 
 fn variable_table_from_rows(
@@ -1656,39 +1664,37 @@ fn variable_table_from_rows(
     entity_ref: Option<u32>,
     rows: Vec<FeatureVariableRow>,
     offset: usize,
-) -> Option<FeatureVariableTable> {
-    (!rows.is_empty()).then(|| {
-        let mut coordinates = BTreeMap::<u32, (Option<f64>, Option<f64>)>::new();
-        for row in rows.iter().filter(|row| matches!(row.variable_type, 1 | 2)) {
-            coordinates.entry(row.key).or_insert((None, None));
+) -> FeatureVariableTable {
+    let mut coordinates = BTreeMap::<u32, (Option<f64>, Option<f64>)>::new();
+    for row in rows.iter().filter(|row| matches!(row.variable_type, 1 | 2)) {
+        coordinates.entry(row.key).or_insert((None, None));
+    }
+    for (&point_id, point) in &mut coordinates {
+        let mut u_rows = rows
+            .iter()
+            .filter(|row| row.key == point_id && row.variable_type == 1);
+        let u = u_rows.next();
+        if u_rows.next().is_none() {
+            point.0 = u.and_then(|row| row.value);
         }
-        for (&point_id, point) in &mut coordinates {
-            let mut u_rows = rows
-                .iter()
-                .filter(|row| row.key == point_id && row.variable_type == 1);
-            let u = u_rows.next();
-            if u_rows.next().is_none() {
-                point.0 = u.and_then(|row| row.value);
-            }
-            let mut v_rows = rows
-                .iter()
-                .filter(|row| row.key == point_id && row.variable_type == 2);
-            let v = v_rows.next();
-            if v_rows.next().is_none() {
-                point.1 = v.and_then(|row| row.value);
-            }
+        let mut v_rows = rows
+            .iter()
+            .filter(|row| row.key == point_id && row.variable_type == 2);
+        let v = v_rows.next();
+        if v_rows.next().is_none() {
+            point.1 = v.and_then(|row| row.value);
         }
-        FeatureVariableTable {
-            declared_count,
-            entity_ref,
-            rows,
-            points: coordinates
-                .into_iter()
-                .map(|(point_id, (u, v))| FeatureSectionPoint { point_id, u, v })
-                .collect(),
-            offset,
-        }
-    })
+    }
+    FeatureVariableTable {
+        declared_count,
+        entity_ref,
+        rows,
+        points: coordinates
+            .into_iter()
+            .map(|(point_id, (u, v))| FeatureSectionPoint { point_id, u, v })
+            .collect(),
+        offset,
+    }
 }
 
 fn positional_variable_table(
@@ -1727,7 +1733,7 @@ fn positional_variable_table(
     let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
     prototype_separator.extend_from_slice(&reference_bytes);
     prototype_separator.push(0xe2);
-    while cursor < end && rows.len() < row_limit {
+    'rows: while cursor < end && rows.len() < row_limit {
         let row_offset = cursor;
         let (variable_type, next) = psb::compact_int(payload, cursor);
         cursor = next;
@@ -1741,14 +1747,16 @@ fn positional_variable_table(
         let mut trailing = Vec::with_capacity(3);
         while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
             if payload[cursor] >= 0xc0 {
-                return None;
+                break 'rows;
             }
             let (field, next) = psb::compact_int(payload, cursor);
-            (next > cursor).then_some(())?;
+            if next <= cursor {
+                break 'rows;
+            }
             trailing.push(field);
             cursor = next;
         }
-        rows.push(FeatureVariableRow {
+        let row = FeatureVariableRow {
             variable_type,
             key,
             value,
@@ -1758,21 +1766,30 @@ fn positional_variable_table(
             uvar_id: trailing.get(2).copied(),
             dimension_driven,
             offset: row_offset,
-        });
-        if rows.len() < row_limit {
-            if rows.len() == 1 {
-                (payload.get(cursor..cursor + prototype_separator.len())
-                    == Some(prototype_separator.as_slice()))
-                .then_some(())?;
+        };
+        if rows.len() + 1 < row_limit {
+            if rows.is_empty() {
+                if payload.get(cursor..cursor + prototype_separator.len())
+                    != Some(prototype_separator.as_slice())
+                {
+                    break;
+                }
                 cursor += prototype_separator.len();
             } else {
-                (payload.get(cursor) == Some(&0xe2)).then_some(())?;
+                if payload.get(cursor) != Some(&0xe2) {
+                    break;
+                }
                 cursor += 1;
             }
         }
+        rows.push(row);
     }
-    (rows.len() == row_limit).then_some(())?;
-    variable_table_from_rows(declared_count, Some(table_class), rows, table)
+    Some(variable_table_from_rows(
+        declared_count,
+        Some(table_class),
+        rows,
+        table,
+    ))
 }
 
 fn segment_int(payload: &[u8], offset: usize) -> (Option<u32>, usize) {
@@ -6561,6 +6578,27 @@ mod tests {
     }
 
     #[test]
+    fn variable_tables_retain_extents_without_decoded_rows() {
+        let named = b"var_arr\0\xf8\x02\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2";
+        let cache = scalar::ScalarCache::from_section(named);
+        let variables =
+            variable_table(named, 0, named.len(), &cache).expect("named var_arr header");
+        assert_eq!(variables.declared_count, 2);
+        assert_eq!(variables.entity_ref, Some(119));
+        assert!(variables.rows.is_empty());
+        assert!(variables.points.is_empty());
+
+        let positional = b"\xf8\x02\xf7\x77\xfb\xe2\xf7\x78";
+        let cache = scalar::ScalarCache::from_section(positional);
+        let variables = positional_variable_table(positional, 0, positional.len(), 119, &cache)
+            .expect("positional var_arr header");
+        assert_eq!(variables.declared_count, 2);
+        assert_eq!(variables.entity_ref, Some(119));
+        assert!(variables.rows.is_empty());
+        assert!(variables.points.is_empty());
+    }
+
+    #[test]
     fn variable_table_withholds_duplicate_coordinate_identities() {
         let row = |variable_type, value, offset| FeatureVariableRow {
             variable_type,
@@ -6578,8 +6616,7 @@ mod tests {
             Some(119),
             vec![row(1, 2.0, 10), row(1, 2.0, 20), row(2, 3.0, 30)],
             5,
-        )
-        .expect("variable table");
+        );
 
         assert_eq!(table.rows.len(), 3);
         assert_eq!(table.points.len(), 1);
@@ -6606,8 +6643,7 @@ mod tests {
             Some(119),
             vec![row(1, 7, 2.0, 10), row(2, 7, 3.0, 20), row(3, 99, 4.0, 30)],
             5,
-        )
-        .expect("variable table");
+        );
 
         assert_eq!(table.points.len(), 1);
         assert_eq!(table.points[0].point_id, 7);
