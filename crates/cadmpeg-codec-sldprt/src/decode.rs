@@ -47,6 +47,13 @@ struct DecodedBrep {
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
 }
 
+struct EvaluatedFeatureState<'a> {
+    feature: &'a cadmpeg_ir::features::Feature,
+    dependencies: &'a [cadmpeg_ir::features::FeatureId],
+    outputs: &'a [cadmpeg_ir::ids::BodyId],
+    definition: &'a cadmpeg_ir::features::FeatureDefinition,
+}
+
 /// Decode one seekable `.sldprt` stream into IR and diagnostics.
 ///
 /// The function reads and retains the complete source image. Container framing
@@ -467,11 +474,44 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .iter()
         .map(|feature| (&feature.id, feature.ordinal))
         .collect::<BTreeMap<_, _>>();
-    let incoherent_feature_edges = ir
+    let evaluated_feature_states = if ir
         .model
-        .features
+        .configurations
         .iter()
-        .filter(|feature| {
+        .any(|configuration| !configuration.feature_states.is_empty())
+    {
+        ir.model
+            .configurations
+            .iter()
+            .flat_map(|configuration| {
+                ir.model.features.iter().filter_map(move |feature| {
+                    configuration.feature_states.get(&feature.id).map(|state| {
+                        EvaluatedFeatureState {
+                            feature,
+                            dependencies: &state.dependencies,
+                            outputs: &state.outputs,
+                            definition: &state.definition,
+                        }
+                    })
+                })
+            })
+            .collect::<Vec<_>>()
+    } else {
+        ir.model
+            .features
+            .iter()
+            .map(|feature| EvaluatedFeatureState {
+                feature,
+                dependencies: &feature.dependencies,
+                outputs: &feature.outputs,
+                definition: &feature.definition,
+            })
+            .collect::<Vec<_>>()
+    };
+    let incoherent_feature_edges = evaluated_feature_states
+        .iter()
+        .filter(|state| {
+            let feature = state.feature;
             let parent_incoherent = feature.parent.as_ref().is_some_and(|parent| {
                 feature_positions
                     .get(parent)
@@ -479,7 +519,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             });
             let mut dependencies = std::collections::HashSet::new();
             parent_incoherent
-                || feature.dependencies.iter().any(|dependency| {
+                || state.dependencies.iter().any(|dependency| {
                     !dependencies.insert(dependency)
                         || feature_positions
                             .get(dependency)
@@ -556,16 +596,15 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         });
     }
 
-    let unresolved_output_scopes = ir
-        .model
-        .features
+    let unresolved_output_scopes = evaluated_feature_states
         .iter()
-        .filter(|feature| {
-            feature
+        .filter(|state| {
+            state
+                .feature
                 .source_properties
                 .get("Scope")
                 .is_some_and(|scope| !scope.trim().is_empty())
-                && feature.outputs.is_empty()
+                && state.outputs.is_empty()
         })
         .count();
     if unresolved_output_scopes > 0 {
@@ -584,13 +623,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .iter()
         .map(|body| &body.id)
         .collect::<std::collections::HashSet<_>>();
-    let incoherent_feature_outputs = ir
-        .model
-        .features
+    let incoherent_feature_outputs = evaluated_feature_states
         .iter()
-        .filter(|feature| {
+        .filter(|state| {
             let mut outputs = std::collections::HashSet::new();
-            feature
+            state
                 .outputs
                 .iter()
                 .any(|body| !outputs.insert(body) || !body_ids.contains(body))
@@ -665,29 +702,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         });
     }
 
-    let evaluated_feature_definitions = if ir
-        .model
-        .configurations
+    let native_features = evaluated_feature_states
         .iter()
-        .any(|configuration| !configuration.feature_states.is_empty())
-    {
-        ir.model
-            .configurations
-            .iter()
-            .flat_map(|configuration| configuration.feature_states.values())
-            .map(|state| &state.definition)
-            .collect::<Vec<_>>()
-    } else {
-        ir.model
-            .features
-            .iter()
-            .map(|feature| &feature.definition)
-            .collect::<Vec<_>>()
-    };
-    let native_features = evaluated_feature_definitions
-        .iter()
-        .copied()
-        .filter(|definition| matches!(definition, FeatureDefinition::Native { .. }))
+        .filter(|state| matches!(state.definition, FeatureDefinition::Native { .. }))
         .count();
     if native_features > 0 {
         report.losses.push(LossNote {
@@ -725,10 +742,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         matches!(extent, Extent::Unresolved)
             || matches!(extent, Extent::ToFace { face } if native_face_selection(face))
     };
-    let incomplete_typed_features = evaluated_feature_definitions
+    let incomplete_typed_features = evaluated_feature_states
         .iter()
-        .copied()
-        .filter(|definition| match definition {
+        .filter(|state| match state.definition {
             FeatureDefinition::TreeNode { .. }
             | FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlane { .. }
@@ -2598,7 +2614,7 @@ mod design_loss_tests {
             suppressed: false,
             parent: None,
             dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
+            source_properties: BTreeMap::from([("Scope".into(), "Body1".into())]),
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
@@ -2640,8 +2656,14 @@ mod design_loss_tests {
                     feature_id.clone(),
                     ConfigurationFeatureState {
                         suppressed: false,
-                        dependencies: Vec::new(),
-                        outputs: Vec::new(),
+                        dependencies: (ordinal == 0)
+                            .then(|| FeatureId("missing-dependency".into()))
+                            .into_iter()
+                            .collect(),
+                        outputs: (ordinal == 0)
+                            .then(|| BodyId("missing-output".into()))
+                            .into_iter()
+                            .collect(),
                         definition,
                     },
                 )]),
@@ -2659,6 +2681,9 @@ mod design_loss_tests {
         append_design_losses(&ir, &mut report);
 
         for expected in [
+            "1 feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; 0 feature record(s) share regeneration ordinals.",
+            "1 feature(s) retain non-empty native output scopes that do not resolve to model bodies.",
+            "1 feature record(s) contain missing or repeated output body references.",
             "1 feature(s) retain their native kind without a complete neutral operation definition.",
             "1 typed feature(s) retain native or unresolved required operation operands.",
         ] {
