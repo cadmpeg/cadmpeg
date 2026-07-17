@@ -9,8 +9,7 @@ This document records F3D semantics that the format specification does not yet d
 - The roles of the two boolean flags terminating a cache-first `par_int_cur` are unresolved.
 - The roles of the four booleans between the offset distance and the enum in a revision-gated `off_spl_sur` are unresolved, including which of them carry the U/V senses and which belong to the ASM extension tail.
 - The role of the boolean following the shared revision-gated surface tail in a revision-gated `ortho_spl_sur` is unresolved, as is which of the two trailing booleans is the orthogonal sense.
-- The role of the enum preceding the solved cache in revision-gated spline-surface forms is unresolved.
-- The role of the second parameter interval following the embedded base curve in a cache-first `off_surf_int_cur` is unresolved.
+- The role of the enum opening the shared revision-gated surface tail is unresolved.
 - Variable-arity algebraic `readLaw` operators `MIN`, `MAX`, and `STEP` have no defined serialized child-count or terminating delimiter. Their recursive boundaries cannot yet be decoded or written losslessly inside law, net, skin, and sweep payloads.
 - The semantic role of the integer between the secondary and tertiary pcurves in a variable-blend support side is unresolved.
 - Whether the six integers between a variable-blend cache fit tolerance and the tail Boolean are three counted discontinuity arrays followed by three integers or six plain integers is unresolved when every count and value is zero. The semantic roles of that tail Boolean and of the three integers that follow it are also unresolved.
