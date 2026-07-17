@@ -3958,6 +3958,11 @@ fn saved_line_block(
         cursor = next + 1;
         let mut values = Vec::with_capacity(6);
         while cursor < segment_end && values.len() < 6 {
+            if payload.get(cursor) == Some(&0xe3)
+                || payload.get(cursor) == Some(&psb::token::NAMED_RECORD)
+            {
+                break;
+            }
             if payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
                 values.extend([Some(0.0), Some(1.0), Some(0.0)]);
                 cursor += 2;
@@ -4035,13 +4040,15 @@ fn saved_line_block(
         }
         let row_separator = payload.get(cursor) == Some(&0xe3);
         let named_boundary = payload.get(cursor) == Some(&psb::token::NAMED_RECORD);
-        if values.len() != 6 || (!row_separator && !named_boundary) {
+        let section_boundary = cursor == segment_end;
+        if !row_separator && !named_boundary && !section_boundary {
             cursor = record_offset + 1;
             continue;
         }
         if row_separator {
             cursor += 1;
         }
+        values.resize(6, None);
         entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
             entity_id,
             references,
@@ -7435,6 +7442,24 @@ mod tests {
         };
         assert_eq!(line.entity_id, 3);
         assert_eq!(line.references, [196]);
+    }
+
+    #[test]
+    fn saved_line_retains_its_identity_and_coordinate_prefix() {
+        let payload = b"\xe0\0entity(line)\0\x07\xe2\x0f\x0f\x0f\
+            \xe0\0entity(arc)\0";
+
+        let entities =
+            saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+
+        let [FeatureSavedEntity::Line(line)] = entities.as_slice() else {
+            panic!("saved line");
+        };
+        assert_eq!(line.entity_id, 7);
+        assert_eq!(
+            line.endpoints,
+            [[Some(0.0), Some(0.0), Some(0.0)], [None; 3]]
+        );
     }
 
     #[test]

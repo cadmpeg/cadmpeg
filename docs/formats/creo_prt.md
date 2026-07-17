@@ -1527,7 +1527,9 @@ Each populated entry begins with `f7 <entry_class>` and stores two incident
 authoritative solved trim topology. Its named table remains present when no
 entity row is complete. Saved line rows may contain `f0 f7 <ref>`,
 `f1 f7 <ref>`, or bare `f7 <ref>` references between their identity, attribute,
-and coordinate fields.
+and coordinate fields. A saved line retains its identity, references,
+attributes, and ordered coordinate prefix when a structural boundary occurs
+before all six endpoint-coordinate slots.
 Named saved arcs and circles retain their identity and each decoded scalar
 field when later center, radius, endpoint, or parameter fields are absent.
 The line prototype can close with `f1 e3`; positional line rows follow that
