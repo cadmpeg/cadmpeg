@@ -665,11 +665,29 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         });
     }
 
-    let native_features = ir
+    let evaluated_feature_definitions = if ir
         .model
-        .features
+        .configurations
         .iter()
-        .filter(|feature| matches!(feature.definition, FeatureDefinition::Native { .. }))
+        .any(|configuration| !configuration.feature_states.is_empty())
+    {
+        ir.model
+            .configurations
+            .iter()
+            .flat_map(|configuration| configuration.feature_states.values())
+            .map(|state| &state.definition)
+            .collect::<Vec<_>>()
+    } else {
+        ir.model
+            .features
+            .iter()
+            .map(|feature| &feature.definition)
+            .collect::<Vec<_>>()
+    };
+    let native_features = evaluated_feature_definitions
+        .iter()
+        .copied()
+        .filter(|definition| matches!(definition, FeatureDefinition::Native { .. }))
         .count();
     if native_features > 0 {
         report.losses.push(LossNote {
@@ -707,11 +725,10 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         matches!(extent, Extent::Unresolved)
             || matches!(extent, Extent::ToFace { face } if native_face_selection(face))
     };
-    let incomplete_typed_features = ir
-        .model
-        .features
+    let incomplete_typed_features = evaluated_feature_definitions
         .iter()
-        .filter(|feature| match &feature.definition {
+        .copied()
+        .filter(|definition| match definition {
             FeatureDefinition::TreeNode { .. }
             | FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlane { .. }
@@ -2516,10 +2533,10 @@ mod design_loss_tests {
         FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchRelationKind,
     };
     use cadmpeg_ir::features::{
-        Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
-        FeatureTreeNodeRole, Length, ParameterId, ParameterPmi, ParameterValue,
-        PmiDimensionSubtype,
+        Angle, BodySelection, BooleanOp, ConfigurationFeatureState, ConfigurationId,
+        DesignConfiguration, DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId,
+        FeatureSourceContent, FeatureTreeNodeRole, Length, ParameterId, ParameterPmi,
+        ParameterValue, PmiDimensionSubtype,
     };
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -2568,6 +2585,85 @@ mod design_loss_tests {
             loss.message
                 == "1 typed feature(s) retain native or unresolved required operation operands."
         }));
+    }
+
+    #[test]
+    fn configuration_feature_states_drive_design_completeness_accounting() {
+        let mut ir = CadIr::empty(Units::default());
+        let feature_id = FeatureId("configured".into());
+        ir.model.features.push(Feature {
+            id: feature_id.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+            },
+            native_ref: None,
+        });
+        for (ordinal, definition) in [
+            (
+                0,
+                FeatureDefinition::Native {
+                    kind: "Unprojected".into(),
+                    parameters: BTreeMap::new(),
+                    properties: BTreeMap::new(),
+                },
+            ),
+            (
+                1,
+                FeatureDefinition::Combine {
+                    target: BodySelection::Native("target".into()),
+                    tools: BodySelection::Native("tools".into()),
+                    op: BooleanOp::Unresolved,
+                },
+            ),
+        ] {
+            ir.model.configurations.push(DesignConfiguration {
+                id: ConfigurationId(format!("configuration-{ordinal}")),
+                ordinal,
+                active: ordinal == 0,
+                source_index: Some(ordinal),
+                name: format!("Configuration {ordinal}"),
+                material: None,
+                properties: BTreeMap::new(),
+                bodies: Vec::new(),
+                parameter_values: BTreeMap::new(),
+                feature_states: BTreeMap::from([(
+                    feature_id.clone(),
+                    ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: Vec::new(),
+                        outputs: Vec::new(),
+                        definition,
+                    },
+                )]),
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        for expected in [
+            "1 feature(s) retain their native kind without a complete neutral operation definition.",
+            "1 typed feature(s) retain native or unresolved required operation operands.",
+        ] {
+            assert!(report.losses.iter().any(|loss| loss.message == expected));
+        }
     }
 
     #[test]
