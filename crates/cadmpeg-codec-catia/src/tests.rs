@@ -4964,10 +4964,7 @@ fn decode_retains_outer_object_graph_order_and_dependencies() {
     let object = &native.design_objects[0];
     assert_eq!(object.parent, graph.id);
     assert_eq!(object.owner_ordinal, 2);
-    assert_eq!(
-        object.owner_record.as_deref(),
-        Some(graph.records[1].id.as_str())
-    );
+    assert_eq!(object.owner_record, graph.records[1].id);
     assert_eq!(
         object.fields,
         graph

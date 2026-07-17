@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 23;
+pub const CATIA_NATIVE_VERSION: u32 = 24;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -268,9 +268,8 @@ pub struct CatiaDesignObject {
     pub parent: String,
     /// One-based owner ordinal stored by every field record.
     pub owner_ordinal: u32,
-    /// Record selected by `owner_ordinal` when it lies inside the graph.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owner_record: Option<String>,
+    /// Record selected by `owner_ordinal`.
+    pub owner_record: String,
     /// Resolved class of the selected owner record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_class: Option<String>,
@@ -302,8 +301,9 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
             }
             let owners = fields.keys().copied().collect::<Vec<_>>();
             fields.into_iter().map(move |(owner_ordinal, records)| {
-                let owner_record = object_record_index(owner_ordinal, graph.records.len())
-                    .and_then(|index| graph.records.get(index));
+                let owner_record =
+                    &graph.records[object_record_index(owner_ordinal, graph.records.len())
+                        .expect("design object owner was validated before grouping")];
                 let mut dependency_owners = Vec::new();
                 for reference in records
                     .iter()
@@ -324,9 +324,9 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                     id: design_object_id(graph.byte_offset, owner_ordinal),
                     parent: graph.id.clone(),
                     owner_ordinal,
-                    owner_record: owner_record.map(|record| record.id.clone()),
-                    owner_class: owner_record.and_then(|record| record.class_name.clone()),
-                    owner_storage_ref: owner_record.and_then(|record| record.storage_ref),
+                    owner_record: owner_record.id.clone(),
+                    owner_class: owner_record.class_name.clone(),
+                    owner_storage_ref: owner_record.storage_ref,
                     fields: records.iter().map(|record| record.id.clone()).collect(),
                     field_classes: records
                         .iter()
