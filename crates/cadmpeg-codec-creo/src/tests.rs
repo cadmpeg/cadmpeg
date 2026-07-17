@@ -1634,3 +1634,115 @@ fn inspect_summary_has_layout_and_census_notes() {
     assert!(summary.notes.iter().any(|n| n.contains("layout: ND")));
     assert!(summary.notes.iter().any(|n| n.contains("srf_array=7")));
 }
+
+mod fidelity {
+    use cadmpeg_ir::source_fidelity::{
+        CanonicalSpaceId, LedgerCapability, LedgerLevel, SerializedOrigin, SpanClass,
+    };
+
+    use crate::container::{self, role};
+    use crate::fidelity::coarse_ledger;
+
+    use super::{build_prt, visibgeom_payload};
+
+    #[test]
+    fn coarse_ledger_tiles_the_source_space_completely() {
+        let data = build_prt(
+            "c",
+            &[
+                ("ND:0:VisibGeom:1", visibgeom_payload(2, 3)),
+                ("MdlStatus", b"status-bytes".to_vec()),
+            ],
+        );
+        let scan = container::scan_bytes(&data);
+        let sidecar = coarse_ledger(&scan).expect("coarse ledger builds and validates");
+
+        assert_eq!(sidecar.level, LedgerLevel::L1);
+        assert_eq!(sidecar.capability, LedgerCapability::Accounted);
+        assert_eq!(sidecar.spaces.len(), 1);
+
+        let space = &sidecar.spaces[0];
+        assert_eq!(space.id, CanonicalSpaceId::source());
+        assert_eq!(space.origin, SerializedOrigin::Root);
+        assert_eq!(space.length, data.len() as u64);
+
+        // Spans tile [0, length) with no gap or overlap.
+        let mut cursor = 0_u64;
+        for span in &space.spans {
+            assert_eq!(span.range.start, cursor, "gap or overlap before {cursor}");
+            assert!(span.range.end >= span.range.start);
+            cursor = span.range.end;
+        }
+        assert_eq!(cursor, data.len() as u64);
+
+        // The leading framing is structural; every section is opaque with a
+        // digest and no retained bytes (accounted, not recoverable).
+        assert_eq!(space.spans[0].class, SpanClass::Structural);
+        assert_eq!(space.spans[0].range.start, 0);
+        let section_spans = space
+            .spans
+            .iter()
+            .filter(|s| s.owner == "creo_section")
+            .count();
+        assert_eq!(section_spans, scan.sections.len());
+        for span in &space.spans {
+            assert_eq!(span.digest.len(), 64);
+            if span.class == SpanClass::Opaque {
+                assert!(span.retained.is_none());
+            }
+        }
+        // Validation is mandatory and already ran inside the builder.
+        sidecar.validate().expect("validated sidecar re-validates");
+    }
+
+    #[test]
+    fn coarse_ledger_serialization_is_deterministic() {
+        let data = build_prt(
+            "c",
+            &[
+                ("ND:0:VisibGeom:1", visibgeom_payload(4, 1)),
+                ("MdlStatus", vec![0x01, 0x02, 0x03, 0x04]),
+                ("Materials", b"meta".to_vec()),
+            ],
+        );
+        let first = coarse_ledger(&container::scan_bytes(&data))
+            .expect("first build")
+            .to_canonical_json()
+            .expect("first json");
+        let second = coarse_ledger(&container::scan_bytes(&data))
+            .expect("second build")
+            .to_canonical_json()
+            .expect("second json");
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn coarse_ledger_classifies_section_roles_in_meaning() {
+        let data = build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(1, 1))]);
+        let scan = container::scan_bytes(&data);
+        let sidecar = coarse_ledger(&scan).expect("ledger");
+        let geometry = sidecar.spaces[0]
+            .spans
+            .iter()
+            .find(|s| s.owner == "creo_section")
+            .expect("a section span");
+        assert!(geometry.meaning.starts_with(role::GEOMETRY));
+    }
+
+    #[test]
+    fn coarse_ledger_covers_a_file_with_no_sections() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"#UGC:2 P c\n");
+        data.extend_from_slice(b"#-END_OF_UGC_HEADER\n");
+        let scan = container::scan_bytes(&data);
+        assert!(scan.sections.is_empty());
+        let sidecar = coarse_ledger(&scan).expect("ledger over section-less file");
+        let space = &sidecar.spaces[0];
+        assert_eq!(space.length, data.len() as u64);
+        assert_eq!(
+            space.spans.last().expect("a span").range.end,
+            data.len() as u64
+        );
+        sidecar.validate().expect("section-less tiling validates");
+    }
+}

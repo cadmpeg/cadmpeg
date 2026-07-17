@@ -36,6 +36,7 @@ use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use serde::Serialize;
 
 use crate::container::{self, role, ContainerScan};
+use crate::fidelity;
 use crate::topology::HalfEdgeId;
 
 #[derive(Serialize)]
@@ -561,8 +562,15 @@ fn transfer_plane_brep(
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan_view(ctx, root)?;
 
+    // L1 container accounting (§10 Phase 3C): build the complete coarse tiling
+    // of the source space and run its mandatory conservation validation on
+    // every decode. `coarse_ledger` fails the decode if the framing the scan
+    // reported cannot tile the file, so an accounting-enabled result never
+    // ships an inconsistent ledger. The validated sidecar rides the decode
+    // report through its `source_fidelity` slot.
     let ir = build_ir(&scan)?;
-    let report = build_report(&scan, ctx.container_only());
+    let mut report = build_report(&scan, ctx.container_only());
+    report.source_fidelity = Some(fidelity::coarse_ledger(&scan)?);
     Ok(DecodeResult::new(ir, report))
 }
 
@@ -1178,6 +1186,7 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
+        source_fidelity: None,
         format: "creo".to_string(),
         container_only,
         geometry_transferred: !scan.datum_planes.is_empty() || placed_plane_count != 0,
