@@ -5,11 +5,13 @@ members = [
   "crates/cadmpeg",
   "crates/cadmpeg-ir",
   "crates/cadmpeg-codec-f3d",
+  "crates/cadmpeg-codec-freecad",
   "crates/cadmpeg-codec-sldprt",
   "crates/cadmpeg-codec-catia",
   "crates/cadmpeg-codec-creo",
   "crates/cadmpeg-codec-nx",
   "crates/cadmpeg-codec-rhino",
+  "crates/cadmpeg-codec-iges",
   "crates/cadmpeg-step",
 ]
 # cadmpeg-fuzz is intentionally excluded: cargo-fuzz targets link libFuzzer and
@@ -29,11 +31,13 @@ rust-version = "1.88"
 [workspace.dependencies]
 cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.2.0" }
 cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.2.0" }
+cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.2.0" }
 cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.2.0" }
 cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.2.0" }
 cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.2.0" }
 cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.2.0" }
 cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.2.0" }
+cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.2.0" }
 cadmpeg-step = { path = "crates/cadmpeg-step", version = "0.2.0" }
 
 serde = { version = "1", features = ["derive"] }
@@ -52,6 +56,7 @@ roxmltree = "0.21"
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
+encoding_rs = "0.8"
 
 [profile.release]
 lto = "thin"

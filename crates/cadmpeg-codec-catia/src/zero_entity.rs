@@ -1037,6 +1037,7 @@ pub(crate) fn pcurve_parameter_range(
             }
             Some(range)
         }
+        _ => None,
     }
 }
 
@@ -1145,6 +1146,7 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
             return lift_parameter_line(*origin, *direction, surface);
         }
         PcurveGeometry::Nurbs { control_points, .. } => control_points,
+        _ => return None,
     };
     match surface {
         SurfaceGeometry::Plane {
@@ -1318,7 +1320,9 @@ fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<Cur
                 crate::geometry::nurbs_surface_isocurve(surface, v, false).map(CurveGeometry::Nurbs)
             }
         }
-        SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Transformed { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
     }
 }
 
@@ -1896,7 +1900,10 @@ fn lift_geometry(geometry: &SurfaceGeometry, uv: [[f64; 2]; 2]) -> Option<[[f64;
                 ..
             } => [u / major_radius, v / minor_radius],
             SurfaceGeometry::Plane { .. } | SurfaceGeometry::Nurbs(_) => [u, v],
-            SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Unknown { .. } => return None,
+            SurfaceGeometry::Sphere { .. }
+            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Transformed { .. }
+            | SurfaceGeometry::Unknown { .. } => return None,
         };
         let point = cadmpeg_ir::eval::surface_point(geometry, neutral[0], neutral[1])?;
         Some([point.x, point.y, point.z])
@@ -2082,7 +2089,10 @@ fn neutral_uv(native: [f64; 2], carrier: &SurfaceGeometry) -> Option<[f64; 2]> {
             ..
         } => [native[0] / major_radius, native[1] / minor_radius],
         SurfaceGeometry::Plane { .. } | SurfaceGeometry::Nurbs(_) => native,
-        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Unknown { .. } => return None,
+        SurfaceGeometry::Sphere { .. }
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Transformed { .. }
+        | SurfaceGeometry::Unknown { .. } => return None,
     })
 }
 

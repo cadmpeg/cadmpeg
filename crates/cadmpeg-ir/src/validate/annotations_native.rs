@@ -3,8 +3,13 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
+use crate::drawings::Drawing;
 use crate::features::{DesignConfiguration, DesignParameter};
+use crate::presentation::{PresentationDocument, ViewPresentation};
+use crate::products::{AssemblyJoint, Component, Occurrence};
+use crate::semantic_annotations::SemanticAnnotation;
 use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
+use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 
 macro_rules! define_model_entity_json {
@@ -54,17 +59,17 @@ fn annotated_entity_json(ir: &CadIr, wanted: &HashSet<&str>) -> HashMap<String, 
 
 pub(super) fn check_annotations(
     ir: &CadIr,
+    annotations: &crate::Annotations,
     all_ids: &HashSet<String>,
     findings: &mut Vec<Finding>,
 ) {
-    let wanted: HashSet<&str> = ir
-        .annotations
+    let wanted: HashSet<&str> = annotations
         .exactness
         .iter()
         .filter_map(|(id, note)| (!note.fields.is_empty()).then_some(id.as_str()))
         .collect();
     let entity_json = annotated_entity_json(ir, &wanted);
-    for (id, provenance) in &ir.annotations.provenance {
+    for (id, provenance) in &annotations.provenance {
         if !all_ids.contains(id) {
             annotation_finding(
                 findings,
@@ -73,7 +78,7 @@ pub(super) fn check_annotations(
                 "provenance key does not resolve to an entity",
             );
         }
-        if provenance.stream as usize >= ir.annotations.streams.len() {
+        if provenance.stream as usize >= annotations.streams.len() {
             annotation_finding(
                 findings,
                 Severity::Error,
@@ -82,7 +87,7 @@ pub(super) fn check_annotations(
             );
         }
     }
-    for (id, note) in &ir.annotations.exactness {
+    for (id, note) in &annotations.exactness {
         if !all_ids.contains(id) {
             annotation_finding(
                 findings,

@@ -14,13 +14,17 @@
 # File name as committed in corpus/ (or the sharing location noted in the PR).
 filename = "bracket_single_body.f3d"
 
-# Codec format key: f3d | sldprt | catia | nx | creo | rhino.
+# Codec format key: f3d | fcstd | sldprt | catia | nx | creo | rhino | iges.
 format = "f3d"
 
 # The application you authored the file in, and its exact version. Version
 # matters: container layouts and kernel encodings shift between releases.
 authoring_app = "Autodesk Fusion 360"
 authoring_app_version = "2.0.19426"
+
+# Stable donation or review URL and the date these exact bytes were acquired.
+source_url = "https://github.com/example/cadmpeg-corpus/pull/1"
+acquisition_date = "2026-07-14"
 
 # License dedication. Must be CC0-1.0 for the public corpus.
 license = "CC0-1.0"
@@ -54,6 +58,8 @@ filename = "fillet_study.sldprt"
 format = "sldprt"
 authoring_app = "SolidWorks"
 authoring_app_version = "2023 SP2.0"
+source_url = "https://github.com/example/cadmpeg-corpus/pull/2"
+acquisition_date = "2026-07-14"
 license = "CC0-1.0"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 notes = "Cylindrical + toroidal faces from a filleted edge; exercises analytic surface recovery."

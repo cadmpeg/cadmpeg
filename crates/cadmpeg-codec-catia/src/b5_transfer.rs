@@ -365,6 +365,7 @@ fn transfer_complete(
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: Point3::new(coordinates[0], coordinates[1], coordinates[2]),
+            source_object: None,
         });
         let vertex_id = VertexId(format!("catia:b5:vertex#{index}"));
         annotate(
@@ -397,6 +398,7 @@ fn transfer_complete(
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: Point3::new(coordinates[0], coordinates[1], coordinates[2]),
+            source_object: None,
         });
         let vertex_id = VertexId(format!("catia:b5:vertex#{index}"));
         annotate(
@@ -472,7 +474,7 @@ fn transfer_complete(
                     axis_origin: revolution.axis_origin,
                     axis_direction: revolution.axis_direction,
                     angular_interval: revolution.angular_interval,
-                    parameter_interval: revolution.parameter_interval,
+                    parameter_interval: Some(revolution.parameter_interval),
                     transposed: false,
                 },
                 cache_fit_tolerance: None,
@@ -502,8 +504,8 @@ fn transfer_complete(
             definition: ProceduralSurfaceDefinition::Offset {
                 support: support.clone(),
                 distance: offset.distance,
-                u_sense: 0,
-                v_sense: 0,
+                u_sense: Some(0),
+                v_sense: Some(0),
                 extension_flags: Vec::new(),
             },
             cache_fit_tolerance: None,
@@ -793,7 +795,9 @@ fn transfer_complete(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: coedge_ids.clone(),
+                vertex_uses: Vec::new(),
             });
             for (position, &member) in member_order.iter().enumerate() {
                 let edge = loop_.edges[member];
@@ -813,7 +817,7 @@ fn transfer_complete(
                     "previous",
                     "radial_next",
                     "sense",
-                    "pcurve",
+                    "pcurves",
                 ] {
                     annotations.derived(&id, field);
                 }
@@ -832,7 +836,14 @@ fn transfer_complete(
                     } else {
                         Sense::Forward
                     },
-                    pcurve: pcurve_ids.get(&(loop_.object_id, member)).cloned(),
+                    pcurves: pcurve_ids
+                        .get(&(loop_.object_id, member))
+                        .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
+                            pcurve: pcurve.clone(),
+                            isoparametric: None,
+                        })
+                        .into_iter()
+                        .collect(),
                 });
             }
         }
@@ -2440,7 +2451,7 @@ mod tests {
             ir.model
                 .coedges
                 .iter()
-                .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.as_str()))
+                .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.as_str()))
                 .collect::<Vec<_>>(),
             [
                 "catia:b5:pcurve#20@0",

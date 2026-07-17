@@ -12,6 +12,7 @@ use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::Annotations;
 
 use crate::variant::Variant;
 use crate::CatiaCodec;
@@ -81,14 +82,14 @@ fn external_reference_segment(target: &str) -> Vec<u8> {
     bytes
 }
 
-fn assert_every_entity_has_v1_annotation(ir: &CadIr) {
+fn assert_every_entity_has_v1_annotation(ir: &CadIr, annotations: &Annotations) {
     let mut entity_count = 0;
     macro_rules! check {
         ($entities:expr) => {
             for entity in $entities {
                 entity_count += 1;
-                let provenance = &ir.annotations.provenance[&entity.id.0];
-                assert!(ir.annotations.streams[provenance.stream as usize].starts_with("catia:"));
+                let provenance = &annotations.provenance[&entity.id.0];
+                assert!(annotations.streams[provenance.stream as usize].starts_with("catia:"));
             }
         };
     }
@@ -106,7 +107,7 @@ fn assert_every_entity_has_v1_annotation(ir: &CadIr) {
     check!(&ir.model.curves);
     let unknowns = ir.native_unknowns("catia").unwrap();
     check!(&unknowns);
-    assert_eq!(ir.annotations.provenance.len(), entity_count);
+    assert_eq!(annotations.provenance.len(), entity_count);
 }
 
 fn standard_quad_topology_stream() -> Vec<u8> {
@@ -4082,7 +4083,7 @@ fn decode_standard_transfers_exact_offset_construction() {
         .iter()
         .any(|surface| surface.id == *support));
     assert_eq!(*distance, 2.5);
-    assert_eq!([*u_sense, *v_sense], [1, 1]);
+    assert_eq!([*u_sense, *v_sense], [Some(1), Some(1)]);
     assert!(extension_flags.is_empty());
 }
 
@@ -5253,9 +5254,9 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
     assert_eq!(sites.len(), 2);
     assert_eq!(sites[1].first_limit, Point3::new(2.0, 0.0, 0.0));
     assert_eq!(sites[1].angle, std::f64::consts::FRAC_PI_2);
-    let provenance = &decoded.ir.annotations.provenance[&procedural.id.0];
+    let provenance = &decoded.source_fidelity.annotations.provenance[&procedural.id.0];
     assert_eq!(
-        decoded.ir.annotations.streams[provenance.stream as usize],
+        decoded.source_fidelity.annotations.streams[provenance.stream as usize],
         "catia:object_stream_a8_03_32"
     );
     let tag = provenance
@@ -5454,7 +5455,9 @@ fn container_only_stops_before_geometry() {
     // The reconstructed BREP stream is preserved as an unknown passthrough.
     let unknowns = result.ir.native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
-    assert_eq!(unknowns[0].sha256.len(), 64);
+    let retained = &result.source_fidelity.retained_records[0];
+    assert_eq!(retained.sha256.len(), 64);
+    assert!(retained.data.is_some());
 }
 
 #[test]
@@ -5472,7 +5475,7 @@ fn every_decode_path_populates_v1_annotations() {
         let decoded = CatiaCodec
             .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
             .unwrap();
-        assert_every_entity_has_v1_annotation(&decoded.ir);
+        assert_every_entity_has_v1_annotation(&decoded.ir, &decoded.source_fidelity.annotations);
     }
 
     let container_only = CatiaCodec
@@ -5483,5 +5486,8 @@ fn every_decode_path_populates_v1_annotations() {
             },
         )
         .unwrap();
-    assert_every_entity_has_v1_annotation(&container_only.ir);
+    assert_every_entity_has_v1_annotation(
+        &container_only.ir,
+        &container_only.source_fidelity.annotations,
+    );
 }

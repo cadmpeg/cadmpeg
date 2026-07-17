@@ -73,8 +73,9 @@ The repository contains six native-format codecs:
 - **Siemens NX `.prt` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology.
 - **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.
 - **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** container mastered; no placed model geometry.
+- **STEP Part 21 AP203/AP214/AP242 — [L9](docs/format-support.md#support-ladder):** full-document read and semantic clear-text write with target-schema selection and strict fidelity checks.
 
-The pure-Rust STEP AP214 writer exports supported analytic and B-spline B-rep geometry and reports loss.
+The pure-Rust STEP writer re-decodes generated files and can reject every reported semantic loss before writing.
 
 [Format support profiles](docs/format-support.md) detail current capabilities. [`docs/formats/`](docs/formats/) defines byte semantics and tracks unresolved fields and structures.
 
@@ -86,7 +87,7 @@ input file ──▶ container decoder ──▶ format decoder ──▶ IR ─
 
 The IR connects the pipeline. Decoders produce it, validators check it, and exporters consume it. Version 2 serializes a format-neutral model, the required `subds` control-cage arena, free-carrier source associations, sparse source annotations, independently versioned native namespaces, and opaque records as canonical JSON. Arena entries are ordered by ID after finalization, and carrier reachability follows topology links, procedural references, and source associations.
 
-- [CAD IR version 3](docs/cad-ir.md) defines byte semantics, canonical units and parameterization, identity, topology, directed SubD control cages, bounded procedural constructions, annotations, native opacity, and versioning.
+- [CAD IR version 53](docs/cad-ir.md) defines byte semantics, canonical units and parameterization, identity, topology, directed SubD control cages, bounded procedural constructions, annotations, native opacity, and versioning.
 - [Architecture](docs/architecture.md) describes the pipeline, codec interface, and crate map.
 - [Format support](docs/format-support.md) records current capability by format.
 - [Roadmap](docs/roadmap.md) defines milestones and contributor entry points.
@@ -102,9 +103,9 @@ cadmpeg convert  part.f3d -f step -o part.step
 cadmpeg diff     a.cadir.json b.cadir.json
 ```
 
-Output formats are `cadir`, `step`, `f3d`, and `sldprt`; `json` aliases `cadir`. `export` and `convert` infer omitted formats from the output extension. Use `--input-format` to override source detection.
+Output formats are `cadir`, `step`, `fcstd`, `f3d`, and `sldprt`; `json` aliases `cadir`. `export` and `convert` infer omitted formats from the output extension. Use `--input-format` to override source detection.
 
-Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 3`. This command-envelope version is independent of the CAD IR's `ir_version: "3"`.
+Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 3`. This command-envelope version is independent of the CAD IR's `ir_version: "5"`.
 
 ## Contributing
 

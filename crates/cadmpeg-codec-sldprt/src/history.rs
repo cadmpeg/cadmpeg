@@ -1065,7 +1065,11 @@ fn project_definition(
     native_by_source: &HashMap<&str, &str>,
 ) -> FeatureDefinition {
     if let Some(role) = feature_tree_node_role(feature) {
-        return FeatureDefinition::TreeNode { role };
+        return FeatureDefinition::TreeNode {
+            role,
+            children: Vec::new(),
+            active_child: None,
+        };
     }
     let class = classify(feature);
     if class == Some(FeatureClass::Sketch) {
@@ -1336,6 +1340,15 @@ fn project_extrude(
         extent,
         op,
         draft,
+        reverse_draft: None,
+        direction_source: None,
+        solid: Some(true),
+        face_maker: None,
+        inner_wire_taper: None,
+        first_offset: None,
+        second_offset: None,
+        length_along_profile_normal: None,
+        allow_multi_profile_faces: None,
     })
 }
 
@@ -1510,6 +1523,10 @@ fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         pitch: Length(pitch),
         revolutions,
         clockwise,
+        radial_growth: None,
+        cone_angle: None,
+        segment_turns: None,
+        construction_style: None,
     })
 }
 
@@ -1763,6 +1780,11 @@ fn project_loft(
             .properties
             .get("Closed")
             .map_or(Some(false), |closed| parse_bool(closed))?,
+        solid: true,
+        ruled: false,
+        max_degree: None,
+        check_compatibility: None,
+        allow_multi_profile_faces: None,
     })
 }
 
@@ -1825,10 +1847,17 @@ fn project_sweep(
     };
     Some(FeatureDefinition::Sweep {
         profile,
+        sections: Vec::new(),
         path,
         mode,
+        orientation: None,
+        transition: None,
+        transformation: None,
+        path_tangent: false,
+        linearize: false,
         twist,
         scale,
+        allow_multi_profile_faces: None,
     })
 }
 
@@ -1931,6 +1960,7 @@ fn project_pattern(
                 plane_origin: parse_point3_mm(feature.properties.get("PlaneOrigin")?)?,
                 plane_normal: parse_valid_direction(feature.properties.get("PlaneNormal")?)?,
             },
+            PatternForm::Scale | PatternForm::Composite => return None,
         })
     });
     let seeds_required = !matches!(form, Some(PatternForm::Linear | PatternForm::CurveDriven));
@@ -1986,6 +2016,11 @@ fn project_revolve(feature: &Feature, native_by_source: &HashMap<&str, &str>) ->
             profile,
             axis,
             extent,
+            axis_reference: None,
+            solid: Some(true),
+            face_maker_class: None,
+            fuse_order: None,
+            allow_multi_profile_faces: None,
         },
         op,
     }
@@ -2066,6 +2101,8 @@ fn project_hole(feature: &Feature) -> FeatureDefinition {
         Some(_) => None,
     };
     FeatureDefinition::Hole {
+        profile: None,
+        profile_filter: None,
         face: feature
             .properties
             .get("Face")
@@ -2082,6 +2119,10 @@ fn project_hole(feature: &Feature) -> FeatureDefinition {
         kind,
         diameter,
         extent,
+        bottom: None,
+        taper_angle: None,
+        specification: None,
+        allow_multi_profile_faces: None,
     }
 }
 
@@ -2108,6 +2149,10 @@ fn project_shell(feature: &Feature) -> FeatureDefinition {
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         thickness: thickness.map(Length),
         outward,
+        mode: None,
+        join: None,
+        resolve_intersections: None,
+        allow_self_intersections: None,
     }
 }
 
@@ -2611,6 +2656,7 @@ fn project_chamfer(feature: &Feature) -> FeatureDefinition {
             .cloned()
             .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
         spec,
+        flip_direction: false,
     }
 }
 
@@ -3742,7 +3788,17 @@ pub fn sync_neutral_features(
             .flat_map(|history| &mut history.features)
             .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
         let (kind, parameters, mut properties) = match &feature.definition {
-            FeatureDefinition::TreeNode { role } => {
+            FeatureDefinition::TreeNode {
+                role,
+                children,
+                active_child,
+            } => {
+                if !children.is_empty() || active_child.is_some() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses explicit tree membership",
+                        feature.id
+                    )));
+                }
                 if existing
                     .as_deref()
                     .is_some_and(|record| feature_tree_node_role(record) != Some(*role))
@@ -3772,6 +3828,34 @@ pub fn sync_neutral_features(
                 let mut merged = feature.source_properties.clone();
                 merged.extend(properties.clone());
                 (kind.clone(), parameters.clone(), merged)
+            }
+            FeatureDefinition::StoredGeometry => (
+                existing
+                    .as_deref()
+                    .map_or_else(|| "Feature".into(), |record| record.kind.clone()),
+                existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                feature.source_properties.clone(),
+            ),
+            FeatureDefinition::DerivedGeometry { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported copied-geometry semantics",
+                    feature.id
+                )));
+            }
+            FeatureDefinition::ImportedGeometry { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported external-import semantics",
+                    feature.id
+                )));
+            }
+            FeatureDefinition::Primitive { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported analytic-primitive semantics",
+                    feature.id
+                )));
             }
             FeatureDefinition::DatumPrincipalPlane { plane } => {
                 let record = existing.as_deref().ok_or_else(|| {
@@ -4321,7 +4405,21 @@ pub fn sync_neutral_features(
                 pitch,
                 revolutions,
                 clockwise,
+                radial_growth,
+                cone_angle,
+                segment_turns,
+                construction_style,
             } => {
+                if radial_growth.is_some()
+                    || cone_angle.is_some()
+                    || segment_turns.is_some()
+                    || construction_style.is_some()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses unsupported helix construction controls",
+                        feature.id
+                    )));
+                }
                 if ![axis_origin.x, axis_origin.y, axis_origin.z, pitch.0]
                     .into_iter()
                     .all(f64::is_finite)
@@ -4536,7 +4634,31 @@ pub fn sync_neutral_features(
                 extent,
                 op,
                 draft,
+                reverse_draft,
+                direction_source,
+                solid,
+                face_maker,
+                inner_wire_taper,
+                first_offset,
+                second_offset,
+                length_along_profile_normal,
+                allow_multi_profile_faces,
             } => {
+                if reverse_draft.is_some()
+                    || direction_source.is_some()
+                    || *solid == Some(false)
+                    || face_maker.is_some()
+                    || inner_wire_taper.is_some()
+                    || first_offset.is_some()
+                    || second_offset.is_some()
+                    || length_along_profile_normal.is_some()
+                    || allow_multi_profile_faces.is_some()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses unsupported extrusion construction controls",
+                        feature.id
+                    )));
+                }
                 if *op == BooleanOp::Unresolved && existing.is_none() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} requires retained extrusion operation data",
@@ -4611,6 +4733,12 @@ pub fn sync_neutral_features(
                     Extent::ThroughAll => {
                         properties.insert("EndCondition".into(), "ThroughAll".into());
                     }
+                    Extent::ToFirst | Extent::ToLast | Extent::ToShape { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses an unsupported extrusion termination",
+                            feature.id
+                        )));
+                    }
                     Extent::ToFace { face } if face_selection_value(face).is_some() => {
                         let selection = face_selection_value(face).expect("guarded above");
                         properties.insert("EndCondition".into(), "ToFace".into());
@@ -4624,7 +4752,9 @@ pub fn sync_neutral_features(
                     }
                     Extent::Angle { .. }
                     | Extent::SymmetricAngle { .. }
-                    | Extent::TwoSidedAngles { .. } => {
+                    | Extent::TwoSidedAngles { .. }
+                    | Extent::TwoSidedExtents { .. }
+                    | Extent::SymmetricExtent { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} uses an unsupported extrusion extent",
                             feature.id
@@ -4772,7 +4902,17 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::Chamfer { edges, spec } => {
+            FeatureDefinition::Chamfer {
+                edges,
+                spec,
+                flip_direction,
+            } => {
+                if *flip_direction {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses an unsupported reversed chamfer reference side",
+                        feature.id
+                    )));
+                }
                 let selection = edge_selection_value(edges);
                 if selection.is_none()
                     && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
@@ -4937,11 +5077,62 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::OffsetShape { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported whole-shape offset semantics",
+                    feature.id
+                )));
+            }
+            FeatureDefinition::PostProcess { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported topology post-processing semantics",
+                    feature.id
+                )));
+            }
+            FeatureDefinition::PointGeometry { .. }
+            | FeatureDefinition::LineSegment { .. }
+            | FeatureDefinition::CircularArc { .. }
+            | FeatureDefinition::EllipticArc { .. }
+            | FeatureDefinition::Polyline { .. }
+            | FeatureDefinition::RegularPolygonCurve { .. }
+            | FeatureDefinition::PlanarPatch { .. }
+            | FeatureDefinition::FaceFromShapes { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported construction-geometry semantics",
+                    feature.id
+                )));
+            }
+            FeatureDefinition::Compound { .. }
+            | FeatureDefinition::RefineShape { .. }
+            | FeatureDefinition::ReverseShape { .. }
+            | FeatureDefinition::RuledBetweenCurves { .. }
+            | FeatureDefinition::SectionShape { .. }
+            | FeatureDefinition::MirrorShape { .. }
+            | FeatureDefinition::ProjectOnSurface { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported derived-shape semantics",
+                    feature.id
+                )));
+            }
             FeatureDefinition::Shell {
                 removed_faces,
                 thickness,
                 outward,
+                mode,
+                join,
+                resolve_intersections,
+                allow_self_intersections,
             } => {
+                if mode.is_some()
+                    || join.is_some()
+                    || resolve_intersections.is_some()
+                    || allow_self_intersections.is_some()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported shell construction semantics",
+                        feature.id
+                    )));
+                }
                 let selection = face_selection_value(removed_faces);
                 if selection.is_none()
                     && !(matches!(removed_faces, FaceSelection::Unresolved) && existing.is_some())
@@ -5863,13 +6054,31 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Hole {
+                profile,
+                profile_filter,
                 face,
                 position,
                 direction,
                 kind,
                 diameter,
                 extent,
+                bottom,
+                taper_angle,
+                specification,
+                allow_multi_profile_faces,
             } => {
+                if profile.is_some()
+                    || profile_filter.is_some()
+                    || bottom.is_some()
+                    || taper_angle.is_some()
+                    || specification.is_some()
+                    || allow_multi_profile_faces.is_some()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported hole construction semantics",
+                        feature.id
+                    )));
+                }
                 if existing
                     .as_deref()
                     .is_some_and(|record| !feature_family(record, "Hole"))
@@ -5919,6 +6128,12 @@ pub fn sync_neutral_features(
                         parameters
                             .insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
                         parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
+                    }
+                    HoleKind::Counterdrill { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unsupported counterdrill construction",
+                            feature.id
+                        )));
                     }
                 }
                 let mut properties = feature.source_properties.clone();
@@ -6009,6 +6224,17 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Revolve { construction, op } => {
+                if construction.axis_reference.is_some()
+                    || construction.solid == Some(false)
+                    || construction.face_maker_class.is_some()
+                    || construction.fuse_order.is_some()
+                    || construction.allow_multi_profile_faces.is_some()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses unsupported revolution construction controls",
+                        feature.id
+                    )));
+                }
                 if existing
                     .as_deref()
                     .is_some_and(|record| !is_revolve(record))
@@ -6095,11 +6321,31 @@ pub fn sync_neutral_features(
             }
             FeatureDefinition::Sweep {
                 profile,
+                sections,
                 path,
                 mode,
+                orientation,
+                transition,
+                transformation,
+                path_tangent,
+                linearize,
                 twist,
                 scale,
+                allow_multi_profile_faces,
             } => {
+                if !sections.is_empty()
+                    || orientation.is_some()
+                    || transition.is_some()
+                    || transformation.is_some()
+                    || *path_tangent
+                    || *linearize
+                    || allow_multi_profile_faces.is_some()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported sweep construction semantics",
+                        feature.id
+                    )));
+                }
                 if existing.as_deref().is_some_and(|record| !is_sweep(record)) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
@@ -6207,7 +6453,23 @@ pub fn sync_neutral_features(
                 guides,
                 op,
                 closed,
+                solid,
+                ruled,
+                max_degree,
+                check_compatibility,
+                allow_multi_profile_faces,
             } => {
+                if !solid
+                    || *ruled
+                    || max_degree.is_some()
+                    || check_compatibility.is_some()
+                    || allow_multi_profile_faces.is_some()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported loft result semantics",
+                        feature.id
+                    )));
+                }
                 if existing.as_deref().is_some_and(|record| !is_loft(record)) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported loft semantics",
@@ -6343,10 +6605,16 @@ pub fn sync_neutral_features(
             FeatureDefinition::Pattern { seeds, pattern } => {
                 let expected_form = match pattern {
                     PatternKind::Unresolved { form } => *form,
-                    PatternKind::Linear { .. } => Some(PatternForm::Linear),
-                    PatternKind::Circular { .. } => Some(PatternForm::Circular),
+                    PatternKind::Linear { .. } | PatternKind::LinearOffsets { .. } => {
+                        Some(PatternForm::Linear)
+                    }
+                    PatternKind::Circular { .. } | PatternKind::CircularAngles { .. } => {
+                        Some(PatternForm::Circular)
+                    }
                     PatternKind::CurveDriven { .. } => Some(PatternForm::CurveDriven),
                     PatternKind::Mirror { .. } => Some(PatternForm::Mirror),
+                    PatternKind::Scale { .. } => Some(PatternForm::Scale),
+                    PatternKind::Composite { .. } => Some(PatternForm::Composite),
                 };
                 if existing.as_deref().is_some_and(|record| {
                     expected_form.is_some_and(|form| pattern_form(record) != Some(form))
@@ -6522,6 +6790,15 @@ pub fn sync_neutral_features(
                         properties.insert("PlaneOrigin".into(), format_point3_mm(*plane_origin));
                         properties.insert("PlaneNormal".into(), format_vector3(*plane_normal));
                     }
+                    PatternKind::LinearOffsets { .. }
+                    | PatternKind::CircularAngles { .. }
+                    | PatternKind::Scale { .. }
+                    | PatternKind::Composite { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses a pattern form that cannot be written",
+                            feature.id
+                        )));
+                    }
                 }
                 let kind = existing.as_deref().map_or_else(
                     || match expected_form {
@@ -6529,11 +6806,24 @@ pub fn sync_neutral_features(
                         Some(PatternForm::Circular) => "CircularPattern".into(),
                         Some(PatternForm::CurveDriven) => "CrvPattern".into(),
                         Some(PatternForm::Mirror) => "Mirror".into(),
+                        Some(PatternForm::Scale | PatternForm::Composite) => "Pattern".into(),
                         None => "Pattern".into(),
                     },
                     |record| record.kind.clone(),
                 );
                 (kind, parameters, properties)
+            }
+            FeatureDefinition::HelicalSweep { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses a helical sweep that cannot be written",
+                    feature.id
+                )));
+            }
+            FeatureDefinition::Binder { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses design-binder semantics that cannot be written",
+                    feature.id
+                )));
             }
         };
         if feature.outputs.is_empty() {
@@ -6739,6 +7029,7 @@ fn dependency_residual(
         FeatureDefinition::Extrude { .. }
         | FeatureDefinition::Revolve { .. }
         | FeatureDefinition::Sweep { .. }
+        | FeatureDefinition::HelicalSweep { .. }
         | FeatureDefinition::Loft { .. }
         | FeatureDefinition::Rib { .. } => dependencies
             .into_iter()
@@ -6963,6 +7254,10 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Helix { .. } | FeatureDefinition::HelixNativeAxis { .. } => "Helix",
         FeatureDefinition::Wrap { .. } => "Wrap",
         FeatureDefinition::Sketch { .. } => "Sketch",
+        FeatureDefinition::StoredGeometry => "Feature",
+        FeatureDefinition::DerivedGeometry { .. } => "Feature",
+        FeatureDefinition::ImportedGeometry { .. } => "Feature",
+        FeatureDefinition::Primitive { .. } => "Primitive",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",
         FeatureDefinition::Sweep {
@@ -6970,6 +7265,8 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
             ..
         } => "Surface-Sweep",
         FeatureDefinition::Sweep { .. } => "Sweep",
+        FeatureDefinition::HelicalSweep { .. } => "Helix",
+        FeatureDefinition::Binder { .. } => "Feature",
         FeatureDefinition::Loft { .. } => "Loft",
         FeatureDefinition::Rib { .. } => "Rib",
         FeatureDefinition::Fillet { .. } => "Fillet",
@@ -7004,12 +7301,29 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Dome { .. } => "Dome",
         FeatureDefinition::Flex { .. } => "Flex",
         FeatureDefinition::Scale { .. } => "Scale",
+        FeatureDefinition::OffsetShape { .. } => "Offset",
+        FeatureDefinition::Compound { .. } => "Compound",
+        FeatureDefinition::RefineShape { .. } => "Refine",
+        FeatureDefinition::ReverseShape { .. } => "Reverse",
+        FeatureDefinition::RuledBetweenCurves { .. } => "RuledSurface",
+        FeatureDefinition::SectionShape { .. } => "Section",
+        FeatureDefinition::MirrorShape { .. } => "Mirror",
+        FeatureDefinition::ProjectOnSurface { .. } => "ProjectOnSurface",
         FeatureDefinition::Hole { .. } => "Hole",
         FeatureDefinition::Pattern {
             pattern: PatternKind::Mirror { .. },
             ..
         } => "Mirror",
         FeatureDefinition::Pattern { .. } => "Pattern",
+        FeatureDefinition::PostProcess { .. } => "Feature",
+        FeatureDefinition::PointGeometry { .. } => "Point",
+        FeatureDefinition::LineSegment { .. } => "Line",
+        FeatureDefinition::CircularArc { .. } => "Circle",
+        FeatureDefinition::EllipticArc { .. } => "Ellipse",
+        FeatureDefinition::Polyline { .. } => "Polyline",
+        FeatureDefinition::RegularPolygonCurve { .. } => "Polygon",
+        FeatureDefinition::PlanarPatch { .. } => "Plane",
+        FeatureDefinition::FaceFromShapes { .. } => "Face",
         FeatureDefinition::Native { kind, .. } if extrude_op(kind).is_some() => "Extrusion",
         FeatureDefinition::Native { kind, .. } if valid_xml_name(kind) => kind,
         FeatureDefinition::Native { .. } => "Feature",

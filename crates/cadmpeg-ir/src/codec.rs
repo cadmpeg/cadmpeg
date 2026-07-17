@@ -12,6 +12,7 @@ use std::io::{Read, Seek, Write};
 use crate::document::CadIr;
 use crate::report::DecodeReport;
 use crate::report::ExportReport;
+use crate::source_fidelity::SourceFidelity;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -94,13 +95,34 @@ pub struct DecodeResult {
     pub ir: CadIr,
     /// What was transferred and what was lost.
     pub report: DecodeReport,
+    /// Decode-time byte accounting and conversion facts.
+    pub source_fidelity: SourceFidelity,
 }
 
 impl DecodeResult {
     /// Build a result after canonicalizing the document's arena order.
     pub fn new(mut ir: CadIr, report: DecodeReport) -> Self {
         ir.finalize();
-        Self { ir, report }
+        Self {
+            ir,
+            report,
+            source_fidelity: SourceFidelity::default(),
+        }
+    }
+
+    /// Build a result with an explicit source-fidelity sidecar.
+    pub fn with_source_fidelity(
+        mut ir: CadIr,
+        report: DecodeReport,
+        mut source_fidelity: SourceFidelity,
+    ) -> Self {
+        ir.finalize();
+        source_fidelity.finalize();
+        Self {
+            ir,
+            report,
+            source_fidelity,
+        }
     }
 }
 
@@ -153,6 +175,20 @@ pub trait Encoder {
 
     /// Encode one IR document to the target format.
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError>;
+
+    /// Encode with decode-time source fidelity when the caller retained it.
+    ///
+    /// Encoders that do not consume source accounting use the neutral model
+    /// through [`Encoder::encode`].
+    fn encode_with_source_fidelity(
+        &self,
+        ir: &CadIr,
+        source_fidelity: Option<&SourceFidelity>,
+        writer: &mut dyn Write,
+    ) -> Result<ExportReport, CodecError> {
+        let _ = source_fidelity;
+        self.encode(ir, writer)
+    }
 }
 
 /// Encoder for canonical versioned CADIR JSON.

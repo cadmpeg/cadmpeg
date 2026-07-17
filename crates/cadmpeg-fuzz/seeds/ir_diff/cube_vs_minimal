@@ -1,5 +1,5 @@
 {
-  "ir_version": "3",
+  "ir_version": "6",
   "units": {
     "length": "millimeter"
   },
@@ -932,6 +932,11 @@
     "procedural_surfaces": [],
     "procedural_curves": [],
     "features": [],
+    "configurations": [],
+    "parameters": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
     "tessellations": [],
     "appearances": [],
     "appearance_bindings": [],
@@ -1543,7 +1548,7 @@
   },
   "native": {}
 } {
-  "ir_version": "3",
+  "ir_version": "6",
   "units": {
     "length": "millimeter"
   },
@@ -1568,6 +1573,11 @@
     "procedural_surfaces": [],
     "procedural_curves": [],
     "features": [],
+    "configurations": [],
+    "parameters": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
     "tessellations": [],
     "appearances": [],
     "appearance_bindings": [],
