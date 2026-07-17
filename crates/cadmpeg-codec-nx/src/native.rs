@@ -8445,7 +8445,10 @@ pub fn feature_extrude_construction_profiles(
         if operation_references.is_empty()
             || operation_references
                 .iter()
-                .any(|reference| !reference.witnessed)
+                .enumerate()
+                .any(|(ordinal, reference)| {
+                    reference.ordinal != ordinal as u32 || !reference.witnessed
+                })
         {
             continue;
         }

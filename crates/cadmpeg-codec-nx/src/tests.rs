@@ -6953,7 +6953,17 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
     assert_eq!(profiles[0].object_indices, [100, 101]);
     assert_eq!(profiles[0].data_blocks, ["block-10", "block-11"]);
 
-    let mut mismatched = lane;
+    for ordinal in [0, 2] {
+        let mut malformed = references.clone();
+        malformed[1].ordinal = ordinal;
+        assert!(crate::native::feature_extrude_construction_profiles(
+            &malformed,
+            std::slice::from_ref(&lane),
+        )
+        .is_empty());
+    }
+
+    let mut mismatched = lane.clone();
     mismatched.object_indices[1] = 102;
     assert!(
         crate::native::feature_extrude_construction_profiles(&references, &[mismatched]).is_empty()
