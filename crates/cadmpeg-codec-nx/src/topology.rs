@@ -117,28 +117,6 @@ impl Node {
         read_sequence_at(&self.bytes, &mut at, count)
     }
 
-    /// Read an XMT reference at a logical record offset.
-    pub fn xmt_at(&self, offset: usize) -> Option<u32> {
-        read_xmt(&self.bytes, offset + self.shift).map(|(xmt, _)| xmt)
-    }
-
-    /// Read adjacent XMT references, accounting for extended encodings.
-    pub fn xmt_sequence(&self, offset: usize, count: usize) -> Option<Vec<u32>> {
-        let mut at = offset + self.shift;
-        // Each iteration reads at least two bytes from `self.bytes` before
-        // pushing, and `read_xmt` returns `None` at end of record, so the vector
-        // never grows past `self.bytes.len() / 2` regardless of `count`.
-        // Accumulate via `Vec::new`/`push` (lint-invisible per §8) rather than
-        // reserving against the untrusted `count`.
-        let mut values = Vec::new();
-        for _ in 0..count {
-            let (value, extra) = read_xmt(&self.bytes, at)?;
-            values.push(value);
-            at += 2 + extra;
-        }
-        Some(values)
-    }
-
     /// Read a byte at its logical record offset.
     pub fn byte_at(&self, offset: usize) -> Option<u8> {
         self.bytes.get(offset + self.shift).copied()
@@ -152,22 +130,6 @@ impl Node {
     /// Read a big-endian unsigned 32-bit field at a logical record offset.
     pub fn u32_at(&self, offset: usize) -> Option<u32> {
         be::u32_at(&self.bytes, offset + self.shift)
-    }
-
-    /// Read a floating-point field immediately after an XMT reference.
-    pub fn f64_after_xmt(&self, offset: usize) -> Option<f64> {
-        let (_, extra) = read_xmt(&self.bytes, offset + self.shift)?;
-        be::f64_at(&self.bytes, offset + self.shift + 2 + extra)
-    }
-
-    /// Read a floating-point field immediately after adjacent XMT references.
-    pub fn f64_after_xmt_sequence(&self, offset: usize, count: usize) -> Option<f64> {
-        let mut at = offset + self.shift;
-        for _ in 0..count {
-            let (_, extra) = read_xmt(&self.bytes, at)?;
-            at += 2 + extra;
-        }
-        be::f64_at(&self.bytes, at)
     }
 
     /// Decode FACE fields while accumulating every preceding large-index shift.

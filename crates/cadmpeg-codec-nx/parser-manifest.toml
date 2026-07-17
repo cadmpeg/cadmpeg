@@ -217,8 +217,8 @@ path = "crates/cadmpeg-codec-nx/src/decode.rs"
 status = "legacy"
 input_spaces = ["source", "parasolid_stream"]
 fuzz_targets = ["nx_container", "nx_parasolid"]
-charges = ["work"]
-cost_model = "legacy orchestrator; scan charges the root scan as work upstream; knot assembly reserves against a trusted in-memory parameter length; ticket issuance and req_* mirror deferred to Phase 3D"
+charges = ["work", "alloc"]
+cost_model = "legacy orchestrator; scan charges the root scan as work and the retained image copy as alloc (`nx_container_image`); knot assembly reserves against a trusted in-memory parameter length; ticket issuance and req_* mirror deferred to Phase 3D"
 window_egress = ["scan: root image handed to the legacy leaf scanners"]
 ledger_level = 0
 
