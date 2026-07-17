@@ -2441,8 +2441,9 @@ fn project_extrude(
         None | Some("Blind") => Extent::Blind {
             length: length("Depth")?,
         },
-        Some("Symmetric") => Extent::Symmetric {
-            length: length("Depth")?,
+        Some("Symmetric") => match length("Depth") {
+            Some(length) => Extent::Symmetric { length },
+            None => Extent::Unresolved,
         },
         Some("TwoSided") => Extent::TwoSided {
             first: length("Depth")?,
