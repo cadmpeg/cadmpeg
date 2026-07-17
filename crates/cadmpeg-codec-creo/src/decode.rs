@@ -19639,6 +19639,25 @@ fn oriented_native_pcurve_endpoints(
     }
 }
 
+fn unique_oriented_native_pcurve(
+    surface: &SurfaceGeometry,
+    candidates: &[([[f64; 2]; 2], usize)],
+    traversal: [[f64; 3]; 2],
+) -> Option<([[f64; 2]; 2], usize)> {
+    let mut matching = candidates.iter().filter_map(|(endpoints, offset)| {
+        oriented_native_pcurve_endpoints(surface, *endpoints, traversal)
+            .map(|oriented| (oriented, *offset))
+    });
+    let mut selected = matching.next()?;
+    for candidate in matching {
+        if candidate.0 != selected.0 {
+            return None;
+        }
+        selected.1 = selected.1.min(candidate.1);
+    }
+    Some(selected)
+}
+
 #[cfg(test)]
 mod native_pcurve_tests {
     use super::*;
@@ -19675,6 +19694,52 @@ mod native_pcurve_tests {
             None
         );
     }
+
+    #[test]
+    fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
+        let traversal = [[2.0, 4.0, 3.0], [5.0, 7.0, 3.0]];
+        let endpoints = [[2.0, 4.0], [5.0, 7.0]];
+        assert_eq!(
+            unique_oriented_native_pcurve(
+                &plane(),
+                &[(endpoints, 20), ([endpoints[1], endpoints[0]], 10)],
+                traversal,
+            ),
+            Some((endpoints, 10))
+        );
+        assert_eq!(
+            unique_oriented_native_pcurve(
+                &plane(),
+                &[(endpoints, 20), ([[2.0, 4.0], [5.0, 8.0]], 10)],
+                traversal,
+            ),
+            Some((endpoints, 20))
+        );
+
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        };
+        assert_eq!(
+            unique_oriented_native_pcurve(
+                &cylinder,
+                &[
+                    ([[0.0, 0.0], [std::f64::consts::FRAC_PI_2, 0.0]], 10),
+                    (
+                        [
+                            [std::f64::consts::TAU, 0.0],
+                            [std::f64::consts::TAU + std::f64::consts::FRAC_PI_2, 0.0],
+                        ],
+                        20,
+                    ),
+                ],
+                [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            ),
+            None
+        );
+    }
 }
 
 fn transfer_plane_brep(
@@ -19697,11 +19762,38 @@ fn transfer_plane_brep(
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
     let solved_vertices = solved_topological_vertices(scan, &carriers);
-    let native_pcurves = scan
+    let mut native_pcurves = BTreeMap::<(u32, u32), Vec<([[f64; 2]; 2], usize)>>::new();
+    for (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) in scan
         .pcurves
         .iter()
-        .map(|pcurve| (pcurve.curve_id, pcurve))
-        .collect::<BTreeMap<_, _>>();
+        .map(|pcurve| {
+            (
+                pcurve.curve_id,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+                pcurve.offset,
+            )
+        })
+        .chain(scan.bound_prototype_pcurves.iter().map(|pcurve| {
+            (
+                pcurve.curve_id,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+                pcurve.offset,
+            )
+        }))
+    {
+        native_pcurves
+            .entry((curve_id, faces[0]))
+            .or_default()
+            .push((face_0_endpoints, offset));
+        native_pcurves
+            .entry((curve_id, faces[1]))
+            .or_default()
+            .push((face_1_endpoints, offset));
+    }
     let edge_vertices = scan
         .curve_topology_rows
         .iter()
@@ -20069,14 +20161,8 @@ fn transfer_plane_brep(
                         Exactness::Derived,
                     );
                     let pcurves = native_pcurves
-                        .get(&half_edge.curve_id)
-                        .and_then(|pcurve| {
-                            let face_index = pcurve.faces.iter().position(|id| id == face_id)?;
-                            let endpoints = if face_index == 0 {
-                                pcurve.face_0_endpoints
-                            } else {
-                                pcurve.face_1_endpoints
-                            };
+                        .get(&(half_edge.curve_id, *face_id))
+                        .and_then(|candidates| {
                             let incidence = incidence.get(half_edge)?;
                             let end = incidence.end_vertex_id?;
                             let traversal = [
@@ -20087,12 +20173,7 @@ fn transfer_plane_brep(
                                 candidate.id
                                     == SurfaceId(format!("creo:visibgeom:surface#{face_id}"))
                             })?;
-                            oriented_native_pcurve_endpoints(
-                                &surface.geometry,
-                                endpoints,
-                                traversal,
-                            )
-                            .map(|endpoints| (endpoints, pcurve.offset))
+                            unique_oriented_native_pcurve(&surface.geometry, candidates, traversal)
                         })
                         .map(|(endpoints, offset)| {
                             let pcurve = PcurveId(format!(
