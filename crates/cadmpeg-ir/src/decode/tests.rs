@@ -747,6 +747,56 @@ fn transfer_accounting_accepts_dropped_when_loss_is_reflected() {
 }
 
 #[test]
+fn transfer_accounting_rejects_shared_loss_note_for_multiple_drops() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let loss = LossNote {
+        category: LossCategory::Other,
+        severity: Severity::Warning,
+        message: "unhandled body variant".to_owned(),
+        provenance: None,
+    };
+    // Two records dropped under one key, but only one matching note reaches
+    // the report: the second drop must not borrow the first's accounting.
+    let first = ctx.commit_record(root.location(), RecordKind("body"));
+    let second = ctx.commit_record(root.location(), RecordKind("body"));
+    ctx.resolve(first, RecordDisposition::Dropped { loss: loss.clone() });
+    ctx.resolve(second, RecordDisposition::Dropped { loss: loss.clone() });
+    let mut result = dummy_result();
+    result.report.losses.push(loss);
+    match ctx.finish(Ok(result)) {
+        Err(CodecError::Malformed(message)) => {
+            assert!(message.contains("loss note is absent"), "{message}");
+        }
+        other => panic!("expected strict dropped-loss error, got {other:?}"),
+    }
+}
+
+#[test]
+fn transfer_accounting_accepts_one_loss_note_per_drop() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let loss = LossNote {
+        category: LossCategory::Other,
+        severity: Severity::Warning,
+        message: "unhandled body variant".to_owned(),
+        provenance: None,
+    };
+    let first = ctx.commit_record(root.location(), RecordKind("body"));
+    let second = ctx.commit_record(root.location(), RecordKind("body"));
+    ctx.resolve(first, RecordDisposition::Dropped { loss: loss.clone() });
+    ctx.resolve(second, RecordDisposition::Dropped { loss: loss.clone() });
+    let mut result = dummy_result();
+    result.report.losses.push(loss.clone());
+    result.report.losses.push(loss);
+    assert!(ctx.finish(Ok(result)).is_ok());
+}
+
+#[test]
 fn transfer_accounting_violations_degrade_to_losses_in_salvage() {
     let bytes: &[u8] = &[0u8; 8];
     let arena = DecodeArena::new();

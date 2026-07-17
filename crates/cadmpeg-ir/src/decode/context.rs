@@ -1401,8 +1401,15 @@ impl TicketTable {
     /// unresolved ticket is not re-reported here — [`finish`](DecodeContext::finish)
     /// handles resolution before this runs. [`RecordDisposition::Structural`]
     /// carries no semantic content and is unconstrained.
+    ///
+    /// Dropped reflection consumes one report loss per disposition: each
+    /// `Dropped` claims a distinct un-consumed `LossNote` matching its key, so
+    /// N records dropped under a shared key require N notes in `report.losses`.
+    /// Existence-only matching would let one note account for many drops,
+    /// reintroducing the concealed under-accounting §6.2 forbids.
     fn transfer_accounting(&self, retained: &RetainedStore, losses: &[LossNote]) -> Vec<String> {
         let mut violations = Vec::new();
+        let mut consumed = vec![false; losses.len()];
         for state in self.entries.borrow().iter() {
             let (kind, location) = (state.kind.0, state.location);
             let at = format!(
@@ -1433,13 +1440,16 @@ impl TicketTable {
                     }
                 }
                 Some(RecordDisposition::Dropped { loss }) => {
-                    let reflected = losses
-                        .iter()
-                        .any(|note| note.category == loss.category && note.message == loss.message);
-                    if !reflected {
-                        violations.push(format!(
+                    let matched = losses.iter().enumerate().find(|(index, note)| {
+                        !consumed[*index]
+                            && note.category == loss.category
+                            && note.message == loss.message
+                    });
+                    match matched {
+                        Some((index, _)) => consumed[index] = true,
+                        None => violations.push(format!(
                             "{at} resolved Dropped but its loss note is absent from the report"
-                        ));
+                        )),
                     }
                 }
                 Some(RecordDisposition::Structural) | None => {}
