@@ -92,7 +92,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
     };
 
     let (kind, role, feature, tree_node) = match name {
-        "moExtrusion_c" | "moICE_c" => (
+        "moExtrusion_c" | "moICE_c" | "moCut_c" => (
             NativeClassKind::Extrusion,
             Feature,
             Some(FeatureClass::Extrude),
@@ -334,7 +334,7 @@ fn classify_xml_element(tag: &str) -> Option<FeatureClass> {
         "CompositeCurve" => FeatureClass::CompositeCurve,
         "Helix" | "HelixSpiral" | "Helix/Spiral" => FeatureClass::Helix,
         "Wrap" => FeatureClass::Wrap,
-        "Extrusion" => FeatureClass::Extrude,
+        "Extrusion" | "Cut" => FeatureClass::Extrude,
         "Fillet" => FeatureClass::Fillet,
         "Chamfer" => FeatureClass::Chamfer,
         "Shell" => FeatureClass::Shell,
@@ -549,6 +549,7 @@ mod tests {
         for name in [
             "moExtrusion_c",
             "moICE_c",
+            "moCut_c",
             "Fillet_c",
             "Chamfer_c",
             "moOriginProfileFeature_c",

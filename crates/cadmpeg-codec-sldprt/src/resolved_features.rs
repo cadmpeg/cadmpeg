@@ -6562,7 +6562,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             else {
                 continue;
             };
-            if feature.xml_tag != "Extrusion" {
+            if !matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut") {
                 continue;
             }
             let has_depth =
