@@ -855,8 +855,8 @@ fn le_f64(v: f64) -> [u8; 8] {
     v.to_le_bytes()
 }
 
-/// A `MainDataStream` physical payload: two FBB spine rows, the standard
-/// edge-table delimiter, and three `05 08 01` vertex records.
+/// A `MainDataStream` physical payload: two FBB spine rows, two empty standard
+/// edge tables, and a counted table of three `05 08 01` vertex records.
 fn main_stream() -> Vec<u8> {
     let mut b = Vec::new();
     // Non-planar positional packet for the first, cylindrical face.
@@ -872,9 +872,12 @@ fn main_stream() -> Vec<u8> {
     for _ in 0..2 {
         b.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
     }
-    // Standard edge-table delimiter.
-    b.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
-    // Three vertex records (3×f32 LE, millimetres).
+    for kind in [1, 2] {
+        b.extend_from_slice(&[0x01, kind, 0]);
+        b.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
+    }
+    // Counted vertex table: three records (3×f32 LE, millimetres).
+    b.extend_from_slice(&[0x01, 0x06, 3]);
     for xyz in [[0.0f32, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0]] {
         b.extend_from_slice(&[0x05, 0x08, 0x01]);
         for v in xyz {
@@ -1083,11 +1086,15 @@ fn tetrahedron_topology_catpart() -> Vec<u8> {
 fn fbb_only_catpart() -> Vec<u8> {
     let mut file = standard_catpart();
     let delimiter = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
-    let pos = file
+    let positions = file
         .windows(delimiter.len())
-        .position(|bytes| bytes == delimiter)
-        .expect("standard fixture delimiter");
-    file[pos] = 0x11;
+        .enumerate()
+        .filter_map(|(position, bytes)| (bytes == delimiter).then_some(position))
+        .collect::<Vec<_>>();
+    assert_eq!(positions.len(), 2);
+    for position in positions {
+        file[position] = 0x11;
+    }
     file
 }
 
@@ -2563,7 +2570,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
 }
 
 #[test]
-fn decode_fbb_only_transfers_shared_vertices_and_carriers() {
+fn decode_fbb_only_without_parseable_counted_table_transfers_only_carriers() {
     assert_eq!(
         crate::container::scan_bytes(fbb_only_catpart()).variant,
         Variant::FbbOnly
@@ -2572,7 +2579,7 @@ fn decode_fbb_only_transfers_shared_vertices_and_carriers() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.model.points.len(), 3);
+    assert!(result.ir.model.points.is_empty());
     assert_eq!(result.ir.model.surfaces.len(), 2);
 }
 

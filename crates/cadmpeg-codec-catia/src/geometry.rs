@@ -341,12 +341,12 @@ pub fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
     }
 }
 
-/// Read every `05 08 01` vertex record as `(x, y, z)` in millimetres.
+/// Read direct-record-layout `05 08 01` vertices as `(x, y, z)` in millimetres.
 ///
 /// Non-finite and out-of-range candidates are filtered (real part coordinates sit
 /// well under 10 metres, and the 3-byte signature occurs incidentally in packed
-/// sub-streams). Records retain their raw 1:1 correspondence with the
-/// STEP `VERTEX_POINT` count.
+/// sub-streams). Standard and FBB topology paths do not use this scan; their
+/// vertices come only from the declared counted table.
 pub fn vertices(brep: &[u8]) -> Vec<Point3> {
     let mut out = Vec::new();
     let mut p = 0usize;

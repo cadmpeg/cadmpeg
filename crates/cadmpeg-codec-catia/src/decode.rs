@@ -4640,15 +4640,11 @@ fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDerivative {
 /// the caller falls back to the container-metadata path.
 fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let brep = scan.brep.as_ref()?;
-    let points = topology::standard_vertex_points(brep).map_or_else(
-        || geometry::vertices(brep),
-        |points| {
-            points
-                .into_iter()
-                .map(|[x, y, z]| Point3::new(x, y, z))
-                .collect()
-        },
-    );
+    let points = topology::standard_vertex_points(brep)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|[x, y, z]| Point3::new(x, y, z))
+        .collect::<Vec<_>>();
     let face_count = topology::standard_face_count(brep).unwrap_or_default();
     let records = geometry::standard_surface_records(brep, face_count).unwrap_or_else(|| {
         geometry::surface_prefixes(brep)
