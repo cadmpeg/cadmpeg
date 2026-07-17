@@ -2464,6 +2464,7 @@ fn project_extrude(
             second: length("Depth2")?,
         },
         Some("ThroughAll") => Extent::ThroughAll,
+        Some("ThroughAllBoth") => Extent::ThroughAllBoth,
         Some("ThroughNext") => Extent::ThroughNext,
         Some("ToFace") => Extent::ToFace {
             face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
@@ -6990,6 +6991,9 @@ pub fn sync_neutral_features(
                     }
                     Extent::ThroughAll => {
                         properties.insert("EndCondition".into(), "ThroughAll".into());
+                    }
+                    Extent::ThroughAllBoth => {
+                        properties.insert("EndCondition".into(), "ThroughAllBoth".into());
                     }
                     Extent::ThroughNext => {
                         properties.insert("EndCondition".into(), "ThroughNext".into());

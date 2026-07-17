@@ -2318,6 +2318,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 Extent::OffsetFromFace { offset, .. } => offset.0.is_finite() && offset.0 > 0.0,
                 Extent::Unresolved
                 | Extent::ThroughAll
+                | Extent::ThroughAllBoth
                 | Extent::ThroughNext
                 | Extent::ToFace { .. }
                 | Extent::ToVertex { .. } => true,

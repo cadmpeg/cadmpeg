@@ -364,8 +364,9 @@ mod marker_tests {
         arc_angle_relation_kind, compact_body_component_path_at, compact_body_path_at,
         compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
         compact_body_state_ids, compact_combine_operation_at, compact_edge_component_path_at,
-        compact_edge_selection_at, compact_extrusion_mid_plane_at,
-        compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
+        compact_edge_selection_at, compact_extrusion_blind_through_all_second_at,
+        compact_extrusion_mid_plane_at, compact_extrusion_offset_from_face_at,
+        compact_extrusion_through_all_at, compact_extrusion_through_all_both_at,
         compact_extrusion_through_next_at, compact_extrusion_to_face_at,
         compact_extrusion_to_vertex_at, compact_general_curve_ref_at, compact_line_chain_addresses,
         compact_line_region_addresses, compact_profile_reference_plane_source,
@@ -1239,6 +1240,78 @@ mod marker_tests {
         payload.extend_from_slice(b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c");
         dimension_tail(&mut payload);
         assert!(compact_extrusion_mid_plane_at(&payload, 0));
+    }
+
+    #[test]
+    fn compact_extrusion_through_all_both_accepts_both_carriers() {
+        let dimension_tail = |payload: &mut Vec<u8>| {
+            let block = payload.len();
+            payload.resize(block + 16, 0);
+            payload[block + 9] = 0x20;
+            payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
+            payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+            payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+        };
+
+        // Traversal carrier: first-direction code 1 with second-direction 1.
+        let mut payload = vec![0; 104];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+        payload[18] = 1;
+        payload[22] = 1;
+        payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
+        payload[92] = 1;
+        assert!(compact_extrusion_through_all_both_at(&payload, 0));
+        assert!(!compact_extrusion_through_all_at(&payload, 0));
+        payload[8] = 1;
+        assert!(compact_extrusion_through_all_both_at(&payload, 0));
+        payload[8] = 2;
+        assert!(!compact_extrusion_through_all_both_at(&payload, 0));
+        payload[8] = 0;
+        payload[22] = 0;
+        assert!(!compact_extrusion_through_all_both_at(&payload, 0));
+        payload[22] = 1;
+        payload[18] = 2;
+        assert!(!compact_extrusion_through_all_both_at(&payload, 0));
+
+        // Dedicated code 9 carrier with the retained dimension child.
+        let mut payload = vec![0; 26];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+        payload[18] = 9;
+        payload[22] = 1;
+        payload.extend_from_slice(&[0x6a, 0x81]);
+        dimension_tail(&mut payload);
+        assert!(compact_extrusion_through_all_both_at(&payload, 0));
+        payload[22] = 0;
+        assert!(!compact_extrusion_through_all_both_at(&payload, 0));
+        payload[22] = 1;
+        payload[4] = 2;
+        assert!(!compact_extrusion_through_all_both_at(&payload, 0));
+    }
+
+    #[test]
+    fn compact_extrusion_blind_second_direction_requires_the_dimension_child() {
+        let mut payload = vec![0; 26];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+        payload[4] = 1;
+        payload[22] = 1;
+        payload.extend_from_slice(&[0x6a, 0x81]);
+        let block = payload.len();
+        payload.resize(block + 16, 0);
+        payload[block + 9] = 0x20;
+        payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
+        payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+        payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+        assert!(compact_extrusion_blind_through_all_second_at(&payload, 0));
+        assert!(!compact_extrusion_through_all_both_at(&payload, 0));
+        payload[22] = 0;
+        assert!(!compact_extrusion_blind_through_all_second_at(&payload, 0));
+        payload[22] = 1;
+        payload[4] = 0;
+        assert!(!compact_extrusion_blind_through_all_second_at(&payload, 0));
+        payload[4] = 1;
+        let last = payload.len() - 1;
+        payload[last] = 0;
+        assert!(!compact_extrusion_blind_through_all_second_at(&payload, 0));
     }
 
     #[test]
@@ -6722,7 +6795,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    let mut terminations = HashMap::<String, Vec<Option<(String, Option<String>)>>>::new();
+    type TerminationVote = (String, Option<String>, Option<String>);
+    let mut terminations = HashMap::<String, Vec<Option<TerminationVote>>>::new();
     for lane in lanes {
         let mut objects = histories
             .iter()
@@ -6778,7 +6852,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let candidates = (start..end.saturating_sub(103))
                 .filter_map(|offset| {
                     if compact_extrusion_mid_plane_at(&lane.native_payload, offset) {
-                        return Some(("Symmetric".to_string(), None));
+                        return Some(("Symmetric".to_string(), None, None));
                     }
                     if let Some(reference) =
                         compact_extrusion_offset_from_face_at(&lane.native_payload, offset, end)
@@ -6788,15 +6862,27 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             Some(format!(
                                 "sldprt:feature-input:single-face-ref:{lane_key}:{reference}"
                             )),
+                            None,
                         ));
+                    }
+                    if compact_extrusion_through_all_both_at(&lane.native_payload, offset) {
+                        return Some(("ThroughAllBoth".to_string(), None, None));
+                    }
+                    if has_depth
+                        && compact_extrusion_blind_through_all_second_at(
+                            &lane.native_payload,
+                            offset,
+                        )
+                    {
+                        return Some(("Blind".to_string(), None, Some("ThroughAll".to_string())));
                     }
                     if has_depth {
                         return None;
                     }
                     if compact_extrusion_through_all_at(&lane.native_payload, offset) {
-                        Some(("ThroughAll".to_string(), None))
+                        Some(("ThroughAll".to_string(), None, None))
                     } else if compact_extrusion_through_next_at(&lane.native_payload, offset) {
-                        Some(("ThroughNext".to_string(), None))
+                        Some(("ThroughNext".to_string(), None, None))
                     } else if let Some((reference, kind)) =
                         compact_extrusion_to_vertex_at(&lane.native_payload, offset)
                     {
@@ -6809,6 +6895,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             Some(format!(
                                 "sldprt:feature-input:{prefix}:{lane_key}:{reference}"
                             )),
+                            None,
                         ))
                     } else {
                         compact_extrusion_to_face_at(&lane.native_payload, offset).map(
@@ -6818,6 +6905,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                     Some(format!(
                                     "sldprt:feature-input:single-face-ref:{lane_key}:{reference}"
                                 )),
+                                    None,
                                 )
                             },
                         )
@@ -6862,6 +6950,11 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .properties
                 .entry(key.into())
                 .or_insert_with(|| reference.clone());
+        }
+        if let Some(second) = &first.2 {
+            feature
+                .properties
+                .insert("EndCondition2".into(), second.clone());
         }
     }
 }
@@ -7446,9 +7539,69 @@ pub(crate) fn compact_extrusion_through_next_at(payload: &[u8], offset: usize) -
         && compact_extrusion_traversal_tail_at(payload, offset)
 }
 
+/// Through-all in both directions. Two carriers exist: a first-direction
+/// traversal code `1` with second-direction code `1` and the shared traversal
+/// tail, and the dedicated code `9` whose second-direction word is `1` and
+/// whose retained blind dimension child follows immediately.
+pub(crate) fn compact_extrusion_through_all_both_at(payload: &[u8], offset: usize) -> bool {
+    (compact_extrusion_two_direction_header(payload, offset, 1)
+        && payload.get(offset + 26..offset + 30) == Some(&[0, 0, 0, 0])
+        && compact_extrusion_traversal_body_at(payload, offset))
+        || (compact_extrusion_two_direction_header(payload, offset, 9)
+            && compact_extrusion_dimension_child_at(payload, offset + 26).is_some())
+}
+
+/// Blind first direction with a through-all second direction: a code `0`
+/// header whose second-direction word is `1`, owning the blind dimension
+/// child.
+pub(crate) fn compact_extrusion_blind_through_all_second_at(payload: &[u8], offset: usize) -> bool {
+    compact_end_spec_identity_at(payload, offset)
+        && payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+        && payload
+            .get(offset + 12..offset + 16)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|flag| flag <= 1)
+        && payload.get(offset + 16..offset + 22) == Some(&[0, 0, 0, 0, 0, 0])
+        && payload.get(offset + 22..offset + 26) == Some(&[1, 0, 0, 0])
+        && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()
+}
+
+/// Two-direction end-spec header: the words at `+4` and `+8` carry `0` or
+/// `1`, the first-direction code sits at `+18`, and the second-direction
+/// code `1` sits at `+22`.
+fn compact_extrusion_two_direction_header(payload: &[u8], offset: usize, code: u32) -> bool {
+    compact_end_spec_identity_at(payload, offset)
+        && payload.get(offset + 2..offset + 4) == Some(&[0, 0])
+        && payload
+            .get(offset + 4..offset + 8)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|word| word <= 1)
+        && payload
+            .get(offset + 8..offset + 12)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|word| word <= 1)
+        && payload
+            .get(offset + 12..offset + 16)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|flag| flag <= 1)
+        && payload.get(offset + 16..offset + 18) == Some(&[0, 0])
+        && payload.get(offset + 18..offset + 22) == Some(code.to_le_bytes().as_slice())
+        && payload.get(offset + 22..offset + 26) == Some(&[1, 0, 0, 0])
+}
+
 fn compact_extrusion_traversal_tail_at(payload: &[u8], offset: usize) -> bool {
     payload.get(offset + 22..offset + 30) == Some(&[0, 0, 0, 0, 0, 0, 0, 0])
-        && payload.get(offset + 30..offset + 34) == Some(&[1, 0, 0, 1])
+        && compact_extrusion_traversal_body_at(payload, offset)
+}
+
+/// Shared traversal run from `+30`: the `[1, 0, 0, 1]` marker and the fixed
+/// zero fill through the `+90` word.
+fn compact_extrusion_traversal_body_at(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset + 30..offset + 34) == Some(&[1, 0, 0, 1])
         && payload
             .get(offset + 34..offset + 90)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))

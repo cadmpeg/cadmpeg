@@ -1177,6 +1177,8 @@ pub enum Extent {
     },
     /// Extends through all material.
     ThroughAll,
+    /// Extends through all material on both sides of the profile.
+    ThroughAllBoth,
     /// Extends until it exits the next material region.
     ThroughNext,
     /// Extends until it reaches a target face.
