@@ -990,13 +990,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         });
     }
 
-    let unresolved_body_modes = ir
-        .model
-        .features
+    let unresolved_body_modes = evaluated_feature_states
         .iter()
-        .filter(|feature| {
+        .filter(|state| {
             matches!(
-                feature.definition,
+                state.definition,
                 FeatureDefinition::DeleteBody {
                     mode: BodyRetentionMode::Unresolved,
                     ..
@@ -2600,10 +2598,10 @@ mod design_loss_tests {
         FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchRelationKind,
     };
     use cadmpeg_ir::features::{
-        Angle, BodySelection, BooleanOp, ConfigurationFeatureState, ConfigurationId,
-        DesignConfiguration, DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        FeatureSourceContent, FeatureTreeNodeRole, Length, ParameterId, ParameterPmi,
-        ParameterValue, PmiDimensionSubtype,
+        Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState,
+        ConfigurationId, DesignConfiguration, DesignParameter, FaceSelection, Feature,
+        FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, Length,
+        ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype,
     };
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -2692,6 +2690,13 @@ mod design_loss_tests {
                     op: BooleanOp::Unresolved,
                 },
             ),
+            (
+                2,
+                FeatureDefinition::DeleteBody {
+                    bodies: BodySelection::Native("bodies".into()),
+                    mode: BodyRetentionMode::Unresolved,
+                },
+            ),
         ] {
             ir.model.configurations.push(DesignConfiguration {
                 id: ConfigurationId(format!("configuration-{ordinal}")),
@@ -2733,10 +2738,11 @@ mod design_loss_tests {
 
         for expected in [
             "1 feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; 0 feature record(s) share regeneration ordinals.",
-            "1 feature(s) retain non-empty native output scopes that do not resolve to model bodies.",
+            "2 feature(s) retain non-empty native output scopes that do not resolve to model bodies.",
             "1 feature record(s) contain missing or repeated output body references.",
             "1 feature(s) retain their native kind without a complete neutral operation definition.",
-            "1 typed feature(s) retain native or unresolved required operation operands.",
+            "2 typed feature(s) retain native or unresolved required operation operands.",
+            "1 body delete/keep feature(s) retain selected native body identities without a decoded retention mode.",
         ] {
             assert!(report.losses.iter().any(|loss| loss.message == expected));
         }
