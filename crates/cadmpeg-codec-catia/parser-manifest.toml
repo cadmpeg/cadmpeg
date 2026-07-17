@@ -128,6 +128,19 @@ cost_model = "work = bytes examined by the `b5 03` walk plus nodes+edges of the 
 window_egress = []
 ledger_level = 0
 
+# `b5 03` record-class table (Phase 4E generated source of truth): the named
+# class constants and the `CLASSES` table `b5.rs` dispatches against, plus the
+# doc/fuzz-dictionary generators. No hostile read.
+[[module]]
+path = "crates/cadmpeg-codec-catia/src/b5_record_class.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["catia_b5"]
+charges = []
+cost_model = "no budget charge; static class-code table and its Markdown/dictionary renderers, no read, no scan, no untrusted-count allocation"
+window_egress = []
+ledger_level = 0
+
 # E5 `0D 03` class-tagged record stream: bodies, faces, edges, geometry refs.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/e5.rs"

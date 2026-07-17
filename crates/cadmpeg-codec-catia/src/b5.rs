@@ -6,6 +6,11 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::le::{f32_at, f64_at};
 
+use crate::b5_record_class::{
+    self, EDGE, FACE, LINE_PCURVE, LOOP, PCURVE, PROFILE_ARC, PROFILE_LINE, SURFACE_CYLINDER,
+    SURFACE_PLANE, SURFACE_REVOLUTION,
+};
+
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
 /// surfaces bound through the in-stream `object_id` map ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)),
 /// together with the `05 08 01` vertex points used to bind edge endpoints.
@@ -199,7 +204,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         .collect();
     let mut pcurves: BTreeMap<u32, B5Pcurve> = records
         .iter()
-        .filter(|record| record.class == 0x21)
+        .filter(|record| record.class == PCURVE)
         .filter_map(|record| parse_pcurve(record).map(|pcurve| (record.object_id, pcurve)))
         .collect();
     for pcurve in pcurves.values_mut() {
@@ -209,12 +214,12 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     }
     let loops: BTreeMap<u32, B5Loop> = records
         .iter()
-        .filter(|record| record.class == 0x62)
+        .filter(|record| record.class == LOOP)
         .map(|record| parse_loop(record, &by_id, &pcurves).map(|loop_| (record.object_id, loop_)))
         .collect::<Option<_>>()?;
     let faces: Vec<B5Face> = records
         .iter()
-        .filter(|record| record.class == 0x5f)
+        .filter(|record| record.class == FACE)
         .filter_map(|record| parse_face(record, &by_id, &loops))
         .collect();
     if faces.is_empty() || loops.is_empty() {
@@ -236,11 +241,11 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
 
 fn parse_profile(record: &B5Record) -> Option<B5Profile> {
     match record.class {
-        0x0e => Some(B5Profile::Line {
+        PROFILE_LINE => Some(B5Profile::Line {
             point: point(&record.payload, 1)?,
             direction: unit(point(&record.payload, 25)?)?,
         }),
-        0x0f if record.payload.first() == Some(&0x80) => {
+        PROFILE_ARC if record.payload.first() == Some(&0x80) => {
             let radius = scalar(&record.payload, 73)?;
             (radius > 0.0).then_some(B5Profile::Arc {
                 center: point(&record.payload, 1)?,
@@ -334,12 +339,12 @@ fn distance_squared(left: [f64; 3], right: [f64; 3]) -> f64 {
 
 fn parse_surface(record: &B5Record) -> Option<B5Surface> {
     match record.class {
-        0x27 => Some(B5Surface::Plane {
+        SURFACE_PLANE => Some(B5Surface::Plane {
             origin: point(&record.payload, 1)?,
             direction_u: point(&record.payload, 25)?,
             direction_v: point(&record.payload, 49)?,
         }),
-        0x28 => {
+        SURFACE_CYLINDER => {
             let direction_u = unit(point(&record.payload, 25)?)?;
             let axis = unit(cross(direction_u, point(&record.payload, 49)?))?;
             let radius = scalar(&record.payload, 73)?;
@@ -350,7 +355,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 radius,
             })
         }
-        0x2d => {
+        SURFACE_REVOLUTION => {
             if record.payload.get(1) != Some(&0x38) {
                 return None;
             }
@@ -732,7 +737,7 @@ fn parse_face(
 ) -> Option<B5Face> {
     let references = uncounted_references(&record.payload)?;
     let surface = *references.first()?;
-    if !is_surface(by_id.get(&surface)?.class) {
+    if !b5_record_class::is_surface(by_id.get(&surface)?.class) {
         return None;
     }
     let loop_ids: Vec<u32> = references[1..]
@@ -768,15 +773,15 @@ fn parse_loop(
         return None;
     }
     let surface = *references.last()?;
-    if !is_surface(by_id.get(&surface)?.class) {
+    if !b5_record_class::is_surface(by_id.get(&surface)?.class) {
         return None;
     }
     let mut pcurves = Vec::with_capacity((count - 1) / 2);
     let mut edges = Vec::with_capacity((count - 1) / 2);
     for pair in references[..count - 1].chunks_exact(2) {
-        if !matches!(by_id.get(&pair[0])?.class, 0x18 | 0x21)
-            || by_id.get(&pair[1])?.class != 0x5e
-            || (by_id.get(&pair[0])?.class == 0x21 && !parsed_pcurves.contains_key(&pair[0]))
+        if !matches!(by_id.get(&pair[0])?.class, LINE_PCURVE | PCURVE)
+            || by_id.get(&pair[1])?.class != EDGE
+            || (by_id.get(&pair[0])?.class == PCURVE && !parsed_pcurves.contains_key(&pair[0]))
         {
             return None;
         }
@@ -789,10 +794,6 @@ fn parse_loop(
         edges,
         surface,
     })
-}
-
-fn is_surface(class: u8) -> bool {
-    matches!(class, 0x27 | 0x28 | 0x2d | 0x34)
 }
 
 fn uncounted_references(bytes: &[u8]) -> Option<Vec<u32>> {
