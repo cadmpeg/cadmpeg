@@ -258,9 +258,7 @@ impl LossCode {
     pub fn reversible(self) -> bool {
         matches!(
             self,
-            Self::RetentionDegraded
-                | Self::UnresolvedRecordDropped
-                | Self::ContainerOnly
+            Self::ContainerOnly
                 | Self::CarrierSummary
                 | Self::FeatureHistoryRetained
                 | Self::AssemblyComponentsExternal
@@ -593,6 +591,11 @@ mod tests {
             StrictConsequence::Tolerate
         );
         assert!(LossCode::PassthroughRecordOmitted.reversible());
+        // Salvage-mode degradations account bytes without retaining recoverable
+        // content (§11.10): budget-exhausted retention and auto-dropped
+        // unresolved records are not reconstructable from any retained record.
+        assert!(!LossCode::RetentionDegraded.reversible());
+        assert!(!LossCode::UnresolvedRecordDropped.reversible());
     }
 
     #[test]
