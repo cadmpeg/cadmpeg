@@ -411,13 +411,15 @@ Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a
 
 | Tag                    | Deltas form | Magic    | Anchor                                 |
 | ---------------------- | ----------- | -------- | -------------------------------------- |
+| `00 0e`                | tripled     | body +9  | owner triple before magic; five ref triples then marker after |
+| `00 0f`                | tripled     | none     | four ref triples at body +6            |
 | `00 10`                | prefixed    | body +9  | ref slot 2 = curve carrier             |
 | `00 11`                | tripled     | none     | slot4 vuse, slot5 twin, slot6 edge-use |
 | `00 12`                | prefixed    | body +21 | refs-before-magic slot 4 = point attr  |
 | `00 1d`                | prefixed    | none     | xyz after `[hi][lo][01]*` run          |
 | `00 1e/1f/20/32/33/35` | prefixed    | none     | f64 block after `2b`/`2d` marker       |
 
-Partition and deltas streams in the same outer block share a site namespace. Prefixed and tripled references encode the same u16 attribute values as bare references.
+Post-magic `00 10` reference cells appear as `[01][hi][lo]` or `[hi][lo][01]` triples. Partition and deltas streams in the same outer block share a site namespace. Prefixed and tripled references encode the same u16 attribute values as bare references. Deltas bridges do not extend a partition's face membership; a partition without bridges takes its face membership from the deltas stream.
 
 ## 5. Entity records and face families
 
