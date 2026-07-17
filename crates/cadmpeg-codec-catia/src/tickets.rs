@@ -23,8 +23,6 @@ use cadmpeg_ir::decode::{DecodeContext, RecordDisposition, RecordKind, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 
-use crate::container::ContainerScan;
-
 /// Issues and resolves the decode's record tickets against `ctx`.
 ///
 /// Called once per decode path at the commit boundary, after the IR and report
@@ -34,7 +32,6 @@ use crate::container::ContainerScan;
 pub(crate) fn account_records(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
-    _scan: &ContainerScan<'_>,
     ir: &CadIr,
     report: &mut DecodeReport,
 ) {
@@ -48,6 +45,15 @@ pub(crate) fn account_records(
     // The reconstructed record stream the decode committed to interpreting. At
     // L1 it is one opaque ledger span, so it is one ticket resolved by outcome.
     let outputs = collect_entity_ids(ir);
+    // Reconcile the two truth signals: resolving the stream `Dropped` (no
+    // entity) while the report asserts `geometry_transferred` would ship a
+    // self-contradictory report. Surface that contradiction in debug builds
+    // rather than letting `TransferAccounting` — which never cross-checks
+    // `geometry_transferred` — pass it silently.
+    debug_assert!(
+        !(outputs.is_empty() && report.geometry_transferred),
+        "record stream resolves Dropped while report.geometry_transferred is set"
+    );
     let stream = ctx.commit_record(location, RecordKind("catia_record_stream"));
     if outputs.is_empty() {
         // A salvage path that transferred no record to typed IR. The payload is
@@ -73,22 +79,11 @@ pub(crate) fn account_records(
 /// Collects the ids of every model entity the decode emitted, in sorted order
 /// for a deterministic disposition table. `Check::TransferAccounting` requires
 /// each named `Typed` output to resolve in the IR model, which these do by
-/// construction.
+/// construction. Derived from [`Model::entity_ids`], which enumerates every
+/// arena from the `arena_registry!` declaration, so an entity emitted into any
+/// arena is named — never silently omitted from the `Typed` outputs (§6.2).
 fn collect_entity_ids(ir: &CadIr) -> Vec<String> {
-    let model = &ir.model;
-    let mut ids = Vec::new();
-    ids.extend(model.bodies.iter().map(|entity| entity.id.0.clone()));
-    ids.extend(model.regions.iter().map(|entity| entity.id.0.clone()));
-    ids.extend(model.shells.iter().map(|entity| entity.id.0.clone()));
-    ids.extend(model.faces.iter().map(|entity| entity.id.0.clone()));
-    ids.extend(model.loops.iter().map(|entity| entity.id.0.clone()));
-    ids.extend(model.coedges.iter().map(|entity| entity.id.0.clone()));
-    ids.extend(model.edges.iter().map(|entity| entity.id.0.clone()));
-    ids.extend(model.vertices.iter().map(|entity| entity.id.0.clone()));
-    ids.extend(model.points.iter().map(|entity| entity.id.0.clone()));
-    ids.extend(model.surfaces.iter().map(|entity| entity.id.0.clone()));
-    ids.extend(model.curves.iter().map(|entity| entity.id.0.clone()));
-    ids.extend(model.pcurves.iter().map(|entity| entity.id.0.clone()));
+    let mut ids = ir.model.entity_ids();
     ids.sort();
     ids
 }

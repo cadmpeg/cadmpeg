@@ -83,6 +83,17 @@ macro_rules! declare_model {
                 false
             }
 
+            /// Every entity identity across all arenas, in canonical arena
+            /// order. Derived from the same `arena_registry!` declaration as
+            /// [`contains_id`](Self::contains_id), so a new arena is covered
+            /// without editing per-arena call sites (used by codec record
+            /// accounting to name every emitted entity, doc §6.2).
+            pub fn entity_ids(&self) -> Vec<String> {
+                let mut ids = Vec::new();
+                $( ids.extend(self.$field.iter().map($key)); )*
+                ids
+            }
+
             /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self) {
                 $(self.$field.sort_by_key($key);)*
