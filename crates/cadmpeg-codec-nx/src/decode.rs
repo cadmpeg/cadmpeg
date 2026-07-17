@@ -10809,30 +10809,7 @@ pub(crate) fn block_projection(
     let [body] = outputs else {
         return None;
     };
-    let body_record = ir
-        .model
-        .bodies
-        .iter()
-        .find(|candidate| candidate.id == *body)?;
-    if body_record.kind != BodyKind::Solid {
-        return None;
-    }
-    let [region_id] = body_record.regions.as_slice() else {
-        return None;
-    };
-    let region = ir
-        .model
-        .regions
-        .iter()
-        .find(|region| region.id == *region_id && region.body == body_record.id)?;
-    let [shell_id] = region.shells.as_slice() else {
-        return None;
-    };
-    ir.model
-        .shells
-        .iter()
-        .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
-    let faces = body_faces(ir, body)?;
+    let faces = connected_solid_body_faces(ir, body)?;
     let surface_geometry = ir
         .model
         .surfaces
