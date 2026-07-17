@@ -2414,6 +2414,26 @@ fn native_namespace_retains_summary_preview_bytes() {
 }
 
 #[test]
+fn summary_preview_requires_a_coherent_frame_header() {
+    let valid = summary_preview_segment();
+    let frame = valid
+        .windows(2)
+        .position(|bytes| bytes == [0xff, 0xc0])
+        .expect("fixture SOF marker");
+
+    let mut zero_height = valid.clone();
+    zero_height[frame + 5..frame + 7].copy_from_slice(&0u16.to_be_bytes());
+    assert!(crate::container::preview_images(&zero_height).is_empty());
+
+    let mut inconsistent_components = valid;
+    inconsistent_components[frame + 9] = 2;
+    assert!(crate::container::preview_images(&inconsistent_components).is_empty());
+    assert!(crate::native::CatiaNative::decode(&inconsistent_components)
+        .preview_images
+        .is_empty());
+}
+
+#[test]
 fn scan_parses_directory_and_identifies_standard() {
     let f = standard_catpart();
     let scan = crate::container::scan_bytes(f);

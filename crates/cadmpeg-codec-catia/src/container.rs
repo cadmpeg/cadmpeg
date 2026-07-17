@@ -335,11 +335,19 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
             if length < 8 {
                 return None;
             }
-            frame = Some((
-                u16::from_be_bytes([data[payload + 3], data[payload + 4]]),
-                u16::from_be_bytes([data[payload + 1], data[payload + 2]]),
-                data[payload + 5],
-            ));
+            let width = u16::from_be_bytes([data[payload + 3], data[payload + 4]]);
+            let height = u16::from_be_bytes([data[payload + 1], data[payload + 2]]);
+            let components = data[payload + 5];
+            let expected_length = 8usize.checked_add(3usize.checked_mul(components.into())?)?;
+            if width == 0
+                || height == 0
+                || components == 0
+                || length != expected_length
+                || frame.is_some()
+            {
+                return None;
+            }
+            frame = Some((width, height, components));
         }
         in_entropy = marker == 0xda;
         at = end;
