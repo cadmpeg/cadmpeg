@@ -58,6 +58,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::report::{ExportReport, LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::topology::{Coedge, Edge, Point, Sense, Vertex};
+use cadmpeg_ir::transfer::{LossSink, Transfer};
 use cadmpeg_ir::CadIr;
 
 use writer::{real, refs, string, Emitter, Ref};
@@ -212,6 +213,15 @@ struct Builder<'a> {
     unstyled_colors: usize,
 }
 
+/// Export losses drain into the builder's accumulator, so a `Transfer`
+/// resolved at an entity-to-writer boundary records into the same buffer the
+/// `ExportReport` reads (§10 Phase 4B).
+impl LossSink for Builder<'_> {
+    fn record_loss(&mut self, note: LossNote) {
+        self.losses.push(note);
+    }
+}
+
 impl<'a> Builder<'a> {
     fn new(ir: &'a CadIr) -> Self {
         Builder {
@@ -257,7 +267,7 @@ impl<'a> Builder<'a> {
         severity: Severity,
         message: String,
     ) {
-        self.losses.push(LossNote {
+        self.record_loss(LossNote {
             code,
             category,
             severity,
@@ -272,19 +282,25 @@ impl<'a> Builder<'a> {
         let product_def_shape = self.emit_product_structure();
         let context = self.emit_context();
 
+        // Entity-to-writer boundary (§10 Phase 4B): the exportable-solid set is
+        // either transferred or omitted. Routing the decision through `Transfer`
+        // makes the empty-representation omission inseparable from its loss
+        // note — the solids cannot be dropped silently.
         let solids = self.emit_solids();
-        if solids.is_empty() {
-            self.loss(
-                LossCode::NoExportableSolids,
-                LossCategory::Topology,
-                Severity::Warning,
-                "no exportable solids: the IR document contains no body/region/shell \
-                 geometry, so the STEP representation is empty"
+        let solids = if solids.is_empty() {
+            Transfer::omitted(LossNote {
+                code: LossCode::NoExportableSolids,
+                category: LossCategory::Topology,
+                severity: Severity::Warning,
+                message: "no exportable solids: the IR document contains no body/region/shell \
+                          geometry, so the STEP representation is empty"
                     .to_string(),
-            );
-        }
-
-        let mut items = solids;
+                provenance: None,
+            })
+        } else {
+            Transfer::exact(solids)
+        };
+        let mut items = solids.resolve(&mut self.losses).unwrap_or_default();
         // A representation-space origin placement is conventional and harmless.
         let origin = geometry::placement(
             &mut self.emitter,
