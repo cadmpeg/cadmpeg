@@ -9737,6 +9737,7 @@ fn parse_parameter_scope(
     else {
         return None;
     };
+    let family = design_feature_family(kind);
     if kind == "Sketch" && reference_members.len() != 1 {
         return None;
     }
@@ -9749,7 +9750,7 @@ fn parse_parameter_scope(
         extrude_direction_reversed_offset,
         extrude_start,
         extrude_start_offset,
-    ) = if kind == "Extrude" {
+    ) = if family == Some(DesignFeatureFamily::Extrude) {
         let direct_offset = start.checked_add(28)?;
         let referenced_offset = start.checked_add(38)?;
         let operation_offset = if bytes.get(start.checked_add(25)?) == Some(&1)
@@ -13926,7 +13927,8 @@ mod relation_tests {
 
     #[test]
     fn extrude_scope_discriminators_follow_optional_indexed_reference() {
-        let scope = |operation: u32,
+        let scope = |kind: &str,
+                     operation: u32,
                      extent: (u32, u32),
                      direction_reversed: bool,
                      start: u8,
@@ -13957,7 +13959,7 @@ mod relation_tests {
             bytes.extend_from_slice(&55u32.to_le_bytes());
             bytes.extend_from_slice(&[0; 6]);
             bytes.extend_from_slice(&7u32.to_le_bytes());
-            lp_utf16(&mut bytes, "Extrude");
+            lp_utf16(&mut bytes, kind);
             let mut tail = [0; 78];
             tail[0..4].copy_from_slice(&1u32.to_le_bytes());
             tail[31..35].copy_from_slice(&2u32.to_le_bytes());
@@ -13974,7 +13976,7 @@ mod relation_tests {
             parse_parameter_scope(&bytes, &header).unwrap()
         };
 
-        let direct = scope(1, (1, 2), false, 0, false);
+        let direct = scope("Extrude", 1, (1, 2), false, 0, false);
         assert_eq!(direct.extrude_operation, Some(DesignExtrudeOperation::Join));
         assert_eq!(direct.extrude_operation_offset, Some(28));
         assert_eq!(
@@ -13986,7 +13988,7 @@ mod relation_tests {
         assert_eq!(direct.extrude_direction_reversed_offset, Some(40));
         assert_eq!(direct.extrude_start, Some(DesignExtrudeStart::ProfilePlane));
         assert_eq!(direct.extrude_start_offset, Some(42));
-        let shifted = scope(3, (2, 0), false, 1, true);
+        let shifted = scope("Extrude", 3, (2, 0), false, 1, true);
         assert_eq!(
             shifted.extrude_operation,
             Some(DesignExtrudeOperation::Intersect)
@@ -14002,7 +14004,8 @@ mod relation_tests {
             Some(DesignExtrudeStart::OffsetProfilePlane)
         );
         assert_eq!(shifted.extrude_start_offset, Some(52));
-        let to_face = scope(2, (1, 1), true, 2, false);
+        let to_face = scope("Extrusion", 2, (1, 1), true, 2, false);
+        assert_eq!(to_face.kind, "Extrusion");
         assert_eq!(
             to_face.extrude_extent,
             Some(DesignExtrudeExtent::OneSidedToFace)

@@ -411,7 +411,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 scope.extrude_start_offset,
             ) {
                 (
-                    "Extrude",
+                    "Extrude" | "Extrusion",
                     Some(_),
                     Some(operation_offset),
                     Some(_),
@@ -431,7 +431,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         && direction_reversed_offset == operation_offset.saturating_add(12)
                         && extent_offsets[1] < scope.reference_count_offset
                 }
-                ("Extrude", _, _, _, _, _, _, _, _) => false,
+                ("Extrude" | "Extrusion", _, _, _, _, _, _, _, _) => false,
                 (_, None, None, None, None, None, None, None, None) => true,
                 _ => false,
             }
