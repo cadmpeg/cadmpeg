@@ -10433,7 +10433,7 @@ pub(crate) fn offset_surface_feature_definition(
     Some((
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Native(format!("{}:offset-support-surfaces", body.0)),
-            distance: Length(distance),
+            distance: Some(Length(distance)),
         },
         supports,
     ))
@@ -10801,6 +10801,10 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             extent: Extent::Unresolved,
             op: BooleanOp::Unresolved,
             draft: None,
+        },
+        "OFFSET" => FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Unresolved,
+            distance: None,
         },
         "THICKEN_SHEET" => FeatureDefinition::Thicken {
             faces: FaceSelection::Unresolved,

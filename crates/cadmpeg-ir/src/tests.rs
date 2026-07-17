@@ -668,6 +668,21 @@ fn unresolved_extrusion_profile_round_trips_through_json() {
 }
 
 #[test]
+fn unresolved_surface_offset_round_trips_through_json() {
+    use crate::features::{FaceSelection, FeatureDefinition};
+
+    let definition = FeatureDefinition::OffsetSurface {
+        faces: FaceSelection::Unresolved,
+        distance: None,
+    };
+    let json = serde_json::to_string(&definition).unwrap();
+    assert_eq!(
+        serde_json::from_str::<FeatureDefinition>(&json).unwrap(),
+        definition
+    );
+}
+
+#[test]
 fn feature_history_rejects_dangling_and_forward_dependencies() {
     use crate::features::{
         BooleanOp, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
@@ -2595,7 +2610,7 @@ fn feature_operation_geometry_is_validated() {
         },
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Unresolved,
-            distance: Length(f64::NAN),
+            distance: Some(Length(f64::NAN)),
         },
         FeatureDefinition::KnitSurface {
             faces: FaceSelection::Unresolved,

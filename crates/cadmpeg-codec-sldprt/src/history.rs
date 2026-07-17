@@ -2154,7 +2154,9 @@ fn project_thicken(feature: &Feature) -> FeatureDefinition {
 fn project_offset_surface(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::OffsetSurface {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        distance: Length(parse_length_mm(feature.parameters.get("Distance")?)?),
+        distance: Some(Length(parse_length_mm(
+            feature.parameters.get("Distance")?,
+        )?)),
     })
 }
 
@@ -5109,6 +5111,12 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::OffsetSurface { faces, distance } => {
+                let distance = distance.ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no surface-offset distance",
+                        feature.id
+                    ))
+                })?;
                 let selection = face_selection_value(faces).ok_or_else(|| {
                     CodecError::Malformed(format!(
                         "SLDPRT feature {} has no offset-surface support faces",

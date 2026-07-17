@@ -517,8 +517,9 @@ pub enum FeatureDefinition {
     OffsetSurface {
         /// Faces supplying the source surface geometry.
         faces: FaceSelection,
-        /// Signed normal offset in canonical millimeters.
-        distance: Length,
+        /// Signed normal offset in canonical millimeters, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance: Option<Length>,
     },
     /// Joins selected surface bodies along coincident or near-coincident boundaries.
     KnitSurface {

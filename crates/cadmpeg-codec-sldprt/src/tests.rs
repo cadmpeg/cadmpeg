@@ -9996,7 +9996,7 @@ fn semantic_writer_round_trips_offset_surface() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Resolved { faces, native },
-            distance: Length(2.0),
+            distance: Some(Length(2.0)),
         } if faces == &[face_id.clone()] && native == &face
     ));
 
@@ -10006,7 +10006,7 @@ fn semantic_writer_round_trips_offset_surface() {
         panic!("typed offset surface");
     };
     *faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *distance = Length(-3.5);
+    *distance = Some(Length(-3.5));
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -10022,10 +10022,21 @@ fn semantic_writer_round_trips_offset_surface() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::OffsetSurface {
-            distance: Length(-3.5),
+            distance: Some(Length(-3.5)),
             ..
         }
     ));
+
+    let FeatureDefinition::OffsetSurface { distance, .. } =
+        &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed offset surface");
+    };
+    *distance = None;
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("surface-offset distance"));
 }
 
 #[test]

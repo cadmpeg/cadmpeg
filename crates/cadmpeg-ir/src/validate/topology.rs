@@ -1529,7 +1529,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             FeatureDefinition::OffsetSurface { faces, distance } => {
                 face_selections.push(faces);
-                if !distance.0.is_finite() {
+                if distance.is_some_and(|distance| !distance.0.is_finite()) {
                     feature_geometry_error(findings, feature, "surface offset is invalid");
                 }
             }

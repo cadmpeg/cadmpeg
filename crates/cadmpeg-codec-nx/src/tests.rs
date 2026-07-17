@@ -2844,6 +2844,13 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             draft: None,
         }
     );
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("OFFSET", &[], None, None, None),
+        FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Unresolved,
+            distance: None,
+        }
+    );
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("THICKEN_SHEET", &[], None, None, None),
         FeatureDefinition::Thicken {
@@ -3417,7 +3424,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     assert!(matches!(
         definition,
         FeatureDefinition::OffsetSurface {
-            distance: cadmpeg_ir::features::Length(30.0),
+            distance: Some(cadmpeg_ir::features::Length(30.0)),
             ..
         }
     ));
