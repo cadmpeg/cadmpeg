@@ -137,8 +137,12 @@ ledger_level = 0
 # `alloc_unfloored` under the `MAX_CONTROL_POINTS` codec-local cap; committed
 # scalars use the `req_*` mirror; per-element `work` is charged; the module
 # carries `deny(clippy::disallowed_methods)`. Truncation at the control-net
-# boundary is tested. Only `chunk_at` (record framing) still touches the shared
-# `chunks.rs` plumbing to locate the body window before the `View` takes over.
+# boundary is tested. Residual raw-byte egress: the body is obtained as the raw
+# `&[u8]` file slice via `MeshExpand::data()` (which is `MeshExpand::root.window()`
+# in mesh.rs) and `chunk_at` locates the record body on that slice before the
+# `View` takes over. That whole-file `&[u8]` handoff is a real raw-byte egress
+# boundary and is named in `window_egress` below; the underlying `.window()`
+# call site lives in mesh.rs and is counted there by the source ratchet.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/cage.rs"
 status = "migrated"
@@ -146,7 +150,9 @@ input_spaces = ["rhino_object_record"]
 fuzz_targets = ["rhino_cage", "rhino_object_record"]
 charges = ["alloc_bytes", "work"]
 cost_model = "alloc_bytes per reserved knot/control element via exact_vec (weights via alloc_unfloored under MAX_CONTROL_POINTS); work charged once per count-framed loop proportional to elements read (knot_count per axis, control_count*stored_dimension for the net)"
-window_egress = []
+window_egress = [
+  "cage.rs MeshExpand::data() (== MeshExpand::root.window()): the whole record slice handed to the legacy chunk_at record framing before the child View takes over the body",
+]
 ledger_level = 0
 
 # Space morph parameters. Count-framed sample tables.
@@ -170,10 +176,12 @@ ledger_level = 0
 # module carries `deny(clippy::disallowed_methods)`. Residual: each child
 # segment record is located by the legacy `chunk_at`/`parse_class_wrapper`,
 # which take the raw `&[u8]` file slice; the segment class check runs on that
-# raw slice before the child `View` takes over the body. That framing does not
-# call `View::window()` (so it is not counted as window egress) but it is a raw
-# `&[u8]` read outside the platform budget. Truncation at the segment child
-# boundary is tested.
+# raw slice before the child `View` takes over the body. The body slice is the
+# whole record window obtained via `MeshExpand::data()` (which is
+# `MeshExpand::root.window()` in mesh.rs), so this is a real raw-byte egress
+# boundary named in `window_egress` below, not a typed-`Range`-only handoff; the
+# underlying `.window()` call site lives in mesh.rs and is counted there by the
+# source ratchet. Truncation at the segment child boundary is tested.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/polyedge.rs"
 status = "migrated"
@@ -181,7 +189,9 @@ input_spaces = ["rhino_object_record"]
 fuzz_targets = ["rhino_polyedge", "rhino_object_record"]
 charges = ["alloc_bytes", "work"]
 cost_model = "alloc_bytes per reserved parameter/segment via exact_vec; work charged proportional to elements read (parameter_count for the parameter loop, 13 fixed field reads per segment)"
-window_egress = []
+window_egress = [
+  "polyedge.rs MeshExpand::data() (== MeshExpand::root.window()): the whole record slice handed to the legacy chunk_at/parse_class_wrapper segment framing before each child View takes over the body",
+]
 ledger_level = 0
 
 # Hatch loops, now migrated. Reads the record body through a `View` on the
@@ -193,10 +203,12 @@ ledger_level = 0
 # fixed header field count plus one unit per loop). Residual: each loop's curve
 # is located by the legacy `chunk_at`/`parse_class_wrapper` and re-read by the
 # still-legacy `curves::decode_2d`, all of which take the raw `&[u8]` file slice
-# and size their own accumulators off the platform budget. That delegation does
-# not call `View::window()` (so it is not counted as window egress) but it is a
-# raw `&[u8]` read, not a typed-`Range`-only handoff. Truncation at the loop
-# child boundary is tested.
+# and size their own accumulators off the platform budget. That body slice is
+# the whole record window obtained via `MeshExpand::data()` (which is
+# `MeshExpand::root.window()` in mesh.rs), so this is a real raw-byte egress
+# boundary named in `window_egress` below, not a typed-`Range`-only handoff; the
+# underlying `.window()` call site lives in mesh.rs and is counted there by the
+# source ratchet. Truncation at the loop child boundary is tested.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/hatch.rs"
 status = "migrated"
@@ -204,7 +216,9 @@ input_spaces = ["rhino_object_record"]
 fuzz_targets = ["rhino_hatch", "rhino_object_record"]
 charges = ["alloc_bytes", "work"]
 cost_model = "alloc_bytes per reserved loop via exact_vec and per accumulated warning via grow_vec; work charged proportional to elements read (19 fixed header field reads plus loop_count for the boundary-loop table)"
-window_egress = []
+window_egress = [
+  "hatch.rs MeshExpand::data() (== MeshExpand::root.window()): the whole record slice handed to the legacy chunk_at/parse_class_wrapper loop-curve framing and curves::decode_2d before each child View takes over the body",
+]
 ledger_level = 0
 
 # ===========================================================================

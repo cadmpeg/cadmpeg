@@ -15,9 +15,13 @@
 //! each loop's curve is located by the legacy `chunk_at`/`parse_class_wrapper`
 //! and re-read by the still-legacy `curves::decode_2d`, all of which take the
 //! raw `&[u8]` file slice and size their own accumulators off the platform
-//! budget. That delegation does not call `View::window()`, so it is not counted
-//! as window egress, but it is a raw `&[u8]` read rather than a typed-[`Range`]
-//! handoff. The module carries the graduated `deny(clippy::disallowed_methods)`.
+//! budget. That slice is the whole record window obtained via
+//! `MeshExpand::data()`, which returns the `MeshExpand::root` window, so this is
+//! a real raw-byte egress boundary — named in the `hatch.rs` `window_egress`
+//! entry of `parser-manifest.toml` — not a typed-[`Range`] handoff; the
+//! window-yielding call site itself lives in `mesh.rs` and is counted there by
+//! the source ratchet. The module carries the graduated
+//! `deny(clippy::disallowed_methods)`.
 #![deny(clippy::disallowed_methods)]
 
 use std::ops::Range;

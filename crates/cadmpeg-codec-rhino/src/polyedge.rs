@@ -10,9 +10,13 @@
 //! budget. Residual: each child segment record is located by the legacy
 //! `chunk_at`/`parse_class_wrapper`, which take the raw `&[u8]` file slice, and
 //! its class check runs on that raw slice before the child `View` takes over the
-//! body. That framing does not call `View::window()`, so it is not counted as
-//! window egress, but it is a raw `&[u8]` read outside the platform budget. The
-//! module carries the graduated `deny(clippy::disallowed_methods)`.
+//! body. That slice is the whole record window obtained via `MeshExpand::data()`,
+//! which returns the `MeshExpand::root` window, so this is a real raw-byte egress
+//! boundary — named in the `polyedge.rs` `window_egress` entry of
+//! `parser-manifest.toml` — not a typed-`Range`-only handoff; the
+//! window-yielding call site itself lives in `mesh.rs` and is counted there by
+//! the source ratchet. The module carries the graduated
+//! `deny(clippy::disallowed_methods)`.
 #![deny(clippy::disallowed_methods)]
 
 use std::ops::Range;
@@ -28,6 +32,15 @@ use crate::wire::Uuid;
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const ITEM_CAP: usize = 1 << 20;
+
+/// Minimum on-disk footprint of one polyedge segment, in bytes, used as the
+/// `counted` element width so `segment_count` is proved against a floor that
+/// reflects a segment's real size rather than a one-byte element. Each segment
+/// body reads a fixed 97-byte field layout (two `i32` + `uuid` + two `i32` +
+/// five 16-byte intervals + one `bool`, see [`segment`]) and is additionally
+/// wrapped in an anonymous chunk header, so 97 is a strict lower bound on the
+/// bytes each segment consumes from the record body.
+const MIN_SEGMENT_BYTES: usize = 97;
 pub(crate) const CURVE_CLASS: Uuid = Uuid::from_canonical([
     0x39, 0xff, 0x3d, 0xd3, 0xfe, 0x0f, 0x48, 0x07, 0x9d, 0x59, 0x18, 0x5f, 0x0d, 0x73, 0xc0, 0xe4,
 ]);
@@ -208,7 +221,7 @@ pub(crate) fn decode(
     if version >> 4 != 1 {
         return Err(malformed(range.start, "unsupported polyedge-curve version"));
     }
-    let (segment_count, segment_bound) = counted(&mut body, 1)?;
+    let (segment_count, segment_bound) = counted(&mut body, MIN_SEGMENT_BYTES)?;
     if segment_count == 0 {
         return Err(malformed(body.position(), "polyedge curve has no segments"));
     }
