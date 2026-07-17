@@ -25,6 +25,9 @@
 //! - [`oracle`] defines the stage-1 oracles and their calibrated envelopes.
 //! - [`baseline`] is the multidimensional baseline schema and the regression
 //!   check the gate test runs against committed baselines.
+//! - [`stage2`] resolves the §7 stage-2 capability matrix per codec from its
+//!   `parser-manifest.toml`: which oracle rows gate, and the runtime predicates
+//!   for the byte-accounting and disposition rows.
 //!
 //! # Oracles
 //!
@@ -68,6 +71,7 @@ pub mod driver;
 pub mod execute;
 pub mod fixtures;
 pub mod oracle;
+pub mod stage2;
 pub mod sweep;
 
 mod model;
