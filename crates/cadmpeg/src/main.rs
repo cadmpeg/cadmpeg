@@ -164,13 +164,41 @@ struct DecodeArgs {
     /// Stop after the native container layer without transferring geometry.
     #[arg(long)]
     container_only: bool,
+    /// Fail fast: abort the decode on the first committed-record failure with
+    /// the classified error, instead of salvaging it into an accountable loss.
+    /// Off by default (salvage mode). Governs failure handling only; resource
+    /// budgets are active in both modes.
+    #[arg(long)]
+    strict: bool,
+    /// Resource-limit profile: `desktop` (generous, the default) or `service`
+    /// (tight ceilings for unattended use).
+    #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
+    limits: LimitProfile,
+}
+
+/// Which caller-owned resource-limit profile a decode runs under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum LimitProfile {
+    /// Generous ceilings for interactive desktop use.
+    Desktop,
+    /// Tight ceilings for unattended service use.
+    Service,
 }
 
 impl DecodeArgs {
     fn options(&self) -> cadmpeg_ir::DecodeOptions {
+        let limits = match self.limits {
+            LimitProfile::Desktop => cadmpeg_ir::ResourceLimits::desktop(),
+            LimitProfile::Service => cadmpeg_ir::ResourceLimits::service(),
+        };
+        let mode = if self.strict {
+            cadmpeg_ir::DecodeMode::Strict
+        } else {
+            cadmpeg_ir::DecodeMode::Salvage
+        };
         cadmpeg_ir::DecodeOptions {
             container_only: self.container_only,
-            ..Default::default()
+            policy: cadmpeg_ir::DecodePolicy { mode, limits },
         }
     }
 }
