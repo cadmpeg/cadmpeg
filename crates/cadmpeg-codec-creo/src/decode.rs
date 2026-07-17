@@ -11152,25 +11152,89 @@ fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> V
                 .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))),
         );
     let mut outputs = evaluated_sweep_output_bodies(ir, feature_id);
-    for surface in generated_surfaces {
-        for face in ir.model.faces.iter().filter(|face| face.surface == surface) {
-            let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == face.shell) else {
-                continue;
-            };
-            let Some(region) = ir
-                .model
-                .regions
-                .iter()
-                .find(|region| region.id == shell.region)
-            else {
-                continue;
-            };
-            if !outputs.contains(&region.body) {
-                outputs.push(region.body.clone());
+    let edge_outputs = match feature_edge_selection(scan, ir, feature_id) {
+        Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ir, &edges),
+        _ => Vec::new(),
+    };
+    if edge_outputs.is_empty() {
+        for surface in generated_surfaces {
+            for face in ir.model.faces.iter().filter(|face| face.surface == surface) {
+                let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == face.shell)
+                else {
+                    continue;
+                };
+                let Some(region) = ir
+                    .model
+                    .regions
+                    .iter()
+                    .find(|region| region.id == shell.region)
+                else {
+                    continue;
+                };
+                if !outputs.contains(&region.body) {
+                    outputs.push(region.body.clone());
+                }
+            }
+        }
+    } else {
+        for body in edge_outputs {
+            if !outputs.contains(&body) {
+                outputs.push(body);
             }
         }
     }
     outputs
+}
+
+fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) -> Vec<BodyId> {
+    let selected = edges.iter().collect::<BTreeSet<_>>();
+    let mut shell_ids = ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| selected.contains(&coedge.edge))
+        .filter_map(|coedge| {
+            let lp = ir
+                .model
+                .loops
+                .iter()
+                .find(|lp| lp.id == coedge.owner_loop)?;
+            ir.model
+                .faces
+                .iter()
+                .find(|face| face.id == lp.face)
+                .map(|face| face.shell.clone())
+        })
+        .collect::<BTreeSet<_>>();
+    shell_ids.extend(
+        ir.model
+            .shells
+            .iter()
+            .filter(|shell| shell.wire_edges.iter().any(|edge| selected.contains(edge)))
+            .map(|shell| shell.id.clone()),
+    );
+    ir.model
+        .shells
+        .iter()
+        .filter(|shell| shell_ids.contains(&shell.id))
+        .filter_map(|shell| {
+            let region = ir
+                .model
+                .regions
+                .iter()
+                .find(|region| region.id == shell.region)?;
+            ir.model
+                .bodies
+                .iter()
+                .any(|body| body.id == region.body)
+                .then(|| region.body.clone())
+        })
+        .fold(Vec::new(), |mut bodies, body| {
+            if !bodies.contains(&body) {
+                bodies.push(body);
+            }
+            bodies
+        })
 }
 
 fn evaluated_sweep_output_bodies(ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
