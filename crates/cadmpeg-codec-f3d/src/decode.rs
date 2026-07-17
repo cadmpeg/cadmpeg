@@ -1509,12 +1509,6 @@ fn extend_related_design_records(
         &native.design_parameter_scopes,
         &native.design_record_headers,
     )?;
-    native.design_fillet_radius_groups = crate::design::decode_fillet_radius_groups(
-        &native.design_parameter_scopes,
-        &native.design_construction_operand_groups,
-        &native.design_parameter_owners,
-        &native.design_parameters,
-    );
     native.design_extrude_selection_groups = crate::design::decode_extrude_selection_groups(
         scan,
         &native.design_parameter_scopes,
@@ -1572,6 +1566,45 @@ fn extend_related_design_records(
             &native.design_construction_operand_groups,
             &native.design_record_headers,
         )?;
+    let scopes = native
+        .design_parameter_scopes
+        .iter()
+        .filter_map(|scope| {
+            Some((
+                (
+                    crate::design::native_stream(&scope.id)?.to_owned(),
+                    scope.record_index,
+                ),
+                scope.kind.as_str(),
+            ))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let identified_groups = native
+        .design_construction_operand_identities
+        .iter()
+        .filter_map(|identity| {
+            Some((
+                crate::design::native_stream(&identity.id)?.to_owned(),
+                identity.group_record_index,
+            ))
+        })
+        .collect::<std::collections::HashSet<_>>();
+    native.design_construction_operand_groups.retain(|group| {
+        let Some(stream) = crate::design::native_stream(&group.id) else {
+            return true;
+        };
+        let kind = scopes
+            .get(&(stream.to_owned(), group.scope_record_index))
+            .copied();
+        !matches!(kind, Some("Congé" | "Chanfrein"))
+            || identified_groups.contains(&(stream.to_owned(), group.record_index))
+    });
+    native.design_fillet_radius_groups = crate::design::decode_fillet_radius_groups(
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_parameter_owners,
+        &native.design_parameters,
+    );
     crate::design::bind_lost_edge_groups(
         &mut native.design_construction_operand_groups,
         &native.design_construction_operand_identities,

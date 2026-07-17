@@ -50,6 +50,10 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
     }
 }
 
+fn has_typed_edge_treatment_group(kind: &str) -> bool {
+    matches!(kind, "Fillet" | "Congé" | "Chamfer" | "Chanfrein")
+}
+
 const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
     (b"body_recipe_data", ConstructionRecipeKind::Body),
     (b"face_recipe_data", ConstructionRecipeKind::Face),
@@ -8365,7 +8369,7 @@ pub fn decode_construction_operand_groups(
     let mut out = Vec::new();
     for scope in scopes
         .iter()
-        .filter(|scope| matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer"))
+        .filter(|scope| scope.kind == "Extrude" || has_typed_edge_treatment_group(&scope.kind))
     {
         let scope_group_start = out.len();
         let Some(stream) = native_stream(&scope.id) else {
@@ -8436,7 +8440,10 @@ pub fn decode_fillet_radius_groups(
         })
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| scope.kind == "Fillet") {
+    for scope in scopes
+        .iter()
+        .filter(|scope| matches!(scope.kind.as_str(), "Fillet" | "Congé"))
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -18587,14 +18594,14 @@ mod relation_tests {
     }
 
     #[test]
-    fn fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
+    fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         let scope = DesignParameterScope {
             id: "f3d:native:scope#12".into(),
             byte_offset: 100,
             class_tag: "301".into(),
             record_index: 12,
             frame_length: 200,
-            kind: "Fillet".into(),
+            kind: "Congé".into(),
             kind_offset: 210,
             extrude_operation: None,
             extrude_operation_offset: None,
@@ -18657,7 +18664,7 @@ mod relation_tests {
                 "d1",
                 value,
             ))
-            .expect("canonical Fillet parameter");
+            .expect("canonical localized Fillet parameter");
             parameter.id = format!("f3d:native:parameter#{record_index}");
             parameter.record_index = record_index;
             parameter
@@ -18718,7 +18725,7 @@ mod relation_tests {
             &[],
         );
         let FeatureDefinition::Fillet { groups } = &features[0].definition else {
-            panic!("expected typed Fillet");
+            panic!("expected typed localized Fillet");
         };
         assert_eq!(groups.len(), 2);
         assert!(matches!(

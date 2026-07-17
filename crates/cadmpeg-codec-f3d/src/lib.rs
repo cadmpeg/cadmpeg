@@ -592,13 +592,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         }
                         None => false,
                     },
-                    "Fillet" | "Chamfer" => {
+                    "Fillet" | "Congé" | "Chamfer" | "Chanfrein" => {
                         group.extrude_role.is_none() && group.extrude_face_role.is_none()
                     }
                     _ => false,
                 };
-                matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer")
-                    && role_is_valid
+                matches!(
+                    scope.kind.as_str(),
+                    "Extrude" | "Fillet" | "Congé" | "Chamfer" | "Chanfrein"
+                ) && role_is_valid
                     && usize::try_from(group.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
@@ -836,7 +838,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let tangency_weight = assignment
             .tangency_weight_parameter_record_index
             .and_then(|record_index| parameters_by_index.get(&(native_stream, record_index)));
-        let valid = scope.is_some_and(|scope| scope.kind == "Fillet")
+        let valid = scope.is_some_and(|scope| matches!(scope.kind.as_str(), "Fillet" | "Congé"))
             && group.is_some_and(|group| {
                 group.scope_record_index == assignment.scope_record_index
                     && group.members == assignment.edge_operand_record_indices
@@ -876,7 +878,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let native_stream = design_stream(&group.id);
         let is_fillet = scopes_by_index
             .get(&(native_stream, group.scope_record_index))
-            .is_some_and(|scope| scope.kind == "Fillet");
+            .is_some_and(|scope| matches!(scope.kind.as_str(), "Fillet" | "Congé"));
         if is_fillet && !fillet_radius_group_records.contains(&(native_stream, group.record_index))
         {
             findings.push(Finding {
