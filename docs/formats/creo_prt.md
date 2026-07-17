@@ -762,6 +762,9 @@ Sense-zero saved lines participate in type-one horizontal, type-two vertical,
 type-five perpendicular, type-seven parallel, type-eight equal-length, and
 type-fourteen symmetry-axis incidences through their `order_table` external
 identifier under the same arity rules as `segtab` lines.
+A complete saved line whose two endpoints share exactly one section coordinate
+supplies that fixed-coordinate orientation to its connected type-five/type-seven
+line component.
 
 The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;

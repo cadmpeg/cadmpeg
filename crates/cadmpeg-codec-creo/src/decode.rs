@@ -3980,16 +3980,7 @@ fn section_line_fixed_coordinate(
             }
             _ => continue,
         };
-        let Some(first_segment) = unique_section_skamp_segment(definition, first.entity_id) else {
-            continue;
-        };
-        let Some(second_segment) = unique_section_skamp_segment(definition, second.entity_id)
-        else {
-            continue;
-        };
-        if first_segment.kind != crate::feature::FeatureSegmentKind::Line
-            || second_segment.kind != crate::feature::FeatureSegmentKind::Line
-        {
+        if !section_skamp_is_line(definition, first) || !section_skamp_is_line(definition, second) {
             continue;
         }
         adjacency
@@ -4019,9 +4010,8 @@ fn section_line_fixed_coordinate(
     }
     let mut coordinates = BTreeSet::new();
     for (entity_id, parity) in parities {
-        let related = unique_section_skamp_segment(definition, entity_id)?;
         coordinates.extend(
-            section_line_direct_fixed_coordinates(definition, related)
+            section_line_direct_fixed_coordinates(definition, entity_id)
                 .into_iter()
                 .map(|coordinate| coordinate ^ parity),
         );
@@ -4034,10 +4024,11 @@ fn section_line_fixed_coordinate(
 
 fn section_line_direct_fixed_coordinates(
     definition: &crate::feature::FeatureDefinition,
-    segment: &crate::feature::FeatureSegment,
+    entity_id: u32,
 ) -> BTreeSet<usize> {
-    let mut coordinates = segment
-        .vertical_horizontal
+    let mut coordinates = unique_section_skamp_segment(definition, entity_id)
+        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
+        .and_then(|segment| segment.vertical_horizontal)
         .and_then(|selector| match selector {
             0 => Some(0),
             1 => Some(1),
@@ -4051,11 +4042,32 @@ fn section_line_direct_fixed_coordinates(
             .iter()
             .flat_map(|table| &table.skamps)
             .filter_map(|skamp| match (skamp.kind, skamp.items.as_slice()) {
-                (1, [item]) if item.sense == 0 && item.entity_id == segment.external_id => Some(1),
-                (2, [item]) if item.sense == 0 && item.entity_id == segment.external_id => Some(0),
+                (1, [item]) if item.sense == 0 && item.entity_id == entity_id => Some(1),
+                (2, [item]) if item.sense == 0 && item.entity_id == entity_id => Some(0),
                 _ => None,
             }),
     );
+    if let Some(crate::feature::FeatureSavedEntity::Line(line)) =
+        section_saved_entity(definition, entity_id)
+    {
+        let [[Some(x0), Some(y0), _], [Some(x1), Some(y1), _]] = line.endpoints else {
+            return coordinates;
+        };
+        let scale = [x0, y0, x1, y1]
+            .into_iter()
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+        let tolerance = 1e-9 * scale;
+        match [(x0 - x1).abs() <= tolerance, (y0 - y1).abs() <= tolerance] {
+            [true, false] => {
+                coordinates.insert(0);
+            }
+            [false, true] => {
+                coordinates.insert(1);
+            }
+            _ => {}
+        }
+    }
     coordinates
 }
 
@@ -16514,6 +16526,32 @@ mod resolved_sketch_tests {
             SketchConstraintDefinition::Horizontal {
                 entity: SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             }
+        );
+        saved_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps = vec![crate::feature::FeatureSkamp {
+            id: 31,
+            kind: 7,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                },
+            ],
+            offset: 86,
+        }];
+        let segment = unique_section_skamp_segment(&saved_definition, 12).expect("segment line");
+        assert_eq!(
+            section_line_fixed_coordinate(&saved_definition, segment),
+            Some(1)
         );
         let mut duplicate_saved = saved_definition
             .saved_section
