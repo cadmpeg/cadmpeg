@@ -3501,7 +3501,10 @@ fn blend_surface_offset(
     (matches == 1).then_some(distance)
 }
 
-fn analytic_surface_offset(support: &SurfaceGeometry, offset: &SurfaceGeometry) -> Option<f64> {
+pub(crate) fn analytic_surface_offset(
+    support: &SurfaceGeometry,
+    offset: &SurfaceGeometry,
+) -> Option<f64> {
     match (support, offset) {
         (
             SurfaceGeometry::Plane {
@@ -3558,6 +3561,60 @@ fn analytic_surface_offset(support: &SurfaceGeometry, offset: &SurfaceGeometry) 
             && support_ref == offset_ref =>
         {
             Some(offset_radius - support_radius)
+        }
+        (
+            SurfaceGeometry::Cone {
+                origin: support_origin,
+                axis: support_axis,
+                ref_direction: support_ref,
+                radius: support_radius,
+                ratio: support_ratio,
+                half_angle: support_angle,
+            },
+            SurfaceGeometry::Cone {
+                origin: offset_origin,
+                axis: offset_axis,
+                ref_direction: offset_ref,
+                radius: offset_radius,
+                ratio: offset_ratio,
+                half_angle: offset_angle,
+            },
+        ) if support_axis == offset_axis
+            && support_ref == offset_ref
+            && support_ratio.to_bits() == 1.0_f64.to_bits()
+            && offset_ratio.to_bits() == 1.0_f64.to_bits()
+            && support_angle.to_bits() == offset_angle.to_bits() =>
+        {
+            let delta = Vector3::new(
+                offset_origin.x - support_origin.x,
+                offset_origin.y - support_origin.y,
+                offset_origin.z - support_origin.z,
+            );
+            let axial_delta = dot_vector(delta, *support_axis);
+            let residual = Vector3::new(
+                delta.x - axial_delta * support_axis.x,
+                delta.y - axial_delta * support_axis.y,
+                delta.z - axial_delta * support_axis.z,
+            );
+            let radial_delta = offset_radius - support_radius;
+            let distance = radial_delta * support_angle.cos() - axial_delta * support_angle.sin();
+            let scale = [
+                support_origin.x,
+                support_origin.y,
+                support_origin.z,
+                offset_origin.x,
+                offset_origin.y,
+                offset_origin.z,
+                *support_radius,
+                *offset_radius,
+                axial_delta,
+                distance,
+            ]
+            .into_iter()
+            .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+            let tolerance = 64.0 * f64::EPSILON * scale;
+            (distance.is_finite() && dot_vector(residual, residual) <= tolerance * tolerance)
+                .then_some(distance)
         }
         (
             SurfaceGeometry::Sphere {

@@ -3762,6 +3762,51 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 }
 
 #[test]
+fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let angle = std::f64::consts::FRAC_PI_6;
+    let support = SurfaceGeometry::Cone {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 4.0,
+        ratio: 1.0,
+        half_angle: angle,
+    };
+    let axial_shift = 3.0;
+    let expected = 2.0;
+    let offset = SurfaceGeometry::Cone {
+        origin: Point3::new(0.0, 0.0, axial_shift),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 4.0 + (expected + axial_shift * angle.sin()) / angle.cos(),
+        ratio: 1.0,
+        half_angle: angle,
+    };
+
+    let distance = crate::decode::analytic_surface_offset(&support, &offset).expect("offset");
+    assert!((distance - expected).abs() <= 1e-12);
+    let reverse = crate::decode::analytic_surface_offset(&offset, &support).expect("reverse");
+    assert!((reverse + expected).abs() <= 1e-12);
+
+    let mut lateral = offset.clone();
+    let SurfaceGeometry::Cone { origin, .. } = &mut lateral else {
+        unreachable!()
+    };
+    origin.x = 0.1;
+    assert!(crate::decode::analytic_surface_offset(&support, &lateral).is_none());
+
+    let mut elliptical = offset;
+    let SurfaceGeometry::Cone { ratio, .. } = &mut elliptical else {
+        unreachable!()
+    };
+    *ratio = 0.5;
+    assert!(crate::decode::analytic_surface_offset(&support, &elliptical).is_none());
+}
+
+#[test]
 fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
     use cadmpeg_ir::geometry::ProceduralSurface;
