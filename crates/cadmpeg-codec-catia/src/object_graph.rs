@@ -359,12 +359,20 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             return None;
         }
         let head_start = at + 6;
-        let child = data[head_start..record_end]
+        let mut children = data[head_start..record_end]
             .windows(2)
-            .position(|bytes| bytes == [0x7c, 0x0a])
-            .map(|relative| head_start + relative)?;
-        let child_len = usize::try_from(u32_le(data, child + 2)?).ok()?;
-        if child.checked_add(child_len)? != record_end || child_len < 6 {
+            .enumerate()
+            .filter_map(|(relative, marker)| {
+                if marker != [0x7c, 0x0a] {
+                    return None;
+                }
+                let child = head_start + relative;
+                let child_len = usize::try_from(u32_le(data, child + 2)?).ok()?;
+                (child_len >= 6 && child.checked_add(child_len) == Some(record_end))
+                    .then_some((child, child_len))
+            });
+        let (child, _) = children.next()?;
+        if children.next().is_some() {
             return None;
         }
         let head = decode_head(&data[head_start..child]);

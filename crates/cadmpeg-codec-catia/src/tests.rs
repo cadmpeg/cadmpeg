@@ -4502,6 +4502,36 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
 }
 
 #[test]
+fn outer_object_graph_uses_the_unique_length_closing_child_frame() {
+    let records = [
+        object_graph_record(
+            &[0x04, 0x7c, 0x0a, 0xff, 0xff, 0xff, 0xff, 0x01, 0x82, 0x83],
+            &[0xfe],
+        ),
+        object_graph_record(&[0x04, 0x01, 0x82, 0x84], &[0xfe]),
+    ];
+    let graph = crate::object_graph::parse(&object_graph_from_records(&records))
+        .expect("length-closing object payload");
+    assert_eq!(graph.records.len(), 2);
+    assert_eq!(graph.records[0].owner_ref, Some(2));
+    assert_eq!(graph.records[0].class_ref, Some(3));
+}
+
+#[test]
+fn outer_object_graph_rejects_ambiguous_length_closing_child_frames() {
+    let mut first = object_graph_record(&[0x04, 0x01, 0x82, 0x83], &[0xfe]);
+    let fake = 8;
+    first.splice(fake..fake, [0x7c, 0x0a, 0, 0, 0, 0]);
+    let closing_len = u32::try_from(first.len() - fake).expect("fixture child length");
+    first[fake + 2..fake + 6].copy_from_slice(&closing_len.to_le_bytes());
+    let record_len = u32::try_from(first.len()).expect("fixture record length");
+    first[2..6].copy_from_slice(&record_len.to_le_bytes());
+
+    let second = object_graph_record(&[0x04, 0x01, 0x82, 0x84], &[0xfe]);
+    assert!(crate::object_graph::parse(&object_graph_from_records(&[first, second])).is_none());
+}
+
+#[test]
 fn object_graph_payload_reads_fixed_width_escaped_values() {
     use crate::object_graph::PayloadField;
 
