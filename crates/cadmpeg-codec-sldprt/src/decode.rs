@@ -769,6 +769,19 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+    let multiply_projected_relations = native.as_ref().map_or(0, |native| {
+        multiply_projected_sketch_relation_records(ir, native)
+    });
+    if multiply_projected_relations > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{multiply_projected_relations} native sketch relation record(s) are claimed by multiple neutral objects."
+            ),
+            provenance: None,
+        });
+    }
 
     let native_features = evaluated_feature_states
         .iter()
@@ -1175,6 +1188,55 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
             instances + bindings + markers
         })
         .sum()
+}
+
+fn multiply_projected_sketch_relation_records(
+    ir: &CadIr,
+    native: &crate::native::SldprtNative,
+) -> usize {
+    let native_relation_ids = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| {
+            lane.relation_instances
+                .iter()
+                .map(|relation| relation.id.as_str())
+                .chain(lane.sketch_entities.iter().filter_map(|marker| {
+                    matches!(
+                        marker.kind,
+                        crate::records::SketchInputKind::Relation(_)
+                            | crate::records::SketchInputKind::Native(_)
+                    )
+                    .then_some(marker.id.as_str())
+                }))
+        })
+        .collect::<std::collections::HashSet<_>>();
+    let mut projection_counts = BTreeMap::<&str, usize>::new();
+    for native_ref in ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| constraint.native_ref.as_deref())
+        .chain(
+            ir.model
+                .sketch_entities
+                .iter()
+                .filter_map(|entity| entity.native_ref.as_deref()),
+        )
+        .chain(
+            ir.model
+                .spatial_sketch_entities
+                .iter()
+                .filter_map(|entity| entity.native_ref.as_deref()),
+        )
+        .filter(|native_ref| native_relation_ids.contains(native_ref))
+    {
+        *projection_counts.entry(native_ref).or_default() += 1;
+    }
+    projection_counts
+        .values()
+        .filter(|count| **count > 1)
+        .count()
 }
 
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream
@@ -2697,7 +2759,8 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 #[cfg(test)]
 mod design_loss_tests {
     use super::{
-        append_design_losses, assign_configuration_bodies, unbound_feature_input_operation_objects,
+        append_design_losses, assign_configuration_bodies,
+        multiply_projected_sketch_relation_records, unbound_feature_input_operation_objects,
         unprojected_sketch_relation_records,
     };
     use crate::native::SldprtNative;
@@ -3659,6 +3722,60 @@ mod design_loss_tests {
         };
 
         assert_eq!(unprojected_sketch_relation_records(&ir, &native), 3);
+    }
+
+    #[test]
+    fn native_relation_records_have_at_most_one_neutral_owner() {
+        let mut ir = CadIr::empty(Units::default());
+        let entity = |id: &str, native_ref: &str| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("sketch".into()),
+            construction: false,
+            native_ref: Some(native_ref.into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Native {
+                native_kind: "UnknownGeometry".into(),
+            },
+        };
+        ir.model.sketch_entities = vec![
+            entity("first", "relation-marker"),
+            entity("second", "relation-marker"),
+            entity("profile", "profile-stream-record"),
+        ];
+        let native = SldprtNative {
+            feature_input_lanes: vec![FeatureInputLane {
+                id: "lane".into(),
+                configuration: None,
+                native_payload: Vec::new(),
+                classes: Vec::new(),
+                names: Vec::new(),
+                scalars: Vec::new(),
+                relation_bindings: Vec::new(),
+                relation_instances: Vec::new(),
+                body_selections: Vec::new(),
+                edge_selections: Vec::new(),
+                surface_selections: Vec::new(),
+                references: Vec::new(),
+                sketch_entities: vec![SketchInputEntity {
+                    id: "relation-marker".into(),
+                    parent: "lane".into(),
+                    feature_ref: Some("feature".into()),
+                    ordinal: 0,
+                    offset: 0,
+                    object_index: None,
+                    local_id: None,
+                    kind: SketchInputKind::Relation(SketchRelationKind::Horizontal),
+                    state_value: None,
+                    coordinates_m: None,
+                    links: Vec::new(),
+                    link_selector: None,
+                }],
+            }],
+            ..SldprtNative::default()
+        };
+
+        assert_eq!(multiply_projected_sketch_relation_records(&ir, &native), 1);
     }
 
     #[test]
