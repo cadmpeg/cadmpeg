@@ -219,15 +219,11 @@ fn transfer_complete(
                 weights: pcurve.weights.clone(),
                 periodic: false,
             };
-            if pcurve_plan
-                .insert(
-                    pcurve_id,
-                    (geometry, cylinder_reparameterized, parameter_range),
-                )
-                .is_some()
-            {
-                return false;
-            }
+            pcurve_plan.entry(pcurve_id).or_insert((
+                geometry,
+                cylinder_reparameterized,
+                parameter_range,
+            ));
             let supports = edge_support_plan.entry(edge_id).or_default();
             if !supports
                 .iter()
@@ -2003,17 +1999,88 @@ mod tests {
         b5_edge_support_definition, body_kind_if_owned, cylinder_helix, cylinder_point,
         lifted_curve_geometry, merge_curve_plan, neutral_pcurve_point, oriented_circle_plan,
         oriented_line_plan, oriented_nurbs_range, rational_arc, revolution_surface, revolve_nurbs,
-        transfer_vertex_tolerances, CurvePlan, SurfacePlan,
+        transfer, transfer_vertex_tolerances, CurvePlan, SurfacePlan,
     };
     use crate::b5::{B5Face, B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
+    use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{
         CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::ids::{SurfaceId, UnknownId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::BodyKind;
+    use cadmpeg_ir::units::Units;
+    use cadmpeg_ir::AnnotationBuilder;
     use std::collections::{BTreeMap, HashMap, HashSet};
+
+    #[test]
+    fn repeated_pcurve_identity_is_shared_across_loop_occurrences() {
+        let graph = B5Graph {
+            complete: true,
+            records: Vec::new(),
+            faces: vec![B5Face {
+                object_id: 1,
+                surface: 10,
+                loops: vec![2],
+            }],
+            loops: BTreeMap::from([(
+                2,
+                B5Loop {
+                    object_id: 2,
+                    pcurves: vec![20, 20, 20],
+                    edges: vec![30, 31, 32],
+                    surface: 10,
+                },
+            )]),
+            pcurves: BTreeMap::from([(
+                20,
+                B5Pcurve {
+                    object_id: 20,
+                    surface: 10,
+                    degree: 1,
+                    distinct_knots: vec![0.0, 1.0],
+                    multiplicities: vec![2, 2],
+                    control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+                    weights: None,
+                    lifted_endpoints: None,
+                },
+            )]),
+            opaque_pcurves: BTreeMap::new(),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::from([(
+                10,
+                B5Surface::Plane {
+                    origin: [0.0, 0.0, 0.0],
+                    direction_u: [1.0, 0.0, 0.0],
+                    direction_v: [0.0, 1.0, 0.0],
+                },
+            )]),
+            offset_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::new(),
+            vertex_parameter_incidences: BTreeMap::new(),
+            vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            logical_vertex_points: Vec::new(),
+            logical_vertex_refs: Vec::new(),
+            edge_vertices: BTreeMap::from([(30, [0, 1]), (31, [1, 2]), (32, [2, 0])]),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::new(),
+        };
+        let mut ir = CadIr::empty(Units::default());
+
+        assert!(transfer(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            graph,
+            &UnknownId("catia:test-payload".to_string()),
+        ));
+        assert_eq!(ir.model.pcurves.len(), 1);
+        assert_eq!(ir.model.coedges.len(), 3);
+        assert!(ir.model.coedges.iter().all(|coedge| {
+            coedge.pcurve.as_ref().map(|id| id.0.as_str()) == Some("catia:b5:pcurve#20")
+        }));
+    }
 
     #[test]
     fn edge_supports_preserve_one_sided_and_intersection_constructions() {
