@@ -1279,6 +1279,51 @@ pub(crate) fn parameters_with_unresolved_references(
         .count()
 }
 
+pub(crate) fn parameters_with_unevaluable_expressions(
+    parameters: &[DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+    configurations: &[cadmpeg_ir::features::DesignConfiguration],
+) -> usize {
+    let aliases = parameter_aliases(parameters, feature_names);
+    let global_values = parameters
+        .iter()
+        .filter_map(|parameter| {
+            parameter
+                .value
+                .clone()
+                .map(|value| (parameter.id.clone(), value))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut states = if configurations.is_empty() {
+        vec![global_values]
+    } else {
+        configurations
+            .iter()
+            .map(|configuration| {
+                let mut values = global_values.clone();
+                values.extend(configuration.parameter_values.clone());
+                values
+            })
+            .collect()
+    };
+    parameters
+        .iter()
+        .filter(|parameter| {
+            states.iter_mut().any(|values| {
+                let own = values.remove(&parameter.id);
+                let evaluated =
+                    ParameterExpressionParser::new(&parameter.expression, &aliases, values)
+                        .parse()
+                        .filter(parameter_value_is_finite);
+                if let Some(value) = own {
+                    values.insert(parameter.id.clone(), value);
+                }
+                evaluated.is_none()
+            })
+        })
+        .count()
+}
+
 pub(crate) fn parameters_with_incoherent_dependencies(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
