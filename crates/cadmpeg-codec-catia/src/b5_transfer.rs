@@ -53,6 +53,12 @@ struct HelixPlan {
     fit_tolerance: f64,
 }
 
+struct OwnershipPlan {
+    body_kind: BodyKind,
+    components: Vec<Vec<usize>>,
+    face_components: Vec<usize>,
+}
+
 /// Transfer a complete B5 graph. Returns `false` without mutation when any
 /// referenced face, pcurve, edge endpoint, or loop chain remains unresolved.
 pub(crate) fn transfer(
@@ -118,7 +124,7 @@ fn transfer_complete(
         return false;
     }
 
-    let Some(body_kind) = body_kind_if_owned(graph) else {
+    let Some(ownership) = ownership_plan(graph) else {
         return false;
     };
 
@@ -331,9 +337,6 @@ fn transfer_complete(
     }
     let vertex_tolerances = transfer_vertex_tolerances(graph, &pcurve_plan, &surface_plan);
 
-    let body_id = BodyId("catia:b5:body#0".to_string());
-    let region_id = RegionId("catia:b5:region#0".to_string());
-    let shell_id = ShellId("catia:b5:shell#0".to_string());
     let used_vertices: HashSet<usize> = edge_ids
         .iter()
         .flat_map(|edge| graph.edge_vertices[edge])
@@ -660,6 +663,10 @@ fn transfer_complete(
         });
     }
 
+    let body_id = BodyId("catia:b5:body#0".to_string());
+    let region_ids: Vec<RegionId> = (0..ownership.components.len())
+        .map(|component| RegionId(format!("catia:b5:region#{component}")))
+        .collect();
     annotate(
         annotations,
         &body_id,
@@ -672,53 +679,60 @@ fn transfer_complete(
         .derived(&body_id, "regions");
     ir.model.bodies.push(Body {
         id: body_id.clone(),
-        kind: body_kind,
-        regions: vec![region_id.clone()],
+        kind: ownership.body_kind,
+        regions: region_ids.clone(),
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
-    annotate(
-        annotations,
-        &region_id,
-        "object_stream_b5_03",
-        "derived_region",
-        Exactness::Inferred,
-    );
-    annotations
-        .derived(&region_id, "body")
-        .derived(&region_id, "shells");
-    ir.model.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells: vec![shell_id.clone()],
-    });
-    annotate(
-        annotations,
-        &shell_id,
-        "object_stream_b5_03",
-        "derived_shell",
-        Exactness::Inferred,
-    );
-    annotations
-        .derived(&shell_id, "region")
-        .derived(&shell_id, "faces");
-    ir.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id,
-        faces: graph
-            .faces
-            .iter()
-            .map(|face| FaceId(format!("catia:b5:face#{}", face.object_id)))
-            .collect(),
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
+    for (component_index, component_faces) in ownership.components.iter().enumerate() {
+        let region_id = region_ids[component_index].clone();
+        let shell_id = ShellId(format!("catia:b5:shell#{component_index}"));
+        annotate(
+            annotations,
+            &region_id,
+            "object_stream_b5_03",
+            "derived_region",
+            Exactness::Inferred,
+        );
+        annotations
+            .derived(&region_id, "body")
+            .derived(&region_id, "shells");
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id.clone()],
+        });
+        annotate(
+            annotations,
+            &shell_id,
+            "object_stream_b5_03",
+            "derived_shell",
+            Exactness::Inferred,
+        );
+        annotations
+            .derived(&shell_id, "region")
+            .derived(&shell_id, "faces");
+        ir.model.shells.push(Shell {
+            id: shell_id,
+            region: region_id,
+            faces: component_faces
+                .iter()
+                .map(|face| FaceId(format!("catia:b5:face#{}", graph.faces[*face].object_id)))
+                .collect(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+    }
 
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
-    for face in &graph.faces {
+    for (face_index, face) in graph.faces.iter().enumerate() {
         let face_id = FaceId(format!("catia:b5:face#{}", face.object_id));
+        let shell_id = ShellId(format!(
+            "catia:b5:shell#{}",
+            ownership.face_components[face_index]
+        ));
         annotate(
             annotations,
             &face_id,
@@ -1984,19 +1998,20 @@ fn expand_knots(distinct: &[f64], multiplicities: &[u32]) -> Option<Vec<f64>> {
     Some(knots)
 }
 
-fn body_kind_if_owned(graph: &B5Graph) -> Option<BodyKind> {
+fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     let mut face_ids = HashSet::new();
     let mut loop_owners = HashMap::<u32, usize>::new();
-    for face in &graph.faces {
+    for (face_index, face) in graph.faces.iter().enumerate() {
         if !face_ids.insert(face.object_id) || face.loops.is_empty() {
             return None;
         }
         for loop_id in &face.loops {
-            *loop_owners.entry(*loop_id).or_default() += 1;
+            if loop_owners.insert(*loop_id, face_index).is_some() {
+                return None;
+            }
         }
     }
     if loop_owners.len() != graph.loops.len()
-        || loop_owners.values().any(|owners| *owners != 1)
         || graph.loops.iter().any(|(loop_id, loop_)| {
             loop_id != &loop_.object_id || !loop_owners.contains_key(loop_id)
         })
@@ -2008,21 +2023,59 @@ fn body_kind_if_owned(graph: &B5Graph) -> Option<BodyKind> {
         .vertex_points
         .len()
         .checked_add(graph.logical_vertex_points.len())?;
-    let mut uses = HashMap::<u32, usize>::new();
-    for edge in graph.loops.values().flat_map(|loop_| &loop_.edges) {
-        let endpoints = graph.edge_vertices.get(edge)?;
-        if endpoints.iter().any(|endpoint| *endpoint >= vertex_count) {
-            return None;
+    let mut parents: Vec<usize> = (0..graph.faces.len()).collect();
+    let mut first_face_by_edge = HashMap::<u32, usize>::new();
+    let mut edge_uses = HashMap::<u32, usize>::new();
+    for (loop_id, loop_) in &graph.loops {
+        let face = loop_owners[loop_id];
+        for edge in &loop_.edges {
+            let endpoints = graph.edge_vertices.get(edge)?;
+            if endpoints.iter().any(|endpoint| *endpoint >= vertex_count) {
+                return None;
+            }
+            *edge_uses.entry(*edge).or_default() += 1;
+            if let Some(other_face) = first_face_by_edge.insert(*edge, face) {
+                union_faces(&mut parents, face, other_face);
+            }
         }
-        *uses.entry(*edge).or_default() += 1;
     }
-    Some(if uses.values().any(|count| *count > 2) {
+
+    let mut labels = HashMap::<usize, usize>::new();
+    let mut face_components = Vec::with_capacity(graph.faces.len());
+    for face in 0..graph.faces.len() {
+        let root = face_root(&mut parents, face);
+        let next = labels.len();
+        face_components.push(*labels.entry(root).or_insert(next));
+    }
+    let mut component_faces = vec![Vec::new(); labels.len()];
+    for (face, component) in face_components.iter().copied().enumerate() {
+        component_faces[component].push(face);
+    }
+    let body_kind = if edge_uses.values().any(|uses| *uses > 2) {
         BodyKind::General
-    } else if !uses.is_empty() && uses.values().all(|count| *count == 2) {
+    } else if !edge_uses.is_empty() && edge_uses.values().all(|uses| *uses == 2) {
         BodyKind::Solid
     } else {
         BodyKind::Sheet
+    };
+    Some(OwnershipPlan {
+        body_kind,
+        components: component_faces,
+        face_components,
     })
+}
+
+fn union_faces(parents: &mut [usize], left: usize, right: usize) {
+    let left = face_root(parents, left);
+    let right = face_root(parents, right);
+    parents[left] = right;
+}
+
+fn face_root(parents: &mut [usize], index: usize) -> usize {
+    if parents[index] != index {
+        parents[index] = face_root(parents, parents[index]);
+    }
+    parents[index]
 }
 
 fn annotate(
@@ -2070,12 +2123,11 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::{
-        b5_edge_support_definition, body_kind_if_owned, bounded_occurrence_range, cylinder_helix,
-        cylinder_point, edge_pcurve_parameters, isocurve_endpoint_parameters,
-        lifted_curve_geometry, merge_curve_plan, neutral_pcurve_point, ordered_subrange,
-        oriented_circle_plan, oriented_line_plan, oriented_nurbs_range, rational_arc,
-        revolution_surface, revolve_nurbs, transfer, transfer_vertex_tolerances, CurvePlan,
-        SurfacePlan,
+        b5_edge_support_definition, bounded_occurrence_range, cylinder_helix, cylinder_point,
+        edge_pcurve_parameters, isocurve_endpoint_parameters, lifted_curve_geometry,
+        merge_curve_plan, neutral_pcurve_point, ordered_subrange, oriented_circle_plan,
+        oriented_line_plan, oriented_nurbs_range, ownership_plan, rational_arc, revolution_surface,
+        revolve_nurbs, transfer, transfer_vertex_tolerances, CurvePlan, SurfacePlan,
     };
     use crate::b5::{
         loop_chain_senses, B5Face, B5Graph, B5Loop, B5ParameterIncidence, B5Pcurve, B5Profile,
@@ -2428,19 +2480,49 @@ mod tests {
             profiles: BTreeMap::new(),
         };
 
-        assert_eq!(body_kind_if_owned(&graph), Some(BodyKind::Sheet));
+        assert_eq!(ownership_plan(&graph).unwrap().body_kind, BodyKind::Sheet);
         graph.faces[0].loops.push(2);
-        assert_eq!(body_kind_if_owned(&graph), None);
+        assert!(ownership_plan(&graph).is_none());
         graph.faces[0].loops.pop();
         graph.faces.push(B5Face {
             object_id: 5,
             surface: 10,
             loops: vec![2],
         });
-        assert_eq!(body_kind_if_owned(&graph), None);
+        assert!(ownership_plan(&graph).is_none());
         graph.faces.pop();
+
+        graph.faces.push(B5Face {
+            object_id: 5,
+            surface: 10,
+            loops: vec![6],
+        });
+        graph.loops.insert(
+            6,
+            B5Loop {
+                object_id: 6,
+                pcurves: vec![8],
+                edges: vec![7],
+                surface: 10,
+            },
+        );
+        graph.edge_vertices.insert(7, [0, 1]);
+        let ownership = ownership_plan(&graph).unwrap();
+        assert_eq!(ownership.face_components, vec![0, 1]);
+        assert_eq!(ownership.components.len(), 2);
+        assert_eq!(ownership.body_kind, BodyKind::Sheet);
+
+        graph.loops.get_mut(&6).unwrap().edges[0] = 3;
+        let ownership = ownership_plan(&graph).unwrap();
+        assert_eq!(ownership.face_components, vec![0, 0]);
+        assert_eq!(ownership.components.len(), 1);
+        assert_eq!(ownership.body_kind, BodyKind::Solid);
+
+        graph.faces.pop();
+        graph.loops.remove(&6);
+        graph.edge_vertices.remove(&7);
         graph.edge_vertices.insert(3, [0, 2]);
-        assert_eq!(body_kind_if_owned(&graph), None);
+        assert!(ownership_plan(&graph).is_none());
     }
 
     #[test]
