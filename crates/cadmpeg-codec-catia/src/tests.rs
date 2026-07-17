@@ -3452,4 +3452,37 @@ mod ledger {
             assert!(sidecar.spaces[0].id.is_source());
         });
     }
+
+    /// A hostile outer directory extent that reaches back over the inner
+    /// container must not relabel the catalogued opaque stream extents as
+    /// discardable structural framing: the outer-directory claim is emitted only
+    /// when it clears the inner container's content, so the physical-extent spans
+    /// stay `Opaque` (defect classes C and E).
+    #[test]
+    fn ledger_rejects_outer_directory_over_inner_container() {
+        let mut fixture = standard_catpart();
+        // Point the outer directory at the inner container (offset 16) and give
+        // it a length that clamps to the whole file.
+        fixture[8..12].copy_from_slice(&16u32.to_be_bytes());
+        fixture[12..16].copy_from_slice(&u32::MAX.to_be_bytes());
+        with_scan(&fixture, |scan| {
+            let sidecar = container_ledger(scan).expect("ledger validates");
+            let source = sidecar
+                .spaces
+                .iter()
+                .find(|s| s.id.is_source())
+                .expect("source space present");
+            assert!(
+                source
+                    .spans
+                    .iter()
+                    .any(|s| s.class == SpanClass::Opaque && s.meaning.contains("physical extent")),
+                "catalogued stream extents must stay opaque despite the hostile outer directory"
+            );
+            assert!(
+                !source.spans.iter().any(|s| s.meaning == "outer directory"),
+                "the inner-overlapping outer directory claim must not be emitted"
+            );
+        });
+    }
 }

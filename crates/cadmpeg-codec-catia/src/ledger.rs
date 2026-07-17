@@ -57,7 +57,7 @@ struct Claim {
 /// the validation [`FidelityError`] if the built tiling ever violates the
 /// conservation invariant — a defect in this builder, surfaced rather than
 /// serialized.
-pub fn container_ledger(scan: &ContainerScan<'_>) -> Result<SourceFidelity, FidelityError> {
+pub(crate) fn container_ledger(scan: &ContainerScan<'_>) -> Result<SourceFidelity, FidelityError> {
     let mut spaces = vec![source_space(scan)];
     if let Some(stream) = brep_stream_space(scan) {
         spaces.push(stream);
@@ -86,17 +86,29 @@ fn source_space(scan: &ContainerScan<'_>) -> AddressSpaceLedger {
     );
 
     // Outer directory region, when the header points to a non-empty tail.
+    //
+    // The offset/length pair is read raw from the outer header and is not
+    // trusted here: a hostile directory extent that reaches back over the inner
+    // container would sort ahead of every inner claim and, because `tile` drops
+    // any later claim overlapping already-tiled bytes, silently relabel the
+    // catalogued opaque stream extents as discardable container framing. The
+    // legitimate outer directory sits at or past the end of the inner
+    // container's content, so the claim is emitted only when its start clears
+    // that boundary; otherwise those bytes fall through to opaque padding or the
+    // inner claims rather than being over-claimed as structural.
     let outer_dir_start = u64::from(scan.outer_dir_offset);
     let outer_dir_end = outer_dir_start.saturating_add(u64::from(scan.outer_dir_length));
-    push_claim(
-        &mut claims,
-        outer_dir_start,
-        outer_dir_end,
-        SpanClass::Structural,
-        "container",
-        "outer directory".to_string(),
-        length,
-    );
+    if outer_dir_start >= inner_content_end(scan) {
+        push_claim(
+            &mut claims,
+            outer_dir_start,
+            outer_dir_end,
+            SpanClass::Structural,
+            "container",
+            "outer directory".to_string(),
+            length,
+        );
+    }
 
     if let Some(dir) = &scan.inner {
         let inner = dir.inner as u64;
@@ -131,6 +143,35 @@ fn source_space(scan: &ContainerScan<'_>) -> AddressSpaceLedger {
         origin: SerializedOrigin::Root,
         spans,
     }
+}
+
+/// The first byte at or past the end of the inner container's content.
+///
+/// A well-formed outer directory begins here or later. Returns `0` when there is
+/// no nested container, so the non-nested variant keeps emitting its outer
+/// directory claim unchanged. The bound is the maximum end of the inner header,
+/// the inner stream directory magic, and every catalogued physical extent — the
+/// spans whose opaque classification a hostile outer directory must not erase.
+fn inner_content_end(scan: &ContainerScan<'_>) -> u64 {
+    let Some(dir) = &scan.inner else {
+        return 0;
+    };
+    let length = scan.data.len() as u64;
+    let inner = dir.inner as u64;
+    let mut end = inner.saturating_add(HEADER_LEN);
+    let dir_off = dir.dir_offset as u64;
+    end = end.max(dir_off.saturating_add(container::DIR_MAGIC.len() as u64));
+    for descriptor in &dir.descriptors {
+        for extent in &descriptor.extents {
+            let start = inner.saturating_add(u64::from(extent.phys_off));
+            let extent_end = start.saturating_add(u64::from(extent.phys_len));
+            if extent_end > length || start >= extent_end {
+                continue;
+            }
+            end = end.max(extent_end);
+        }
+    }
+    end.min(length)
 }
 
 /// Adds one opaque claim per catalogued physical extent, applying the same
