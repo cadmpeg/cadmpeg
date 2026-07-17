@@ -920,6 +920,8 @@ radius. The circles have the cylinder radius and lie at signed axial offsets
 `±sqrt(Rs² - Rc²)` from the sphere center. The edge's paired solved endpoint
 orbits select one circle when exactly one candidate contains both endpoints.
 Equal radii produce the single equatorial circle.
+Intersecting every candidate circle with an additional incident plane supplies
+a topological vertex only when all carrier intersections reduce to one point.
 
 A plane normal to a torus axis at axial offset `z` intersects the torus in circles of radii `R ± sqrt(r² - z²)`. At `|z| = r` the two roots coincide in one contact circle. At `|z| < r` the edge's paired solved endpoint orbits select one circle when exactly one positive-radius candidate contains both endpoints. A zero-radius horn-torus root is a point and does not define a curve.
 
