@@ -4,7 +4,7 @@
 
 - The class-root vector following `index_map_offset` is unresolved. Body, shell, and face-use heads bind through the disc-keyed layouts and the cluster-key chain form; sites whose list heads satisfy neither shape remain unresolved.
 - Deltas-stream face entities outside a multi-chain site's partition intervals have no resolved body assignment.
-- Deltas streams carry no decoded deletion records, so whether a deltas-only bridge belongs to the final stored state is unresolved; deltas bridges therefore never extend a partition's face membership.
+- The structural discriminator separating partition faces superseded by a deltas change set from partition faces the change set retains is unresolved; roster membership, roster-entry record presence, and the owning loop's or owner entity's record presence do not determine supersession. Until the discriminator is resolved, deltas bridges do not extend a partition's face membership.
 
 ## Geometry carriers
 

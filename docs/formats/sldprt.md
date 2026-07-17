@@ -419,7 +419,17 @@ Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a
 | `00 1d`                | prefixed    | none     | xyz after `[hi][lo][01]*` run          |
 | `00 1e/1f/20/32/33/35` | prefixed    | none     | f64 block after `2b`/`2d` marker       |
 
-Post-magic `00 10` reference cells appear as `[01][hi][lo]` or `[hi][lo][01]` triples. Partition and deltas streams in the same outer block share a site namespace. Prefixed and tripled references encode the same u16 attribute values as bare references. Deltas bridges do not extend a partition's face membership; a partition without bridges takes its face membership from the deltas stream.
+Post-magic `00 10` reference cells appear as `[01][hi][lo]` or `[hi][lo][01]` triples. Partition and deltas streams in the same outer block share a site namespace. Prefixed and tripled references encode the same u16 attribute values as bare references.
+
+A deltas stream groups its records into change sets. Each change set carries a **change roster**:
+
+```
+00 01 00 01  ( attr u16 BE  class u16 BE )*  00 01
+```
+
+Roster entries name same-site nodes by attribute and node class, mixing topology, geometry-carrier, and entity classes. Roster membership records that a node belongs to the change set; it does not determine whether the node persists in the final state — a roster names retained, rewritten, and superseded nodes alike. A rostered node with no stored record in any same-site stream has no payload; references to it resolve to nothing.
+
+A deltas change set can re-create a body's faces under new attributes. A deltas bridge with a full record denotes a face of the final stored state; the partition faces it supersedes do not persist. The partition base plus deltas-only bridges therefore overcounts the final face set by the superseded partition faces. A partition without bridges takes its face membership entirely from the deltas stream.
 
 ## 5. Entity records and face families
 
