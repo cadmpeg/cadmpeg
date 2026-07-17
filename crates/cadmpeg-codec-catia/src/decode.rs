@@ -62,6 +62,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         let ir = build_metadata_ir(&scan)?;
         let mut report = build_container_report(&scan, true);
         report.source_fidelity = Some(crate::ledger::container_ledger(&scan));
+        crate::tickets::account_records(ctx, root, &scan, &ir, &mut report);
         return Ok(DecodeResult::new(ir, report));
     }
 
@@ -122,6 +123,7 @@ fn finish_decode<'a>(
     // from the result. The tiling is total by construction, so a defect here is
     // a builder bug that panics rather than a decode-time `Malformed` failure.
     report.source_fidelity = Some(crate::ledger::container_ledger(scan));
+    crate::tickets::account_records(ctx, root, scan, &ir, &mut report);
     Ok(DecodeResult::new(ir, report))
 }
 

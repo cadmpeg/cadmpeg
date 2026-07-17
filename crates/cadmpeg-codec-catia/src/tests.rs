@@ -3346,6 +3346,121 @@ fn every_decode_path_populates_v1_annotations() {
     assert_every_entity_has_v1_annotation(&container_only.ir);
 }
 
+/// Record-ticket issuance and transfer accounting (doc §6.2, §10 Phase 3D).
+mod tickets {
+    use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+    use cadmpeg_ir::decode::{DecodeMode, DecodePolicy};
+    use std::io::Cursor;
+
+    use super::{
+        a8_catpart, e5_catpart, fbb_only_catpart, inner_no_directory_a8_catpart, standard_catpart,
+        tetrahedron_topology_catpart, zero_entity_catpart, zero_entity_cylinder_catpart,
+        zero_entity_nurbs_catpart,
+    };
+    use crate::CatiaCodec;
+
+    fn fixtures() -> Vec<Vec<u8>> {
+        vec![
+            standard_catpart(),
+            tetrahedron_topology_catpart(),
+            fbb_only_catpart(),
+            zero_entity_catpart(),
+            zero_entity_cylinder_catpart(),
+            zero_entity_nurbs_catpart(),
+            e5_catpart(),
+            a8_catpart(),
+            inner_no_directory_a8_catpart(),
+        ]
+    }
+
+    fn options(mode: DecodeMode) -> DecodeOptions {
+        DecodeOptions {
+            container_only: false,
+            policy: DecodePolicy {
+                mode,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// `Check::TransferAccounting` runs inside `finish`; a disposition that did
+    /// not validate against the ledger fails a strict decode and appends an
+    /// accountable loss under salvage. Every fixture decoding `Ok` in strict
+    /// mode is the proof the issued dispositions are consistent.
+    #[test]
+    fn every_fixture_transfer_accounts_in_both_modes() {
+        for fixture in fixtures() {
+            for mode in [DecodeMode::Strict, DecodeMode::Salvage] {
+                CatiaCodec
+                    .decode(&mut Cursor::new(fixture.clone()), &options(mode))
+                    .unwrap_or_else(|error| {
+                        panic!("transfer accounting failed in {mode:?} mode: {error:?}")
+                    });
+            }
+        }
+
+        // The container-only and metadata fallbacks issue a `Dropped` stream
+        // ticket whose loss must ride the report; exercise strict mode so an
+        // unmatched drop would fail rather than degrade.
+        CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart()),
+                &DecodeOptions {
+                    container_only: true,
+                    policy: DecodePolicy {
+                        mode: DecodeMode::Strict,
+                        ..Default::default()
+                    },
+                },
+            )
+            .expect("container-only decode transfer-accounts in strict mode");
+    }
+
+    /// A path that transfers typed geometry resolves its stream ticket `Typed`,
+    /// so no dropped-stream loss note is appended.
+    #[test]
+    fn typed_transfer_appends_no_dropped_stream_loss() {
+        let decoded = CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart()),
+                &options(DecodeMode::Salvage),
+            )
+            .unwrap();
+        assert!(decoded.report.geometry_transferred);
+        assert!(
+            !decoded
+                .report
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains("transferred no record to typed IR")),
+            "typed stream must not record a dropped-stream loss"
+        );
+    }
+
+    /// A container-only decode transfers no record; its stream ticket resolves
+    /// `Dropped` and the accountable loss rides the report.
+    #[test]
+    fn dropped_stream_records_accountable_loss() {
+        let decoded = CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart()),
+                &DecodeOptions {
+                    container_only: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(
+            decoded
+                .report
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains("transferred no record to typed IR")),
+            "dropped stream must record its disposition as an accountable loss"
+        );
+    }
+}
+
 /// L1 coarse source-fidelity tiling (doc §6.1, §10 Phase 3C).
 mod ledger {
     use cadmpeg_ir::{LedgerCapability, LedgerLevel, SerializedOrigin, SpanClass};

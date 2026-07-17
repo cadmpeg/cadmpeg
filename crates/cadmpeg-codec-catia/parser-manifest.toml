@@ -238,3 +238,20 @@ charges = []
 cost_model = "no budget charge; builds the L1 source-fidelity ledger from already-scanned container facts, digesting bounded source spans; output proportional to the physical-extent count"
 window_egress = []
 ledger_level = 1
+
+# ---------------------------------------------------------------------------
+# Record-ticket issuance (doc section 6.2 / 10 Phase 3D). Not a byte parser:
+# issues and resolves the decode's `RecordTicket`s at the section 3.3 commit
+# boundary from already-scanned `ContainerScan` facts and the built `CadIr`, so
+# `Check::TransferAccounting` can prove per-record conservation against the L1
+# ledger. No hostile read, no `.window()` egress, and no budget charge of its
+# own. Emits the resolved disposition table.
+[[module]]
+path = "crates/cadmpeg-codec-catia/src/tickets.rs"
+status = "migrated"
+input_spaces = ["source"]
+fuzz_targets = []
+charges = []
+cost_model = "no budget charge; issues and resolves record tickets from already-scanned container facts and the built `CadIr` model, output proportional to the emitted-entity count"
+window_egress = []
+ledger_level = 1
