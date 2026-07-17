@@ -3734,7 +3734,7 @@ pub(crate) fn resolved_section_points(
                 .all(|point_id| !ambiguous_point_ids.contains(point_id))
         })
         .collect::<Vec<_>>();
-    let coincident_point_pairs = definition
+    let coincident_points = definition
         .relations
         .iter()
         .flat_map(|table| &table.skamps)
@@ -3744,27 +3744,34 @@ pub(crate) fn resolved_section_points(
             };
             let pair = match skamp.kind {
                 0 => Some([
-                    section_skamp_endpoint_point_id(definition, first)?,
-                    section_skamp_endpoint_point_id(definition, second)?,
+                    section_skamp_endpoint_point(definition, first)?,
+                    section_skamp_endpoint_point(definition, second)?,
                 ]),
                 3 => {
                     let first_point = section_skamp_point_entity_id(definition, first);
                     let second_point = section_skamp_point_entity_id(definition, second);
                     match (first_point, second_point) {
-                        (Some(point), None) => {
-                            Some([point, section_skamp_selected_point_id(definition, second)?])
-                        }
-                        (None, Some(point)) => {
-                            Some([section_skamp_selected_point_id(definition, first)?, point])
-                        }
+                        (Some(point), None) => Some([
+                            SectionPointSource::Point(point),
+                            section_skamp_selected_point(definition, second)?,
+                        ]),
+                        (None, Some(point)) => Some([
+                            section_skamp_selected_point(definition, first)?,
+                            SectionPointSource::Point(point),
+                        ]),
                         _ => None,
                     }
                 }
                 _ => None,
             }?;
-            pair.iter()
-                .all(|point_id| !ambiguous_point_ids.contains(point_id))
-                .then_some(pair)
+            (pair
+                .iter()
+                .any(|point| matches!(point, SectionPointSource::Point(_)))
+                && pair.iter().all(|point| match point {
+                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                    SectionPointSource::Value(_) => true,
+                }))
+            .then_some(pair)
         })
         .collect::<Vec<_>>();
     let point_on_line_coordinates = definition
@@ -3899,18 +3906,26 @@ pub(crate) fn resolved_section_points(
                 _ => {}
             }
         }
-        for &[first_id, second_id] in &coincident_point_pairs {
-            let [first, second] =
-                [first_id, second_id].map(|id| points.get(&id).copied().unwrap_or([None, None]));
+        for &[first_source, second_source] in &coincident_points {
+            let [first, second] = [first_source, second_source].map(|source| match source {
+                SectionPointSource::Point(id) => points.get(&id).copied().unwrap_or([None, None]),
+                SectionPointSource::Value(value) => [Some(value[0]), Some(value[1])],
+            });
             for coordinate in 0..2 {
                 match [first[coordinate], second[coordinate]] {
                     [Some(value), None] => {
-                        points.entry(second_id).or_insert([None, None])[coordinate] = Some(value);
-                        changed = true;
+                        if let SectionPointSource::Point(second_id) = second_source {
+                            points.entry(second_id).or_insert([None, None])[coordinate] =
+                                Some(value);
+                            changed = true;
+                        }
                     }
                     [None, Some(value)] => {
-                        points.entry(first_id).or_insert([None, None])[coordinate] = Some(value);
-                        changed = true;
+                        if let SectionPointSource::Point(first_id) = first_source {
+                            points.entry(first_id).or_insert([None, None])[coordinate] =
+                                Some(value);
+                            changed = true;
+                        }
                     }
                     _ => {}
                 }
@@ -4238,16 +4253,24 @@ fn saved_line_fixed_coordinate_value(
     ((first - second).abs() <= 1e-9 * scale).then_some(first)
 }
 
-fn section_skamp_endpoint_point_id(
+#[derive(Clone, Copy)]
+enum SectionPointSource {
+    Point(u32),
+    Value([f64; 2]),
+}
+
+fn section_skamp_endpoint_point(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
-) -> Option<u32> {
-    let segment = unique_section_skamp_segment(definition, item.entity_id)?;
-    match item.sense {
-        2 => Some(segment.point_ids[0]),
-        3 => Some(segment.point_ids[1]),
-        _ => None,
+) -> Option<SectionPointSource> {
+    if let Some(segment) = unique_section_skamp_segment(definition, item.entity_id) {
+        return match item.sense {
+            2 => Some(SectionPointSource::Point(segment.point_ids[0])),
+            3 => Some(SectionPointSource::Point(segment.point_ids[1])),
+            _ => None,
+        };
     }
+    saved_section_point(definition, item).map(SectionPointSource::Value)
 }
 
 fn unique_section_skamp_segment(
@@ -4286,6 +4309,45 @@ fn section_skamp_selected_point_id(
         4 => segment.center_id,
         _ => None,
     }
+}
+
+fn section_skamp_selected_point(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<SectionPointSource> {
+    section_skamp_selected_point_id(definition, item)
+        .map(SectionPointSource::Point)
+        .or_else(|| saved_section_point(definition, item).map(SectionPointSource::Value))
+}
+
+fn saved_section_point(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<[f64; 2]> {
+    if definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.rows)
+        .any(|segment| segment.external_id == item.entity_id)
+    {
+        return None;
+    }
+    let coordinates = match (
+        section_saved_entity(definition, item.entity_id)?,
+        item.sense,
+    ) {
+        (crate::feature::FeatureSavedEntity::Line(line), 2) => line.endpoints[0],
+        (crate::feature::FeatureSavedEntity::Line(line), 3) => line.endpoints[1],
+        (crate::feature::FeatureSavedEntity::Arc(arc), 2) => arc.endpoints[0],
+        (crate::feature::FeatureSavedEntity::Arc(arc), 3) => arc.endpoints[1],
+        (crate::feature::FeatureSavedEntity::Arc(arc), 4) => arc.center,
+        (crate::feature::FeatureSavedEntity::Circle(circle), 4) => circle.center,
+        _ => return None,
+    };
+    let [Some(u), Some(v), _] = coordinates else {
+        return None;
+    };
+    (u.is_finite() && v.is_finite()).then_some([u, v])
 }
 
 pub(crate) fn resolved_section_radii(
@@ -16702,6 +16764,62 @@ mod resolved_sketch_tests {
         assert_eq!(
             resolved_section_points(&saved_definition).get(&4),
             Some(&[3.0, 1.0])
+        );
+        let mut saved_coincident = saved_definition.clone();
+        for point in &mut saved_coincident
+            .variables
+            .as_mut()
+            .expect("variables")
+            .points
+        {
+            if matches!(point.point_id, 4 | 5) {
+                point.u = None;
+                point.v = None;
+            }
+        }
+        saved_coincident
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps = vec![
+            crate::feature::FeatureSkamp {
+                id: 33,
+                kind: 0,
+                flags: 0,
+                status: 0,
+                items: vec![
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 99,
+                        sense: 2,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 15,
+                        sense: 2,
+                    },
+                ],
+                offset: 88,
+            },
+            crate::feature::FeatureSkamp {
+                id: 34,
+                kind: 3,
+                flags: 0,
+                status: 0,
+                items: vec![
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 14,
+                        sense: 0,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 99,
+                        sense: 3,
+                    },
+                ],
+                offset: 89,
+            },
+        ];
+        assert_eq!(
+            resolved_section_points(&saved_coincident),
+            BTreeMap::from([(1, [0.0, 2.0]), (4, [1.0, 1.0]), (5, [0.0, 1.0])])
         );
         saved_definition
             .variables

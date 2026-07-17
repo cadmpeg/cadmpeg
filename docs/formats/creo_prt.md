@@ -767,6 +767,8 @@ supplies that fixed-coordinate orientation to its connected type-five/type-seven
 line component.
 For type-three and type-nine point-on-line incidences, that same complete saved
 line coordinate supplies the missing coordinate of the selected `segtab` point.
+For type-zero and type-three coincidence incidences, complete saved endpoint or
+center coordinates supply missing coordinates of the coincident `segtab` point.
 For type-fourteen symmetry incidences, it supplies the reflection coordinate
 without introducing a section-point identity for the saved axis.
 
