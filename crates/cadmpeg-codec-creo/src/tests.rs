@@ -3843,9 +3843,10 @@ fn decode_places_first_plane_instance_from_named_prototype() {
 }
 
 #[test]
-fn decode_withholds_named_prototype_before_its_surface_row() {
+fn decode_places_named_prototype_before_its_surface_row() {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     push_named_analytic_prototype(&mut payload, "plane", &[]);
+    payload.push(0xe3);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
@@ -3855,12 +3856,40 @@ fn decode_withholds_named_prototype_before_its_surface_row() {
     )
     .expect("decode");
 
-    assert!(result
+    let plane = result
         .ir
         .model
         .surfaces
         .iter()
-        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+        .expect("following first plane instance");
+    assert!(matches!(
+        plane.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
+    ));
+}
+
+#[test]
+fn decode_withholds_prototype_between_two_same_family_rows() {
+    let mut payload = b"srf_array\0\xf8\x02".to_vec();
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    push_named_analytic_prototype(&mut payload, "plane", &[]);
+    payload.push(0xe3);
+    payload.extend_from_slice(&[8, 0x22, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+
+    assert!(result.ir.model.surfaces.iter().all(|surface| {
+        !matches!(
+            surface.id.as_str(),
+            "creo:visibgeom:surface#7" | "creo:visibgeom:surface#8"
+        )
+    }));
 }
 
 #[test]
