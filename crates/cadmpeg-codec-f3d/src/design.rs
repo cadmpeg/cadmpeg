@@ -2234,7 +2234,6 @@ fn project_extrude(
         (DesignExtrudeExtent::TwoSidedDistance, Some(along), Some(against))
             if along.0 != 0.0
                 && against.0 != 0.0
-                && start_groups.is_empty()
                 && termination_groups.is_empty()
                 && side_one_offset.is_none() =>
         {
@@ -17482,7 +17481,7 @@ mod relation_tests {
             ],
             &[body_group, start_group.clone(), face_group],
             &[],
-            &[placement],
+            std::slice::from_ref(&placement),
         )
         .expect("typed selected-face start Extrude");
         assert!(matches!(
@@ -17491,6 +17490,35 @@ mod relation_tests {
                 start: ExtrudeStart::FromFace {
                     face: FaceSelection::Native(ref id),
                     offset: None,
+                },
+                ..
+            } if id == &start_group.id
+        ));
+
+        scope.extrude_operation = Some(DesignExtrudeOperation::NewBody);
+        scope.extrude_extent = Some(DesignExtrudeExtent::TwoSidedDistance);
+        let from_face_two_sided = project_extrude(
+            &scope,
+            &[
+                (0, &parameter("ProfileOffset", "mm", 0.0)),
+                (1, &along),
+                (2, &against),
+            ],
+            &[start_group.clone()],
+            &[],
+            std::slice::from_ref(&placement),
+        )
+        .expect("typed selected-face-start two-sided Extrude");
+        assert!(matches!(
+            from_face_two_sided,
+            FeatureDefinition::Extrude {
+                start: ExtrudeStart::FromFace {
+                    face: FaceSelection::Native(ref id),
+                    offset: None,
+                },
+                extent: Extent::TwoSided {
+                    first: Length(5.5),
+                    second: Length(0.5),
                 },
                 ..
             } if id == &start_group.id
