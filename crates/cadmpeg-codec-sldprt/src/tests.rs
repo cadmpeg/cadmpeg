@@ -14570,3 +14570,77 @@ fn compact_carriers_reject_zero_direction_frames() {
     let cylinder = cylinder_carrier(6, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 1.0);
     assert!(parse_carrier(&cylinder, 0).is_none());
 }
+
+#[test]
+fn container_ledger_tiles_every_physical_byte() {
+    let f = synthetic_sldprt();
+    let scan = container::scan_bytes(&f);
+    let ledger = crate::fidelity::container_ledger(&scan);
+
+    // L1 accounting: complete coarse tiling, no retained-byte requirement.
+    assert_eq!(ledger.version, cadmpeg_ir::SOURCE_FIDELITY_VERSION);
+    assert_eq!(ledger.level, cadmpeg_ir::LedgerLevel::L1);
+    assert_eq!(ledger.capability, cadmpeg_ir::LedgerCapability::Accounted);
+
+    // Validation enforces exact tiling of [0, length) for every space, origin
+    // consistency, and acyclicity. A gap would fail here.
+    ledger.validate().expect("L1 ledger validates");
+
+    // The root space plus one decompressed child space per block.
+    assert_eq!(ledger.spaces.len(), 1 + scan.blocks.len());
+    let root = ledger
+        .spaces
+        .iter()
+        .find(|s| s.id.is_source())
+        .expect("root source space present");
+    assert_eq!(root.length, f.len() as u64);
+    // The two compressed block payloads surface as opaque spans; framing is
+    // structural.
+    assert_eq!(
+        root.spans
+            .iter()
+            .filter(|s| s.class == cadmpeg_ir::SpanClass::Opaque
+                && s.meaning.starts_with("block-payload:"))
+            .count(),
+        scan.blocks.len()
+    );
+    assert!(root
+        .spans
+        .iter()
+        .any(|s| s.class == cadmpeg_ir::SpanClass::Structural && s.meaning == "outer-header"));
+
+    // Each block registers a Transform child space carrying one opaque payload
+    // span the whole length of the decompressed block.
+    for block in &scan.blocks {
+        let child = ledger
+            .spaces
+            .iter()
+            .find(|s| {
+                matches!(&s.origin, cadmpeg_ir::SerializedOrigin::Transform { .. })
+                    && s.length == block.payload.len() as u64
+            })
+            .expect("block child space present");
+        assert_eq!(child.spans.len(), 1);
+        assert_eq!(child.spans[0].class, cadmpeg_ir::SpanClass::Opaque);
+    }
+}
+
+#[test]
+fn container_ledger_serialization_is_deterministic() {
+    let f = synthetic_sldprt();
+
+    let first = crate::fidelity::container_ledger(&container::scan_bytes(&f));
+    let second = crate::fidelity::container_ledger(&container::scan_bytes(&f));
+    let first_json = first.to_canonical_json().unwrap();
+    let second_json = second.to_canonical_json().unwrap();
+    assert_eq!(first_json, second_json);
+
+    // The public codec entry produces the same validated sidecar, and it
+    // round-trips through the v2 parser.
+    let via_codec = SldprtCodec
+        .source_fidelity(&mut Cursor::new(f.clone()))
+        .expect("codec builds a validated sidecar");
+    assert_eq!(via_codec.to_canonical_json().unwrap(), first_json);
+    let parsed = cadmpeg_ir::SourceFidelity::from_json(&first_json).unwrap();
+    assert_eq!(parsed, first);
+}

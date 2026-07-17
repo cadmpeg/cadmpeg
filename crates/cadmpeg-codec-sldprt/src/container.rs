@@ -39,7 +39,7 @@ const PER_BLOCK_GRAPH_BYTES: u64 = 256;
 
 /// Bytes between a marker and its preamble in a block frame
 /// (`marker[6] + type_id[4] + crc32[4] + comp_sz[4] + uncomp_sz[4] + pre_sz[4]`).
-const BLOCK_HEADER_LEN: usize = 26;
+pub(crate) const BLOCK_HEADER_LEN: usize = 26;
 
 /// Upper bound on a single decompressed block, guarding a corrupt `uncomp_sz`
 /// from driving an unbounded allocation. Real part streams sit far below this.
@@ -198,7 +198,7 @@ pub struct ContainerScan {
 }
 
 /// The outer header magic length (`file_id` + `version`).
-const OUTER_HEADER_LEN: usize = 8;
+pub(crate) const OUTER_HEADER_LEN: usize = 8;
 
 /// Test whether a prefix contains the container marker after its outer header.
 ///

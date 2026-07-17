@@ -268,3 +268,19 @@ charges = []
 cost_model = "unbudgeted: decodes sequential triangle-strip cells over a `&[u8]` window with marker probes and `Vec::new`/`push` accumulation; needs a `View` over the tessellation stream, `read_counted` for the strip vertex runs, and `work` charged over bytes examined"
 window_egress = []
 ledger_level = 0
+
+# ---------------------------------------------------------------------------
+# L1 container accounting (doc section 10 Phase 3C). Not a byte parser: builds
+# the coarse source-fidelity ledger from already-scanned `ContainerScan` facts,
+# digesting bounded source spans and deriving one child space per block. No
+# hostile read, no `.window()` egress, and no budget charge of its own; the
+# container scan already charged the bytes. Emits the serialized L1 ledger.
+[[module]]
+path = "crates/cadmpeg-codec-sldprt/src/fidelity.rs"
+status = "migrated"
+input_spaces = ["source"]
+fuzz_targets = []
+charges = []
+cost_model = "no budget charge; builds the L1 source-fidelity ledger from already-scanned container facts, digesting bounded source spans; output proportional to the block count"
+window_egress = []
+ledger_level = 1

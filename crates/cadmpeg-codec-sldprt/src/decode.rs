@@ -767,6 +767,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
+        source_fidelity: None,
         format: "sldprt".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -1204,6 +1205,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
+        source_fidelity: None,
         format: "sldprt".to_string(),
         container_only,
         geometry_transferred: false,

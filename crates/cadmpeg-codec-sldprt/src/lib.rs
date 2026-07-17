@@ -79,6 +79,7 @@ pub mod brep;
 mod classification;
 pub mod container;
 pub mod decode;
+pub mod fidelity;
 mod history;
 mod metadata;
 mod native;
@@ -94,17 +95,45 @@ mod writer_transform;
 #[cfg(feature = "fuzzing")]
 pub mod fuzzing;
 
-use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
+use cadmpeg_ir::codec::{
+    Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder, ReadSeek,
+};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::{Check, Finding, Severity};
+use cadmpeg_ir::{Check, Finding, Severity, SourceFidelity};
 use std::io::Write;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SldprtCodec;
+
+impl SldprtCodec {
+    /// Build the validated L1 source-fidelity sidecar for a `.sldprt` container.
+    ///
+    /// Scans the outer container and produces the v2 [`SourceFidelity`] at
+    /// [`LedgerLevel::L1`](cadmpeg_ir::LedgerLevel::L1): complete coarse tiling
+    /// of the root `source` space plus one `Transform` child space per block
+    /// (see [`fidelity`]). The ledger is validated before it is returned, so an
+    /// accounting-enabled result never carries an incompletely tiled or
+    /// origin-inconsistent ledger; a [`FidelityError`](cadmpeg_ir::FidelityError)
+    /// surfaces as [`CodecError::Malformed`]. Serialize the result through
+    /// [`SourceFidelity::to_canonical_json`] for the stable-id sidecar.
+    pub fn source_fidelity(&self, reader: &mut dyn ReadSeek) -> Result<SourceFidelity, CodecError> {
+        reader
+            .seek(std::io::SeekFrom::Start(0))
+            .map_err(CodecError::Io)?;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(reader, &mut bytes).map_err(CodecError::Io)?;
+        let scan = container::scan_bytes(&bytes);
+        let ledger = fidelity::container_ledger(&scan);
+        ledger
+            .validate()
+            .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        Ok(ledger)
+    }
+}
 
 /// Validate `SolidWorks` native feature-input byte references.
 pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
