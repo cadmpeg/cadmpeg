@@ -151,9 +151,11 @@ fn commit_record_tickets(
 /// The block whose Parasolid stream was lifted into the B-rep graph
 /// (`typed_offset`) resolves `Typed`, naming the IR entities transferred; every
 /// other retained block resolves `Retained`, naming its preserved payload blob;
-/// framing records resolve `Structural`. A block that was neither typed nor
-/// retained (an outcome the decode path does not produce) resolves `Structural`
-/// rather than being dropped silently.
+/// framing records (`block_offset == None`) resolve `Structural`. Every content
+/// block is retained on the decode path, so a block that is neither typed nor
+/// retained is an invariant break, not framing: it is surfaced in debug builds
+/// rather than silently reclassified as `Structural` (which would conceal a lost
+/// content record, §6.2).
 fn resolve_record_tickets(
     ctx: &DecodeContext<'_>,
     tickets: Vec<PendingTicket>,
@@ -170,7 +172,16 @@ fn resolve_record_tickets(
             (Some(_), Some(digest)) => RecordDisposition::Retained {
                 records: vec![digest],
             },
-            _ => RecordDisposition::Structural,
+            // A content block (`block_offset == Some`) must have been retained;
+            // reaching here means a block-admission path skipped `ctx.retain`.
+            (Some(offset), None) => {
+                debug_assert!(
+                    false,
+                    "content block at offset {offset} resolved neither Typed nor Retained"
+                );
+                RecordDisposition::Structural
+            }
+            (None, _) => RecordDisposition::Structural,
         };
         ctx.resolve(pending.ticket, disposition);
     }
