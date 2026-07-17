@@ -400,7 +400,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
         });
         at = record_end;
     }
-    (records.len() >= 2).then_some(ObjectGraph {
+    (records.len() >= 2 && at == end).then_some(ObjectGraph {
         pos,
         total_len,
         catalog_pos: None,

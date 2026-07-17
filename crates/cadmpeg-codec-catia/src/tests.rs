@@ -4532,6 +4532,16 @@ fn outer_object_graph_rejects_ambiguous_length_closing_child_frames() {
 }
 
 #[test]
+fn outer_object_graph_requires_records_to_cover_the_root_extent() {
+    let mut bytes = object_graph_stream();
+    bytes.extend_from_slice(&[0xaa, 0xbb]);
+    let declared_len = u32::try_from(bytes.len()).expect("fixture graph length");
+    bytes[2..6].copy_from_slice(&declared_len.to_le_bytes());
+
+    assert!(crate::object_graph::parse(&bytes).is_none());
+}
+
+#[test]
 fn object_graph_payload_reads_fixed_width_escaped_values() {
     use crate::object_graph::PayloadField;
 
