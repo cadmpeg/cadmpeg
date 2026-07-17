@@ -2120,7 +2120,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
     );
     assert_eq!(
         crate::decode::non_boolean_feature_definition_with_parameters(
-            "EXTRUDE",
+            "UNKNOWN OPERATION",
             &[],
             None,
             None,
@@ -2129,7 +2129,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             parameters,
         ),
         cadmpeg_ir::features::FeatureDefinition::Native {
-            kind: "EXTRUDE".to_string(),
+            kind: "UNKNOWN OPERATION".to_string(),
             parameters: std::collections::BTreeMap::from([
                 ("p1_length".to_string(), "p2_length * 2".to_string()),
                 ("p2_length".to_string(), "12.5".to_string()),
@@ -2832,6 +2832,16 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             targets: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
             keep: BodyTrimSide::Unresolved,
+        }
+    );
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("EXTRUDE", &[], None, None, None),
+        FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            direction: None,
+            extent: cadmpeg_ir::features::Extent::Unresolved,
+            op: BooleanOp::Unresolved,
+            draft: None,
         }
     );
     assert!(matches!(

@@ -650,6 +650,24 @@ fn unresolved_datum_families_round_trip_through_json() {
 }
 
 #[test]
+fn unresolved_extrusion_profile_round_trips_through_json() {
+    use crate::features::{BooleanOp, Extent, FeatureDefinition, ProfileRef};
+
+    let definition = FeatureDefinition::Extrude {
+        profile: ProfileRef::Unresolved,
+        direction: None,
+        extent: Extent::Unresolved,
+        op: BooleanOp::Unresolved,
+        draft: None,
+    };
+    let json = serde_json::to_string(&definition).unwrap();
+    assert_eq!(
+        serde_json::from_str::<FeatureDefinition>(&json).unwrap(),
+        definition
+    );
+}
+
+#[test]
 fn feature_history_rejects_dangling_and_forward_dependencies() {
     use crate::features::{
         BooleanOp, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,

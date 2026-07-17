@@ -1189,6 +1189,8 @@ pub enum SweepMode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum ProfileRef {
+    /// Profile family is known but its construction geometry is unresolved.
+    Unresolved,
     /// Opaque reference into a native feature-input record; no neutral geometry given.
     Native(String),
     /// Solved neutral sketch profile.

@@ -10795,6 +10795,13 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             tools: BodySelection::Unresolved,
             keep: BodyTrimSide::Unresolved,
         },
+        "EXTRUDE" => FeatureDefinition::Extrude {
+            profile: ProfileRef::Unresolved,
+            direction: None,
+            extent: Extent::Unresolved,
+            op: BooleanOp::Unresolved,
+            draft: None,
+        },
         "THICKEN_SHEET" => FeatureDefinition::Thicken {
             faces: FaceSelection::Unresolved,
             thickness: None,
