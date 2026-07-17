@@ -23,6 +23,14 @@ use crate::container::{role, ContainerScan};
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
 
+/// Compare a serialized Protein visual token with a Design visual GUID.
+///
+/// Protein assets may append one or more `_Post2015` revisions to their
+/// 36-character GUID. Design assignments retain only the GUID prefix.
+pub(crate) fn visual_guid_matches(left: &str, right: &str) -> bool {
+    is_guid_prefix(left) && is_guid_prefix(right) && left[..36].eq_ignore_ascii_case(&right[..36])
+}
+
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
     let schema = appearance.schema.as_deref().unwrap_or("GenericSchema");
     let guid = appearance
@@ -381,7 +389,10 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
     let object_types = decode_design_object_types(reader, scan)?;
     for assignment in &assignments {
         if !out.iter().any(|appearance| {
-            appearance.visual_guid.as_deref() == Some(&assignment.visual_guid)
+            appearance
+                .visual_guid
+                .as_deref()
+                .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
                 || assignment.visual_preset.as_deref() == appearance.name.as_deref()
         }) {
             out.push(Appearance {
@@ -398,10 +409,12 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
         }
     }
     for appearance in &mut out {
-        if let Some(assignment) = assignments
-            .iter()
-            .find(|assignment| appearance.visual_guid.as_deref() == Some(&assignment.visual_guid))
-        {
+        if let Some(assignment) = assignments.iter().find(|assignment| {
+            appearance
+                .visual_guid
+                .as_deref()
+                .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
+        }) {
             appearance.physical_token = assignment.physical_token.clone();
         }
     }
@@ -423,7 +436,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
             appearance
                 .visual_guid
                 .as_deref()
-                .is_some_and(|guid| guid.starts_with(&over.visual_guid))
+                .is_some_and(|guid| visual_guid_matches(guid, &over.visual_guid))
         }) else {
             continue;
         };
@@ -801,7 +814,10 @@ fn bind_bodies<S: std::hash::BuildHasher>(
                 (*key == assignment.asm_body_key).then_some(body.clone())
             })?;
             let appearance = appearances.iter().find(|appearance| {
-                appearance.visual_guid.as_deref() == Some(&assignment.visual_guid)
+                appearance
+                    .visual_guid
+                    .as_deref()
+                    .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
                     || assignment.visual_preset.as_deref() == appearance.name.as_deref()
             })?;
             Some(AppearanceBinding {

@@ -19305,6 +19305,26 @@ fn decode_transfers_generated_protein_appearance() {
 }
 
 #[test]
+fn decode_binds_revision_suffixed_protein_visual_guid() {
+    let visual = "11111111-2222-3333-4444-555555555555_Post2015_Post2015";
+    let f3d = f3d_with_smbh_and_protein_guids(&synthetic_geometry_smbh(), &[visual]);
+    let result = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .expect("revision-suffixed Protein decode");
+
+    assert_eq!(result.ir.model.appearances.len(), 1);
+    assert_eq!(
+        result.ir.model.appearances[0].visual_guid.as_deref(),
+        Some(visual)
+    );
+    assert_eq!(result.ir.model.appearance_bindings.len(), 1);
+    assert_eq!(
+        result.ir.model.appearance_bindings[0].appearance,
+        result.ir.model.appearances[0].id
+    );
+}
+
+#[test]
 fn decode_transfers_generated_custom_attribute() {
     let f3d = f3d_with_smbh(&synthetic_geometry_with_attribute_smbh());
     let mut cur = Cursor::new(f3d);
@@ -19618,6 +19638,22 @@ fn browser_body_appearance_decodes_named_and_nameless_records() {
             (454966, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
         ]
     );
+}
+
+#[test]
+fn protein_revision_suffix_does_not_change_visual_guid_identity() {
+    assert!(crate::materials::visual_guid_matches(
+        "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015",
+        "7dd7765d-ca8c-4a38-b156-b3b4916e0c17",
+    ));
+    assert!(!crate::materials::visual_guid_matches(
+        "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015",
+        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F",
+    ));
+    assert!(!crate::materials::visual_guid_matches(
+        "not-a-guid_Post2015",
+        "not-a-guid",
+    ));
 }
 
 #[test]

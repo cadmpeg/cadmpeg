@@ -4127,7 +4127,9 @@ fn source_less_body_key(
                 .as_ref()?
                 .design_material_assignments
                 .iter()
-                .find(|assignment| assignment.visual_guid == visual_guid)
+                .find(|assignment| {
+                    crate::materials::visual_guid_matches(&assignment.visual_guid, visual_guid)
+                })
                 .map(|assignment| assignment.asm_body_key)
         });
     let key = assigned.unwrap_or(
@@ -11611,8 +11613,9 @@ fn validate_material_assignment_appearances(
             continue;
         }
         let synchronized = target_assignments.iter().any(|assignment| {
-            after.visual_guid.as_deref() == Some(assignment.visual_guid.as_str())
-                && after.physical_token == assignment.physical_token
+            after.visual_guid.as_deref().is_some_and(|guid| {
+                crate::materials::visual_guid_matches(guid, &assignment.visual_guid)
+            }) && after.physical_token == assignment.physical_token
         });
         if !synchronized {
             return Err(CodecError::NotImplemented(format!(
@@ -11629,8 +11632,9 @@ fn validate_material_assignment_appearances(
         };
         if after.physical_token != before.physical_token
             && !target.model.appearances.iter().any(|appearance| {
-                appearance.visual_guid.as_deref() == Some(after.visual_guid.as_str())
-                    && appearance.physical_token == after.physical_token
+                appearance.visual_guid.as_deref().is_some_and(|guid| {
+                    crate::materials::visual_guid_matches(guid, &after.visual_guid)
+                }) && appearance.physical_token == after.physical_token
             })
         {
             return Err(CodecError::NotImplemented(format!(

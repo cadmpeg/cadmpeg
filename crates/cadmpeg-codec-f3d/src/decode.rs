@@ -2134,7 +2134,7 @@ fn resolve_face_appearance_bindings(
             appearance
                 .visual_guid
                 .as_deref()
-                .is_some_and(|guid| guid.starts_with(&assignment.visual_guid))
+                .is_some_and(|guid| materials::visual_guid_matches(guid, &assignment.visual_guid))
         }) else {
             continue;
         };
