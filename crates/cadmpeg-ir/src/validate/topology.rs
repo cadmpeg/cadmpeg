@@ -1362,14 +1362,60 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         if !configuration.feature_states.is_empty() {
-            for feature in configuration.feature_states.keys() {
-                if !features.contains_key(feature.0.as_str()) {
+            for (feature, state) in &configuration.feature_states {
+                let Some(feature_ordinal) = features.get(feature.0.as_str()) else {
                     ref_error(
                         findings,
                         &configuration.id.0,
                         "configuration feature",
                         &feature.0,
                     );
+                    continue;
+                };
+                let mut dependencies = HashSet::new();
+                for dependency in &state.dependencies {
+                    if !dependencies.insert(dependency) {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "configuration feature `{}` repeats dependency `{}`",
+                                feature.0, dependency.0
+                            ),
+                            entity: Some(configuration.id.0.clone()),
+                        });
+                        continue;
+                    }
+                    match features.get(dependency.0.as_str()) {
+                        None => ref_error(
+                            findings,
+                            &configuration.id.0,
+                            "configuration dependency feature",
+                            &dependency.0,
+                        ),
+                        Some(dependency_ordinal) if dependency_ordinal >= feature_ordinal => {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: format!(
+                                    "configuration dependency feature `{}` does not precede `{}`",
+                                    dependency.0, feature.0
+                                ),
+                                entity: Some(configuration.id.0.clone()),
+                            });
+                        }
+                        Some(_) => {}
+                    }
+                }
+                for body in &state.outputs {
+                    if !ids.bodies.contains(&body.0) {
+                        ref_error(
+                            findings,
+                            &configuration.id.0,
+                            "configuration feature output body",
+                            &body.0,
+                        );
+                    }
                 }
             }
             if configuration.feature_states.len() != features.len() {

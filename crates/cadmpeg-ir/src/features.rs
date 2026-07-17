@@ -83,6 +83,12 @@ pub struct ConfigurationFeatureState {
     /// Whether evaluation of this feature is disabled in the configuration.
     #[serde(default)]
     pub suppressed: bool,
+    /// Earlier features consumed during regeneration in source operand order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<FeatureId>,
+    /// Bodies produced or modified in the configuration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outputs: Vec<BodyId>,
     /// Evaluated construction semantics in the configuration.
     pub definition: FeatureDefinition,
 }

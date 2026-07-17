@@ -2032,6 +2032,8 @@ fn project_configuration_feature_states(
                     feature.id,
                     ConfigurationFeatureState {
                         suppressed: feature.suppressed,
+                        dependencies: feature.dependencies,
+                        outputs: feature.outputs,
                         definition: feature.definition,
                     },
                 )

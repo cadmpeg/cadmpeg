@@ -9585,7 +9585,6 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Profile A"))
-        .and_then(|feature| feature.native_ref.as_deref())
         .unwrap();
     let profile_b = decoded
         .ir
@@ -9593,22 +9592,25 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Profile B"))
-        .and_then(|feature| feature.native_ref.as_deref())
         .unwrap();
+    let state_a = &decoded.ir.model.configurations[0].feature_states[&extrusion_id];
+    let state_b = &decoded.ir.model.configurations[1].feature_states[&extrusion_id];
     assert!(matches!(
-        &decoded.ir.model.configurations[0].feature_states[&extrusion_id].definition,
+        &state_a.definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Native(profile),
             ..
-        } if profile == profile_a
+        } if Some(profile.as_str()) == profile_a.native_ref.as_deref()
     ));
     assert!(matches!(
-        &decoded.ir.model.configurations[1].feature_states[&extrusion_id].definition,
+        &state_b.definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Native(profile),
             ..
-        } if profile == profile_b
+        } if Some(profile.as_str()) == profile_b.native_ref.as_deref()
     ));
+    assert_eq!(state_a.dependencies, vec![profile_a.id.clone()]);
+    assert_eq!(state_b.dependencies, vec![profile_b.id.clone()]);
 }
 
 #[test]

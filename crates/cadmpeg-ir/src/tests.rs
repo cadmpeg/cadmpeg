@@ -977,6 +977,8 @@ fn configuration_body_membership_round_trips_and_validates() {
         FeatureId("synthetic:test:feature#missing".into()),
         ConfigurationFeatureState {
             suppressed: false,
+            dependencies: Vec::new(),
+            outputs: Vec::new(),
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
             },
