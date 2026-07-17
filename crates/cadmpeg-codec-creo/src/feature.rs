@@ -836,6 +836,12 @@ pub struct FeatureTrimEntity {
 /// Solved/trimmed entity graph for one feature definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureTrimEntityTable {
+    /// Count declared by the table opener when present.
+    pub declared_count: Option<u32>,
+    /// Native table-class reference when present.
+    pub entity_ref: Option<u32>,
+    /// Native row-class reference when present.
+    pub entry_ref: Option<u32>,
     /// Complete positional rows in stored order.
     pub rows: Vec<FeatureTrimEntity>,
     /// Sorted external IDs present in the trimmed profile.
@@ -860,6 +866,12 @@ pub struct FeatureTrimVertex {
 /// Solved trim-vertex adjacency table for one feature definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureTrimVertexTable {
+    /// Count declared by the table opener when present.
+    pub declared_count: Option<u32>,
+    /// Native table-class reference when present.
+    pub entity_ref: Option<u32>,
+    /// Native row-class reference when present.
+    pub entry_ref: Option<u32>,
     /// Complete validated vertex rows in stored order.
     pub rows: Vec<FeatureTrimVertex>,
     /// Byte offset of the `vert_tab` label in the original stream.
@@ -2075,6 +2087,7 @@ fn trim_entity_table(
     segments: Option<&FeatureSegmentTable>,
 ) -> Option<FeatureTrimEntityTable> {
     let table = find_bytes(payload, b"ent_tab\0", start, end)?;
+    let header = trim_table_header(payload, b"ent_tab\0", start, end);
     let prototype = find_bytes(payload, b"entry_ptr(entity_entry)", table, end)?;
     let close = find_bytes(payload, &[0xf2, psb::token::ENTITY_REF], prototype, end)?;
     let (_, mut cursor) = psb::compact_int(payload, close + 2);
@@ -2131,6 +2144,9 @@ fn trim_entity_table(
         cursor += 1;
     }
     (!rows.is_empty()).then(|| FeatureTrimEntityTable {
+        declared_count: header.map(|header| header.0),
+        entity_ref: header.map(|header| header.1),
+        entry_ref: header.map(|header| header.2),
         solved_external_ids: seen.into_iter().collect(),
         rows,
         offset: table,
@@ -2143,9 +2159,19 @@ fn trim_table_classes(
     start: usize,
     end: usize,
 ) -> Option<(u32, u32)> {
+    trim_table_header(payload, label, start, end)
+        .map(|(_, table_class, entry_class)| (table_class, entry_class))
+}
+
+fn trim_table_header(
+    payload: &[u8],
+    label: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<(u32, u32, u32)> {
     let table = find_bytes(payload, label, start, end)? + label.len();
     let opener = (table..end).find(|&offset| payload[offset] == psb::token::ARRAY_OPEN)?;
-    let (_, after_count) = psb::compact_int(payload, opener + 1);
+    let (declared_count, after_count) = psb::compact_int(payload, opener + 1);
     (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
     let (table_class, _) = psb::reference_id(payload, after_count + 1).ok()?;
     let entry_class = (after_count..end).find_map(|offset| {
@@ -2164,7 +2190,7 @@ fn trim_table_classes(
         }
         (payload.get(after_reference..after_reference + 2) == Some(&[0, 0xe3])).then_some(class)
     })?;
-    Some((table_class, entry_class))
+    Some((declared_count, table_class, entry_class))
 }
 
 fn positional_table_region(
@@ -2275,6 +2301,9 @@ fn positional_trim_entity_table(
         cursor += 1;
     }
     (!rows.is_empty()).then(|| FeatureTrimEntityTable {
+        declared_count: Some(declared_count),
+        entity_ref: Some(table_class),
+        entry_ref: Some(entry_class),
         solved_external_ids: seen.into_iter().collect(),
         rows,
         offset: table,
@@ -2290,6 +2319,7 @@ fn trim_vertex_table(
     variables: Option<&FeatureVariableTable>,
 ) -> Option<FeatureTrimVertexTable> {
     let table = find_bytes(payload, b"vert_tab\0", start, end)?;
+    let header = trim_table_header(payload, b"vert_tab\0", start, end);
     let chains_end = table
         .saturating_add(b"vert_tab\0".len())
         .saturating_add(120)
@@ -2382,6 +2412,9 @@ fn trim_vertex_table(
         cursor = next + 1;
     }
     (!rows.is_empty()).then_some(FeatureTrimVertexTable {
+        declared_count: header.map(|header| header.0),
+        entity_ref: header.map(|header| header.1),
+        entry_ref: header.map(|header| header.2),
         rows,
         offset: table,
     })
@@ -2459,6 +2492,9 @@ fn positional_trim_vertex_table(
         cursor = next.saturating_add(1).max(cursor + 1);
     }
     (!rows.is_empty()).then_some(FeatureTrimVertexTable {
+        declared_count: Some(declared_count),
+        entity_ref: Some(table_class),
+        entry_ref: Some(entry_class),
         rows,
         offset: table,
     })
@@ -6701,6 +6737,9 @@ mod tests {
         )
         .expect("positional ent_tab");
 
+        assert_eq!(entities.declared_count, Some(7));
+        assert_eq!(entities.entity_ref, Some(66));
+        assert_eq!(entities.entry_ref, Some(67));
         assert_eq!(entities.solved_external_ids, vec![9]);
         assert_eq!(entities.rows[0].vertices, [3, 4]);
         assert_eq!(entities.rows[0].kind, TrimEntityKind::Line);
@@ -6748,6 +6787,9 @@ mod tests {
         let payload = b"prefix\xf8\x13\xf7\x44\xfb\xe2\xf7\x45\
             \x09\x0a\x03\x00\xe2";
         let entities = FeatureTrimEntityTable {
+            declared_count: None,
+            entity_ref: None,
+            entry_ref: None,
             rows: vec![
                 FeatureTrimEntity {
                     external_id: 9,
@@ -6781,6 +6823,9 @@ mod tests {
         )
         .expect("positional vert_tab");
 
+        assert_eq!(vertices.declared_count, Some(19));
+        assert_eq!(vertices.entity_ref, Some(68));
+        assert_eq!(vertices.entry_ref, Some(69));
         assert_eq!(vertices.rows.len(), 1);
         assert_eq!(vertices.rows[0].vertex_id, 3);
         assert_eq!(vertices.rows[0].entities, [9, 10]);
@@ -6881,6 +6926,10 @@ mod tests {
         assert_eq!(
             trim_table_classes(payload, b"vert_tab\0", 0, payload.len()),
             Some((68, 69))
+        );
+        assert_eq!(
+            trim_table_header(payload, b"vert_tab\0", 0, payload.len()),
+            Some((19, 68, 69))
         );
     }
 

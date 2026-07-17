@@ -117,6 +117,7 @@ struct CreoSketchTableHeader {
     kind: &'static str,
     declared_count: Option<u32>,
     entity_ref: Option<u32>,
+    entry_ref: Option<u32>,
     row_count: usize,
     offset: usize,
 }
@@ -2986,11 +2987,12 @@ fn sketch_table_headers(
     definition: &crate::feature::FeatureDefinition,
 ) -> Vec<CreoSketchTableHeader> {
     let mut headers = Vec::new();
-    let mut push = |kind, declared_count, entity_ref, row_count, offset| {
+    let mut push = |kind, declared_count, entity_ref, entry_ref, row_count, offset| {
         headers.push(CreoSketchTableHeader {
             kind,
             declared_count,
             entity_ref,
+            entry_ref,
             row_count,
             offset,
         });
@@ -3000,6 +3002,7 @@ fn sketch_table_headers(
             "variables",
             Some(table.declared_count),
             table.entity_ref,
+            None,
             table.rows.len(),
             table.offset,
         );
@@ -3009,21 +3012,37 @@ fn sketch_table_headers(
             "segments",
             Some(table.declared_count),
             table.entity_ref,
+            None,
             table.rows.len(),
             table.offset,
         );
     }
     if let Some(table) = &definition.trim_entities {
-        push("trim_entities", None, None, table.rows.len(), table.offset);
+        push(
+            "trim_entities",
+            table.declared_count,
+            table.entity_ref,
+            table.entry_ref,
+            table.rows.len(),
+            table.offset,
+        );
     }
     if let Some(table) = &definition.trim_vertices {
-        push("trim_vertices", None, None, table.rows.len(), table.offset);
+        push(
+            "trim_vertices",
+            table.declared_count,
+            table.entity_ref,
+            table.entry_ref,
+            table.rows.len(),
+            table.offset,
+        );
     }
     if let Some(table) = &definition.order_table {
         push(
             "order",
             Some(table.declared_count),
             table.entity_ref,
+            None,
             table.rows.len(),
             table.offset,
         );
@@ -3033,6 +3052,7 @@ fn sketch_table_headers(
             "dimensions",
             Some(table.declared_count),
             table.entity_ref,
+            None,
             table.rows.len(),
             table.offset,
         );
@@ -3042,6 +3062,7 @@ fn sketch_table_headers(
             "relations",
             Some(table.declared_count),
             table.entity_ref,
+            None,
             table.rows.len(),
             table.offset,
         );
@@ -3050,6 +3071,7 @@ fn sketch_table_headers(
                 "solver_incidences",
                 Some(header.declared_count),
                 Some(header.entity_ref),
+                None,
                 table.skamps.len(),
                 header.offset,
             );
@@ -3059,6 +3081,7 @@ fn sketch_table_headers(
                 "relation_triples",
                 Some(header.declared_count),
                 Some(header.entity_ref),
+                None,
                 table.triples.len(),
                 header.offset,
             );
@@ -3067,6 +3090,7 @@ fn sketch_table_headers(
     if let Some(table) = &definition.saved_section {
         push(
             "saved_entities",
+            None,
             None,
             None,
             table.entities.len(),
@@ -14293,6 +14317,9 @@ mod resolved_sketch_tests {
             offset: 4,
         });
         completed.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
+            declared_count: None,
+            entity_ref: None,
+            entry_ref: None,
             rows: vec![crate::feature::FeatureTrimEntity {
                 external_id: 42,
                 mode: Some(0),
@@ -14522,6 +14549,9 @@ mod resolved_sketch_tests {
             offset: 38,
         });
         trimmed.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
+            declared_count: None,
+            entity_ref: None,
+            entry_ref: None,
             rows: vec![crate::feature::FeatureTrimEntity {
                 external_id: 42,
                 mode: Some(0),
@@ -14539,6 +14569,9 @@ mod resolved_sketch_tests {
         );
         let mut conflicting_vertex = trimmed.clone();
         conflicting_vertex.trim_vertices = Some(crate::feature::FeatureTrimVertexTable {
+            declared_count: None,
+            entity_ref: None,
+            entry_ref: None,
             rows: vec![
                 crate::feature::FeatureTrimVertex {
                     vertex_id: 1,
@@ -14654,6 +14687,9 @@ mod resolved_sketch_tests {
             variables: None,
             segments: None,
             trim_entities: Some(crate::feature::FeatureTrimEntityTable {
+                declared_count: None,
+                entity_ref: None,
+                entry_ref: None,
                 rows: vec![crate::feature::FeatureTrimEntity {
                     external_id: 42,
                     mode: Some(0),
@@ -16494,6 +16530,9 @@ mod resolved_sketch_tests {
             variables: None,
             segments: None,
             trim_entities: Some(crate::feature::FeatureTrimEntityTable {
+                declared_count: None,
+                entity_ref: None,
+                entry_ref: None,
                 rows: [(10, [1, 2]), (11, [3, 2]), (12, [3, 4]), (13, [4, 1])]
                     .into_iter()
                     .map(
@@ -16535,6 +16574,9 @@ mod resolved_sketch_tests {
 
         let mut arcs = definition.clone();
         arcs.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
+            declared_count: None,
+            entity_ref: None,
+            entry_ref: None,
             rows: [(10, [1, 2]), (11, [2, 1])]
                 .into_iter()
                 .map(

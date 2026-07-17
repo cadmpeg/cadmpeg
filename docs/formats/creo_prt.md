@@ -657,6 +657,9 @@ ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, 
 The `skamp_ptr` and `triples_ptr` array headers retain their declared counts,
 table-class references, and source offsets independently of the number of rows
 whose bodies decode.
+The `ent_tab` and `vert_tab` headers likewise retain their declared counts,
+table-class references, and row-class references independently of validated
+trim rows.
 
 The first `var_arr` row is the named field prototype between the table header
 and schema close. It is a data row and contributes to the declared count;
