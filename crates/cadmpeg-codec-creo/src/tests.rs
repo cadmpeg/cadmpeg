@@ -4632,18 +4632,30 @@ fn decode_transfers_closed_plane_intersection_brep() {
         push_generated_topology_row(&mut payload, curve, faces, next);
     }
 
-    let allfeatur = b"\x04\xeb\x04\xe0\x21geoms_affected\0\xf8\x01\x63".to_vec();
+    let allfeatur = b"\x04\xeb\x04\x00\x10\x01\x00\xe5\xe3\xf6\x83\x91\xe1\
+        \xe0\x21geoms_affected\0\xf8\x01\x63\
+        \xe0\x21edgs_affected\0\xf8\x02\x0a\x0b"
+        .to_vec();
     let data = build_prt(
         "c",
         &[
             ("VisibGeom", payload),
             ("AllFeatur", allfeatur),
-            ("MdlStatus", b"Protrusion id 4\0".to_vec()),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
         ],
     );
     let scan = container::scan_bytes(data.clone());
     assert_eq!(scan.plane_local_systems.len(), 4);
     assert_eq!(scan.curve_topology_rows.len(), 6);
+    assert!(
+        scan.feature_affected_ids.iter().any(|record| {
+            record.feature_id == 4
+                && record.kind == crate::feature::AffectedIdKind::Edges
+                && record.ids == [10, 11]
+        }),
+        "affected ids: {:#?}",
+        scan.feature_affected_ids
+    );
     assert_eq!(scan.loops.len(), 4);
     assert_eq!(scan.topological_vertices.len(), 4);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
@@ -4693,6 +4705,20 @@ fn decode_transfers_closed_plane_intersection_brep() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature 4");
     assert_eq!(feature.outputs, vec![model.bodies[0].id.clone()]);
+    let cadmpeg_ir::features::FeatureDefinition::Fillet { edges, .. } = &feature.definition else {
+        panic!("round definition: {:#?}", feature.definition);
+    };
+    let cadmpeg_ir::features::EdgeSelection::Resolved { edges, native } = edges else {
+        panic!("round edges: {edges:#?}");
+    };
+    assert_eq!(
+        edges,
+        &[
+            cadmpeg_ir::ids::EdgeId("creo:visibgeom:edge#10".to_string()),
+            cadmpeg_ir::ids::EdgeId("creo:visibgeom:edge#11".to_string()),
+        ]
+    );
+    assert_eq!(native, "creo:allfeatur:edgs_affected#4:10,11");
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }

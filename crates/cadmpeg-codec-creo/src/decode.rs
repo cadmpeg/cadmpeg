@@ -11729,8 +11729,12 @@ fn resolved_revolution_axis(
     Some(*axis)
 }
 
-fn feature_edge_selection(scan: &ContainerScan, feature_id: u32) -> Option<EdgeSelection> {
-    if let Some(ids) = agreed_feature_affected_ids(
+fn feature_edge_selection(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<EdgeSelection> {
+    let (ids, native) = if let Some(ids) = agreed_feature_affected_ids(
         &scan.feature_affected_ids,
         feature_id,
         crate::feature::AffectedIdKind::Edges,
@@ -11738,27 +11742,43 @@ fn feature_edge_selection(scan: &ContainerScan, feature_id: u32) -> Option<EdgeS
         if ids.is_empty() {
             return None;
         }
-        return Some(EdgeSelection::Native(format!(
+        let native = format!(
             "creo:allfeatur:edgs_affected#{feature_id}:{}",
             ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
-        )));
+        );
+        (ids, native)
+    } else {
+        if has_feature_affected_ids(
+            &scan.feature_affected_ids,
+            feature_id,
+            crate::feature::AffectedIdKind::Edges,
+        ) {
+            return None;
+        }
+        let ids = agreed_feature_replay_edge_ids(&scan.feature_replay_affected_ids, feature_id)?;
+        if ids.is_empty() {
+            return None;
+        }
+        let native = format!(
+            "creo:allfeatur:replay_edgs_affected#{feature_id}:{}",
+            ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+        );
+        (ids, native)
+    };
+    let edges = ids
+        .iter()
+        .map(|id| EdgeId(format!("creo:visibgeom:edge#{id}")))
+        .collect::<Vec<_>>();
+    let unique = edges.iter().collect::<BTreeSet<_>>().len() == edges.len();
+    if unique
+        && edges
+            .iter()
+            .all(|edge| ir.model.edges.iter().any(|candidate| candidate.id == *edge))
+    {
+        Some(EdgeSelection::Resolved { edges, native })
+    } else {
+        Some(EdgeSelection::Native(native))
     }
-    if has_feature_affected_ids(
-        &scan.feature_affected_ids,
-        feature_id,
-        crate::feature::AffectedIdKind::Edges,
-    ) {
-        return None;
-    }
-
-    let ids = agreed_feature_replay_edge_ids(&scan.feature_replay_affected_ids, feature_id)?;
-    if ids.is_empty() {
-        return None;
-    }
-    Some(EdgeSelection::Native(format!(
-        "creo:allfeatur:replay_edgs_affected#{feature_id}:{}",
-        ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
-    )))
 }
 
 fn parallel_support_radius(planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>) -> Option<f64> {
@@ -12089,7 +12109,8 @@ fn schema_feature_definition(
     }
     if schema_class == 913 {
         return IrFeatureDefinition::Fillet {
-            edges: feature_edge_selection(scan, feature_id).unwrap_or(EdgeSelection::Unresolved),
+            edges: feature_edge_selection(scan, ir, feature_id)
+                .unwrap_or(EdgeSelection::Unresolved),
             radius: round_constant_radius(scan, ir, feature_id).map_or(
                 RadiusSpec::Unresolved { form: None },
                 |radius| RadiusSpec::Constant {
@@ -12100,7 +12121,8 @@ fn schema_feature_definition(
     }
     if schema_class == 914 {
         return IrFeatureDefinition::Chamfer {
-            edges: feature_edge_selection(scan, feature_id).unwrap_or(EdgeSelection::Unresolved),
+            edges: feature_edge_selection(scan, ir, feature_id)
+                .unwrap_or(EdgeSelection::Unresolved),
             spec: ChamferSpec::Unresolved { form: None },
             flip_direction: false,
         };

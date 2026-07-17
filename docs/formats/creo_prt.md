@@ -1036,6 +1036,8 @@ Repeated named affected-ID arrays for one feature and namespace are distinct
 stored states. They define a neutral edge selection, parent set, generated
 output set, or round support set only when their ordered identifier arrays are
 identical. Conflicting arrays remain native operation parameters.
+An agreed `edgs_affected` identifier selects the B-rep edge with the same
+`crv_array` curve identifier when that edge is present in the transferred body.
 Positional replay geometry and edge arrays use the same agreement rule,
 including empty arrays; an empty and a nonempty state conflict.
 
