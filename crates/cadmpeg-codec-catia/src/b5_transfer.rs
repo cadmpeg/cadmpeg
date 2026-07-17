@@ -28,10 +28,13 @@ use crate::b5::{B5Graph, B5Loop, B5Surface};
 /// (§6.2, §10) through a [`Transfer`]: an analytic carrier the decoder can read
 /// verbatim resolves [`Exact`](Transfer::Exact), while a plane whose stored
 /// axes are not orthonormal or a revolution carrier the transfer cannot express
-/// resolves [`Fallback`](Transfer::Fallback) to an opaque `Unknown` surface and
-/// records a stable loss code. Threading the substitution through a [`Builder`]
-/// makes the fallback unwritable without its note, so `losses` gains one entry
-/// per substituted carrier. `losses` is left untouched on every `false` return.
+/// resolves [`Fallback`](Transfer::Fallback) to an opaque `Unknown` surface. An
+/// opaque substitute is not a tolerable reduction: the face's mandatory surface
+/// geometry was not transferred, so the note carries the
+/// [`GeometryNotTransferred`](LossCode::GeometryNotTransferred) code that strict
+/// mode refuses. Threading the substitution through a [`Builder`] makes the
+/// fallback unwritable without its note, so `losses` gains one entry per
+/// substituted carrier. `losses` is left untouched on every `false` return.
 pub(crate) fn transfer(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -73,9 +76,13 @@ pub(crate) fn transfer(
         let Some(surface) = graph.surfaces.get(&surface_id) else {
             return false;
         };
-        let geometry = surface_builder
-            .take(neutral_surface(surface, payload, surface_id))
-            .expect("a b5 surface transfer never drops its carrier");
+        // A carrier substitution resolves `Fallback` and yields its opaque
+        // value; a future `Dropped` branch would yield `None`, which is treated
+        // as an unresolved graph (`false`) rather than a panic on hostile input.
+        let Some(geometry) = surface_builder.take(neutral_surface(surface, payload, surface_id))
+        else {
+            return false;
+        };
         surface_plan.insert(surface_id, geometry);
     }
 
@@ -416,7 +423,10 @@ pub(crate) fn transfer(
 /// Resolve one B5 carrier across the Phase-4B resolver boundary. A readable
 /// analytic carrier is [`Exact`](Transfer::Exact); a plane whose stored axes are
 /// not orthonormal, or a revolution the transfer cannot express, substitutes an
-/// opaque `Unknown` carrier and carries the loss that explains it.
+/// opaque `Unknown` carrier. That substitution drops the face's mandatory
+/// surface geometry irreversibly, so it carries the
+/// [`GeometryNotTransferred`](LossCode::GeometryNotTransferred) code strict mode
+/// refuses, not a tolerable-reduction code.
 fn neutral_surface(
     surface: &B5Surface,
     payload: &UnknownId,
@@ -434,10 +444,11 @@ fn neutral_surface(
                     record: Some(payload.clone()),
                 },
                 carrier_loss(
-                    LossCode::CarrierAxisInferred,
+                    LossCode::GeometryNotTransferred,
                     format!(
-                        "B5 plane carrier #{surface_id} stores non-orthonormal axes; \
-                         its analytic definition was replaced by an opaque carrier."
+                        "B5 plane carrier #{surface_id} stores non-orthonormal axes; its analytic \
+                         surface definition was not transferred and the face carries an opaque \
+                         carrier."
                     ),
                 ),
             ),
@@ -459,10 +470,10 @@ fn neutral_surface(
                 record: Some(payload.clone()),
             },
             carrier_loss(
-                LossCode::ProceduralReduced,
+                LossCode::GeometryNotTransferred,
                 format!(
-                    "B5 revolution carrier #{surface_id} was reduced to an opaque carrier; \
-                     its procedural surface definition was not transferred."
+                    "B5 revolution carrier #{surface_id} was replaced by an opaque carrier; its \
+                     procedural surface definition was not transferred."
                 ),
             ),
         ),
@@ -625,7 +636,8 @@ mod tests {
     }
 
     #[test]
-    fn non_orthonormal_plane_falls_back_and_records_axis_loss() {
+    fn non_orthonormal_plane_falls_back_and_rejects_in_strict() {
+        use cadmpeg_ir::report::StrictConsequence;
         let mut sink: Vec<LossNote> = Vec::new();
         let surface = B5Surface::Plane {
             origin: [0.0, 0.0, 0.0],
@@ -635,11 +647,15 @@ mod tests {
         let value = neutral_surface(&surface, &payload(), 7).resolve(&mut sink);
         assert!(matches!(value, Some(SurfaceGeometry::Unknown { .. })));
         assert_eq!(sink.len(), 1);
-        assert_eq!(sink[0].code, LossCode::CarrierAxisInferred);
+        assert_eq!(sink[0].code, LossCode::GeometryNotTransferred);
+        // The opaque substitution is an irreversible geometry drop strict mode
+        // refuses, not a tolerable reduction.
+        assert_eq!(sink[0].code.strict_consequence(), StrictConsequence::Reject);
     }
 
     #[test]
-    fn revolution_falls_back_and_records_procedural_loss() {
+    fn revolution_falls_back_and_rejects_in_strict() {
+        use cadmpeg_ir::report::StrictConsequence;
         let mut sink: Vec<LossNote> = Vec::new();
         let surface = B5Surface::Revolution {
             profile_curve: 3,
@@ -650,7 +666,8 @@ mod tests {
         let value = neutral_surface(&surface, &payload(), 9).resolve(&mut sink);
         assert!(matches!(value, Some(SurfaceGeometry::Unknown { .. })));
         assert_eq!(sink.len(), 1);
-        assert_eq!(sink[0].code, LossCode::ProceduralReduced);
+        assert_eq!(sink[0].code, LossCode::GeometryNotTransferred);
+        assert_eq!(sink[0].code.strict_consequence(), StrictConsequence::Reject);
     }
 
     #[test]
