@@ -192,6 +192,11 @@ pub(crate) struct DecodeContext<'a> {
     mesh_budget: crate::mesh::MeshBudget,
     geometry_transferred: bool,
     phase_warnings: Vec<String>,
+    /// Typed loss notes raised when a Phase-4B boundary resolves through a
+    /// [`Transfer`]. Distinct from `phase_warnings`, which aggregate into
+    /// untyped `DecodeDiagnostic` notes; these carry the boundary's own loss
+    /// code and drain into the report's `losses` at finalization.
+    typed_losses: Vec<LossNote>,
     selected_object: Option<usize>,
     instance_key: Option<String>,
     instance_path: Vec<String>,
@@ -226,6 +231,7 @@ impl<'a> DecodeContext<'a> {
             mesh_budget: crate::mesh::MeshBudget::new(),
             geometry_transferred: false,
             phase_warnings: Vec::new(),
+            typed_losses: Vec::new(),
             selected_object: None,
             instance_key: None,
             instance_path: Vec::new(),
@@ -1862,6 +1868,7 @@ impl<'a> DecodeContext<'a> {
                 }),
             });
         }
+        losses.append(&mut self.typed_losses);
         losses.extend(self.scan.warnings.iter().map(|warning| LossNote {
             code: LossCode::DecodeDiagnostic,
             category: LossCategory::Other,
@@ -2655,7 +2662,32 @@ impl<'a> DecodeContext<'a> {
                 });
                 if validation.is_ok() {
                     for warning in warnings {
-                        self.scan_warning(source_order, &warning);
+                        if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
+                            // Resolver-to-fallback carrier/axis boundary (§10
+                            // Phase 4B): the brep's topology could not be
+                            // represented, so the resolver substituted the
+                            // decoded free carriers for it. The substitution is
+                            // a `Transfer::fallback` resolved into the typed
+                            // loss channel, so the retained carriers cannot be
+                            // committed without recording, with the boundary's
+                            // own `TopologyNotTransferred` code, why topology
+                            // was not transferred — where the untyped warning
+                            // path recorded only an opaque `DecodeDiagnostic`.
+                            let carriers: Option<()> = Transfer::fallback(
+                                (),
+                                LossNote {
+                                    code: LossCode::TopologyNotTransferred,
+                                    category: LossCategory::Topology,
+                                    severity: Severity::Warning,
+                                    message: format!("Brep topology fallback: {cause}"),
+                                    provenance: None,
+                                },
+                            )
+                            .resolve(&mut self.typed_losses);
+                            debug_assert!(carriers.is_some());
+                        } else {
+                            self.scan_warning(source_order, &warning);
+                        }
                     }
                     if cache_only {
                         self.scan_warning(
