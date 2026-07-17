@@ -109,6 +109,15 @@ use std::io::Write;
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SldprtCodec;
 
+/// Ceiling on the buffered input for the context-free
+/// [`SldprtCodec::source_fidelity`] entry point.
+///
+/// The session decode path bounds input through the platform `max_input_bytes`
+/// policy; this method runs without a [`DecodeContext`], so it enforces this
+/// codec-local cap instead to keep the read from allocating in proportion to an
+/// untrusted reader's size.
+const MAX_SOURCE_BYTES: u64 = 512 * 1024 * 1024;
+
 impl SldprtCodec {
     /// Build the validated L1 source-fidelity sidecar for a `.sldprt` container.
     ///
@@ -121,6 +130,18 @@ impl SldprtCodec {
     /// surfaces as [`CodecError::Malformed`]. Serialize the result through
     /// [`SourceFidelity::to_canonical_json`] for the stable-id sidecar.
     pub fn source_fidelity(&self, reader: &mut dyn ReadSeek) -> Result<SourceFidelity, CodecError> {
+        // This entry point runs outside a `DecodeContext`, so no platform budget
+        // bounds the read. Cap the input against a codec-local ceiling before
+        // buffering it, so an oversized reader cannot drive input-proportional
+        // allocation the session `max_input_bytes` policy would otherwise reject.
+        let end = reader
+            .seek(std::io::SeekFrom::End(0))
+            .map_err(CodecError::Io)?;
+        if end > MAX_SOURCE_BYTES {
+            return Err(CodecError::Malformed(format!(
+                "input exceeds sldprt source-fidelity cap of {MAX_SOURCE_BYTES} bytes"
+            )));
+        }
         reader
             .seek(std::io::SeekFrom::Start(0))
             .map_err(CodecError::Io)?;

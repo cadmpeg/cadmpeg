@@ -62,12 +62,21 @@ pub fn container_ledger(scan: &ContainerScan) -> SourceFidelity {
     SourceFidelity::new(LedgerLevel::L1, LedgerCapability::Accounted, spaces)
 }
 
-/// One claimed run of the root space, before gaps are filled.
+/// Priority of a preserved-payload claim: it must win any overlap against
+/// container framing so real bytes are never relabeled as discardable.
+const PRIORITY_PAYLOAD: u8 = 1;
+/// Priority of a container-framing claim.
+const PRIORITY_FRAMING: u8 = 0;
+
+/// One claimed run of the root space, before overlaps are resolved.
 struct Claim {
     start: u64,
     end: u64,
     class: SpanClass,
     meaning: String,
+    /// Overlap-resolution rank: a higher priority paints its bytes first, so a
+    /// framing claim can never overwrite an overlapping payload claim.
+    priority: u8,
 }
 
 /// Tile the root `source` space into a gap-free ascending span list.
@@ -82,6 +91,7 @@ fn tile_root(scan: &ContainerScan) -> Vec<LedgerSpan> {
             end: (OUTER_HEADER_LEN as u64).min(length),
             class: SpanClass::Structural,
             meaning: "outer-header".to_string(),
+            priority: PRIORITY_FRAMING,
         });
     }
 
@@ -92,12 +102,14 @@ fn tile_root(scan: &ContainerScan) -> Vec<LedgerSpan> {
             end: payload_start,
             class: SpanClass::Structural,
             meaning: "block-frame".to_string(),
+            priority: PRIORITY_FRAMING,
         });
         claims.push(Claim {
             start: payload_start,
             end: payload_end,
             class: SpanClass::Opaque,
             meaning: format!("block-payload:{}", block.family),
+            priority: PRIORITY_PAYLOAD,
         });
     }
 
@@ -107,6 +119,7 @@ fn tile_root(scan: &ContainerScan) -> Vec<LedgerSpan> {
             end: cache_cell_frame_end(source, cell),
             class: SpanClass::Structural,
             meaning: "cache-cell".to_string(),
+            priority: PRIORITY_FRAMING,
         });
     }
 
@@ -116,45 +129,75 @@ fn tile_root(scan: &ContainerScan) -> Vec<LedgerSpan> {
             end: directory_frame_end(source, entry),
             class: SpanClass::Structural,
             meaning: "directory-entry".to_string(),
+            priority: PRIORITY_FRAMING,
         });
     }
 
-    claims.sort_by(|a, b| a.start.cmp(&b.start).then(a.end.cmp(&b.end)));
-    fill(source, claims, length)
+    resolve(source, &claims, length)
 }
 
-/// Convert accepted claims into a complete tiling, inserting `Opaque` padding
-/// spans over any unclaimed run and skipping claims that overlap an already
-/// accepted span.
-fn fill(source: &[u8], claims: Vec<Claim>, length: u64) -> Vec<LedgerSpan> {
-    let mut spans = Vec::new();
-    let mut cursor = 0_u64;
+/// Resolve possibly-overlapping claims into a complete gap-free tiling of
+/// `[0, length)`.
+///
+/// A hostile container can place a framing marker inside a block's compressed
+/// payload (the directory descriptor window carries no printability guard), so a
+/// directory-entry frame claim can overlap a block-payload claim. A cursor sweep
+/// that keeps whichever claim starts first would let the framing claim swallow
+/// the payload and relabel preserved bytes as discardable framing. Instead every
+/// coordinate boundary is walked and each segment takes the class of the
+/// highest-priority claim covering it in full: payload claims outrank framing,
+/// so real payload bytes always tile as `Opaque` even when a frame overlaps
+/// them, and any byte no claim covers becomes an `Opaque` padding span.
+fn resolve(source: &[u8], claims: &[Claim], length: u64) -> Vec<LedgerSpan> {
+    if length == 0 {
+        return Vec::new();
+    }
+    let mut coords: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
+    coords.insert(0);
+    coords.insert(length);
     for claim in claims {
-        if claim.end <= claim.start || claim.start < cursor {
+        if claim.start < claim.end {
+            coords.insert(claim.start.min(length));
+            coords.insert(claim.end.min(length));
+        }
+    }
+    let coords: Vec<u64> = coords.into_iter().collect();
+
+    // (start, end, class, meaning), merged with the previous segment when the
+    // class and meaning match so adjacent same-kind runs stay one span.
+    let mut segments: Vec<(u64, u64, SpanClass, String)> = Vec::new();
+    for window in coords.windows(2) {
+        let (a, b) = (window[0], window[1]);
+        if a >= b {
             continue;
         }
-        if claim.start > cursor {
-            spans.push(span(
-                source,
-                cursor,
-                claim.start,
-                SpanClass::Opaque,
-                "padding",
-            ));
+        let mut best: Option<&Claim> = None;
+        for claim in claims {
+            if claim.start <= a
+                && claim.end >= b
+                && claim.start < claim.end
+                && best.is_none_or(|current| claim.priority > current.priority)
+            {
+                best = Some(claim);
+            }
         }
-        spans.push(span(
-            source,
-            claim.start,
-            claim.end,
-            claim.class,
-            &claim.meaning,
-        ));
-        cursor = claim.end;
+        let (class, meaning) = match best {
+            Some(claim) => (claim.class, claim.meaning.clone()),
+            None => (SpanClass::Opaque, "padding".to_string()),
+        };
+        if let Some(last) = segments.last_mut() {
+            if last.1 == a && last.2 == class && last.3 == meaning {
+                last.1 = b;
+                continue;
+            }
+        }
+        segments.push((a, b, class, meaning));
     }
-    if cursor < length {
-        spans.push(span(source, cursor, length, SpanClass::Opaque, "padding"));
-    }
-    spans
+
+    segments
+        .into_iter()
+        .map(|(start, end, class, meaning)| span(source, start, end, class, &meaning))
+        .collect()
 }
 
 /// Build one block's decompressed child space: a `Transform`-from-`source`
