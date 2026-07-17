@@ -163,17 +163,23 @@ fn entry_space(scan: &ContainerScan<'_>, entry: &EntryLayout) -> Option<AddressS
     })
 }
 
-/// Entry layouts with duplicate archive paths collapsed to the first seen, so a
-/// derived space's canonical id stays unique.
+/// Entry layouts with duplicate archive paths collapsed to the last seen, so a
+/// derived space's canonical id stays unique and its physical extent matches the
+/// retained payload.
+///
+/// [`ContainerScan::entry_bytes`] is keyed by archive path and, like the ZIP
+/// scan's payload map, keeps the last entry of a duplicated name. Collapsing to
+/// the last layout row here keeps the derived space's `Slice` range and length
+/// describing the same physical entry whose bytes and digest the space reports;
+/// keeping the first would splice the first entry's extent onto the last entry's
+/// bytes.
 fn dedup_entries<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s EntryLayout> {
-    let mut seen = std::collections::BTreeSet::new();
-    let mut out = Vec::new();
+    let mut by_name: std::collections::BTreeMap<&'s str, &'s EntryLayout> =
+        std::collections::BTreeMap::new();
     for entry in &scan.layout {
-        if seen.insert(entry.name.as_str()) {
-            out.push(entry);
-        }
+        by_name.insert(entry.name.as_str(), entry);
     }
-    out
+    by_name.into_values().collect()
 }
 
 /// A structural framing span over `[start, end)` of the source.

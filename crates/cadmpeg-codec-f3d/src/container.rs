@@ -144,8 +144,6 @@ pub struct EntryLayout {
     pub stored: bool,
     /// The compressed payload's byte range within the root `source` space.
     pub compressed: ByteRange,
-    /// The entry's uncompressed byte length.
-    pub uncompressed_len: u64,
 }
 
 /// One decoded BREP stream's header facts, kept for the summary and decode
@@ -414,7 +412,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
                     name: name.clone(),
                     stored: method == CompressionMethod::Stored,
                     compressed: ByteRange { start, end },
-                    uncompressed_len: uncompressed_size,
                 });
             }
         }

@@ -197,6 +197,22 @@ fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeMut<'_> {
 }
 
 #[test]
+fn decode_emits_validated_l1_source_fidelity_ledger() {
+    use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let bytes = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let decoded = crate::decode::decode(&ctx, root).unwrap();
+    let sidecar = decoded
+        .report
+        .source_fidelity
+        .expect("decode report carries the L1 container-accounting ledger");
+    assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L1);
+    assert_eq!(sidecar.validate(), Ok(()));
+}
+
+#[test]
 fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let decoded = F3dCodec
         .decode(

@@ -24,7 +24,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::brep::{self, Brep};
 use crate::container::{self, BrepFacts, ContainerScan};
-use crate::{asm_header, materials, sab};
+use crate::{asm_header, fidelity, materials, sab};
 
 /// Decode a `.f3d` root view into a document and its loss report.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
@@ -34,7 +34,8 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         let mut ir = build_metadata_ir(&scan)?;
         populate_annotations(&mut ir, &scan, &F3dNative::default(), None);
         preserve_source_image(&scan, &mut ir)?;
-        let report = build_container_report(&scan, true);
+        let mut report = build_container_report(&scan, true);
+        report.source_fidelity = Some(build_source_fidelity(&scan)?);
         return Ok(DecodeResult::new(ir, report));
     }
 
@@ -139,6 +140,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 Some((&active.name, &annotation_records)),
             );
             preserve_source_image(&scan, &mut ir)?;
+            report.source_fidelity = Some(build_source_fidelity(&scan)?);
             return Ok(DecodeResult::new(ir, report));
         }
     }
@@ -182,8 +184,22 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     native.store(ir.native.namespace_mut("f3d"))?;
     populate_annotations(&mut ir, &scan, &native, None);
     preserve_source_image(&scan, &mut ir)?;
-    let report = build_container_report(&scan, false);
+    let mut report = build_container_report(&scan, false);
+    report.source_fidelity = Some(build_source_fidelity(&scan)?);
     Ok(DecodeResult::new(ir, report))
+}
+
+/// Build the validated L1 container-accounting ledger for the scanned archive.
+///
+/// A tiling defect surfaces as a `Malformed` decode failure rather than a
+/// silently absent proof, so an accounting-enabled report never ships an
+/// inconsistent ledger through its `source_fidelity` slot.
+fn build_source_fidelity(
+    scan: &ContainerScan<'_>,
+) -> Result<cadmpeg_ir::source_fidelity::SourceFidelity, CodecError> {
+    fidelity::build_validated_ledger(scan).map_err(|e| {
+        CodecError::Malformed(format!("f3d source-fidelity ledger is not a level: {e}"))
+    })
 }
 
 fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) -> Result<(), CodecError> {
