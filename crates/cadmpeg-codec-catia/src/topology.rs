@@ -366,8 +366,9 @@ impl StandardTopology {
 }
 
 /// Number of face rows in the governing standard topology spine. The spine is
-/// the largest contiguous stride-eight FBB run; shorter marker runs are not
-/// members of this face population.
+/// the unique largest contiguous stride-eight FBB run; shorter marker runs are
+/// not members of this face population. Equal-largest runs leave ownership
+/// unresolved.
 #[must_use]
 pub fn standard_face_count(bytes: &[u8]) -> Option<usize> {
     largest_fbb_run(bytes).map(|(_, count, _)| count)
@@ -7900,6 +7901,7 @@ fn parse_fbb_edge_tables_width(
 
 fn largest_fbb_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
     let mut best = None;
+    let mut tied = false;
     let mut position = 0;
     while position + 8 <= bytes.len() {
         if bytes[position..].starts_with(&FBB_ROW) {
@@ -7911,12 +7913,19 @@ fn largest_fbb_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
             }
             if best.is_none_or(|(_, best_count, _)| count > best_count) {
                 best = Some((start, count, position));
+                tied = false;
+            } else if best.is_some_and(|(_, best_count, _)| count == best_count) {
+                tied = true;
             }
         } else {
             position += 1;
         }
     }
-    best
+    if tied {
+        None
+    } else {
+        best
+    }
 }
 
 fn parse_count(bytes: &[u8], position: &mut usize) -> Option<usize> {
@@ -8622,6 +8631,16 @@ mod motif_tests {
         bytes.extend_from_slice(&row);
 
         assert_eq!(standard_face_count(&bytes), Some(3));
+    }
+
+    #[test]
+    fn standard_face_population_rejects_equal_largest_fbb_runs() {
+        let row = [0x30, 0x04, 0x04, 0xff, 0xff, 0xff, 0xd2, 0xd2];
+        let mut bytes = row.repeat(2);
+        bytes.push(0);
+        bytes.extend_from_slice(&row.repeat(2));
+
+        assert_eq!(standard_face_count(&bytes), None);
     }
 
     fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
