@@ -16869,3 +16869,115 @@ fn face_appearance_assignment_rejects_entity_id_and_uppercase_targets() {
         assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
     }
 }
+
+mod fidelity {
+    use super::*;
+    use crate::container;
+    use crate::fidelity::{build_ledger, build_validated_ledger};
+    use cadmpeg_ir::source_fidelity::{
+        CanonicalSpaceId, LedgerCapability, LedgerLevel, SerializedOrigin, SerializedTransformKind,
+        SpanClass,
+    };
+
+    /// The root space's spans must tile `[0, length)` with no gap or overlap,
+    /// so every physical byte of the archive is classified.
+    #[test]
+    fn root_space_tiles_every_byte() {
+        let f3d = f3d_with_smbh(&synthetic_smbh());
+        let len = f3d.len() as u64;
+        with_scan(&f3d, |ctx, root| {
+            let scan = container::scan(ctx, root).unwrap();
+            let sidecar = build_validated_ledger(&scan).unwrap();
+            assert_eq!(sidecar.level, LedgerLevel::L1);
+            assert_eq!(sidecar.capability, LedgerCapability::Accounted);
+
+            let source = sidecar
+                .spaces
+                .iter()
+                .find(|s| s.id == CanonicalSpaceId::source())
+                .expect("root space present");
+            assert_eq!(source.length, len);
+            let mut cursor = 0_u64;
+            for span in &source.spans {
+                assert_eq!(span.range.start, cursor, "gap or overlap at {cursor}");
+                cursor = span.range.end;
+            }
+            assert_eq!(cursor, len, "spans do not reach the source end");
+
+            // Both stored entries are present as opaque payload spans and as
+            // slice-derived spaces.
+            let opaque = source
+                .spans
+                .iter()
+                .filter(|s| s.class == SpanClass::Opaque)
+                .count();
+            assert_eq!(opaque, 2, "one opaque payload per stored entry");
+            assert!(source
+                .spans
+                .iter()
+                .any(|s| s.class == SpanClass::Structural));
+        });
+    }
+
+    /// A stored entry derives a slice space; a deflated entry derives a
+    /// decompression transform space. Both tile their own payload completely.
+    #[test]
+    fn entry_spaces_carry_stored_and_compressed_origins() {
+        let f3d = f3d_with_deflated_nested_protein(
+            &synthetic_geometry_smbh(),
+            "11111111-2222-3333-4444-555555555555",
+        );
+        with_scan(&f3d, |ctx, root| {
+            let scan = container::scan(ctx, root).unwrap();
+            let sidecar = build_validated_ledger(&scan).unwrap();
+
+            let stored = sidecar
+                .spaces
+                .iter()
+                .find(|s| s.id == CanonicalSpaceId::entry("Manifest.dat"))
+                .expect("stored manifest space");
+            assert!(matches!(stored.origin, SerializedOrigin::Slice { .. }));
+
+            let protein = sidecar
+                .spaces
+                .iter()
+                .find(|s| {
+                    s.id == CanonicalSpaceId::entry(
+                        "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
+                    )
+                })
+                .expect("deflated protein space");
+            match &protein.origin {
+                SerializedOrigin::Transform { transform, inputs } => {
+                    assert_eq!(*transform, SerializedTransformKind::Decompress);
+                    assert_eq!(inputs.len(), 1);
+                    assert_eq!(inputs[0].space, CanonicalSpaceId::source());
+                }
+                other => panic!("expected decompression transform, got {other:?}"),
+            }
+            // The derived space tiles its whole inflated length with one opaque
+            // span.
+            assert_eq!(protein.spans.len(), 1);
+            assert_eq!(protein.spans[0].range.start, 0);
+            assert_eq!(protein.spans[0].range.end, protein.length);
+            assert_eq!(protein.spans[0].class, SpanClass::Opaque);
+        });
+    }
+
+    /// Two independent scans of the same archive serialize an identical
+    /// canonical ledger, regardless of registration order.
+    #[test]
+    fn serialized_ledger_is_deterministic() {
+        let f3d = f3d_with_deflated_nested_protein(
+            &synthetic_geometry_smbh(),
+            "11111111-2222-3333-4444-555555555555",
+        );
+        let json = |bytes: &[u8]| {
+            with_scan(bytes, |ctx, root| {
+                let scan = container::scan(ctx, root).unwrap();
+                build_ledger(&scan).to_canonical_json().unwrap()
+            })
+        };
+        assert_eq!(json(&f3d), json(&f3d));
+    }
+}

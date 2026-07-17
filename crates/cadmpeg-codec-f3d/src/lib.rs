@@ -80,6 +80,7 @@ pub mod brep;
 pub mod container;
 pub mod decode;
 pub mod design;
+pub mod fidelity;
 pub mod history;
 mod history_records;
 pub mod materials;

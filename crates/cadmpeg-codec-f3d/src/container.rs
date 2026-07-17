@@ -130,6 +130,24 @@ fn compression_label(method: CompressionMethod) -> String {
     }
 }
 
+/// One archive entry's physical placement within the root address space.
+///
+/// The compressed extent is the entry's byte range in the root `source` space;
+/// the L1 fidelity ledger ([`crate::fidelity`]) tiles it as an opaque payload
+/// span and derives the entry's own space from it (a slice of the root when
+/// stored, a decompression transform otherwise).
+#[derive(Debug, Clone)]
+pub struct EntryLayout {
+    /// Archive path, matching the entry's [`ContainerEntry::name`].
+    pub name: String,
+    /// Whether the entry is stored uncompressed (its bytes alias the root).
+    pub stored: bool,
+    /// The compressed payload's byte range within the root `source` space.
+    pub compressed: ByteRange,
+    /// The entry's uncompressed byte length.
+    pub uncompressed_len: u64,
+}
+
 /// One decoded BREP stream's header facts, kept for the summary and decode
 /// metadata.
 #[derive(Debug, Clone)]
@@ -168,6 +186,9 @@ pub struct ContainerScan<'a> {
     /// space in the runtime graph: a `Slice` of the root for stored entries, a
     /// decompression `Transform` for compressed ones.
     inflated_entries: BTreeMap<String, View<'a>>,
+    /// Physical placement of every admitted entry within the root space, in
+    /// archive order. Drives the L1 fidelity ledger's coarse tiling.
+    pub layout: Vec<EntryLayout>,
 }
 
 impl<'a> ContainerScan<'a> {
@@ -298,6 +319,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
     let mut breps = Vec::new();
     let mut asset_folder = None;
     let mut inflated_entries = BTreeMap::new();
+    let mut layout = Vec::new();
 
     for i in 0..archive.len() {
         let mut file = archive
@@ -305,9 +327,13 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
             .map_err(|e| CodecError::Malformed(format!("bad ZIP entry {i}: {e}")))?;
         let name = file.name().to_string();
         let role = classify(&name);
-        let compression = compression_label(file.compression());
+        let method = file.compression();
+        let compression = compression_label(method);
         let compressed_size = file.compressed_size();
         let uncompressed_size = file.size();
+        // Read the compressed payload offset before `admit_entry` consumes the
+        // file: it fixes the entry's opaque extent in the root `source` space.
+        let data_start = file.data_start();
         let mut attributes = BTreeMap::new();
 
         let is_brep = role == role::BREP_SMBH || role == role::BREP_SMB;
@@ -380,6 +406,19 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
             });
         }
 
+        // `admit_entry` already refused an entry whose data offset was absent or
+        // whose extent overflowed, so a present offset here has a bounded end.
+        if let Some(start) = data_start {
+            if let Some(end) = start.checked_add(compressed_size) {
+                layout.push(EntryLayout {
+                    name: name.clone(),
+                    stored: method == CompressionMethod::Stored,
+                    compressed: ByteRange { start, end },
+                    uncompressed_len: uncompressed_size,
+                });
+            }
+        }
+
         entries.push(ContainerEntry {
             name: name.clone(),
             role: role.to_string(),
@@ -397,6 +436,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         breps,
         asset_folder,
         inflated_entries,
+        layout,
     })
 }
 

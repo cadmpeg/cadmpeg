@@ -198,3 +198,19 @@ charges = []
 cost_model = "target: fixed-width committed reads via req_* mirror; no count or scan charge"
 window_egress = []
 ledger_level = 0
+
+# ---------------------------------------------------------------------------
+# L1 container accounting (doc section 10 Phase 3C). Not a byte parser: builds
+# the coarse source-fidelity ledger from already-scanned `ContainerScan` facts,
+# digesting bounded source and entry spans. No hostile read, no `.window()`
+# egress, and no budget charge of its own; the container scan already charged
+# the bytes. Emits the serialized L1 ledger.
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/fidelity.rs"
+status = "migrated"
+input_spaces = ["source", "entry:*"]
+fuzz_targets = []
+charges = []
+cost_model = "no budget charge; builds the L1 source-fidelity ledger from already-scanned container facts, digesting bounded source and entry spans; output proportional to the entry count"
+window_egress = []
+ledger_level = 1
