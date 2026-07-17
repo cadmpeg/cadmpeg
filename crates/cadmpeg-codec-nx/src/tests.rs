@@ -10013,6 +10013,80 @@ fn deltas_offset_surface_partition_stream() -> Vec<u8> {
     stream
 }
 
+fn status_frame_compact_references(mut record: Vec<u8>, reference_offsets: &[usize]) -> Vec<u8> {
+    for &offset in reference_offsets.iter().rev() {
+        record.insert(offset + 2, 1);
+    }
+    record
+}
+
+fn deltas_stream_with_record(record: Vec<u8>) -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend(record);
+    stream
+}
+
+fn deltas_blend_surface_partition_stream() -> Vec<u8> {
+    let mut blend = record(56, 66);
+    put_ref(&mut blend, 2, 12);
+    blend[4..8].copy_from_slice(&908u32.to_be_bytes());
+    for at in [8, 10, 12, 14, 16] {
+        put_ref(&mut blend, at, 1);
+    }
+    blend[18] = b'+';
+    blend[19] = b'R';
+    put_ref(&mut blend, 20, 6);
+    put_ref(&mut blend, 22, 6);
+    put_ref(&mut blend, 24, 1);
+    put_f64(&mut blend, 26, -0.004);
+    put_f64(&mut blend, 34, 0.004);
+    put_f64(&mut blend, 42, 1.0);
+    put_f64(&mut blend, 50, 1.0);
+    for at in [58, 60, 62, 64] {
+        put_ref(&mut blend, at, 1);
+    }
+    deltas_stream_with_record(status_frame_compact_references(
+        blend,
+        &[8, 10, 12, 14, 16, 20, 22, 24, 58, 60, 62, 64],
+    ))
+}
+
+fn deltas_trimmed_curve_partition_stream() -> Vec<u8> {
+    let mut trim = record(133, 85);
+    put_ref(&mut trim, 2, 12);
+    trim[4..8].copy_from_slice(&909u32.to_be_bytes());
+    for at in [8, 10, 12, 14, 16] {
+        put_ref(&mut trim, at, 1);
+    }
+    trim[18] = b'+';
+    put_ref(&mut trim, 19, 9);
+    put_f64(&mut trim, 69, 0.000_3);
+    put_f64(&mut trim, 77, 0.000_7);
+    deltas_stream_with_record(status_frame_compact_references(
+        trim,
+        &[8, 10, 12, 14, 16, 19],
+    ))
+}
+
+fn deltas_surface_curve_partition_stream() -> Vec<u8> {
+    let mut surface_curve = record(137, 33);
+    put_ref(&mut surface_curve, 2, 12);
+    surface_curve[4..8].copy_from_slice(&910u32.to_be_bytes());
+    for at in [8, 10, 12, 14, 16] {
+        put_ref(&mut surface_curve, at, 1);
+    }
+    surface_curve[18] = b'+';
+    put_ref(&mut surface_curve, 19, 6);
+    put_ref(&mut surface_curve, 21, 9);
+    put_ref(&mut surface_curve, 23, 9);
+    put_f64(&mut surface_curve, 25, 0.000_02);
+    deltas_stream_with_record(status_frame_compact_references(
+        surface_curve,
+        &[8, 10, 12, 14, 16, 19, 21, 23],
+    ))
+}
+
 fn circle_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
     for (kind, xmt, field) in [(16u8, 8u8, 24usize), (17, 7, 18)] {
@@ -12453,6 +12527,48 @@ fn deltas_offset_surface_normalizes_exact_record_envelope() {
 }
 
 #[test]
+fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
+    for (stream, family, kind, byte_len) in [
+        (
+            deltas_blend_surface_partition_stream(),
+            "BLEND_SURF",
+            56,
+            66,
+        ),
+        (
+            deltas_trimmed_curve_partition_stream(),
+            "TRIMMED_CURVE",
+            133,
+            85,
+        ),
+        (deltas_surface_curve_partition_stream(), "SP_CURVE", 137, 33),
+    ] {
+        let census = crate::deltas::walk(&stream);
+        assert_eq!(census.full_counts.get(family), Some(&1));
+        let record = census
+            .records
+            .iter()
+            .find(|record| record.kind == kind)
+            .expect("procedural wrapper");
+        assert_eq!(record.canonical_bytes.len(), byte_len);
+        assert!(crate::topology::Graph::parse(&record.canonical_bytes)
+            .get(kind as u8, 12)
+            .is_some());
+    }
+
+    let mut invalid_blend = deltas_blend_surface_partition_stream();
+    let blend = invalid_blend
+        .windows(4)
+        .position(|window| window == [0, 56, 0, 12])
+        .expect("BLEND_SURF record");
+    invalid_blend[blend + 24] = b'X';
+    assert!(!crate::deltas::walk(&invalid_blend)
+        .records
+        .iter()
+        .any(|record| record.kind == 56));
+}
+
+#[test]
 fn merged_deltas_full_record_replaces_partition_node() {
     let partition = topology_partition_stream();
     let mut deltas = status_framed_deltas_point_stream();
@@ -12681,6 +12797,78 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     };
     assert_eq!(distance, 4.5);
     assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
+    let partition = blend_surface_topology_partition_stream();
+    let deltas = deltas_blend_surface_partition_stream();
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_streams(&[&partition, &deltas])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let ProceduralSurfaceDefinition::Blend { radius, .. } =
+        &result.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("blend surface");
+    };
+    assert_eq!(
+        *radius,
+        BlendRadiusLaw::Constant {
+            signed_radius: -4.0
+        }
+    );
+    assert_eq!(
+        result.ir.model.faces[0].surface,
+        result.ir.model.procedural_surfaces[0].surface
+    );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
+    let partition = trimmed_topology_partition_stream();
+    let deltas = deltas_trimmed_curve_partition_stream();
+    let merged = crate::deltas::merge_full_records(&partition, &deltas);
+    assert_eq!(
+        crate::topology::trimmed_curves(&merged)[0].parameters,
+        [0.000_3, 0.000_7]
+    );
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_streams(&[&partition, &deltas])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.edges[0].param_range, Some([0.3, 0.7]));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
+    let partition = surface_curve_topology_partition_stream();
+    let deltas = deltas_surface_curve_partition_stream();
+    let merged = crate::deltas::merge_full_records(&partition, &deltas);
+    assert_eq!(
+        crate::topology::surface_curves(&merged)[0].tolerance,
+        0.000_02
+    );
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_streams(&[&partition, &deltas])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        result.ir.model.edges[0].curve.as_ref(),
+        Some(&result.ir.model.curves[0].id)
+    );
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 

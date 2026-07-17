@@ -72,6 +72,7 @@ enum Token {
     Tolerance,
     Sense,
     OffsetDiscriminator,
+    BlendSubtype,
     Boolean,
     Position,
     Vector,
@@ -254,6 +255,51 @@ const OFFSET_SURFACE: &[Token] = &[
     Token::Ref,
     Token::Scalar,
 ];
+const BLEND_SURFACE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::BlendSubtype,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Scalar,
+    Token::Scalar,
+    Token::Scalar,
+    Token::Scalar,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+];
+const TRIMMED_CURVE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Ref,
+    Token::Position,
+    Token::Position,
+    Token::Scalar,
+    Token::Scalar,
+];
+const SURFACE_CURVE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Tolerance,
+];
 const COMPOSITE_CURVE: &[Token] = &[
     Token::Ref,
     Token::Ref,
@@ -339,7 +385,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
-        if matches!(kind, 12..=19 | 29..=32 | 50..=54 | 60 | 124 | 134)
+        if matches!(kind, 12..=19 | 29..=32 | 50..=54 | 56 | 60 | 124 | 133 | 134 | 137)
             && crate::topology::Graph::parse(&record.canonical_bytes)
                 .get(kind, record.xmt)
                 .is_some()
@@ -478,6 +524,11 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
                 canonical_bytes.push(*stream.get(at)?);
                 at += 1;
             }
+            Token::BlendSubtype => {
+                (stream.get(at) == Some(&b'R')).then_some(())?;
+                canonical_bytes.push(b'R');
+                at += 1;
+            }
             Token::Boolean => {
                 matches!(stream.get(at), Some(0 | 1)).then_some(())?;
                 canonical_bytes.push(*stream.get(at)?);
@@ -551,10 +602,13 @@ fn family_name(kind: u16) -> Option<&'static str> {
         52 => "CONE",
         53 => "SPHERE",
         54 => "TORUS",
+        56 => "BLEND_SURF",
         60 => "OFFSET_SURF",
         38 => "INTERSECTION",
         124 => "B_SURFACE",
+        133 => "TRIMMED_CURVE",
         134 => "B_CURVE",
+        137 => "SP_CURVE",
         12 => "BODY",
         13 => "SHELL",
         19 => "REGION",
@@ -579,10 +633,13 @@ fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
         52 => CONE,
         53 => SPHERE,
         54 => TORUS,
+        56 => BLEND_SURFACE,
         60 => OFFSET_SURFACE,
         38 => COMPOSITE_CURVE,
         124 => COMPACT_TWO_REFS,
+        133 => TRIMMED_CURVE,
         134 => COMPACT_TWO_REFS,
+        137 => SURFACE_CURVE,
         19 => REGION,
         _ => return None,
     })
