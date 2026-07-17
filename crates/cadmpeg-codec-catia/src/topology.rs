@@ -227,6 +227,7 @@ impl StandardTopology {
         }
         let mut uses = vec![HashMap::<usize, usize>::new(); face_groups.len()];
         let mut bodies_by_edge = vec![HashSet::new(); self.edge_rows.len()];
+        let mut first_face_by_edge = vec![None; self.edge_rows.len()];
         for (face, topology) in self.faces.iter().enumerate() {
             let body = body_by_face[face];
             for coedge in topology
@@ -238,18 +239,47 @@ impl StandardTopology {
                     return None;
                 }
                 bodies_by_edge[coedge.edge_row].insert(body);
+                first_face_by_edge[coedge.edge_row].get_or_insert(face);
                 *uses[body].entry(coedge.edge_row).or_default() += 1;
             }
         }
         if bodies_by_edge.iter().any(|bodies| bodies.len() != 1) {
             return None;
         }
+        let components = self.face_components();
+        let mut component_by_face = vec![0usize; self.faces.len()];
+        let mut components_by_body = vec![Vec::new(); face_groups.len()];
+        for (component, faces) in components.iter().enumerate() {
+            let body = body_by_face[faces[0]];
+            components_by_body[body].push(component);
+            for &face in faces {
+                component_by_face[face] = component;
+            }
+        }
+        let component_by_edge = first_face_by_edge
+            .into_iter()
+            .map(|face| face.map(|face| component_by_face[face]))
+            .collect::<Vec<_>>();
         Some(
             uses.into_iter()
-                .map(|uses| {
-                    if uses.values().any(|count| *count > 2) {
+                .zip(components_by_body)
+                .map(|(uses, components)| {
+                    let closed_component_count = components
+                        .iter()
+                        .filter(|component| {
+                            uses.keys()
+                                .any(|edge| component_by_edge[*edge] == Some(**component))
+                                && uses.iter().all(|(edge, count)| {
+                                    component_by_edge[*edge] != Some(**component) || *count == 2
+                                })
+                        })
+                        .count();
+                    if uses.values().any(|count| *count > 2)
+                        || (closed_component_count != 0
+                            && closed_component_count != components.len())
+                    {
                         BodyKind::General
-                    } else if !uses.is_empty() && uses.values().all(|count| *count == 2) {
+                    } else if !components.is_empty() && closed_component_count == components.len() {
                         BodyKind::Solid
                     } else {
                         BodyKind::Sheet
@@ -9366,6 +9396,7 @@ mod motif_tests {
             topology.body_kinds(&[2, 1]),
             Some(vec![BodyKind::Solid, BodyKind::Sheet])
         );
+        assert_eq!(topology.body_kinds(&[3]), Some(vec![BodyKind::General]));
         assert_eq!(topology.face_components(), vec![vec![0, 1], vec![2]]);
         topology
             .orient_solid_body_cycles(&[2, 1])
