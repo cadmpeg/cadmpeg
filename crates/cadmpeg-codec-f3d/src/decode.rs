@@ -826,8 +826,11 @@ fn source_and_tolerances(scan: &ContainerScan, active: &BrepFacts) -> (SourceMet
 /// [`crate::builder::omit`] so the omission cannot be reached without recording
 /// its note, while a reduction that survives approximately (spline/procedural
 /// forms solved into cached NURBS carriers) or an informational census goes
-/// through [`crate::builder::reduce`]. The bare `losses.push` spelling is not
-/// used here, so a silent drop is a construction that does not typecheck.
+/// through [`crate::builder::reduce`]. This function routes every note through
+/// that module rather than the bare `losses.push` spelling; the guarantee is
+/// that the builder is the one construction path used on the geometry path, not
+/// a type error against `Vec::push` (the platform `Builder` cannot ban the
+/// method). A direct push would compile — review keeps it out.
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     use crate::builder::{omit, reduce};
 

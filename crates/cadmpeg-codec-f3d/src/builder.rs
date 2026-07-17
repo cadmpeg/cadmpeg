@@ -9,8 +9,12 @@
 //! This module is the single construction path for those notes. A decoder that
 //! wants to record a loss reaches [`omit`] or [`reduce`] here, both of which
 //! resolve the note through the platform [`Builder`](cadmpeg_ir::transfer::Builder)
-//! into the report's loss channel — so the bare `losses.push` spelling that
-//! would let a drop go unrecorded is never written on the geometry path.
+//! into the report's loss channel. The guarantee is that this module is the one
+//! construction path the geometry path uses, not a compiler ban: a bare
+//! `losses.push(note)` elsewhere would still compile (`clippy.toml` disallows
+//! only the capacity-taking `Vec` methods, not `push`), so the no-silent-drop
+//! property is held by keeping construction here and by review, not by the type
+//! system.
 //!
 //! [`omit`] models the omission boundary: the value the transfer would have
 //! carried does not exist, so [`Transfer::omitted`] records the note and yields

@@ -39,7 +39,7 @@ use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use serde::Serialize;
 
-use crate::builder::{self, LossBuilder};
+use crate::builder;
 use crate::container::{self, role, ContainerScan};
 use crate::fidelity;
 use crate::topology::HalfEdgeId;
@@ -684,7 +684,8 @@ fn build_ir(
         // Resolver-to-fallback-axis boundary (§10 Phase 4B): the source stores
         // no in-plane reference, so the u-axis is synthesized from the normal
         // through the typed lossy builder, which records the substitution note.
-        let u_axis = LossBuilder::new(&mut dropped_losses).datum_u_axis(
+        let u_axis = builder::datum_u_axis(
+            &mut dropped_losses,
             Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
             plane.id,
             offset,
@@ -727,7 +728,7 @@ fn build_ir(
             // cannot be skipped without recording its note, and reflect the same
             // note on its `Dropped` disposition (§6.2).
             let loss = builder::incomplete_frame_note(frame.surface_id, frame.offset as u64);
-            LossBuilder::new(&mut dropped_losses).omit(loss.clone());
+            builder::omit(&mut dropped_losses, loss.clone());
             ctx.resolve(frame_ticket, RecordDisposition::Dropped { loss });
             continue;
         };
@@ -918,7 +919,7 @@ fn build_ir(
                 // shared a `feature_id` and offset (§6.2).
                 let loss =
                     builder::unplaced_sketch_note(&sketch.id, sketch.feature_id, offset as u64);
-                LossBuilder::new(&mut dropped_losses).omit(loss.clone());
+                builder::omit(&mut dropped_losses, loss.clone());
                 ctx.resolve(sketch_ticket, RecordDisposition::Dropped { loss });
             }
         }

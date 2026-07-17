@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed lossy construction at creo's §10 Phase 4B boundaries.
 //!
-//! The decoder reaches every value substitution and omission through
-//! [`LossBuilder`], the codec's single lossy-construction path. It wraps the
-//! platform [`Builder`](cadmpeg_ir::transfer::Builder) over the decode's loss
-//! channel so a defaulted axis or a dropped record cannot enter the model
-//! without surrendering its [`LossNote`]: [`LossBuilder::datum_u_axis`] resolves
-//! a [`Transfer::fallback`] and [`LossBuilder::omit`] resolves a
-//! [`Transfer::omitted`], and neither yields its value without pushing the note.
+//! The decoder reaches every value substitution and omission through the two
+//! free functions here, the codec's lossy-construction path. Each resolves a
+//! platform [`Transfer`] against the decode's loss channel so a defaulted axis
+//! or a dropped record cannot enter the model without surrendering its
+//! [`LossNote`]: [`datum_u_axis`] resolves a [`Transfer::fallback`] and [`omit`]
+//! resolves a [`Transfer::omitted`], and neither yields its value without
+//! pushing the note. The guarantee is that these functions are the path the
+//! decode uses, not a compiler ban on `Vec::push` (`clippy.toml` disallows only
+//! the capacity-taking `Vec` methods): a bare `losses.push` would still compile
+//! and is kept out by review.
 //!
 //! Creo's three named boundaries are the datum-plane u-axis (resolver to
 //! fallback axis), the incomplete `VisibGeom` support frame (unsupported concept
@@ -24,42 +27,30 @@ use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::transfer::{Builder, Transfer};
 
-/// The codec's single typed-lossy construction path: one platform
-/// [`Builder`](cadmpeg_ir::transfer::Builder) threaded over the decode's loss
-/// channel for the duration of one document's construction.
-pub(crate) struct LossBuilder<'a> {
-    inner: Builder<'a, Vec<LossNote>>,
+/// Resolver-to-fallback-axis boundary: an `ActDatums` datum plane carries no
+/// in-plane reference direction, so the u-axis is synthesized from the normal by
+/// convention. Resolving the [`Transfer::fallback`] records the substitution
+/// note into `sink` before returning the derived axis.
+pub(crate) fn datum_u_axis(
+    sink: &mut Vec<LossNote>,
+    normal: Vector3,
+    plane_id: u32,
+    offset: u64,
+) -> Vector3 {
+    Builder::new(sink)
+        .take(Transfer::fallback(
+            derive_reference_direction(normal),
+            inferred_u_axis_note(plane_id, offset),
+        ))
+        .expect("Transfer::fallback always yields its value")
 }
 
-impl<'a> LossBuilder<'a> {
-    /// Wrap the decode's dropped-loss channel for typed construction.
-    pub(crate) fn new(sink: &'a mut Vec<LossNote>) -> Self {
-        LossBuilder {
-            inner: Builder::new(sink),
-        }
-    }
-
-    /// Resolver-to-fallback-axis boundary: an `ActDatums` datum plane carries no
-    /// in-plane reference direction, so the u-axis is synthesized from the normal
-    /// by convention. Resolving the [`Transfer::fallback`] records the
-    /// substitution note before returning the derived axis.
-    pub(crate) fn datum_u_axis(&mut self, normal: Vector3, plane_id: u32, offset: u64) -> Vector3 {
-        self.inner
-            .take(Transfer::fallback(
-                derive_reference_direction(normal),
-                inferred_u_axis_note(plane_id, offset),
-            ))
-            .expect("Transfer::fallback always yields its value")
-    }
-
-    /// Unsupported-concept / record-to-omission boundary: drain an omission's
-    /// note through the builder so the record cannot be skipped silently. The
-    /// note is also recorded against the record's `Dropped` disposition by the
-    /// caller, so pass a clone here.
-    pub(crate) fn omit(&mut self, note: LossNote) {
-        let dropped: Option<()> = self.inner.take(Transfer::omitted(note));
-        debug_assert!(dropped.is_none());
-    }
+/// Unsupported-concept / record-to-omission boundary: drain an omission's note
+/// through the loss channel so the record cannot be skipped silently. The note
+/// is also recorded against the record's `Dropped` disposition by the caller, so
+/// pass a clone here.
+pub(crate) fn omit(sink: &mut Vec<LossNote>, note: LossNote) {
+    Builder::new(sink).take::<()>(Transfer::omitted(note));
 }
 
 /// The note for a datum plane's conventionally derived in-plane u-axis.
