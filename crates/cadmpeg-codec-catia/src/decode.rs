@@ -2775,6 +2775,9 @@ fn transfer_e5_topology(
             return false;
         };
         for loop_ in &face.loops {
+            if loop_.resolved_members().is_none() {
+                return false;
+            }
             for (&pcurve_ref, &edge_ref) in loop_.pcurves.iter().zip(&loop_.edge_uses) {
                 let Some(edge) = topology.edges.get(&edge_ref) else {
                     return false;
@@ -3274,9 +3277,9 @@ fn transfer_e5_topology(
             let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.edge_uses.len())
                 .map(|index| CoedgeId(format!("catia:e5:coedge#{}-{index}", loop_.record_id)))
                 .collect();
-            let Some(members) = loop_.resolved_members() else {
-                return false;
-            };
+            let members = loop_
+                .resolved_members()
+                .expect("E5 loop membership passed topology admission");
             let coedge_ids: Vec<CoedgeId> = members
                 .iter()
                 .map(|member| coedge_ids_by_member[member.serialized_index].clone())
@@ -4753,21 +4756,28 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         );
     }
     ir.model.surfaces = surfaces;
-    attach_standard_faces(&mut ir, &mut annotations, &face_bindings, brep);
-    let topology_attached =
-        attach_standard_topology(&mut ir, &mut annotations, &face_bindings, brep, &scan.data);
-    if !topology_attached {
+    let mut topology_ir = ir.clone();
+    let mut topology_annotations = annotations.clone();
+    attach_standard_faces(
+        &mut topology_ir,
+        &mut topology_annotations,
+        &face_bindings,
+        brep,
+    );
+    let topology_attached = attach_standard_topology(
+        &mut topology_ir,
+        &mut topology_annotations,
+        &face_bindings,
+        brep,
+        &scan.data,
+    );
+    if topology_attached {
+        ir = topology_ir;
+        annotations = topology_annotations;
+    } else {
         attach_standard_circles(&mut ir, &mut annotations, &face_bindings, brep);
         attach_standard_lines(&mut ir, &mut annotations, &face_bindings, brep);
-        if let Some(shell) = ir.model.shells.first_mut() {
-            shell.free_vertices = ir
-                .model
-                .vertices
-                .iter()
-                .map(|vertex| vertex.id.clone())
-                .collect();
-            annotations.derived(&shell.id, "free_vertices");
-        } else if !ir.model.vertices.is_empty() {
+        if !ir.model.vertices.is_empty() {
             attach_standard_free_vertices(&mut ir, &mut annotations);
         }
     }

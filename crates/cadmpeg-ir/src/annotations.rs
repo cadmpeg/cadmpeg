@@ -62,7 +62,7 @@ impl Default for ExactnessNote {
 pub struct StreamHandle(u32);
 
 /// Incrementally constructs document annotations while interning stream names.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct AnnotationBuilder {
     annotations: Annotations,
 }

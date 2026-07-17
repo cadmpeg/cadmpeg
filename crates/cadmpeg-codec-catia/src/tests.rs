@@ -2472,19 +2472,16 @@ fn decode_standard_transfers_vertices_and_cylinder() {
                 && (u_axis.x * normal.x + u_axis.y * normal.y + u_axis.z * normal.z).abs() < 1e-6
     )));
 
-    // Complete FBB face records with stored carrier senses bind the analytic
-    // carrier order to a body/shell/face hierarchy. Boundary topology remains
-    // unavailable until the trim/edge graph is decoded.
-    assert_eq!(result.ir.model.faces.len(), 2);
+    // Stored face/carrier rows do not establish a B-rep without a complete
+    // trim and edge graph. Carriers remain free and vertices receive only the
+    // neutral ownership required for a disconnected point set.
+    assert!(result.ir.model.faces.is_empty());
     assert_eq!(result.ir.model.bodies.len(), 1);
-    assert!(matches!(
-        result.ir.model.faces[0].sense,
-        cadmpeg_ir::topology::Sense::Forward
-    ));
-    assert!(matches!(
-        result.ir.model.faces[1].sense,
-        cadmpeg_ir::topology::Sense::Reversed
-    ));
+    assert_eq!(
+        result.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Wire
+    );
+    assert_eq!(result.ir.model.shells[0].free_vertices.len(), 3);
     assert!(result.ir.model.edges.is_empty());
     assert!(result
         .report
@@ -2498,7 +2495,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
 }
 
 #[test]
-fn decode_standard_retains_unresolved_roster_carrier_and_face() {
+fn decode_standard_retains_unresolved_roster_carrier_without_fabricating_a_face() {
     let mut surf = surf_stream();
     let bridge = [0xff, 0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32];
     let bridge_start = surf
@@ -2514,15 +2511,11 @@ fn decode_standard_retains_unresolved_roster_carrier_and_face() {
         .expect("decode unresolved roster carrier");
 
     assert_eq!(decoded.ir.model.surfaces.len(), 2);
-    assert_eq!(decoded.ir.model.faces.len(), 2);
+    assert!(decoded.ir.model.faces.is_empty());
     assert!(matches!(
         decoded.ir.model.surfaces[1].geometry,
         SurfaceGeometry::Unknown { record: Some(_) }
     ));
-    assert_eq!(
-        decoded.ir.model.faces[1].surface,
-        decoded.ir.model.surfaces[1].id
-    );
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
