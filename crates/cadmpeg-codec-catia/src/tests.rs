@@ -174,7 +174,7 @@ fn standard_counted_vertex_table_excludes_incidental_markers() {
     bytes.extend_from_slice(&le_f32(20.0));
     bytes.extend_from_slice(&le_f32(30.0));
 
-    assert_eq!(crate::geometry::vertices(&bytes).len(), 5);
+    assert_eq!(crate::geometry::direct_vertices(&bytes).len(), 5);
     assert_eq!(
         crate::topology::standard_vertex_points(&bytes)
             .unwrap()
@@ -4887,6 +4887,40 @@ fn e5_stream_selection_prefers_coherent_storage_segment_over_stray_preamble_mark
     let range = crate::container::e5_record_stream(&bytes).expect("coherent E5 stream");
     assert_eq!(range.start, expected_start);
     assert_eq!(&bytes[range.start..range.start + 8], b"FINJPL  ");
+}
+
+#[test]
+fn e5_vertices_exclude_marker_like_record_payload_bytes() {
+    let mut false_vertex = vec![0x05, 0x08, 0x01];
+    for value in [90.0f32, 91.0, 92.0] {
+        false_vertex.extend_from_slice(&le_f32(value));
+    }
+    let mut stream = Vec::new();
+    append_e5_record(&mut stream, 0xc0, 1, &false_vertex);
+    stream.extend_from_slice(&[0x05, 0x08, 0x01]);
+    for value in [1.0f32, 2.0, 3.0] {
+        stream.extend_from_slice(&le_f32(value));
+    }
+    append_e5_record(&mut stream, 0xfe, 2, &[]);
+
+    let vertices = crate::geometry::e5_vertices(&stream, 1);
+    assert_eq!(vertices.len(), 1);
+    assert_eq!(vertices[0], cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
+}
+
+#[test]
+fn e5_vertices_reject_multiple_matching_coordinate_runs() {
+    let mut stream = Vec::new();
+    for (record_id, coordinate) in [(1, 1.0f32), (2, 2.0)] {
+        append_e5_record(&mut stream, 0xfe, record_id, &[]);
+        stream.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in [coordinate, 0.0, 0.0] {
+            stream.extend_from_slice(&le_f32(value));
+        }
+    }
+    append_e5_record(&mut stream, 0xfe, 3, &[]);
+
+    assert!(crate::geometry::e5_vertices(&stream, 1).is_empty());
 }
 
 #[test]

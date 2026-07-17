@@ -341,20 +341,25 @@ pub fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
     }
 }
 
-/// Read direct-record-layout `05 08 01` vertices as `(x, y, z)` in millimetres.
+/// Read unframed-layout `05 08 01` vertices as `(x, y, z)` in millimetres.
 ///
 /// Non-finite and out-of-range candidates are filtered (real part coordinates sit
 /// well under 10 metres, and the 3-byte signature occurs incidentally in packed
 /// sub-streams). Standard and FBB topology paths do not use this scan; their
-/// vertices come only from the declared counted table.
-pub fn vertices(brep: &[u8]) -> Vec<Point3> {
+/// vertices come only from the declared counted table. E5 uses
+/// [`e5_vertices`], which excludes framed-record payloads.
+pub fn direct_vertices(brep: &[u8]) -> Vec<Point3> {
+    scan_vertex_records(brep)
+}
+
+fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
     let mut out = Vec::new();
     let mut p = 0usize;
-    while p + 15 <= brep.len() {
-        if brep[p] == 0x05 && brep[p + 1] == 0x08 && brep[p + 2] == 0x01 {
-            let x = f32_le(brep, p + 3);
-            let y = f32_le(brep, p + 7);
-            let z = f32_le(brep, p + 11);
+    while p + 15 <= bytes.len() {
+        if bytes[p] == 0x05 && bytes[p + 1] == 0x08 && bytes[p + 2] == 0x01 {
+            let x = f32_le(bytes, p + 3);
+            let y = f32_le(bytes, p + 7);
+            let z = f32_le(bytes, p + 11);
             if finite_in_range(x) && finite_in_range(y) && finite_in_range(z) {
                 out.push(Point3::new(x as f64, y as f64, z as f64));
             }
@@ -589,6 +594,44 @@ fn e5_records(data: &[u8]) -> Vec<E5Record> {
         position = end;
     }
     records
+}
+
+/// Read the unique E5 `05 08 01` coordinate run matching the referenced vertex
+/// population. Marker-like bytes inside framed payloads are not vertex rows.
+#[must_use]
+pub fn e5_vertices(data: &[u8], vertex_count: usize) -> Vec<Point3> {
+    if vertex_count == 0 {
+        return Vec::new();
+    }
+    let records = e5_records(data);
+    let mut candidates = Vec::new();
+    let mut region_start = 0usize;
+    for record in records {
+        candidates.extend(vertex_runs(&data[region_start..record.pos], vertex_count));
+        region_start = record.end;
+    }
+    candidates.extend(vertex_runs(&data[region_start..], vertex_count));
+    <[Vec<Point3>; 1]>::try_from(candidates).map_or_else(|_| Vec::new(), |[vertices]| vertices)
+}
+
+fn vertex_runs(bytes: &[u8], expected_count: usize) -> Vec<Vec<Point3>> {
+    let mut runs = Vec::new();
+    let mut position = 0usize;
+    while position + 15 <= bytes.len() {
+        if bytes[position..position + 3] != [0x05, 0x08, 0x01] {
+            position += 1;
+            continue;
+        }
+        let start = position;
+        while position + 15 <= bytes.len() && bytes[position..position + 3] == [0x05, 0x08, 0x01] {
+            position += 15;
+        }
+        let vertices = scan_vertex_records(&bytes[start..position]);
+        if vertices.len() == expected_count {
+            runs.push(vertices);
+        }
+    }
+    runs
 }
 
 /// Walk an E5 record stream and decode its inline `0xc9` circle carriers.
@@ -1691,7 +1734,7 @@ pub fn a5_native_edge_graph(data: &[u8]) -> Option<A5NativeEdgeGraph> {
 /// coincide with serialized `05 08 01` vertices at single-precision tolerance.
 #[must_use]
 pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
-    let points = vertices(data);
+    let points = direct_vertices(data);
     let standalone = b2_cylinders(data);
     let embedded = b2_embedded_cylinders(data);
     let circles = b2_circles(data);

@@ -159,7 +159,7 @@ fn admit_neutral_model(ir: &mut CadIr, annotations: &mut AnnotationBuilder) -> b
 
 fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let decoded = geometry::zero_entity_surfaces(&scan.data);
-    let points = geometry::vertices(&scan.data);
+    let points = geometry::direct_vertices(&scan.data);
     let topology = crate::zero_entity::parse(&scan.data);
     if decoded.is_empty() && points.is_empty() && topology.is_none() {
         return None;
@@ -866,7 +866,17 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let circles = geometry::e5_circles(stream);
     let mut surfaces = geometry::e5_surfaces(stream);
     let topology = crate::e5::parse_topology(stream);
-    let points = geometry::vertices(&scan.data);
+    let vertex_count = topology.as_ref().map_or_else(
+        || {
+            geometry::e5_edges(stream)
+                .into_iter()
+                .flat_map(|edge| [edge.start_vertex_id, edge.end_vertex_id])
+                .collect::<HashSet<_>>()
+                .len()
+        },
+        |topology| topology.vertex_refs.len(),
+    );
+    let points = geometry::e5_vertices(stream, vertex_count);
     if let Some(topology) = &topology {
         append_e5_planes(stream, topology, &points, &mut surfaces);
     }
