@@ -1773,9 +1773,14 @@ fn try_decode_brep(
     let Some(start) = asm_header::record_stream_start(bytes) else {
         return Ok(None);
     };
-    let limit = active.delta_state_offset.unwrap_or(bytes.len());
-
-    let records = match sab::frame(bytes, start, limit, usize::from(width)) {
+    // A stream without a delta-state boundary is history-less: its final
+    // `End-of-ASM-data` record ends at EOF without the `0x11` terminator, so
+    // it needs the EOF-tolerant framer used for the history partition.
+    let framed = match active.delta_state_offset {
+        Some(limit) => sab::frame(bytes, start, limit, usize::from(width)),
+        None => sab::frame_history(bytes, start, bytes.len(), usize::from(width)),
+    };
+    let records = match framed {
         Ok(r) if !r.is_empty() => r,
         _ => return Ok(None),
     };

@@ -668,6 +668,33 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     }));
 }
 
+#[test]
+fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
+    // A history-less `.smb` stream has no `delta_state` boundary and its final
+    // `End-of-ASM-data` record ends at EOF without the `0x11` terminator.
+    let mut smbh = synthetic_geometry_smbh();
+    let marker = smbh
+        .windows(b"\x0d\x0bdelta_state".len())
+        .position(|window| window == b"\x0d\x0bdelta_state")
+        .expect("generated history boundary");
+    smbh.truncate(marker);
+    for name in ["End", "of", "ASM"] {
+        t_subident(&mut smbh, name);
+    }
+    t_ident(&mut smbh, "data"); // no trailing 0x11
+    assert!(crate::asm_header::first_delta_state_offset(&smbh).is_none());
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("history-less stream must decode");
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    assert_eq!(decoded.ir.model.edges.len(), 3);
+    assert_eq!(decoded.ir.model.vertices.len(), 3);
+}
+
 fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let name_tag = bytes
