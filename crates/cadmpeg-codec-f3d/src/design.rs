@@ -4881,14 +4881,23 @@ fn null_locus_dimension_definition(
     {
         return Some(definition);
     }
-    (source_kind == "Angular Dimension-2"
-        && pair.null_role == 14
-        && pair.geometry_role == 3
-        && matches!(entity.geometry, SketchGeometry::Line { .. }))
-    .then(|| Definition::AngleToAxis {
-        entity: entity.id.clone(),
-        axis: SketchAxis::Horizontal,
-        parameter,
+    if source_kind != "Angular Dimension-2"
+        || pair.null_role != 14
+        || pair.geometry_role != 3
+        || !matches!(entity.geometry, SketchGeometry::Line { .. })
+    {
+        return None;
+    }
+    let horizontal_axis = SketchGeometry::Line {
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(1.0, 0.0),
+    };
+    line_angle_matches(&entity.geometry, &horizontal_axis, evaluated_value).then(|| {
+        Definition::AngleToAxis {
+            entity: entity.id.clone(),
+            axis: SketchAxis::Horizontal,
+            parameter,
+        }
     })
 }
 
@@ -13262,7 +13271,7 @@ mod relation_tests {
                 &axis_pair,
                 &entity,
                 "Angular Dimension-2",
-                0.5,
+                std::f64::consts::FRAC_PI_4,
                 parameter.clone(),
             ),
             Some(SketchConstraintDefinition::AngleToAxis {
@@ -13271,12 +13280,20 @@ mod relation_tests {
                 parameter: ref actual_parameter,
             }) if actual_entity == &entity.id && actual_parameter == &parameter
         ));
-        axis_pair.null_role = 13;
         assert!(null_locus_dimension_definition(
             &axis_pair,
             &entity,
             "Angular Dimension-2",
             0.5,
+            parameter.clone(),
+        )
+        .is_none());
+        axis_pair.null_role = 13;
+        assert!(null_locus_dimension_definition(
+            &axis_pair,
+            &entity,
+            "Angular Dimension-2",
+            std::f64::consts::FRAC_PI_4,
             parameter,
         )
         .is_none());
