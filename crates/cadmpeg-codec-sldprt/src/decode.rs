@@ -25,7 +25,9 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 use cadmpeg_ir::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, ProfileVersions, Severity};
+use cadmpeg_ir::report::{
+    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
+};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
@@ -866,6 +868,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
 
     if s.unknown_surface_faces > 0 {
         losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -881,6 +884,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.unknown_curve_edges > 0 {
         losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -893,6 +897,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.synthetic_body_grouping {
         losses.push(LossNote {
+            code: LossCode::TopologyGaugeSubstituted,
             category: LossCategory::Topology,
             severity: Severity::Warning,
             message: "No body record was available; one body/region/shell hierarchy was derived."
@@ -1298,6 +1303,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 
     let mut losses = vec![
         LossNote {
+            code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
             message: format!(
@@ -1310,6 +1316,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             provenance: None,
         },
         LossNote {
+            code: LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message:
@@ -1319,6 +1326,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             provenance: None,
         },
         LossNote {
+            code: LossCode::MaterialNotTransferred,
             category: LossCategory::Material,
             severity: Severity::Warning,
             message: "Materials/appearances, tessellation, and document/feature metadata were not \
@@ -1330,6 +1338,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 
     if container::select_active_parasolid(scan).is_none() {
         losses.push(LossNote {
+            code: LossCode::MissingGeometryStream,
             category: LossCategory::Geometry,
             severity: Severity::Error,
             message: "no Parasolid partition/deltas stream was located in the container"

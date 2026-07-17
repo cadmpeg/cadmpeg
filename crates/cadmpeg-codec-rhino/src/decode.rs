@@ -13,7 +13,9 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, ProfileVersions, Severity};
+use cadmpeg_ir::report::{
+    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
+};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -1789,6 +1791,7 @@ impl<'a> DecodeContext<'a> {
             .sum::<usize>();
         let total = self.scan.objects.len();
         losses.push(LossNote {
+            code: LossCode::ObjectRecordsUntransferred,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!("decoded {decoded}/{total} Rhino object records"),
@@ -1797,6 +1800,7 @@ impl<'a> DecodeContext<'a> {
         for (class, outcome) in &self.outcomes {
             if outcome.retained > 0 {
                 losses.push(LossNote {
+                    code: LossCode::UnsupportedObjectFamily,
                     category: LossCategory::Geometry,
                     severity: Severity::Warning,
                     message: format!(
@@ -1808,6 +1812,7 @@ impl<'a> DecodeContext<'a> {
             }
             if outcome.attribute_degraded > 0 {
                 losses.push(LossNote {
+                    code: LossCode::AttributesNotTransferred,
                     category: LossCategory::Attribute,
                     severity: Severity::Warning,
                     message: format!(
@@ -1819,6 +1824,7 @@ impl<'a> DecodeContext<'a> {
             }
             if outcome.failed_framed > 0 {
                 losses.push(LossNote {
+                    code: LossCode::DecodeDiagnostic,
                     category: LossCategory::Other,
                     severity: Severity::Error,
                     message: format!(
@@ -1831,6 +1837,7 @@ impl<'a> DecodeContext<'a> {
         }
         if let Some(first) = self.scan.definitions.diagnostics.first() {
             losses.push(LossNote {
+                code: LossCode::DecodeDiagnostic,
                 category: LossCategory::Other,
                 severity: Severity::Warning,
                 message: format!(
@@ -1847,6 +1854,7 @@ impl<'a> DecodeContext<'a> {
             });
         }
         losses.extend(self.scan.warnings.iter().map(|warning| LossNote {
+            code: LossCode::DecodeDiagnostic,
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: warning.clone(),
@@ -1868,6 +1876,7 @@ impl<'a> DecodeContext<'a> {
             phase_families
                 .into_iter()
                 .map(|(family, (count, first))| LossNote {
+                    code: LossCode::DecodeDiagnostic,
                     category: LossCategory::Other,
                     severity: Severity::Warning,
                     message: if count == 1 {

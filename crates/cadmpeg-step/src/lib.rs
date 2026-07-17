@@ -56,7 +56,7 @@ use cadmpeg_ir::codec::{CodecError, Encoder};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{ExportReport, LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::topology::{Coedge, Edge, Point, Sense, Vertex};
 use cadmpeg_ir::CadIr;
 
@@ -250,8 +250,15 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn loss(&mut self, category: LossCategory, severity: Severity, message: String) {
+    fn loss(
+        &mut self,
+        code: LossCode,
+        category: LossCategory,
+        severity: Severity,
+        message: String,
+    ) {
         self.losses.push(LossNote {
+            code,
             category,
             severity,
             message,
@@ -268,6 +275,7 @@ impl<'a> Builder<'a> {
         let solids = self.emit_solids();
         if solids.is_empty() {
             self.loss(
+                LossCode::NoExportableSolids,
                 LossCategory::Topology,
                 Severity::Warning,
                 "no exportable solids: the IR document contains no body/region/shell \
@@ -574,6 +582,7 @@ impl<'a> Builder<'a> {
             .collect();
         if !hidden.is_empty() {
             self.loss(
+                LossCode::HiddenBodyOmitted,
                 LossCategory::Metadata,
                 Severity::Info,
                 format!(
@@ -589,6 +598,7 @@ impl<'a> Builder<'a> {
             if let Some(t) = &body.transform {
                 if !is_identity(&t.rows) {
                     self.loss(
+                        LossCode::BodyTransformNotApplied,
                         LossCategory::Geometry,
                         Severity::Warning,
                         format!(
@@ -820,6 +830,7 @@ impl<'a> Builder<'a> {
             .count();
         if nonstandard_analytic_surfaces > 0 {
             self.loss(
+                LossCode::AnalyticSurfaceNormalized,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
@@ -842,6 +853,7 @@ impl<'a> Builder<'a> {
             .count();
         if elliptical_cones > 0 {
             self.loss(
+                LossCode::EllipticalConeReduced,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
@@ -851,6 +863,7 @@ impl<'a> Builder<'a> {
         }
         if !self.curveless_edges.is_empty() {
             self.loss(
+                LossCode::CurvelessEdgeOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
@@ -862,6 +875,7 @@ impl<'a> Builder<'a> {
         }
         if !self.unknown_surface_faces.is_empty() {
             self.loss(
+                LossCode::UnknownSurfaceFaceOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
@@ -881,6 +895,7 @@ impl<'a> Builder<'a> {
             .count();
         if pcurve_count > 0 {
             self.loss(
+                LossCode::PcurveOmitted,
                 LossCategory::Geometry,
                 Severity::Info,
                 format!(
@@ -892,6 +907,7 @@ impl<'a> Builder<'a> {
         }
         if !self.ir.model.pcurves.is_empty() {
             self.loss(
+                LossCode::PcurveOmitted,
                 LossCategory::Geometry,
                 Severity::Info,
                 format!(
@@ -902,6 +918,7 @@ impl<'a> Builder<'a> {
         }
         if !self.ir.model.subds.is_empty() {
             self.loss(
+                LossCode::SubdOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
@@ -913,6 +930,7 @@ impl<'a> Builder<'a> {
         }
         if !self.ir.model.tessellations.is_empty() {
             self.loss(
+                LossCode::TessellationOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
@@ -952,6 +970,7 @@ impl<'a> Builder<'a> {
                 .count();
         if source_object_count > 0 {
             self.loss(
+                LossCode::SourceAssociationOmitted,
                 LossCategory::Metadata,
                 Severity::Info,
                 format!(
@@ -969,6 +988,7 @@ impl<'a> Builder<'a> {
             .sum::<usize>();
         if unknown_count > 0 {
             self.loss(
+                LossCode::PassthroughRecordOmitted,
                 LossCategory::Metadata,
                 Severity::Info,
                 format!("{unknown_count} uninterpreted passthrough record(s) were not represented in STEP"),
@@ -976,6 +996,7 @@ impl<'a> Builder<'a> {
         }
         if self.unstyled_colors > 0 {
             self.loss(
+                LossCode::AttributesNotTransferred,
                 LossCategory::Attribute,
                 Severity::Info,
                 format!(
@@ -987,6 +1008,7 @@ impl<'a> Builder<'a> {
         }
         if !self.ir.model.appearances.is_empty() {
             self.loss(
+                LossCode::AppearanceReduced,
                 LossCategory::Material,
                 Severity::Info,
                 format!(
@@ -998,6 +1020,7 @@ impl<'a> Builder<'a> {
         }
         if !self.ir.model.attributes.is_empty() {
             self.loss(
+                LossCode::AttributesNotTransferred,
                 LossCategory::Attribute,
                 Severity::Info,
                 format!(
@@ -1038,6 +1061,7 @@ impl<'a> Builder<'a> {
             .count();
         if procedural_surface_count > 0 || !self.ir.model.procedural_curves.is_empty() {
             self.loss(
+                LossCode::ProceduralReduced,
                 LossCategory::Geometry,
                 Severity::Info,
                 format!(
@@ -1056,6 +1080,7 @@ impl<'a> Builder<'a> {
             .sum();
         if parametric_records > 0 {
             self.loss(
+                LossCode::ParametricRecordOmitted,
                 LossCategory::Metadata,
                 Severity::Info,
                 format!(

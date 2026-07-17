@@ -27,7 +27,9 @@ use cadmpeg_ir::ids::{
     VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, ProfileVersions, Severity};
+use cadmpeg_ir::report::{
+    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
+};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, Point, Region, Sense, Shell, Vertex,
 };
@@ -707,6 +709,7 @@ fn build_ir(
             // placed carrier. Resolve `Dropped` with an accountable loss rather
             // than leaving the record silent (§6.2).
             let loss = LossNote {
+                code: LossCode::GeometryNotTransferred,
                 category: LossCategory::Geometry,
                 severity: Severity::Info,
                 message: format!(
@@ -906,6 +909,7 @@ fn build_ir(
                 // pushed notes tied to the count of resolutions even if two
                 // definitions ever shared a `feature_id` and offset (§6.2).
                 let loss = LossNote {
+                    code: LossCode::PassthroughRecordOmitted,
                     category: LossCategory::Attribute,
                     severity: Severity::Info,
                     message: format!(
@@ -1198,6 +1202,7 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
 
     if container_only {
         losses.push(LossNote {
+            code: LossCode::ContainerOnly,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: "Container-only decode requested; only the container layer was read."
@@ -1216,6 +1221,7 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
         .crv_array_count
         .map_or_else(|| "n/a".to_string(), |c| c.to_string());
     losses.push(LossNote {
+        code: LossCode::CarrierSummary,
         category: LossCategory::Geometry,
         severity: Severity::Info,
         message: format!(
@@ -1236,6 +1242,7 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
 
     // The core prototype-vs-instance limitation.
     losses.push(LossNote {
+        code: LossCode::GeometryNotTransferred,
         category: LossCategory::Geometry,
         severity: Severity::Blocking,
         message: format!(
@@ -1252,6 +1259,7 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
 
     if placed_plane_count != 0 {
         losses.push(LossNote {
+            code: LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -1264,6 +1272,7 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
 
     if !scan.datum_planes.is_empty() {
         losses.push(LossNote {
+            code: LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -1277,6 +1286,7 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
 
     // The specific undecoded PSB layers that gate per-instance geometry.
     losses.push(LossNote {
+        code: LossCode::GeometryNotTransferred,
         category: LossCategory::Geometry,
         severity: Severity::Blocking,
         message: "Additional model-space carriers are gated by unresolved lane-specific scalar \
@@ -1289,6 +1299,7 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
 
     // Topology.
     losses.push(LossNote {
+        code: LossCode::TopologyNotTransferred,
         category: LossCategory::Topology,
         severity: Severity::Blocking,
         message: "Native curve half-edges and closed loops were decoded. Exact plane-intersection \
@@ -1301,6 +1312,7 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
 
     // Features, history, materials.
     losses.push(LossNote {
+        code: LossCode::FeatureHistoryRetained,
         category: LossCategory::Attribute,
         severity: Severity::Warning,
         message: "Named feature operations and their decoded dependency/input tables transfer as \

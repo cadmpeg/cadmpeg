@@ -20,7 +20,9 @@ use cadmpeg_ir::decode::{
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, ProfileVersions, Severity};
+use cadmpeg_ir::report::{
+    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
+};
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::unknown::UnknownRecord;
 
@@ -114,6 +116,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             native.act_root_components = act.root_components;
             if !native.lost_edge_references.is_empty() {
                 report.losses.push(LossNote {
+                    code: LossCode::AttributesNotTransferred,
                     category: LossCategory::Attribute,
                     severity: Severity::Warning,
                     message: format!(
@@ -404,6 +407,7 @@ fn untransferred_asset_loss(role_label: &str, name: &str) -> LossNote {
         ),
     };
     LossNote {
+        code: LossCode::AssetNotTransferred,
         category,
         severity: Severity::Info,
         message,
@@ -760,6 +764,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
 
     if s.nurbs_surfaces > 0 {
         losses.push(LossNote {
+            code: LossCode::ProceduralReduced,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -772,6 +777,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.nurbs_curves > 0 {
         losses.push(LossNote {
+            code: LossCode::ProceduralReduced,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
@@ -784,6 +790,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.unknown_surface_faces > 0 {
         losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -800,6 +807,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.procedural_curve_edges > 0 {
         losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -813,6 +821,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.undecoded_pcurve_refs > 0 {
         losses.push(LossNote {
+            code: LossCode::PcurveOmitted,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -826,6 +835,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.partial_procedural_supports > 0 {
         losses.push(LossNote {
+            code: LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -837,6 +847,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.other_records > 0 {
         losses.push(LossNote {
+            code: LossCode::AttributesNotTransferred,
             category: LossCategory::Attribute,
             severity: Severity::Warning,
             message: format!(
@@ -852,6 +863,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         });
     }
     losses.push(LossNote {
+        code: LossCode::MaterialNotTransferred,
         category: LossCategory::Material,
         severity: Severity::Warning,
         message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
@@ -938,6 +950,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 
     let mut losses = vec![
         LossNote {
+            code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
             message: format!(
@@ -948,6 +961,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             provenance: None,
         },
         LossNote {
+            code: LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message:
@@ -957,6 +971,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             provenance: None,
         },
         LossNote {
+            code: LossCode::MaterialNotTransferred,
             category: LossCategory::Material,
             severity: Severity::Warning,
             message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
@@ -968,6 +983,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 
     if container::select_active_brep(scan).is_none() {
         losses.push(LossNote {
+            code: LossCode::MissingGeometryStream,
             category: LossCategory::Geometry,
             severity: Severity::Error,
             message: "no ASM BREP stream (.smb/.smbh) was found in the container".to_string(),

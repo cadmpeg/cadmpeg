@@ -8,7 +8,7 @@
 use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{ExportReport, LossCategory, LossCode, LossNote, Severity};
 use std::io::Write;
 
 pub(crate) mod accounting;
@@ -150,6 +150,7 @@ impl Encoder for RhinoEncoder {
         let mut losses = Vec::new();
         if vertex_quantization {
             losses.push(LossNote {
+                code: LossCode::MeshVertexPrecision,
                 category: LossCategory::Geometry,
                 severity: Severity::Warning,
                 message: "archive version 50 stores standalone mesh vertices as f32".into(),
@@ -158,6 +159,7 @@ impl Encoder for RhinoEncoder {
         }
         if normal_quantization {
             losses.push(LossNote {
+                code: LossCode::MeshVertexPrecision,
                 category: LossCategory::Geometry,
                 severity: Severity::Warning,
                 message: "3DM mesh normals are stored as f32".into(),

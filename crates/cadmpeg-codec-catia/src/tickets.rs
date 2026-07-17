@@ -21,7 +21,7 @@
 
 use cadmpeg_ir::decode::{DecodeContext, RecordDisposition, RecordKind, View};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
 
 /// Issues and resolves the decode's record tickets against `ctx`.
 ///
@@ -61,6 +61,7 @@ pub(crate) fn account_records(
         // ledger's view the record is dropped: record it as such with a loss the
         // report carries, so the omission is accountable rather than silent.
         let loss = LossNote {
+            code: LossCode::RecordNotTyped,
             category: LossCategory::Other,
             severity: Severity::Warning,
             message:

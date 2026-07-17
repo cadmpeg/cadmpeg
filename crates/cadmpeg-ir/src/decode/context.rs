@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 
 use crate::codec::{CodecError, DecodeResult, ReadSeek};
 use crate::document::Model;
-use crate::report::{LossCategory, LossNote, ProfileVersions, Severity};
+use crate::report::{LossCategory, LossCode, LossNote, ProfileVersions, Severity};
 
 use super::arena::DecodeArena;
 use super::budget::BudgetCells;
@@ -778,6 +778,7 @@ impl<'a> DecodeContext<'a> {
                     }
                     DecodeMode::Salvage => {
                         result.report.losses.push(LossNote {
+                            code: LossCode::TransferAccounting,
                             category: LossCategory::Other,
                             severity: Severity::Warning,
                             message: format!("transfer accounting: {message}"),
@@ -805,6 +806,7 @@ impl<'a> DecodeContext<'a> {
                 DecodeMode::Salvage => {
                     for message in violations {
                         result.report.losses.push(LossNote {
+                            code: LossCode::TransferAccounting,
                             category: LossCategory::Other,
                             severity: Severity::Warning,
                             message: format!("transfer accounting: {message}"),
@@ -820,6 +822,7 @@ impl<'a> DecodeContext<'a> {
             // deterministic loss note — never as a decode failure (§11.10).
             result.report.retention_degraded = true;
             result.report.losses.push(LossNote {
+                code: LossCode::RetentionDegraded,
                 category: LossCategory::Other,
                 severity: Severity::Warning,
                 message: format!(
@@ -1498,8 +1501,8 @@ impl TicketTable {
                 Some(RecordDisposition::Dropped { loss }) => {
                     let matched = losses.iter().enumerate().find(|(index, note)| {
                         !consumed[*index]
+                            && note.code == loss.code
                             && note.category == loss.category
-                            && note.message == loss.message
                     });
                     match matched {
                         Some((index, _)) => consumed[index] = true,
@@ -1538,6 +1541,7 @@ impl TicketTable {
         for state in self.entries.borrow_mut().iter_mut() {
             if state.disposition.is_none() {
                 let loss = LossNote {
+                    code: LossCode::UnresolvedRecordDropped,
                     category: LossCategory::Other,
                     severity: Severity::Warning,
                     message: format!(

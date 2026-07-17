@@ -7,7 +7,7 @@ use std::io::Cursor;
 use super::*;
 use crate::codec::{CodecError, DecodeResult};
 use crate::document::CadIr;
-use crate::report::{DecodeReport, LossCategory, LossNote, ProfileVersions, Severity};
+use crate::report::{DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity};
 use crate::units::Units;
 
 fn desktop() -> DecodePolicy {
@@ -842,6 +842,7 @@ fn transfer_accounting_rejects_dropped_without_loss_note_in_strict() {
         ticket,
         RecordDisposition::Dropped {
             loss: LossNote {
+                code: LossCode::DecodeDiagnostic,
                 category: LossCategory::Other,
                 severity: Severity::Warning,
                 message: "unhandled body variant".to_owned(),
@@ -864,6 +865,7 @@ fn transfer_accounting_accepts_dropped_when_loss_is_reflected() {
     let policy = strict();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let loss = LossNote {
+        code: LossCode::DecodeDiagnostic,
         category: LossCategory::Other,
         severity: Severity::Warning,
         message: "unhandled body variant".to_owned(),
@@ -883,6 +885,7 @@ fn transfer_accounting_rejects_shared_loss_note_for_multiple_drops() {
     let policy = strict();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let loss = LossNote {
+        code: LossCode::DecodeDiagnostic,
         category: LossCategory::Other,
         severity: Severity::Warning,
         message: "unhandled body variant".to_owned(),
@@ -911,6 +914,7 @@ fn transfer_accounting_accepts_one_loss_note_per_drop() {
     let policy = strict();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let loss = LossNote {
+        code: LossCode::DecodeDiagnostic,
         category: LossCategory::Other,
         severity: Severity::Warning,
         message: "unhandled body variant".to_owned(),

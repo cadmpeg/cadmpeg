@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, ProfileVersions, Severity};
+use cadmpeg_ir::report::{
+    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
+};
 use cadmpeg_ir::units::Units;
 
 use crate::chunks::{
@@ -668,6 +670,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
         .warnings
         .iter()
         .map(|message| LossNote {
+            code: LossCode::DecodeDiagnostic,
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: message.clone(),
@@ -679,6 +682,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
             .diagnostics
             .iter()
             .map(|diagnostic| LossNote {
+                code: LossCode::DecodeDiagnostic,
                 category: LossCategory::Other,
                 severity: Severity::Warning,
                 message: diagnostic.message.clone(),

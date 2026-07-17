@@ -26,7 +26,9 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, ProfileVersions, Severity};
+use cadmpeg_ir::report::{
+    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
+};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -212,6 +214,7 @@ fn parse_stream_index(id: &str) -> Option<usize> {
 /// per-record `Dropped` disposition consumes exactly one matching note.
 fn stream_drop_note(stream_index: usize, stream: &Stream) -> LossNote {
     LossNote {
+        code: LossCode::PassthroughRecordOmitted,
         category: LossCategory::Other,
         severity: Severity::Info,
         message: format!(
@@ -1397,6 +1400,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
     let mut losses = Vec::new();
 
     losses.push(LossNote {
+        code: LossCode::CarrierSummary,
         category: LossCategory::Geometry,
         severity: Severity::Info,
         message: format!(
@@ -1421,6 +1425,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
 
     if !has_topology {
         losses.push(LossNote {
+            code: LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message: "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not \
@@ -1435,6 +1440,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
     }
 
     losses.push(LossNote {
+        code: LossCode::GeometryNotTransferred,
         category: LossCategory::Geometry,
         severity: Severity::Warning,
         message:
@@ -1448,6 +1454,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
 
     if scan.count(StreamKind::Deltas) > 0 {
         losses.push(LossNote {
+            code: LossCode::TopologyGaugeSubstituted,
             category: LossCategory::Topology,
             severity: Severity::Warning,
             message: format!(
@@ -1463,6 +1470,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
 
     if scan.count(StreamKind::Partition) > 1 {
         losses.push(LossNote {
+            code: LossCode::TopologyGaugeSubstituted,
             category: LossCategory::Topology,
             severity: Severity::Warning,
             message: format!(
@@ -1477,6 +1485,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
     }
 
     losses.push(LossNote {
+        code: LossCode::AttributesNotTransferred,
         category: LossCategory::Attribute,
         severity: Severity::Warning,
         message: "Materials, appearances, part attributes, feature history, and assembly \
@@ -1555,6 +1564,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
 
     if assembly {
         losses.push(LossNote {
+            code: LossCode::AssemblyComponentsExternal,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
             message: "No inline Parasolid geometry: this is an assembly .prt. Component geometry \
@@ -1566,6 +1576,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         });
     } else {
         losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
             message: "No B-rep geometry was transferred: no gate-passing analytic carrier was found \
@@ -1579,6 +1590,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
 
     if container_only {
         losses.push(LossNote {
+            code: LossCode::ContainerOnly,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: "Container-only decode requested; entity decode was not attempted."

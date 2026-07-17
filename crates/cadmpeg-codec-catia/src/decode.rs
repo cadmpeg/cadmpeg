@@ -23,7 +23,9 @@ use cadmpeg_ir::ids::{
     SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, ProfileVersions, Severity};
+use cadmpeg_ir::report::{
+    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
+};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -214,6 +216,7 @@ fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeRepo
         container_only: false,
         geometry_transferred: true,
         losses: vec![LossNote {
+            code: LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message: "Zero-entity analytic surface carriers were decoded, but the face/loop/coedge/edge/vertex graph is not yet transferred."
@@ -316,6 +319,7 @@ fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
         Vec::new()
     } else {
         vec![LossNote {
+            code: LossCode::ReferenceGraphNotClosed,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message: "E5 analytic carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding."
@@ -871,6 +875,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<(CadIr, Deco
             geometry_transferred: true,
             losses: if topology_transferred {
                 vec![LossNote {
+                    code: LossCode::TopologyGaugeSubstituted,
                     category: LossCategory::Topology,
                     severity: Severity::Warning,
                     message: "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved."
@@ -879,6 +884,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<(CadIr, Deco
                 }]
             } else {
                 vec![LossNote {
+                    code: LossCode::ReferenceGraphNotClosed,
                     category: LossCategory::Topology,
                     severity: Severity::Blocking,
                     message: "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close."
@@ -1710,6 +1716,7 @@ fn build_geometry_report(
     let mut losses = Vec::new();
 
     losses.push(LossNote {
+        code: LossCode::CarrierSummary,
         category: LossCategory::Geometry,
         severity: Severity::Info,
         message: format!(
@@ -1729,6 +1736,7 @@ fn build_geometry_report(
 
     if !topology_attached {
         losses.push(LossNote {
+            code: LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message: format!(
@@ -1743,6 +1751,7 @@ fn build_geometry_report(
 
     if plane_faces > 0 {
         losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -1758,6 +1767,7 @@ fn build_geometry_report(
     let freeform = prefix_count.saturating_sub(typed.total() + plane_faces + typed.plane);
     if freeform > 0 {
         losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
@@ -1771,6 +1781,7 @@ fn build_geometry_report(
     }
 
     losses.push(LossNote {
+        code: LossCode::CarrierAxisInferred,
         category: LossCategory::Attribute,
         severity: Severity::Warning,
         message: "Standard circles with a consistent adjacent-carrier axis and plane-plane lines \
@@ -1890,6 +1901,7 @@ fn link_payload_carriers(
 fn build_container_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let mut losses = vec![LossNote {
+        code: LossCode::GeometryNotTransferred,
         category: LossCategory::Geometry,
         severity: Severity::Blocking,
         message: format!(
@@ -1903,6 +1915,7 @@ fn build_container_report(scan: &ContainerScan<'_>, container_only: bool) -> Dec
 
     if container_only {
         losses.push(LossNote {
+            code: LossCode::ContainerOnly,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: "Container-only decode requested; entity decode was not attempted."
@@ -1912,6 +1925,7 @@ fn build_container_report(scan: &ContainerScan<'_>, container_only: bool) -> Dec
     }
 
     losses.push(LossNote {
+        code: LossCode::TopologyNotTransferred,
         category: LossCategory::Topology,
         severity: Severity::Blocking,
         message:
