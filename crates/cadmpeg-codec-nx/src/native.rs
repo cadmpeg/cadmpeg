@@ -8561,11 +8561,21 @@ pub fn feature_extrude_32_constructions(
     references: &[FeatureExtrudeProfileReference],
     branches: &[FeatureExtrudePayload32Branch],
 ) -> Vec<FeatureExtrude32Construction> {
-    let mut constructions = Vec::new();
+    let mut branches_by_operation = BTreeMap::<&str, Vec<&FeatureExtrudePayload32Branch>>::new();
     for branch in branches {
+        branches_by_operation
+            .entry(branch.operation_label.as_str())
+            .or_default()
+            .push(branch);
+    }
+    let mut constructions = Vec::new();
+    for (operation_label, operation_branches) in branches_by_operation {
+        let [branch] = operation_branches.as_slice() else {
+            continue;
+        };
         let mut profile = references
             .iter()
-            .filter(|reference| reference.operation_label == branch.operation_label)
+            .filter(|reference| reference.operation_label == operation_label)
             .collect::<Vec<_>>();
         profile.sort_by_key(|reference| reference.ordinal);
         if profile.is_empty()

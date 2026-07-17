@@ -7129,6 +7129,12 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
     assert_eq!(constructions[0].first_data_blocks, ["block#2"]);
     assert_eq!(constructions[0].second_data_blocks, ["block#3"]);
 
+    assert!(crate::native::feature_extrude_32_constructions(
+        std::slice::from_ref(&reference),
+        &[branch.clone(), branch.clone()],
+    )
+    .is_empty());
+
     let mut unresolved = reference;
     unresolved.data_block = None;
     assert!(crate::native::feature_extrude_32_constructions(
