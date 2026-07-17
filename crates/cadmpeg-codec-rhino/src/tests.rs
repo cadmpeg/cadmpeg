@@ -4,6 +4,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, CodecEntry, CodecError, Confidence, DecodeOptions};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::InspectOptions;
+use cadmpeg_ir::LossCode;
 use cadmpeg_ir::IR_VERSION;
 
 use super::chunks::{
@@ -3303,10 +3304,11 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
         let mut context = super::decode::DecodeContext::new(&scan, expand);
         assert!(context.mark_decoded(0));
         let result = context.commit();
-        assert!(result.report.losses.iter().any(|loss| {
-            loss.category == cadmpeg_ir::report::LossCategory::Attribute
-                && loss.message.contains("degraded attributes")
-        }));
+        assert!(result
+            .report
+            .losses
+            .iter()
+            .any(|loss| { loss.code == LossCode::AttributesNotTransferred }));
     });
 }
 

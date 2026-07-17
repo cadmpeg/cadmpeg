@@ -562,6 +562,40 @@ mod tests {
     }
 
     #[test]
+    fn loss_code_serializes_under_its_stable_identifier() {
+        // The code is the stable key gates and diffs match on (§10 Phase 4A):
+        // lock the wire form to the `as_str` identifier so a rename is a
+        // deliberate, visible change rather than a silent one.
+        let note = LossNote {
+            code: LossCode::TopologyNotTransferred,
+            category: LossCategory::Topology,
+            severity: Severity::Blocking,
+            message: "topology graph not transferred".to_owned(),
+            provenance: None,
+        };
+        let value: serde_json::Value = serde_json::to_value(&note).unwrap();
+        assert_eq!(value["code"], "topology_not_transferred");
+        assert_eq!(value["code"], LossCode::TopologyNotTransferred.as_str());
+    }
+
+    #[test]
+    fn loss_code_carries_reversibility_and_strict_consequence() {
+        // A dropped mandatory graph rejects under strict mode and is not
+        // recoverable from retained source; a passthrough omission tolerates
+        // and is reversible because its bytes survive as a native record.
+        assert_eq!(
+            LossCode::TopologyNotTransferred.strict_consequence(),
+            StrictConsequence::Reject
+        );
+        assert!(!LossCode::TopologyNotTransferred.reversible());
+        assert_eq!(
+            LossCode::PassthroughRecordOmitted.strict_consequence(),
+            StrictConsequence::Tolerate
+        );
+        assert!(LossCode::PassthroughRecordOmitted.reversible());
+    }
+
+    #[test]
     fn profile_versions_serialize_under_stable_keys() {
         // The serialized shape is the durable explanation the feature exists to
         // provide (§5.2): a report keeps a machine-readable record of the

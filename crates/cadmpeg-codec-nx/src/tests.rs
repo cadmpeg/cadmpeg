@@ -18,6 +18,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::InspectOptions;
+use cadmpeg_ir::LossCode;
 
 use crate::container;
 use crate::parasolid::{self, Stream, StreamKind};
@@ -2790,7 +2791,7 @@ fn decode_assembly_reports_external_dependency() {
         .report
         .losses
         .iter()
-        .any(|l| l.message.contains("assembly")));
+        .any(|l| l.code == LossCode::AssemblyComponentsExternal));
 }
 
 #[test]
@@ -2898,7 +2899,7 @@ fn geometry_decode_passes_transfer_accounting_in_both_modes() {
             .report
             .losses
             .iter()
-            .any(|loss| loss.message.starts_with("transfer accounting:")));
+            .any(|loss| loss.code == LossCode::TransferAccounting));
     }
 }
 
@@ -2914,7 +2915,7 @@ fn assembly_metadata_decode_passes_transfer_accounting_in_both_modes() {
             .report
             .losses
             .iter()
-            .any(|loss| loss.message.starts_with("transfer accounting:")));
+            .any(|loss| loss.code == LossCode::TransferAccounting));
     }
 }
 
@@ -2937,12 +2938,12 @@ fn container_only_decode_passes_transfer_accounting_in_both_modes() {
             .report
             .losses
             .iter()
-            .any(|loss| loss.message.contains("yielded no typed IR entity")));
+            .any(|loss| loss.code == LossCode::PassthroughRecordOmitted));
         assert!(!result
             .report
             .losses
             .iter()
-            .any(|loss| loss.message.starts_with("transfer accounting:")));
+            .any(|loss| loss.code == LossCode::TransferAccounting));
     }
 }
 

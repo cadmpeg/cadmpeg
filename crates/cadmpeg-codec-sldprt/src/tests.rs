@@ -8,6 +8,7 @@ use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::InspectOptions;
+use cadmpeg_ir::LossCode;
 
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
@@ -14111,7 +14112,7 @@ fn face_on_untyped_surface_keeps_topology() {
         .report
         .losses
         .iter()
-        .any(|l| l.message.contains("does not type")));
+        .any(|l| l.code == LossCode::GeometryNotTransferred));
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }

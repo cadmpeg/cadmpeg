@@ -12,6 +12,7 @@ use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::InspectOptions;
+use cadmpeg_ir::LossCode;
 
 use crate::container::{self, role, Layout};
 use crate::CreoCodec;
@@ -1494,10 +1495,11 @@ fn decode_passes_transfer_accounting_in_strict_mode() {
     );
     // The incomplete support frame's `Dropped` disposition reflects a matching
     // salvage-skip loss in the report.
-    assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Geometry
-            && loss.message.contains("incomplete support frame")
-    }));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == LossCode::GeometryNotTransferred }));
 
     // Salvage mode over the same bytes must also pass accounting.
     CreoCodec
@@ -1737,7 +1739,7 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
         .report
         .losses
         .iter()
-        .any(|l| l.message.contains("prototype")));
+        .any(|l| l.code == LossCode::GeometryNotTransferred));
 }
 
 #[test]

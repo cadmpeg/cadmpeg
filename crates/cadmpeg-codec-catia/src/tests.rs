@@ -12,6 +12,7 @@ use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::InspectOptions;
+use cadmpeg_ir::LossCode;
 
 use crate::variant::Variant;
 use crate::CatiaCodec;
@@ -1699,7 +1700,7 @@ fn decode_zero_entity_falls_back_to_metadata() {
         .report
         .losses
         .iter()
-        .any(|l| l.message.contains("zero_entity")));
+        .any(|l| l.code == LossCode::GeometryNotTransferred));
 }
 
 #[test]
@@ -3432,7 +3433,7 @@ mod tickets {
                 .report
                 .losses
                 .iter()
-                .any(|loss| loss.message.contains("transferred no record to typed IR")),
+                .any(|loss| loss.code == cadmpeg_ir::LossCode::RecordNotTyped),
             "typed stream must not record a dropped-stream loss"
         );
     }
@@ -3455,7 +3456,7 @@ mod tickets {
                 .report
                 .losses
                 .iter()
-                .any(|loss| loss.message.contains("transferred no record to typed IR")),
+                .any(|loss| loss.code == cadmpeg_ir::LossCode::RecordNotTyped),
             "dropped stream must record its disposition as an accountable loss"
         );
     }

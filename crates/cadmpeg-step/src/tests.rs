@@ -12,6 +12,7 @@ use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
+use cadmpeg_ir::LossCode;
 
 use crate::{write_step, StepWriteOptions};
 
@@ -451,7 +452,7 @@ fn edge_without_curve_is_reported_and_omitted() {
     assert!(report
         .losses
         .iter()
-        .any(|l| l.message.contains("edge(s) have no typed 3D curve")));
+        .any(|l| l.code == LossCode::CurvelessEdgeOmitted));
 }
 
 #[test]
@@ -488,24 +489,18 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         });
 
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default()).unwrap();
-    assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
-            && loss.severity == cadmpeg_ir::Severity::Warning
-            && loss
-                .message
-                .contains("1 subdivision surface(s) were omitted")
-    }));
-    assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
-            && loss.severity == cadmpeg_ir::Severity::Warning
-            && loss.message.contains("1 tessellation(s) were omitted")
-    }));
-    assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Metadata
-            && loss
-                .message
-                .contains("2 source-object association(s) were not represented")
-    }));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == LossCode::SubdOmitted }));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == LossCode::TessellationOmitted }));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == LossCode::SourceAssociationOmitted }));
 }
 
 #[test]
@@ -532,7 +527,7 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
     let unknown_notes: Vec<_> = report
         .losses
         .iter()
-        .filter(|l| l.message.contains("rest on an unknown"))
+        .filter(|l| l.code == LossCode::UnknownSurfaceFaceOmitted)
         .collect();
     assert_eq!(
         unknown_notes.len(),
@@ -556,10 +551,10 @@ fn signed_analytic_radius_normalization_is_reported() {
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
 
-    assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
-            && loss.message.contains("normalized to positive STEP radii")
-    }));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == LossCode::AnalyticSurfaceNormalized }));
 }
 
 #[test]
@@ -577,10 +572,10 @@ fn elliptical_cone_reduction_is_reported() {
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
 
-    assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
-            && loss.message.contains("elliptical cone surface(s)")
-    }));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == LossCode::EllipticalConeReduced }));
 }
 
 #[test]
@@ -607,9 +602,10 @@ fn procedural_construction_reduction_is_reported() {
 
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
-    assert!(report.losses.iter().any(|loss| loss
-        .message
-        .contains("reduced to their solved STEP carriers")));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == LossCode::ProceduralReduced));
 }
 
 #[test]
@@ -626,9 +622,10 @@ fn parametric_history_reduction_is_reported() {
 
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
-    assert!(report.losses.iter().any(|loss| loss
-        .message
-        .contains("parametric design/history record(s) were not represented in STEP")));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == LossCode::ParametricRecordOmitted));
 }
 
 #[test]
@@ -643,7 +640,7 @@ fn hidden_body_is_omitted_and_reported() {
     assert!(report
         .losses
         .iter()
-        .any(|l| l.message.contains("hidden body(ies) were omitted")));
+        .any(|l| l.code == LossCode::HiddenBodyOmitted));
 
     // An explicitly visible body exports unchanged.
     let mut ir = unit_cube();
