@@ -449,6 +449,10 @@ fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
 fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
     let mut out = BTreeMap::new();
     for source in chart_source_records(stream) {
+        let fit_tolerance = source.chordal_error * 1000.0;
+        if !fit_tolerance.is_finite() {
+            continue;
+        }
         let mut chord_parameters = Vec::with_capacity(source.points.len());
         chord_parameters.push(source.base_parameter);
         for pair in source.points.windows(2) {
@@ -464,7 +468,7 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
         let candidate = Chart {
             points: source.points,
             parameters: source.native_parameters.clone().unwrap_or(chord_parameters),
-            fit_tolerance: source.chordal_error * 1000.0,
+            fit_tolerance,
             ext_support_uv: source.ext_support_uv,
         };
         match out.entry(source.xmt) {

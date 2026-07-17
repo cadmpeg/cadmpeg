@@ -298,10 +298,15 @@ pub fn points(stream: &[u8]) -> Vec<Point> {
         .into_iter()
         .filter_map(|record| {
             let [x, y, z] = record.position?;
+            let position = Point3::new(x * 1000.0, y * 1000.0, z * 1000.0);
+            [position.x, position.y, position.z]
+                .into_iter()
+                .all(f64::is_finite)
+                .then_some(())?;
             Some(Point {
                 xmt: record.xmt,
                 node_id: record.node_id?,
-                position: Point3::new(x * 1000.0, y * 1000.0, z * 1000.0),
+                position,
                 offset: record.offset,
             })
         })

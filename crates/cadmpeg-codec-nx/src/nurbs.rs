@@ -78,11 +78,7 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
                 if !weight.is_finite() || weight == 0.0 {
                     return None;
                 }
-                control_points.push(Point3::new(
-                    pole[0] * 1000.0 / weight,
-                    pole[1] * 1000.0 / weight,
-                    pole[2] * 1000.0 / weight,
-                ));
+                control_points.push(weighted_mm_point(pole, weight)?);
                 if let Some(weights) = &mut weights {
                     weights.push(weight);
                 }
@@ -192,11 +188,7 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
                 if !weight.is_finite() || weight == 0.0 {
                     return None;
                 }
-                control_points.push(Point3::new(
-                    pole[0] * 1000.0 / weight,
-                    pole[1] * 1000.0 / weight,
-                    pole[2] * 1000.0 / weight,
-                ));
+                control_points.push(weighted_mm_point(pole, weight)?);
                 if let Some(weights) = &mut weights {
                     weights.push(weight);
                 }
@@ -213,6 +205,14 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
             })
         })
         .collect()
+}
+
+fn weighted_mm_point(pole: &[f64], weight: f64) -> Option<Point3> {
+    let coordinates = [pole[0], pole[1], pole[2]].map(|value| value / weight * 1000.0);
+    coordinates
+        .into_iter()
+        .all(f64::is_finite)
+        .then(|| Point3::new(coordinates[0], coordinates[1], coordinates[2]))
 }
 
 #[derive(Default)]

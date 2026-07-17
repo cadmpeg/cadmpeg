@@ -1258,22 +1258,30 @@ fn try_decode_geometry(
             }
             for surface_curve in &surface_curves {
                 if let Some(pcurve) = pcurves_by_xmt.get(&surface_curve.pcurve).cloned() {
-                    if normalized_pcurves.insert(pcurve.clone()) {
+                    if !normalized_pcurves.contains(&pcurve) {
                         let support = surfaces_by_xmt
                             .get(&surface_curve.surface)
                             .and_then(|id| {
                                 ir.model.surfaces.iter().find(|surface| surface.id == *id)
                             })
                             .map(|surface| surface.geometry.clone());
-                        if let (Some(support), Some(carrier)) = (
+                        let normalized = if let (Some(support), Some(carrier)) = (
                             support,
                             ir.model
                                 .pcurves
                                 .iter_mut()
                                 .find(|candidate| candidate.id == pcurve),
                         ) {
-                            normalize_pcurve_parameters(&mut carrier.geometry, &support);
+                            normalize_pcurve_parameters(&mut carrier.geometry, &support).is_some()
+                        } else {
+                            false
+                        };
+                        if !normalized {
+                            pcurves_by_xmt.remove(&surface_curve.pcurve);
+                            ir.model.pcurves.retain(|candidate| candidate.id != pcurve);
+                            continue;
                         }
+                        normalized_pcurves.insert(pcurve.clone());
                     }
                     if let Some(carrier) = ir.model.pcurves.iter_mut().find(|p| p.id == pcurve) {
                         carrier.fit_tolerance = decoded_tolerance(surface_curve.tolerance);
@@ -2148,7 +2156,9 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces(
             return false;
         };
         values.iter().zip(points).all(|(uv, point)| {
-            let uv = surface_parameters(geometry, *uv);
+            let Some(uv) = surface_parameters(geometry, *uv) else {
+                return false;
+            };
             model_surface_point(ir, surface, uv.u, uv.v)
                 .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
         })
@@ -2288,13 +2298,14 @@ pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11S
             {
                 return None;
             }
+            let control_points = values
+                .iter()
+                .map(|uv| surface_parameters(surface_geometry, *uv))
+                .collect::<Option<Vec<_>>>()?;
             Some(PcurveGeometry::Nurbs {
                 degree: 1,
                 knots: linear_knots(parameters),
-                control_points: values
-                    .iter()
-                    .map(|uv| surface_parameters(surface_geometry, *uv))
-                    .collect(),
+                control_points,
                 weights: None,
                 periodic: false,
             })
@@ -4948,13 +4959,14 @@ fn intersection_side(
             .find(|candidate| &candidate.id == surface_id)
             .map(|surface| &surface.geometry)?;
         let (uv, parameters) = uv?;
+        let control_points = uv
+            .iter()
+            .map(|pair| surface_parameters(geometry, *pair))
+            .collect::<Option<Vec<_>>>()?;
         Some(PcurveGeometry::Nurbs {
             degree: 1,
             knots: linear_knots(parameters),
-            control_points: uv
-                .iter()
-                .map(|pair| surface_parameters(geometry, *pair))
-                .collect(),
+            control_points,
             weights: None,
             periodic: false,
         })
@@ -4962,8 +4974,8 @@ fn intersection_side(
     IntcurveSupportSide { surface, pcurve }
 }
 
-fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Point2 {
-    match surface {
+fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Option<Point2> {
+    let point = match surface {
         SurfaceGeometry::Plane { .. } => Point2::new(uv[0] * 1000.0, uv[1] * 1000.0),
         SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
             Point2::new(uv[0], uv[1] * 1000.0)
@@ -4974,16 +4986,23 @@ fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Point2 {
         | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
-        SurfaceGeometry::Transformed { basis, .. } => surface_parameters(basis, uv),
-    }
+        SurfaceGeometry::Transformed { basis, .. } => return surface_parameters(basis, uv),
+    };
+    [point.u, point.v]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(point)
 }
 
-fn normalize_pcurve_parameters(pcurve: &mut PcurveGeometry, surface: &SurfaceGeometry) {
+fn normalize_pcurve_parameters(
+    pcurve: &mut PcurveGeometry,
+    surface: &SurfaceGeometry,
+) -> Option<()> {
     match pcurve {
         PcurveGeometry::Line { origin, direction } => {
             let end = Point2::new(origin.u + direction.u, origin.v + direction.v);
-            let converted_origin = surface_parameters(surface, [origin.u, origin.v]);
-            let converted_end = surface_parameters(surface, [end.u, end.v]);
+            let converted_origin = surface_parameters(surface, [origin.u, origin.v])?;
+            let converted_end = surface_parameters(surface, [end.u, end.v])?;
             *origin = converted_origin;
             *direction = Point2::new(
                 converted_end.u - converted_origin.u,
@@ -4991,12 +5010,15 @@ fn normalize_pcurve_parameters(pcurve: &mut PcurveGeometry, surface: &SurfaceGeo
             );
         }
         PcurveGeometry::Nurbs { control_points, .. } => {
-            for point in control_points {
-                *point = surface_parameters(surface, [point.u, point.v]);
-            }
+            let converted = control_points
+                .iter()
+                .map(|point| surface_parameters(surface, [point.u, point.v]))
+                .collect::<Option<Vec<_>>>()?;
+            *control_points = converted;
         }
         _ => {}
     }
+    Some(())
 }
 
 // The parameters are the per-stream lookup tables produced by the decode pass;
@@ -6617,7 +6639,10 @@ fn synthesize_closed_edge_vertex(
 fn canonical_trim_range(ir: &CadIr, basis: &CurveId, raw: [f64; 2]) -> Option<[f64; 2]> {
     let curve = ir.model.curves.iter().find(|curve| curve.id == *basis)?;
     match &curve.geometry {
-        CurveGeometry::Line { .. } => Some([raw[0] * 1000.0, raw[1] * 1000.0]),
+        CurveGeometry::Line { .. } => {
+            let range = [raw[0] * 1000.0, raw[1] * 1000.0];
+            range.into_iter().all(f64::is_finite).then_some(range)
+        }
         CurveGeometry::Nurbs(nurbs) => {
             let domain = [*nurbs.knots.first()?, *nurbs.knots.last()?];
             let epsilon = 1.0e-6 * (1.0 + domain[0].abs().max(domain[1].abs()));

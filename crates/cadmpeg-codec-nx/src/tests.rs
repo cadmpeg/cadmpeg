@@ -9099,6 +9099,24 @@ fn decode_omits_surface_curve_missing_tolerance_sentinel() {
 }
 
 #[test]
+fn decode_rejects_overflowing_pcurve_parameter_conversion() {
+    let mut stream = pcurve_topology_partition_stream();
+    let payload = stream
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 22])
+        .expect("pcurve payload");
+    put_f64(&mut stream, payload + 15, f64::MAX);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir.model.pcurves.is_empty());
+    assert!(result.ir.model.coedges[0].pcurves.is_empty());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn decode_preserves_multiple_shells_in_one_region() {
     let stream = shared_region_shells_partition_stream();
     let mut input = Cursor::new(prt_with_partition(&stream));
@@ -9135,7 +9153,7 @@ fn offset_surface_topology_partition_stream() -> Vec<u8> {
 }
 
 #[test]
-fn nx_offset_surface_accepts_every_finite_distance() {
+fn nx_offset_surface_accepts_unbounded_representable_distance() {
     let mut stream = offset_surface_topology_partition_stream();
     let offset = stream
         .windows(4)
@@ -9149,6 +9167,9 @@ fn nx_offset_surface_accepts_every_finite_distance() {
     assert_eq!(surface.distance, 1_001_000.0);
 
     put_f64(&mut stream, offset + 23, f64::INFINITY);
+    assert!(crate::topology::offset_surfaces(&stream).is_empty());
+
+    put_f64(&mut stream, offset + 23, f64::MAX);
     assert!(crate::topology::offset_surfaces(&stream).is_empty());
 }
 
@@ -9332,6 +9353,10 @@ fn nx_blend_surface_requires_a_nonzero_rolling_ball_radius() {
     assert!(crate::topology::blend_surfaces(&stream).is_empty());
 
     put_f64(&mut stream, blend + 26, 0.5e-9);
+    assert!(crate::topology::blend_surfaces(&stream).is_empty());
+
+    put_f64(&mut stream, blend + 26, f64::MAX);
+    put_f64(&mut stream, blend + 34, f64::MAX);
     assert!(crate::topology::blend_surfaces(&stream).is_empty());
 }
 
@@ -12300,6 +12325,13 @@ fn deltas_point_exposes_typed_position_in_model_units() {
 }
 
 #[test]
+fn deltas_point_rejects_nonfinite_millimeter_position() {
+    let mut stream = status_framed_deltas_point_stream();
+    put_f64(&mut stream, 20, f64::MAX);
+    assert!(crate::deltas::points(&stream).is_empty());
+}
+
+#[test]
 fn deltas_point_normalizes_to_partition_record_framing() {
     let record = crate::deltas::walk(&status_framed_deltas_point_stream())
         .records
@@ -12929,6 +12961,39 @@ fn trimmed_curves_reject_nonfinite_endpoint_witnesses() {
         .expect("trimmed curve");
     put_f64(&mut stream, trim + 21, f64::NAN);
     assert!(crate::topology::trimmed_curves(&stream).is_empty());
+
+    put_f64(&mut stream, trim + 21, f64::MAX);
+    assert!(crate::topology::trimmed_curves(&stream).is_empty());
+}
+
+#[test]
+fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
+    let mut surface = bspline_partition_stream();
+    let payload = surface
+        .windows(4)
+        .position(|window| window == [0, 125, 0, 21])
+        .expect("surface payload");
+    put_f64(&mut surface, payload + 97, f64::MAX);
+    assert!(crate::nurbs::surfaces(&surface).is_empty());
+
+    let mut curve = bspline_partition_stream();
+    let payload = curve
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 41])
+        .expect("curve payload");
+    put_f64(&mut curve, payload + 15, f64::MAX);
+    assert!(crate::nurbs::curves(&curve).is_empty());
+}
+
+#[test]
+fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let chart = stream
+        .windows(2)
+        .position(|window| window == [0, 40])
+        .expect("chart record");
+    put_f64(&mut stream, chart + 28, f64::MAX);
+    assert!(crate::intersection::curves(&stream).is_empty());
 }
 
 #[test]
@@ -14673,6 +14738,21 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
         .expect("edge carrier");
     assert!(matches!(carrier.geometry, CurveGeometry::Line { .. }));
     assert_eq!(edge.param_range, None);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_omits_overflowing_line_trim_range() {
+    let mut stream = trimmed_topology_partition_stream();
+    let trim = stream
+        .windows(4)
+        .position(|window| window == [0, 133, 0, 12])
+        .expect("trimmed curve");
+    put_f64(&mut stream, trim + 69, f64::MAX);
+
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    assert_eq!(result.ir.model.edges[0].param_range, None);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 

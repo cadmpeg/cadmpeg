@@ -544,6 +544,8 @@ pub fn blend_surfaces(stream: &[u8]) -> Vec<BlendSurface> {
                 || refs[1] <= 1
                 || values[0] == 0.0
                 || values[1] == 0.0
+                || !(values[0] * 1000.0).is_finite()
+                || !(values[1] * 1000.0).is_finite()
                 || (values[0].abs() - values[1].abs()).abs() > 1.0e-9
             {
                 return None;
@@ -581,12 +583,13 @@ pub fn offset_surfaces(stream: &[u8]) -> Vec<OffsetSurface> {
             at += 1;
             let support = read_and_advance(&node.bytes, &mut at)?;
             let distance = be::f64_at(&node.bytes, at)?;
+            let distance = distance * 1000.0;
             (support > 1 && distance.is_finite()).then_some(OffsetSurface {
                 xmt: node.xmt,
                 discriminator,
                 true_offset,
                 support,
-                distance: distance * 1000.0,
+                distance,
                 pos: node.pos,
             })
         })
@@ -628,7 +631,7 @@ pub fn trimmed_curves(stream: &[u8]) -> Vec<TrimmedCurve> {
             if point_0
                 .iter()
                 .chain(point_1.iter())
-                .any(|coordinate| !coordinate.is_finite())
+                .any(|coordinate| !coordinate.is_finite() || !(*coordinate * 1000.0).is_finite())
             {
                 return None;
             }
