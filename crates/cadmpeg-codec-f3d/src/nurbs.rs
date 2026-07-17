@@ -4881,6 +4881,8 @@ pub(crate) struct EmbeddedSurfaceOffset {
     pub(crate) base_v_range: [f64; 2],
     pub(crate) base: NurbsCurve,
     pub(crate) base_range: [f64; 2],
+    pub(crate) base_endpoints: [Option<f64>; 2],
+    pub(crate) cache_first: Option<cadmpeg_ir::geometry::CacheFirstCurveForm>,
     pub(crate) distance: f64,
     pub(crate) shift: f64,
     pub(crate) scale: f64,
@@ -4895,6 +4897,7 @@ pub(crate) struct EmbeddedSpring {
     pub(crate) parameter_range: [f64; 2],
     pub(crate) discontinuities: [Vec<f64>; 3],
     pub(crate) discontinuity_flag: bool,
+    pub(crate) cache_first: Option<cadmpeg_ir::geometry::CacheFirstCurveForm>,
     pub(crate) direction: i64,
 }
 
@@ -5069,6 +5072,10 @@ fn decode_procedural_curve_recursive(
             decode_embedded_intersection(bytes, int_width, &decoded.curve, active_bytes, tables);
         let embedded_surface_curve =
             decode_embedded_surface_curve(bytes, int_width, &decoded.curve, active_bytes, tables);
+        let embedded_surface_offset =
+            decode_embedded_surface_offset(bytes, int_width, &decoded.curve, active_bytes, tables);
+        let embedded_spring =
+            decode_embedded_spring(bytes, int_width, &decoded.curve, active_bytes, tables);
         return Some(DecodedProceduralCurve {
             curve: decoded.curve,
             native_kind,
@@ -5083,8 +5090,8 @@ fn decode_procedural_curve_recursive(
             ),
             embedded_surface_curve,
             embedded_silhouette: decode_embedded_silhouette(bytes, int_width),
-            embedded_surface_offset: decode_embedded_surface_offset(bytes, int_width),
-            embedded_spring: decode_embedded_spring(bytes, int_width),
+            embedded_surface_offset,
+            embedded_spring,
             embedded_deformable: decode_embedded_deformable(bytes, int_width),
             embedded_projection: decode_embedded_projection(bytes, int_width),
             embedded_law: decode_embedded_law_curve(bytes, int_width),
@@ -5204,10 +5211,38 @@ fn decode_embedded_law_curve(bytes: &[u8], int_width: usize) -> Option<EmbeddedL
     })
 }
 
-fn decode_embedded_spring(bytes: &[u8], int_width: usize) -> Option<EmbeddedSpring> {
+fn decode_embedded_spring(
+    bytes: &[u8],
+    int_width: usize,
+    solved: &NurbsCurve,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<EmbeddedSpring> {
     let name = b"spring_int_cur";
     let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
     let mut position = marker + name_len + 3;
+    if bytes.get(position) == Some(&0x04) {
+        let context = decode_cache_first_curve_context(
+            bytes,
+            &mut position,
+            int_width,
+            solved,
+            active_bytes,
+            tables,
+        )?;
+        let direction = take_tagged_int(bytes, &mut position, 0x15, int_width)?;
+        return Some(EmbeddedSpring {
+            surfaces: context.surfaces,
+            pcurves: context.pcurves,
+            surface_parameter_ranges: [None, None],
+            first_pcurve_parameter_range: None,
+            parameter_range: context.parameter_range,
+            discontinuities: context.discontinuities,
+            discontinuity_flag: false,
+            cache_first: Some(context.form),
+            direction,
+        });
+    }
     let mut surfaces = [None, None];
     let mut surface_parameter_ranges = [None, None];
     for side in 0..2 {
@@ -5272,6 +5307,7 @@ fn decode_embedded_spring(bytes: &[u8], int_width: usize) -> Option<EmbeddedSpri
         parameter_range,
         discontinuities,
         discontinuity_flag,
+        cache_first: None,
         direction,
     })
 }
@@ -5569,10 +5605,128 @@ pub(crate) fn rolling_ball_patch_layout(
     Some(RollingBallPatchLayout { radii })
 }
 
-fn decode_embedded_surface_offset(bytes: &[u8], int_width: usize) -> Option<EmbeddedSurfaceOffset> {
+/// Embedded cache-first base curve: a direct NURBS block, an analytic
+/// `straight`, or a referenced `intcurve` resolved to its solved cache.
+fn decode_embedded_base_curve_resolving_refs(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<NurbsCurve> {
+    if let Some(block) = decode_curve_block(bytes, *position, int_width) {
+        *position = block.end;
+        return Some(block.curve);
+    }
+    let saved = *position;
+    match take_native_ident(bytes, position)?.as_str() {
+        "straight" => {
+            let origin = take_native_vec3(bytes, position, 0x13)?;
+            let direction = take_native_vec3(bytes, position, 0x14)?;
+            let start = Point3::new(
+                origin[0] * LEN_TO_MM,
+                origin[1] * LEN_TO_MM,
+                origin[2] * LEN_TO_MM,
+            );
+            let end = Point3::new(
+                (origin[0] + direction[0]) * LEN_TO_MM,
+                (origin[1] + direction[1]) * LEN_TO_MM,
+                (origin[2] + direction[2]) * LEN_TO_MM,
+            );
+            Some(NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![start, end],
+                weights: None,
+                periodic: false,
+            })
+        }
+        "intcurve" => {
+            take_bool(bytes, position)?;
+            let reference = *position;
+            let marker = b"\x0f\x0d\x03ref\x04";
+            if !bytes.get(reference..)?.starts_with(marker) {
+                *position = saved;
+                return None;
+            }
+            let index =
+                usize::try_from(read_int(bytes, reference + marker.len(), int_width)?).ok()?;
+            let reference_span = subtype_span(bytes, reference, int_width)?;
+            *position = reference + reference_span.len();
+            tables
+                .for_width(int_width)
+                .get(index)
+                .and_then(|target| subtype_span(active_bytes, *target, int_width))
+                .and_then(|target| decode_curve_cache_resolving_refs(target, active_bytes, tables))
+        }
+        _ => {
+            *position = saved;
+            None
+        }
+    }
+}
+
+fn decode_embedded_surface_offset(
+    bytes: &[u8],
+    int_width: usize,
+    solved: &NurbsCurve,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<EmbeddedSurfaceOffset> {
     let name = b"off_surf_int_cur";
     let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
     let mut position = marker + name_len + 3;
+    if bytes.get(position) == Some(&0x04) {
+        let context = decode_cache_first_curve_context(
+            bytes,
+            &mut position,
+            int_width,
+            solved,
+            active_bytes,
+            tables,
+        )?;
+        let base_u_range = [
+            take_optional_range_value(bytes, &mut position)??,
+            take_optional_range_value(bytes, &mut position)??,
+        ];
+        let base_v_range = [
+            take_optional_range_value(bytes, &mut position)??,
+            take_optional_range_value(bytes, &mut position)??,
+        ];
+        let base = decode_embedded_base_curve_resolving_refs(
+            bytes,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+        )?;
+        let base_endpoints = [
+            take_optional_range_value(bytes, &mut position)?,
+            take_optional_range_value(bytes, &mut position)?,
+        ];
+        let base_range = [
+            take_optional_range_value(bytes, &mut position)??,
+            take_optional_range_value(bytes, &mut position)??,
+        ];
+        return Some(EmbeddedSurfaceOffset {
+            context: EmbeddedIntersection {
+                surfaces: context.surfaces,
+                pcurves: context.pcurves,
+                parameter_range: context.parameter_range,
+                discontinuities: context.discontinuities,
+            },
+            discontinuity_flag: false,
+            base_u_range,
+            base_v_range,
+            base,
+            base_range,
+            base_endpoints,
+            cache_first: Some(context.form),
+            distance: take_f64(bytes, &mut position)? * LEN_TO_MM,
+            shift: take_f64(bytes, &mut position)?,
+            scale: take_f64(bytes, &mut position)?,
+        });
+    }
     let surfaces = [
         decode_embedded_surface(bytes, &mut position, int_width)?,
         decode_embedded_surface(bytes, &mut position, int_width)?,
@@ -5617,6 +5771,8 @@ fn decode_embedded_surface_offset(bytes: &[u8], int_width: usize) -> Option<Embe
         base_v_range,
         base: base.curve,
         base_range,
+        base_endpoints: [None, None],
+        cache_first: None,
         distance: take_f64(bytes, &mut position)? * LEN_TO_MM,
         shift: take_f64(bytes, &mut position)?,
         scale: take_f64(bytes, &mut position)?,
@@ -5844,7 +6000,6 @@ fn decode_embedded_surface_curve(
     })?;
     let position = marker + name.len() + 3;
     decode_context_first_surface_curve(bytes, position, int_width, family.clone()).or_else(|| {
-        (family == SurfaceCurveFamily::Blend).then_some(())?;
         decode_cache_first_surface_curve(
             bytes,
             position,
@@ -5854,6 +6009,77 @@ fn decode_embedded_surface_curve(
             active_bytes,
             tables,
         )
+    })
+}
+
+/// Shared cache-first intcurve context: revision, enum zero, solved cache and
+/// fit tolerance, two bounded supports, two nullable pcurves, two optional
+/// solved-interval endpoints, three discontinuity arrays, and one extension.
+struct CacheFirstCurveContext {
+    form: cadmpeg_ir::geometry::CacheFirstCurveForm,
+    surfaces: [Option<SurfaceGeometry>; 2],
+    pcurves: [Option<NurbsPcurve>; 2],
+    parameter_range: [f64; 2],
+    discontinuities: [Vec<f64>; 3],
+}
+
+fn decode_cache_first_curve_context(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    solved: &NurbsCurve,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<CacheFirstCurveContext> {
+    let revision = take_tagged_int(bytes, position, 0x04, int_width)?;
+    (revision > 0).then_some(())?;
+    (take_tagged_int(bytes, position, 0x15, int_width)? == 0).then_some(())?;
+    *position = decode_curve_block(bytes, *position, int_width)?.end;
+    take_f64(bytes, position)?;
+    let (first_surface, first_bounds) = decode_optional_embedded_surface_with_bounds(
+        bytes,
+        position,
+        int_width,
+        active_bytes,
+        tables,
+    )?;
+    let (second_surface, second_bounds) = decode_optional_embedded_surface_with_bounds(
+        bytes,
+        position,
+        int_width,
+        active_bytes,
+        tables,
+    )?;
+    let pcurves = [
+        decode_nullable_embedded_pcurve(bytes, position, int_width)?,
+        decode_nullable_embedded_pcurve(bytes, position, int_width)?,
+    ];
+    let solved_range = [
+        take_optional_range_value(bytes, position)?,
+        take_optional_range_value(bytes, position)?,
+    ];
+    let domain = nurbs_curve_parameter_domain(solved)?;
+    let parameter_range = [
+        solved_range[0].unwrap_or(domain[0]),
+        solved_range[1].unwrap_or(domain[1]),
+    ];
+    let discontinuities = [
+        take_float_array(bytes, position, int_width)?,
+        take_float_array(bytes, position, int_width)?,
+        take_float_array(bytes, position, int_width)?,
+    ];
+    let extension = take_tagged_int(bytes, position, 0x04, int_width)?;
+    Some(CacheFirstCurveContext {
+        form: cadmpeg_ir::geometry::CacheFirstCurveForm {
+            revision,
+            support_bounds: [first_bounds, second_bounds],
+            solved_range,
+            extension,
+        },
+        surfaces: [first_surface, second_surface],
+        pcurves,
+        parameter_range,
+        discontinuities,
     })
 }
 
@@ -5909,52 +6135,34 @@ fn decode_cache_first_surface_curve(
     EmbeddedIntersection,
     Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
 )> {
-    let revision = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
-    (revision > 0).then_some(())?;
-    (take_tagged_int(bytes, &mut position, 0x15, int_width)? == 0).then_some(())?;
-    position = decode_curve_block(bytes, position, int_width)?.end;
-    take_f64(bytes, &mut position)?;
-    let surfaces = [
-        decode_optional_embedded_surface_resolving_ref(
-            bytes,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-        )?,
-        decode_optional_embedded_surface_resolving_ref(
-            bytes,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-        )?,
-    ];
-    let pcurves = [
-        decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
-        decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
-    ];
-    let domain = nurbs_curve_parameter_domain(solved)?;
-    let parameter_range = [
-        take_optional_range_value(bytes, &mut position)?.unwrap_or(domain[0]),
-        take_optional_range_value(bytes, &mut position)?.unwrap_or(domain[1]),
-    ];
-    let discontinuities = [
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-    ];
-    let extension = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    let context = decode_cache_first_curve_context(
+        bytes,
+        &mut position,
+        int_width,
+        solved,
+        active_bytes,
+        tables,
+    )?;
     let flag = take_bool(bytes, &mut position)?;
+    let second_flag = matches!(bytes.get(position), Some(0x0a | 0x0b))
+        .then(|| take_bool(bytes, &mut position))
+        .flatten();
     Some((
         family,
         EmbeddedIntersection {
-            surfaces,
-            pcurves,
-            parameter_range,
-            discontinuities,
+            surfaces: context.surfaces,
+            pcurves: context.pcurves,
+            parameter_range: context.parameter_range,
+            discontinuities: context.discontinuities,
         },
-        Some(cadmpeg_ir::geometry::SurfaceCurveTail { extension, flag }),
+        Some(cadmpeg_ir::geometry::SurfaceCurveTail {
+            extension: context.form.extension,
+            flag,
+            second_flag,
+            revision: context.form.revision,
+            support_bounds: context.form.support_bounds,
+            solved_range: context.form.solved_range,
+        }),
     ))
 }
 
@@ -6692,10 +6900,23 @@ fn decode_optional_embedded_surface_resolving_ref(
     active_bytes: &[u8],
     tables: &SubtypeTables,
 ) -> Option<Option<SurfaceGeometry>> {
+    decode_optional_embedded_surface_with_bounds(bytes, position, int_width, active_bytes, tables)
+        .map(|(surface, _)| surface)
+}
+
+/// Optional embedded support surface plus its four optional U/V bound fields.
+#[allow(clippy::type_complexity)]
+fn decode_optional_embedded_surface_with_bounds(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<(Option<SurfaceGeometry>, [Option<f64>; 4])> {
     let saved = *position;
     let kind = take_native_ident(bytes, position);
     if kind.as_deref() == Some("null_surface") {
-        return Some(None);
+        return Some((None, [None; 4]));
     }
     if kind.as_deref() == Some("spline") {
         if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
@@ -6716,20 +6937,22 @@ fn decode_optional_embedded_surface_resolving_ref(
                     decode_surface_cache_resolving_refs(target, active_bytes, tables)
                 })
                 .map(SurfaceGeometry::Nurbs);
-            for _ in 0..4 {
-                take_optional_range_value(bytes, position)?;
+            let mut bounds = [None; 4];
+            for bound in &mut bounds {
+                *bound = take_optional_range_value(bytes, position)?;
             }
-            return Some(surface);
+            return Some((surface, bounds));
         }
     }
     *position = saved;
     let surface = decode_embedded_surface(bytes, position, int_width)?;
+    let mut bounds = [None; 4];
     if kind.as_deref() == Some("plane") || kind.as_deref() == Some("spline") {
-        for _ in 0..4 {
-            take_bool(bytes, position)?;
+        for bound in &mut bounds {
+            *bound = take_optional_range_value(bytes, position)?;
         }
     }
-    Some(Some(surface))
+    Some((Some(surface), bounds))
 }
 
 fn take_f64(bytes: &[u8], position: &mut usize) -> Option<f64> {

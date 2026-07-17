@@ -2059,6 +2059,22 @@ pub struct IntcurveSupportContext {
     pub discontinuities: [Vec<f64>; 3],
 }
 
+/// Cache-first shared-context fields absent from the context-first layout.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+pub struct CacheFirstCurveForm {
+    /// Positive serializer-revision integer selecting the cache-first layout.
+    pub revision: i64,
+    /// Optional U/V bound fields following each ordered support surface.
+    #[serde(default)]
+    pub support_bounds: [[Option<f64>; 4]; 2],
+    /// Optional solved-curve interval endpoints; absent endpoints inherit the
+    /// solved NURBS domain.
+    #[serde(default)]
+    pub solved_range: [Option<f64>; 2],
+    /// Native integer ASM extension following the discontinuity arrays.
+    pub extension: i64,
+}
+
 /// Tail fields carried by the cache-first surface-curve layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SurfaceCurveTail {
@@ -2066,6 +2082,19 @@ pub struct SurfaceCurveTail {
     pub extension: i64,
     /// Native boolean terminating the subtype payload.
     pub flag: bool,
+    /// Second terminating boolean stored by `par_int_cur`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_flag: Option<bool>,
+    /// Positive serializer-revision integer opening the cache-first layout.
+    #[serde(default)]
+    pub revision: i64,
+    /// Optional U/V bound fields following each ordered support surface.
+    #[serde(default)]
+    pub support_bounds: [[Option<f64>; 4]; 2],
+    /// Optional solved-curve interval endpoints; absent endpoints inherit the
+    /// solved NURBS domain.
+    #[serde(default)]
+    pub solved_range: [Option<f64>; 2],
 }
 
 /// Mutually exclusive tail forms of a native projected intcurve.
@@ -2229,6 +2258,14 @@ pub enum ProceduralCurveDefinition {
         base: CurveId,
         /// Native interval on `base`.
         base_range: [f64; 2],
+        /// Optional parameter endpoints following the embedded base curve in
+        /// the cache-first layout.
+        #[serde(default)]
+        base_endpoints: [Option<f64>; 2],
+        /// Cache-first shared-context fields; absent from the context-first
+        /// layout.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_first: Option<CacheFirstCurveForm>,
         /// Signed model-space offset distance.
         distance: f64,
         /// Native unscaled parameter shift.
@@ -2247,8 +2284,13 @@ pub enum ProceduralCurveDefinition {
         /// is the native `nullbs` sentinel.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         first_pcurve_parameter_range: Option<[f64; 2]>,
-        /// Native boolean following the discontinuity arrays.
+        /// Native boolean following the discontinuity arrays; unused by the
+        /// cache-first layout.
         discontinuity_flag: bool,
+        /// Cache-first shared-context fields; absent from the context-first
+        /// layout.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_first: Option<CacheFirstCurveForm>,
         /// Native `CURV_DIR` enum value.
         direction: i64,
     },

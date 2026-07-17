@@ -3947,6 +3947,8 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             base_v_range: embedded.base_v_range,
                             base,
                             base_range: embedded.base_range,
+                            base_endpoints: embedded.base_endpoints,
+                            cache_first: embedded.cache_first,
                             distance: embedded.distance,
                             shift: embedded.shift,
                             scale: embedded.scale,
@@ -3995,6 +3997,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             surface_parameter_ranges: embedded.surface_parameter_ranges,
                             first_pcurve_parameter_range: embedded.first_pcurve_parameter_range,
                             discontinuity_flag: embedded.discontinuity_flag,
+                            cache_first: embedded.cache_first,
                             direction: embedded.direction,
                         }
                     } else if let Some(embedded) = procedural.12 {

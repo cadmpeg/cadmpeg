@@ -9206,11 +9206,6 @@ fn native_procedural_curve(
         tail,
     } = &procedural.definition
     {
-        if tail.is_some() {
-            return Err(CodecError::NotImplemented(
-                "cache-first surface-curve generation is not implemented".into(),
-            ));
-        }
         let name = match family {
             cadmpeg_ir::geometry::SurfaceCurveFamily::Blend => "blend_int_cur",
             cadmpeg_ir::geometry::SurfaceCurveFamily::SurfaceConstrained => "surf_int_cur",
@@ -9220,9 +9215,29 @@ fn native_procedural_curve(
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, name)?;
-        native_intcurve_support_context(bytes, target, context)?;
-        native_nurbs_curve(bytes, solved_cache)?;
-        write_cache_fit_tolerance(bytes);
+        if let Some(tail) = tail {
+            native_cache_first_curve_context(
+                bytes,
+                target,
+                context,
+                &cadmpeg_ir::geometry::CacheFirstCurveForm {
+                    revision: tail.revision,
+                    support_bounds: tail.support_bounds,
+                    solved_range: tail.solved_range,
+                    extension: tail.extension,
+                },
+                solved_cache,
+                procedural.cache_fit_tolerance,
+            )?;
+            bytes.push(native_bool(tail.flag));
+            if let Some(second_flag) = tail.second_flag {
+                bytes.push(native_bool(second_flag));
+            }
+        } else {
+            native_intcurve_support_context(bytes, target, context)?;
+            native_nurbs_curve(bytes, solved_cache)?;
+            write_cache_fit_tolerance(bytes);
+        }
         bytes.push(0x10);
         return Ok(true);
     }
@@ -9270,6 +9285,8 @@ fn native_procedural_curve(
         base_v_range,
         base,
         base_range,
+        base_endpoints,
+        cache_first,
         distance,
         shift,
         scale,
@@ -9285,22 +9302,48 @@ fn native_procedural_curve(
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "off_surf_int_cur")?;
-        native_intcurve_support_context(bytes, target, context)?;
-        bytes.push(native_bool(*discontinuity_flag));
-        for range in [base_u_range, base_v_range] {
-            for value in *range {
-                native_f64(bytes, value);
+        if let Some(form) = cache_first {
+            native_cache_first_curve_context(
+                bytes,
+                target,
+                context,
+                form,
+                solved_cache,
+                procedural.cache_fit_tolerance,
+            )?;
+            for range in [base_u_range, base_v_range] {
+                for value in *range {
+                    native_optional_f64(bytes, Some(value));
+                }
             }
+            native_nurbs_curve(bytes, &base)?;
+            for value in base_endpoints {
+                native_optional_f64(bytes, *value);
+            }
+            for value in base_range {
+                native_optional_f64(bytes, Some(*value));
+            }
+            native_f64(bytes, *distance / 10.0);
+            native_f64(bytes, *shift);
+            native_f64(bytes, *scale);
+        } else {
+            native_intcurve_support_context(bytes, target, context)?;
+            bytes.push(native_bool(*discontinuity_flag));
+            for range in [base_u_range, base_v_range] {
+                for value in *range {
+                    native_f64(bytes, value);
+                }
+            }
+            native_nurbs_curve(bytes, &base)?;
+            for value in base_range {
+                native_f64(bytes, *value);
+            }
+            native_f64(bytes, *distance / 10.0);
+            native_f64(bytes, *shift);
+            native_f64(bytes, *scale);
+            native_nurbs_curve(bytes, solved_cache)?;
+            write_cache_fit_tolerance(bytes);
         }
-        native_nurbs_curve(bytes, &base)?;
-        for value in base_range {
-            native_f64(bytes, *value);
-        }
-        native_f64(bytes, *distance / 10.0);
-        native_f64(bytes, *shift);
-        native_f64(bytes, *scale);
-        native_nurbs_curve(bytes, solved_cache)?;
-        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }
@@ -9309,12 +9352,33 @@ fn native_procedural_curve(
         surface_parameter_ranges,
         first_pcurve_parameter_range,
         discontinuity_flag,
+        cache_first,
         direction,
     } = &procedural.definition
     {
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "spring_int_cur")?;
+        if let Some(form) = cache_first {
+            if surface_parameter_ranges.iter().any(Option::is_some)
+                || first_pcurve_parameter_range.is_some()
+            {
+                return Err(CodecError::Malformed(
+                    "cache-first spring context stores no conditional null-carrier ranges".into(),
+                ));
+            }
+            native_cache_first_curve_context(
+                bytes,
+                target,
+                context,
+                form,
+                solved_cache,
+                procedural.cache_fit_tolerance,
+            )?;
+            native_enum(bytes, *direction);
+            bytes.push(0x10);
+            return Ok(true);
+        }
         for (side_index, side) in context.sides.iter().enumerate() {
             if let Some(surface_id) = &side.surface {
                 if surface_parameter_ranges[side_index].is_some() {
@@ -9741,6 +9805,95 @@ fn native_intcurve_support_context(
             native_f64(bytes, *value);
         }
     }
+    Ok(())
+}
+
+fn native_optional_f64(bytes: &mut Vec<u8>, value: Option<f64>) {
+    match value {
+        Some(value) => {
+            bytes.push(0x0a);
+            native_f64(bytes, value);
+        }
+        None => bytes.push(0x0b),
+    }
+}
+
+/// Emit the shared cache-first intcurve context: revision, enum zero, solved
+/// cache and fit tolerance, bounded supports, nullable pcurves, optional
+/// solved-interval endpoints, discontinuity arrays, and the extension integer.
+fn native_cache_first_curve_context(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    context: &cadmpeg_ir::geometry::IntcurveSupportContext,
+    form: &cadmpeg_ir::geometry::CacheFirstCurveForm,
+    solved_cache: &cadmpeg_ir::geometry::NurbsCurve,
+    cache_fit_tolerance: Option<f64>,
+) -> Result<(), CodecError> {
+    if form.revision <= 0 {
+        return Err(CodecError::Malformed(
+            "cache-first intcurve context requires a positive serializer revision".into(),
+        ));
+    }
+    native_i64(bytes, form.revision);
+    native_enum(bytes, 0);
+    native_nurbs_curve(bytes, solved_cache)?;
+    native_f64(bytes, cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for (side, bounds) in context.sides.iter().zip(&form.support_bounds) {
+        if let Some(surface_id) = &side.surface {
+            let surface = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == *surface_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "cache-first intcurve references missing support {surface_id}"
+                    ))
+                })?;
+            native_embedded_surface(bytes, &surface.geometry)?;
+            if matches!(
+                surface.geometry,
+                SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Plane { .. }
+            ) {
+                for bound in bounds {
+                    native_optional_f64(bytes, *bound);
+                }
+            } else if bounds.iter().any(Option::is_some) {
+                return Err(CodecError::Malformed(
+                    "cache-first support bounds require a spline or plane support".into(),
+                ));
+            }
+        } else {
+            native_ident(bytes, "null_surface")?;
+            if bounds.iter().any(Option::is_some) {
+                return Err(CodecError::Malformed(
+                    "cache-first support bounds require a non-null support".into(),
+                ));
+            }
+        }
+    }
+    for side in &context.sides {
+        if let Some(pcurve) = &side.pcurve {
+            native_nurbs_pcurve_block(bytes, pcurve)?;
+        } else {
+            native_ident(bytes, "nullbs")?;
+        }
+    }
+    for value in form.solved_range {
+        native_optional_f64(bytes, value);
+    }
+    for discontinuities in &context.discontinuities {
+        native_i64(
+            bytes,
+            i64::try_from(discontinuities.len()).map_err(|_| {
+                CodecError::NotImplemented("discontinuity count exceeds i64".into())
+            })?,
+        );
+        for value in discontinuities {
+            native_f64(bytes, *value);
+        }
+    }
+    native_i64(bytes, form.extension);
     Ok(())
 }
 

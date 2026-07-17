@@ -1751,6 +1751,246 @@ fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     bytes
 }
 
+/// Splice one cache-first intcurve record built by `tail` into the synthetic
+/// geometry stream and point edge 10 at it.
+fn synthetic_geometry_with_cache_first_curve_smbh(
+    subtype: &str,
+    tail: impl FnOnce(&mut Vec<u8>),
+) -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+        .expect("generated edge reference offsets");
+    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "intcurve");
+    t_ident(&mut curve, "curve");
+    t_ref(&mut curve, -1);
+    t_long(&mut curve, -1);
+    t_ref(&mut curve, -1);
+    curve.push(0x0f);
+    t_ident(&mut curve, subtype);
+    t_long(&mut curve, 23100);
+    curve.push(0x15);
+    curve.extend_from_slice(&0i64.to_le_bytes());
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut curve, 0.0004);
+    t_ident(&mut curve, "null_surface");
+    t_ident(&mut curve, "null_surface");
+    t_ident(&mut curve, "nullbs");
+    t_ident(&mut curve, "nullbs");
+    curve.push(0x0a);
+    t_dbl(&mut curve, -1.0);
+    curve.push(0x0a);
+    t_dbl(&mut curve, 2.0);
+    t_long(&mut curve, 0);
+    t_long(&mut curve, 0);
+    t_long(&mut curve, 0);
+    t_long(&mut curve, 7);
+    tail(&mut curve);
+    curve.push(0x10);
+    t_end(&mut curve);
+    bytes.splice(delta..delta, curve);
+    bytes
+}
+
+#[test]
+fn generated_cache_first_spring_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_cache_first_curve_smbh("spring_int_cur", |curve| {
+                    curve.push(0x15);
+                    curve.extend_from_slice(&4i64.to_le_bytes());
+                }),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("cache-first spring decode");
+    let ProceduralCurveDefinition::Spring {
+        context,
+        surface_parameter_ranges,
+        first_pcurve_parameter_range,
+        discontinuity_flag,
+        cache_first,
+        direction,
+    } = &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected spring construction")
+    };
+    let form = cache_first.as_ref().expect("cache-first spring form");
+    assert_eq!(form.revision, 23100);
+    assert_eq!(form.solved_range, [Some(-1.0), Some(2.0)]);
+    assert_eq!(form.extension, 7);
+    assert_eq!(*direction, 4);
+    assert!(!*discontinuity_flag);
+    assert_eq!(*surface_parameter_ranges, [None, None]);
+    assert_eq!(*first_pcurve_parameter_range, None);
+    assert_eq!(context.parameter_range, [-1.0, 2.0]);
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less cache-first spring encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less cache-first spring round trip");
+    assert_eq!(
+        round_trip.ir.model.procedural_curves[0].definition,
+        source_less.model.procedural_curves[0].definition
+    );
+}
+
+#[test]
+fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceCurveFamily};
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_cache_first_curve_smbh("par_int_cur", |curve| {
+                    curve.push(0x0a);
+                    curve.push(0x0b);
+                }),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("cache-first parametric decode");
+    let ProceduralCurveDefinition::SurfaceCurve {
+        family,
+        context,
+        tail,
+    } = &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected surface-curve construction")
+    };
+    assert_eq!(*family, SurfaceCurveFamily::Parametric);
+    let tail = tail.as_ref().expect("cache-first parametric tail");
+    assert_eq!(tail.revision, 23100);
+    assert_eq!(tail.extension, 7);
+    assert!(tail.flag);
+    assert_eq!(tail.second_flag, Some(false));
+    assert_eq!(tail.solved_range, [Some(-1.0), Some(2.0)]);
+    assert_eq!(context.parameter_range, [-1.0, 2.0]);
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less cache-first parametric encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less cache-first parametric round trip");
+    assert_eq!(
+        round_trip.ir.model.procedural_curves[0].definition,
+        source_less.model.procedural_curves[0].definition
+    );
+}
+
+#[test]
+fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_cache_first_curve_smbh("off_surf_int_cur", |curve| {
+                    for value in [-1.0, 2.0, -3.0, 4.0] {
+                        curve.push(0x0a);
+                        t_dbl(curve, value);
+                    }
+                    curve.extend_from_slice(&generated_curve_block());
+                    curve.push(0x0b);
+                    curve.push(0x0b);
+                    curve.push(0x0a);
+                    t_dbl(curve, -0.5);
+                    curve.push(0x0a);
+                    t_dbl(curve, 1.5);
+                    t_dbl(curve, -0.25);
+                    t_dbl(curve, 0.75);
+                    t_dbl(curve, 1.25);
+                }),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("cache-first surface-offset decode");
+    let ProceduralCurveDefinition::SurfaceOffset {
+        cache_first,
+        base_u_range,
+        base_v_range,
+        base_endpoints,
+        base_range,
+        distance,
+        shift,
+        scale,
+        ..
+    } = &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("expected surface-offset construction")
+    };
+    let form = cache_first
+        .as_ref()
+        .expect("cache-first surface-offset form");
+    assert_eq!(form.revision, 23100);
+    assert_eq!(form.extension, 7);
+    assert_eq!(*base_u_range, [-1.0, 2.0]);
+    assert_eq!(*base_v_range, [-3.0, 4.0]);
+    assert_eq!(*base_endpoints, [None, None]);
+    assert_eq!(*base_range, [-0.5, 1.5]);
+    assert_eq!(*distance, -2.5);
+    assert_eq!(*shift, 0.75);
+    assert_eq!(*scale, 1.25);
+
+    let mut source_less = result.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less cache-first surface-offset encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less cache-first surface-offset round trip");
+    let mut expected = source_less.model.procedural_curves[0].definition.clone();
+    let mut actual = round_trip.ir.model.procedural_curves[0].definition.clone();
+    let (
+        ProceduralCurveDefinition::SurfaceOffset {
+            base: expected_base,
+            ..
+        },
+        ProceduralCurveDefinition::SurfaceOffset {
+            base: actual_base, ..
+        },
+    ) = (&mut expected, &mut actual)
+    else {
+        panic!("expected surface-offset round trip")
+    };
+    let round_trip_base = actual_base.clone();
+    *actual_base = expected_base.clone();
+    assert_eq!(actual, expected);
+    assert!(round_trip
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id == round_trip_base));
+}
+
 fn synthetic_geometry_with_deformable_curve_smbh(mode: i64) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -18393,11 +18633,13 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
         surface_parameter_ranges,
         first_pcurve_parameter_range,
         discontinuity_flag,
+        cache_first,
         direction,
     } = &result.ir.model.procedural_curves[0].definition
     else {
         panic!("expected spring construction")
     };
+    assert_eq!(*cache_first, None);
     assert_eq!(*direction, 4);
     assert!(*discontinuity_flag);
     assert!(context
