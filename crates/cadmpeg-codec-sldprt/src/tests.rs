@@ -14533,6 +14533,47 @@ fn decode_projects_compact_solid_sweep_general_curve_path() {
 }
 
 #[test]
+fn decode_does_not_globalize_configuration_local_sweep_path() {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    fn sweep_payload(has_path: bool) -> Vec<u8> {
+        let mut payload = resolved_feature_classes_with_ids(&[("moSweep_c", "Sweep", 137)]);
+        if has_path {
+            payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
+            let path_class = b"moGeneralCurveRef_w";
+            payload.extend_from_slice(&(path_class.len() as u16).to_le_bytes());
+            payload.extend_from_slice(path_class);
+        }
+        payload
+    }
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Feature Name="Sweep" Type="Localized" id="137"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &sweep_payload(true),
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-1-ResolvedFeatures",
+        &sweep_payload(false),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Sweep { path: None, .. }
+    ));
+}
+
+#[test]
 fn decode_projects_native_surface_sweep_class_without_localized_type() {
     use cadmpeg_ir::features::{FeatureDefinition, PathRef, SweepMode};
 

@@ -6674,6 +6674,7 @@ pub(crate) fn enrich_history_sweep_paths(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
+    let mut paths = HashMap::<String, Vec<Option<String>>>::new();
     for lane in lanes {
         let mut objects = histories
             .iter()
@@ -6686,7 +6687,6 @@ pub(crate) fn enrich_history_sweep_paths(
             })
             .collect::<Vec<_>>();
         objects.sort_unstable_by_key(|object| object.0);
-        let mut paths = HashMap::new();
         for (index, &(start, ref feature_id)) in objects.iter().enumerate() {
             let Some(feature) = histories
                 .iter()
@@ -6739,37 +6739,44 @@ pub(crate) fn enrich_history_sweep_paths(
                 .collect::<Vec<_>>();
             source_candidates.sort_unstable();
             source_candidates.dedup();
-            if let [source] = source_candidates.as_slice() {
-                paths.insert(feature_id.clone(), source.to_string());
-                continue;
-            }
-            let mut candidates = declared;
-            candidates.extend(compact);
-            candidates.extend(compact_profiles);
-            candidates.sort_unstable();
-            candidates.dedup();
-            if let [offset] = candidates.as_slice() {
-                let lane_key = lane
-                    .id
-                    .rsplit_once('#')
-                    .map_or(lane.id.as_str(), |(_, key)| key);
-                paths.insert(
-                    feature_id.clone(),
-                    format!("sldprt:feature-input:general-curve-ref:{lane_key}:{offset}"),
-                );
-            }
-        }
-        for feature in histories
-            .iter_mut()
-            .flat_map(|history| &mut history.features)
-        {
-            let Some(path) = paths.get(&feature.id) else {
-                continue;
+            let path = if let [source] = source_candidates.as_slice() {
+                Some(source.to_string())
+            } else {
+                let mut candidates = declared;
+                candidates.extend(compact);
+                candidates.extend(compact_profiles);
+                candidates.sort_unstable();
+                candidates.dedup();
+                if let [offset] = candidates.as_slice() {
+                    let lane_key = lane
+                        .id
+                        .rsplit_once('#')
+                        .map_or(lane.id.as_str(), |(_, key)| key);
+                    Some(format!(
+                        "sldprt:feature-input:general-curve-ref:{lane_key}:{offset}"
+                    ))
+                } else {
+                    None
+                }
             };
-            feature
-                .properties
-                .entry("Path".into())
-                .or_insert_with(|| path.clone());
+            paths.entry(feature_id.clone()).or_default().push(path);
+        }
+    }
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        if feature.properties.contains_key("Path") {
+            continue;
+        }
+        let Some(votes) = paths.get(&feature.id) else {
+            continue;
+        };
+        let Some(Some(first)) = votes.first() else {
+            continue;
+        };
+        if votes.iter().all(|vote| vote.as_ref() == Some(first)) {
+            feature.properties.insert("Path".into(), first.clone());
         }
     }
 }
