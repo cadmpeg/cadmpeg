@@ -9578,6 +9578,37 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
             ..
         } if owner == extrusion.native_ref.as_deref().unwrap()
     ));
+    let extrusion_id = extrusion.id.clone();
+    let profile_a = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Profile A"))
+        .and_then(|feature| feature.native_ref.as_deref())
+        .unwrap();
+    let profile_b = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Profile B"))
+        .and_then(|feature| feature.native_ref.as_deref())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.configurations[0].feature_states[&extrusion_id].definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Native(profile),
+            ..
+        } if profile == profile_a
+    ));
+    assert!(matches!(
+        &decoded.ir.model.configurations[1].feature_states[&extrusion_id].definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Native(profile),
+            ..
+        } if profile == profile_b
+    ));
 }
 
 #[test]
@@ -11437,7 +11468,8 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
         payload.extend_from_slice(&[0, 3, 0, 0]);
         payload.extend_from_slice(&[0; 4]);
         payload.extend_from_slice(&[
-            0x66, 0x80, 0, 0, 0x10, 0, 0, 0, 0x2b, 0x80, 0x02, 0, 0, 0, 0, 0,
+            0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49,
+            0xb2, 0x54,
         ]);
         payload.extend_from_slice(&[0, 0]);
         payload.extend_from_slice(&[0x32, 0x80, 0, 0]);
@@ -11455,6 +11487,18 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
         payload
     }
 
+    let resolved_selection = combine_payload(true);
+    assert_eq!(
+        (12..resolved_selection.len())
+            .filter(|offset| crate::resolved_features::compact_body_path_at(
+                &resolved_selection,
+                *offset
+            )
+            .is_some())
+            .count(),
+        2
+    );
+
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -11464,7 +11508,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     source.extend(make_block(
         0x42,
         "Contents/Config-0-ResolvedFeatures",
-        &combine_payload(true),
+        &resolved_selection,
     ));
     source.extend(make_block(
         0x42,
@@ -11477,6 +11521,24 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
         .unwrap();
     assert!(matches!(
         decoded.ir.model.features[0].definition,
+        FeatureDefinition::Combine {
+            target: BodySelection::Unresolved,
+            tools: BodySelection::Unresolved,
+            ..
+        }
+    ));
+    let feature_id = decoded.ir.model.features[0].id.clone();
+    assert!(matches!(
+        &decoded.ir.model.configurations[0].feature_states[&feature_id].definition,
+        FeatureDefinition::Combine {
+            target: BodySelection::Native(target),
+            tools: BodySelection::Native(tools),
+            ..
+        } if target.starts_with("sldprt:feature-input:body-path:")
+            && tools.starts_with("sldprt:feature-input:body-path:")
+    ));
+    assert!(matches!(
+        decoded.ir.model.configurations[1].feature_states[&feature_id].definition,
         FeatureDefinition::Combine {
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
@@ -14692,7 +14754,7 @@ fn decode_projects_compact_solid_sweep_general_curve_path() {
 
 #[test]
 fn decode_does_not_globalize_configuration_local_sweep_path() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, PathRef};
 
     fn sweep_payload(has_path: bool) -> Vec<u8> {
         let mut payload = resolved_feature_classes_with_ids(&[("moSweep_c", "Sweep", 137)]);
@@ -14727,6 +14789,18 @@ fn decode_does_not_globalize_configuration_local_sweep_path() {
         .unwrap();
     assert!(matches!(
         decoded.ir.model.features[0].definition,
+        FeatureDefinition::Sweep { path: None, .. }
+    ));
+    let feature_id = decoded.ir.model.features[0].id.clone();
+    assert!(matches!(
+        &decoded.ir.model.configurations[0].feature_states[&feature_id].definition,
+        FeatureDefinition::Sweep {
+            path: Some(PathRef::Native(path)),
+            ..
+        } if path.starts_with("sldprt:feature-input:general-curve-ref:")
+    ));
+    assert!(matches!(
+        decoded.ir.model.configurations[1].feature_states[&feature_id].definition,
         FeatureDefinition::Sweep { path: None, .. }
     ));
 }
