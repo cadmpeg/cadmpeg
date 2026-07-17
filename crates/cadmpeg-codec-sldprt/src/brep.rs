@@ -119,7 +119,7 @@ fn valid_carrier_scalars(tt: u8, values: &[f64]) -> bool {
                 && (values[7] * values[7] + values[8] * values[8] - 1.0).abs() <= 1.0e-9
         }
         tag::SPHERE => values[3] > 0.0,
-        tag::TORUS => values[6] > values[7] && values[7] > 0.0,
+        tag::TORUS => values[6] > 0.0 && values[7] > 0.0,
         _ => false,
     }
 }
@@ -499,11 +499,33 @@ mod tests {
         let torus = compact_carrier(
             tag::TORUS,
             9,
-            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 0.001, 1.0, 0.0, 0.0],
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, 0.0, 1.0, 0.0, 0.0],
         );
 
         assert!(parse_carrier(&ellipse, 0).is_none());
         assert!(parse_carrier(&torus, 0).is_none());
+    }
+
+    #[test]
+    fn parses_spindle_torus_with_minor_radius_over_major() {
+        let bytes = compact_carrier(
+            tag::TORUS,
+            8,
+            &[
+                0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, 0.0022, 0.0044, -1.0, 0.0, 0.0,
+            ],
+        );
+        let carrier = parse_carrier(&bytes, 0).expect("spindle torus");
+        let CarrierGeometry::Surface(SurfaceGeometry::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        }) = carrier.geometry
+        else {
+            panic!("expected torus");
+        };
+        assert!((major_radius - 2.2).abs() < 1e-12);
+        assert!((minor_radius - 4.4).abs() < 1e-12);
     }
 
     #[test]
