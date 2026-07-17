@@ -1284,14 +1284,15 @@ mod chart_tests {
         attach_standard_free_vertices, build_standard_edge_curve,
         circle_parameter_range_from_surface_branch,
         circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
-        e5_body_kinds, e5_boundary_curve, e5_occurrence_intersection_context, e5_pcurve_on_surface,
-        equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes, include_native_endpoint_pairs,
-        intersection_line_direction, merge_native_endpoint_evidence, ordered_range,
-        parameter_ranges_reversed, point_distance, point_on_known_surface, point_on_standard_face,
-        quintic_jet_pcurve, rational_pcurve_arc, resolve_standard_endpoint_pairs,
-        reverse_e5_pcurve_geometry, standard_circle_endpoint_candidates,
-        standard_circle_param_range, standard_native_edge_references, standard_pcurve_geometry,
-        unique_index_owners, unique_native_identity_points, unresolved_carrier_counts,
+        e5_boundary_curve, e5_occurrence_intersection_context, e5_ownership_plan,
+        e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes,
+        include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
+        ordered_range, parameter_ranges_reversed, point_distance, point_on_known_surface,
+        point_on_standard_face, quintic_jet_pcurve, rational_pcurve_arc,
+        resolve_standard_endpoint_pairs, reverse_e5_pcurve_geometry,
+        standard_circle_endpoint_candidates, standard_circle_param_range,
+        standard_native_edge_references, standard_pcurve_geometry, unique_index_owners,
+        unique_native_identity_points, unresolved_carrier_counts,
     };
     use crate::e5::{E5Edge, E5Face, E5Loop, E5Topology};
     use crate::geometry::{FreeformFaceBounds, StandardCurveGeometry, StandardCurveSupport};
@@ -1458,8 +1459,8 @@ mod chart_tests {
     }
 
     #[test]
-    fn e5_body_kinds_require_complete_single_body_edge_ownership() {
-        let face = |record_id| E5Face {
+    fn e5_ownership_requires_complete_bodies_and_partitions_face_components() {
+        let face = |record_id, edge_use| E5Face {
             record_id,
             surface: 100 + record_id,
             trailer_sign: 1,
@@ -1467,7 +1468,7 @@ mod chart_tests {
                 record_id: 200 + record_id,
                 surface: 100 + record_id,
                 pcurves: vec![300 + record_id],
-                edge_uses: vec![10],
+                edge_uses: vec![edge_use],
                 reversed: vec![false],
                 oriented_members: Some(vec![crate::e5::E5OrientedMember {
                     serialized_index: 0,
@@ -1499,25 +1500,38 @@ mod chart_tests {
             vertex_refs: Vec::new(),
         };
 
-        assert_eq!(
-            e5_body_kinds(&topology(vec![face(1)], vec![10]), &[(None, vec![1])]),
-            Some(vec![BodyKind::Sheet])
-        );
-        assert_eq!(
-            e5_body_kinds(
-                &topology(vec![face(1), face(2)], vec![10]),
-                &[(None, vec![1, 2])],
-            ),
-            Some(vec![BodyKind::Solid])
-        );
-        assert!(e5_body_kinds(
-            &topology(vec![face(1), face(2)], vec![10]),
+        let plan =
+            e5_ownership_plan(&topology(vec![face(1, 10)], vec![10]), &[(None, vec![1])]).unwrap();
+        assert_eq!(plan[0].kind, BodyKind::Sheet);
+        assert_eq!(plan[0].components, vec![vec![1]]);
+
+        let plan = e5_ownership_plan(
+            &topology(vec![face(1, 10), face(2, 10)], vec![10]),
+            &[(None, vec![1, 2])],
+        )
+        .unwrap();
+        assert_eq!(plan[0].kind, BodyKind::Solid);
+        assert_eq!(plan[0].components, vec![vec![1, 2]]);
+
+        let plan = e5_ownership_plan(
+            &topology(vec![face(1, 10), face(2, 11)], vec![10, 11]),
+            &[(None, vec![1, 2])],
+        )
+        .unwrap();
+        assert_eq!(plan[0].kind, BodyKind::Sheet);
+        assert_eq!(plan[0].components, vec![vec![1], vec![2]]);
+
+        assert!(e5_ownership_plan(
+            &topology(vec![face(1, 10), face(2, 10)], vec![10]),
             &[(Some(1), vec![1]), (Some(2), vec![2])],
         )
         .is_none());
-        assert!(
-            e5_body_kinds(&topology(vec![face(1)], vec![10, 11]), &[(None, vec![1])],).is_none()
-        );
+        assert!(e5_ownership_plan(
+            &topology(vec![face(1, 10)], vec![10, 11]),
+            &[(None, vec![1])],
+        )
+        .is_none());
+        assert!(e5_ownership_plan(&topology(Vec::new(), Vec::new()), &[]).is_none());
     }
 
     #[test]
@@ -2995,26 +3009,18 @@ fn transfer_e5_topology(
             .map(|body| (Some(body.record_id), body.faces.clone()))
             .collect()
     };
+    let Some(ownership) = e5_ownership_plan(topology, &body_faces) else {
+        return false;
+    };
     let mut face_shell = HashMap::new();
-    for (index, (_, faces)) in body_faces.iter().enumerate() {
-        let shell = ShellId(format!("catia:e5:shell#{index}"));
-        for face in faces {
-            if face_shell.insert(*face, shell.clone()).is_some() {
-                return false;
+    for (body, plan) in ownership.iter().enumerate() {
+        for (component, faces) in plan.components.iter().enumerate() {
+            let shell = ShellId(format!("catia:e5:shell#{body}-{component}"));
+            for face in faces {
+                face_shell.insert(*face, shell.clone());
             }
         }
     }
-    if face_shell.len() != topology.faces.len()
-        || topology
-            .faces
-            .iter()
-            .any(|face| !face_shell.contains_key(&face.record_id))
-    {
-        return false;
-    }
-    let Some(body_kinds) = e5_body_kinds(topology, &body_faces) else {
-        return false;
-    };
 
     let edge_ids: HashMap<u32, EdgeId> = topology
         .edges
@@ -3153,14 +3159,15 @@ fn transfer_e5_topology(
         });
     }
 
-    for (body_index, (record_id, faces)) in body_faces.iter().enumerate() {
+    for (body_index, (record_id, _)) in body_faces.iter().enumerate() {
         let body_id = BodyId(record_id.map_or_else(
             || format!("catia:e5:body#inferred-{body_index}"),
             |id| format!("catia:e5:body#{id}"),
         ));
-        let region_id = RegionId(format!("catia:e5:region#{body_index}"));
-        let shell_id = ShellId(format!("catia:e5:shell#{body_index}"));
-        let kind = body_kinds[body_index];
+        let plan = &ownership[body_index];
+        let region_ids: Vec<RegionId> = (0..plan.components.len())
+            .map(|component| RegionId(format!("catia:e5:region#{body_index}-{component}")))
+            .collect();
         annotate(
             annotations,
             &body_id,
@@ -3178,50 +3185,54 @@ fn transfer_e5_topology(
             .derived(&body_id, "regions");
         ir.model.bodies.push(Body {
             id: body_id.clone(),
-            kind,
-            regions: vec![region_id.clone()],
+            kind: plan.kind,
+            regions: region_ids.clone(),
             transform: None,
             name: None,
             color: None,
             visible: None,
         });
-        annotate(
-            annotations,
-            &region_id,
-            "e5_0d_03",
-            0,
-            "derived_region",
-            Exactness::Inferred,
-        );
-        annotations
-            .derived(&region_id, "body")
-            .derived(&region_id, "shells");
-        ir.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id,
-            shells: vec![shell_id.clone()],
-        });
-        annotate(
-            annotations,
-            &shell_id,
-            "e5_0d_03",
-            0,
-            "derived_shell",
-            Exactness::Inferred,
-        );
-        annotations
-            .derived(&shell_id, "region")
-            .derived(&shell_id, "faces");
-        ir.model.shells.push(Shell {
-            id: shell_id,
-            region: region_id,
-            faces: faces
-                .iter()
-                .map(|face| FaceId(format!("catia:e5:face#{face}")))
-                .collect(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
+        for (component, component_faces) in plan.components.iter().enumerate() {
+            let region_id = region_ids[component].clone();
+            let shell_id = ShellId(format!("catia:e5:shell#{body_index}-{component}"));
+            annotate(
+                annotations,
+                &region_id,
+                "e5_0d_03",
+                0,
+                "derived_region",
+                Exactness::Inferred,
+            );
+            annotations
+                .derived(&region_id, "body")
+                .derived(&region_id, "shells");
+            ir.model.regions.push(Region {
+                id: region_id.clone(),
+                body: body_id.clone(),
+                shells: vec![shell_id.clone()],
+            });
+            annotate(
+                annotations,
+                &shell_id,
+                "e5_0d_03",
+                0,
+                "derived_shell",
+                Exactness::Inferred,
+            );
+            annotations
+                .derived(&shell_id, "region")
+                .derived(&shell_id, "faces");
+            ir.model.shells.push(Shell {
+                id: shell_id,
+                region: region_id,
+                faces: component_faces
+                    .iter()
+                    .map(|face| FaceId(format!("catia:e5:face#{face}")))
+                    .collect(),
+                wire_edges: Vec::new(),
+                free_vertices: Vec::new(),
+            });
+        }
     }
 
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
@@ -3959,10 +3970,18 @@ fn e5_surface_uv(surface: &geometry::E5Surface, raw: [f64; 2]) -> Point2 {
     Point2::new(raw[0] * surface.uv_scale[0], raw[1] * surface.uv_scale[1])
 }
 
-fn e5_body_kinds(
+struct E5BodyOwnership {
+    kind: BodyKind,
+    components: Vec<Vec<u32>>,
+}
+
+fn e5_ownership_plan(
     topology: &crate::e5::E5Topology,
     body_faces: &[(Option<u32>, Vec<u32>)],
-) -> Option<Vec<BodyKind>> {
+) -> Option<Vec<E5BodyOwnership>> {
+    if body_faces.is_empty() || body_faces.iter().any(|(_, faces)| faces.is_empty()) {
+        return None;
+    }
     let mut body_by_face = HashMap::new();
     for (body, (_, faces)) in body_faces.iter().enumerate() {
         for face in faces {
@@ -3989,19 +4008,55 @@ fn e5_body_kinds(
     {
         return None;
     }
-    Some(
-        uses.into_iter()
-            .map(|uses| {
-                if uses.values().any(|count| *count > 2) {
-                    BodyKind::General
-                } else if !uses.is_empty() && uses.values().all(|count| *count == 2) {
-                    BodyKind::Solid
-                } else {
-                    BodyKind::Sheet
+    body_faces
+        .iter()
+        .enumerate()
+        .map(|(body, (_, faces))| {
+            let face_indices: HashMap<u32, usize> = faces
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(index, face)| (face, index))
+                .collect();
+            if face_indices.len() != faces.len() {
+                return None;
+            }
+            let mut parents: Vec<usize> = (0..faces.len()).collect();
+            let mut first_face_by_edge = HashMap::<u32, usize>::new();
+            for face in topology
+                .faces
+                .iter()
+                .filter(|face| body_by_face[&face.record_id] == body)
+            {
+                let face_index = face_indices[&face.record_id];
+                for edge in face.loops.iter().flat_map(|loop_| &loop_.edge_uses) {
+                    if let Some(other) = first_face_by_edge.insert(*edge, face_index) {
+                        union_indices(&mut parents, face_index, other);
+                    }
                 }
-            })
-            .collect(),
-    )
+            }
+            let mut labels = HashMap::<usize, usize>::new();
+            let mut components = Vec::<Vec<u32>>::new();
+            for (face_index, face) in faces.iter().copied().enumerate() {
+                let root = index_root(&mut parents, face_index);
+                let next = labels.len();
+                let component = *labels.entry(root).or_insert(next);
+                if component == components.len() {
+                    components.push(Vec::new());
+                }
+                components[component].push(face);
+            }
+            let body_uses = &uses[body];
+            let kind = if body_uses.values().any(|count| *count > 2) {
+                BodyKind::General
+            } else if !body_uses.is_empty() && body_uses.values().all(|count| *count == 2) {
+                BodyKind::Solid
+            } else {
+                BodyKind::Sheet
+            };
+            Some(E5BodyOwnership { kind, components })
+        })
+        .collect()
 }
 
 fn point_distance(a: Point3, b: Point3) -> f64 {
