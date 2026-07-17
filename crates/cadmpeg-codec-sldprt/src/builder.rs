@@ -8,22 +8,21 @@
 //! stream resolved into a topology graph, an untyped support surface or curve
 //! carrier), or a field the source did not carry that a deterministic gauge
 //! filled (defaulted-field / resolver-to-fallback — a derived body hierarchy).
-//! This module is the single construction path for those notes. A decoder that
-//! wants to record a loss reaches [`omit`], [`substitute`], or [`census`] here,
-//! each of which resolves the note through the platform
-//! [`Builder`](cadmpeg_ir::transfer::Builder) into the report's loss channel —
-//! so the bare `losses.push` spelling that would let a drop or a silent
-//! substitution go unrecorded is never written on the decode path.
+//! This module is the construction path for those notes. A decoder that wants
+//! to record a loss reaches [`omit`] or [`census`] here, each of which resolves
+//! the note through the platform [`Builder`](cadmpeg_ir::transfer::Builder) into
+//! the report's loss channel. The guarantee is that this module is the one path
+//! the decode uses, not a compiler ban: a bare `losses.push(note)` elsewhere
+//! would still compile (`clippy.toml` disallows only the capacity-taking `Vec`
+//! methods, not `push`), so the no-silent-drop property is held by keeping
+//! construction here and by review, not by the type system.
 //!
 //! [`omit`] models the omission boundary: the value the transfer would have
 //! carried does not exist, so [`Transfer::omitted`] records the note and yields
-//! nothing. [`substitute`] models the fallback boundary: a deterministic value
-//! stands in for an absent or unrepresentable source field, so
-//! [`Transfer::fallback`] records the note and hands the substituted value back
-//! — unreachable without surrendering its note. [`census`] records an
-//! accountable aggregate note for content that is already present in the IR as
-//! an opaque carrier (the value crossed the boundary earlier); its note is a
-//! standalone census threaded through the same sink.
+//! nothing. [`census`] records an accountable aggregate note for content that is
+//! already present in the IR as an opaque carrier or a derived hierarchy (the
+//! value entered the arenas earlier, so there is nothing left to gate); its note
+//! is a standalone census threaded through the same sink.
 
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::transfer::{Builder, Transfer};
@@ -37,18 +36,6 @@ use cadmpeg_ir::transfer::{Builder, Transfer};
 pub(crate) fn omit(losses: &mut Vec<LossNote>, note: LossNote) {
     let omitted: Option<()> = Builder::new(losses).take(Transfer::omitted(note));
     debug_assert!(omitted.is_none(), "an omission transfer yields no value");
-}
-
-/// Resolve a deterministic substitution: `value` stands in for an absent or
-/// unrepresentable source field, and `note` explains the fallback.
-///
-/// The value passes through [`Transfer::fallback`], which records the note
-/// before returning the value, so the substitution cannot be reached without
-/// surrendering its loss note.
-pub(crate) fn substitute<T>(losses: &mut Vec<LossNote>, value: T, note: LossNote) -> T {
-    Builder::new(losses)
-        .take(Transfer::fallback(value, note))
-        .expect("a fallback transfer always yields its substituted value")
 }
 
 /// Record an accountable census or aggregate reduction: the affected content is
@@ -81,15 +68,6 @@ mod tests {
         omit(&mut losses, note(LossCode::GeometryNotTransferred));
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].code, LossCode::GeometryNotTransferred);
-    }
-
-    #[test]
-    fn substitute_yields_the_value_and_records_the_note() {
-        let mut losses = Vec::new();
-        let kept = substitute(&mut losses, 42, note(LossCode::TopologyGaugeSubstituted));
-        assert_eq!(kept, 42);
-        assert_eq!(losses.len(), 1);
-        assert_eq!(losses[0].code, LossCode::TopologyGaugeSubstituted);
     }
 
     #[test]

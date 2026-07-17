@@ -14340,6 +14340,58 @@ fn face_on_untyped_surface_keeps_topology() {
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
+/// A B-rep whose topology transfers completely but whose faces rest on an
+/// untyped support surface raises a `GeometryNotTransferred` census note. That
+/// code is `Reject`-consequence: the underlying surface shape is a mandatory
+/// semantic the codec did not transfer, so strict mode refuses the otherwise
+/// usable topology decode rather than return a model that silently omits it.
+/// Salvage keeps the partial model and surfaces the same stable code — the
+/// strict-reject / salvage-loss-code pair for the census boundary (§10 Phase 4).
+#[test]
+fn strict_rejects_topology_decode_resting_on_untyped_surface() {
+    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+
+    let mut body = Vec::new();
+    body.extend(bridge(10, 20, 999)); // 999 = no carrier
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    body.extend(edge_use(40, 0));
+    body.extend(edge_use(41, 0));
+    body.extend(edge_use(42, 0));
+    body.extend(vertex_use(50, 60));
+    body.extend(vertex_use(51, 61));
+    body.extend(vertex_use(52, 62));
+    body.extend(world_point(60, [0.0, 0.0, 0.0]));
+    body.extend(world_point(61, [1.0, 0.0, 0.0]));
+    body.extend(world_point(62, [0.0, 1.0, 0.0]));
+    let fixture = sldprt_with_body(&body);
+
+    // Salvage: the topology decode succeeds and the census note carries the
+    // reject-consequence code.
+    let salvaged = SldprtCodec
+        .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
+        .expect("salvage keeps the topology decode");
+    assert_eq!(salvaged.ir.model.faces.len(), 1);
+    let census = salvaged
+        .report
+        .losses
+        .iter()
+        .find(|l| l.code == LossCode::GeometryNotTransferred)
+        .expect("untyped support surface raises a census note");
+    assert_eq!(census.code.strict_consequence(), StrictConsequence::Reject);
+
+    // Strict: the same input is refused because the surface shape is a
+    // mandatory semantic that was not transferred, even though topology was.
+    let error = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &strict_options())
+        .expect_err("strict refuses the untyped-surface census");
+    assert!(error
+        .to_string()
+        .contains("strict mode rejects unrepresentable mandatory semantics"));
+}
+
 #[test]
 fn opaque_curve_is_retained_and_does_not_block_point_edits() {
     use cadmpeg_ir::geometry::CurveGeometry;

@@ -907,7 +907,10 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
 
     if s.unknown_surface_faces > 0 {
         // Census boundary: the opaque surface carrier already lives in the IR;
-        // this aggregate note accounts for the untyped support shape.
+        // this aggregate note accounts for the untyped support shape. The code
+        // is `GeometryNotTransferred` (Reject): the surface shape is a mandatory
+        // semantic the codec did not transfer, so even though topology decoded,
+        // strict mode refuses this decode (accountability is not tolerance).
         crate::builder::census(
             &mut losses,
             LossNote {
@@ -943,12 +946,13 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         );
     }
     if s.synthetic_body_grouping {
-        // Fallback boundary: a deterministic body/region/shell hierarchy stands
-        // in for an absent body record. The gauged hierarchy is already in the
-        // IR arenas; `substitute` records the accountable note for it.
-        crate::builder::substitute(
+        // Census boundary: the deterministic body/region/shell hierarchy that
+        // stands in for an absent body record is already in the IR arenas by the
+        // time this report is built, so there is no value left to gate — the
+        // note is an accountable census over content already present, not a
+        // `substitute` over a live value.
+        crate::builder::census(
             &mut losses,
-            (),
             LossNote {
                 code: LossCode::TopologyGaugeSubstituted,
                 category: LossCategory::Topology,
