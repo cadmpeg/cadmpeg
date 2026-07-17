@@ -8326,13 +8326,17 @@ fn resolved_feature_schema_class_from_classes(
     classes: BTreeSet<u32>,
     feature_id: u32,
 ) -> Option<u32> {
+    if let Some(schema_class) = current_feature_operation(operations, feature_id)
+        .and_then(|operation| operation.root_schema_class)
+    {
+        return Some(schema_class);
+    }
     if !classes.is_empty() {
         let mut classes = classes.into_iter();
         let schema_class = classes.next()?;
         return classes.next().is_none().then_some(schema_class);
     }
-    current_feature_operation(operations, feature_id)
-        .and_then(|operation| operation.root_schema_class)
+    None
 }
 
 fn feature_row_schema_classes(scan: &ContainerScan, feature_id: u32) -> BTreeSet<u32> {
@@ -14434,7 +14438,15 @@ mod resolved_sketch_tests {
                 row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
                 6,
             ),
-            None
+            Some(917)
+        );
+        assert_eq!(
+            resolved_feature_schema_class_from_classes(
+                std::slice::from_ref(&operation),
+                row_feature_schema_classes(&[row(913, 20), row(913, 30)], 6),
+                6,
+            ),
+            Some(917)
         );
         assert_eq!(
             row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
