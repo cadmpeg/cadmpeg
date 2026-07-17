@@ -3393,11 +3393,16 @@ fn b5_closed_triangle_stream() -> Vec<u8> {
 #[test]
 fn b5_frame_walk_ignores_markers_inside_payloads() {
     let mut bytes = Vec::new();
-    append_b5_record(&mut bytes, 0x06, 1, &[0xb5, 0x03, 0x5f, 0x08, 0, 0, 0, 0]);
+    let mut payload = vec![0xb5, 0x03, 0x5f, 0x08, 0, 0, 0, 0, 0x05, 0x08, 0x01];
+    for value in [90.0f32, 91.0, 92.0] {
+        payload.extend_from_slice(&le_f32(value));
+    }
+    append_b5_record(&mut bytes, 0x06, 1, &payload);
     bytes.extend_from_slice(&b5_closed_triangle_stream());
     let graph = crate::b5::parse(&bytes).expect("length-closed B5 graph");
     assert_eq!(graph.faces.len(), 1);
     assert_eq!(graph.loops.len(), 1);
+    assert_eq!(graph.vertex_points.len(), 3);
     assert_eq!(graph.edge_vertices.len(), 3);
 }
 

@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
 use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
-use cadmpeg_ir::le::{f32_at, f64_at};
+use cadmpeg_ir::le::f64_at;
 use cadmpeg_ir::math::Point2;
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
@@ -519,7 +519,10 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     if faces.is_empty() || loops.is_empty() {
         return None;
     }
-    let vertex_points = vertex_points(bytes);
+    let vertex_points = crate::geometry::object_stream_vertices(bytes)
+        .into_iter()
+        .map(|point| [point.x, point.y, point.z])
+        .collect::<Vec<_>>();
     let geometric_edge_vertices =
         if let Some(vertices) = bind_edge_vertices(&loops, &pcurves, &vertex_points) {
             vertices
@@ -1157,32 +1160,6 @@ fn parse_profile(record: &B5Record) -> Option<B5Profile> {
         }
         _ => None,
     }
-}
-
-fn vertex_points(bytes: &[u8]) -> Vec<[f64; 3]> {
-    let mut points = Vec::new();
-    let mut position = 0;
-    while position + 15 <= bytes.len() {
-        if bytes.get(position..position + 3) != Some(&[0x05, 0x08, 0x01]) {
-            position += 1;
-            continue;
-        }
-        let Some(point) = f32_at(bytes, position + 3)
-            .zip(f32_at(bytes, position + 7))
-            .zip(f32_at(bytes, position + 11))
-            .map(|((x, y), z)| [f64::from(x), f64::from(y), f64::from(z)])
-        else {
-            break;
-        };
-        if point
-            .iter()
-            .all(|value| value.is_finite() && value.abs() < 1e7)
-        {
-            points.push(point);
-        }
-        position += 15;
-    }
-    points
 }
 
 fn bind_edge_vertices(
