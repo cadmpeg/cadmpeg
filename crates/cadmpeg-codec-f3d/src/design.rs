@@ -16419,6 +16419,29 @@ mod relation_tests {
             cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance { .. }
         )));
 
+        let mut incompatible_unit = parameter.clone();
+        incompatible_unit.unit = Some("deg".into());
+        let constraints = project_dimension_constraints(
+            std::slice::from_ref(&placement),
+            std::slice::from_ref(&incompatible_unit),
+            std::slice::from_ref(&owner),
+            &[],
+            &[],
+            &[],
+            std::slice::from_ref(&companion),
+            &[recipe(1, 31), recipe(0, 30)],
+            &[],
+            &[],
+            &entities,
+        );
+        assert!(matches!(
+            constraints.as_slice(),
+            [cadmpeg_ir::sketches::SketchConstraint {
+                definition: SketchConstraintDefinition::Native { operands, .. },
+                ..
+            }] if operands.len() == 2
+        ));
+
         let retained = project_dimension_constraints(
             std::slice::from_ref(&placement),
             std::slice::from_ref(&parameter),
