@@ -66,6 +66,9 @@ pub struct DesignConfiguration {
     /// Bodies present when this configuration is active.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bodies: Vec<BodyId>,
+    /// Evaluated parameter state when this configuration is active.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub parameter_values: BTreeMap<ParameterId, ParameterValue>,
     /// Identifier of the full-fidelity record in a native namespace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,

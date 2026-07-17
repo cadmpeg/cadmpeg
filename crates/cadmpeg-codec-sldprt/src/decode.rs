@@ -13,7 +13,7 @@
 //! requests the metadata-only path.
 
 use std::cmp::Reverse;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -156,6 +156,47 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+    let unresolved_configuration_parameter_lanes = native.as_ref().map_or(0, |native| {
+        let mut counts = BTreeMap::<&str, usize>::new();
+        for key in native
+            .feature_input_lanes
+            .iter()
+            .filter_map(|lane| lane.configuration.as_deref())
+        {
+            *counts.entry(key).or_default() += 1;
+        }
+        counts
+            .into_iter()
+            .map(|(key, count)| {
+                let configuration_matches = key.parse::<u32>().ok().map_or(0, |source_index| {
+                    ir.model
+                        .configurations
+                        .iter()
+                        .filter(|configuration| {
+                            configuration.source_index == Some(source_index)
+                                || configuration.source_index.is_none()
+                                    && configuration.ordinal == source_index
+                        })
+                        .count()
+                });
+                if count == 1 && configuration_matches == 1 {
+                    0
+                } else {
+                    count
+                }
+            })
+            .sum()
+    });
+    if unresolved_configuration_parameter_lanes > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_configuration_parameter_lanes} configuration-scoped feature-input lane(s) have duplicate or unresolved configuration identity."
+            ),
+            provenance: None,
+        });
+    }
     let mut configuration_source_counts = BTreeMap::new();
     for source_index in ir
         .model
@@ -271,7 +312,13 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .model
         .parameters
         .iter()
-        .filter(|parameter| parameter.value.is_none())
+        .filter(|parameter| {
+            parameter.value.is_none()
+                && (ir.model.configurations.is_empty()
+                    || ir.model.configurations.iter().any(|configuration| {
+                        !configuration.parameter_values.contains_key(&parameter.id)
+                    }))
+        })
         .count();
     let unresolved_parameter_references =
         crate::history::parameters_with_unresolved_references(&ir.model.parameters, &feature_names);
@@ -1159,7 +1206,7 @@ fn build_geometry_ir(
         &mut ir.model.parameters,
         &ir.model.features,
         &histories,
-        &lanes,
+        parameter_identity_lanes(&lanes),
     );
     crate::resolved_features::type_display_relation_parameters(
         &mut ir.model.parameters,
@@ -1761,7 +1808,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &mut ir.model.parameters,
         &ir.model.features,
         &histories,
-        &lanes,
+        parameter_identity_lanes(&lanes),
     );
     crate::resolved_features::type_display_relation_parameters(
         &mut ir.model.parameters,
@@ -1889,6 +1936,7 @@ fn project_design_history(
     crate::resolved_features::enrich_history_parameters(&mut parameter_projection, lanes, false);
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters = crate::history::project_parameters(&parameter_projection);
+    project_configuration_parameter_values(ir, histories, lanes, pmi_dimensions);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "sldprt_neutral_feature_sha256".into(),
@@ -1903,6 +1951,10 @@ fn project_design_history(
             crate::history::configuration_hash(&ir.model.configurations),
         );
         source.attributes.insert(
+            "sldprt_configuration_parameter_values_sha256".into(),
+            crate::history::configuration_parameter_value_hash(&ir.model.configurations),
+        );
+        source.attributes.insert(
             "sldprt_native_configuration_sha256".into(),
             crate::history::native_configuration_hash(histories),
         );
@@ -1915,6 +1967,79 @@ fn project_design_history(
             crate::history::native_parameter_hash(histories),
         );
     }
+}
+
+fn project_configuration_parameter_values(
+    ir: &mut CadIr,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+    pmi_dimensions: &[crate::records::PmiDimension],
+) {
+    let mut lanes_by_configuration =
+        BTreeMap::<String, Vec<&crate::records::FeatureInputLane>>::new();
+    for lane in lanes {
+        let Some(configuration) = lane.configuration.as_ref() else {
+            continue;
+        };
+        lanes_by_configuration
+            .entry(configuration.clone())
+            .or_default()
+            .push(lane);
+    }
+    for (source_key, scoped_lanes) in lanes_by_configuration {
+        let [scoped_lane] = scoped_lanes.as_slice() else {
+            continue;
+        };
+        let Ok(source_index) = source_key.parse::<u32>() else {
+            continue;
+        };
+        let candidates = ir
+            .model
+            .configurations
+            .iter()
+            .enumerate()
+            .filter(|(_, configuration)| {
+                configuration.source_index == Some(source_index)
+                    || configuration.source_index.is_none() && configuration.ordinal == source_index
+            })
+            .map(|(position, _)| position)
+            .collect::<Vec<_>>();
+        let [configuration_index] = candidates.as_slice() else {
+            continue;
+        };
+        let mut projection = histories.to_vec();
+        crate::resolved_features::enrich_history_parameters(
+            &mut projection,
+            std::iter::once(*scoped_lane),
+            true,
+        );
+        crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
+        ir.model.configurations[*configuration_index].parameter_values =
+            crate::history::project_parameters(&projection)
+                .into_iter()
+                .filter_map(|parameter| parameter.value.map(|value| (parameter.id, value)))
+                .collect();
+    }
+}
+
+fn parameter_identity_lanes(
+    lanes: &[crate::records::FeatureInputLane],
+) -> Vec<&crate::records::FeatureInputLane> {
+    let has_global = lanes.iter().any(|lane| lane.configuration.is_none());
+    let scoped_configurations = lanes
+        .iter()
+        .filter_map(|lane| lane.configuration.as_deref())
+        .collect::<BTreeSet<_>>();
+    lanes
+        .iter()
+        .filter(|lane| {
+            if has_global {
+                lane.configuration.is_none()
+            } else {
+                scoped_configurations.len() == 1 && lanes.len() == 1
+            }
+        })
+        .collect()
 }
 
 fn stamp_parameter_baseline(ir: &mut CadIr) {
@@ -2079,6 +2204,7 @@ fn assign_configuration_bodies(
                 material: None,
                 properties: std::collections::BTreeMap::new(),
                 bodies,
+                parameter_values: std::collections::BTreeMap::new(),
                 native_ref: None,
             });
     }
@@ -2086,10 +2212,16 @@ fn assign_configuration_bodies(
 
 fn stamp_configuration_baseline(ir: &mut CadIr) {
     let hash = crate::history::configuration_hash(&ir.model.configurations);
+    let parameter_value_hash =
+        crate::history::configuration_parameter_value_hash(&ir.model.configurations);
     if let Some(source) = &mut ir.source {
         source
             .attributes
             .insert("sldprt_neutral_configuration_sha256".into(), hash);
+        source.attributes.insert(
+            "sldprt_configuration_parameter_values_sha256".into(),
+            parameter_value_hash,
+        );
     }
 }
 
@@ -2663,6 +2795,7 @@ mod design_loss_tests {
             material: None,
             properties: BTreeMap::new(),
             bodies: Vec::new(),
+            parameter_values: BTreeMap::new(),
             native_ref: Some(format!("native:{id}")),
         };
         ir.model
@@ -2706,6 +2839,7 @@ mod design_loss_tests {
                 material: None,
                 properties: BTreeMap::new(),
                 bodies: Vec::new(),
+                parameter_values: BTreeMap::new(),
                 native_ref: Some(format!("native:{id}")),
             });
         }
@@ -2741,6 +2875,7 @@ mod design_loss_tests {
                 material: None,
                 properties: BTreeMap::new(),
                 bodies: Vec::new(),
+                parameter_values: BTreeMap::new(),
                 native_ref: Some(format!("native:{position}")),
             });
         }
@@ -2779,6 +2914,7 @@ mod design_loss_tests {
             material: None,
             properties: BTreeMap::new(),
             bodies: Vec::new(),
+            parameter_values: BTreeMap::new(),
             native_ref: Some("native:configuration".into()),
         });
         let mut report = DecodeReport {
@@ -2810,6 +2946,7 @@ mod design_loss_tests {
             material: None,
             properties: BTreeMap::new(),
             bodies,
+            parameter_values: BTreeMap::new(),
             native_ref: Some(format!("native:{id}")),
         };
         ir.model.configurations = vec![

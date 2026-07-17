@@ -504,6 +504,7 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
             material: configuration.material.clone(),
             properties: configuration.properties.clone(),
             bodies: Vec::new(),
+            parameter_values: BTreeMap::new(),
             native_ref: Some(configuration.id.clone()),
         })
         .collect()
@@ -1510,6 +1511,7 @@ mod history_reference_tests {
                 material: None,
                 properties: BTreeMap::new(),
                 bodies: Vec::new(),
+                parameter_values: BTreeMap::new(),
                 native_ref: Some("native-configuration".into()),
             }],
             &mut native,
@@ -3818,7 +3820,10 @@ fn format_f64_literal(value: f64) -> String {
 
 #[cfg(test)]
 mod literal_tests {
-    use super::{apply_parameter_function, format_f64_literal, parse_length_mm, ParameterValue};
+    use super::{
+        apply_parameter_function, format_f64_literal, parse_length_mm, parse_parameter_literal,
+        ParameterValue,
+    };
 
     #[test]
     fn native_scalar_literals_are_compact_and_bit_exact() {
@@ -3869,6 +3874,13 @@ mod literal_tests {
                 apply_parameter_function("sgn", &ParameterValue::Integer(argument)),
                 Some(ParameterValue::Integer(expected))
             );
+        }
+    }
+
+    #[test]
+    fn non_finite_parameter_literals_have_no_evaluated_value() {
+        for literal in ["NaN", "inf", "-inf"] {
+            assert_eq!(parse_parameter_literal(literal), None, "{literal}");
         }
     }
 }
@@ -4032,6 +4044,7 @@ fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
         .trim()
         .parse::<f64>()
         .ok()
+        .filter(|value| value.is_finite())
         .map(ParameterValue::Real)
 }
 
@@ -4129,6 +4142,17 @@ pub fn configuration_hash(configurations: &[DesignConfiguration]) -> String {
     let mut configurations = configurations.to_vec();
     configurations.sort_by(|left, right| left.id.cmp(&right.id));
     hash_debug(&configurations)
+}
+
+/// Stable hash of configuration-local evaluated parameter state.
+pub fn configuration_parameter_value_hash(configurations: &[DesignConfiguration]) -> String {
+    let mut values = configurations
+        .iter()
+        .filter(|configuration| !configuration.parameter_values.is_empty())
+        .map(|configuration| (&configuration.id, &configuration.parameter_values))
+        .collect::<Vec<_>>();
+    values.sort_by(|left, right| left.0.cmp(right.0));
+    hash_debug(&values)
 }
 
 /// Stable hash of native configuration records.
@@ -4680,6 +4704,24 @@ pub fn prepare_configurations_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
+    let parameter_value_hash = configuration_parameter_value_hash(&ir.model.configurations);
+    let baseline_parameter_values = ir.source.as_ref().and_then(|source| {
+        source
+            .attributes
+            .get("sldprt_configuration_parameter_values_sha256")
+    });
+    if baseline_parameter_values.is_some_and(|baseline| baseline != &parameter_value_hash)
+        || baseline_parameter_values.is_none()
+            && ir
+                .model
+                .configurations
+                .iter()
+                .any(|configuration| !configuration.parameter_values.is_empty())
+    {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT semantic writer does not encode configuration-local parameter values".into(),
+        ));
+    }
     let neutral_hash = configuration_hash(&ir.model.configurations);
     let native_hash = native
         .as_ref()

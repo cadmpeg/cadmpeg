@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::features::{
-    ChamferSpec, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind,
-    RadiusSpec,
+    ChamferSpec, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterValue,
+    PatternKind, RadiusSpec,
 };
 use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
@@ -981,6 +981,18 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         if !features.contains(parameter.owner.0.as_str()) {
             ref_error(findings, &parameter.id.0, "feature", &parameter.owner.0);
         }
+        if parameter
+            .value
+            .as_ref()
+            .is_some_and(|value| !parameter_value_is_finite(value))
+        {
+            findings.push(Finding {
+                check: Check::GeometricConsistency,
+                severity: Severity::Error,
+                message: "design parameter has a non-finite value".into(),
+                entity: Some(parameter.id.0.clone()),
+            });
+        }
         if !parameter_names.insert((&parameter.owner, parameter.name.as_str())) {
             findings.push(Finding {
                 check: Check::Counts,
@@ -1264,6 +1276,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
     let mut configuration_source_indices = HashSet::new();
     let mut configuration_names = HashSet::new();
     let mut active_configurations = 0;
+    let parameter_ids = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.0.as_str())
+        .collect::<HashSet<_>>();
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if configuration.name.is_empty() {
@@ -1312,6 +1330,27 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     check: Check::Counts,
                     severity: Severity::Error,
                     message: format!("configuration repeats body `{}`", body.0),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
+        }
+        for (parameter, value) in &configuration.parameter_values {
+            if !parameter_ids.contains(parameter.0.as_str()) {
+                ref_error(
+                    findings,
+                    &configuration.id.0,
+                    "configuration parameter",
+                    &parameter.0,
+                );
+            }
+            if !parameter_value_is_finite(value) {
+                findings.push(Finding {
+                    check: Check::GeometricConsistency,
+                    severity: Severity::Error,
+                    message: format!(
+                        "configuration parameter `{}` has a non-finite value",
+                        parameter.0
+                    ),
                     entity: Some(configuration.id.0.clone()),
                 });
             }
@@ -2272,6 +2311,15 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 BodySelection::Unresolved | BodySelection::Native(_) => {}
             }
         }
+    }
+}
+
+fn parameter_value_is_finite(value: &ParameterValue) -> bool {
+    match value {
+        ParameterValue::Length(value) => value.0.is_finite(),
+        ParameterValue::Angle(value) => value.0.is_finite(),
+        ParameterValue::Real(value) => value.is_finite(),
+        ParameterValue::Integer(_) | ParameterValue::Boolean(_) => true,
     }
 }
 

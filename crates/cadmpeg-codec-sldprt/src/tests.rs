@@ -4292,6 +4292,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
         bodies: vec![ir.model.bodies[0].id.clone()],
+        parameter_values: BTreeMap::new(),
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
@@ -4303,6 +4304,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         material: None,
         properties: BTreeMap::new(),
         bodies: Vec::new(),
+        parameter_values: BTreeMap::new(),
         native_ref: None,
     });
     ir.finalize();
@@ -4525,6 +4527,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             material: None,
             properties: BTreeMap::new(),
             bodies: vec![body.clone()],
+            parameter_values: BTreeMap::new(),
             native_ref: None,
         })
         .collect();
@@ -10994,7 +10997,10 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         let error = SldprtCodec
             .write_preserved(&detached, &mut Vec::new())
             .unwrap_err();
-        assert!(error.to_string().contains("unresolved scale construction"));
+        assert!(
+            error.to_string().contains("unresolved scale construction"),
+            "{error}"
+        );
     }
 
     for (index, feature) in decoded.ir.model.features.iter_mut().enumerate() {
@@ -17369,6 +17375,83 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
         ))
     );
     assert!(parameter.native_ref.is_some());
+}
+
+#[test]
+fn decode_preserves_configuration_local_parameter_values() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Large"/><Fillet Name="Round1" Type="Fillet"><Dimension Name="D1">30mm</Dimension></Fillet></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload_with_names_relation_and_scalar(
+            &[0],
+            &["Round1", "D1"],
+            "sgPntPntDist",
+            0.025,
+        ),
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-1-ResolvedFeatures",
+        &resolved_features_payload_with_names_relation_and_scalar(
+            &[0],
+            &["Round1", "D1"],
+            "sgPntPntDist",
+            0.050,
+        ),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D1")
+        .unwrap();
+    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(30.0))));
+    assert_eq!(parameter.native_ref, None);
+    assert_eq!(
+        decoded.ir.model.configurations[0]
+            .parameter_values
+            .get(&parameter.id),
+        Some(&ParameterValue::Length(Length(25.0)))
+    );
+    assert_eq!(
+        decoded.ir.model.configurations[1]
+            .parameter_values
+            .get(&parameter.id),
+        Some(&ParameterValue::Length(Length(50.0)))
+    );
+    let round_trip =
+        cadmpeg_ir::CadIr::from_json(&serde_json::to_string(&decoded.ir).unwrap()).unwrap();
+    assert_eq!(
+        round_trip.model.configurations[1]
+            .parameter_values
+            .get(&parameter.id),
+        Some(&ParameterValue::Length(Length(50.0)))
+    );
+
+    let parameter_id = parameter.id.clone();
+    let mut edited = decoded.ir;
+    edited.model.configurations[1]
+        .parameter_values
+        .insert(parameter_id, ParameterValue::Length(Length(75.0)));
+    let error = SldprtCodec
+        .write_preserved(&edited, &mut Vec::new())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("does not encode configuration-local parameter values"));
 }
 
 #[test]

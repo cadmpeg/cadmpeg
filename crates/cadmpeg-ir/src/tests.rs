@@ -930,7 +930,7 @@ fn tessellation_counts_must_be_consistent() {
 
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
-    use crate::features::{ConfigurationId, DesignConfiguration};
+    use crate::features::{ConfigurationId, DesignConfiguration, ParameterId, ParameterValue};
     use crate::ids::BodyId;
     use std::collections::BTreeMap;
 
@@ -946,12 +946,28 @@ fn configuration_body_membership_round_trips_and_validates() {
         material: None,
         properties: BTreeMap::new(),
         bodies: vec![body.clone()],
+        parameter_values: BTreeMap::new(),
         native_ref: None,
     });
     ir.finalize();
     assert!(validate(&ir, Vec::new()).is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
     assert_eq!(round_trip.model.configurations[0].bodies, vec![body]);
+
+    let missing_parameter = ParameterId("synthetic:test:parameter#missing".into());
+    ir.model.configurations[0]
+        .parameter_values
+        .insert(missing_parameter, ParameterValue::Real(f64::NAN));
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message.contains("missing configuration parameter")
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message.contains("non-finite value")
+    }));
+    ir.model.configurations[0].parameter_values.clear();
 
     ir.model.configurations[0].bodies = vec![
         BodyId("synthetic:test:body#missing".into()),
@@ -976,6 +992,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         material: None,
         properties: BTreeMap::new(),
         bodies: Vec::new(),
+        parameter_values: BTreeMap::new(),
         native_ref: None,
     });
     ir.model.configurations[0].active = true;

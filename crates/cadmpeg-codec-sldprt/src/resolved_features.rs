@@ -4416,9 +4416,9 @@ fn legacy_scalar_layout(payload: &[u8], trailer_offset: usize) -> bool {
 }
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
-pub(crate) fn enrich_history_parameters(
+pub(crate) fn enrich_history_parameters<'a>(
     histories: &mut [crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
     replace_existing: bool,
 ) {
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -6030,11 +6030,11 @@ fn bind_circular_profile_by_dimension(
 }
 
 /// Bind neutral parameters to uniquely owned native scalar records.
-pub(crate) fn bind_parameter_scalars(
+pub(crate) fn bind_parameter_scalars<'a>(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
 ) {
     let neutral_owners = features
         .iter()
