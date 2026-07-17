@@ -85,6 +85,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "creo_strict_salvage"
+path = "fuzz_targets/creo_strict_salvage.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "nx_container"
 path = "fuzz_targets/nx_container.rs"
 test = false

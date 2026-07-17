@@ -4,9 +4,10 @@
 //! Complements `f3d_container` (which decodes only under the default salvage
 //! policy) by driving the full decode in strict mode as well, exercising the
 //! Phase-4B typed-builder loss channel from both entry points. Contract: no
-//! input may panic or abort in either mode; every surfaced loss carries a
-//! stable machine code (never an untyped or message-only loss); and decode is
-//! deterministic within a mode.
+//! input may panic or abort in either mode, and decode is deterministic within
+//! a mode — the same input yields the same ordered loss codes. (Every loss
+//! carries a stable `LossCode` by the type of `LossNote.code`; that is a
+//! construction guarantee, not a runtime property a fuzz assertion can test.)
 #![no_main]
 
 use std::io::Cursor;
@@ -34,11 +35,6 @@ fuzz_target!(|data: &[u8]| {
         let second = codec.decode(&mut Cursor::new(data), &options(mode));
 
         if let (Ok(a), Ok(b)) = (&first, &second) {
-            // Every loss the typed builder resolved must carry a stable code;
-            // gates key on it, so an untyped loss would be a silent drop.
-            for loss in &a.report.losses {
-                assert!(!loss.code.as_str().is_empty());
-            }
             // Decode is deterministic within a mode: the same input yields the
             // same ordered loss codes.
             let codes = |report: &cadmpeg_ir::report::DecodeReport| {

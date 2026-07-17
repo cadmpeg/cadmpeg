@@ -17137,11 +17137,6 @@ fn geometry_transfer_loss_codes_match_across_modes() {
         !strict_codes.is_empty(),
         "a geometry decode reports its reductions and omissions"
     );
-    // Every surfaced code is a stable, serializable identifier — the builder
-    // never yields an untyped or message-only loss.
-    for code in &strict_codes {
-        assert!(!LossCode::as_str(*code).is_empty());
-    }
 }
 
 /// Strict-reject + salvage-loss-code pair for the metadata-fallback path

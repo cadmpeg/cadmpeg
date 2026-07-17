@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fuzz target for the CATIA Phase-4 strict/salvage decode contract.
+//! Fuzz target for the Creo Phase-4 strict/salvage decode contract.
 //!
-//! Feeds arbitrary bytes through `CatiaCodec::decode` in both strict and salvage
+//! Feeds arbitrary bytes through `CreoCodec::decode` in both strict and salvage
 //! modes. Contract: no input may panic in either mode, and a successful strict
 //! decode never carries a reject-consequence loss (`§10` Phase 4) — that is the
 //! invariant `decode::reject_unrepresentable_in_strict` enforces at the
 //! typed-lossy builder boundary. Salvage may return either a classified
-//! `CodecError` or a partial model with the loss recorded.
+//! `CodecError` or a partial model with the loss recorded. This mirrors the
+//! strict/salvage differential drivers its Phase-4B batch peers carry.
 
 #![no_main]
 
-use cadmpeg_codec_catia::CatiaCodec;
+use cadmpeg_codec_creo::CreoCodec;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use cadmpeg_ir::decode::{DecodeMode, DecodePolicy};
 use cadmpeg_ir::report::StrictConsequence;
@@ -28,7 +29,7 @@ fn options(mode: DecodeMode) -> DecodeOptions {
 }
 
 fuzz_target!(|data: &[u8]| {
-    let codec = CatiaCodec;
+    let codec = CreoCodec;
 
     // Salvage mode: must not panic; result kind is unconstrained here.
     let _ = codec.decode(&mut Cursor::new(data), &options(DecodeMode::Salvage));

@@ -34,8 +34,9 @@ cadmpeg-codec-f3d = 384
 # for the two `std::io::Cursor` decode drivers in the Phase 3D transfer-accounting
 # tests, then 393 -> 401 for the eight `std::io::Cursor` decode drivers in the
 # Phase 4 strict-reject/salvage, rigid-motion, fixpoint, and carrier-golden
-# tests.
-cadmpeg-codec-sldprt = 401
+# tests, then 401 -> 403 for the two `std::io::Cursor` decode drivers in the
+# strict-reject-on-untyped-surface census test.
+cadmpeg-codec-sldprt = 403
 # Raised 20 -> 25 for the five `std::io::Cursor` decode drivers in the Phase 3D
 # record-ticket transfer-accounting tests, not the domain `Cursor` reader `View`
 # replaces, then 25 -> 36 for the `std::io::Cursor` decode drivers in the Phase
@@ -60,4 +61,6 @@ cadmpeg-harness = 3
 # Phase-4 strict/salvage fuzz targets (`f3d_decode_modes`, `sldprt_decode_modes`,
 # `nx_strict_salvage`, `catia_strict_salvage`), which wrap `&[u8]` for the
 # reader-based codec entry, not the domain `Cursor` reader `View` replaces.
-cadmpeg-fuzz = 46
+# Raised 46 -> 49 for the `creo_strict_salvage` differential fuzz target, which
+# wraps `&[u8]` for the same reader-based codec entry as its batch peers.
+cadmpeg-fuzz = 49
