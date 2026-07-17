@@ -17385,7 +17385,7 @@ fn decode_preserves_configuration_local_parameter_values() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Large"/><Fillet Name="Round1" Type="Fillet"><Dimension Name="D1">30mm</Dimension></Fillet></Keywords>"#,
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Large"/><Fillet Name="Round1" Type="Fillet"><Dimension Name="D1">30mm</Dimension><Dimension Name="D2">D1 * 2</Dimension></Fillet></Keywords>"#,
     ));
     source.extend(make_block(
         0x45,
@@ -17418,6 +17418,13 @@ fn decode_preserves_configuration_local_parameter_values() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .unwrap();
+    let dependent = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D2")
+        .unwrap();
     assert_eq!(parameter.value, Some(ParameterValue::Length(Length(30.0))));
     assert_eq!(parameter.native_ref, None);
     assert_eq!(
@@ -17431,6 +17438,18 @@ fn decode_preserves_configuration_local_parameter_values() {
             .parameter_values
             .get(&parameter.id),
         Some(&ParameterValue::Length(Length(50.0)))
+    );
+    assert_eq!(
+        decoded.ir.model.configurations[0]
+            .parameter_values
+            .get(&dependent.id),
+        Some(&ParameterValue::Length(Length(50.0)))
+    );
+    assert_eq!(
+        decoded.ir.model.configurations[1]
+            .parameter_values
+            .get(&dependent.id),
+        Some(&ParameterValue::Length(Length(100.0)))
     );
     let round_trip =
         cadmpeg_ir::CadIr::from_json(&serde_json::to_string(&decoded.ir).unwrap()).unwrap();
