@@ -4,6 +4,9 @@
 //! Feeds arbitrary bytes through UTF-8 decoding, JSON deserialization into
 //! `CadIr`, then STEP export. Contract: no input may panic. Malformed JSON must
 //! surface as `serde_json::Error`; STEP export errors are discarded.
+//!
+//! Structure-aware runs load `dictionaries/step_writer.dict`, generated from
+//! `cadmpeg_step::entity_table`, via `cargo fuzz run step_writer -- -dict=...`.
 
 #![no_main]
 
