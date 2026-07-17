@@ -9585,6 +9585,9 @@ fn parse_parameter_scope(
     else {
         return None;
     };
+    if kind == "Sketch" && reference_members.len() != 1 {
+        return None;
+    }
     let (
         extrude_operation,
         extrude_operation_offset,
@@ -13537,6 +13540,15 @@ mod relation_tests {
         assert_eq!(scope.frame_length, paired_at as u64);
         assert_eq!(scope.paired_class_tag, "261");
         assert_eq!(scope.paired_byte_offset, paired_at as u64);
+
+        let mut excess_reference = vec![1];
+        excess_reference.extend_from_slice(&56u32.to_le_bytes());
+        excess_reference.extend_from_slice(&[0; 6]);
+        let mut excess_references = bytes.clone();
+        excess_references[reference_count_at..reference_count_at + 4]
+            .copy_from_slice(&2u32.to_le_bytes());
+        excess_references.splice(reference_at + 11..reference_at + 11, excess_reference);
+        assert!(parse_parameter_scope(&excess_references, &header).is_none());
 
         let mut companion = DesignParameterCompanion {
             id: "f3d:native:parameter-companion#11".into(),

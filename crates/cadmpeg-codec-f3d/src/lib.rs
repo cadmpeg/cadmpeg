@@ -455,6 +455,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && scope.reference_count_offset > scope.byte_offset
             && scope.reference_count_offset < scope.kind_offset
             && !scope.reference_members.is_empty()
+            && (scope.kind != "Sketch" || scope.reference_members.len() == 1)
             && scope.reference_members.len() == scope.reference_member_offsets.len()
             && scope.reference_member_offsets.first()
                 == Some(&scope.reference_count_offset.saturating_add(5))
