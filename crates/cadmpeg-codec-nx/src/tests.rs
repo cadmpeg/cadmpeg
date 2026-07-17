@@ -9107,6 +9107,24 @@ fn offset_surface_topology_partition_stream() -> Vec<u8> {
     stream
 }
 
+#[test]
+fn nx_offset_surface_accepts_every_finite_distance() {
+    let mut stream = offset_surface_topology_partition_stream();
+    let offset = stream
+        .windows(4)
+        .position(|window| window == [0, 60, 0, 12])
+        .expect("offset record");
+    put_f64(&mut stream, offset + 23, 1_001.0);
+    let surfaces = crate::topology::offset_surfaces(&stream);
+    let [surface] = surfaces.as_slice() else {
+        panic!("offset surface")
+    };
+    assert_eq!(surface.distance, 1_001_000.0);
+
+    put_f64(&mut stream, offset + 23, f64::INFINITY);
+    assert!(crate::topology::offset_surfaces(&stream).is_empty());
+}
+
 fn surface_curve_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
     for (tag, xmt, offset) in [(16, 8, 24), (17, 7, 18)] {

@@ -525,7 +525,7 @@ An extended leading reference shifts the analytic payload and record end by the 
 
 Validity gates: CONE has finite nonzero `sin_half` and `cos_half` satisfying `sin_half² + cos_half² ≈ 1`; SPHERE has `radius > 0` and unit axis; a horn torus has `major == minor`.
 
-**OFFSET_SURF (60):** discriminator byte `+19` (`V`/`I`/`U`), `true_offset:u8 +20` (`0`/`1`), base surface ref `+21`, `offset_distance:f64 +23` (meters). Surface `P = base(u,v) + offset_distance · unit_normal(u,v)`. There is no scale field at `+31` (that position lands in the next record). For a B_SURFACE base, the unit normal comes from the rational quotient rule:
+**OFFSET_SURF (60):** discriminator byte `+19` (`V`/`I`/`U`), `true_offset:u8 +20` (`0`/`1`), base surface ref `+21`, finite `offset_distance:f64 +23` (meters). Surface `P = base(u,v) + offset_distance · unit_normal(u,v)`. The format imposes no magnitude bound on the finite distance. There is no scale field at `+31` (that position lands in the next record). For a B_SURFACE base, the unit normal comes from the rational quotient rule:
 
 ```text
 Pu = (Au·W − A·Wu)/W²,  Pv = (Av·W − A·Wv)/W²,  normal = normalize(Pu × Pv)

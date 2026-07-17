@@ -585,16 +585,14 @@ pub fn offset_surfaces(stream: &[u8]) -> Vec<OffsetSurface> {
             at += 1;
             let support = read_and_advance(&node.bytes, &mut at)?;
             let distance = be::f64_at(&node.bytes, at)?;
-            (support > 1 && distance.is_finite() && distance.abs() <= 1_000.0).then_some(
-                OffsetSurface {
-                    xmt: node.xmt,
-                    discriminator,
-                    true_offset,
-                    support,
-                    distance: distance * 1000.0,
-                    pos: node.pos,
-                },
-            )
+            (support > 1 && distance.is_finite()).then_some(OffsetSurface {
+                xmt: node.xmt,
+                discriminator,
+                true_offset,
+                support,
+                distance: distance * 1000.0,
+                pos: node.pos,
+            })
         })
         .collect()
 }
