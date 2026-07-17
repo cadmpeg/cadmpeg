@@ -227,12 +227,20 @@ impl Envelope {
 
     /// Version tag for the platform default envelope's calibration constants
     /// (§5.2). No caller API overrides the envelope yet, so every decode runs
-    /// this version. `envelope-v2` records the Phase 2 alloc/work/depth freeze:
-    /// the `alloc_bytes`/`work` terms moved from provisional starting points to
-    /// frozen, calibration-defended values (their magnitudes were unchanged —
-    /// the migrated charge sites sit far inside them — but their status did).
+    /// this version. `envelope-v2` records the Phase 2 freeze of the envelope's
+    /// `alloc_bytes` and `work` terms: they moved from provisional starting
+    /// points to frozen, calibration-defended values (their magnitudes were
+    /// unchanged — the migrated charge sites sit far inside them — but their
+    /// status did). The `max_depth` ceiling is not an envelope term; its Phase 2
+    /// freeze is recorded by `DESKTOP_VERSION`/`SERVICE_VERSION` and their
+    /// pinning tests, not here.
     /// The tag advances when a `PLATFORM_DEFAULT` constant changes or when a
-    /// dimension's freeze status advances. The
+    /// dimension's freeze status advances. This differs deliberately from the
+    /// profile ceiling tags (`DESKTOP_VERSION`/`SERVICE_VERSION`), which advance
+    /// on a ceiling *value* change only: the envelope carries no other durable
+    /// record of its own freeze status, whereas each ceiling freeze is pinned by
+    /// a `*_version_pins_its_ceilings` test that asserts the frozen value, so the
+    /// profile tag is left free to signal value drift. The
     /// `envelope_version_pins_its_constants` test pins the tag to its values so
     /// a constant cannot change without advancing the tag.
     pub(crate) const VERSION: &'static str = "envelope-v2";

@@ -10,15 +10,24 @@ each defended in the owning crate's calibration note.
 
 ## Freeze outcome
 
-The `alloc_bytes`, `work`, and `depth` envelope terms are frozen at
-`envelope-v2` (`Envelope::PLATFORM_DEFAULT` in
-`crates/cadmpeg-ir/src/decode/policy.rs`). Every constant value is unchanged
-from `envelope-v1`: the Phase 2 calibration measured the migrated charge sites
-far inside the provisional constants, so the data does not move them. The
-version bump records the status transition (provisional starting point ->
-frozen, calibration-defended default), giving every decode report a durable
-marker of which freeze state produced it. The `desktop-v1`/`service-v1` ceiling
-tags are unchanged because no ceiling value changed.
+The envelope's `alloc_bytes` and `work` terms are frozen at `envelope-v2`
+(`Envelope::PLATFORM_DEFAULT` in `crates/cadmpeg-ir/src/decode/policy.rs`).
+Every envelope constant value is unchanged from `envelope-v1`: the Phase 2
+calibration measured the migrated charge sites far inside the provisional
+constants, so the data does not move them. The version bump records the status
+transition (provisional starting point -> frozen, calibration-defended default),
+giving every decode report a durable marker of which envelope freeze state
+produced it.
+
+Phase 2 also froze the `max_alloc_bytes`, `max_work`, and `max_depth` ceilings.
+Those are ceilings in `ResourceLimits`, not envelope terms; `depth` in
+particular has no envelope representation at all. Their values are likewise
+unchanged, so the `desktop-v1`/`service-v1` profile tags do not advance —
+profile tags track ceiling *values* so a value drift stays detectable
+independent of the status freeze. The ceiling freeze is instead pinned
+machine-readably by the `desktop_version_pins_its_ceilings` and
+`service_version_pins_its_ceilings` tests, which assert each frozen ceiling
+value against its tag.
 
 Frozen dimensions and their calibration basis:
 
