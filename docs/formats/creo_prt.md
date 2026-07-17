@@ -666,6 +666,8 @@ The `var_arr` header retains its declared count and table-class reference when
 no variable row body validates; its derived point set is then empty.
 The `segtab_ptr` header retains its declared count and table-class reference
 when no segment row body validates.
+The `order_table` header retains its declared count and table-class reference
+when its prototype or positional identity rows do not validate.
 
 The first `var_arr` row is the named field prototype between the table header
 and schema close. It is a data row and contributes to the declared count;

@@ -2620,7 +2620,7 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
         }
         cursor = next + 1;
     }
-    (!rows.is_empty()).then_some(FeatureOrderTable {
+    Some(FeatureOrderTable {
         declared_count,
         entity_ref,
         rows,
@@ -2634,7 +2634,7 @@ fn positional_order_table(
     end: usize,
     table_class: u32,
 ) -> Option<FeatureOrderTable> {
-    let (table, declared_count, mut cursor) = (start..end).find_map(|table| {
+    let (table, declared_count, cursor) = (start..end).find_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
         (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
@@ -2643,28 +2643,31 @@ fn positional_order_table(
             && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
         .then_some((table, declared_count, after_reference + 2))
     })?;
-    (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-    let (_, after_entry_class) = psb::reference_id(payload, cursor + 1).ok()?;
-    cursor = after_entry_class;
-    for _ in 0..3 {
-        let (_, next) = segment_int(payload, cursor);
-        (next > cursor).then_some(())?;
-        cursor = next;
-    }
-    (payload.get(cursor..cursor + 2) == Some(&[0xf1, psb::token::ENTITY_REF])).then_some(())?;
-    let (class, after_reference) = psb::reference_id(payload, cursor + 2).ok()?;
-    (class == table_class && payload.get(after_reference) == Some(&0xe2)).then_some(())?;
-    cursor = after_reference + 1;
+    let rows_start = (|| {
+        (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (_, mut prototype) = psb::reference_id(payload, cursor + 1).ok()?;
+        for _ in 0..3 {
+            let (_, next) = segment_int(payload, prototype);
+            (next > prototype).then_some(())?;
+            prototype = next;
+        }
+        (payload.get(prototype..prototype + 2) == Some(&[0xf1, psb::token::ENTITY_REF]))
+            .then_some(())?;
+        let (class, after_reference) = psb::reference_id(payload, prototype + 2).ok()?;
+        (class == table_class && payload.get(after_reference) == Some(&0xe2)).then_some(())?;
+        Some(after_reference + 1)
+    })();
     let row_limit = usize::try_from(declared_count.saturating_sub(1)).unwrap_or(usize::MAX);
     // Each row consumes at least one byte before its 0xe2 separator, so the row
     // count cannot exceed the unread bytes in the table window.
     let capacity = bounded_len(
         u64::from(declared_count.saturating_sub(1)),
         1,
-        end.saturating_sub(cursor),
+        end.saturating_sub(rows_start.unwrap_or(end)),
     )
     .unwrap_or(0);
     let mut rows = Vec::with_capacity(capacity);
+    let mut cursor = rows_start.unwrap_or(end);
     let mut external_ids = BTreeSet::new();
     let mut internal_ids = BTreeSet::new();
     while cursor < end && rows.len() < row_limit {
@@ -2675,25 +2678,29 @@ fn positional_order_table(
         let (Some(external_id), Some(internal_id), Some(bitmask)) =
             (external_id, internal_id, bitmask)
         else {
-            return None;
+            break;
         };
         if !external_ids.insert(external_id) || !internal_ids.insert(internal_id) {
-            return None;
+            break;
         }
-        rows.push(FeatureOrderRow {
+        let row = FeatureOrderRow {
             external_id,
             internal_id,
             bitmask,
             offset: row_offset,
-        });
+        };
         cursor = next;
-        if rows.len() == row_limit {
+        if rows.len() + 1 == row_limit {
+            rows.push(row);
             break;
         }
-        (payload.get(cursor) == Some(&0xe2)).then_some(())?;
+        if payload.get(cursor) != Some(&0xe2) {
+            break;
+        }
         cursor += 1;
+        rows.push(row);
     }
-    (rows.len() == row_limit).then_some(FeatureOrderTable {
+    Some(FeatureOrderTable {
         declared_count,
         entity_ref: Some(table_class),
         rows,
@@ -6883,6 +6890,22 @@ mod tests {
             offset: 21,
         });
         assert_eq!(duplicate_internal.external_id(2), None);
+    }
+
+    #[test]
+    fn order_tables_retain_extents_without_decoded_rows() {
+        let named = b"order_table\0\xf8\x02\xf7\x42\xfb\xe2\xf1\xf7\x42\xe2";
+        let order = order_table(named, 0, named.len()).expect("named order_table header");
+        assert_eq!(order.declared_count, 2);
+        assert_eq!(order.entity_ref, Some(66));
+        assert!(order.rows.is_empty());
+
+        let positional = b"\xf8\x02\xf7\x42\xfb\xe2";
+        let order = positional_order_table(positional, 0, positional.len(), 66)
+            .expect("positional order_table header");
+        assert_eq!(order.declared_count, 2);
+        assert_eq!(order.entity_ref, Some(66));
+        assert!(order.rows.is_empty());
     }
 
     #[test]
