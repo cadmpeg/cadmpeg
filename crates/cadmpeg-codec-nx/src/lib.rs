@@ -55,6 +55,7 @@
 //! intersection, and topology decoders; applications that need a complete IR
 //! entry point should use [`NxCodec`].
 
+mod accounting;
 pub mod container;
 pub mod decode;
 pub mod deltas;

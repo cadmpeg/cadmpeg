@@ -50,6 +50,12 @@ impl StreamKind {
 pub struct Stream {
     /// Byte offset of the `78 01` zlib header in the source file.
     pub file_offset: usize,
+    /// Compressed input bytes the decoder consumed at `file_offset`.
+    ///
+    /// The physical extent `[file_offset, file_offset + consumed)` in the source
+    /// space is the decompression `Transform` input this stream's derived space
+    /// names in the source-fidelity ledger (§6.1).
+    pub consumed: u64,
     /// Inflated bytes.
     pub inflated: Vec<u8>,
     /// Payload classification.
@@ -125,10 +131,11 @@ pub fn extract_streams<'a>(
     let mut i = 0usize;
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
-            if let Some(inflated) = inflate_stream(ctx, part_view, i)? {
+            if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i)? {
                 let (kind, schema) = classify(&inflated);
                 streams.push(Stream {
                     file_offset: start + i,
+                    consumed,
                     inflated,
                     kind,
                     schema,
@@ -159,7 +166,7 @@ fn inflate_stream<'a>(
     ctx: &DecodeContext<'a>,
     part_view: View<'a>,
     offset: usize,
-) -> Result<Option<Vec<u8>>, CodecError> {
+) -> Result<Option<(Vec<u8>, u64)>, CodecError> {
     let Some(source) = part_view.child(offset, part_view.end()) else {
         return Ok(None);
     };
@@ -186,9 +193,10 @@ fn inflate_stream<'a>(
     // compressed length is unknown until it is decoded. Record only the bytes
     // the decoder actually consumed, so packed members register disjoint input
     // spans instead of each overlapping every later member.
-    writer.set_consumed(decoder.total_in());
+    let consumed = decoder.total_in();
+    writer.set_consumed(consumed);
     writer.finalize()?;
-    Ok(Some(inflated))
+    Ok(Some((inflated, consumed)))
 }
 
 /// A zlib header has compression method 8 and a 16-bit header divisible by

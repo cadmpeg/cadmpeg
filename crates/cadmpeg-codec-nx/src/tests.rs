@@ -2923,3 +2923,124 @@ fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].schema.as_deref(), Some("SCH_TEST_1_9999"));
 }
+
+/// Parse a container and inflate its streams, driving the same context path
+/// [`crate::decode::decode`] runs, and return the owned [`crate::decode::Scan`].
+fn scan_of(data: &[u8]) -> crate::decode::Scan {
+    let arena = cadmpeg_ir::decode::DecodeArena::new();
+    let policy = cadmpeg_ir::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_ir::decode::DecodeContext::from_root_bytes(data, &arena, &policy).unwrap();
+    crate::decode::scan(&ctx, root).unwrap()
+}
+
+#[test]
+fn source_fidelity_tiles_every_physical_space() {
+    let file = prt_with_arrangements();
+    let scan = scan_of(&file);
+    let sidecar = crate::accounting::build_sidecar(&scan);
+
+    assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L1);
+    assert_eq!(sidecar.capability, cadmpeg_ir::LedgerCapability::Accounted);
+    // The complete coarse tiling validates: origins form a DAG rooted at
+    // `source` and every space tiles `[0, length)` exactly.
+    assert_eq!(sidecar.validate(), Ok(()));
+
+    // One space per inflated stream plus the root `source` space.
+    assert_eq!(sidecar.spaces.len(), scan.streams.len() + 1);
+
+    let source = sidecar
+        .spaces
+        .iter()
+        .find(|space| space.id == cadmpeg_ir::CanonicalSpaceId::source())
+        .expect("source space present");
+    assert_eq!(source.length, file.len() as u64);
+
+    // Spans tile the whole file with no gap or overlap, and at least one opaque
+    // payload span and one structural framing span exist.
+    let mut cursor = 0u64;
+    let mut saw_opaque = false;
+    let mut saw_structural = false;
+    for span in &source.spans {
+        assert_eq!(span.range.start, cursor, "gap or overlap in source tiling");
+        cursor = span.range.end;
+        match span.class {
+            cadmpeg_ir::SpanClass::Opaque => saw_opaque = true,
+            cadmpeg_ir::SpanClass::Structural => saw_structural = true,
+            cadmpeg_ir::SpanClass::Typed => {}
+        }
+    }
+    assert_eq!(
+        cursor,
+        file.len() as u64,
+        "source tiling leaves a suffix gap"
+    );
+    assert!(saw_opaque, "catalogued payload should be one opaque span");
+    assert!(saw_structural, "container framing should be structural");
+
+    // Every derived stream space names the canonical part path and tiles its
+    // inflated body with a single opaque span.
+    for (ordinal, stream) in scan.streams.iter().enumerate() {
+        let id = cadmpeg_ir::CanonicalSpaceId::stream("/Root/UG_PART/UG_PART", ordinal as u32);
+        let space = sidecar
+            .spaces
+            .iter()
+            .find(|space| space.id == id)
+            .expect("stream space present");
+        assert_eq!(space.length, stream.inflated.len() as u64);
+        assert_eq!(space.spans.len(), 1);
+        assert_eq!(space.spans[0].range.start, 0);
+        assert_eq!(space.spans[0].range.end, space.length);
+        assert_eq!(space.spans[0].class, cadmpeg_ir::SpanClass::Opaque);
+    }
+}
+
+#[test]
+fn source_fidelity_serialization_is_deterministic() {
+    let file = prt_with_arrangements();
+    // Two independent decodes must serialize byte-identical canonical JSON,
+    // independent of registration order.
+    let first = crate::accounting::build_sidecar(&scan_of(&file))
+        .to_canonical_json()
+        .unwrap();
+    let second = crate::accounting::build_sidecar(&scan_of(&file))
+        .to_canonical_json()
+        .unwrap();
+    assert_eq!(first, second);
+}
+
+#[test]
+fn decode_installs_validated_source_fidelity_sidecar() {
+    #[derive(serde::Deserialize)]
+    struct Stored {
+        #[allow(dead_code)]
+        id: String,
+        sidecar: cadmpeg_ir::SourceFidelity,
+    }
+
+    let mut cur = Cursor::new(prt_with_arrangements());
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let stored = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<Stored>("source_fidelity")
+        .unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].sidecar.level, cadmpeg_ir::LedgerLevel::L1);
+    assert_eq!(stored[0].sidecar.validate(), Ok(()));
+}
+
+#[test]
+fn source_fidelity_handles_container_without_streams() {
+    // An assembly `.prt` carries an external-reference entry and no inline
+    // Parasolid stream; the source space still tiles completely and the sidecar
+    // carries only the root space.
+    let file = assembly_prt();
+    let scan = scan_of(&file);
+    assert!(scan.streams.is_empty());
+    let sidecar = crate::accounting::build_sidecar(&scan);
+    assert_eq!(sidecar.spaces.len(), 1);
+    assert_eq!(sidecar.validate(), Ok(()));
+}

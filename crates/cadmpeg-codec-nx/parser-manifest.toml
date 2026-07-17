@@ -241,3 +241,20 @@ charges = []
 cost_model = "no budget charge; summary built from trusted decoded scan results, output proportional to the catalogued stream count"
 window_egress = []
 ledger_level = 0
+
+# ---------------------------------------------------------------------------
+# L1 container accounting (doc section 10 Phase 3C). Not a byte parser: builds
+# the coarse source-fidelity ledger from the decoded `Scan` and inflated
+# streams, tiling the source space and deriving one `Decompress` space per
+# inflated member. No hostile read, no `.window()` egress, and no budget charge
+# of its own; the container scan already charged the bytes. Emits the
+# serialized L1 ledger.
+[[module]]
+path = "crates/cadmpeg-codec-nx/src/accounting.rs"
+status = "migrated"
+input_spaces = ["source"]
+fuzz_targets = []
+charges = []
+cost_model = "no budget charge; builds the L1 source-fidelity ledger from already-decoded scan facts, digesting bounded source spans; output proportional to the inflated-stream count"
+window_egress = []
+ledger_level = 1

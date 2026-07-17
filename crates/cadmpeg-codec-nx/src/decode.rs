@@ -550,6 +550,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
     attach_free_topology(&mut ir, &mut annotations);
     ir.annotations = annotations.build();
     retain_live_annotations(&mut ir);
+    crate::accounting::install(&mut ir, scan);
     let report = build_geometry_report(scan, &counts, !ir.model.faces.is_empty());
     Some((ir, report))
 }
@@ -1380,6 +1381,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
+        source_fidelity: None,
         format: "nx".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -1406,6 +1408,7 @@ fn build_metadata_ir(scan: &Scan) -> Result<CadIr, CodecError> {
     attach_native_object_model(&mut ir, scan)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     ir.annotations = annotations.build();
+    crate::accounting::install(&mut ir, scan);
     Ok(ir)
 }
 
@@ -1480,6 +1483,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
+        source_fidelity: None,
         format: "nx".to_string(),
         container_only,
         geometry_transferred: false,
