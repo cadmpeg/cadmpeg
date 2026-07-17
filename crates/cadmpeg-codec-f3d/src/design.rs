@@ -2641,6 +2641,8 @@ fn neutral_feature_id_parts(
     kind: &str,
     feature_ordinal: u32,
 ) -> cadmpeg_ir::features::FeatureId {
+    let stream = identity_key_component(stream);
+    let kind = identity_key_component(kind);
     cadmpeg_ir::features::FeatureId(format!(
         "f3d:model:feature#{}:{}{}:{}{}",
         stream.len(),
@@ -2664,6 +2666,7 @@ fn neutral_parameter_id_parts(
     stream: &str,
     source_ordinal: u32,
 ) -> cadmpeg_ir::features::ParameterId {
+    let stream = identity_key_component(stream);
     cadmpeg_ir::features::ParameterId(format!(
         "f3d:model:parameter#{}:{}{}",
         stream.len(),
@@ -2675,10 +2678,10 @@ fn neutral_parameter_id_parts(
 pub(crate) fn neutral_sketch_id(
     placement: &DesignSketchPlacement,
 ) -> cadmpeg_ir::sketches::SketchId {
+    let stream = identity_key_component(native_stream(&placement.id).unwrap_or("f3d:design"));
     cadmpeg_ir::sketches::SketchId(format!(
         "f3d:model:sketch#{}@{}",
-        native_stream(&placement.id).unwrap_or("f3d:design"),
-        placement.entity_suffix
+        stream, placement.entity_suffix
     ))
 }
 
@@ -2686,7 +2689,7 @@ pub(crate) fn neutral_sketch_point_id(
     native_ref: &str,
     persistent_id: u64,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    let stream = native_stream(native_ref).unwrap_or("f3d:design");
+    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
     cadmpeg_ir::sketches::SketchEntityId(format!(
         "f3d:model:sketch-entity#{}:{}p{persistent_id}",
         stream.len(),
@@ -2699,7 +2702,7 @@ pub(crate) fn neutral_sketch_curve_id(
     primary_id: u64,
     secondary_id: u64,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    let stream = native_stream(native_ref).unwrap_or("f3d:design");
+    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
     cadmpeg_ir::sketches::SketchEntityId(format!(
         "f3d:model:sketch-entity#{}:{}c{primary_id}:{secondary_id}",
         stream.len(),
@@ -2711,10 +2714,27 @@ pub(crate) fn neutral_sketch_constraint_id(
     native_ref: &str,
     record_index: u32,
 ) -> cadmpeg_ir::sketches::SketchConstraintId {
+    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
     cadmpeg_ir::sketches::SketchConstraintId(format!(
-        "f3d:model:sketch-constraint#{}@{record_index}",
-        native_stream(native_ref).unwrap_or("f3d:design")
+        "f3d:model:sketch-constraint#{stream}@{record_index}"
     ))
+}
+
+fn identity_key_component(value: &str) -> String {
+    use std::fmt::Write as _;
+
+    let mut encoded = String::with_capacity(value.len());
+    for character in value.chars() {
+        if character == '#' || character == '%' || character.is_whitespace() {
+            let mut bytes = [0; 4];
+            for byte in character.encode_utf8(&mut bytes).as_bytes() {
+                write!(encoded, "%{byte:02X}").expect("writing to a String cannot fail");
+            }
+        } else {
+            encoded.push(character);
+        }
+    }
+    encoded
 }
 
 pub(crate) fn neutral_dimension_constraint_id(
@@ -12254,6 +12274,17 @@ mod relation_tests {
         assert_eq!(first, same);
         assert_ne!(first, different_stream);
         assert_ne!(first, different_family);
+
+        let localized = neutral_feature_id_parts("Design Name", "Symétrie miroir", 1);
+        let literal_escape = neutral_feature_id_parts("Design%20Name", "Symétrie%20miroir", 1);
+        assert!(!localized.0.chars().any(char::is_whitespace));
+        assert!(localized.0.contains("Design%20Name"));
+        assert!(localized.0.contains("Symétrie%20miroir"));
+        assert_ne!(localized, literal_escape);
+        assert!(!feature_input_topology_id(&localized, 2)
+            .0
+            .chars()
+            .any(char::is_whitespace));
     }
 
     #[test]
