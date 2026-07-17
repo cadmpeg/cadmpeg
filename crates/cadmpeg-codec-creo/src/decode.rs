@@ -220,6 +220,7 @@ enum CreoSketchSavedEntity {
     },
     Spline {
         entity_id: Option<u32>,
+        declared_point_count: Option<u32>,
         interpolation_points: Vec<[f64; 3]>,
         endpoint_tangents: Option<[[f64; 3]; 2]>,
         parameters: Option<Vec<f64>>,
@@ -2866,6 +2867,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     crate::feature::FeatureSavedEntity::Spline(spline) => {
                         CreoSketchSavedEntity::Spline {
                             entity_id: spline.entity_id,
+                            declared_point_count: spline.declared_point_count,
                             interpolation_points: spline.interpolation_points.clone(),
                             endpoint_tangents: spline.endpoint_tangents,
                             parameters: spline.parameters.clone(),
@@ -5490,6 +5492,8 @@ fn interpolation_curve_data(
 }
 
 fn saved_spline_nurbs(spline: &crate::feature::FeatureSavedSpline) -> Option<NurbsCurve> {
+    (usize::try_from(spline.declared_point_count?).ok()? == spline.interpolation_points.len())
+        .then_some(())?;
     let parameters = spline.parameters.as_ref()?;
     let tangents = spline.endpoint_tangents?;
     let (knots, control_points) =
@@ -17302,6 +17306,7 @@ mod resolved_sketch_tests {
     fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         let spline = crate::feature::FeatureSavedSpline {
             entity_id: Some(7),
+            declared_point_count: Some(3),
             interpolation_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
             endpoint_tangents: Some([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
             parameters: Some(vec![0.0, 1.0, 2.0]),
@@ -17348,6 +17353,9 @@ mod resolved_sketch_tests {
             assert!((derivative[0] - 1.0).abs() < 1e-12);
             assert!(derivative[1].abs() < 1e-12 && derivative[2].abs() < 1e-12);
         }
+        let mut incomplete = spline;
+        incomplete.declared_point_count = Some(4);
+        assert!(saved_spline_nurbs(&incomplete).is_none());
     }
 
     #[test]

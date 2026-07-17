@@ -1538,6 +1538,9 @@ consume the second as a dictionary index.
 
 `save_entity_ptr(spline)` carries `i_pnts f9 <count> 03` followed by exactly
 `count` section-space XYZ triples. Every coordinate is a scalar-lane value.
+The spline identity, declared point count, and complete point prefix remain
+present when the point body is incomplete. Neutral spline geometry requires the
+complete declared point count.
 The saved spline identifier is null when the spline is not assigned an
 `order_table.int_id`. `end_tangts f9 02 03` carries two endpoint tangent
 triples. `params f8 <count>` carries one scalar interpolation parameter per
