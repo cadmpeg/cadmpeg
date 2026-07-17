@@ -3109,3 +3109,265 @@ fn source_fidelity_handles_container_without_streams() {
     assert_eq!(sidecar.spaces.len(), 1);
     assert_eq!(sidecar.validate(), Ok(()));
 }
+
+// ---------------------------------------------------------------------------
+// Phase 4 — semantic assurance (§9, §10 Phase 4).
+//
+// Strict-reject + salvage-loss-code pairs for every fallback-capable path, a
+// rigid-motion metamorphic property, and value-level record-family goldens over
+// the analytic carriers the codec claims.
+// ---------------------------------------------------------------------------
+
+use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::DecodeMode;
+use cadmpeg_ir::report::Severity;
+
+/// A Parasolid partition stream carrying only the `PS` header and a schema
+/// string — no analytic records — so it classifies as a partition but yields no
+/// gate-passing carrier, driving the metadata-fallback (`build_container_report`)
+/// path.
+fn empty_partition_stream() -> Vec<u8> {
+    let mut s = Vec::new();
+    s.extend_from_slice(b"PS\x00\x00");
+    s.extend_from_slice(
+        b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
+    );
+    s
+}
+
+/// The `partition_stream` geometry with every position field translated by `t`
+/// metres; directions, normals, axes, and the cylinder radius are motion
+/// invariants and stay fixed. Used to assert rigid-motion (translation)
+/// equivariance of the decode.
+fn translated_partition_stream(t: [f64; 3]) -> Vec<u8> {
+    let mut s = Vec::new();
+    s.extend_from_slice(b"PS\x00\x00");
+    s.extend_from_slice(b"XX: TRANSMIT FILE (partition) created by modeller version 3400176\x00");
+    s.extend_from_slice(b"SCH_TEST_1_9999\x00");
+
+    let add = |base: [f64; 3]| [base[0] + t[0], base[1] + t[1], base[2] + t[2]];
+
+    let mut pt = record(0x1d, 40);
+    put_vec3(&mut pt, 16, add([0.0625, 0.0, 0.0127]));
+    s.extend_from_slice(&pt);
+
+    let mut pl = record(0x32, 91);
+    pl[18] = b'+';
+    put_vec3(&mut pl, 19, add([0.0762, 0.0, 0.0]));
+    put_vec3(&mut pl, 43, [0.0, 0.0, 1.0]);
+    put_vec3(&mut pl, 67, [1.0, 0.0, 0.0]);
+    s.extend_from_slice(&pl);
+
+    let mut cy = record(0x33, 99);
+    cy[18] = b'+';
+    put_vec3(&mut cy, 19, add([0.0, 0.0, 0.0]));
+    put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
+    put_f64(&mut cy, 67, 0.004_05);
+    put_vec3(&mut cy, 75, [1.0, 0.0, 0.0]);
+    s.extend_from_slice(&cy);
+
+    let mut ln = record(0x1e, 67);
+    ln[18] = b'+';
+    put_vec3(&mut ln, 19, add([0.01, 0.02, 0.03]));
+    put_vec3(&mut ln, 43, [1.0, 0.0, 0.0]);
+    s.extend_from_slice(&ln);
+
+    s
+}
+
+#[test]
+fn strict_rejects_carriers_without_topology_salvage_reports_the_loss() {
+    // Fallback-capable path: carriers decode but no connected B-rep ownership
+    // graph forms, so `build_geometry_report` emits a blocking
+    // `TopologyNotTransferred`. Strict mode refuses the partial model; salvage
+    // returns it with the stable loss code recorded.
+    let file = single_part_prt();
+
+    let strict = NxCodec.decode(
+        &mut Cursor::new(file.clone()),
+        &options_in(DecodeMode::Strict, false),
+    );
+    let err = strict.expect_err("strict rejects carriers with no transferred topology");
+    match err {
+        CodecError::Malformed(message) => {
+            assert!(message.starts_with("strict:"), "message: {message}");
+            assert!(
+                message.contains("topology_not_transferred"),
+                "message: {message}"
+            );
+        }
+        other => panic!("expected Malformed strict refusal, got {other:?}"),
+    }
+
+    let salvage = NxCodec
+        .decode(
+            &mut Cursor::new(file),
+            &options_in(DecodeMode::Salvage, false),
+        )
+        .expect("salvage returns the partial model");
+    assert!(salvage.report.geometry_transferred);
+    assert!(salvage
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == LossCode::TopologyNotTransferred
+            && loss.severity == Severity::Blocking));
+}
+
+#[test]
+fn strict_rejects_metadata_fallback_no_geometry_salvage_reports_the_loss() {
+    // Fallback-capable path: a Parasolid stream with no gate-passing carrier
+    // falls back to metadata IR with a blocking `GeometryNotTransferred`. Strict
+    // rejects; salvage records the code.
+    let file = prt_with_partition(&empty_partition_stream());
+
+    let err = NxCodec
+        .decode(
+            &mut Cursor::new(file.clone()),
+            &options_in(DecodeMode::Strict, false),
+        )
+        .expect_err("strict rejects a decode that transferred no geometry");
+    match err {
+        CodecError::Malformed(message) => {
+            assert!(
+                message.contains("geometry_not_transferred"),
+                "message: {message}"
+            );
+        }
+        other => panic!("expected Malformed strict refusal, got {other:?}"),
+    }
+
+    let salvage = NxCodec
+        .decode(
+            &mut Cursor::new(file),
+            &options_in(DecodeMode::Salvage, false),
+        )
+        .expect("salvage returns metadata IR");
+    assert!(!salvage.report.geometry_transferred);
+    assert!(salvage
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == LossCode::GeometryNotTransferred
+            && loss.severity == Severity::Blocking));
+}
+
+#[test]
+fn strict_tolerates_assembly_external_dependency() {
+    // The assembly external-reference boundary is a `Tolerate` loss: geometry
+    // lives in child parts, not a decode gap. Strict must not reject it, and the
+    // salvage report names the stable code.
+    let strict = NxCodec
+        .decode(
+            &mut Cursor::new(assembly_prt()),
+            &options_in(DecodeMode::Strict, false),
+        )
+        .expect("strict tolerates the external-dependency boundary");
+    assert!(strict
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == LossCode::AssemblyComponentsExternal));
+
+    let salvage = NxCodec
+        .decode(
+            &mut Cursor::new(assembly_prt()),
+            &options_in(DecodeMode::Salvage, false),
+        )
+        .expect("salvage tolerates it too");
+    assert!(salvage
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == LossCode::AssemblyComponentsExternal));
+}
+
+#[test]
+fn strict_accepts_fully_transferred_topology() {
+    // A complete connected B-rep carries no blocking Reject-coded loss, so strict
+    // mode accepts it — the strict-reject counterpart's negative control.
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(topology_part_prt()),
+            &options_in(DecodeMode::Strict, false),
+        )
+        .expect("strict accepts a fully transferred B-rep");
+    assert!(result.report.geometry_transferred);
+    assert!(!result.ir.model.faces.is_empty());
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.severity == Severity::Blocking
+            && loss.code.strict_consequence() == cadmpeg_ir::report::StrictConsequence::Reject
+    }));
+}
+
+#[test]
+fn strict_tolerates_container_only_request() {
+    // Container-only is an operator request, not an unrepresentable mandatory
+    // semantic; strict mode must return the metadata IR, never reject.
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(single_part_prt()),
+            &options_in(DecodeMode::Strict, true),
+        )
+        .expect("strict honors container-only without rejecting");
+    assert!(result.report.container_only);
+}
+
+#[test]
+fn decoded_geometry_is_translation_equivariant() {
+    // Metamorphic rigid-motion property (§9): translating every source position
+    // by `t` translates every decoded position by `t` (in millimetres) and
+    // leaves motion invariants — the cylinder radius and every direction/normal —
+    // byte-identical.
+    let t = [0.5_f64, -0.25, 0.125];
+    let base = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_partition(&translated_partition_stream([0.0; 3]))),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let moved = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_partition(&translated_partition_stream(t))),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let shift = Vector3::new(t[0] * 1000.0, t[1] * 1000.0, t[2] * 1000.0);
+
+    assert_eq!(base.ir.model.points.len(), 1);
+    assert_eq!(moved.ir.model.points.len(), 1);
+    let bp = base.ir.model.points[0].position;
+    let mp = moved.ir.model.points[0].position;
+    assert!((mp.x - (bp.x + shift.x)).abs() < 1e-9);
+    assert!((mp.y - (bp.y + shift.y)).abs() < 1e-9);
+    assert!((mp.z - (bp.z + shift.z)).abs() < 1e-9);
+
+    let radius = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find_map(|surface| match &surface.geometry {
+                SurfaceGeometry::Cylinder { radius, .. } => Some(*radius),
+                _ => None,
+            })
+            .expect("a cylinder carrier")
+    };
+    assert_eq!(radius(&base), radius(&moved));
+
+    let plane_normal = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find_map(|surface| match surface.geometry {
+                SurfaceGeometry::Plane { normal, .. } => Some(normal),
+                _ => None,
+            })
+            .expect("a plane carrier")
+    };
+    assert_eq!(plane_normal(&base), plane_normal(&moved));
+}

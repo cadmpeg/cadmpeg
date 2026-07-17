@@ -13,7 +13,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, RecordDisposition, RecordKind, SourceLocation, View};
+use cadmpeg_ir::decode::{
+    DecodeContext, DecodeMode, RecordDisposition, RecordKind, SourceLocation, View,
+};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -27,11 +29,12 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
+    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity, StrictConsequence,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
+use cadmpeg_ir::transfer::{Builder, Transfer};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
@@ -119,6 +122,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     }
 
     if let Some((ir, report)) = try_decode_geometry(ctx, source, &scan) {
+        enforce_strict(ctx.mode(), &report)?;
         return Ok(DecodeResult::new(ir, report));
     }
 
@@ -126,7 +130,56 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     let mut report = build_container_report(&scan, false);
     report.source_fidelity = Some(crate::accounting::ledger(&scan));
     issue_stream_tickets(ctx, source, &scan, &ir, &mut report);
+    enforce_strict(ctx.mode(), &report)?;
     Ok(DecodeResult::new(ir, report))
+}
+
+/// Reject an entity decode in strict mode when the report carries a loss whose
+/// code removes mandatory, unreconstructable semantics (§10 Phase 4).
+///
+/// Phase 4 requires strict mode to refuse a decode that could only be completed
+/// by dropping semantics the target model treats as mandatory, rather than
+/// silently returning a partial model. The decision keys on
+/// [`LossCode::strict_consequence`] together with severity: a
+/// [`Reject`](StrictConsequence::Reject) code (untransferred topology, no
+/// transferred geometry) carried at [`Severity::Blocking`] marks mandatory,
+/// unreconstructable semantics strict mode cannot tolerate. The same Reject code
+/// at a lower severity is an accountable partial loss over content that *was*
+/// transferred (opaque intersection surfaces standing beside decoded carriers
+/// and topology); it, accountable approximations, retained passthrough, and
+/// operator-requested omissions [`Tolerate`](StrictConsequence::Tolerate) and
+/// pass through. Salvage
+/// mode never rejects; it returns the same report with the loss code recorded,
+/// so every strict rejection has a salvage counterpart that names the loss.
+///
+/// The refusal is surfaced as [`CodecError::Malformed`] with a `strict:` prefix:
+/// the error taxonomy (§3.1) has no dedicated semantic-refusal decode variant,
+/// and `Malformed` is the codebase's established spelling for a strict-mode
+/// refusal (it is a classified error the stage-2 salvage/strict oracles accept).
+/// Container-only decode never reaches here — the caller returns before entity
+/// decode — so an operator-requested skip is never a strict rejection.
+fn enforce_strict(mode: DecodeMode, report: &DecodeReport) -> Result<(), CodecError> {
+    if mode != DecodeMode::Strict {
+        return Ok(());
+    }
+    let mut codes: Vec<&'static str> = report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.severity == Severity::Blocking
+                && loss.code.strict_consequence() == StrictConsequence::Reject
+        })
+        .map(|loss| loss.code.as_str())
+        .collect();
+    if codes.is_empty() {
+        return Ok(());
+    }
+    codes.sort_unstable();
+    codes.dedup();
+    Err(CodecError::Malformed(format!(
+        "strict: mandatory semantics could not be represented (loss codes: {})",
+        codes.join(", ")
+    )))
 }
 
 /// Issue and resolve one [`RecordTicket`](cadmpeg_ir::decode::RecordTicket) per
@@ -1397,9 +1450,19 @@ fn source_meta(scan: &Scan) -> SourceMeta {
 }
 
 fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> DecodeReport {
+    // The geometry report's losses are constructed through the Phase-4B typed
+    // [`Builder`] over the report's own loss vector (§6.2, §10). Every note that
+    // stands in for content the codec could not transfer — an untransferred
+    // topology graph or intersection surface (unsupported concept → omission),
+    // an inferred deltas/Boolean gauge (resolver → fallback), the undecoded
+    // attribute serialization (omission) — is a `Transfer` resolved through the
+    // one sink, so a graduated module cannot record a substitution or drop
+    // without surrendering its note. The carrier census carries no loss and is
+    // recorded directly.
     let mut losses = Vec::new();
+    let mut builder = Builder::new(&mut losses);
 
-    losses.push(LossNote {
+    builder.record_loss(LossNote {
         code: LossCode::CarrierSummary,
         category: LossCategory::Geometry,
         severity: Severity::Info,
@@ -1424,7 +1487,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
     });
 
     if !has_topology {
-        losses.push(LossNote {
+        let _: Option<()> = builder.take(Transfer::omitted(LossNote {
             code: LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
@@ -1436,10 +1499,10 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
                       then remains unattached."
                 .to_string(),
             provenance: None,
-        });
+        }));
     }
 
-    losses.push(LossNote {
+    let _: Option<()> = builder.take(Transfer::omitted(LossNote {
         code: LossCode::GeometryNotTransferred,
         category: LossCategory::Geometry,
         severity: Severity::Warning,
@@ -1450,10 +1513,10 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
                   available."
                 .to_string(),
         provenance: None,
-    });
+    }));
 
     if scan.count(StreamKind::Deltas) > 0 {
-        losses.push(LossNote {
+        let _: Option<()> = builder.take(Transfer::fallback((), LossNote {
             code: LossCode::TopologyGaugeSubstituted,
             category: LossCategory::Topology,
             severity: Severity::Warning,
@@ -1465,11 +1528,11 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
                 scan.count(StreamKind::Deltas)
             ),
             provenance: None,
-        });
+        }));
     }
 
     if scan.count(StreamKind::Partition) > 1 {
-        losses.push(LossNote {
+        let _: Option<()> = builder.take(Transfer::fallback((), LossNote {
             code: LossCode::TopologyGaugeSubstituted,
             category: LossCategory::Topology,
             severity: Severity::Warning,
@@ -1481,10 +1544,10 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
                 scan.count(StreamKind::Partition)
             ),
             provenance: None,
-        });
+        }));
     }
 
-    losses.push(LossNote {
+    let _: Option<()> = builder.take(Transfer::omitted(LossNote {
         code: LossCode::AttributesNotTransferred,
         category: LossCategory::Attribute,
         severity: Severity::Warning,
@@ -1493,7 +1556,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
                   per-class field serialization, which is not decoded."
             .to_string(),
         provenance: None,
-    });
+    }));
 
     DecodeReport {
         retention_degraded: false,
@@ -1553,7 +1616,13 @@ fn attach_native_object_model(
 }
 
 fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
+    // Constructed through the Phase-4B typed [`Builder`] (§6.2, §10): the
+    // no-geometry note is an omission `Transfer` that must surrender its loss,
+    // while the assembly external-dependency note and the operator-requested
+    // container-only note carry no substituted or dropped value and are
+    // recorded directly.
     let mut losses = Vec::new();
+    let mut builder = Builder::new(&mut losses);
 
     let assembly = scan
         .container
@@ -1563,7 +1632,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         && !scan.has_parasolid();
 
     if assembly {
-        losses.push(LossNote {
+        builder.record_loss(LossNote {
             code: LossCode::AssemblyComponentsExternal,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
@@ -1575,7 +1644,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
             provenance: None,
         });
     } else {
-        losses.push(LossNote {
+        let _: Option<()> = builder.take(Transfer::omitted(LossNote {
             code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
@@ -1585,11 +1654,11 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
                       unknown passthrough records."
                 .to_string(),
             provenance: None,
-        });
+        }));
     }
 
     if container_only {
-        losses.push(LossNote {
+        builder.record_loss(LossNote {
             code: LossCode::ContainerOnly,
             category: LossCategory::Geometry,
             severity: Severity::Info,
