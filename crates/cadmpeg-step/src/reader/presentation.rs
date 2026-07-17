@@ -446,12 +446,14 @@ fn style_depth(
     Some(depth)
 }
 
+type CachedColor = Option<(u64, Color, Option<String>)>;
+
 fn find_color(
     id: u64,
     exchange: &Exchange,
     domain: StyleDomain,
     active: &mut BTreeSet<u64>,
-    cache: &mut BTreeMap<u64, Option<(u64, Color, Option<String>)>>,
+    cache: &mut BTreeMap<u64, CachedColor>,
     depth: usize,
 ) -> Option<(u64, Color, Option<String>)> {
     if depth >= 256 {

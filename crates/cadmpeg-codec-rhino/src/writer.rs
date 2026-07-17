@@ -4906,6 +4906,7 @@ mod tests {
             id: loop_id.clone(),
             face,
             coedges: coedge_ids.to_vec(),
+            vertex: None,
         });
         ir.model.surfaces.push(Surface {
             id: surface,
@@ -4994,6 +4995,7 @@ mod tests {
             id: loop_id.clone(),
             face,
             coedges: coedge_ids.clone(),
+            vertex: None,
         });
         for index in 0..points.len() {
             let next_index = (index + 1) % points.len();
@@ -5134,11 +5136,13 @@ mod tests {
             id: loop_ids[0].clone(),
             face: face_ids[0].clone(),
             coedges: coedge_ids[0..4].to_vec(),
+            vertex: None,
         });
         ir.model.loops.push(Loop {
             id: loop_ids[1].clone(),
             face: face_ids[1].clone(),
             coedges: coedge_ids[4..8].to_vec(),
+            vertex: None,
         });
         for index in 0..positions.len() {
             ir.model.points.push(Point {
@@ -5365,6 +5369,7 @@ mod tests {
                 id: loop_ids[face].clone(),
                 face: face_ids[face].clone(),
                 coedges: coedge_ids[start..start + 3].to_vec(),
+                vertex: None,
             });
             ir.model.surfaces.push(Surface {
                 id: surface_ids[face].clone(),

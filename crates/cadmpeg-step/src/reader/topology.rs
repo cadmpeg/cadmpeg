@@ -88,9 +88,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
     for (&id, record) in &exchange.records {
         if !matches!(
             record.simple_name(),
-            Some("SHELL_BASED_SURFACE_MODEL")
-                | Some("MANIFOLD_SOLID_BREP")
-                | Some("BREP_WITH_VOIDS")
+            Some("SHELL_BASED_SURFACE_MODEL" | "MANIFOLD_SOLID_BREP" | "BREP_WITH_VOIDS")
         ) {
             continue;
         }
@@ -107,7 +105,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         } else {
             result.warnings.push(format!(
                 "{} #{id} does not resolve to a complete connected topology graph",
-                record.simple_name().unwrap()
+                record.simple_name().expect("matched simple name")
             ));
         }
     }
@@ -139,9 +137,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
     for (&id, record) in &exchange.records {
         if !matches!(
             record.simple_name(),
-            Some("SHAPE_REPRESENTATION")
-                | Some("ADVANCED_BREP_SHAPE_REPRESENTATION")
-                | Some("GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION")
+            Some(
+                "SHAPE_REPRESENTATION"
+                    | "ADVANCED_BREP_SHAPE_REPRESENTATION"
+                    | "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION"
+            )
         ) {
             continue;
         }
@@ -168,9 +168,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
     for (&id, record) in &exchange.records {
         if matches!(
             record.simple_name(),
-            Some("MANIFOLD_SURFACE_SHAPE_REPRESENTATION")
-                | Some("ADVANCED_BREP_SHAPE_REPRESENTATION")
-                | Some("SHAPE_REPRESENTATION")
+            Some(
+                "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
+                    | "ADVANCED_BREP_SHAPE_REPRESENTATION"
+                    | "SHAPE_REPRESENTATION"
+            )
         ) && record
             .parameter(1)
             .and_then(refs)
@@ -487,7 +489,7 @@ fn build(
 ) -> Option<Built> {
     let solid = matches!(
         root.simple_name(),
-        Some("MANIFOLD_SOLID_BREP") | Some("BREP_WITH_VOIDS")
+        Some("MANIFOLD_SOLID_BREP" | "BREP_WITH_VOIDS")
     );
     let shell_steps = match root.simple_name()? {
         "SHELL_BASED_SURFACE_MODEL" => refs(root.parameter(1)?)?,
@@ -540,7 +542,7 @@ fn build(
             continue;
         }
         let sr = exchange.records.get(&shell_step)?;
-        if !matches!(sr.simple_name(), Some("OPEN_SHELL") | Some("CLOSED_SHELL")) {
+        if !matches!(sr.simple_name(), Some("OPEN_SHELL" | "CLOSED_SHELL")) {
             return None;
         }
         let sid = ShellId(format!("step:data:shell#{shell_step}"));
@@ -558,10 +560,7 @@ fn build(
             let mut loop_ids = vec![];
             for bound_step in refs(fr.parameter(1)?)? {
                 let br = exchange.records.get(&bound_step)?;
-                if !matches!(
-                    br.simple_name(),
-                    Some("FACE_BOUND") | Some("FACE_OUTER_BOUND")
-                ) {
+                if !matches!(br.simple_name(), Some("FACE_BOUND" | "FACE_OUTER_BOUND")) {
                     return None;
                 }
                 let loop_step = br.parameter(1)?.reference()?;

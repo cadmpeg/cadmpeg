@@ -25,32 +25,32 @@ mod validation;
 pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
 
 /// Decode a complete clear-text exchange structure.
-pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, CodecError> {
+pub fn decode(input: &[u8], options: DecodeOptions) -> Result<DecodeResult, CodecError> {
     let exchange = parse::parse(input).map_err(|error| CodecError::Malformed(error.to_string()))?;
-    decode_exchange(input, options, &exchange)
+    Ok(decode_exchange(input, options, &exchange))
 }
 
 pub(super) fn decode_exchange(
     input: &[u8],
-    options: &DecodeOptions,
+    options: DecodeOptions,
     exchange: &Exchange,
-) -> Result<DecodeResult, CodecError> {
-    decode_exchange_mode(input, options, exchange, true).map(|(decoded, _)| decoded)
+) -> DecodeResult {
+    decode_exchange_mode(input, options, exchange, true).0
 }
 
 pub(super) fn inspect_exchange(
     input: &[u8],
     exchange: &Exchange,
-) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
-    decode_exchange_mode(input, &DecodeOptions::default(), exchange, false)
+) -> (DecodeResult, BTreeSet<usize>) {
+    decode_exchange_mode(input, DecodeOptions::default(), exchange, false)
 }
 
 fn decode_exchange_mode(
     input: &[u8],
-    options: &DecodeOptions,
+    options: DecodeOptions,
     exchange: &Exchange,
     retain_opaque: bool,
-) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
+) -> (DecodeResult, BTreeSet<usize>) {
     let mut ir = CadIr::empty(Units::default());
     let mut attributes = BTreeMap::new();
     attributes.insert("schema".into(), schema_name(exchange));
@@ -76,7 +76,7 @@ fn decode_exchange_mode(
             .collect(),
     };
     if options.container_only {
-        return Ok((DecodeResult::new(ir, report), BTreeSet::new()));
+        return (DecodeResult::new(ir, report), BTreeSet::new());
     }
 
     let geometry = geometry::decode(exchange, &mut ir);
@@ -260,7 +260,7 @@ fn decode_exchange_mode(
             message: format!("preserved {count} {name} instance(s) as named opaque STEP records"),
             provenance: None,
         }));
-    Ok((DecodeResult::new(ir, report), opaque_offsets))
+    (DecodeResult::new(ir, report), opaque_offsets)
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

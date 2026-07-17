@@ -14,32 +14,29 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
     let documents = exchange
         .records
         .iter()
-        .filter_map(|(&id, record)| {
-            matches!(record.simple_name(), Some("DOCUMENT" | "DOCUMENT_FILE")).then(|| {
+        .filter(|(_, record)| matches!(record.simple_name(), Some("DOCUMENT" | "DOCUMENT_FILE")))
+        .map(|(&id, record)| {
+            (
+                id,
                 (
-                    id,
-                    (
-                        record
-                            .parameter(0)
-                            .and_then(ValueExt::text)
-                            .unwrap_or_default(),
-                        record
-                            .parameter(1)
-                            .and_then(ValueExt::text)
-                            .unwrap_or_default(),
-                        record.parameter(3).and_then(ValueExt::reference),
-                    ),
-                )
-            })
+                    record
+                        .parameter(0)
+                        .and_then(ValueExt::text)
+                        .unwrap_or_default(),
+                    record
+                        .parameter(1)
+                        .and_then(ValueExt::text)
+                        .unwrap_or_default(),
+                    record.parameter(3).and_then(ValueExt::reference),
+                ),
+            )
         })
         .collect::<BTreeMap<_, _>>();
     let sources = exchange
         .records
         .iter()
-        .filter_map(|(&id, record)| {
-            (record.simple_name() == Some("EXTERNAL_SOURCE"))
-                .then(|| (id, record.parameter(0).and_then(ValueExt::source_text)))
-        })
+        .filter(|(_, record)| record.simple_name() == Some("EXTERNAL_SOURCE"))
+        .map(|(&id, record)| (id, record.parameter(0).and_then(ValueExt::source_text)))
         .filter_map(|(id, source)| source.map(|source| (id, source)))
         .collect::<BTreeMap<_, _>>();
     let mut typed = BTreeSet::new();

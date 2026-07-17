@@ -45,20 +45,22 @@ pub(super) fn decode(
         .records
         .iter()
         .filter_map(|(&id, record)| {
-            (record.simple_name() == Some("PROPERTY_DEFINITION")
+            if record.simple_name() == Some("PROPERTY_DEFINITION")
                 && record
                     .parameter(0)?
                     .text()?
-                    .eq_ignore_ascii_case("geometric validation property"))
-            .then(|| {
-                (
+                    .eq_ignore_ascii_case("geometric validation property")
+            {
+                Some((
                     id,
                     record
                         .parameter(1)
                         .and_then(ValueExt::text)
                         .unwrap_or_default(),
-                )
-            })
+                ))
+            } else {
+                None
+            }
         })
         .collect::<BTreeMap<_, _>>();
     let computed = mesh_properties(ir);

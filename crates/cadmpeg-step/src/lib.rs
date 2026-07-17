@@ -1290,8 +1290,7 @@ impl<'a> Builder<'a> {
             let body_kind = self
                 .bodies
                 .get(region.body.as_str())
-                .map(|body| body.kind)
-                .unwrap_or(BodyKind::General);
+                .map_or(BodyKind::General, |body| body.kind);
             if body_kind == BodyKind::Wire {
                 if let Some(item) = self.emit_wire_region(region) {
                     let shape_item = self.place_body_item(&region.body, item, context);
@@ -2484,7 +2483,7 @@ impl<'a> Builder<'a> {
         };
         self.emitter.emit(
             "MEASURE_REPRESENTATION_ITEM",
-            &format!("{},{typed}({}),{unit}", string(name), real(value.value),),
+            &format!("{},{typed}({}),{unit}", string(name), real(value.value)),
         )
     }
 
@@ -2587,7 +2586,7 @@ impl<'a> Builder<'a> {
             .coedges
             .iter()
             .filter_map(|coedge| coedge.pcurve.as_ref())
-            .filter(|id| self.pcurves.get(id.as_str()).is_none())
+            .filter(|id| !self.pcurves.contains_key(id.as_str()))
             .count();
         if missing_pcurve_count > 0 {
             self.loss(
@@ -2637,10 +2636,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 LossCategory::Attribute,
                 Severity::Warning,
-                format!(
-                    "{} PMI annotation(s) were not written to STEP",
-                    unwritten_pmi
-                ),
+                format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
             );
         }
         let source_object_count = self
@@ -2740,9 +2736,8 @@ impl<'a> Builder<'a> {
                 LossCategory::Material,
                 Severity::Info,
                 format!(
-                    "{} appearance asset(s) were reduced to STYLED_ITEM base colors; \
-                     schemas, textures, and shader properties were not written to STEP",
-                    lossy_appearances
+                    "{lossy_appearances} appearance asset(s) were reduced to STYLED_ITEM base colors; \
+                     schemas, textures, and shader properties were not written to STEP"
                 ),
             );
         }
@@ -2820,9 +2815,7 @@ impl<'a> Builder<'a> {
                 LossCategory::Geometry,
                 Severity::Info,
                 format!(
-                    "{} procedural surface definition(s) and {} procedural curve definition(s) were reduced to their solved STEP carriers",
-                    procedural_surface_count,
-                    procedural_curve_count
+                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers"
                 ),
             );
         }
@@ -2897,14 +2890,14 @@ impl Codec for StepCodec {
         }
         let exchange =
             parse::parse(&bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
-        let (decoded, opaque_offsets) = reader::inspect_exchange(&bytes, &exchange)?;
+        let (decoded, opaque_offsets) = reader::inspect_exchange(&bytes, &exchange);
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
             role: "metadata".into(),
             compression: "none".into(),
             compressed_size: 0,
             uncompressed_size: 0,
-            attributes: Default::default(),
+            attributes: BTreeMap::default(),
         }];
         if !exchange.anchors.is_empty() {
             let mut attributes = std::collections::BTreeMap::new();
@@ -3001,36 +2994,40 @@ impl Codec for StepCodec {
                 compression: "none".into(),
                 compressed_size: 0,
                 uncompressed_size: 0,
-                attributes: Default::default(),
+                attributes: BTreeMap::default(),
             });
         }
         let schema = exchange
             .header
             .iter()
             .find(|record| record.name == "FILE_SCHEMA")
-            .map(|record| {
-                fn strings(value: &parse::Value, out: &mut Vec<String>) {
-                    match value {
-                        parse::Value::String(bytes) => {
-                            if let Ok(value) = strings::decode(bytes) {
-                                out.push(value);
+            .map_or_else(
+                || "unspecified".into(),
+                |record| {
+                    fn strings(value: &parse::Value, out: &mut Vec<String>) {
+                        match value {
+                            parse::Value::String(bytes) => {
+                                if let Ok(value) = strings::decode(bytes) {
+                                    out.push(value);
+                                }
                             }
+                            parse::Value::List(values) => {
+                                for value in values {
+                                    strings(value, out);
+                                }
+                            }
+                            parse::Value::Typed(_, value) => strings(value, out),
+                            _ => {}
                         }
-                        parse::Value::List(values) => {
-                            values.iter().for_each(|value| strings(value, out));
-                        }
-                        parse::Value::Typed(_, value) => strings(value, out),
-                        _ => {}
                     }
-                }
-                let mut names = Vec::new();
-                record
-                    .parameters
-                    .iter()
-                    .for_each(|value| strings(value, &mut names));
-                names.join(",")
-            })
-            .unwrap_or_else(|| "unspecified".into());
+                    let mut names = Vec::new();
+                    record
+                        .parameters
+                        .iter()
+                        .for_each(|value| strings(value, &mut names));
+                    names.join(",")
+                },
+            );
         let edition = if schema.contains("442 4") {
             "edition 3"
         } else if schema.contains("442 3") {
@@ -3059,7 +3056,7 @@ impl Codec for StepCodec {
         if self.detect(&bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        reader::decode(&bytes, options)
+        reader::decode(&bytes, *options)
     }
 }
 

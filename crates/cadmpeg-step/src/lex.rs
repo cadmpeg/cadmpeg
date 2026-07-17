@@ -99,22 +99,18 @@ impl Lexer<'_> {
         let exchange_end = tail
             .windows(b"END-ISO-10303-21".len())
             .position(|window| window == b"END-ISO-10303-21")
-            .ok_or_else(|| self.error(start, "unterminated signature section"))?;
+            .ok_or_else(|| Self::error(start, "unterminated signature section"))?;
         let section_end = tail[..exchange_end]
             .windows(b"ENDSEC".len())
             .rposition(|window| window == b"ENDSEC")
-            .ok_or_else(|| self.error(start, "unterminated signature section"))?;
+            .ok_or_else(|| Self::error(start, "unterminated signature section"))?;
         self.at = start + section_end;
         Ok(())
     }
 
     fn skip_trivia(&mut self) -> Result<bool, LexError> {
         loop {
-            while self
-                .input
-                .get(self.at)
-                .is_some_and(|b| b.is_ascii_whitespace())
-            {
+            while self.input.get(self.at).is_some_and(u8::is_ascii_whitespace) {
                 self.at += 1;
             }
             if self.input.get(self.at..self.at + 2) != Some(b"/*") {
@@ -123,7 +119,7 @@ impl Lexer<'_> {
             let start = self.at;
             self.at += 2;
             let Some(end) = self.input[self.at..].windows(2).position(|w| w == b"*/") else {
-                return Err(self.error(start, "unterminated comment"));
+                return Err(Self::error(start, "unterminated comment"));
             };
             self.at += end + 2;
         }
@@ -154,7 +150,7 @@ impl Lexer<'_> {
             b'!' => self.user_name()?,
             b'+' | b'-' | b'0'..=b'9' | b'.' => self.number()?,
             b if b.is_ascii_alphabetic() => self.name(),
-            _ => return Err(self.error(start, "unexpected byte")),
+            _ => return Err(Self::error(start, "unexpected byte")),
         };
         Ok(Token {
             kind,
@@ -184,7 +180,7 @@ impl Lexer<'_> {
         let start = self.at;
         self.at += 1;
         if !self.input.get(self.at).is_some_and(u8::is_ascii_alphabetic) {
-            return Err(self.error(start, "user-defined name has no identifier"));
+            return Err(Self::error(start, "user-defined name has no identifier"));
         }
         let TokenKind::Name(name) = self.name() else {
             unreachable!()
@@ -200,12 +196,12 @@ impl Lexer<'_> {
             self.at += 1;
         }
         if digits == self.at {
-            return Err(self.error(start, "instance name has no digits"));
+            return Err(Self::error(start, "instance name has no digits"));
         }
         let value = std::str::from_utf8(&self.input[digits..self.at])
             .ok()
             .and_then(|s| s.parse().ok())
-            .ok_or_else(|| self.error(start, "instance name is out of range"))?;
+            .ok_or_else(|| Self::error(start, "instance name is out of range"))?;
         Ok(TokenKind::Instance(value))
     }
 
@@ -250,11 +246,11 @@ impl Lexer<'_> {
             };
             parsed
                 .map(TokenKind::Real)
-                .map_err(|_| self.error(start, "invalid real"))
+                .map_err(|_| Self::error(start, "invalid real"))
         } else {
             raw.parse()
                 .map(TokenKind::Integer)
-                .map_err(|_| self.error(start, "invalid integer"))
+                .map_err(|_| Self::error(start, "invalid integer"))
         }
     }
 
@@ -270,7 +266,7 @@ impl Lexer<'_> {
             self.at += 1;
         }
         if self.input.get(self.at) != Some(&b'.') {
-            return Err(self.error(start, "unterminated enumeration"));
+            return Err(Self::error(start, "unterminated enumeration"));
         }
         let name = String::from_utf8_lossy(&self.input[name_start..self.at]).to_ascii_uppercase();
         self.at += 1;
@@ -295,7 +291,7 @@ impl Lexer<'_> {
                     bytes.push(byte);
                     self.at += 1;
                 }
-                None => return Err(self.error(start, "unterminated string")),
+                None => return Err(Self::error(start, "unterminated string")),
             }
         }
     }
@@ -308,18 +304,26 @@ impl Lexer<'_> {
             self.at += 1;
         }
         if self.input.get(self.at) != Some(&b'"') {
-            return Err(self.error(start, "invalid binary literal"));
+            return Err(Self::error(start, "invalid binary literal"));
         }
         let raw = &self.input[content..self.at];
         let Some((&indicator, digits)) = raw.split_first() else {
-            return Err(self.error(start, "binary literal has no unused-bit indicator"));
+            return Err(Self::error(
+                start,
+                "binary literal has no unused-bit indicator",
+            ));
         };
         let unused_bits = match indicator {
             b'0'..=b'3' => indicator - b'0',
-            _ => return Err(self.error(start, "binary unused-bit indicator exceeds three")),
+            _ => {
+                return Err(Self::error(
+                    start,
+                    "binary unused-bit indicator exceeds three",
+                ))
+            }
         };
         if digits.is_empty() && unused_bits != 0 {
-            return Err(self.error(start, "empty binary payload has unused bits"));
+            return Err(Self::error(start, "empty binary payload has unused bits"));
         }
         let nibbles = digits
             .iter()
@@ -335,7 +339,7 @@ impl Lexer<'_> {
                 .last()
                 .is_some_and(|nibble| nibble & ((1 << unused_bits) - 1) != 0)
         {
-            return Err(self.error(start, "unused binary bits are not zero"));
+            return Err(Self::error(start, "unused binary bits are not zero"));
         }
         let mut data = Vec::with_capacity(nibbles.len().div_ceil(2));
         for chunk in nibbles.chunks(2) {
@@ -354,15 +358,15 @@ impl Lexer<'_> {
             self.at += 1;
         }
         if self.input.get(self.at) != Some(&b'>') {
-            return Err(self.error(start, "unterminated resource token"));
+            return Err(Self::error(start, "unterminated resource token"));
         }
         let value = String::from_utf8(self.input[content..self.at].to_vec())
-            .map_err(|_| self.error(start, "resource token is not UTF-8"))?;
+            .map_err(|_| Self::error(start, "resource token is not UTF-8"))?;
         self.at += 1;
         Ok(TokenKind::Resource(value))
     }
 
-    fn error(&self, offset: usize, message: &str) -> LexError {
+    fn error(offset: usize, message: &str) -> LexError {
         LexError {
             offset,
             message: message.into(),

@@ -200,54 +200,51 @@ struct Parser {
 impl Parser {
     fn exchange(mut self) -> Result<Exchange, ParseError> {
         self.name("ISO-10303-21")?;
-        self.punct(TokenKind::Semicolon)?;
+        self.punct(&TokenKind::Semicolon)?;
         self.name("HEADER")?;
-        self.punct(TokenKind::Semicolon)?;
+        self.punct(&TokenKind::Semicolon)?;
         let mut header = Vec::new();
         while !self.peek_name("ENDSEC") {
             let name = self.take_name()?;
             let parameters = self.parameters()?;
-            self.punct(TokenKind::Semicolon)?;
+            self.punct(&TokenKind::Semicolon)?;
             header.push(HeaderRecord { name, parameters });
         }
         self.name("ENDSEC")?;
-        self.punct(TokenKind::Semicolon)?;
+        self.punct(&TokenKind::Semicolon)?;
         let mut anchors = Vec::new();
         if self.peek_name("ANCHOR") {
             self.at += 1;
-            self.punct(TokenKind::Semicolon)?;
+            self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
-                let name = match self.next_kind()? {
-                    TokenKind::Resource(name) => name,
-                    _ => return self.err("expected anchor name"),
+                let TokenKind::Resource(name) = self.next_kind()? else {
+                    return self.err("expected anchor name");
                 };
-                self.punct(TokenKind::Equals)?;
+                self.punct(&TokenKind::Equals)?;
                 let value = self.value()?;
-                self.punct(TokenKind::Semicolon)?;
+                self.punct(&TokenKind::Semicolon)?;
                 anchors.push(AnchorEntry { name, value });
             }
             self.at += 1;
-            self.punct(TokenKind::Semicolon)?;
+            self.punct(&TokenKind::Semicolon)?;
         }
         let mut reference_entries = Vec::new();
         if self.peek_name("REFERENCE") {
             self.at += 1;
-            self.punct(TokenKind::Semicolon)?;
+            self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
-                let name = match self.next_kind()? {
-                    TokenKind::Resource(name) => name,
-                    _ => return self.err("expected reference name"),
+                let TokenKind::Resource(name) = self.next_kind()? else {
+                    return self.err("expected reference name");
                 };
-                self.punct(TokenKind::Equals)?;
-                let uri = match self.next_kind()? {
-                    TokenKind::Resource(uri) => uri,
-                    _ => return self.err("expected reference URI"),
+                self.punct(&TokenKind::Equals)?;
+                let TokenKind::Resource(uri) = self.next_kind()? else {
+                    return self.err("expected reference URI");
                 };
-                self.punct(TokenKind::Semicolon)?;
+                self.punct(&TokenKind::Semicolon)?;
                 reference_entries.push(ReferenceEntry { name, uri });
             }
             self.at += 1;
-            self.punct(TokenKind::Semicolon)?;
+            self.punct(&TokenKind::Semicolon)?;
         }
         let mut data = Vec::new();
         let mut records = BTreeMap::new();
@@ -258,7 +255,7 @@ impl Parser {
             } else {
                 Vec::new()
             };
-            self.punct(TokenKind::Semicolon)?;
+            self.punct(&TokenKind::Semicolon)?;
             let mut ids = Vec::new();
             while !self.peek_name("ENDSEC") {
                 let record = self.record()?;
@@ -269,7 +266,7 @@ impl Parser {
                 ids.push(id);
             }
             self.name("ENDSEC")?;
-            self.punct(TokenKind::Semicolon)?;
+            self.punct(&TokenKind::Semicolon)?;
             data.push(DataSection {
                 parameters,
                 records: ids,
@@ -278,7 +275,7 @@ impl Parser {
         let signature = if self.peek_name("SIGNATURE") {
             let start = self.current_offset();
             self.at += 1;
-            self.punct(TokenKind::Semicolon)?;
+            self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
                 self.at += 1;
                 if self.at >= self.tokens.len() {
@@ -286,13 +283,13 @@ impl Parser {
                 }
             }
             self.at += 1;
-            self.punct(TokenKind::Semicolon)?;
+            self.punct(&TokenKind::Semicolon)?;
             Some(start..self.previous_end())
         } else {
             None
         };
         self.name("END-ISO-10303-21")?;
-        self.punct(TokenKind::Semicolon)?;
+        self.punct(&TokenKind::Semicolon)?;
         if self.at != self.tokens.len() {
             return self.err("tokens after exchange terminator");
         }
@@ -337,7 +334,7 @@ impl Parser {
                 }
             }
             if refs.into_iter().any(|id| !records.contains_key(&id)) {
-                return self.err_at(record.span.start, "unresolved instance reference");
+                return Self::err_at(record.span.start, "unresolved instance reference");
             }
         }
         Ok(Exchange {
@@ -353,11 +350,10 @@ impl Parser {
 
     fn record(&mut self) -> Result<RawRecord, ParseError> {
         let start = self.current_offset();
-        let id = match self.next_kind()? {
-            TokenKind::Instance(id) => id,
-            _ => return self.err("expected instance name"),
+        let TokenKind::Instance(id) = self.next_kind()? else {
+            return self.err("expected instance name");
         };
-        self.punct(TokenKind::Equals)?;
+        self.punct(&TokenKind::Equals)?;
         let partials = if self.peek(&TokenKind::LParen) {
             self.at += 1;
             let mut parts = Vec::new();
@@ -366,13 +362,13 @@ impl Parser {
             }
             self.at += 1;
             if !parts.windows(2).all(|w| w[0].name < w[1].name) {
-                return self.err_at(start, "complex partial records are not alphabetical");
+                return Self::err_at(start, "complex partial records are not alphabetical");
             }
             parts
         } else {
             vec![self.partial()?]
         };
-        self.punct(TokenKind::Semicolon)?;
+        self.punct(&TokenKind::Semicolon)?;
         Ok(RawRecord {
             id,
             partials,
@@ -398,7 +394,7 @@ impl Parser {
     }
 
     fn parameters_inner(&mut self) -> Result<Vec<Value>, ParseError> {
-        self.punct(TokenKind::LParen)?;
+        self.punct(&TokenKind::LParen)?;
         let mut values = Vec::new();
         if self.peek(&TokenKind::RParen) {
             self.at += 1;
@@ -412,7 +408,7 @@ impl Parser {
                 break;
             }
         }
-        self.punct(TokenKind::RParen)?;
+        self.punct(&TokenKind::RParen)?;
         Ok(values)
     }
 
@@ -438,7 +434,12 @@ impl Parser {
                 }
                 Ok(Value::Typed(
                     name,
-                    Box::new(parameters.into_iter().next().unwrap()),
+                    Box::new(
+                        parameters
+                            .into_iter()
+                            .next()
+                            .expect("parameter count was checked"),
+                    ),
                 ))
             }
             _ => self.err("expected parameter value"),
@@ -459,9 +460,9 @@ impl Parser {
             self.err(&format!("expected {expected}, found {actual}"))
         }
     }
-    fn punct(&mut self, expected: TokenKind) -> Result<(), ParseError> {
+    fn punct(&mut self, expected: &TokenKind) -> Result<(), ParseError> {
         let actual = self.next_kind()?;
-        if std::mem::discriminant(&actual) == std::mem::discriminant(&expected) {
+        if std::mem::discriminant(&actual) == std::mem::discriminant(expected) {
             Ok(())
         } else {
             self.err("unexpected token")
@@ -494,9 +495,9 @@ impl Parser {
             .map_or(0, |t| t.span.end)
     }
     fn err<T>(&self, message: &str) -> Result<T, ParseError> {
-        self.err_at(self.current_offset(), message)
+        Self::err_at(self.current_offset(), message)
     }
-    fn err_at<T>(&self, offset: usize, message: &str) -> Result<T, ParseError> {
+    fn err_at<T>(offset: usize, message: &str) -> Result<T, ParseError> {
         Err(ParseError::Syntax {
             offset,
             message: message.into(),

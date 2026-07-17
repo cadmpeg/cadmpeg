@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ISO 10303-21 string escape decoding and canonical encoding.
 
+use std::fmt::Write;
+
 /// A malformed or unsupported string escape.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{message} at string byte {offset}")]
@@ -122,10 +124,12 @@ pub fn encode(input: &str) -> String {
             '\\' => output.push_str("\\\\"),
             '\u{20}'..='\u{7e}' => output.push(character),
             character if u32::from(character) <= 0xffff => {
-                output.push_str(&format!("\\X2\\{:04X}\\X0\\", u32::from(character)));
+                write!(output, "\\X2\\{:04X}\\X0\\", u32::from(character))
+                    .expect("writing to a String cannot fail");
             }
             character => {
-                output.push_str(&format!("\\X4\\{:08X}\\X0\\", u32::from(character)));
+                write!(output, "\\X4\\{:08X}\\X0\\", u32::from(character))
+                    .expect("writing to a String cannot fail");
             }
         }
     }
@@ -140,7 +144,7 @@ fn decode_wide(input: &[u8], start: usize, width: usize) -> Result<(String, usiz
         return error(start, "unterminated wide escape");
     };
     let end = start + relative_end;
-    if (end - start) % width != 0 {
+    if !(end - start).is_multiple_of(width) {
         return error(start, "wide escape has incomplete code unit");
     }
     let mut scalars = Vec::new();

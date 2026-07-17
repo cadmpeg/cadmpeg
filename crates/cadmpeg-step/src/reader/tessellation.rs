@@ -77,10 +77,12 @@ pub(super) fn decode(
     for (&id, record) in &exchange.records {
         if !matches!(
             record.simple_name(),
-            Some("TRIANGULATED_FACE")
-                | Some("COMPLEX_TRIANGULATED_FACE")
-                | Some("TRIANGULATED_SURFACE_SET")
-                | Some("COMPLEX_TRIANGULATED_SURFACE_SET")
+            Some(
+                "TRIANGULATED_FACE"
+                    | "COMPLEX_TRIANGULATED_FACE"
+                    | "TRIANGULATED_SURFACE_SET"
+                    | "COMPLEX_TRIANGULATED_SURFACE_SET"
+            )
         ) {
             continue;
         }
@@ -94,7 +96,7 @@ pub(super) fn decode(
         let Some(vertices) = coordinates.get(&coordinate_id) else {
             warnings.push(format!(
                 "{} #{id} has no resolved COORDINATES_LIST",
-                record.simple_name().unwrap()
+                record.simple_name().expect("matched simple name")
             ));
             continue;
         };
@@ -224,9 +226,9 @@ pub(super) fn decode(
         for (&id, record) in &exchange.records {
             if matches!(
                 record.simple_name(),
-                Some("TESSELLATED_SHAPE_REPRESENTATION")
-                    | Some("TESSELLATED_SOLID")
-                    | Some("TESSELLATED_SHELL")
+                Some(
+                    "TESSELLATED_SHAPE_REPRESENTATION" | "TESSELLATED_SOLID" | "TESSELLATED_SHELL"
+                )
             ) {
                 typed.insert(id);
             }

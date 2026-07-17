@@ -272,7 +272,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         } else {
             warnings.push(format!(
                 "{} #{id} has invalid geometry",
-                record.simple_name().unwrap()
+                record.simple_name().expect("matched simple name")
             ));
         }
     }
@@ -468,7 +468,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             .and_then(Value::reference)
             .map(|source| CurveId(format!("step:data:curve#{source}")));
         let distance = record.parameter(2).and_then(Value::number);
-        let self_intersect = record.parameter(3).and_then(logical_value);
+        let self_intersect = record
+            .parameter(3)
+            .and_then(logical_value)
+            .map(StepLogical::into_option);
         let reference_direction = record
             .parameter(4)
             .and_then(Value::reference)
@@ -655,7 +658,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         } else {
             warnings.push(format!(
                 "{} #{id} has invalid geometry",
-                record.simple_name().unwrap()
+                record.simple_name().expect("matched simple name")
             ));
         }
     }
@@ -762,7 +765,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             .map(|support| SurfaceId(format!("step:data:surface#{support}")))
             .filter(|support| surface_ids.contains(support));
         let distance = record.parameter(2).and_then(Value::number);
-        let self_intersect = record.parameter(3).and_then(logical_value);
+        let self_intersect = record
+            .parameter(3)
+            .and_then(logical_value)
+            .map(StepLogical::into_option);
         let Some((support, distance, self_intersect)) = support
             .zip(distance)
             .zip(self_intersect)
@@ -839,7 +845,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         if record.simple_name() != Some("DEGENERATE_TOROIDAL_SURFACE") {
             continue;
         }
-        let select_outer = record.parameter(4).and_then(logical_value).flatten();
+        let select_outer = record
+            .parameter(4)
+            .and_then(logical_value)
+            .and_then(StepLogical::into_option);
         let surface = SurfaceId(format!("step:data:surface#{id}"));
         if !ir
             .model
@@ -1010,15 +1019,15 @@ fn unit_scale_mm_inner(
     }
     let record = exchange.records.get(&id)?;
     let result = if let Some(unit) = record.partial("SI_UNIT") {
-        if unit.parameters.get(1)?.enumeration()? != "METRE" {
-            None
-        } else {
+        if unit.parameters.get(1)?.enumeration()? == "METRE" {
             let prefix = match unit.parameters.first()? {
                 Value::Omitted => 1.0,
                 Value::Enumeration(prefix) => si_prefix(prefix)?,
                 _ => return None,
             };
             Some(prefix * 1000.0)
+        } else {
+            None
         }
     } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
         let factor_id = unit.parameters.get(1)?.reference()?;
@@ -1197,11 +1206,13 @@ fn cross(a: Vector3, b: Vector3) -> Vector3 {
     )
 }
 
+type CompositeCurveData = (Vec<(u64, CompositeCurveSegment)>, Option<bool>);
+
 fn composite_curve(
     record: &RawRecord,
     exchange: &Exchange,
     decoded: &BTreeSet<CurveId>,
-) -> Option<(Vec<(u64, CompositeCurveSegment)>, Option<bool>)> {
+) -> Option<CompositeCurveData> {
     let complex = record.partials.len() > 1;
     let composite = record.partial("COMPOSITE_CURVE")?;
     let offset = usize::from(!complex);
@@ -1244,7 +1255,8 @@ fn composite_curve(
         composite
             .parameters
             .get(offset + 1)
-            .and_then(logical_value)?,
+            .and_then(logical_value)?
+            .into_option(),
     ))
 }
 
@@ -1265,11 +1277,26 @@ fn composite_dependencies(record: &RawRecord, exchange: &Exchange) -> Option<Vec
         .collect()
 }
 
-fn logical_value(value: &Value) -> Option<Option<bool>> {
+#[derive(Clone, Copy)]
+enum StepLogical {
+    Known(bool),
+    Unknown,
+}
+
+impl StepLogical {
+    fn into_option(self) -> Option<bool> {
+        match self {
+            Self::Known(value) => Some(value),
+            Self::Unknown => None,
+        }
+    }
+}
+
+fn logical_value(value: &Value) -> Option<StepLogical> {
     match value {
-        Value::Enumeration(value) if value == "T" => Some(Some(true)),
-        Value::Enumeration(value) if value == "F" => Some(Some(false)),
-        Value::Enumeration(value) if value == "U" => Some(None),
+        Value::Enumeration(value) if value == "T" => Some(StepLogical::Known(true)),
+        Value::Enumeration(value) if value == "F" => Some(StepLogical::Known(false)),
+        Value::Enumeration(value) if value == "U" => Some(StepLogical::Unknown),
         _ => None,
     }
 }
@@ -1354,7 +1381,9 @@ fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<Nur
     if usize::try_from(degree).ok()? >= control_points.len() {
         return None;
     }
-    let periodic = logical_value(base.parameters.get(offset + 3)?)?.unwrap_or(false);
+    let periodic = logical_value(base.parameters.get(offset + 3)?)?
+        .into_option()
+        .unwrap_or(false);
     let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(3)?;
     let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
@@ -1399,7 +1428,9 @@ fn nurbs_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<Pc
     if usize::try_from(degree).ok()? >= control_points.len() {
         return None;
     }
-    let periodic = logical_value(base.parameters.get(offset + 3)?)?.unwrap_or(false);
+    let periodic = logical_value(base.parameters.get(offset + 3)?)?
+        .into_option()
+        .unwrap_or(false);
     let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(3)?;
     let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
@@ -1471,18 +1502,22 @@ fn nurbs_surface(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<N
         || v_degree >= v_count
         || rows.iter().any(|row| {
             row.list()
-                .map_or(true, |values| values.len() != v_count as usize)
+                .is_none_or(|values| values.len() != v_count as usize)
         })
     {
         return None;
     }
     let control_points = rows
         .iter()
-        .flat_map(|row| row.list().unwrap())
+        .flat_map(|row| row.list().expect("row shape was validated"))
         .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
         .collect::<Option<Vec<_>>>()?;
-    let u_periodic = logical_value(base.parameters.get(offset + 4)?)?.unwrap_or(false);
-    let v_periodic = logical_value(base.parameters.get(offset + 5)?)?.unwrap_or(false);
+    let u_periodic = logical_value(base.parameters.get(offset + 4)?)?
+        .into_option()
+        .unwrap_or(false);
+    let v_periodic = logical_value(base.parameters.get(offset + 5)?)?
+        .into_option()
+        .unwrap_or(false);
     let knot_leaf = record.partial("B_SPLINE_SURFACE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(5)?;
     let expected_u = usize::try_from(u_count)

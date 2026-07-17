@@ -13,6 +13,9 @@ use crate::parse::{Exchange, RawRecord, Value};
 
 use super::geometry::GeometryResult;
 
+const MAX_OCCURRENCES: usize = 100_000;
+const MAX_ASSEMBLY_DEPTH: usize = 256;
+
 pub(super) struct ProductResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
@@ -33,8 +36,10 @@ pub(super) fn decode(
         .filter_map(|(id, record)| {
             if !matches!(
                 record.simple_name(),
-                Some("PRODUCT_DEFINITION_FORMATION")
-                    | Some("PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE")
+                Some(
+                    "PRODUCT_DEFINITION_FORMATION"
+                        | "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE"
+                )
             ) {
                 return None;
             }
@@ -130,8 +135,6 @@ pub(super) fn decode(
             .or_default()
             .push(usage_id);
     }
-    const MAX_OCCURRENCES: usize = 100_000;
-    const MAX_ASSEMBLY_DEPTH: usize = 256;
     let had_roots = !pending_occurrences.is_empty();
     'expansion: while let Some((parent_definition, parent)) = pending_occurrences.pop_front() {
         for &usage_id in usages_by_parent
@@ -214,15 +217,17 @@ pub(super) fn decode(
     ]) {
         if matches!(
             record.simple_name(),
-            Some("APPLICATION_CONTEXT")
-                | Some("PRODUCT_CONTEXT")
-                | Some("PRODUCT_DEFINITION_CONTEXT")
-                | Some("PRODUCT_DEFINITION_SHAPE")
-                | Some("SHAPE_DEFINITION_REPRESENTATION")
-                | Some("ITEM_DEFINED_TRANSFORMATION")
-                | Some("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")
-                | Some("REPRESENTATION_MAP")
-                | Some("MAPPED_ITEM")
+            Some(
+                "APPLICATION_CONTEXT"
+                    | "PRODUCT_CONTEXT"
+                    | "PRODUCT_DEFINITION_CONTEXT"
+                    | "PRODUCT_DEFINITION_SHAPE"
+                    | "SHAPE_DEFINITION_REPRESENTATION"
+                    | "ITEM_DEFINED_TRANSFORMATION"
+                    | "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"
+                    | "REPRESENTATION_MAP"
+                    | "MAPPED_ITEM"
+            )
         ) || record
             .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
             .is_some()
