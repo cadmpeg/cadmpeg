@@ -6459,6 +6459,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
+    let mut terminations = HashMap::<String, Vec<Option<(String, Option<String>)>>>::new();
     for lane in lanes {
         let mut objects = histories
             .iter()
@@ -6471,7 +6472,6 @@ pub(crate) fn enrich_history_extrusion_terminations(
             })
             .collect::<Vec<_>>();
         objects.sort_unstable_by_key(|object| object.0);
-        let mut terminations = HashMap::new();
         for (index, (start, feature_id)) in objects.iter().enumerate() {
             let Some(feature) = histories
                 .iter()
@@ -6510,38 +6510,58 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let candidates = (start..end.saturating_sub(103))
                 .filter_map(|offset| {
                     if compact_extrusion_through_all_at(&lane.native_payload, offset) {
-                        Some(("ThroughAll", None))
+                        Some(("ThroughAll".to_string(), None))
                     } else {
-                        compact_extrusion_to_face_at(&lane.native_payload, offset)
-                            .map(|reference| ("ToFace", Some(reference)))
+                        compact_extrusion_to_face_at(&lane.native_payload, offset).map(
+                            |reference| {
+                                let lane_key = lane
+                                    .id
+                                    .rsplit_once('#')
+                                    .map_or(lane.id.as_str(), |(_, key)| key);
+                                (
+                                    "ToFace".to_string(),
+                                    Some(format!(
+                                    "sldprt:feature-input:single-face-ref:{lane_key}:{reference}"
+                                )),
+                                )
+                            },
+                        )
                     }
                 })
                 .collect::<Vec<_>>();
-            if let [(condition, reference)] = candidates.as_slice() {
-                terminations.insert(feature_id.clone(), (*condition, *reference));
-            }
+            terminations.entry(feature_id.clone()).or_default().push(
+                candidates
+                    .as_slice()
+                    .first()
+                    .cloned()
+                    .filter(|_| candidates.len() == 1),
+            );
         }
-        for feature in histories
-            .iter_mut()
-            .flat_map(|history| &mut history.features)
-        {
-            let Some(&(condition, reference)) = terminations.get(&feature.id) else {
-                continue;
-            };
-            if !feature.properties.contains_key("EndCondition") {
-                feature
-                    .properties
-                    .insert("EndCondition".into(), condition.into());
-            }
-            if let Some(offset) = reference {
-                feature.properties.entry("Face".into()).or_insert_with(|| {
-                    let lane_key = lane
-                        .id
-                        .rsplit_once('#')
-                        .map_or(lane.id.as_str(), |(_, key)| key);
-                    format!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}")
-                });
-            }
+    }
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        if feature.properties.contains_key("EndCondition") {
+            continue;
+        }
+        let Some(votes) = terminations.get(&feature.id) else {
+            continue;
+        };
+        let Some(Some(first)) = votes.first() else {
+            continue;
+        };
+        if !votes.iter().all(|vote| vote.as_ref() == Some(first)) {
+            continue;
+        }
+        feature
+            .properties
+            .insert("EndCondition".into(), first.0.clone());
+        if let Some(reference) = &first.1 {
+            feature
+                .properties
+                .entry("Face".into())
+                .or_insert_with(|| reference.clone());
         }
     }
 }

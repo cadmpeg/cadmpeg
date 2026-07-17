@@ -9377,6 +9377,60 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
 }
 
 #[test]
+fn decode_does_not_globalize_configuration_local_extrusion_termination() {
+    use cadmpeg_ir::features::{Extent, FeatureDefinition};
+
+    fn compact_extrusion_payload(through_all: bool) -> Vec<u8> {
+        let mut payload = resolved_feature_classes_with_ids(&[("moExtrusion_c", "Boss", 9)]);
+        let offset = payload.len();
+        payload.resize(offset + 104, 0);
+        if through_all {
+            payload[offset..offset + 2].copy_from_slice(&[0x0c, 0x8e]);
+            payload[offset + 4] = 1;
+            payload[offset + 18] = 1;
+            payload[offset + 30..offset + 34].copy_from_slice(&[1, 0, 0, 1]);
+            payload[offset + 92] = 1;
+        }
+        payload
+    }
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Blind"/><Extrusion Name="Boss" Type="Extrusion" id="9"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &compact_extrusion_payload(true),
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-1-ResolvedFeatures",
+        &compact_extrusion_payload(false),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .unwrap();
+    assert!(matches!(
+        feature.definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::Unresolved,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn decode_binds_adjacent_profile_feature_to_extrusion() {
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
 
