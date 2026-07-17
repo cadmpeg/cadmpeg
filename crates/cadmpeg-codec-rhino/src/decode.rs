@@ -20,7 +20,7 @@ use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::transfer::Transfer;
+use cadmpeg_ir::transfer::{Builder, Transfer};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -388,6 +388,17 @@ impl<'a> DecodeContext<'a> {
     #[cfg(test)]
     pub(crate) fn ir_mut(&mut self) -> &mut CadIr {
         &mut self.ir
+    }
+
+    /// Returns the module's single Phase-4B construction path: a [`Builder`]
+    /// over the typed loss channel (§10 Phase 4B). Every boundary this module
+    /// crosses — a resolver's fallback carrier, an unsupported-family omission —
+    /// resolves its [`Transfer`] through this one `Builder`, so the substituted
+    /// or omitted value cannot be reached without draining its loss note into
+    /// `typed_losses`. Naming the sink here keeps the barrier the mechanism the
+    /// boundaries share rather than a per-site `resolve` call.
+    fn builder(&mut self) -> Builder<'_, Vec<LossNote>> {
+        Builder::new(&mut self.typed_losses)
     }
 
     #[cfg(test)]
@@ -1812,17 +1823,17 @@ impl<'a> DecodeContext<'a> {
                 // taken without recording its loss note; the value it would have
                 // carried (typed geometry) does not exist, so resolution yields
                 // `None` and only the note survives.
-                let omitted: Option<()> = Transfer::omitted(LossNote {
-                    code: LossCode::UnsupportedObjectFamily,
-                    category: LossCategory::Geometry,
-                    severity: Severity::Warning,
-                    message: format!(
+                let omitted: Option<()> =
+                    Builder::new(&mut losses).take(Transfer::omitted(LossNote {
+                        code: LossCode::UnsupportedObjectFamily,
+                        category: LossCategory::Geometry,
+                        severity: Severity::Warning,
+                        message: format!(
                         "retained {} object record(s) for class {class}; geometry is not decoded",
                         outcome.retained
                     ),
-                    provenance: Some(loss_provenance(class, outcome)),
-                })
-                .resolve(&mut losses);
+                        provenance: Some(loss_provenance(class, outcome)),
+                    }));
                 debug_assert!(omitted.is_none());
             }
             if outcome.attribute_degraded > 0 {
@@ -2673,7 +2684,7 @@ impl<'a> DecodeContext<'a> {
                             // own `TopologyNotTransferred` code, why topology
                             // was not transferred — where the untyped warning
                             // path recorded only an opaque `DecodeDiagnostic`.
-                            let carriers: Option<()> = Transfer::fallback(
+                            let carriers: Option<()> = self.builder().take(Transfer::fallback(
                                 (),
                                 LossNote {
                                     code: LossCode::TopologyNotTransferred,
@@ -2682,8 +2693,7 @@ impl<'a> DecodeContext<'a> {
                                     message: format!("Brep topology fallback: {cause}"),
                                     provenance: None,
                                 },
-                            )
-                            .resolve(&mut self.typed_losses);
+                            ));
                             debug_assert!(carriers.is_some());
                         } else {
                             self.scan_warning(source_order, &warning);
