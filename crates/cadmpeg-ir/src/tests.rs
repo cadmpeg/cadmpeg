@@ -1062,6 +1062,78 @@ fn configuration_body_membership_round_trips_and_validates() {
 }
 
 #[test]
+fn configuration_feature_definitions_use_global_feature_validation() {
+    use crate::features::{
+        BooleanOp, ConfigurationFeatureState, ConfigurationId, DesignConfiguration, Extent,
+        Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ProfileRef,
+    };
+    use crate::ids::BodyId;
+    use std::collections::BTreeMap;
+
+    let mut ir = unit_cube();
+    let feature_id = FeatureId("synthetic:test:feature#configured".into());
+    ir.model.features.push(Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: false,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::History,
+        },
+        native_ref: None,
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId("synthetic:test:configuration#configured".into()),
+        ordinal: 0,
+        active: true,
+        source_index: None,
+        name: "Configured".into(),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: Vec::new(),
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::from([(
+            feature_id,
+            ConfigurationFeatureState {
+                suppressed: false,
+                dependencies: vec![FeatureId("synthetic:test:feature#missing".into())],
+                outputs: vec![BodyId("synthetic:test:body#missing".into())],
+                definition: FeatureDefinition::Extrude {
+                    profile: ProfileRef::Unresolved("native-profile".into()),
+                    direction: None,
+                    extent: Extent::Blind {
+                        length: Length(f64::NAN),
+                    },
+                    op: BooleanOp::NewBody,
+                    draft: None,
+                },
+            },
+        )]),
+        native_ref: None,
+    });
+    ir.finalize();
+
+    let report = validate(&ir, Vec::new());
+    for message in [
+        "missing dependency feature",
+        "missing output body",
+        "feature extent magnitude is invalid",
+    ] {
+        assert!(report.findings.iter().any(|finding| {
+            finding.message.starts_with("configuration `Configured`:")
+                && finding.message.contains(message)
+        }));
+    }
+}
+
+#[test]
 fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let left = unit_cube();
     let mut right = left.clone();
