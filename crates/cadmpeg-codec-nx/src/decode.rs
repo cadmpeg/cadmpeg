@@ -159,12 +159,24 @@ fn issue_stream_tickets(
         };
         let ticket = ctx.commit_record(location, RecordKind(stream.kind.label()));
         let outputs = outputs_by_stream.remove(&si).unwrap_or_default();
-        if outputs.is_empty() {
+        if !outputs.is_empty() {
+            ctx.resolve(ticket, RecordDisposition::Typed { outputs });
+        } else if stream.kind.is_parasolid() {
+            // The stream produced no typed IR entity, but its inflated bytes are
+            // preserved verbatim as the native unknown passthrough record
+            // `nx:container:parasolid#si` on every path (`try_decode_geometry`
+            // and `build_metadata_ir` both push it). Preserved content is not a
+            // loss; the platform's checkable dispositions name model entities
+            // (`Typed`) or retained-store blobs (`Retained`), and a native
+            // `UnknownRecord` is neither, so the disposition is `Structural`.
+            // Resolving `Dropped` with a `Geometry` loss here would substitute a
+            // loss for content the codec preserved, flipping loss-count and
+            // Geometry-category gates against a losslessly-preserved decode.
+            ctx.resolve(ticket, RecordDisposition::Structural);
+        } else {
             let loss = stream_drop_note(si, stream);
             report.losses.push(loss.clone());
             ctx.resolve(ticket, RecordDisposition::Dropped { loss });
-        } else {
-            ctx.resolve(ticket, RecordDisposition::Typed { outputs });
         }
     }
 }
@@ -192,36 +204,21 @@ fn parse_stream_index(id: &str) -> Option<usize> {
     rest[..end].parse().ok()
 }
 
-/// The accountable loss note for a stream that produced no surviving typed
-/// entity. A Parasolid stream's inflated bytes remain in the IR as an unknown
-/// passthrough record; a non-Parasolid stream is accounted by digest in the
-/// source-fidelity ledger. Each message is stream-scoped, so a per-record
-/// `Dropped` disposition consumes exactly one matching note.
+/// The accountable loss note for a non-Parasolid stream that produced no
+/// surviving typed entity; it is classified but not transferred, accounted by
+/// digest in the source-fidelity ledger. Parasolid streams never reach here —
+/// their bytes are preserved verbatim as a native unknown passthrough record and
+/// resolve `Structural`, not `Dropped`. The message is stream-scoped, so a
+/// per-record `Dropped` disposition consumes exactly one matching note.
 fn stream_drop_note(stream_index: usize, stream: &Stream) -> LossNote {
-    let (category, message) = if stream.kind.is_parasolid() {
-        (
-            LossCategory::Geometry,
-            format!(
-                "Parasolid {} stream #{stream_index} yielded no typed IR entity; its inflated \
-                 bytes are preserved verbatim as the unknown passthrough record \
-                 nx:container:parasolid#{stream_index}.",
-                stream.kind.label()
-            ),
-        )
-    } else {
-        (
-            LossCategory::Other,
-            format!(
-                "Non-Parasolid {} stream #{stream_index} was classified but not transferred; it \
-                 is accounted by digest in the source-fidelity ledger.",
-                stream.kind.label()
-            ),
-        )
-    };
     LossNote {
-        category,
+        category: LossCategory::Other,
         severity: Severity::Info,
-        message,
+        message: format!(
+            "Non-Parasolid {} stream #{stream_index} was classified but not transferred; it is \
+             accounted by digest in the source-fidelity ledger.",
+            stream.kind.label()
+        ),
         provenance: None,
     }
 }

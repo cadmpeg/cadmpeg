@@ -2928,11 +2928,16 @@ fn container_only_decode_passes_transfer_accounting_in_both_modes() {
         let result = NxCodec.decode(&mut cur, &options_in(mode, true)).unwrap();
         assert!(result.report.container_only);
         // The single Parasolid stream is walked but not typed under
-        // container-only, so its ticket resolves Dropped with an accountable,
-        // stream-scoped preservation note — not a silent loss.
-        assert!(result.report.losses.iter().any(|loss| loss
-            .message
-            .contains("preserved verbatim as the unknown passthrough record")));
+        // container-only; its inflated bytes are preserved verbatim as the
+        // native unknown passthrough record, so its ticket resolves Structural,
+        // not Dropped. No per-record stream-scoped drop note is emitted for the
+        // preserved stream.
+        assert_eq!(result.ir.native_unknowns("nx").unwrap().len(), 1);
+        assert!(!result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("yielded no typed IR entity")));
         assert!(!result
             .report
             .losses
