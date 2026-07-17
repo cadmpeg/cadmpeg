@@ -3,7 +3,7 @@
 
 use cadmpeg_ir::annotations::ExactnessNote;
 use cadmpeg_ir::codec::DecodeResult;
-use cadmpeg_ir::decode::{RecordDisposition, RecordKind, Retention, SourceLocation, SpaceId};
+use cadmpeg_ir::decode::{RecordDisposition, RecordKind, SourceLocation, SpaceId};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -1780,7 +1780,8 @@ impl<'a> DecodeContext<'a> {
             .set_native_unknowns("rhino", &self.unknowns)
             .expect("Rhino unknown records serialize");
         self.ir.finalize();
-        let mut losses = self.issue_object_tickets();
+        self.issue_object_tickets();
+        let mut losses: Vec<LossNote> = Vec::new();
         let decoded = self
             .outcomes
             .values()
@@ -1911,20 +1912,19 @@ impl<'a> DecodeContext<'a> {
     /// A record whose geometry decoded resolves [`Typed`](RecordDisposition::Typed)
     /// naming the IR entities it produced (filtered to entities that survived
     /// [`finalize`](CadIr::finalize), so the disposition never names a pruned
-    /// id). Every other record is conserved opaque under stable source identity
-    /// and resolves [`Retained`](RecordDisposition::Retained) against a platform
-    /// retained blob, so no walked record is silently lost. A record whose bytes
-    /// cannot be retained (the platform retained budget is exhausted, which in
-    /// strict mode also fuses the context) resolves [`Dropped`](RecordDisposition::Dropped)
-    /// with an accountable loss the report carries — a record that could not be
-    /// preserved is a loss, never framing.
-    ///
-    /// Returns the loss notes for the dropped records so the caller reflects them
-    /// in the report, satisfying `Check::TransferAccounting`'s requirement that
-    /// each `Dropped` disposition match a report loss.
-    fn issue_object_tickets(&self) -> Vec<LossNote> {
+    /// id). Every other record is conserved opaque as a native IR unknown
+    /// (`set_native_unknowns`) and byte-censused by the crate's own accounting
+    /// module, so it resolves [`Structural`](RecordDisposition::Structural): the
+    /// platform's checkable dispositions name model entities (`Typed`) or
+    /// retained-store blobs (`Retained`), and a native `UnknownRecord` is
+    /// neither. Rhino does not egress the platform retained store
+    /// (`source_fidelity: None`); routing undecoded records through `ctx.retain`
+    /// would duplicate the codec's own capped IR retention purely as
+    /// bookkeeping and charge the platform `RetainedBytes` budget against
+    /// untrusted input, flipping `retention_degraded` on large salvage decodes
+    /// over bytes the codec never intended to recover through that store.
+    fn issue_object_tickets(&self) {
         let ctx = self.expand.ctx();
-        let mut dropped = Vec::new();
         for (source_order, object) in self.scan.objects.iter().enumerate() {
             let location = SourceLocation {
                 space: SpaceId::ROOT,
@@ -1947,35 +1947,11 @@ impl<'a> DecodeContext<'a> {
                     Vec::new()
                 };
             if outputs.is_empty() {
-                match ctx.retain(&self.scan.data[object.range.clone()]) {
-                    Ok(retention) => {
-                        let id = match retention {
-                            Retention::Retained(range) => range.blob().as_str().to_owned(),
-                            Retention::Accounted { digest } => digest,
-                        };
-                        ctx.resolve(ticket, RecordDisposition::Retained { records: vec![id] });
-                    }
-                    Err(_) => {
-                        let loss = LossNote {
-                            category: LossCategory::Geometry,
-                            severity: Severity::Warning,
-                            message: format!(
-                                "Rhino object record at offset {} could not be retained (platform \
-                                 retained budget exhausted); its bytes are not preserved in the \
-                                 platform store.",
-                                object.range.start
-                            ),
-                            provenance: None,
-                        };
-                        dropped.push(loss.clone());
-                        ctx.resolve(ticket, RecordDisposition::Dropped { loss });
-                    }
-                }
+                ctx.resolve(ticket, RecordDisposition::Structural);
             } else {
                 ctx.resolve(ticket, RecordDisposition::Typed { outputs });
             }
         }
-        dropped
     }
 
     fn retain_object_records(&mut self) {
