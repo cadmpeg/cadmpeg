@@ -48,6 +48,19 @@ cost_model = "allocation bounded by input: index count physically floored to byt
 window_egress = []
 ledger_level = 0
 
+# OM serialization vocabulary (Phase 4E generated source of truth): the anchor
+# literals and unit-token table `om.rs` matches and dispatches against, plus the
+# doc/fuzz-dictionary generators. No hostile read.
+[[module]]
+path = "crates/cadmpeg-codec-nx/src/om_tokens.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["nx_om"]
+charges = []
+cost_model = "no budget charge; static anchor-literal and unit-token table and its Markdown/dictionary renderers, no read, no scan, no untrusted-count allocation"
+window_egress = []
+ledger_level = 0
+
 # NURBS curve and surface families. Control-point vectors moved off
 # `Vec::with_capacity(poles)` to `Vec::new`/`push`; `poles` is proven equal to
 # `payload.values.len() / stride` before the loop, so the vector is bounded by

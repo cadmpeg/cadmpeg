@@ -64,6 +64,7 @@ pub mod intersection;
 pub mod native;
 pub mod nurbs;
 pub mod om;
+pub mod om_tokens;
 pub mod parasolid;
 pub mod topology;
 

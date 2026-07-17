@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::le::u32_at;
 
-const ROOT_PREFIX: &[u8] = b"\x04\x01\x0eNX ";
+use crate::om_tokens::{self, CLASS_NAME_PREFIX, HOST_GLOBALS, NUMBER_PREFIX, ROOT_MARKER};
 
 /// One NX object-model entity with persistent object identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,8 +75,8 @@ impl<'a> IndexedSection<'a> {
         if !self.records.iter().any(|record| {
             record
                 .bytes
-                .windows(b"hostglobalvariables".len())
-                .any(|window| window == b"hostglobalvariables")
+                .windows(HOST_GLOBALS.len())
+                .any(|window| window == HOST_GLOBALS)
         }) {
             return Vec::new();
         }
@@ -115,7 +115,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         else {
             continue;
         };
-        if bytes.get(table_end..table_end + ROOT_PREFIX.len()) != Some(ROOT_PREFIX)
+        if bytes.get(table_end..table_end + ROOT_MARKER.len()) != Some(ROOT_MARKER)
             || u32_at(bytes, index_start) != Some(0)
             || !seen_record_starts.insert(table_end)
         {
@@ -191,7 +191,7 @@ fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinitio
         let Some(raw) = bytes.get(name_start..name_end) else {
             break;
         };
-        let valid = raw.starts_with(b"UGS::")
+        let valid = raw.starts_with(CLASS_NAME_PREFIX)
             && raw.iter().all(|byte| (0x20..0x7f).contains(byte))
             && name_end < end;
         if valid {
@@ -211,11 +211,10 @@ fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinitio
 }
 
 fn numeric_expression<'a>(record: &EntityRecord<'a>) -> Option<NumericExpression<'a>> {
-    const PREFIX: &[u8] = b"(Number [";
     let relative = record
         .bytes
-        .windows(PREFIX.len())
-        .position(|window| window == PREFIX)?;
+        .windows(NUMBER_PREFIX.len())
+        .position(|window| window == NUMBER_PREFIX)?;
     if relative < 3 || record.bytes.get(relative - 2) != Some(&0x04) {
         return None;
     }
@@ -227,11 +226,7 @@ fn numeric_expression<'a>(record: &EntityRecord<'a>) -> Option<NumericExpression
     text.ends_with("; ").then_some(())?;
     let text = text.strip_prefix("(Number [")?;
     let (unit, rest) = text.split_once("]) ")?;
-    let unit = match unit {
-        "mm" => ExpressionUnit::Millimeter,
-        "degrees" => ExpressionUnit::Degree,
-        _ => return None,
-    };
+    let unit = om_tokens::unit_for(unit)?;
     let (name, value_tail) = rest.split_once(": ")?;
     if name.is_empty()
         || !name
