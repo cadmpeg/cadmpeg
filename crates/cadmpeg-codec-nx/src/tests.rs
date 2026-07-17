@@ -2192,6 +2192,15 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
             extent: Extent::Unresolved,
             op: BooleanOp::NewBody,
             draft: None,
+            reverse_draft: None,
+            direction_source: None,
+            solid: None,
+            face_maker: None,
+            inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
         })
     );
     assert!(crate::decode::extrude_feature_definition(None, None, BooleanOp::Unresolved).is_none());
@@ -2772,6 +2781,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             }),
             diameter: None,
             extent: Some(cadmpeg_ir::features::Extent::ThroughAll),
+            ..
         }
     ));
     assert!(matches!(
@@ -2876,6 +2886,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         FeatureDefinition::Chamfer {
             edges: EdgeSelection::Unresolved,
             spec: ChamferSpec::Unresolved { form: None },
+            ..
         }
     ));
     assert_eq!(
@@ -2901,6 +2912,15 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             extent: cadmpeg_ir::features::Extent::Unresolved,
             op: BooleanOp::Unresolved,
             draft: None,
+            reverse_draft: None,
+            direction_source: None,
+            solid: None,
+            face_maker: None,
+            inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
         }
     );
     assert_eq!(
@@ -3225,7 +3245,7 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
     use cadmpeg_ir::native::Native;
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
     use cadmpeg_ir::units::{Tolerances, Units};
-    use cadmpeg_ir::{Annotations, SourceObjectAssociation};
+    use cadmpeg_ir::SourceObjectAssociation;
 
     let operations = ["hole-a".to_string(), "hole-b".to_string()];
     let templates = operations
@@ -3306,7 +3326,7 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
                 previous: coedge.clone(),
                 radial_next: coedge,
                 sense: Sense::Forward,
-                pcurve: None,
+                pcurves: Vec::new(),
             });
         }
     }
@@ -3338,7 +3358,6 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
         units: Units::default(),
         tolerances: Tolerances::default(),
         model,
-        annotations: Annotations::default(),
         native: Native::default(),
     };
     let outputs = std::collections::BTreeMap::from([
@@ -3564,7 +3583,7 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
                     previous: coedge.clone(),
                     radial_next: coedge,
                     sense: Sense::Forward,
-                    pcurve: None,
+                    pcurves: Vec::new(),
                 });
             }
         }
@@ -3655,8 +3674,8 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         definition: ProceduralSurfaceDefinition::Offset {
             support: SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
             distance,
-            u_sense: 1,
-            v_sense: 1,
+            u_sense: Some(1),
+            v_sense: Some(1),
             extension_flags: Vec::new(),
         },
         cache_fit_tolerance: None,
@@ -3881,8 +3900,8 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         definition: ProceduralSurfaceDefinition::Offset {
             support: SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
             distance,
-            u_sense: 1,
-            v_sense: 1,
+            u_sense: Some(1),
+            v_sense: Some(1),
             extension_flags: Vec::new(),
         },
         cache_fit_tolerance: None,
@@ -3993,8 +4012,8 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
         definition: ProceduralSurfaceDefinition::Offset {
             support,
             distance,
-            u_sense: 1,
-            v_sense: 1,
+            u_sense: Some(1),
+            v_sense: Some(1),
             extension_flags: Vec::new(),
         },
         cache_fit_tolerance: None,
@@ -8623,7 +8642,10 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         .iter_mut()
         .find(|coedge| coedge.edge == edge.id && coedge.owner_loop == second_loop)
         .expect("second incident coedge")
-        .pcurve = Some(pcurve_id);
+        .pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+        pcurve: pcurve_id,
+        isoparametric: None,
+    }];
 
     crate::decode::complete_intersection_pcurves_from_coedge_incidence(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -8950,10 +8972,12 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         Point {
             id: point_ids[0].clone(),
             position: Point3::new(0.0, 0.0, 0.0),
+            source_object: None,
         },
         Point {
             id: point_ids[1].clone(),
             position: Point3::new(10.0, 0.0, 0.0),
+            source_object: None,
         },
     ]);
     ir.model.vertices.extend([
@@ -9016,7 +9040,10 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
 
     assert_eq!(result.ir.model.pcurves.len(), 1);
     assert_eq!(
-        result.ir.model.coedges[0].pcurve.as_ref(),
+        result.ir.model.coedges[0]
+            .pcurves
+            .first()
+            .map(|pcurve| &pcurve.pcurve),
         Some(&result.ir.model.pcurves[0].id)
     );
     let PcurveGeometry::Nurbs {
@@ -11138,11 +11165,10 @@ fn decode_retains_typed_nx_numeric_expression() {
         Some(&"258".to_string())
     );
     let om_records = result
-        .ir
-        .native_unknowns("nx")
-        .unwrap()
-        .into_iter()
-        .filter(|record| record.id.0.starts_with("nx:om-section-"))
+        .source_fidelity
+        .retained_records
+        .iter()
+        .filter(|record| record.id.starts_with("nx:om-section-"))
         .collect::<Vec<_>>();
     assert_eq!(om_records.len(), 2);
     assert!(om_records.iter().all(|record| {
@@ -11234,7 +11260,8 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert!(matches!(
         result.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::TreeNode {
-            role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations,
+            ..
         }
     ));
     assert_eq!(result.ir.model.features[0].suppressed, Some(false));
@@ -11723,13 +11750,13 @@ fn decode_transfers_point_plane_cylinder_line() {
     // The Parasolid stream is preserved verbatim.
     let unknowns = result.ir.native_unknowns("nx").unwrap();
     assert_eq!(unknowns.len(), 1);
-    assert_eq!(unknowns[0].sha256.len(), 64);
+    assert_eq!(result.source_fidelity.retained_records[0].sha256.len(), 64);
     assert_eq!(
         unknowns[0].links,
         ["nx:s0:surf#0", "nx:s0:surf#1", "nx:s0:crv#0",]
     );
     assert_eq!(
-        result.ir.annotations.exactness[&unknowns[0].id.to_string()].fields["links"],
+        result.source_fidelity.annotations.exactness[&unknowns[0].id.to_string()].fields["links"],
         Exactness::Derived
     );
 
@@ -11802,8 +11829,8 @@ fn decode_emits_offset_surface_construction() {
         panic!("offset definition");
     };
     assert_eq!(*distance, 2.5);
-    assert_eq!(*u_sense, 0);
-    assert_eq!(*v_sense, 0);
+    assert_eq!(*u_sense, Some(0));
+    assert_eq!(*v_sense, Some(0));
     assert!(extension_flags.is_empty());
     assert_ne!(procedural.surface, *support);
     assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
@@ -12712,7 +12739,7 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert!(context.sides[0].pcurve.is_some());
     assert!(context.sides[1].surface.is_none());
     assert_eq!(context.parameter_range, [0.0, 0.01]);
-    assert!(result.ir.model.coedges[0].pcurve.is_none());
+    assert!(result.ir.model.coedges[0].pcurves.is_empty());
     assert!(!result.report.losses.iter().any(|loss| {
         loss.category == LossCategory::Geometry
             && loss.message.contains("surface-intersection record(s)")
@@ -12955,7 +12982,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .find(|coedge| coedge.edge == edge && coedge.id.0.contains("bottom"))
         .expect("bottom coedge");
     target.id = cadmpeg_ir::ids::CoedgeId("nx:s0:fin#42".into());
-    target.pcurve = None;
+    target.pcurves.clear();
     let owner_loop = target.owner_loop.clone();
     let surface = ir
         .model
@@ -13024,11 +13051,10 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .iter()
         .find(|pcurve| pcurve.id.0.contains("intersection-pcurve-completed"))
         .expect("validated completed support lane attaches");
-    assert!(ir
-        .model
-        .coedges
+    assert!(ir.model.coedges.iter().any(|coedge| coedge
+        .pcurves
         .iter()
-        .any(|coedge| coedge.pcurve.as_ref() == Some(&completed.id)));
+        .any(|pcurve| pcurve.pcurve == completed.id)));
 }
 
 #[test]
@@ -13320,8 +13346,8 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
             definition: ProceduralSurfaceDefinition::Offset {
                 support: support.clone(),
                 distance: 30.0,
-                u_sense: 0,
-                v_sense: 0,
+                u_sense: Some(0),
+                v_sense: Some(0),
                 extension_flags: Vec::new(),
             },
             cache_fit_tolerance: None,
@@ -13654,8 +13680,8 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
             definition: ProceduralSurfaceDefinition::Offset {
                 support: surfaces[1 - side].clone(),
                 distance: 1.0,
-                u_sense: 0,
-                v_sense: 0,
+                u_sense: Some(0),
+                v_sense: Some(0),
                 extension_flags: Vec::new(),
             },
             cache_fit_tolerance: None,
@@ -14439,16 +14465,16 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
     let mut cur = Cursor::new(topology_part_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let ir = &result.ir;
+    let annotations = &result.source_fidelity.annotations;
 
     macro_rules! assert_arena_annotations {
         ($arena:expr) => {
             for entity in $arena {
-                let provenance = ir
-                    .annotations
+                let provenance = annotations
                     .provenance
                     .get(&entity.id.to_string())
                     .expect("annotation provenance");
-                assert!(ir.annotations.streams[provenance.stream as usize].starts_with("nx:"));
+                assert!(annotations.streams[provenance.stream as usize].starts_with("nx:"));
                 assert!(provenance.tag.is_some());
             }
         };
@@ -14468,12 +14494,12 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
     let unknowns = ir.native_unknowns("nx").unwrap();
     assert_arena_annotations!(&unknowns);
 
-    let point_note = &ir.annotations.exactness[&ir.model.points[0].id.to_string()];
+    let point_note = &annotations.exactness[&ir.model.points[0].id.to_string()];
     assert_eq!(point_note.entity, Exactness::ByteExact);
     assert_eq!(point_note.fields["position"], Exactness::Derived);
-    let surface_note = &ir.annotations.exactness[&ir.model.surfaces[0].id.to_string()];
+    let surface_note = &annotations.exactness[&ir.model.surfaces[0].id.to_string()];
     assert_eq!(surface_note.fields["geometry"], Exactness::Derived);
-    let curve_note = &ir.annotations.exactness[&ir.model.curves[0].id.to_string()];
+    let curve_note = &annotations.exactness[&ir.model.curves[0].id.to_string()];
     assert_eq!(curve_note.fields["geometry"], Exactness::Derived);
     for id in [
         ir.model.vertices[0].id.to_string(),
@@ -14481,7 +14507,7 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
         ir.model.faces[0].id.to_string(),
     ] {
         assert_eq!(
-            ir.annotations.exactness[&id].fields["tolerance"],
+            annotations.exactness[&id].fields["tolerance"],
             Exactness::Derived
         );
     }

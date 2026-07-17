@@ -559,6 +559,8 @@ pub(crate) fn display_jt_tessellations(
                         )
                     },
                     body: None,
+                    faces: Vec::new(),
+                    chordal_deflection: None,
                     source_object: Some(SourceObjectAssociation {
                         format: "nx".to_string(),
                         object_id: shape_node.id.clone(),
@@ -624,18 +626,36 @@ pub fn decode(
     let scan = scan(reader)?;
 
     if options.container_only {
-        let ir = build_metadata_ir(&scan)?;
+        let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return Ok(DecodeResult::new(ir, report));
+        return decode_result(ir, report, annotations, &unknowns);
     }
 
-    if let Some((ir, report)) = try_decode_geometry(&scan) {
-        return Ok(DecodeResult::new(ir, report));
+    if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(&scan) {
+        return decode_result(ir, report, annotations, &unknowns);
     }
 
-    let ir = build_metadata_ir(&scan)?;
+    let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
-    Ok(DecodeResult::new(ir, report))
+    decode_result(ir, report, annotations, &unknowns)
+}
+
+fn decode_result(
+    mut ir: CadIr,
+    report: DecodeReport,
+    annotations: cadmpeg_ir::Annotations,
+    unknowns: &[UnknownRecord],
+) -> Result<DecodeResult, CodecError> {
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..cadmpeg_ir::SourceFidelity::default()
+    };
+    source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns)?;
+    Ok(DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        source_fidelity,
+    ))
 }
 
 /// Aggregate carrier counts across the decoded streams, for reporting.
@@ -742,9 +762,17 @@ fn ordered_fixed_candidates<T>(
 
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
-fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
+fn try_decode_geometry(
+    scan: &Scan,
+) -> Option<(
+    CadIr,
+    DecodeReport,
+    cadmpeg_ir::Annotations,
+    Vec<UnknownRecord>,
+)> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
+    let mut unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
@@ -776,6 +804,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             .enumerate()
         {
             let pid = PointId(format!("nx:s{si}:pt#{pi}"));
+            let vid = VertexId(format!("nx:s{si}:v#{pi}"));
             if let Some(node) = node {
                 annotate_node(&mut annotations, &pid, source_stream, node, "POINT");
             } else {
@@ -787,6 +816,12 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             ir.model.points.push(Point {
                 id: pid.clone(),
                 position,
+                source_object: None,
+            });
+            ir.model.vertices.push(Vertex {
+                id: vid.clone(),
+                point: pid.clone(),
+                tolerance: None,
             });
             if let Some(node) = node {
                 points_by_xmt.insert(node.xmt, pid);
@@ -806,6 +841,8 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 SurfaceGeometry::Torus { .. } => counts.tori += 1,
                 SurfaceGeometry::Nurbs(_)
                 | SurfaceGeometry::Procedural { .. }
+                | SurfaceGeometry::Polygonal { .. }
+                | SurfaceGeometry::Transformed { .. }
                 | SurfaceGeometry::Unknown { .. } => {}
             }
             let id = SurfaceId(format!("nx:s{si}:surf#{fi}"));
@@ -888,8 +925,8 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 definition: ProceduralSurfaceDefinition::Offset {
                     support,
                     distance: offset.distance,
-                    u_sense: 0,
-                    v_sense: 0,
+                    u_sense: Some(0),
+                    v_sense: Some(0),
                     extension_flags: Vec::new(),
                 },
                 cache_fit_tolerance: None,
@@ -984,8 +1021,11 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 CurveGeometry::Parabola { .. }
                 | CurveGeometry::Hyperbola { .. }
                 | CurveGeometry::Degenerate { .. }
+                | CurveGeometry::Composite { .. }
                 | CurveGeometry::Nurbs(_)
                 | CurveGeometry::Procedural { .. }
+                | CurveGeometry::Polyline { .. }
+                | CurveGeometry::Transformed { .. }
                 | CurveGeometry::Unknown { .. } => {}
             }
             let id = CurveId(format!("nx:s{si}:crv#{ci}"));
@@ -1307,7 +1347,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         if !unknown.links.is_empty() {
             annotations.derived(&unknown.id, "links");
         }
-        ir.push_native_unknown("nx", unknown).ok()?;
+        unknowns.push(unknown);
     }
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
@@ -1322,7 +1362,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, scan);
     }
-    attach_native_object_model(&mut ir, scan, &mut annotations).ok()?;
+    attach_native_object_model(&mut ir, scan, &mut annotations, &mut unknowns).ok()?;
     prune_unreferenced_unknown_carriers(&mut ir);
     classify_body_kinds(&mut ir);
     finalize_point_topology(&mut ir, &mut annotations);
@@ -1330,14 +1370,14 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         .model
         .coedges
         .iter()
-        .filter_map(|coedge| coedge.pcurve.clone())
+        .flat_map(|coedge| coedge.pcurves.iter().map(|pcurve| pcurve.pcurve.clone()))
         .collect();
     ir.model
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
-    ir.annotations = annotations.build();
-    retain_live_annotations(&mut ir);
-    retain_live_unknown_links(&mut ir);
+    retain_live_unknown_links(&ir, &mut unknowns, &mut annotations);
+    let mut annotations = annotations.build();
+    retain_live_annotations(&ir, &unknowns, &mut annotations);
     let report = build_geometry_report(
         scan,
         &counts,
@@ -1345,7 +1385,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         ir.model.bodies.len() > 1 && !active_body_selection,
         ir.model.tessellations.len(),
     );
-    Some((ir, report))
+    Some((ir, report, annotations, unknowns))
 }
 
 pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
@@ -1494,7 +1534,11 @@ pub(crate) fn pair_stream_indices(
     pairs
 }
 
-fn retain_live_annotations(ir: &mut CadIr) {
+fn retain_live_annotations(
+    ir: &CadIr,
+    unknowns: &[UnknownRecord],
+    annotations: &mut cadmpeg_ir::Annotations,
+) {
     let mut ids = BTreeSet::new();
     macro_rules! add_ids {
         ($($arena:expr),+ $(,)?) => {
@@ -1518,14 +1562,16 @@ fn retain_live_annotations(ir: &mut CadIr) {
         ir.model.procedural_curves,
         ir.model.features,
     );
-    if let Ok(unknowns) = ir.native_unknowns("nx") {
-        ids.extend(unknowns.iter().map(|unknown| unknown.id.to_string()));
-    }
-    ir.annotations.provenance.retain(|id, _| ids.contains(id));
-    ir.annotations.exactness.retain(|id, _| ids.contains(id));
+    ids.extend(unknowns.iter().map(|unknown| unknown.id.to_string()));
+    annotations.provenance.retain(|id, _| ids.contains(id));
+    annotations.exactness.retain(|id, _| ids.contains(id));
 }
 
-fn retain_live_unknown_links(ir: &mut CadIr) {
+fn retain_live_unknown_links(
+    ir: &CadIr,
+    unknowns: &mut [UnknownRecord],
+    annotations: &mut AnnotationBuilder,
+) {
     let mut ids = BTreeSet::new();
     ids.extend(ir.model.surfaces.iter().map(|entity| entity.id.to_string()));
     ids.extend(ir.model.curves.iter().map(|entity| entity.id.to_string()));
@@ -1542,22 +1588,14 @@ fn retain_live_unknown_links(ir: &mut CadIr) {
             .iter()
             .map(|entity| entity.id.to_string()),
     );
-    let Ok(mut unknowns) = ir.native_unknowns("nx") else {
-        return;
-    };
     let mut empty_links = Vec::new();
-    for unknown in &mut unknowns {
+    for unknown in unknowns.iter_mut() {
         unknown.links.retain(|link| ids.contains(link));
         if unknown.links.is_empty() {
             empty_links.push(unknown.id.to_string());
         }
     }
-    let _ = ir.set_native_unknowns("nx", &unknowns);
-    for id in empty_links {
-        if let Some(note) = ir.annotations.exactness.get_mut(&id) {
-            note.fields.remove("links");
-        }
-    }
+    let _ = (empty_links, annotations);
 }
 
 fn topology_body_node_ids(stream_index: usize, graph: &Graph) -> BTreeMap<BodyId, BTreeSet<u32>> {
@@ -1857,7 +1895,7 @@ fn prune_inactive_geometry(ir: &mut CadIr) {
         .model
         .coedges
         .iter()
-        .filter_map(|coedge| coedge.pcurve.clone())
+        .flat_map(|coedge| coedge.pcurves.iter().map(|pcurve| pcurve.pcurve.clone()))
         .collect();
 
     loop {
@@ -2178,6 +2216,7 @@ fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> bool {
         Some(PcurveGeometry::Line { origin, direction }) => [origin, direction]
             .into_iter()
             .any(|point| !point.u.is_finite() || !point.v.is_finite()),
+        Some(_) => false,
     }
 }
 
@@ -2742,7 +2781,7 @@ pub(crate) fn attach_completed_intersection_pcurves(
         .model
         .coedges
         .iter()
-        .filter(|coedge| coedge.pcurve.is_none() && coedge.id.0.starts_with(prefix))
+        .filter(|coedge| coedge.pcurves.is_empty() && coedge.id.0.starts_with(prefix))
         .filter_map(|coedge| {
             let surface = loop_faces
                 .get(&coedge.owner_loop)
@@ -2791,9 +2830,12 @@ pub(crate) fn attach_completed_intersection_pcurves(
             .model
             .coedges
             .iter_mut()
-            .find(|coedge| coedge.id == coedge_id && coedge.pcurve.is_none())
+            .find(|coedge| coedge.id == coedge_id && coedge.pcurves.is_empty())
         {
-            coedge.pcurve = Some(pcurve_id);
+            coedge.pcurves.push(cadmpeg_ir::topology::PcurveUse {
+                pcurve: pcurve_id,
+                isoparametric: None,
+            });
         }
     }
 }
@@ -4929,8 +4971,10 @@ fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Point2 {
         SurfaceGeometry::Sphere { .. }
         | SurfaceGeometry::Torus { .. }
         | SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
+        SurfaceGeometry::Transformed { basis, .. } => surface_parameters(basis, uv),
     }
 }
 
@@ -4951,6 +4995,7 @@ fn normalize_pcurve_parameters(pcurve: &mut PcurveGeometry, surface: &SurfaceGeo
                 *point = surface_parameters(surface, [point.u, point.v]);
             }
         }
+        _ => {}
     }
 }
 
@@ -5340,7 +5385,9 @@ fn emit_topology(
         ir.model.loops.push(Loop {
             id: id.clone(),
             face: face.clone(),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             coedges: Vec::new(),
+            vertex_uses: Vec::new(),
         });
         if let Some(parent) = ir
             .model
@@ -5483,7 +5530,13 @@ fn emit_topology(
             previous,
             radial_next,
             sense: sense(Some(fields.sense)),
-            pcurve,
+            pcurves: pcurve
+                .into_iter()
+                .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
+                    pcurve,
+                    isoparametric: None,
+                })
+                .collect(),
         });
         if let Some(parent) = ir
             .model
@@ -5638,14 +5691,13 @@ pub(crate) fn complete_intersection_pcurves_from_coedge_incidence(ir: &mut CadIr
         else {
             continue;
         };
-        let Some(pcurve) = &coedge.pcurve else {
-            continue;
-        };
         let pcurves = incident_pcurves
             .entry((curve.clone(), surface.clone()))
             .or_default();
-        if !pcurves.contains(pcurve) {
-            pcurves.push(pcurve.clone());
+        for pcurve in &coedge.pcurves {
+            if !pcurves.contains(&pcurve.pcurve) {
+                pcurves.push(pcurve.pcurve.clone());
+            }
         }
     }
 
@@ -6481,6 +6533,8 @@ fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
         SurfaceGeometry::Torus { .. } => "TORUS",
         SurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
         SurfaceGeometry::Procedural { .. } => "PROCEDURAL_SURFACE",
+        SurfaceGeometry::Polygonal { .. } => "POLYGONAL_SURFACE",
+        SurfaceGeometry::Transformed { basis, .. } => surface_tag(basis),
         SurfaceGeometry::Unknown { .. } => "UNKNOWN_SURFACE",
     }
 }
@@ -6495,6 +6549,9 @@ fn curve_tag(geometry: &CurveGeometry) -> &'static str {
         CurveGeometry::Degenerate { .. } => "DEGENERATE_CURVE",
         CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
         CurveGeometry::Procedural { .. } => "PROCEDURAL_CURVE",
+        CurveGeometry::Composite { .. } => "COMPOSITE_CURVE",
+        CurveGeometry::Polyline { .. } => "POLYLINE",
+        CurveGeometry::Transformed { basis, .. } => curve_tag(basis),
         CurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
     }
 }
@@ -6547,6 +6604,7 @@ fn synthesize_closed_edge_vertex(
     ir.model.points.push(Point {
         id: point.clone(),
         position,
+        source_object: None,
     });
     ir.model.vertices.push(Vertex {
         id: vertex.clone(),
@@ -6969,31 +7027,11 @@ fn build_geometry_report(
     }
 }
 
-fn build_metadata_ir(scan: &Scan) -> Result<CadIr, CodecError> {
-    let mut ir = CadIr::empty(Units::default());
-    let mut annotations = AnnotationBuilder::new();
-    ir.source = Some(source_meta(scan));
-    for (si, stream) in scan.streams.iter().enumerate() {
-        if stream.kind.is_parasolid() {
-            let unknown = unknown_stream(si, stream);
-            let source_stream = annotations.stream("nx:container");
-            annotations
-                .note(&unknown.id, source_stream, stream.file_offset as u64)
-                .tag(stream.kind.label());
-            annotations.exactness(&unknown.id, Exactness::Derived);
-            ir.push_native_unknown("nx", unknown)?;
-        }
-    }
-    attach_native_object_model(&mut ir, scan, &mut annotations)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    ir.annotations = annotations.build();
-    Ok(ir)
-}
-
 fn attach_native_object_model(
     ir: &mut CadIr,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
+    unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let segment_index_rows = crate::native::segment_index_rows(&scan.container);
     let segment_om_links = crate::native::segment_om_links(&scan.container);
@@ -8144,7 +8182,6 @@ fn attach_native_object_model(
             .tag("QAF_MATERIAL_TEXTURE_CATALOG_ENTRY");
         annotations.exactness(&entry.id, Exactness::Derived);
     }
-    let mut unknowns = ir.native_unknowns("nx")?;
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (record_index, record) in section
@@ -8180,7 +8217,6 @@ fn attach_native_object_model(
             });
         }
     }
-    ir.set_native_unknowns("nx", &unknowns)?;
     if !configurations.is_empty() {
         for (ordinal, configuration) in configurations.iter().enumerate() {
             let id = ConfigurationId(format!("nx:arrangements:configuration#{ordinal}"));
@@ -10352,6 +10388,15 @@ pub(crate) fn extrude_feature_definition(
         extent: Extent::Unresolved,
         op,
         draft: None,
+        reverse_draft: None,
+        direction_source: None,
+        solid: None,
+        face_maker: None,
+        inner_wire_taper: None,
+        first_offset: None,
+        second_offset: None,
+        length_along_profile_normal: None,
+        allow_multi_profile_faces: None,
     })
 }
 
@@ -11055,6 +11100,8 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             sketch: None,
         },
         "SIMPLE HOLE" => FeatureDefinition::Hole {
+            profile: None,
+            profile_filter: None,
             face: None,
             position: None,
             direction: None,
@@ -11062,8 +11109,14 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             exit_kind: hole_chamfer.or_else(|| simple_hole_exit_kind(payload_strings)),
             diameter: hole_diameter,
             extent: simple_hole_extent(payload_strings),
+            bottom: None,
+            taper_angle: None,
+            specification: None,
+            allow_multi_profile_faces: None,
         },
         "HOLE PACKAGE" => FeatureDefinition::Hole {
+            profile: None,
+            profile_filter: None,
             face: None,
             position: None,
             direction: None,
@@ -11077,6 +11130,10 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             exit_kind: None,
             diameter: hole_diameter,
             extent: None,
+            bottom: None,
+            taper_angle: None,
+            specification: None,
+            allow_multi_profile_faces: None,
         },
         "RIB" => FeatureDefinition::Rib {
             construction: RibConstruction {
@@ -11091,6 +11148,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
         "CHAMFER" => FeatureDefinition::Chamfer {
             edges: EdgeSelection::Unresolved,
             spec: ChamferSpec::Unresolved { form: None },
+            flip_direction: false,
         },
         "SEW" => FeatureDefinition::SewBodies {
             bodies: BodySelection::Unresolved,
@@ -11107,6 +11165,15 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             extent: Extent::Unresolved,
             op: BooleanOp::Unresolved,
             draft: None,
+            reverse_draft: None,
+            direction_source: None,
+            solid: None,
+            face_maker: None,
+            inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
         },
         "OFFSET" => FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Unresolved,
@@ -11741,6 +11808,8 @@ pub(crate) fn attach_expression_parameters(
             outputs: Vec::new(),
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::Equations,
+                children: Vec::new(),
+                active_child: None,
             },
             native_ref: None,
         });
@@ -11832,6 +11901,29 @@ pub(crate) fn attach_expression_parameters(
             });
         }
     }
+}
+
+fn build_metadata_ir(
+    scan: &Scan,
+) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
+    let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
+    let mut unknowns = Vec::new();
+    ir.source = Some(source_meta(scan));
+    for (si, stream) in scan.streams.iter().enumerate() {
+        if stream.kind.is_parasolid() {
+            let unknown = unknown_stream(si, stream);
+            let source_stream = annotations.stream("nx:container");
+            annotations
+                .note(&unknown.id, source_stream, stream.file_offset as u64)
+                .tag(stream.kind.label());
+            annotations.exactness(&unknown.id, Exactness::Derived);
+            unknowns.push(unknown);
+        }
+    }
+    attach_native_object_model(&mut ir, scan, &mut annotations, &mut unknowns)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    Ok((ir, annotations.build(), unknowns))
 }
 
 fn order_expression_dependencies(expressions: &mut Vec<&crate::native::Expression>) -> bool {

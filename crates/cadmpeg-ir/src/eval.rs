@@ -6,8 +6,8 @@
 //! angles from the reference/major direction, line parameters are signed
 //! distances along the unit direction, and B-splines evaluate by Cox–de Boor
 //! over their stored knot vectors. Carriers without a typed parameterization
-//! ([`CurveGeometry::Unknown`], [`SurfaceGeometry::Unknown`], parabolas, and
-//! hyperbolas) evaluate to `None`.
+//! ([`CurveGeometry::Unknown`], [`CurveGeometry::Composite`], and
+//! [`SurfaceGeometry::Unknown`]) evaluate to `None`.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -17,6 +17,7 @@ use crate::geometry::{
 };
 use crate::ids::SurfaceId;
 use crate::math::{Point2, Point3, Vector3};
+use crate::transform::Transform;
 
 fn cross(a: Vector3, b: Vector3) -> Vector3 {
     Vector3::new(
@@ -334,6 +335,13 @@ fn periodic_parameter(
 
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
 pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
+    curve_point_inner(geometry, t, 0)
+}
+
+fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<Point3> {
+    if depth > 256 {
+        return None;
+    }
     match geometry {
         CurveGeometry::Line { origin, direction } => Some(offset(*origin, &[(t, *direction)])),
         CurveGeometry::Circle {
@@ -361,6 +369,31 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
                 (minor_radius * t.sin(), cross(*axis, *major_direction)),
             ],
         )),
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => Some(offset(
+            *vertex,
+            &[
+                (focal_distance * t * t, *major_direction),
+                (2.0 * focal_distance * t, cross(*axis, *major_direction)),
+            ],
+        )),
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => Some(offset(
+            *center,
+            &[
+                (major_radius * t.cosh(), *major_direction),
+                (minor_radius * t.sinh(), cross(*axis, *major_direction)),
+            ],
+        )),
         CurveGeometry::Degenerate { point } => Some(*point),
         CurveGeometry::Nurbs(nurbs) => nurbs_curve_point(
             nurbs.degree,
@@ -369,8 +402,13 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
             nurbs.weights.as_deref(),
             t,
         ),
-        CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. }
+        CurveGeometry::Polyline {
+            points, parameters, ..
+        } => polyline_point(points, parameters.as_deref(), t),
+        CurveGeometry::Transformed { basis, transform } => {
+            curve_point_inner(basis, t, depth + 1).map(|point| affine_point(*transform, point))
+        }
+        CurveGeometry::Composite { .. }
         | CurveGeometry::Procedural { .. }
         | CurveGeometry::Unknown { .. } => None,
     }
@@ -380,6 +418,13 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
 /// the azimuth angle and `v` the axial distance / polar angle on analytic
 /// quadrics, and both are knot-domain parameters on NURBS surfaces.
 pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point3> {
+    surface_point_inner(geometry, u, v, 0)
+}
+
+fn surface_point_inner(geometry: &SurfaceGeometry, u: f64, v: f64, depth: usize) -> Option<Point3> {
+    if depth > 256 {
+        return None;
+    }
     match geometry {
         SurfaceGeometry::Plane {
             origin,
@@ -451,7 +496,12 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
             ))
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point(nurbs, u, v),
-        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Transformed { basis, transform } => {
+            surface_point_inner(basis, u, v, depth + 1).map(|point| affine_point(*transform, point))
+        }
+        SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
     }
 }
 
@@ -536,8 +586,12 @@ pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) ->
             )
         }
         SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => return None,
+        SurfaceGeometry::Transformed { basis, transform } => {
+            return analytic_surface_parameters(basis, inverse_affine_point(*transform, point)?);
+        }
     };
     (parameters.u.is_finite() && parameters.v.is_finite()).then_some(parameters)
 }
@@ -550,6 +604,18 @@ fn unit(vector: Vector3) -> Option<Vector3> {
 
 /// Evaluate the oriented unit normal of an explicit surface carrier.
 pub fn surface_normal(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Vector3> {
+    surface_normal_inner(geometry, u, v, 0)
+}
+
+fn surface_normal_inner(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    depth: usize,
+) -> Option<Vector3> {
+    if depth > 256 {
+        return None;
+    }
     match geometry {
         SurfaceGeometry::Plane { normal, .. } => unit(*normal),
         SurfaceGeometry::Cylinder {
@@ -638,7 +704,12 @@ pub fn surface_normal(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Vect
             let (tangent_u, tangent_v) = nurbs_surface_partials(nurbs, u, v)?;
             unit(cross(tangent_u, tangent_v))
         }
-        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Transformed { basis, transform } => {
+            affine_normal(*transform, surface_normal_inner(basis, u, v, depth + 1)?)
+        }
+        SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
     }
 }
 
@@ -741,12 +812,171 @@ impl<'a> ModelSurfaceEvaluator<'a> {
     }
 }
 
+fn polyline_point(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Option<Point3> {
+    if points.len() < 2 || !t.is_finite() {
+        return None;
+    }
+    let implicit;
+    let parameters = if let Some(parameters) = parameters {
+        if parameters.len() != points.len() {
+            return None;
+        }
+        parameters
+    } else {
+        implicit = (0..points.len())
+            .map(|index| index as f64)
+            .collect::<Vec<_>>();
+        &implicit
+    };
+    let segment = parameters.windows(2).position(|window| {
+        (t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1])
+    })?;
+    let width = parameters[segment + 1] - parameters[segment];
+    if width == 0.0 || !width.is_finite() {
+        return None;
+    }
+    let fraction = (t - parameters[segment]) / width;
+    let start = points[segment];
+    let end = points[segment + 1];
+    Some(Point3::new(
+        start.x + fraction * (end.x - start.x),
+        start.y + fraction * (end.y - start.y),
+        start.z + fraction * (end.z - start.z),
+    ))
+}
+
+fn affine_point(transform: Transform, point: Point3) -> Point3 {
+    Point3::new(
+        transform.rows[0][0] * point.x
+            + transform.rows[0][1] * point.y
+            + transform.rows[0][2] * point.z
+            + transform.rows[0][3],
+        transform.rows[1][0] * point.x
+            + transform.rows[1][1] * point.y
+            + transform.rows[1][2] * point.z
+            + transform.rows[1][3],
+        transform.rows[2][0] * point.x
+            + transform.rows[2][1] * point.y
+            + transform.rows[2][2] * point.z
+            + transform.rows[2][3],
+    )
+}
+
+fn inverse_affine_point(transform: Transform, point: Point3) -> Option<Point3> {
+    let r = transform.rows;
+    let determinant = r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
+        - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
+        + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
+    if !determinant.is_finite() || determinant == 0.0 {
+        return None;
+    }
+    let delta = [point.x - r[0][3], point.y - r[1][3], point.z - r[2][3]];
+    let inverse = [
+        [
+            r[1][1] * r[2][2] - r[1][2] * r[2][1],
+            r[0][2] * r[2][1] - r[0][1] * r[2][2],
+            r[0][1] * r[1][2] - r[0][2] * r[1][1],
+        ],
+        [
+            r[1][2] * r[2][0] - r[1][0] * r[2][2],
+            r[0][0] * r[2][2] - r[0][2] * r[2][0],
+            r[0][2] * r[1][0] - r[0][0] * r[1][2],
+        ],
+        [
+            r[1][0] * r[2][1] - r[1][1] * r[2][0],
+            r[0][1] * r[2][0] - r[0][0] * r[2][1],
+            r[0][0] * r[1][1] - r[0][1] * r[1][0],
+        ],
+    ];
+    let coordinate = |row: usize| {
+        inverse[row]
+            .iter()
+            .zip(delta)
+            .map(|(coefficient, value)| coefficient * value)
+            .sum::<f64>()
+            / determinant
+    };
+    let result = Point3::new(coordinate(0), coordinate(1), coordinate(2));
+    [result.x, result.y, result.z]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(result)
+}
+
+fn affine_normal(transform: Transform, normal: Vector3) -> Option<Vector3> {
+    let r = transform.rows;
+    let transformed = Vector3::new(
+        (r[1][1] * r[2][2] - r[1][2] * r[2][1]) * normal.x
+            + (r[1][2] * r[2][0] - r[1][0] * r[2][2]) * normal.y
+            + (r[1][0] * r[2][1] - r[1][1] * r[2][0]) * normal.z,
+        (r[0][2] * r[2][1] - r[0][1] * r[2][2]) * normal.x
+            + (r[0][0] * r[2][2] - r[0][2] * r[2][0]) * normal.y
+            + (r[0][1] * r[2][0] - r[0][0] * r[2][1]) * normal.z,
+        (r[0][1] * r[1][2] - r[0][2] * r[1][1]) * normal.x
+            + (r[0][2] * r[1][0] - r[0][0] * r[1][2]) * normal.y
+            + (r[0][0] * r[1][1] - r[0][1] * r[1][0]) * normal.z,
+    );
+    unit(transformed)
+}
+
 /// Evaluate a pcurve carrier at parameter `t`, yielding a surface `(u, v)`.
 pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
+    pcurve_uv_inner(geometry, t, 0)
+}
+
+fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Point2> {
+    if depth > 256 {
+        return None;
+    }
     match geometry {
         PcurveGeometry::Line { origin, direction } => Some(Point2::new(
             origin.u + t * direction.u,
             origin.v + t * direction.v,
+        )),
+        PcurveGeometry::Circle {
+            center,
+            x_axis,
+            y_axis,
+            radius,
+        } => Some(offset2(
+            *center,
+            &[(radius * t.cos(), *x_axis), (radius * t.sin(), *y_axis)],
+        )),
+        PcurveGeometry::Ellipse {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => Some(offset2(
+            *center,
+            &[
+                (major_radius * t.cos(), *x_axis),
+                (minor_radius * t.sin(), *y_axis),
+            ],
+        )),
+        PcurveGeometry::Parabola {
+            vertex,
+            x_axis,
+            y_axis,
+            focal_distance,
+        } if *focal_distance != 0.0 => Some(offset2(
+            *vertex,
+            &[(t * t / (4.0 * focal_distance), *x_axis), (t, *y_axis)],
+        )),
+        PcurveGeometry::Parabola { .. } => None,
+        PcurveGeometry::Hyperbola {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => Some(offset2(
+            *center,
+            &[
+                (major_radius * t.cosh(), *x_axis),
+                (minor_radius * t.sinh(), *y_axis),
+            ],
         )),
         PcurveGeometry::Nurbs {
             degree,
@@ -755,5 +985,18 @@ pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
             weights,
             ..
         } => nurbs_pcurve_uv(*degree, knots, control_points, weights.as_deref(), t),
+        PcurveGeometry::Trimmed { basis, .. } => pcurve_uv_inner(basis, t, depth + 1),
+        // Exact offset evaluation also requires the basis tangent. The IR
+        // retains the exact construction even when this point-only evaluator
+        // cannot establish a stable tangent.
+        PcurveGeometry::Offset { .. } => None,
     }
+}
+
+fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
+    terms.iter().fold(base, |mut point, (factor, direction)| {
+        point.u += factor * direction.u;
+        point.v += factor * direction.v;
+        point
+    })
 }

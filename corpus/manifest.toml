@@ -1,0 +1,123 @@
+# SPDX-License-Identifier: CC0-1.0
+# Public corpus files authored from blank documents by repository-owned scripts.
+
+[[file]]
+filename = "freecad_fcstd/fixtures/application_payloads.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_fixtures.py"
+license = "CC0-1.0"
+sha256 = "410af2e9ed55011039ee065b20e7614037482d382e75e173d78c9a008522de75"
+notes = "Blank-document mesh, point cloud, FEM analysis and constraint, CAM toolpath, embedded bytes, links, and inert Python-backed application state."
+
+[[file]]
+filename = "freecad_fcstd/fixtures/core_design_product.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_fixtures.py"
+license = "CC0-1.0"
+sha256 = "69c6aa00699cb8d8bb4014b48eb7c419352c49f360cffb45075f31e152f989ba"
+notes = "Blank-document exact geometry, persistent names, sketch constraints, design properties, product link, and spreadsheet."
+
+[[file]]
+filename = "freecad_fcstd/fixtures/techdraw_annotations.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_fixtures.py"
+license = "CC0-1.0"
+sha256 = "6bc4c0e639b8055640c0bb02e2828a63184c787d42bda85d661707de3db84317"
+notes = "Blank-document TechDraw page, template, model view, dimension, visible annotation, symbol, and embedded SVG assets."
+
+[[file]]
+filename = "freecad_fcstd/fixtures/geometry_topology.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_fixtures.py"
+license = "CC0-1.0"
+sha256 = "d7c0a6325cd4f68413f5ba9b0e51cd1396d4dc32a5f08dedc3ed5b00fc12cb59"
+notes = "Deterministic text B-rep carrier and connected-topology matrix: free curves, freeform surface, solid, void, seam, degenerate, sheet, wire, compound, multi-shell, sweep, and revolution."
+
+[[file]]
+filename = "freecad_fcstd/fixtures/binary_exact_shape.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_fixtures.py"
+license = "CC0-1.0"
+sha256 = "86ecddcee6d677370343c2f5a9682e57ca58db5808775b0e8812bdbe844dbe1e"
+notes = "Deterministically packaged binary exact-shape payload exported by FreeCAD from a blank document."
+
+[[file]]
+filename = "freecad_fcstd/fixtures/design_history.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_fixtures.py"
+license = "CC0-1.0"
+sha256 = "c71da85ee80979f3f210690125da00406b2d49682be765100fc1cfb1d98ea0d7"
+notes = "Deterministic PartDesign Body with constrained sketches, additive Pad, subtractive Pocket, and edge Fillet history."
+
+[[file]]
+filename = "freecad_fcstd/fixtures/gui_appearance.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_gui_fixture.py"
+license = "CC0-1.0"
+sha256 = "393db41b6acd1d3c890dc07085017fa6f07e91f96d59e7a244e2c834075ffcc2"
+notes = "Deterministic GUI document, thumbnail, camera, and object-, face-, edge-, and vertex-level appearance evidence."
+
+[[file]]
+filename = "freecad_fcstd/fixtures/sketch_constraints.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_constraint_fixture.py"
+license = "CC0-1.0"
+sha256 = "35bbba0d7529415176cfbbbdc1fabc265ac3748f5fc38058887ac254e44d074f"
+notes = "Deterministic independent geometric, dimensional, and symmetry Sketcher constraint families."
+
+[[file]]
+filename = "freecad_fcstd/fixtures/core_operations.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_operation_fixture.py"
+license = "CC0-1.0"
+sha256 = "54cc992ca6278fdd8e38b3d01f37c616e5dfdc38ca7a058fe838599b709ed228"
+notes = "Deterministic Part revolution, loft, sweep, fillet, chamfer, thickness, mirror, and PartDesign datum operation families with non-default controls."
+
+[[file]]
+filename = "freecad_fcstd/fixtures/product_assembly.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_assembly_fixture.py"
+license = "CC0-1.0"
+sha256 = "b8e0e92c0155b4182565493deace3e30b42fe1e45e8424ae4fd1d9bc5ddd8340"
+notes = "Deterministic Assembly container with groups, nested, array, and external occurrences, grounding, and a limited revolute joint with persistent subelement operands."
+
+[[file]]
+filename = "freecad_fcstd/fixtures/external_component.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_assembly_fixture.py"
+license = "CC0-1.0"
+sha256 = "e1a563bd89e46c00237b65ac543482aaa361c833deef759164143687d0de557b"
+notes = "Deterministic standalone component targeted by the product-assembly fixture's relative external link."

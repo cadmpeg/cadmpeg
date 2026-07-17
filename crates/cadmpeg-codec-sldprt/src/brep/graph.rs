@@ -120,8 +120,8 @@ impl Brep {
             coedge.next.0 = qualify(&coedge.next.0);
             coedge.previous.0 = qualify(&coedge.previous.0);
             coedge.radial_next.0 = qualify(&coedge.radial_next.0);
-            if let Some(pcurve) = &mut coedge.pcurve {
-                pcurve.0 = qualify(&pcurve.0);
+            for use_ in &mut coedge.pcurves {
+                use_.pcurve.0 = qualify(&use_.pcurve.0);
             }
         }
         for edge in &mut self.edges {
@@ -424,6 +424,7 @@ fn decode_graph(
         out.points.push(Point {
             id: PointId(id_point(a)),
             position: cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
+            source_object: None,
         });
     }
 
@@ -484,6 +485,7 @@ fn decode_graph(
             out.points.push(Point {
                 id: PointId(point_id.clone()),
                 position,
+                source_object: None,
             });
             out.vertices.push(Vertex {
                 id: VertexId(vertex_id.clone()),
@@ -606,7 +608,7 @@ fn decode_graph(
                     previous: CoedgeId(id_coedge(prev)),
                     radial_next: partner.unwrap_or_else(|| CoedgeId(id_coedge(ce_attr))),
                     sense: sense_of(ce.marker.unwrap_or(0x2b)),
-                    pcurve: None,
+                    pcurves: Vec::new(),
                 });
             }
         }
@@ -626,7 +628,9 @@ fn decode_graph(
             out.loops.push(Loop {
                 id: LoopId(id_loop(*loop_attr)),
                 face: FaceId(id_face(f.bridge_attr)),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges,
+                vertex_uses: Vec::new(),
             });
         }
     }
@@ -679,7 +683,7 @@ fn decode_graph(
                 let mut geometry = geo.clone();
                 if let Some((_, u_reference, v_reference)) = c.frame {
                     fold_surface_frame(&mut geometry, u_reference, v_reference);
-                    annotate_surface_frame(&mut annotations, id_surf(f.bridge_attr), &geometry);
+                    annotate_surface_frame(&mut annotations, &id_surf(f.bridge_attr), &geometry);
                 }
                 out.surfaces.push(Surface {
                     id: SurfaceId(id_surf(f.bridge_attr)),
@@ -945,51 +949,69 @@ fn prune_rejected_topology(out: &mut Brep) {
 }
 
 fn fold_surface_frame(
-    geometry: &mut SurfaceGeometry,
+    mut geometry: &mut SurfaceGeometry,
     u_reference: cadmpeg_ir::math::Vector3,
     v_reference: cadmpeg_ir::math::Vector3,
 ) {
-    match geometry {
-        SurfaceGeometry::Plane { u_axis, .. } => *u_axis = u_reference,
-        SurfaceGeometry::Cylinder { ref_direction, .. }
-        | SurfaceGeometry::Cone { ref_direction, .. }
-        | SurfaceGeometry::Torus { ref_direction, .. } => *ref_direction = u_reference,
-        SurfaceGeometry::Sphere {
-            axis,
-            ref_direction,
-            ..
-        } => {
-            *axis = v_reference;
-            *ref_direction = u_reference;
+    loop {
+        match geometry {
+            SurfaceGeometry::Plane { u_axis, .. } => {
+                *u_axis = u_reference;
+                break;
+            }
+            SurfaceGeometry::Cylinder { ref_direction, .. }
+            | SurfaceGeometry::Cone { ref_direction, .. }
+            | SurfaceGeometry::Torus { ref_direction, .. } => {
+                *ref_direction = u_reference;
+                break;
+            }
+            SurfaceGeometry::Sphere {
+                axis,
+                ref_direction,
+                ..
+            } => {
+                *axis = v_reference;
+                *ref_direction = u_reference;
+                break;
+            }
+            SurfaceGeometry::Transformed { basis, .. } => geometry = basis,
+            SurfaceGeometry::Nurbs(_)
+            | SurfaceGeometry::Procedural { .. }
+            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Unknown { .. } => break,
         }
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Unknown { .. } => {}
     }
 }
 
 fn annotate_surface_frame(
     annotations: &mut AnnotationBuilder,
-    id: String,
-    geometry: &SurfaceGeometry,
+    id: &str,
+    mut geometry: &SurfaceGeometry,
 ) {
-    match geometry {
-        SurfaceGeometry::Plane { .. } => {
-            annotations.derived(id, "geometry.u_axis");
+    loop {
+        match geometry {
+            SurfaceGeometry::Plane { .. } => {
+                annotations.derived(id.to_owned(), "geometry.u_axis");
+                break;
+            }
+            SurfaceGeometry::Cylinder { .. }
+            | SurfaceGeometry::Cone { .. }
+            | SurfaceGeometry::Torus { .. } => {
+                annotations.derived(id.to_owned(), "geometry.ref_direction");
+                break;
+            }
+            SurfaceGeometry::Sphere { .. } => {
+                annotations
+                    .derived(id, "geometry.axis")
+                    .derived(id.to_owned(), "geometry.ref_direction");
+                break;
+            }
+            SurfaceGeometry::Transformed { basis, .. } => geometry = basis,
+            SurfaceGeometry::Nurbs(_)
+            | SurfaceGeometry::Procedural { .. }
+            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Unknown { .. } => break,
         }
-        SurfaceGeometry::Cylinder { .. }
-        | SurfaceGeometry::Cone { .. }
-        | SurfaceGeometry::Torus { .. } => {
-            annotations.derived(id, "geometry.ref_direction");
-        }
-        SurfaceGeometry::Sphere { .. } => {
-            annotations
-                .derived(&id, "geometry.axis")
-                .derived(id, "geometry.ref_direction");
-        }
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Unknown { .. } => {}
     }
 }
 
@@ -1098,7 +1120,10 @@ fn derive_planar_pcurves(
         .collect::<HashMap<_, _>>();
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurve = Some(id.clone());
+            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id.clone(),
+                isoparametric: None,
+            }];
         }
         annotations
             .note(&id, source_stream, 0)
@@ -1135,7 +1160,7 @@ fn derive_cylindrical_pcurves(
     let position = |vertex_id: &VertexId| vertex_points.get(vertex_id).map(|point| point.position);
     let mut derived = Vec::new();
     for coedge in &out.coedges {
-        if coedge.pcurve.is_some() {
+        if !coedge.pcurves.is_empty() {
             continue;
         }
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
@@ -1254,7 +1279,10 @@ fn derive_cylindrical_pcurves(
         .collect::<HashMap<_, _>>();
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurve = Some(id.clone());
+            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id.clone(),
+                isoparametric: None,
+            }];
         }
         annotations
             .note(&id, source_stream, 0)
@@ -1284,7 +1312,7 @@ fn derive_spherical_pcurves(
     let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
     let mut derived = Vec::new();
     for coedge in &out.coedges {
-        if coedge.pcurve.is_some() {
+        if !coedge.pcurves.is_empty() {
             continue;
         }
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
@@ -1387,7 +1415,10 @@ fn derive_spherical_pcurves(
         .collect::<HashMap<_, _>>();
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurve = Some(id.clone());
+            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id.clone(),
+                isoparametric: None,
+            }];
         }
         annotations
             .note(&id, source_stream, 0)
@@ -1423,7 +1454,7 @@ fn derive_nurbs_boundary_pcurves(
     };
     let mut derived = Vec::new();
     for coedge in &out.coedges {
-        if coedge.pcurve.is_some() {
+        if !coedge.pcurves.is_empty() {
             continue;
         }
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
@@ -1533,7 +1564,10 @@ fn derive_nurbs_boundary_pcurves(
         .collect::<HashMap<_, _>>();
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurve = Some(id.clone());
+            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id.clone(),
+                isoparametric: None,
+            }];
         }
         annotations
             .note(&id, source_stream, 0)
@@ -1748,7 +1782,7 @@ fn synthesize_cylinder_seams(
             previous: circle_a.clone(),
             radial_next: seam_b.clone(),
             sense: Sense::Forward,
-            pcurve: None,
+            pcurves: Vec::new(),
         });
         coedge_indices.insert(seam_b.clone(), out.coedges.len());
         out.coedges.push(Coedge {
@@ -1759,7 +1793,7 @@ fn synthesize_cylinder_seams(
             previous: circle_b.clone(),
             radial_next: seam_a.clone(),
             sense: Sense::Reversed,
-            pcurve: None,
+            pcurves: Vec::new(),
         });
         let ring = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
         for (index, id) in ring.iter().enumerate() {
@@ -1866,6 +1900,7 @@ fn synthesize_sphere_seams(
                 center.y + radius * axis.y,
                 center.z + radius * axis.z,
             ),
+            source_object: None,
         });
         out.vertices.push(Vertex {
             id: vertex_id.clone(),
@@ -1890,7 +1925,7 @@ fn synthesize_sphere_seams(
             previous: ring[2].clone(),
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
-            pcurve: None,
+            pcurves: Vec::new(),
         });
         for (index, id) in ring.iter().enumerate() {
             if let Some(coedge_index) = coedge_indices.get(id) {
