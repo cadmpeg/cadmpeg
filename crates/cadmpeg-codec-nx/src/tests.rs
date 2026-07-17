@@ -3051,6 +3051,13 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
         None
     );
 
+    let mut sheet = ir.clone();
+    sheet.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
+    assert_eq!(
+        crate::decode::block_projection(&sheet, Some(dimensions), std::slice::from_ref(&output)),
+        None
+    );
+
     assert_eq!(
         crate::decode::block_projection(&ir, Some(dimensions), &[]),
         None

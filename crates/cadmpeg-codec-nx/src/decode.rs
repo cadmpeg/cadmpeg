@@ -10766,6 +10766,16 @@ pub(crate) fn block_projection(
     let [body] = outputs else {
         return None;
     };
+    if ir
+        .model
+        .bodies
+        .iter()
+        .find(|candidate| candidate.id == *body)?
+        .kind
+        != BodyKind::Solid
+    {
+        return None;
+    }
     let faces = body_faces(ir, body)?;
     let surface_geometry = ir
         .model
