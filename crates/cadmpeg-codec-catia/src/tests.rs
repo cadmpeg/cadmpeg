@@ -4543,6 +4543,15 @@ fn outer_object_graph_requires_records_to_cover_the_root_extent() {
 }
 
 #[test]
+fn outer_object_graph_requires_a_final_payload_terminator() {
+    for payload in [&[0xfe, 0xaa][..], &[0xe5, 1, 0, 0, 0, 0xfe][..]] {
+        let bytes =
+            object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], payload)]);
+        assert!(crate::object_graph::parse(&bytes).is_none());
+    }
+}
+
+#[test]
 fn outer_object_graph_accepts_one_length_closed_record() {
     let bytes =
         object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])]);

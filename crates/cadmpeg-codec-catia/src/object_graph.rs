@@ -398,7 +398,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
                 _ => None,
             })
             .collect();
-        let payload = decode_payload(&data[child + 6..record_end]);
+        let payload = decode_payload(&data[child + 6..record_end])?;
         let subtype = classify(&payload.fields);
         records.push(ObjectRecord {
             index: records.len(),
@@ -471,7 +471,7 @@ fn atom(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     }
 }
 
-fn decode_payload(bytes: &[u8]) -> ObjectPayload {
+fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
     let mut fields = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
@@ -479,6 +479,7 @@ fn decode_payload(bytes: &[u8]) -> ObjectPayload {
         match bytes[at] {
             0xfe => {
                 fields.push(PayloadField::Terminator);
+                at += 1;
                 break;
             }
             0xe5 if at + 5 <= bytes.len() => {
@@ -597,10 +598,12 @@ fn decode_payload(bytes: &[u8]) -> ObjectPayload {
             }
         }
     }
-    ObjectPayload {
-        size: bytes.len(),
-        fields,
-    }
+    (at == bytes.len() && matches!(fields.last(), Some(PayloadField::Terminator))).then_some(
+        ObjectPayload {
+            size: bytes.len(),
+            fields,
+        },
+    )
 }
 
 fn classify(fields: &[PayloadField]) -> PayloadSubtype {
