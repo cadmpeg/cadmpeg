@@ -671,12 +671,7 @@ fn classify(fields: &[PayloadField]) -> PayloadSubtype {
     if atom_count >= 2 && triplets == 0 && list_count == 0 {
         return PayloadSubtype::AtomVector;
     }
-    if fields.is_empty()
-        || (fields.len() <= 3
-            && fields
-                .iter()
-                .any(|field| matches!(field, PayloadField::Terminator)))
-    {
+    if fields.is_empty() || matches!(fields, [PayloadField::Terminator]) {
         PayloadSubtype::Empty
     } else {
         PayloadSubtype::Mixed

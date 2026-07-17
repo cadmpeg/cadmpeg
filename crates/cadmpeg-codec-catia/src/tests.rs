@@ -4475,7 +4475,7 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
     assert_eq!(graph.records[0].owner_ref, Some(2));
     assert_eq!(graph.records[0].class_ref, Some(3));
     assert_eq!(graph.records[0].storage_ref, Some(4));
-    assert_eq!(graph.records[0].subtype, PayloadSubtype::Empty);
+    assert_eq!(graph.records[0].subtype, PayloadSubtype::Mixed);
     assert!(matches!(
         graph.records[0].payload.fields.as_slice(),
         [
@@ -4573,6 +4573,10 @@ fn outer_object_graph_accepts_one_length_closed_record() {
     assert_eq!(graph.records.len(), 1);
     assert_eq!(graph.records[0].owner_ref, Some(1));
     assert_eq!(graph.records[0].class_ref, Some(1));
+    assert_eq!(
+        graph.records[0].subtype,
+        crate::object_graph::PayloadSubtype::Empty
+    );
 }
 
 #[test]
