@@ -638,7 +638,12 @@ fn native_parameter_is_length(feature: &Feature, name: &str, expression: Option<
         {
             true
         }
-        _ => false,
+        _ => {
+            is_extrude(feature)
+                && feature.properties.get("EndCondition").map(String::as_str) == Some("Symmetric")
+                && feature.parameters.len() == 1
+                && feature.parameters.contains_key(name)
+        }
     }
 }
 
@@ -2441,7 +2446,16 @@ fn project_extrude(
         None | Some("Blind") => Extent::Blind {
             length: length("Depth")?,
         },
-        Some("Symmetric") => match length("Depth") {
+        Some("Symmetric") => match length("Depth").or_else(|| {
+            if feature.parameters.contains_key("Depth") || feature.parameters.contains_key("D1") {
+                return None;
+            }
+            let mut values = feature.parameters.values();
+            let sole = values.next().filter(|_| values.next().is_none())?;
+            parse_positive_length_mm(sole)
+                .or_else(|| parse_positive_dimension_length_mm(sole))
+                .map(Length)
+        }) {
             Some(length) => Extent::Symmetric { length },
             None => Extent::Unresolved,
         },
