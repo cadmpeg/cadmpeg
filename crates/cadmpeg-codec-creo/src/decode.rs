@@ -19604,6 +19604,67 @@ fn orient_line_edge_carrier(
     Some([0.0, length])
 }
 
+fn exact_line_edge_parameter_range(
+    geometry: &CurveGeometry,
+    points: [[f64; 3]; 2],
+) -> Option<[f64; 2]> {
+    if !curve_contains_points(geometry, points) {
+        return None;
+    }
+    let CurveGeometry::Line { origin, direction } = geometry else {
+        return None;
+    };
+    let direction = [direction.x, direction.y, direction.z];
+    let denominator = dot(direction, direction);
+    if !denominator.is_finite() || denominator <= 0.0 {
+        return None;
+    }
+    let origin = [origin.x, origin.y, origin.z];
+    let parameters = points.map(|point| {
+        dot(
+            std::array::from_fn(|index| point[index] - origin[index]),
+            direction,
+        ) / denominator
+    });
+    parameters
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(if parameters[0] <= parameters[1] {
+            parameters
+        } else {
+            [parameters[1], parameters[0]]
+        })
+}
+
+#[cfg(test)]
+mod native_edge_parameter_tests {
+    use super::*;
+
+    #[test]
+    fn preserves_scaled_line_parameterization_and_orders_the_interval() {
+        let line = CurveGeometry::Line {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            direction: Vector3::new(2.0, 0.0, 0.0),
+        };
+        assert_eq!(
+            exact_line_edge_parameter_range(&line, [[7.0, 2.0, 3.0], [-3.0, 2.0, 3.0]]),
+            Some([-2.0, 3.0])
+        );
+    }
+
+    #[test]
+    fn withholds_parameters_for_points_off_the_line() {
+        let line = CurveGeometry::Line {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            direction: Vector3::new(2.0, 0.0, 0.0),
+        };
+        assert_eq!(
+            exact_line_edge_parameter_range(&line, [[7.0, 2.0, 3.0], [-3.0, 2.1, 3.0]]),
+            None
+        );
+    }
+}
+
 fn oriented_native_pcurve_endpoints(
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
@@ -19911,9 +19972,13 @@ fn transfer_plane_brep(
                 .curves
                 .iter_mut()
                 .find(|candidate| candidate.id == curve)
-                .and_then(|curve| orient_line_edge_carrier(&mut curve.geometry, points))
+                .and_then(|candidate| orient_line_edge_carrier(&mut candidate.geometry, points))
         } else {
-            None
+            ir.model
+                .curves
+                .iter()
+                .find(|candidate| candidate.id == curve)
+                .and_then(|candidate| exact_line_edge_parameter_range(&candidate.geometry, points))
         };
         let id = EdgeId(format!("creo:visibgeom:edge#{curve_id}"));
         annotate(

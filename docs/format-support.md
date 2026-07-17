@@ -296,7 +296,8 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   Third-plane intersections resolve vertices across every transferred
   multi-component analytic circle family when exactly one point remains.
   Solved native edges on derived intersection lines use start-anchored unit
-  carriers and `[0, length]` parameter intervals.
+  carriers and `[0, length]` parameter intervals. Exact native line carriers
+  retain their source parameterization and use projected endpoint intervals.
   Complete positional and uniquely face-bound labeled UV endpoint pairs
   transfer as straight pcurves when their face-surface images uniquely agree
   with the solved coedge traversal.

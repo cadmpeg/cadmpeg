@@ -926,9 +926,11 @@ a topological vertex only when all carrier intersections reduce to one point.
 For a native edge on a derived intersection-line carrier, the oriented start
 vertex is the carrier origin and the unit vector from start to end is its
 direction. The edge interval is `[0, length]`. Exact source parameterizations
-are not replaced by this construction. Periodic carriers require an
-independent arc-selection rule and do not acquire an interval from endpoint
-positions alone.
+are not replaced by this construction. For an exact line with origin `O` and
+direction `D`, each solved endpoint `P` has native parameter
+`dot(P - O, D) / dot(D, D)`; the edge interval is the ordered pair of those
+parameters. Periodic carriers require an independent arc-selection rule and do
+not acquire an interval from endpoint positions alone.
 
 A plane normal to a torus axis at axial offset `z` intersects the torus in circles of radii `R ± sqrt(r² - z²)`. At `|z| = r` the two roots coincide in one contact circle. At `|z| < r` the edge's paired solved endpoint orbits select one circle when exactly one positive-radius candidate contains both endpoints. A zero-radius horn-torus root is a point and does not define a curve.
 
