@@ -10786,6 +10786,17 @@ fn decode_pattern_definition(
             text_reference: parsed.auxiliary_references[0],
         });
     }
+    if parsed.state == 0x200_0000_0000
+        && parsed.auxiliary_references.len() == 1
+        && parsed.members.contains(&parsed.auxiliary_references[0])
+    {
+        if let Some(glyph_transforms) = parsed.text_glyph_transforms.clone() {
+            return Some(SketchPatternDefinition::TextPath {
+                text_reference: parsed.auxiliary_references[0],
+                glyph_transforms,
+            });
+        }
+    }
     None
 }
 
@@ -11344,6 +11355,7 @@ struct ParsedSketchRelation {
     state: u64,
     state_offset: usize,
     entity_genesis: Option<u64>,
+    text_glyph_transforms: Option<Vec<[[f64; 4]; 4]>>,
     return_members: Vec<u32>,
     return_member_offsets: Vec<usize>,
     parsed_end: usize,
@@ -11400,6 +11412,25 @@ fn parse_sketch_relation(
     }
     let mut auxiliary_references = Vec::new();
     let mut auxiliary_reference_offsets = Vec::new();
+    // A text-path relation follows the `EntityGenesis` block with a `0x01`
+    // flag, the marked text-entity reference and its zero padding, a u32
+    // character count, and per-character blocks of `u32 16` and sixteen f64
+    // values. Parse the run structurally so the f64 payload's bytes are not
+    // misread as auxiliary references; the owning sketch reference follows
+    // the last block directly.
+    let mut text_glyph_transforms = None;
+    if payload.get(cursor) == Some(&1) && payload.get(cursor + 1) == Some(&1) {
+        if let Some((text_reference, transforms, after)) = parse_text_glyph_run(payload, cursor + 1)
+        {
+            if marked_u32(payload, after).is_some_and(|(reference, _)| owners.contains(&reference))
+            {
+                auxiliary_references.push(text_reference);
+                auxiliary_reference_offsets.push(cursor + 2);
+                text_glyph_transforms = Some(transforms);
+                cursor = after;
+            }
+        }
+    }
     let (owner_reference, owner_reference_offset, end) = loop {
         let (reference, end) = marked_u32(payload, cursor)?;
         if owners.contains(&reference) {
@@ -11460,10 +11491,52 @@ fn parse_sketch_relation(
         state,
         state_offset,
         entity_genesis,
+        text_glyph_transforms,
         return_members,
         return_member_offsets,
         parsed_end,
     })
+}
+
+/// Parse a text-path glyph run at `at`: the marked text-entity reference,
+/// six zero bytes, a u32 character count, and that many blocks of `u32 16`
+/// followed by sixteen finite f64 values forming a row-major 4×4 character
+/// placement transform. Returns the text reference, the transforms in
+/// character order, and the offset directly after the last block.
+type TextGlyphRun = (u32, Vec<[[f64; 4]; 4]>, usize);
+
+fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
+    let (text_reference, end) = marked_u32(payload, at)?;
+    if payload.get(end..end + 6) != Some(&[0u8; 6]) {
+        return None;
+    }
+    let count = usize::try_from(u32_at(payload, end + 6)?).ok()?;
+    if !(1..=4096).contains(&count) {
+        return None;
+    }
+    let mut cursor = end + 10;
+    let mut transforms = Vec::with_capacity(count);
+    for _ in 0..count {
+        if u32_at(payload, cursor) != Some(16) {
+            return None;
+        }
+        let mut transform = [[0.0; 4]; 4];
+        for ordinal in 0..16 {
+            let value = f64::from_le_bytes(
+                payload
+                    .get(cursor + 4 + ordinal * 8..cursor + 12 + ordinal * 8)?
+                    .try_into()
+                    .ok()?,
+            );
+            if !value.is_finite() {
+                return None;
+            }
+            transform[ordinal / 4][ordinal % 4] = value;
+        }
+        transforms.push(transform);
+        cursor += 132;
+    }
+    Some((text_reference, transforms, cursor))
 }
 
 fn next_indexed_record_offset(bytes: &[u8], mut position: usize) -> Option<usize> {
@@ -19658,6 +19731,62 @@ mod relation_tests {
             decode_pattern_definition(&record, &parsed),
             Some(crate::records::SketchPatternDefinition::TextFrame {
                 text_reference: 2394
+            })
+        );
+    }
+
+    #[test]
+    fn genesis_relation_parses_text_path_glyph_run() {
+        let glyphs: [[[f64; 4]; 4]; 2] = [
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, -5.0627],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            [
+                [1.0, 0.0, 0.0, 0.6216],
+                [0.0, 1.0, 0.0, -5.0627],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        ];
+        let mut auxiliary = vec![1u8];
+        push_reference(&mut auxiliary, 304);
+        auxiliary.extend_from_slice(&[0u8; 6]);
+        auxiliary.extend_from_slice(&2u32.to_le_bytes());
+        for transform in &glyphs {
+            auxiliary.extend_from_slice(&16u32.to_le_bytes());
+            for value in transform.iter().flatten() {
+                auxiliary.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        let record = genesis_relation_record(
+            &[(237, 1), (304, 0)],
+            2,
+            &auxiliary,
+            201,
+            0x200_0000_0000,
+            &[237],
+        );
+        let parsed = parse_sketch_relation(&record, &HashSet::from([201])).unwrap();
+        assert_eq!(parsed.members, [237, 304]);
+        assert_eq!(parsed.member_roles, [1, 0]);
+        assert_eq!(parsed.entity_genesis, Some(2));
+        assert_eq!(parsed.auxiliary_references, [304]);
+        assert_eq!(parsed.owner_reference, 201);
+        assert_eq!(parsed.state, 0x200_0000_0000);
+        assert_eq!(parsed.return_members, [237]);
+        assert_eq!(parsed.text_glyph_transforms.as_deref(), Some(&glyphs[..]));
+        assert_eq!(
+            decode_constraint_kinds(parsed.state),
+            (vec![SketchConstraintKind::TextPath], 0)
+        );
+        assert_eq!(
+            decode_pattern_definition(&record, &parsed),
+            Some(crate::records::SketchPatternDefinition::TextPath {
+                text_reference: 304,
+                glyph_transforms: glyphs.to_vec(),
             })
         );
     }

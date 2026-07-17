@@ -1891,6 +1891,14 @@ pub enum SketchPatternDefinition {
         /// Record index of the sketch-text entity the frame curves bind to.
         text_reference: u32,
     },
+    /// A text-path relation's auxiliary operands.
+    TextPath {
+        /// Record index of the sketch-text entity placed along the path curve.
+        text_reference: u32,
+        /// Row-major 4×4 character placement transforms in character order,
+        /// in centimetres.
+        glyph_transforms: Vec<[[f64; 4]; 4]>,
+    },
 }
 
 /// One direction clause of a rectangular-pattern sketch relation.
