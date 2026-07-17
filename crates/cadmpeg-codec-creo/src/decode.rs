@@ -10463,7 +10463,6 @@ fn resolved_feature_dimension_parameter(
     ordinal: usize,
 ) -> Option<(&crate::feature::FeatureDimension, ParameterId)> {
     let dimension = table.rows.get(ordinal)?;
-    dimension.value?;
     (table
         .rows
         .iter()
@@ -10548,9 +10547,6 @@ fn transfer_feature_dimensions(
             continue;
         }
         for (source_ordinal, dimension) in table.rows.iter().enumerate() {
-            if dimension.value.is_none() {
-                continue;
-            }
             candidates.push((owner_feature_id, definition, source_ordinal, dimension));
         }
     }
@@ -10574,9 +10570,6 @@ fn transfer_feature_dimensions(
             dimension.external_id,
             occurrence,
         );
-        let value = dimension
-            .value
-            .expect("resolved feature dimension has a defined value");
         annotate(
             annotations,
             &id.0,
@@ -10601,12 +10594,17 @@ fn transfer_feature_dimensions(
         if let Some(auxiliary) = dimension.auxiliary_value {
             properties.insert("auxiliary_value".to_string(), auxiliary.to_string());
         }
-        let expression = value.to_string();
-        let value = match dimension.value_unit {
+        if dimension.value.is_none() {
+            properties.insert("value_state".to_string(), "unresolved".to_string());
+        }
+        let expression = dimension
+            .value
+            .map_or_else(String::new, |value| value.to_string());
+        let value = dimension.value.map(|value| match dimension.value_unit {
             crate::feature::DimensionUnit::Radians => ParameterValue::Angle(Angle(value)),
             crate::feature::DimensionUnit::Millimeters => ParameterValue::Length(Length(value)),
             crate::feature::DimensionUnit::SchemaDefined => ParameterValue::Real(value),
-        };
+        });
         ir.model.parameters.push(DesignParameter {
             id: id.clone(),
             owner: owner.clone(),
@@ -10614,7 +10612,7 @@ fn transfer_feature_dimensions(
             name,
             expression,
             display: (dimension.dimension_type == 0x03).then_some(DimensionDisplay::Radius),
-            value: Some(value),
+            value,
             dependencies: Vec::new(),
             properties,
             pmi: None,
@@ -14793,6 +14791,22 @@ mod resolved_sketch_tests {
             Some((
                 &dimension,
                 ParameterId("creo:featdefs:parameter#917:40:3".to_string())
+            ))
+        );
+        let unresolved_dimension = crate::feature::FeatureDimension {
+            value: None,
+            external_id: 4,
+            ..dimension.clone()
+        };
+        let unresolved_table = crate::feature::FeatureDimensionTable {
+            rows: vec![unresolved_dimension.clone()],
+            ..table.clone()
+        };
+        assert_eq!(
+            resolved_feature_dimension_parameter(917, 40, &unresolved_table, 0),
+            Some((
+                &unresolved_dimension,
+                ParameterId("creo:featdefs:parameter#917:40:4".to_string())
             ))
         );
         table.rows.push(dimension);
