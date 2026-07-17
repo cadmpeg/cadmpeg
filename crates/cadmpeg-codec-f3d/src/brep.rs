@@ -31,7 +31,7 @@ use cadmpeg_ir::geometry::{
     BlendSupport, Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
     ProceduralSurface, ProceduralSurfaceDefinition, RollingBallConstruction,
     RollingBallRadiusSelector, RollingBallSide, RollingBallThirdSide, Surface, SurfaceGeometry,
-    VariableBlendConstruction, VariableBlendSide, VertexBlendBoundary, VertexBlendBoundaryGeometry,
+    VariableBlendConstruction, VertexBlendBoundary, VertexBlendBoundaryGeometry,
     VertexBlendConstruction,
 };
 use cadmpeg_ir::hash::sha256_hex;
@@ -3247,55 +3247,68 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 let prefix = format!(
                                     "f3d:brep:procedural_surface#{i}:variable_side{side_index}"
                                 );
-                                let surface = SurfaceId(format!("{prefix}:surface"));
-                                out.surfaces.push(Surface {
-                                    id: surface.clone(),
-                                    geometry: side.surface,
-                                    source_object: None,
+                                let surface = side.surface.map(|geometry| {
+                                    let id = SurfaceId(format!("{prefix}:surface"));
+                                    out.surfaces.push(Surface {
+                                        id: id.clone(),
+                                        geometry,
+                                        source_object: None,
+                                    });
+                                    id
                                 });
-                                let curve = CurveId(format!("{prefix}:curve"));
-                                out.curves.push(Curve {
-                                    id: curve.clone(),
-                                    geometry: CurveGeometry::Nurbs(side.curve),
-                                    source_object: None,
+                                let curve = side.curve.map(|geometry| {
+                                    let id = CurveId(format!("{prefix}:curve"));
+                                    out.curves.push(Curve {
+                                        id: id.clone(),
+                                        geometry,
+                                        source_object: None,
+                                    });
+                                    id
                                 });
-                                sides.push(VariableBlendSide {
+                                sides.push(RollingBallSide {
                                     support_kind: side.support_kind,
                                     surface,
+                                    surface_ranges: side.surface_ranges,
                                     curve,
+                                    curve_range: side.curve_range,
                                     pcurve: side.pcurve.map(embedded_pcurve_geometry),
                                     location: side.location,
                                     secondary_pcurve: side
                                         .secondary_pcurve
                                         .map(embedded_pcurve_geometry),
-                                    extension_flag: side.extension_flag,
+                                    extension: side.extension,
                                     tertiary_pcurve: side
                                         .tertiary_pcurve
                                         .map(embedded_pcurve_geometry),
                                 });
                             }
-                            let [first, second]: [VariableBlendSide; 2] = sides
+                            let [first, second]: [RollingBallSide; 2] = sides
                                 .try_into()
                                 .expect("invariant: variable blend has two sides");
-                            let mut add_curve = |suffix: &str, geometry: NurbsCurve| {
+                            let mut add_curve = |suffix: &str, geometry: CurveGeometry| {
                                 let id = CurveId(format!(
                                     "f3d:brep:procedural_surface#{i}:variable_{suffix}"
                                 ));
                                 out.curves.push(Curve {
                                     id: id.clone(),
-                                    geometry: CurveGeometry::Nurbs(geometry),
+                                    geometry,
                                     source_object: None,
                                 });
                                 id
                             };
-                            let primary_curve = add_curve("primary", construction.primary_curve);
-                            let secondary_curve =
-                                add_curve("secondary", construction.secondary_curve);
-                            let post_curve = add_curve("post", construction.post_curve);
+                            let slice = add_curve("slice", construction.slice);
+                            let secondary_curve = construction
+                                .secondary_curve
+                                .map(|geometry| add_curve("secondary", geometry));
+                            let post_curve = construction
+                                .post_curve
+                                .map(|curve| add_curve("post", CurveGeometry::Nurbs(curve)));
                             ProceduralSurfaceDefinition::VariableBlend {
                                 construction: Box::new(VariableBlendConstruction {
+                                    definition_index: construction.definition_index,
                                     sides: Box::new([first, second]),
-                                    primary_curve,
+                                    slice,
+                                    slice_range: construction.slice_range,
                                     offsets: construction.offsets,
                                     radius_kind: construction.radius_kind,
                                     first_value: construction.first_value,
@@ -3308,8 +3321,13 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     shape_parameter: construction.shape_parameter,
                                     shape_length: construction.shape_length,
                                     shape_tail: construction.shape_tail,
+                                    cache_selector: construction.cache_selector,
+                                    discontinuities: construction.discontinuities,
                                     shape_extensions: construction.shape_extensions,
+                                    tail_flag: construction.tail_flag,
+                                    tail_extensions: construction.tail_extensions,
                                     secondary_curve,
+                                    secondary_range: construction.secondary_range,
                                     convexity: construction.convexity,
                                     render_mode: construction.render_mode,
                                     post_range: construction.post_range,

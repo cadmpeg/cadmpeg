@@ -3872,11 +3872,13 @@ fn append_generated_variable_blend_side(bytes: &mut Vec<u8>, label: &str, x: f64
     t_vec(bytes, [0.0, 0.0, 1.0]);
     t_vec(bytes, [1.0, 0.0, 0.0]);
     bytes.push(0x0b);
+    bytes.extend_from_slice(&[0x0b; 4]);
     bytes.extend_from_slice(&generated_curve_block());
+    bytes.extend_from_slice(&[0x0b, 0x0b]);
     bytes.extend_from_slice(&generated_pcurve_block());
     t_pos(bytes, [x, 2.0, 3.0]);
     t_ident(bytes, "nullbs");
-    bytes.push(if x < 2.0 { 0x0a } else { 0x0b });
+    t_long(bytes, if label == "left" { 0 } else { 5 });
     t_ident(bytes, "nullbs");
 }
 
@@ -3886,10 +3888,10 @@ fn append_generated_variable_blend_value(
     radii: [f64; 2],
 ) {
     push_u8_string(bytes, "two_ends");
-    bytes.push(0x0a);
     t_long(bytes, 7);
     bytes.push(0x15);
     bytes.extend_from_slice(&3i64.to_le_bytes());
+    bytes.push(0x0a);
     for value in parameters.into_iter().chain(radii) {
         t_dbl(bytes, value);
     }
@@ -3913,9 +3915,11 @@ fn synthetic_variable_blend_smbh_with_branch(name: &str, rounded_chamfer: bool) 
     t_ref(&mut surface, -1);
     surface.push(0x0f);
     t_ident(&mut surface, name);
+    t_long(&mut surface, 23100);
     append_generated_variable_blend_side(&mut surface, "left", 1.0);
     append_generated_variable_blend_side(&mut surface, "right", 4.0);
     surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&[0x0b, 0x0b]);
     t_dbl(&mut surface, -0.2);
     t_dbl(&mut surface, 0.4);
     surface.push(0x15);
@@ -3929,22 +3933,39 @@ fn synthetic_variable_blend_smbh_with_branch(name: &str, rounded_chamfer: bool) 
         surface.extend_from_slice(&2i64.to_le_bytes());
         append_generated_variable_blend_value(&mut surface, [0.0, 1.0], [5.5, 6.5]);
     }
-    for value in [-1.0, 2.0, -3.0, 4.0] {
+    for value in [-1.0, 2.0] {
+        surface.push(0x0a);
         t_dbl(&mut surface, value);
     }
+    surface.push(0x0b);
+    surface.push(0x0b);
     t_long(&mut surface, 11);
     t_dbl(&mut surface, 0.125);
     t_dbl(&mut surface, 0.6);
     t_long(&mut surface, 12);
+    push_tagged_i64(&mut surface, 0x15, 0);
     surface.extend_from_slice(&generated_surface_block());
     t_dbl(&mut surface, 0.004);
+    for values in [&[0.125][..], &[][..], &[0.25, 0.375][..]] {
+        t_long(&mut surface, i64::try_from(values.len()).unwrap());
+        for value in values {
+            t_dbl(&mut surface, *value);
+        }
+    }
     for value in [21, 22, 23] {
         t_long(&mut surface, value);
     }
+    surface.push(0x0a);
+    for value in [31, 32, 33] {
+        t_long(&mut surface, value);
+    }
     surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&[0x0b, 0x0b]);
     surface.push(0x0a);
     surface.push(0x0b);
+    surface.push(0x0a);
     t_dbl(&mut surface, 0.0);
+    surface.push(0x0a);
     t_dbl(&mut surface, 1.0);
     surface.extend_from_slice(&generated_curve_block());
     t_ident(&mut surface, "nullbs");
@@ -15240,6 +15261,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         else {
             panic!("expected variable blend")
         };
+        assert_eq!(construction.definition_index, 23100);
         assert_eq!(
             construction.sides[0].support_kind,
             cadmpeg_ir::geometry::VariableBlendSupportKind::Surface
@@ -15248,8 +15270,8 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             construction.sides[1].support_kind,
             cadmpeg_ir::geometry::VariableBlendSupportKind::Curve
         );
-        assert_eq!(construction.sides[0].extension_flag, Some(true));
-        assert_eq!(construction.sides[1].extension_flag, Some(false));
+        assert_eq!(construction.sides[0].extension, Some(0));
+        assert_eq!(construction.sides[1].extension, Some(5));
         assert_eq!(
             construction.sides[0].location,
             cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
@@ -15264,13 +15286,26 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         else {
             panic!("expected two-ends radius law")
         };
+        assert!(construction.first_value.modern_flag);
+        assert_eq!(construction.first_value.discriminator, 7);
+        assert_eq!(construction.first_value.calibrated, 3);
         assert_eq!(*parameters, [0.25, 0.75]);
         assert_eq!(*radii, [15.0, 25.0]);
-        assert_eq!(construction.u_range, [-1.0, 2.0]);
-        assert_eq!(construction.v_range, [-3.0, 4.0]);
+        assert_eq!(construction.slice_range, [None, None]);
+        assert_eq!(construction.u_range, [Some(-1.0), Some(2.0)]);
+        assert_eq!(construction.v_range, [None, None]);
         assert_eq!(construction.shape_prefix, 11);
         assert_eq!(construction.shape_length, 6.0);
+        assert_eq!(construction.cache_selector, 0);
+        assert_eq!(
+            construction.discontinuities,
+            [vec![0.125], vec![], vec![0.25, 0.375]]
+        );
         assert_eq!(construction.shape_extensions, [21, 22, 23]);
+        assert!(construction.tail_flag);
+        assert_eq!(construction.tail_extensions, [31, 32, 33]);
+        assert!(construction.secondary_curve.is_some());
+        assert_eq!(construction.secondary_range, [None, None]);
         assert_eq!(
             construction.convexity,
             cadmpeg_ir::geometry::VariableBlendConvexity::Convex
@@ -15279,17 +15314,18 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             construction.render_mode,
             cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallSnapshot
         );
-        assert_eq!(construction.post_range, [0.0, 1.0]);
+        assert_eq!(construction.post_range, [Some(0.0), Some(1.0)]);
+        assert!(construction.post_curve.is_some());
         assert!(construction.post_pcurve.is_none());
         assert!(construction.sides.iter().all(|side| side.pcurve.is_some()));
 
         let expected = construction.clone();
-        let post_curve = construction.post_curve.clone();
-        let primary_curve = construction.primary_curve.clone();
+        let post_curve = construction.post_curve.clone().expect("post curve");
+        let slice_curve = construction.slice.clone();
         let side_curves = construction
             .sides
             .iter()
-            .map(|side| side.curve.clone())
+            .map(|side| side.curve.clone().expect("side curve"))
             .collect::<Vec<_>>();
         let mut source_less = result.ir;
         source_less.source = None;
@@ -15308,8 +15344,8 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             .model
             .curves
             .iter_mut()
-            .find(|curve| curve.id == primary_curve)
-            .expect("variable-blend primary curve")
+            .find(|curve| curve.id == slice_curve)
+            .expect("variable-blend slice curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
             origin: cadmpeg_ir::math::Point3::new(3.0, -2.0, 1.0),
             direction: cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0),
@@ -15346,7 +15382,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                 .model
                 .curves
                 .iter()
-                .find(|curve| curve.id == actual.post_curve)
+                .find(|curve| Some(&curve.id) == actual.post_curve.as_ref())
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
                 if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
@@ -15358,7 +15394,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                     .model
                     .curves
                     .iter()
-                    .find(|curve| curve.id == side.curve)
+                    .find(|curve| Some(&curve.id) == side.curve.as_ref())
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
                     if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
@@ -15370,7 +15406,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                 .model
                 .curves
                 .iter()
-                .find(|curve| curve.id == actual.primary_curve)
+                .find(|curve| curve.id == actual.slice)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
                 if curve.degree == 1 && curve.knots == [-1.0, -1.0, 2.0, 2.0]

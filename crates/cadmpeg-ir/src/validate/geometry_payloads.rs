@@ -1333,9 +1333,17 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 construction.u_range,
                 construction.v_range,
                 construction.post_range,
+                construction.slice_range,
+                construction.secondary_range,
             ]
             .iter()
-            .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
+            .all(|range| {
+                range.iter().flatten().all(|value| value.is_finite())
+                    && match (range[0], range[1]) {
+                        (Some(lower), Some(upper)) => lower <= upper,
+                        _ => true,
+                    }
+            });
             let sides_valid = construction.sides.iter().all(|side| {
                 side.location.x.is_finite()
                     && side.location.y.is_finite()

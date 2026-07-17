@@ -7908,11 +7908,11 @@ fn native_variable_blend_value(
         ));
     }
     native_string(bytes, &value.name)?;
-    bytes.push(native_bool(value.modern_flag));
     if value.discriminator != 1 {
         native_i64(bytes, value.discriminator);
     }
     native_enum(bytes, value.calibrated);
+    bytes.push(native_bool(value.modern_flag));
     match &value.payload {
         VariableBlendValuePayload::TwoEnds { parameters, radii } => {
             for parameter in parameters {
@@ -8155,60 +8155,6 @@ fn encode_native_vertex_blend(
     Ok(())
 }
 
-fn native_variable_blend_side(
-    bytes: &mut Vec<u8>,
-    target: &CadIr,
-    side: &cadmpeg_ir::geometry::VariableBlendSide,
-) -> Result<(), CodecError> {
-    use cadmpeg_ir::geometry::VariableBlendSupportKind;
-
-    native_string(
-        bytes,
-        match side.support_kind {
-            VariableBlendSupportKind::CosineCurve => "blend_support_cos_curve",
-            VariableBlendSupportKind::Curve => "blend_support_curve",
-            VariableBlendSupportKind::PointCurve => "blend_support_point_curve",
-            VariableBlendSupportKind::Surface => "blend_support_surface",
-            VariableBlendSupportKind::ZeroCurve => "blend_support_zero_curve",
-        },
-    )?;
-    let surface = target
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == side.surface)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!("variable support {} is missing", side.surface))
-        })?;
-    native_embedded_surface(bytes, &surface.geometry)?;
-    let curve = target
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id == side.curve)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!("variable side curve {} is missing", side.curve))
-        })?;
-    let curve = native_spline_field_curve(
-        &curve.geometry,
-        native_pcurve_knot_domain(side.pcurve.as_ref())?,
-    )?;
-    native_nurbs_curve(bytes, &curve)?;
-    native_optional_pcurve(bytes, side.pcurve.as_ref())?;
-    native_point(
-        bytes,
-        [
-            side.location.x / 10.0,
-            side.location.y / 10.0,
-            side.location.z / 10.0,
-        ],
-    );
-    native_optional_pcurve(bytes, side.secondary_pcurve.as_ref())?;
-    bytes.push(native_bool(side.extension_flag.unwrap_or(false)));
-    native_optional_pcurve(bytes, side.tertiary_pcurve.as_ref())?;
-    Ok(())
-}
-
 fn encode_native_variable_blend(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -8222,16 +8168,26 @@ fn encode_native_variable_blend(
     })?;
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
-    native_ident(bytes, "var_blend_spl_sur")?;
+    native_ident(bytes, "srf_srf_v_bl_spl_sur")?;
+    native_i64(bytes, construction.definition_index);
     for side in construction.sides.iter() {
-        native_variable_blend_side(bytes, target, side)?;
+        native_rolling_ball_side(bytes, target, side)?;
     }
-    let primary_curve = native_loft_curve_in_range(
-        target,
-        &construction.primary_curve,
-        Some(construction.u_range),
-    )?;
-    native_nurbs_curve(bytes, &primary_curve)?;
+    let slice_range = match construction.slice_range {
+        [Some(lower), Some(upper)] => Some([lower, upper]),
+        _ => match construction.u_range {
+            [Some(lower), Some(upper)] => Some([lower, upper]),
+            _ => None,
+        },
+    };
+    let slice = native_loft_curve_in_range(target, &construction.slice, slice_range)?;
+    native_nurbs_curve(bytes, &slice)?;
+    for endpoint in construction.slice_range {
+        bytes.push(native_bool(endpoint.is_some()));
+        if let Some(value) = endpoint {
+            native_f64(bytes, value);
+        }
+    }
     for offset in construction.offsets {
         native_f64(bytes, offset / 10.0);
     }
@@ -8274,7 +8230,7 @@ fn encode_native_variable_blend(
         }
         if let Some(tail) = &construction.single_radius_tail {
             match &tail.selector {
-                LoftBridgeToken::Integer(value) => native_i64(bytes, *value),
+                LoftBridgeToken::Integer(value) => native_enum(bytes, *value),
                 _ => {
                     return Err(CodecError::NotImplemented(
                         "variable single-radius selector must be an integer".into(),
@@ -8287,22 +8243,54 @@ fn encode_native_variable_blend(
         }
     }
     for range in [construction.u_range, construction.v_range] {
-        native_f64(bytes, range[0]);
-        native_f64(bytes, range[1]);
+        for endpoint in range {
+            bytes.push(native_bool(endpoint.is_some()));
+            if let Some(value) = endpoint {
+                native_f64(bytes, value);
+            }
+        }
     }
     native_i64(bytes, construction.shape_prefix);
     native_f64(bytes, construction.shape_parameter);
     native_f64(bytes, construction.shape_length / 10.0);
     native_i64(bytes, construction.shape_tail);
+    native_enum(bytes, construction.cache_selector);
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, cache_fit_tolerance / 10.0);
+    for values in &construction.discontinuities {
+        native_i64(
+            bytes,
+            i64::try_from(values.len()).map_err(|_| {
+                CodecError::NotImplemented("variable-blend discontinuity count exceeds i64".into())
+            })?,
+        );
+        for value in values {
+            native_f64(bytes, *value);
+        }
+    }
     for extension in construction.shape_extensions {
         native_i64(bytes, extension);
     }
-    native_nurbs_curve(
-        bytes,
-        &native_loft_curve(target, &construction.secondary_curve)?,
-    )?;
+    bytes.push(native_bool(construction.tail_flag));
+    for extension in construction.tail_extensions {
+        native_i64(bytes, extension);
+    }
+    if let Some(secondary) = &construction.secondary_curve {
+        let secondary_range = match construction.secondary_range {
+            [Some(lower), Some(upper)] => Some([lower, upper]),
+            _ => None,
+        };
+        let secondary = native_loft_curve_in_range(target, secondary, secondary_range)?;
+        native_nurbs_curve(bytes, &secondary)?;
+        for endpoint in construction.secondary_range {
+            bytes.push(native_bool(endpoint.is_some()));
+            if let Some(value) = endpoint {
+                native_f64(bytes, value);
+            }
+        }
+    } else {
+        native_ident(bytes, "null_curve")?;
+    }
     bytes.push(native_bool(matches!(
         construction.convexity,
         cadmpeg_ir::geometry::VariableBlendConvexity::Convex
@@ -8311,15 +8299,22 @@ fn encode_native_variable_blend(
         construction.render_mode,
         cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallEnvelope
     )));
-    for value in construction.post_range {
-        native_f64(bytes, value);
+    for endpoint in construction.post_range {
+        bytes.push(native_bool(endpoint.is_some()));
+        if let Some(value) = endpoint {
+            native_f64(bytes, value);
+        }
     }
-    let post_curve = native_loft_curve_in_range(
-        target,
-        &construction.post_curve,
-        Some(construction.post_range),
-    )?;
-    native_nurbs_curve(bytes, &post_curve)?;
+    if let Some(post_curve) = &construction.post_curve {
+        let post_range = match construction.post_range {
+            [Some(lower), Some(upper)] => Some([lower, upper]),
+            _ => None,
+        };
+        let post_curve = native_loft_curve_in_range(target, post_curve, post_range)?;
+        native_nurbs_curve(bytes, &post_curve)?;
+    } else {
+        native_ident(bytes, "nullbs")?;
+    }
     native_optional_pcurve(bytes, construction.post_pcurve.as_ref())?;
     bytes.push(0x10);
     Ok(())

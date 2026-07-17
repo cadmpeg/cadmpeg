@@ -663,18 +663,25 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             ProceduralSurfaceDefinition::VariableBlend { construction } => {
                 for side in construction.sides.iter() {
-                    if !ids.surfaces.contains(&side.surface.0) {
-                        ref_error(findings, &procedural.id.0, "surface", &side.surface.0);
+                    if let Some(surface) = &side.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
                     }
-                    if !ids.curves.contains(&side.curve.0) {
-                        ref_error(findings, &procedural.id.0, "curve", &side.curve.0);
+                    if let Some(curve) = &side.curve {
+                        if !ids.curves.contains(&curve.0) {
+                            ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                        }
                     }
                 }
                 for curve in [
-                    &construction.primary_curve,
-                    &construction.secondary_curve,
-                    &construction.post_curve,
-                ] {
+                    Some(&construction.slice),
+                    construction.secondary_curve.as_ref(),
+                    construction.post_curve.as_ref(),
+                ]
+                .into_iter()
+                .flatten()
+                {
                     if !ids.curves.contains(&curve.0) {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
                     }

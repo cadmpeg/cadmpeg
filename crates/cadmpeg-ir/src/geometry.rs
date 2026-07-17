@@ -1141,32 +1141,6 @@ pub struct RollingBallConstruction {
     pub third: Option<Box<RollingBallThirdSide>>,
 }
 
-/// One native support side in a variable-radius blend construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct VariableBlendSide {
-    /// Native support geometry family.
-    pub support_kind: VariableBlendSupportKind,
-    /// Primary support surface.
-    pub surface: SurfaceId,
-    /// Side curve.
-    pub curve: CurveId,
-    /// Primary BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pcurve: Option<PcurveGeometry>,
-    /// Native model-space side location.
-    pub location: Point3,
-    /// ASM secondary BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_pcurve: Option<PcurveGeometry>,
-    /// ASM extension Boolean between the secondary and tertiary pcurves;
-    /// absent in releases before the side extension was introduced.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extension_flag: Option<bool>,
-    /// ASM tertiary BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tertiary_pcurve: Option<PcurveGeometry>,
-}
-
 /// Geometry role selected by a variable-blend support-side discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -1233,9 +1207,9 @@ pub struct VariableBlendInterpolationPoint {
 pub struct VariableBlendValue {
     /// Native blend-value type name.
     pub name: String,
-    /// Modern ASM flag present after release 222.
+    /// Native Boolean following the calibrated enum.
     pub modern_flag: bool,
-    /// Native sub-discriminator.
+    /// Native sub-discriminator preceding the calibrated enum.
     pub discriminator: i64,
     /// Native calibrated enum.
     pub calibrated: i64,
@@ -1334,10 +1308,15 @@ pub struct VariableBlendChamfer {
 /// Complete native variable-radius blend construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VariableBlendConstruction {
-    /// Two ordered support-side graphs.
-    pub sides: Box<[VariableBlendSide; 2]>,
-    /// Primary blend curve.
-    pub primary_curve: CurveId,
+    /// Native subtype definition-table index.
+    pub definition_index: i64,
+    /// Two ordered support-side graphs in the rolling-ball side layout.
+    pub sides: Box<[RollingBallSide; 2]>,
+    /// Stored slice curve.
+    pub slice: CurveId,
+    /// Optional native slice-curve parameter endpoints.
+    #[serde(default)]
+    pub slice_range: [Option<f64>; 2],
     /// Two signed support offsets in document length units.
     pub offsets: [f64; 2],
     /// Radius-control cardinality.
@@ -1353,30 +1332,43 @@ pub struct VariableBlendConstruction {
     /// Optional single-radius selector tail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub single_radius_tail: Option<VariableBlendSingleRadiusTail>,
-    /// Native U interval.
-    pub u_range: [f64; 2],
-    /// Native V interval.
-    pub v_range: [f64; 2],
+    /// Native optional U interval endpoints.
+    pub u_range: [Option<f64>; 2],
+    /// Native optional V interval endpoints.
+    pub v_range: [Option<f64>; 2],
     /// Native integer before the solved shape.
     pub shape_prefix: i64,
     /// Native scalar before the solved shape.
     pub shape_parameter: f64,
     /// Native length before the solved shape, in document units.
     pub shape_length: f64,
-    /// Native integer immediately before the solved shape.
+    /// Native integer immediately before the cache selector.
     pub shape_tail: i64,
-    /// Three ASM integers following the solved shape.
+    /// Native selector preceding the solved surface cache.
+    pub cache_selector: i64,
+    /// Three ordered ASM discontinuity arrays following the fit tolerance.
+    pub discontinuities: [Vec<f64>; 3],
+    /// Three ASM integers following the discontinuity arrays.
     pub shape_extensions: [i64; 3],
-    /// Secondary curve following the solved shape.
-    pub secondary_curve: CurveId,
+    /// Native Boolean following the shape extensions.
+    pub tail_flag: bool,
+    /// Three ASM integers following the tail Boolean.
+    pub tail_extensions: [i64; 3],
+    /// Secondary curve following the tail extensions, absent for `null_curve`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_curve: Option<CurveId>,
+    /// Optional native secondary-curve parameter endpoints.
+    #[serde(default)]
+    pub secondary_range: [Option<f64>; 2],
     /// Blend convexity.
     pub convexity: VariableBlendConvexity,
     /// Solved-surface representation.
     pub render_mode: VariableBlendRenderMode,
-    /// Native post-shape interval.
-    pub post_range: [f64; 2],
-    /// Native post-shape BS3 curve.
-    pub post_curve: CurveId,
+    /// Native optional post-shape interval endpoints.
+    pub post_range: [Option<f64>; 2],
+    /// Native post-shape BS3 curve, absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_curve: Option<CurveId>,
     /// Native post-shape BS2 pcurve, absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_pcurve: Option<PcurveGeometry>,

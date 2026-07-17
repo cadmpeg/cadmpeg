@@ -840,39 +840,35 @@ pub(crate) struct EmbeddedRollingBallThirdSide {
     pub(crate) flag: bool,
 }
 
-pub(crate) struct EmbeddedVariableBlendSide {
-    pub(crate) support_kind: cadmpeg_ir::geometry::VariableBlendSupportKind,
-    pub(crate) surface: SurfaceGeometry,
-    pub(crate) curve: NurbsCurve,
-    pub(crate) pcurve: Option<NurbsPcurve>,
-    pub(crate) location: Point3,
-    pub(crate) secondary_pcurve: Option<NurbsPcurve>,
-    pub(crate) extension_flag: Option<bool>,
-    pub(crate) tertiary_pcurve: Option<NurbsPcurve>,
-}
-
 /// Embedded native variable blend before stable IR ids are assigned.
 pub struct EmbeddedVariableBlend {
-    pub(crate) sides: Box<[EmbeddedVariableBlendSide; 2]>,
-    pub(crate) primary_curve: NurbsCurve,
+    pub(crate) definition_index: i64,
+    pub(crate) sides: Box<[EmbeddedRollingBallSide; 2]>,
+    pub(crate) slice: CurveGeometry,
+    pub(crate) slice_range: [Option<f64>; 2],
     pub(crate) offsets: [f64; 2],
     pub(crate) radius_kind: cadmpeg_ir::geometry::VariableBlendRadiusKind,
     pub(crate) first_value: cadmpeg_ir::geometry::VariableBlendValue,
     pub(crate) second_value: Option<cadmpeg_ir::geometry::VariableBlendValue>,
     pub(crate) chamfer: Option<Box<cadmpeg_ir::geometry::VariableBlendChamfer>>,
     pub(crate) single_radius_tail: Option<cadmpeg_ir::geometry::VariableBlendSingleRadiusTail>,
-    pub(crate) u_range: [f64; 2],
-    pub(crate) v_range: [f64; 2],
+    pub(crate) u_range: [Option<f64>; 2],
+    pub(crate) v_range: [Option<f64>; 2],
     pub(crate) shape_prefix: i64,
     pub(crate) shape_parameter: f64,
     pub(crate) shape_length: f64,
     pub(crate) shape_tail: i64,
+    pub(crate) cache_selector: i64,
+    pub(crate) discontinuities: [Vec<f64>; 3],
     pub(crate) shape_extensions: [i64; 3],
-    pub(crate) secondary_curve: NurbsCurve,
+    pub(crate) tail_flag: bool,
+    pub(crate) tail_extensions: [i64; 3],
+    pub(crate) secondary_curve: Option<CurveGeometry>,
+    pub(crate) secondary_range: [Option<f64>; 2],
     pub(crate) convexity: cadmpeg_ir::geometry::VariableBlendConvexity,
     pub(crate) render_mode: cadmpeg_ir::geometry::VariableBlendRenderMode,
-    pub(crate) post_range: [f64; 2],
-    pub(crate) post_curve: NurbsCurve,
+    pub(crate) post_range: [Option<f64>; 2],
+    pub(crate) post_curve: Option<NurbsCurve>,
     pub(crate) post_pcurve: Option<NurbsPcurve>,
 }
 
@@ -3869,56 +3865,6 @@ fn decode_rolling_ball_third_side(
     })
 }
 
-fn decode_variable_blend_side(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<EmbeddedVariableBlendSide> {
-    use cadmpeg_ir::geometry::VariableBlendSupportKind;
-
-    let support_kind = match take_native_string(bytes, position)?.as_str() {
-        "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
-        "blend_support_curve" | "blendsupcur" => VariableBlendSupportKind::Curve,
-        "blend_support_point_curve" | "blendsuppnt" => VariableBlendSupportKind::PointCurve,
-        "blend_support_surface" | "blendsupsur" => VariableBlendSupportKind::Surface,
-        "blend_support_zero_curve" | "blendsupzro" => VariableBlendSupportKind::ZeroCurve,
-        _ => return None,
-    };
-    let surface = decode_embedded_surface(bytes, position, int_width)?;
-    let curve = decode_curve_block(bytes, *position, int_width)?;
-    *position = curve.end;
-    let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-    let location = take_native_vec3(bytes, position, 0x13)?;
-    let extension_start = *position;
-    let extension = (|| {
-        let secondary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-        let extension_flag = take_bool(bytes, position)?;
-        let tertiary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-        Some((secondary_pcurve, extension_flag, tertiary_pcurve))
-    })();
-    let (secondary_pcurve, extension_flag, tertiary_pcurve) = match extension {
-        Some((secondary, flag, tertiary)) => (secondary, Some(flag), tertiary),
-        None => {
-            *position = extension_start;
-            (None, None, None)
-        }
-    };
-    Some(EmbeddedVariableBlendSide {
-        support_kind,
-        surface,
-        curve: curve.curve,
-        pcurve,
-        location: Point3::new(
-            location[0] * LEN_TO_MM,
-            location[1] * LEN_TO_MM,
-            location[2] * LEN_TO_MM,
-        ),
-        secondary_pcurve,
-        extension_flag,
-        tertiary_pcurve,
-    })
-}
-
 fn take_blend_value_name(bytes: &[u8], position: &mut usize) -> Option<String> {
     let saved = *position;
     if let Some(value) = take_native_string(bytes, position) {
@@ -3943,17 +3889,17 @@ fn decode_variable_blend_value(
         return None;
     }
     let name = take_blend_value_name(bytes, position)?;
-    let modern_flag = if modern {
-        take_bool(bytes, position)?
-    } else {
-        false
-    };
     let discriminator = if bytes.get(*position) == Some(&0x04) {
         take_tagged_int(bytes, position, 0x04, int_width)?
     } else {
         1
     };
     let calibrated = take_tagged_int(bytes, position, 0x15, int_width)?;
+    let modern_flag = if modern {
+        take_bool(bytes, position)?
+    } else {
+        false
+    };
     let payload = match name.as_str() {
         "two_ends" => VariableBlendValuePayload::TwoEnds {
             parameters: [take_f64(bytes, position)?, take_f64(bytes, position)?],
@@ -4092,9 +4038,9 @@ mod variable_blend_value_tests {
 
     fn two_ends(bytes: &mut Vec<u8>) {
         text(bytes, "two_ends");
-        bytes.push(0x0a);
         integer(bytes, 0x04, 7);
         integer(bytes, 0x15, 3);
+        bytes.push(0x0a);
         for value in [0.25, 0.75, 1.5, 2.5] {
             double(bytes, value);
         }
@@ -4118,8 +4064,8 @@ mod variable_blend_value_tests {
 
         let mut recursive = Vec::new();
         text(&mut recursive, "const");
-        recursive.push(0x0b);
         integer(&mut recursive, 0x15, 4);
+        recursive.push(0x0b);
         for value in [0.1, 0.9, 3.0] {
             double(&mut recursive, value);
         }
@@ -4144,10 +4090,19 @@ mod variable_blend_value_tests {
 fn decode_var_blend_spl_sur(
     record_bytes: &[u8],
     int_width: usize,
+    reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::{
         LoftBridgeToken, VariableBlendChamfer, VariableBlendChamferKind,
         VariableBlendSingleRadiusTail,
+    };
+    let find_marker = |name: &[u8]| {
+        record_bytes.windows(name.len() + 3).position(|window| {
+            window[0] == 0x0f
+                && matches!(window[1], 0x0d | 0x0e)
+                && usize::from(window[2]) == name.len()
+                && &window[3..] == name
+        })
     };
     let names: [&[u8]; 4] = [
         b"var_blend_spl_sur",
@@ -4155,25 +4110,35 @@ fn decode_var_blend_spl_sur(
         b"srf_srf_v_bl_spl_sur",
         b"srfsrfblndsur",
     ];
-    let (start, name_len) = names.into_iter().find_map(|name| {
-        record_bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == name
-            })
-            .map(|start| (start, name.len()))
-    })?;
+    let (start, name_len) = names
+        .into_iter()
+        .find_map(|name| find_marker(name).map(|start| (start, name.len())))?;
+    // A rolling-ball record can embed a complete variable-blend subtype as a
+    // side support surface; a rolling-ball marker before the variable-blend
+    // marker means this record belongs to the rolling-ball decoder.
+    let rb_names: [&[u8]; 6] = [
+        b"rb_blend_spl_sur",
+        b"rbblnsur",
+        b"pipe_spl_sur",
+        b"pipesur",
+        b"sss_blend_spl_sur",
+        b"sssblndsur",
+    ];
+    if rb_names
+        .into_iter()
+        .filter_map(find_marker)
+        .any(|rb_start| rb_start < start)
+    {
+        return None;
+    }
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
+    let definition_index = take_tagged_int(span, &mut position, 0x04, int_width)?;
     let sides = Box::new([
-        decode_variable_blend_side(span, &mut position, int_width)?,
-        decode_variable_blend_side(span, &mut position, int_width)?,
+        decode_rolling_ball_side(span, &mut position, int_width, reference_context)?,
+        decode_rolling_ball_side(span, &mut position, int_width, reference_context)?,
     ]);
-    let primary = decode_curve_block(span, position, int_width)?;
-    position = primary.end;
+    let slice = decode_rolling_ball_curve(span, &mut position, int_width, reference_context)?;
     let offsets = [
         take_f64(span, &mut position)? * LEN_TO_MM,
         take_f64(span, &mut position)? * LEN_TO_MM,
@@ -4218,14 +4183,14 @@ fn decode_var_blend_spl_sur(
     let single_radius_tail = if matches!(
         radius_kind,
         cadmpeg_ir::geometry::VariableBlendRadiusKind::SingleRadius
-    ) && span.get(position) == Some(&0x04)
+    ) && span.get(position) == Some(&0x15)
         && matches!(read_int(span, position + 1, int_width), Some(1 | 7))
     {
         Some(VariableBlendSingleRadiusTail {
             selector: LoftBridgeToken::Integer(take_tagged_int(
                 span,
                 &mut position,
-                0x04,
+                0x15,
                 int_width,
             )?),
             parameters: [
@@ -4237,27 +4202,47 @@ fn decode_var_blend_spl_sur(
         None
     };
     let u_range = [
-        take_range_value(span, &mut position)?,
-        take_range_value(span, &mut position)?,
+        take_optional_range_value(span, &mut position)?,
+        take_optional_range_value(span, &mut position)?,
     ];
     let v_range = [
-        take_range_value(span, &mut position)?,
-        take_range_value(span, &mut position)?,
+        take_optional_range_value(span, &mut position)?,
+        take_optional_range_value(span, &mut position)?,
     ];
     let shape_prefix = take_tagged_int(span, &mut position, 0x04, int_width)?;
     let shape_parameter = take_f64(span, &mut position)?;
     let shape_length = take_f64(span, &mut position)? * LEN_TO_MM;
     let shape_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let cache_selector = take_tagged_int(span, &mut position, 0x15, int_width)?;
     let cache = decode_surface_block(span, position, int_width)?;
     position = cache.end;
     let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let discontinuities = [
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+    ];
     let shape_extensions = [
         take_tagged_int(span, &mut position, 0x04, int_width)?,
         take_tagged_int(span, &mut position, 0x04, int_width)?,
         take_tagged_int(span, &mut position, 0x04, int_width)?,
     ];
-    let secondary = decode_curve_block(span, position, int_width)?;
-    position = secondary.end;
+    let tail_flag = take_bool(span, &mut position)?;
+    let tail_extensions = [
+        take_tagged_int(span, &mut position, 0x04, int_width)?,
+        take_tagged_int(span, &mut position, 0x04, int_width)?,
+        take_tagged_int(span, &mut position, 0x04, int_width)?,
+    ];
+    let saved = position;
+    let (secondary_curve, secondary_range) =
+        if take_native_ident(span, &mut position).as_deref() == Some("null_curve") {
+            (None, [None, None])
+        } else {
+            position = saved;
+            let secondary =
+                decode_rolling_ball_curve(span, &mut position, int_width, reference_context)?;
+            (Some(secondary.geometry), secondary.parameter_range)
+        };
     let convexity = if take_bool(span, &mut position)? {
         cadmpeg_ir::geometry::VariableBlendConvexity::Convex
     } else {
@@ -4269,17 +4254,26 @@ fn decode_var_blend_spl_sur(
         cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallSnapshot
     };
     let post_range = [
-        take_range_value(span, &mut position)?,
-        take_range_value(span, &mut position)?,
+        take_optional_range_value(span, &mut position)?,
+        take_optional_range_value(span, &mut position)?,
     ];
-    let post = decode_curve_block(span, position, int_width)?;
-    position = post.end;
+    let saved = position;
+    let post_curve = if take_native_ident(span, &mut position).as_deref() == Some("nullbs") {
+        None
+    } else {
+        position = saved;
+        let post = decode_curve_block(span, position, int_width)?;
+        position = post.end;
+        Some(post.curve)
+    };
     let post_pcurve = decode_nullable_embedded_pcurve(span, &mut position, int_width)?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(
             EmbeddedVariableBlend {
+                definition_index,
                 sides,
-                primary_curve: primary.curve,
+                slice: slice.geometry,
+                slice_range: slice.parameter_range,
                 offsets,
                 radius_kind,
                 first_value,
@@ -4292,12 +4286,17 @@ fn decode_var_blend_spl_sur(
                 shape_parameter,
                 shape_length,
                 shape_tail,
+                cache_selector,
+                discontinuities,
                 shape_extensions,
-                secondary_curve: secondary.curve,
+                tail_flag,
+                tail_extensions,
+                secondary_curve,
+                secondary_range,
                 convexity,
                 render_mode,
                 post_range,
-                post_curve: post.curve,
+                post_curve,
                 post_pcurve,
             },
         )),
@@ -4706,7 +4705,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_rot_spl_sur(bytes, int_width))
         .or_else(|| decode_off_spl_sur(bytes, int_width))
         .or_else(|| decode_cyl_spl_sur_at(bytes, int_width))
-        .or_else(|| decode_var_blend_spl_sur(bytes, int_width))
+        .or_else(|| decode_var_blend_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_vertex_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_full_rb_blend_spl_sur(bytes, int_width, active_bytes, tables))
         .or_else(|| decode_rb_blend_spl_sur_fallback(bytes, int_width))
@@ -7531,20 +7530,16 @@ mod width_tests {
         bytes
     }
 
-    fn variable_blend_side(int_width: usize, name: &str, extension_flag: Option<bool>) -> Vec<u8> {
+    fn variable_blend_side(int_width: usize, name: &str, extension: Option<i64>) -> Vec<u8> {
         let mut bytes = Vec::new();
         push_string(&mut bytes, name);
-        push_ident(&mut bytes, "plane");
-        push_position(&mut bytes, [0.0, 0.0, 0.0]);
-        push_vector(&mut bytes, [0.0, 0.0, 1.0]);
-        push_vector(&mut bytes, [1.0, 0.0, 0.0]);
-        bytes.push(0x0b);
-        bytes.extend_from_slice(&curve_block(int_width));
+        push_ident(&mut bytes, "null_surface");
+        push_ident(&mut bytes, "null_curve");
         bytes.extend_from_slice(&pcurve_block(int_width));
         push_position(&mut bytes, [1.0, 2.0, 3.0]);
-        if let Some(flag) = extension_flag {
-            push_ident(&mut bytes, "nullbs");
-            bytes.push(if flag { 0x0a } else { 0x0b });
+        push_ident(&mut bytes, "nullbs");
+        if let Some(extension) = extension {
+            push_int(&mut bytes, 0x04, extension, int_width);
             push_ident(&mut bytes, "nullbs");
         }
         bytes.push(0x10);
@@ -7552,7 +7547,7 @@ mod width_tests {
     }
 
     #[test]
-    fn variable_blend_side_boolean_extension_decodes_at_both_integer_widths() {
+    fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
         use cadmpeg_ir::geometry::VariableBlendSupportKind;
 
         for int_width in [4usize, 8] {
@@ -7577,19 +7572,21 @@ mod width_tests {
                 ),
                 ("blendsupzro", VariableBlendSupportKind::ZeroCurve),
             ] {
-                for expected in [None, Some(false), Some(true)] {
+                for expected in [None, Some(0), Some(3)] {
                     let bytes = variable_blend_side(int_width, name, expected);
                     let mut position = 0;
-                    let side = decode_variable_blend_side(&bytes, &mut position, int_width)
+                    let side = decode_rolling_ball_side(&bytes, &mut position, int_width, None)
                         .unwrap_or_else(|| {
                             panic!(
-                                "variable-blend support side {name} width {int_width} flag {expected:?}"
+                                "variable-blend support side {name} width {int_width} extension {expected:?}"
                             )
                         });
                     assert_eq!(position, bytes.len() - 1);
                     assert_eq!(side.support_kind, kind);
-                    assert_eq!(side.extension_flag, expected);
+                    assert_eq!(side.extension, expected);
                     assert_eq!(side.location, Point3::new(10.0, 20.0, 30.0));
+                    assert!(side.surface.is_none());
+                    assert!(side.curve.is_none());
                     assert!(side.secondary_pcurve.is_none());
                     assert!(side.tertiary_pcurve.is_none());
                 }
