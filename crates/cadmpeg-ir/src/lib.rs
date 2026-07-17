@@ -57,6 +57,7 @@ pub mod source_fidelity_diff;
 pub mod subd;
 pub mod tessellation;
 pub mod topology;
+pub mod transfer;
 pub mod transform;
 pub mod units;
 pub mod validate;
@@ -96,6 +97,7 @@ pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
 };
+pub use transfer::{Builder as TransferBuilder, LossSink, OptionalTransfer, Transfer};
 pub use unknown::UnknownRecord;
 pub use validate::validate;
 
