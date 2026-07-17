@@ -911,7 +911,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         // is `GeometryNotTransferred` (Reject): the surface shape is a mandatory
         // semantic the codec did not transfer, so even though topology decoded,
         // strict mode refuses this decode (accountability is not tolerance).
-        crate::builder::census(
+        cadmpeg_ir::transfer::reduce(
             &mut losses,
             LossNote {
                 code: LossCode::GeometryNotTransferred,
@@ -930,7 +930,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         );
     }
     if s.unknown_curve_edges > 0 {
-        crate::builder::census(
+        cadmpeg_ir::transfer::reduce(
             &mut losses,
             LossNote {
                 code: LossCode::GeometryNotTransferred,
@@ -951,7 +951,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         // time this report is built, so there is no value left to gate — the
         // note is an accountable census over content already present, not a
         // `substitute` over a live value.
-        crate::builder::census(
+        cadmpeg_ir::transfer::reduce(
             &mut losses,
             LossNote {
                 code: LossCode::TopologyGaugeSubstituted,
@@ -1364,7 +1364,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     // typed IR. Each drop resolves through the typed builder so no omission is
     // recorded by a bare push.
     let mut losses = Vec::new();
-    crate::builder::omit(
+    cadmpeg_ir::transfer::omit(
         &mut losses,
         LossNote {
             code: LossCode::GeometryNotTransferred,
@@ -1380,7 +1380,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             provenance: None,
         },
     );
-    crate::builder::omit(
+    cadmpeg_ir::transfer::omit(
         &mut losses,
         LossNote {
             code: LossCode::TopologyNotTransferred,
@@ -1393,7 +1393,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             provenance: None,
         },
     );
-    crate::builder::omit(
+    cadmpeg_ir::transfer::omit(
         &mut losses,
         LossNote {
             code: LossCode::MaterialNotTransferred,
@@ -1407,7 +1407,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     );
 
     if container::select_active_parasolid(scan).is_none() {
-        crate::builder::omit(
+        cadmpeg_ir::transfer::omit(
             &mut losses,
             LossNote {
                 code: LossCode::MissingGeometryStream,

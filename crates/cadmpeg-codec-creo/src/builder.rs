@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed lossy construction at creo's §10 Phase 4B boundaries.
 //!
-//! The decoder reaches every value substitution and omission through the two
-//! free functions here, the codec's lossy-construction path. Each resolves a
-//! platform [`Transfer`] against the decode's loss channel so a defaulted axis
-//! or a dropped record cannot enter the model without surrendering its
-//! [`LossNote`]: [`datum_u_axis`] resolves a [`Transfer::fallback`] and [`omit`]
-//! resolves a [`Transfer::omitted`], and neither yields its value without
-//! pushing the note. The guarantee is that these functions are the path the
-//! decode uses, not a compiler ban on `Vec::push` (`clippy.toml` disallows only
-//! the capacity-taking `Vec` methods): a bare `losses.push` would still compile
-//! and is kept out by review.
+//! The decoder reaches its one value substitution through [`datum_u_axis`],
+//! which resolves a platform [`Transfer::fallback`] against the decode's loss
+//! channel so a defaulted axis cannot enter the model without surrendering its
+//! [`LossNote`]. Omissions route through the platform
+//! [`cadmpeg_ir::transfer::omit`] directly; this module supplies their notes
+//! ([`incomplete_frame_note`], [`unplaced_sketch_note`]) alongside the u-axis
+//! note. The guarantee is that these are the paths the decode uses, not a
+//! compiler ban on `Vec::push` (`clippy.toml` disallows only the capacity-taking
+//! `Vec` methods): a bare `losses.push` would still compile and is kept out by
+//! review.
 //!
 //! Creo's three named boundaries are the datum-plane u-axis (resolver to
 //! fallback axis), the incomplete `VisibGeom` support frame (unsupported concept
@@ -43,14 +43,6 @@ pub(crate) fn datum_u_axis(
             inferred_u_axis_note(plane_id, offset),
         ))
         .expect("Transfer::fallback always yields its value")
-}
-
-/// Unsupported-concept / record-to-omission boundary: drain an omission's note
-/// through the loss channel so the record cannot be skipped silently. The note
-/// is also recorded against the record's `Dropped` disposition by the caller, so
-/// pass a clone here.
-pub(crate) fn omit(sink: &mut Vec<LossNote>, note: LossNote) {
-    Builder::new(sink).take::<()>(Transfer::omitted(note));
 }
 
 /// The note for a datum plane's conventionally derived in-plane u-axis.
