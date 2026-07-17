@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::{validate, CadIr};
+use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, SourceFidelity};
 
 use crate::loader::{self, read_prefix};
 use crate::registry::Registry;
@@ -17,8 +17,15 @@ use crate::{DecodeArgs, ForcedInput, Format};
 
 const CLI_SCHEMA_VERSION: u32 = 3;
 
-fn validate_ir(ir: &CadIr, losses: Vec<cadmpeg_ir::LossNote>) -> ValidationReport {
-    let mut report = validate(ir, losses);
+fn validate_ir(
+    ir: &CadIr,
+    source_fidelity: Option<&SourceFidelity>,
+    losses: Vec<cadmpeg_ir::LossNote>,
+) -> ValidationReport {
+    let mut report = match source_fidelity {
+        Some(source_fidelity) => validate_with_source_fidelity(ir, source_fidelity, losses),
+        None => validate(ir, losses),
+    };
     if ir.native.namespace("f3d").is_some() {
         report
             .findings
@@ -84,7 +91,7 @@ pub fn inspect(
         Some(ForcedInput::Cadir) => bail!("inspect requires a container input, not cadir"),
         None => {
             let (codec, confidence) = registry.detect(&prefix).ok_or_else(|| {
-                anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM; use --input-format to override detection", path.display())
+                anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES; use --input-format to override detection", path.display())
             })?;
             (codec, Some(confidence))
         }
@@ -145,7 +152,16 @@ pub fn decode(
     args: &DecodeArgs,
 ) -> Result<()> {
     let loaded = loader::load_ir(registry, path, args.options(), forced)?;
-    export_ir(registry, &loaded.ir, Format::Cadir, out, path, force, None)?;
+    export_ir(
+        registry,
+        &loaded.ir,
+        loaded.source_fidelity.as_ref(),
+        Format::Cadir,
+        out,
+        path,
+        force,
+        None,
+    )?;
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
@@ -174,7 +190,11 @@ pub fn validate_cmd(
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
-    let report = validate_ir(&loaded.ir, losses(loaded.decode_report.as_ref()));
+    let report = validate_ir(
+        &loaded.ir,
+        loaded.source_fidelity.as_ref(),
+        losses(loaded.decode_report.as_ref()),
+    );
     if json {
         writeln!(
             stdout,
@@ -258,6 +278,7 @@ pub fn export(
     let report = export_ir(
         registry,
         &loaded.ir,
+        loaded.source_fidelity.as_ref(),
         format,
         out,
         path,
@@ -291,7 +312,11 @@ pub fn convert(
         print_decode_report(&mut stderr, report)?;
         writeln!(stderr)?;
     }
-    let validation = validate_ir(&loaded.ir, losses(loaded.decode_report.as_ref()));
+    let validation = validate_ir(
+        &loaded.ir,
+        loaded.source_fidelity.as_ref(),
+        losses(loaded.decode_report.as_ref()),
+    );
     print_validation_report(&mut stderr, &validation)?;
     if !validation.is_ok() && !settings.allow_invalid {
         write_command_report(
@@ -332,6 +357,7 @@ pub fn convert(
     let report = export_ir(
         registry,
         &loaded.ir,
+        loaded.source_fidelity.as_ref(),
         format,
         out,
         path,
@@ -434,9 +460,11 @@ fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format
     Format::from_path(out).ok_or_else(|| anyhow!("cannot infer format; pass -f"))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn export_ir(
     registry: &Registry,
     ir: &CadIr,
+    source_fidelity: Option<&SourceFidelity>,
     format: Format,
     out: Option<&Path>,
     input: &Path,
@@ -448,7 +476,13 @@ fn export_ir(
         bail!("--rhino-version requires Rhino output");
     }
     let report = registry
-        .encode_by_id(format.name(), rhino_version, ir, &mut bytes)
+        .encode_by_id(
+            format.name(),
+            rhino_version,
+            ir,
+            source_fidelity,
+            &mut bytes,
+        )
         .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))??;
     if let Some(path) = out {
         write_output(input, path, &bytes, force)?;

@@ -31,6 +31,7 @@ pub mod annotations;
 pub mod appearance;
 pub mod attributes;
 pub mod be;
+pub mod byte_ledger;
 pub mod bytes;
 pub mod codec;
 pub mod compression;
@@ -55,6 +56,7 @@ mod provenance;
 pub mod read;
 pub mod report;
 pub mod sketches;
+pub mod source_fidelity;
 pub mod subd;
 pub mod tessellation;
 pub mod topology;
@@ -63,11 +65,15 @@ pub mod units;
 pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
+pub use byte_ledger::{ByteLedger, ByteSpan, ByteSpanClass};
 pub use codec::{
     CadirEncoder, Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions,
     DecodeResult, Encoder, ReadSeek,
 };
-pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
+pub use diff::{
+    diff, diff_byte_ledger, diff_source_fidelity, AnnotationDiff, ArenaDiff, ByteLedgerDiff,
+    IrDiff, ModifiedEntity, SourceFidelityDiff,
+};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{
     BodyRetentionMode, BodySelection, ConfigurationId, DesignConfiguration, DesignParameter,
@@ -91,12 +97,13 @@ pub use sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
 };
+pub use source_fidelity::{RetainedSourceRecord, SourceFidelity, SOURCE_FIDELITY_VERSION};
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
 };
-pub use unknown::UnknownRecord;
-pub use validate::validate;
+pub use unknown::{NativeUnknownRecord, UnknownRecord};
+pub use validate::{validate, validate_with_source_fidelity};
 
 pub mod unknown;
 

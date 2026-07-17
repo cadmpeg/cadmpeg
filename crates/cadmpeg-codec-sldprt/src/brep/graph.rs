@@ -120,8 +120,8 @@ impl Brep {
             coedge.next.0 = qualify(&coedge.next.0);
             coedge.previous.0 = qualify(&coedge.previous.0);
             coedge.radial_next.0 = qualify(&coedge.radial_next.0);
-            if let Some(pcurve) = &mut coedge.pcurve {
-                pcurve.0 = qualify(&pcurve.0);
+            for use_ in &mut coedge.pcurves {
+                use_.pcurve.0 = qualify(&use_.pcurve.0);
             }
         }
         for edge in &mut self.edges {
@@ -606,7 +606,7 @@ fn decode_graph(
                     previous: CoedgeId(id_coedge(prev)),
                     radial_next: partner.unwrap_or_else(|| CoedgeId(id_coedge(ce_attr))),
                     sense: sense_of(ce.marker.unwrap_or(0x2b)),
-                    pcurve: None,
+                    pcurves: Vec::new(),
                 });
             }
         }
@@ -626,8 +626,9 @@ fn decode_graph(
             out.loops.push(Loop {
                 id: LoopId(id_loop(*loop_attr)),
                 face: FaceId(id_face(f.bridge_attr)),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges,
-                vertex: None,
+                vertex_uses: Vec::new(),
             });
         }
     }
@@ -1095,7 +1096,10 @@ fn derive_planar_pcurves(
         .collect::<HashMap<_, _>>();
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurve = Some(id.clone());
+            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id.clone(),
+                isoparametric: None,
+            }];
         }
         annotations
             .note(&id, source_stream, 0)
@@ -1132,7 +1136,7 @@ fn derive_cylindrical_pcurves(
     let position = |vertex_id: &VertexId| vertex_points.get(vertex_id).map(|point| point.position);
     let mut derived = Vec::new();
     for coedge in &out.coedges {
-        if coedge.pcurve.is_some() {
+        if !coedge.pcurves.is_empty() {
             continue;
         }
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
@@ -1251,7 +1255,10 @@ fn derive_cylindrical_pcurves(
         .collect::<HashMap<_, _>>();
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurve = Some(id.clone());
+            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id.clone(),
+                isoparametric: None,
+            }];
         }
         annotations
             .note(&id, source_stream, 0)
@@ -1281,7 +1288,7 @@ fn derive_spherical_pcurves(
     let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
     let mut derived = Vec::new();
     for coedge in &out.coedges {
-        if coedge.pcurve.is_some() {
+        if !coedge.pcurves.is_empty() {
             continue;
         }
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
@@ -1384,7 +1391,10 @@ fn derive_spherical_pcurves(
         .collect::<HashMap<_, _>>();
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurve = Some(id.clone());
+            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id.clone(),
+                isoparametric: None,
+            }];
         }
         annotations
             .note(&id, source_stream, 0)
@@ -1420,7 +1430,7 @@ fn derive_nurbs_boundary_pcurves(
     };
     let mut derived = Vec::new();
     for coedge in &out.coedges {
-        if coedge.pcurve.is_some() {
+        if !coedge.pcurves.is_empty() {
             continue;
         }
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
@@ -1530,7 +1540,10 @@ fn derive_nurbs_boundary_pcurves(
         .collect::<HashMap<_, _>>();
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurve = Some(id.clone());
+            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: id.clone(),
+                isoparametric: None,
+            }];
         }
         annotations
             .note(&id, source_stream, 0)
@@ -1745,7 +1758,7 @@ fn synthesize_cylinder_seams(
             previous: circle_a.clone(),
             radial_next: seam_b.clone(),
             sense: Sense::Forward,
-            pcurve: None,
+            pcurves: Vec::new(),
         });
         coedge_indices.insert(seam_b.clone(), out.coedges.len());
         out.coedges.push(Coedge {
@@ -1756,7 +1769,7 @@ fn synthesize_cylinder_seams(
             previous: circle_b.clone(),
             radial_next: seam_a.clone(),
             sense: Sense::Reversed,
-            pcurve: None,
+            pcurves: Vec::new(),
         });
         let ring = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
         for (index, id) in ring.iter().enumerate() {
@@ -1887,7 +1900,7 @@ fn synthesize_sphere_seams(
             previous: ring[2].clone(),
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
-            pcurve: None,
+            pcurves: Vec::new(),
         });
         for (index, id) in ring.iter().enumerate() {
             if let Some(coedge_index) = coedge_indices.get(id) {

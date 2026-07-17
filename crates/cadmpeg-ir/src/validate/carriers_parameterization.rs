@@ -36,7 +36,13 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .model
         .coedges
         .iter()
-        .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.as_str()))
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.as_str()))
+        .chain(ir.model.loops.iter().flat_map(|loop_| {
+            loop_
+                .vertex_uses
+                .iter()
+                .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.as_str()))
+        }))
         .collect::<HashSet<_>>();
     let mut points = ir
         .model
@@ -528,11 +534,20 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralCurveDefinition::Offset {
-                source, support, ..
+                source,
+                support,
+                distance_law,
+                ..
             } => {
                 curves.insert(&source.0);
                 if let Some(support) = support {
                     surfaces.insert(&support.0);
+                }
+                if let Some(crate::geometry::CurveOffsetDistanceLaw::Coordinate {
+                    function, ..
+                }) = distance_law
+                {
+                    curves.insert(&function.0);
                 }
             }
             ProceduralCurveDefinition::SpatialOffset { source, .. } => {

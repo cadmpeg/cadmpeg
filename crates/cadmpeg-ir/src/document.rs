@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::annotations::Annotations;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::features::{DesignConfiguration, DesignParameter, Feature};
@@ -17,7 +16,7 @@ use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{Tolerances, Units};
-use crate::unknown::UnknownRecord;
+use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 
 macro_rules! arena_registry {
     ($macro:ident) => {
@@ -83,7 +82,7 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "3";
+pub const IR_VERSION: &str = "6";
 
 arena_registry!(declare_model);
 
@@ -109,8 +108,8 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 
 /// A versioned CAD document.
 ///
-/// `model` holds the format-neutral graph. `annotations`, `native`, and
-/// `unknowns` retain source fidelity without changing that graph's semantics.
+/// `model` holds the format-neutral graph. `native` retains typed
+/// format-specific product data without changing that graph's semantics.
 /// Entity IDs must be globally unique across all document arenas.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CadIr {
@@ -127,9 +126,6 @@ pub struct CadIr {
     pub tolerances: Tolerances,
     /// Format-neutral model.
     pub model: Model,
-    /// Sparse provenance and exactness tables.
-    #[serde(default)]
-    pub annotations: Annotations,
     /// Independently versioned native namespaces.
     #[serde(default)]
     pub native: Native,
@@ -140,7 +136,7 @@ impl CadIr {
     pub fn native_unknowns(
         &self,
         format: &str,
-    ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
+    ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
         self.native.namespace(format).map_or_else(
             || Ok(Vec::new()),
             |namespace| namespace.arena_as("unknowns"),
@@ -150,13 +146,13 @@ impl CadIr {
     /// Deserialize every reserved native `unknowns` arena.
     pub fn all_native_unknowns(
         &self,
-    ) -> Result<Vec<UnknownRecord>, crate::native::NativeConvertError> {
+    ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
         self.native
             .0
             .values()
             .filter(|namespace| namespace.arenas.contains_key("unknowns"))
             .try_fold(Vec::new(), |mut records, namespace| {
-                records.extend(namespace.arena_as::<UnknownRecord>("unknowns")?);
+                records.extend(namespace.arena_as::<NativeUnknownRecord>("unknowns")?);
                 Ok(records)
             })
     }
@@ -165,7 +161,7 @@ impl CadIr {
     pub fn set_native_unknowns(
         &mut self,
         format: &str,
-        records: &[UnknownRecord],
+        records: &[NativeUnknownRecord],
     ) -> Result<(), crate::native::NativeConvertError> {
         let namespace = self.native.namespace_mut(format);
         if namespace.version == 0 {
@@ -195,7 +191,7 @@ impl CadIr {
     pub fn push_native_unknown(
         &mut self,
         format: &str,
-        record: UnknownRecord,
+        record: NativeUnknownRecord,
     ) -> Result<(), crate::native::NativeConvertError> {
         let mut records = self.native_unknowns(format)?;
         records.retain(|existing| existing.id != record.id);
@@ -211,7 +207,6 @@ impl CadIr {
             units,
             tolerances: Tolerances::default(),
             model: Model::default(),
-            annotations: Annotations::default(),
             native: Native::default(),
         }
     }

@@ -9,7 +9,6 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self, role, Layout};
@@ -101,22 +100,22 @@ fn jpeg_payload() -> Vec<u8> {
 }
 
 fn assert_annotation(
-    ir: &CadIr,
+    annotations: &cadmpeg_ir::Annotations,
     id: &str,
     stream: &str,
     offset: u64,
     tag: &str,
     exactness: Exactness,
 ) {
-    let provenance = &ir.annotations.provenance[id];
-    assert_eq!(ir.annotations.streams[provenance.stream as usize], stream);
+    let provenance = &annotations.provenance[id];
+    assert_eq!(annotations.streams[provenance.stream as usize], stream);
     assert_eq!(provenance.offset, offset);
     assert_eq!(provenance.tag.as_deref(), Some(tag));
     if exactness == Exactness::ByteExact {
-        assert!(!ir.annotations.exactness.contains_key(id));
+        assert!(!annotations.exactness.contains_key(id));
     } else {
-        assert_eq!(ir.annotations.exactness[id].entity, exactness);
-        assert!(ir.annotations.exactness[id].fields.is_empty());
+        assert_eq!(annotations.exactness[id].entity, exactness);
+        assert!(annotations.exactness[id].fields.is_empty());
     }
 }
 
@@ -284,7 +283,7 @@ fn decode_transfers_complete_plane_local_system() {
         }
     );
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         surface.id.as_str(),
         "creo:VisibGeom",
         expected_offset,
@@ -716,7 +715,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(variables[0]["value"], 1.0);
     assert_eq!(variables[1]["value"], 3.0);
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         "creo:featdefs:sketch#40",
         "creo:FeatDefs",
         offset,
@@ -1439,18 +1438,24 @@ fn decode_annotations_cover_every_emitted_entity() {
             .and_then(|suffix| suffix.split_once(":section#"))
             .map(|(name, _)| name)
             .expect("unknown id contains its source section");
+        let retained = result
+            .source_fidelity
+            .retained_records
+            .iter()
+            .find(|record| record.id == unknown.id.as_str())
+            .expect("unknown source record");
         assert_annotation(
-            &result.ir,
+            &result.source_fidelity.annotations,
             unknown.id.as_str(),
             &format!("creo:{section_name}"),
-            unknown.offset,
+            retained.offset,
             "psb_geometry_section",
             Exactness::Unknown,
         );
     }
     for surface in &result.ir.model.surfaces {
         assert_annotation(
-            &result.ir,
+            &result.source_fidelity.annotations,
             surface.id.as_str(),
             "creo:ActDatums",
             datum_offset,
@@ -1459,8 +1464,14 @@ fn decode_annotations_cover_every_emitted_entity() {
         );
     }
     let emitted_entity_count = unknowns.len() + result.ir.model.surfaces.len();
-    assert_eq!(result.ir.annotations.provenance.len(), emitted_entity_count);
-    assert_eq!(result.ir.annotations.exactness.len(), emitted_entity_count);
+    assert_eq!(
+        result.source_fidelity.annotations.provenance.len(),
+        emitted_entity_count
+    );
+    assert_eq!(
+        result.source_fidelity.annotations.exactness.len(),
+        emitted_entity_count
+    );
 }
 
 #[test]
@@ -1506,7 +1517,7 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "Extrude"
     ));
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         "creo:mdlstatus:feature#40",
         "creo:MdlStatus",
         scan.feature_operations[0].offset as u64,

@@ -2204,6 +2204,15 @@ pub enum ProceduralCurveDefinition {
         /// to a support surface; `None` for a free-space offset.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         support: Option<SurfaceId>,
+        /// Unit normal defining the positive offset side for planar offsets.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        normal: Option<Vector3>,
+        /// Parameter interval on the source curve used by the offset.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter_range: Option<[f64; 2]>,
+        /// Variable distance law; absent when `distance` is uniform.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance_law: Option<CurveOffsetDistanceLaw>,
     },
     /// Free-space 3D offset using a reference direction.
     SpatialOffset {
@@ -2256,6 +2265,44 @@ pub enum ProceduralCurveDefinition {
         /// Reference to the preserved raw source record, when retained.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
+    },
+}
+
+/// Independent variable used by a curve-offset distance law.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CurveOffsetLawBasis {
+    /// Distance measured along the source curve from the offset interval start.
+    ArcLength,
+    /// Native source-curve parameter.
+    Parameter,
+}
+
+/// Variable signed distance law for a planar curve offset.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CurveOffsetDistanceLaw {
+    /// Linear interpolation between two distance controls.
+    Linear {
+        /// Independent-variable interpretation.
+        basis: CurveOffsetLawBasis,
+        /// Ordered signed distances in document length units.
+        distances: [f64; 2],
+        /// Ordered arc-length or neutral carrier-parameter controls.
+        control_range: [f64; 2],
+    },
+    /// One coordinate of another curve defines the signed distance.
+    Coordinate {
+        /// Curve carrying the distance function.
+        function: CurveId,
+        /// One-based coordinate number on `function`.
+        coordinate: u8,
+        /// Independent-variable interpretation.
+        basis: CurveOffsetLawBasis,
+        /// Function parameter at zero source parameter or arc length.
+        function_parameter_offset: f64,
+        /// Function-parameter change per neutral source parameter or length unit.
+        function_parameter_scale: f64,
     },
 }
 

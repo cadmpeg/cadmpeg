@@ -46,6 +46,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | Rhino `.3dm` (V1/V2 and archive 5)         | **L0 tested**  | header-only inspection; decode is rejected                                                            |
 | STEP Part 21 AP242 editions 1–3            | **L9 tested**  |                                                                                                         |
 | STEP Part 21 AP203 editions 1–2 and AP214  | **L9 tested**  |                                                                                                         |
+| IGES 5.3 Fixed ASCII mechanical/document   | **L8 tested**  | read only                                                                                               |
 
 Each current score applies to the envelope described in its profile.
 
@@ -69,6 +70,47 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 - **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.
 - **Creo Parametric `.prt` (L1 claimed):** container navigation, derived datum planes, and prototype geometry inspection. Read only.
 - **STEP Part 21 (L9 tested):** AP242 editions 1–3 transfer exact geometry, connected topology, products, tessellation, presentation, PMI, and named opaque application records with complete byte accounting. AP203/AP214 transfer their geometry, topology, product, and presentation domains. Semantic writing supports all six target schemas, source-less documents, typed edits, strict atomic refusal, and independently checked round trips.
+- **IGES 5.3 Fixed ASCII mechanical/document profile (L8 tested):** complete read-only fixed-card framing, geometry, topology, product records, presentation records, and byte accounting for the declared envelope.
+
+## IGES
+
+**Model:** IGES 5.3 entity graph
+
+**Ladder: L8 tested for the IGES 5.3 Fixed ASCII mechanical/document envelope.** Compressed ASCII, Binary, pre-5.3 Fixed ASCII, and extensions are separate envelopes and do not inherit this score.
+
+### Envelopes
+
+- **IGES 5.3 Fixed ASCII mechanical/document.** The 80-column representation containing Start, Global, Directory Entry, Parameter Data, and Terminate sections; the geometry, topology, product, presentation, annotation, drawing, associativity, and property entity branches listed by `corpus/iges-envelope-a.toml`; and no extension entity outside that matrix. The codec is read only.
+- **Pre-5.3 Fixed ASCII.** Version-specific legacy envelope. Detection and exact version reporting do not imply semantic compatibility.
+- **Compressed ASCII.** Distinct representation envelope. Fixed ASCII support does not apply.
+- **Binary.** Distinct representation envelope. Fixed ASCII support does not apply.
+- **Extensions.** Named extension envelopes only. An unregistered entity type or form remains inspectable and prevents a Fixed ASCII mechanical/document score above the last cumulative gate that does not require its semantics.
+- **Finite-element analysis.** Types 134, 136, 138, 146, 148, and 418 form an adjacent analysis envelope and are excluded from the mechanical/document profile.
+- **Electrical, artwork, and schematic.** Type 125 and Type 402 Forms 8, 10, and 11 form an adjacent electrical-presentation envelope and are excluded. Types 132, 320, and 420 remain in the mechanical/document profile only for typed network definition, connection identity, and occurrence structure.
+- **Macro and extension definitions.** Type 306 belongs to extension-envelope declaration and is excluded from the closed mechanical/document profile.
+
+### Ladder applicability
+
+- **L0 preview/tessellation is inapplicable.** The envelope has no thumbnail or display-mesh record. Detection, fixed-card framing, document kind, and Global metadata satisfy the applicable L0 semantics. Derived tessellation is an optional recovery product and is not required for L0.
+- **L3 connected-model semantics split by source topology.** Explicit manifold B-rep records must produce a connected body-to-vertex graph with source sharing and orientation. Trimmed and bounded surfaces carry face-local boundary identity but no cross-face shared-edge identity; they must produce valid sheet regions without invented adjacency. This is connected recovery of the topology represented by each source object.
+- **L4 is inapplicable.** The envelope contains geometry, topology, presentation, associativity, and application records but no ordered feature-operation history or replayable sketch history.
+- **L6 is inapplicable.** The envelope contains dimensions and associativity as document semantics, not a complete parametric design system with constraints, expressions, configurations, and re-derivable feature history.
+- **L7 mates are inapplicable.** Product definitions, occurrences, groups, placements, external references, and persistent source identities are required. The envelope has no assembly-mate constraint model.
+
+### Read profile
+
+- **Container and versions: Complete.** Bounded detection, inspection, and decode cover IGES 5.3 Fixed ASCII cards, section order and counts, Global delimiters and metadata, Directory pairs, Parameter records, reference findings, entity/form census, physical line endings, and post-Terminate bytes. Compressed ASCII and Binary are detected and refused by name. Pre-5.3 Fixed ASCII reports its version and is refused for semantic decode.
+- **Geometry: Complete.** Admitted point, vector, analytic curve and surface, conic, composite, copious-data, parametric-spline, rational B-spline, ruled, revolved, tabulated, offset, bounded, trimmed, face-local boundary, CSG primitive, sweep, and Boolean carriers decode into exact neutral geometry or typed native construction records. Units and nested definition, occurrence, entity, and reflected transformations are applied once.
+- **Topology: Complete.** Type 141/142/143/144 face-local boundaries produce validated sheet regions without inferred adjacency. Type 186/502/504/508/510/514 records produce validated shared vertex, edge, coedge, loop, face, shell, region, and body graphs, including seams, voids, open shells, and explicit non-manifold radial rings. Invalid candidates commit no partial topology.
+- **Design intent: Inapplicable.** L4 and L6 semantics are absent from the declared format model.
+- **Product structure: Complete.** Typed native records preserve subfigure and network definitions, occurrences, array occurrences, solid assemblies and instances, groups, connect points, external references without implicit opening, attributes, units, associativities, persistent Directory identity, and separate placements.
+- **Presentation and metadata: Complete.** Global metadata, standard and definition colors, line fonts, text fonts and templates, views, visibility, drawings, notes, leaders, dimensions, symbols, witness geometry, sectioned areas, drawing properties, and admitted Type 406 property forms retain typed identity and links. Neutral appearance transfers where the common IR defines it; drawing and PMI semantics remain native.
+- **Recovery and retention: Complete.** `native.iges` retains physical cards, generic entity records, typed domain arenas, raw token values and spans, links, and source identities. `SourceFidelity` retains exact opaque byte records with source range, length, bytes, and SHA-256. Its byte ledger classifies Global values and delimiters, Directory fields and reserved bytes, Parameter tokens, delimiters, comments, back-pointers, card framing, line endings, Terminate counts, and post-Terminate bytes with exact nonoverlapping source coverage.
+
+### Write and round trip
+
+- **Native write: None.** Writing is outside the envelope.
+- **Round trip: None.** Writing is outside the envelope.
 
 ## Rhino `.3dm`
 
@@ -254,4 +296,4 @@ Per-format specifications in [`formats/`](formats/) define byte semantics. Adjac
 
 Support profiles describe repository behavior only. A profile changes when code and tests land, and every **Partial** domain must identify its remaining gates here or in the linked open-items document. Claims move to **Complete** only after satisfying the roadmap's corpus evidence and reliability gates.
 
-Ladder scores change only when a per-gate review confirms every gate at the new level and below. A score's headline names the failing gate of the next level. Evidence words move independently of levels: **tested** requires fixtures exercising the scored gates, **proven** requires the roadmap's progress gates.
+Ladder scores change only when a per-gate review confirms every gate at the new level and below. A score's headline names the failing gate of the next level. **Tested** requires fixtures exercising the scored gates.

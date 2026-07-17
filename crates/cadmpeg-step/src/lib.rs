@@ -63,7 +63,9 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{OccurrenceId, ProductId};
 use cadmpeg_ir::product::OccurrenceParent;
 use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
-use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Point, Sense, Shell, Vertex};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::CadIr;
 
 use writer::{real, refs, string, Emitter, Ref};
@@ -393,16 +395,15 @@ impl<'a> Builder<'a> {
             .collect();
         let mut edge_coedges = HashMap::<&str, Vec<(&str, &str)>>::new();
         for coedge in &ir.model.coedges {
-            let Some(pcurve) = coedge.pcurve.as_ref() else {
-                continue;
-            };
             let Some(surface) = coedge_surfaces.get(coedge.id.as_str()) else {
                 continue;
             };
-            edge_coedges
-                .entry(coedge.edge.as_str())
-                .or_default()
-                .push((pcurve.as_str(), *surface));
+            for pcurve in &coedge.pcurves {
+                edge_coedges
+                    .entry(coedge.edge.as_str())
+                    .or_default()
+                    .push((pcurve.pcurve.as_str(), *surface));
+            }
         }
         Builder {
             ir,
@@ -1727,8 +1728,17 @@ impl<'a> Builder<'a> {
         let mut bound_refs = Vec::new();
         for (i, lid) in loop_ids.iter().enumerate() {
             if let Some(loop_ref) = self.emit_loop(lid) {
-                // The first loop is the outer bound by IR convention.
-                let kind = if i == 0 {
+                let kind = if matches!(
+                    self.loops
+                        .get(lid.as_str())
+                        .map(|loop_| loop_.boundary_role),
+                    Some(LoopBoundaryRole::Outer)
+                ) || (i == 0
+                    && !loop_ids.iter().any(|id| {
+                        self.loops
+                            .get(id.as_str())
+                            .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
+                    })) {
                     "FACE_OUTER_BOUND"
                 } else {
                     "FACE_BOUND"
@@ -1752,8 +1762,8 @@ impl<'a> Builder<'a> {
 
     fn emit_loop(&mut self, loop_id: &str) -> Option<Ref> {
         let lp = self.loops.get(loop_id).copied()?;
-        if let Some(vertex) = &lp.vertex {
-            let vertex = self.emit_vertex(vertex.as_str())?;
+        if lp.coedges.is_empty() && lp.vertex_uses.len() == 1 {
+            let vertex = self.emit_vertex(lp.vertex_uses[0].vertex.as_str())?;
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
         }
         let coedge_ids: Vec<String> = lp.coedges.iter().map(|c| c.0.clone()).collect();
@@ -2585,8 +2595,8 @@ impl<'a> Builder<'a> {
             .model
             .coedges
             .iter()
-            .filter_map(|coedge| coedge.pcurve.as_ref())
-            .filter(|id| !self.pcurves.contains_key(id.as_str()))
+            .flat_map(|coedge| &coedge.pcurves)
+            .filter(|use_| !self.pcurves.contains_key(use_.pcurve.as_str()))
             .count();
         if missing_pcurve_count > 0 {
             self.loss(
@@ -2602,8 +2612,8 @@ impl<'a> Builder<'a> {
             .model
             .coedges
             .iter()
-            .filter_map(|coedge| coedge.pcurve.as_ref())
-            .filter_map(|id| self.pcurves.get(id.as_str()))
+            .flat_map(|coedge| &coedge.pcurves)
+            .filter_map(|use_| self.pcurves.get(use_.pcurve.as_str()))
             .filter(|pcurve| {
                 pcurve.wrapper_reversed.is_some()
                     || pcurve.native_tail_flags.is_some()

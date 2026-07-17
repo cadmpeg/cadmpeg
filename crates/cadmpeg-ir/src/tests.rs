@@ -20,7 +20,7 @@ use crate::subd::{
 };
 use crate::tessellation::TessellationChannel;
 use crate::topology::Color;
-use crate::unknown::UnknownRecord;
+use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 use crate::validate::validate;
 use crate::{diff, CadIr, LossProvenance};
 use serde::{de::DeserializeOwned, Serialize};
@@ -123,12 +123,8 @@ fn face_on_unknown_surface_validates_clean() {
     let rec = UnknownId("synthetic:cube:unknown#0".into());
     ir.push_native_unknown(
         "synthetic",
-        UnknownRecord {
+        NativeUnknownRecord {
             id: rec.clone(),
-            offset: 0,
-            byte_len: 16,
-            sha256: "0".repeat(64),
-            data: None,
             links: Vec::new(),
         },
     )
@@ -172,15 +168,10 @@ fn unknown_surface_dangling_record_is_flagged() {
     // Link a record id that is not in the unknowns arena.
     make_first_face_surface_unknown(&mut ir, Some(UnknownId("missing".into())));
     let report = validate(&ir, Vec::new());
-    assert!(
-        report
-            .findings
-            .iter()
-            .any(|f| f.check == Check::ReferentialIntegrity),
-        "expected a referential-integrity finding for the dangling record, got: {:?}",
-        report.findings
-    );
-    assert!(!report.is_ok());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.message.contains("missing unknown record `missing`")
+    }));
 }
 
 #[test]
@@ -189,12 +180,8 @@ fn unknown_surface_json_round_trips() {
     let rec = UnknownId("synthetic:cube:unknown#0".into());
     ir.push_native_unknown(
         "synthetic",
-        UnknownRecord {
+        NativeUnknownRecord {
             id: rec.clone(),
-            offset: 0,
-            byte_len: 16,
-            sha256: "0".repeat(64),
-            data: None,
             links: Vec::new(),
         },
     )
@@ -1310,6 +1297,7 @@ fn schema_constrains_version_and_requires_subd_arena() {
         .and_then(serde_json::Value::as_array)
         .unwrap()
         .contains(&serde_json::json!("subds")));
+    assert!(schema.pointer("/properties/byte_ledger").is_none());
 
     let mut value = serde_json::to_value(unit_cube()).unwrap();
     value
@@ -1620,7 +1608,11 @@ fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
     let mut ir = unit_cube();
     let vertex = ir.model.vertices[0].id.clone();
     ir.model.loops[0].coedges.clear();
-    ir.model.loops[0].vertex = Some(vertex.clone());
+    ir.model.loops[0].vertex_uses = vec![crate::topology::VertexUse {
+        vertex: vertex.clone(),
+        after: None,
+        pcurves: Vec::new(),
+    }];
     ir.model.shells[0].free_vertices.push(vertex.clone());
     let mut second_shell = ir.model.shells[0].clone();
     second_shell.id.0 = "synthetic:test:shell#second".into();
@@ -1685,8 +1677,9 @@ fn orphan_carrier_is_flagged() {
 
 #[test]
 fn annotation_keys_streams_and_field_paths_are_checked() {
-    let mut ir = unit_cube();
-    ir.annotations.provenance.insert(
+    let ir = unit_cube();
+    let mut source_fidelity = crate::SourceFidelity::default();
+    source_fidelity.annotations.provenance.insert(
         "missing".into(),
         Provenance {
             stream: u32::MAX,
@@ -1694,7 +1687,7 @@ fn annotation_keys_streams_and_field_paths_are_checked() {
             tag: None,
         },
     );
-    ir.annotations.exactness.insert(
+    source_fidelity.annotations.exactness.insert(
         ir.model.edges[0].id.0.clone(),
         ExactnessNote {
             entity: Exactness::Derived,
@@ -1704,7 +1697,7 @@ fn annotation_keys_streams_and_field_paths_are_checked() {
             )]),
         },
     );
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = crate::validate_with_source_fidelity(&ir, &source_fidelity, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {
         finding.check == Check::Annotations && finding.severity == crate::report::Severity::Error
     }));
@@ -1834,27 +1827,6 @@ fn document_and_entity_tolerances_are_checked() {
 }
 
 #[test]
-fn preserved_payload_digest_is_checked() {
-    let mut ir = unit_cube();
-    ir.push_native_unknown(
-        "zz",
-        UnknownRecord {
-            id: UnknownId("zz:payload".into()),
-            offset: 0,
-            byte_len: 3,
-            sha256: "0".repeat(64),
-            data: Some(vec![1, 2, 3]),
-            links: Vec::new(),
-        },
-    )
-    .unwrap();
-    assert!(validate(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.check == Check::PayloadIntegrity));
-}
-
-#[test]
 fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
     assert_base64_round_trip_and_rejection(
         &UnknownRecord {
@@ -1940,6 +1912,34 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
 }
 
 #[test]
+fn analytic_parabola_and_hyperbola_use_step_parameterization() {
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let major = Vector3::new(1.0, 0.0, 0.0);
+    let parabola = CurveGeometry::Parabola {
+        vertex: Point3::new(0.0, 0.0, 0.0),
+        axis,
+        major_direction: major,
+        focal_distance: 2.0,
+    };
+    assert_eq!(
+        crate::eval::curve_point(&parabola, 1.5),
+        Some(Point3::new(4.5, 6.0, 0.0))
+    );
+
+    let hyperbola = CurveGeometry::Hyperbola {
+        center: Point3::new(1.0, 2.0, 3.0),
+        axis,
+        major_direction: major,
+        major_radius: 2.0,
+        minor_radius: 3.0,
+    };
+    let point = crate::eval::curve_point(&hyperbola, 0.5).unwrap();
+    assert_eq!(point.x, 1.0 + 2.0 * 0.5_f64.cosh());
+    assert_eq!(point.y, 2.0 + 3.0 * 0.5_f64.sinh());
+    assert_eq!(point.z, 3.0);
+}
+
+#[test]
 fn edge_endpoint_mismatch_is_flagged() {
     let mut ir = unit_cube();
     let report = validate(&ir, Vec::new());
@@ -2001,7 +2001,10 @@ fn pcurve_surface_mismatch_is_flagged() {
                 coedge.id.0.contains("bottom") && coedge.edge.0 == "synthetic:cube:edge#0"
             })
             .expect("bottom face uses edge #0");
-        coedge.pcurve = Some(crate::ids::PcurveId("synthetic:cube:pcurve#0".into()));
+        coedge.pcurves = vec![crate::topology::PcurveUse {
+            pcurve: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
+            isoparametric: None,
+        }];
         validate(&ir, Vec::new())
     };
 
@@ -2024,6 +2027,79 @@ fn pcurve_surface_mismatch_is_flagged() {
                 && f.entity.as_deref().is_some_and(|e| e.contains("coedge"))),
         "off-surface-image pcurve must be flagged, got: {:?}",
         inconsistent.findings
+    );
+}
+
+#[test]
+fn vertex_loop_is_valid_and_exclusive_with_coedges() {
+    let mut ir = unit_cube();
+    let face_id = ir.model.faces[0].id.clone();
+    let vertex_id = ir.model.vertices[0].id.clone();
+    let loop_id = crate::ids::LoopId("synthetic:cube:vertex-loop#0".into());
+    ir.model.loops.push(crate::topology::Loop {
+        id: loop_id.clone(),
+        face: face_id,
+        boundary_role: crate::topology::LoopBoundaryRole::Inner,
+        coedges: Vec::new(),
+        vertex_uses: vec![crate::topology::VertexUse {
+            vertex: vertex_id,
+            after: None,
+            pcurves: Vec::new(),
+        }],
+    });
+    ir.model.faces[0].loops.push(loop_id.clone());
+    ir.model.finalize();
+    let report = validate(&ir, Vec::new());
+    assert!(report.is_ok(), "{:#?}", report.findings);
+
+    ir.model
+        .loops
+        .iter_mut()
+        .find(|loop_| loop_.id == loop_id)
+        .unwrap()
+        .boundary_role = crate::topology::LoopBoundaryRole::Outer;
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::LoopClosure
+            && finding.message == "face has more than one explicit outer loop"
+    }));
+    ir.model
+        .loops
+        .iter_mut()
+        .find(|loop_| loop_.id == loop_id)
+        .unwrap()
+        .boundary_role = crate::topology::LoopBoundaryRole::Inner;
+
+    let coedge = ir.model.loops[0].coedges[0].clone();
+    ir.model
+        .loops
+        .iter_mut()
+        .find(|loop_| loop_.id == loop_id)
+        .unwrap()
+        .coedges
+        .push(coedge);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::LoopClosure && finding.entity.as_deref() == Some(loop_id.0.as_str())
+    }));
+}
+
+#[test]
+fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
+    let uses = vec![
+        crate::topology::PcurveUse {
+            pcurve: crate::ids::PcurveId("test:pcurve#first".into()),
+            isoparametric: Some(true),
+        },
+        crate::topology::PcurveUse {
+            pcurve: crate::ids::PcurveId("test:pcurve#second".into()),
+            isoparametric: Some(false),
+        },
+    ];
+    let json = serde_json::to_string(&uses).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Vec<crate::topology::PcurveUse>>(&json).unwrap(),
+        uses
     );
 }
 
@@ -2535,4 +2611,13 @@ fn body_selections_round_trip_through_json() {
         serde_json::from_str::<Vec<BodySelection>>(&json).unwrap(),
         selections
     );
+}
+
+#[test]
+fn current_document_excludes_source_byte_accounting() {
+    let ir = CadIr::empty(crate::units::Units::default());
+    let json = serde_json::to_value(&ir).unwrap();
+
+    assert_eq!(json["ir_version"], "6");
+    assert!(json.get("byte_ledger").is_none());
 }

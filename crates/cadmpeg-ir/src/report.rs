@@ -173,6 +173,8 @@ pub enum Check {
     Tolerances,
     /// A preserved byte payload does not match its declared digest or length.
     PayloadIntegrity,
+    /// Source-byte ownership has a gap, overlap, invalid span, or invalid opaque owner.
+    ByteAccounting,
     /// A tessellation payload is malformed.
     Tessellation,
     /// The document's units are missing or non-canonical, or a tolerance is
@@ -207,6 +209,7 @@ impl fmt::Display for Check {
             Self::ParameterDomain => "parameter_domain",
             Self::Tolerances => "tolerances",
             Self::PayloadIntegrity => "payload_integrity",
+            Self::ByteAccounting => "byte_accounting",
             Self::Tessellation => "tessellation",
             Self::Units => "units",
             Self::Bounds => "bounds",

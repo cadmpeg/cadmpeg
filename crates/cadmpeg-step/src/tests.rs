@@ -274,7 +274,13 @@ fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
         .expect("decode parsed STEP document");
 
     assert_eq!(result.ir.source.as_ref().unwrap().format, "step");
-    let unknowns = result.ir.native_unknowns("step").unwrap();
+    let unknowns = result
+        .ir
+        .native
+        .namespace("step")
+        .unwrap()
+        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .unwrap();
     assert_eq!(unknowns.len(), 2);
     assert_eq!(unknowns[0].id.0, "step:data:example_record#1");
     assert_eq!(
@@ -790,7 +796,7 @@ fn decode_and_write_singular_vertex_loops() {
         .model
         .loops
         .iter()
-        .all(|loop_| loop_.coedges.is_empty() && loop_.vertex.is_some()));
+        .all(|loop_| loop_.coedges.is_empty() && loop_.vertex_uses.len() == 1));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let mut encoded = Vec::new();
@@ -841,7 +847,7 @@ fn decode_builds_a_valid_connected_sheet_brep() {
             .model
             .coedges
             .iter()
-            .filter(|coedge| coedge.pcurve.is_some())
+            .filter(|coedge| !coedge.pcurves.is_empty())
             .count(),
         1
     );
@@ -920,7 +926,7 @@ fn decode_builds_a_valid_connected_sheet_brep() {
             .model
             .coedges
             .iter()
-            .filter(|coedge| coedge.pcurve.is_some())
+            .filter(|coedge| !coedge.pcurves.is_empty())
             .count(),
         1
     );
@@ -2079,8 +2085,13 @@ fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
     ir.model.loops.push(Loop {
         id: inner.clone(),
         face: face.clone(),
+        boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Inner,
         coedges: Vec::new(),
-        vertex: Some(vertex),
+        vertex_uses: vec![cadmpeg_ir::topology::VertexUse {
+            vertex,
+            after: None,
+            pcurves: Vec::new(),
+        }],
     });
     ir.model.faces[0].loops.push(inner);
     let output = export(&ir);
@@ -2496,13 +2507,14 @@ fn edgeless_doc() -> CadIr {
         previous: CoedgeId("ce0".into()),
         radial_next: CoedgeId("ce0".into()),
         sense: Sense::Forward,
-        pcurve: None,
+        pcurves: Vec::new(),
     });
     ir.model.loops.push(Loop {
         id: LoopId("lp0".into()),
         face: FaceId("f0".into()),
+        boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
         coedges: vec![CoedgeId("ce0".into())],
-        vertex: None,
+        vertex_uses: Vec::new(),
     });
     ir.model.faces.push(Face {
         id: FaceId("f0".into()),

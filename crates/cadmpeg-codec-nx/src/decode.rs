@@ -84,18 +84,36 @@ pub fn decode(
     let scan = scan(reader)?;
 
     if options.container_only {
-        let ir = build_metadata_ir(&scan)?;
+        let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return Ok(DecodeResult::new(ir, report));
+        return decode_result(ir, report, annotations, &unknowns);
     }
 
-    if let Some((ir, report)) = try_decode_geometry(&scan) {
-        return Ok(DecodeResult::new(ir, report));
+    if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(&scan) {
+        return decode_result(ir, report, annotations, &unknowns);
     }
 
-    let ir = build_metadata_ir(&scan)?;
+    let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
-    Ok(DecodeResult::new(ir, report))
+    decode_result(ir, report, annotations, &unknowns)
+}
+
+fn decode_result(
+    mut ir: CadIr,
+    report: DecodeReport,
+    annotations: cadmpeg_ir::Annotations,
+    unknowns: &[UnknownRecord],
+) -> Result<DecodeResult, CodecError> {
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..cadmpeg_ir::SourceFidelity::default()
+    };
+    source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns)?;
+    Ok(DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        source_fidelity,
+    ))
 }
 
 /// Aggregate carrier counts across the decoded streams, for reporting.
@@ -135,9 +153,17 @@ impl Counts {
 
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
-fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
+fn try_decode_geometry(
+    scan: &Scan,
+) -> Option<(
+    CadIr,
+    DecodeReport,
+    cadmpeg_ir::Annotations,
+    Vec<UnknownRecord>,
+)> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
+    let mut unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
@@ -512,7 +538,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         if !unknown.links.is_empty() {
             annotations.derived(&unknown.id, "links");
         }
-        ir.push_native_unknown("nx", unknown).ok()?;
+        unknowns.push(unknown);
     }
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
@@ -527,10 +553,10 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         &scan.container.rmfastload_object_ids(),
     );
     attach_free_topology(&mut ir, &mut annotations);
-    ir.annotations = annotations.build();
-    retain_live_annotations(&mut ir);
+    let mut annotations = annotations.build();
+    retain_live_annotations(&ir, &unknowns, &mut annotations);
     let report = build_geometry_report(scan, &counts, !ir.model.faces.is_empty());
-    Some((ir, report))
+    Some((ir, report, annotations, unknowns))
 }
 
 fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
@@ -559,7 +585,11 @@ fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
     semantic
 }
 
-fn retain_live_annotations(ir: &mut CadIr) {
+fn retain_live_annotations(
+    ir: &CadIr,
+    unknowns: &[UnknownRecord],
+    annotations: &mut cadmpeg_ir::Annotations,
+) {
     let mut ids = BTreeSet::new();
     macro_rules! add_ids {
         ($($arena:expr),+ $(,)?) => {
@@ -582,11 +612,9 @@ fn retain_live_annotations(ir: &mut CadIr) {
         ir.model.procedural_surfaces,
         ir.model.procedural_curves,
     );
-    if let Ok(unknowns) = ir.native_unknowns("nx") {
-        ids.extend(unknowns.iter().map(|unknown| unknown.id.to_string()));
-    }
-    ir.annotations.provenance.retain(|id, _| ids.contains(id));
-    ir.annotations.exactness.retain(|id, _| ids.contains(id));
+    ids.extend(unknowns.iter().map(|unknown| unknown.id.to_string()));
+    annotations.provenance.retain(|id, _| ids.contains(id));
+    annotations.exactness.retain(|id, _| ids.contains(id));
 }
 
 fn topology_body_node_ids(stream_index: usize, graph: &Graph) -> BTreeMap<BodyId, BTreeSet<u32>> {
@@ -1061,8 +1089,9 @@ fn emit_topology(
         ir.model.loops.push(Loop {
             id: id.clone(),
             face: face.clone(),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             coedges: Vec::new(),
-            vertex: None,
+            vertex_uses: Vec::new(),
         });
         if let Some(parent) = ir
             .model
@@ -1114,7 +1143,7 @@ fn emit_topology(
             previous,
             radial_next,
             sense: sense(Some(fields.sense)),
-            pcurve: None,
+            pcurves: Vec::new(),
         });
         if let Some(parent) = ir
             .model
@@ -1367,9 +1396,12 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
     }
 }
 
-fn build_metadata_ir(scan: &Scan) -> Result<CadIr, CodecError> {
+fn build_metadata_ir(
+    scan: &Scan,
+) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
+    let mut unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind.is_parasolid() {
@@ -1379,13 +1411,12 @@ fn build_metadata_ir(scan: &Scan) -> Result<CadIr, CodecError> {
                 .note(&unknown.id, source_stream, stream.file_offset as u64)
                 .tag(stream.kind.label());
             annotations.exactness(&unknown.id, Exactness::Derived);
-            ir.push_native_unknown("nx", unknown)?;
+            unknowns.push(unknown);
         }
     }
     attach_native_object_model(&mut ir, scan)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    ir.annotations = annotations.build();
-    Ok(ir)
+    Ok((ir, annotations.build(), unknowns))
 }
 
 fn attach_native_object_model(

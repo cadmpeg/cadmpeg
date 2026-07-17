@@ -172,9 +172,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 ref_error(findings, &lp.id.0, "coedge", &ce.0);
             }
         }
-        if let Some(vertex) = &lp.vertex {
-            if !ids.vertices.contains(&vertex.0) {
-                ref_error(findings, &lp.id.0, "vertex", &vertex.0);
+        for use_ in &lp.vertex_uses {
+            if !ids.vertices.contains(&use_.vertex.0) {
+                ref_error(findings, &lp.id.0, "vertex", &use_.vertex.0);
+            }
+            if let Some(after) = &use_.after {
+                if !ids.coedges.contains(&after.0) {
+                    ref_error(findings, &lp.id.0, "coedge(vertex-use after)", &after.0);
+                }
+            }
+            for pcurve in &use_.pcurves {
+                if !ids.pcurves.contains(&pcurve.pcurve.0) {
+                    ref_error(findings, &lp.id.0, "pcurve(vertex use)", &pcurve.pcurve.0);
+                }
             }
         }
     }
@@ -194,9 +204,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         if !ids.coedges.contains(&ce.radial_next.0) {
             ref_error(findings, &ce.id.0, "coedge(radial_next)", &ce.radial_next.0);
         }
-        if let Some(pc) = &ce.pcurve {
-            if !ids.pcurves.contains(&pc.0) {
-                ref_error(findings, &ce.id.0, "pcurve", &pc.0);
+        for use_ in &ce.pcurves {
+            if !ids.pcurves.contains(&use_.pcurve.0) {
+                ref_error(findings, &ce.id.0, "pcurve", &use_.pcurve.0);
             }
         }
     }
@@ -997,7 +1007,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
             }
             ProceduralCurveDefinition::Offset {
-                source, support, ..
+                source,
+                support,
+                distance_law,
+                ..
             } => {
                 if !ids.curves.contains(&source.0) {
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
@@ -1005,6 +1018,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 if let Some(support) = support {
                     if !ids.surfaces.contains(&support.0) {
                         ref_error(findings, &procedural.id.0, "surface", &support.0);
+                    }
+                }
+                if let Some(crate::geometry::CurveOffsetDistanceLaw::Coordinate {
+                    function, ..
+                }) = distance_law
+                {
+                    if !ids.curves.contains(&function.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &function.0);
                     }
                 }
             }
@@ -2320,26 +2341,42 @@ pub(super) fn check_loops(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|c| (c.id.0.as_str(), c))
         .collect();
 
+    for face in &ir.model.faces {
+        let outer_count = face
+            .loops
+            .iter()
+            .filter_map(|id| ir.model.loops.iter().find(|loop_| loop_.id == *id))
+            .filter(|loop_| loop_.boundary_role == crate::topology::LoopBoundaryRole::Outer)
+            .count();
+        if outer_count > 1 {
+            findings.push(Finding {
+                check: Check::LoopClosure,
+                severity: Severity::Error,
+                message: "face has more than one explicit outer loop".into(),
+                entity: Some(face.id.0.clone()),
+            });
+        }
+    }
+
     for lp in &ir.model.loops {
-        if lp.coedges.is_empty() && lp.vertex.is_none() {
+        let vertex_only =
+            lp.coedges.is_empty() && lp.vertex_uses.len() == 1 && lp.vertex_uses[0].after.is_none();
+        let edge_loop = !lp.coedges.is_empty()
+            && lp.vertex_uses.iter().all(|use_| {
+                use_.after
+                    .as_ref()
+                    .is_some_and(|after| lp.coedges.contains(after))
+            });
+        if !vertex_only && !edge_loop {
             findings.push(Finding {
                 check: Check::LoopClosure,
                 severity: Severity::Error,
-                message: "loop has neither coedges nor a singular vertex".into(),
+                message: "loop must contain a coedge ring with anchored vertex uses or one unanchored vertex use".into(),
                 entity: Some(lp.id.0.clone()),
             });
             continue;
         }
-        if !lp.coedges.is_empty() && lp.vertex.is_some() {
-            findings.push(Finding {
-                check: Check::LoopClosure,
-                severity: Severity::Error,
-                message: "loop has both coedges and a singular vertex".into(),
-                entity: Some(lp.id.0.clone()),
-            });
-            continue;
-        }
-        if lp.vertex.is_some() {
+        if lp.coedges.is_empty() {
             continue;
         }
         // Walk the `next` chain from the first listed coedge and confirm it is a
@@ -2448,7 +2485,7 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .loops
         .iter()
-        .filter_map(|loop_| loop_.vertex.as_ref().map(|vertex| vertex.0.as_str()))
+        .flat_map(|loop_| loop_.vertex_uses.iter().map(|use_| use_.vertex.0.as_str()))
         .collect::<HashSet<_>>();
     let mut wire_owners = HashMap::<&str, usize>::new();
     let mut free_owners = HashMap::<&str, usize>::new();

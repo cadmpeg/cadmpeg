@@ -50,6 +50,7 @@ harnesses call format detection, inspection, and decoding:
 - `catia_container`
 - `creo_container`
 - `nx_container`
+- `iges_container`
 
 Use a parser target for focused binary-format coverage:
 
@@ -63,6 +64,10 @@ Use a parser target for focused binary-format coverage:
   `creo_container_scan`, `creo_surface_rows`, `creo_curve_prototypes`
 - NX: `nx_parasolid`, `nx_geometry_points`, `nx_geometry_surfaces`,
   `nx_geometry_curves`, `nx_nurbs_surfaces`, `nx_nurbs_curves`
+- IGES uses `iges_container` for bounded representation detection, physical-card parsing,
+  Global and Directory fields, Parameter tokens, reference graphs, semantic geometry and
+  topology projection, and byte-ledger accounting. Generate its valid 5.3 point and trimmed-sheet
+  seeds with `cargo run --bin generate_iges_seeds` from `crates/cadmpeg-fuzz`.
 
 Use an IR or STEP target when the input is JSON or the behavior under test is
 format-independent:
