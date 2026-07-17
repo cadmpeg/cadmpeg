@@ -20,6 +20,7 @@ use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
+use cadmpeg_ir::transfer::Transfer;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -1799,7 +1800,13 @@ impl<'a> DecodeContext<'a> {
         });
         for (class, outcome) in &self.outcomes {
             if outcome.retained > 0 {
-                losses.push(LossNote {
+                // Unsupported-concept-to-omission boundary (§10 Phase 4B): a
+                // retained object family has no typed geometry in the IR. The
+                // omission is expressed as a dropped `Transfer` so it cannot be
+                // taken without recording its loss note; the value it would have
+                // carried (typed geometry) does not exist, so resolution yields
+                // `None` and only the note survives.
+                let omitted: Option<()> = Transfer::omitted(LossNote {
                     code: LossCode::UnsupportedObjectFamily,
                     category: LossCategory::Geometry,
                     severity: Severity::Warning,
@@ -1808,7 +1815,9 @@ impl<'a> DecodeContext<'a> {
                         outcome.retained
                     ),
                     provenance: Some(loss_provenance(class, outcome)),
-                });
+                })
+                .resolve(&mut losses);
+                debug_assert!(omitted.is_none());
             }
             if outcome.attribute_degraded > 0 {
                 losses.push(LossNote {
