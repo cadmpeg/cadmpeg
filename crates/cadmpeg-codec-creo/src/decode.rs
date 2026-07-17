@@ -616,15 +616,19 @@ fn build_ir(
     for section in scan.sections.iter().filter(|s| s.role == role::GEOMETRY) {
         let end = (section.offset + section.length).min(scan.data.len());
         let bytes = &scan.data[section.offset..end];
-        // A PSB geometry section is preserved verbatim as an `UnknownRecord` and
-        // conserved physically by the §6.1 coarse ledger's `Opaque` span; it
-        // yields no typed model entity, so its disposition is `Structural`. The
-        // engine's checkable dispositions name model entities (`Typed`) or
-        // retained-store blobs (`Retained`); a native `UnknownRecord` is neither,
-        // and the root-byte lifetime bars `ctx.retain` from `decode_impl` — see
-        // the crate deviation note.
+        // A PSB geometry section is preserved verbatim as an `UnknownRecord`
+        // in the native `unknowns` arena and conserved physically by the §6.1
+        // coarse ledger's `Opaque` span. It yields no typed model entity, so it
+        // resolves `Preserved`, naming the emitted unknown-record id: transfer
+        // accounting then confirms the record actually reached
+        // `ir.native_unknowns`, closing the §6.2 identity guarantee over the
+        // arena the codec preserves the most content into. `Structural` would
+        // leave the emission unchecked; `ctx.retain` is barred by the root-byte
+        // lifetime, so the bytes travel through `push_native_unknown`, not the
+        // retained store.
         let section_ticket = commit(ctx, space, section.offset as u64, "psb_geometry_section");
         let id = UnknownId(format!("creo:{}:section#{}", section.name, section.offset));
+        let unknown_id = id.0.clone();
         annotate(
             &mut annotations,
             &id,
@@ -644,7 +648,12 @@ fn build_ir(
                 links: Vec::new(),
             },
         )?;
-        ctx.resolve(section_ticket, RecordDisposition::Structural);
+        ctx.resolve(
+            section_ticket,
+            RecordDisposition::Preserved {
+                records: vec![unknown_id],
+            },
+        );
     }
     for plane in &scan.datum_planes {
         let plane_ticket = commit(ctx, space, plane.offset_in_payload as u64, "datum_plane");

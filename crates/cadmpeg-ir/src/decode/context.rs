@@ -9,6 +9,7 @@
 //! [`View`] can outlive any single call.
 
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeSet;
 
 use crate::codec::{CodecError, DecodeResult, ReadSeek};
 use crate::document::Model;
@@ -730,7 +731,9 @@ impl<'a> DecodeContext<'a> {
     /// disposition table against the ledger: a [`RecordDisposition::Typed`]
     /// must name at least one output entity, a [`RecordDisposition::Retained`]
     /// must name at least one retained record and every named record must
-    /// resolve in the retained store, and a [`RecordDisposition::Dropped`]'s
+    /// resolve in the retained store, a [`RecordDisposition::Preserved`] must
+    /// name at least one unknown record and every named record must resolve in
+    /// the document's native unknowns, and a [`RecordDisposition::Dropped`]'s
     /// loss note must be reflected in the report's losses. A codec that issues
     /// no tickets has an empty table and passes trivially. A violation is a
     /// codec contract error in strict mode (`Malformed`); in salvage mode each
@@ -759,12 +762,36 @@ impl<'a> DecodeContext<'a> {
             }
         }
         // Check::TransferAccounting (§6.2): validate the resolved disposition
-        // table against the retained ledger and the report's losses. Runs after
-        // salvage auto-drop so auto-generated Dropped dispositions are checked
-        // against the loss notes just appended for them.
+        // table against the retained ledger, the document's native unknowns,
+        // and the report's losses. Runs after salvage auto-drop so
+        // auto-generated Dropped dispositions are checked against the loss
+        // notes just appended for them.
+        let unknown_ids = match result.ir.all_native_unknowns() {
+            Ok(records) => records.into_iter().map(|record| record.id.0).collect(),
+            Err(error) => {
+                let message = format!("native unknowns arena is undecodable: {error}");
+                match self.policy.mode {
+                    DecodeMode::Strict => {
+                        return Err(CodecError::Malformed(format!(
+                            "transfer accounting: {message}"
+                        )))
+                    }
+                    DecodeMode::Salvage => {
+                        result.report.losses.push(LossNote {
+                            category: LossCategory::Other,
+                            severity: Severity::Warning,
+                            message: format!("transfer accounting: {message}"),
+                            provenance: None,
+                        });
+                    }
+                }
+                BTreeSet::new()
+            }
+        };
         let violations = self.tickets.transfer_accounting(
             &result.ir.model,
             &self.retained,
+            &unknown_ids,
             &result.report.losses,
         );
         if !violations.is_empty() {
@@ -1368,6 +1395,15 @@ pub enum RecordDisposition {
         /// Why the record was dropped.
         loss: LossNote,
     },
+    /// Preserved verbatim in a native `unknowns` arena, named by
+    /// unknown-record id. Distinct from [`RecordDisposition::Retained`], which
+    /// names records in the decode-session retained store: a `Preserved`
+    /// record's bytes reach the IR through `push_native_unknown`, so its
+    /// accounting resolves against the document's native unknowns.
+    Preserved {
+        /// The native unknown-record ids the record was preserved as.
+        records: Vec<String>,
+    },
     /// Container framing with no semantic content.
     Structural,
 }
@@ -1401,10 +1437,13 @@ impl TicketTable {
     /// entity and every named entity resolves in `model`; a
     /// [`RecordDisposition::Retained`] names at least one record and
     /// every named record resolves in the retained store; a
-    /// [`RecordDisposition::Dropped`]'s loss is reflected in `losses`. An
-    /// unresolved ticket is not re-reported here — [`finish`](DecodeContext::finish)
-    /// handles resolution before this runs. [`RecordDisposition::Structural`]
-    /// carries no semantic content and is unconstrained.
+    /// [`RecordDisposition::Preserved`] names at least one unknown record and
+    /// every named record resolves in `unknown_ids` (the document's native
+    /// unknowns); a [`RecordDisposition::Dropped`]'s loss is reflected in
+    /// `losses`. An unresolved ticket is not re-reported here —
+    /// [`finish`](DecodeContext::finish) handles resolution before this runs.
+    /// [`RecordDisposition::Structural`] carries no semantic content and is
+    /// unconstrained.
     ///
     /// Dropped reflection consumes one report loss per disposition: each
     /// `Dropped` claims a distinct un-consumed `LossNote` matching its key, so
@@ -1415,6 +1454,7 @@ impl TicketTable {
         &self,
         model: &Model,
         retained: &RetainedStore,
+        unknown_ids: &BTreeSet<String>,
         losses: &[LossNote],
     ) -> Vec<String> {
         let mut violations = Vec::new();
@@ -1466,6 +1506,20 @@ impl TicketTable {
                         None => violations.push(format!(
                             "{at} resolved Dropped but its loss note is absent from the report"
                         )),
+                    }
+                }
+                Some(RecordDisposition::Preserved { records }) => {
+                    if records.is_empty() {
+                        violations.push(format!(
+                            "{at} resolved Preserved but names no unknown records"
+                        ));
+                    }
+                    for record in records {
+                        if !unknown_ids.contains(record) {
+                            violations.push(format!(
+                                "{at} names unknown record `{record}` absent from the native unknowns arena"
+                            ));
+                        }
                     }
                 }
                 Some(RecordDisposition::Structural) | None => {}

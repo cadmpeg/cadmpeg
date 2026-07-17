@@ -672,6 +672,94 @@ fn transfer_accounting_accepts_consistent_dispositions() {
     assert!(ctx.finish(Ok(result_with_bodies(&["body/0"]))).is_ok());
 }
 
+fn result_with_unknown(id: &str) -> DecodeResult {
+    use crate::ids::UnknownId;
+    use crate::unknown::UnknownRecord;
+
+    let mut result = dummy_result();
+    result
+        .ir
+        .push_native_unknown(
+            "test",
+            UnknownRecord {
+                id: UnknownId(id.to_owned()),
+                offset: 0,
+                byte_len: 4,
+                sha256: String::new(),
+                data: None,
+                links: Vec::new(),
+            },
+        )
+        .unwrap();
+    result
+}
+
+#[test]
+fn transfer_accounting_accepts_preserved_when_unknown_is_emitted() {
+    // A Preserved disposition naming a record actually pushed into the native
+    // unknowns arena is consistent: §6.2 identity holds over the arena.
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let ticket = ctx.commit_record(root.location(), RecordKind("section"));
+    ctx.resolve(
+        ticket,
+        RecordDisposition::Preserved {
+            records: vec!["u/0".to_owned()],
+        },
+    );
+    assert!(ctx.finish(Ok(result_with_unknown("u/0"))).is_ok());
+}
+
+#[test]
+fn transfer_accounting_rejects_preserved_unknown_absent_from_arena_in_strict() {
+    // A Preserved disposition naming an unknown id never pushed into the arena
+    // is an unaccounted emission; §6.2 requires each named record to resolve.
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let ticket = ctx.commit_record(root.location(), RecordKind("section"));
+    ctx.resolve(
+        ticket,
+        RecordDisposition::Preserved {
+            records: vec!["u/999".to_owned()],
+        },
+    );
+    match ctx.finish(Ok(result_with_unknown("u/0"))) {
+        Err(CodecError::Malformed(message)) => {
+            assert!(message.contains("transfer accounting"), "{message}");
+            assert!(
+                message.contains("absent from the native unknowns arena"),
+                "{message}"
+            );
+        }
+        other => panic!("expected strict native-unknowns error, got {other:?}"),
+    }
+}
+
+#[test]
+fn transfer_accounting_rejects_preserved_without_records_in_strict() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let ticket = ctx.commit_record(root.location(), RecordKind("section"));
+    ctx.resolve(
+        ticket,
+        RecordDisposition::Preserved {
+            records: Vec::new(),
+        },
+    );
+    match ctx.finish(Ok(dummy_result())) {
+        Err(CodecError::Malformed(message)) => {
+            assert!(message.contains("names no unknown records"), "{message}");
+        }
+        other => panic!("expected strict empty-Preserved error, got {other:?}"),
+    }
+}
+
 #[test]
 fn transfer_accounting_rejects_typed_output_absent_from_ir_in_strict() {
     // A Typed disposition naming an entity id never emitted into the IR is a
