@@ -1378,6 +1378,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
     });
 
     DecodeReport {
+        retention_degraded: false,
         profile_versions: ProfileVersions::default(),
         format: "nx".to_string(),
         container_only: false,
@@ -1477,6 +1478,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
     }
 
     DecodeReport {
+        retention_degraded: false,
         profile_versions: ProfileVersions::default(),
         format: "nx".to_string(),
         container_only,

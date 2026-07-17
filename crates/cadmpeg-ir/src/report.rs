@@ -144,6 +144,11 @@ pub struct DecodeReport {
     pub losses: Vec<LossNote>,
     /// Free-form informational notes (e.g. container findings).
     pub notes: Vec<String>,
+    /// Whether opaque retention degraded from recoverable to accounted because
+    /// the retained-byte budget was exhausted in salvage mode (§11.10). Set by
+    /// the decode session at `finish`; a paired loss note carries the detail.
+    #[serde(default)]
+    pub retention_degraded: bool,
     /// Versioned calibration identifiers in force for this decode (§5.2), set
     /// by the decode session at `finish`.
     #[serde(default)]
@@ -318,6 +323,7 @@ mod tests {
             geometry_transferred: false,
             losses: Vec::new(),
             notes: Vec::new(),
+            retention_degraded: false,
             profile_versions,
         }
     }

@@ -43,6 +43,7 @@ mod context;
 mod error;
 mod policy;
 mod probe;
+mod retained;
 mod space;
 mod view;
 
@@ -59,5 +60,6 @@ pub use error::{
 };
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind, Probe};
+pub use retained::{RetainedBlob, RetainedBlobId, RetainedRange, Retention};
 pub use space::{ByteRange, SourceSpan, SpaceId, SpaceOrigin, TransformKind};
 pub use view::{BoundedCount, View};

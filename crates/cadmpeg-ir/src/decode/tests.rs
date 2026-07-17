@@ -42,6 +42,7 @@ fn dummy_result() -> DecodeResult {
         geometry_transferred: false,
         losses: Vec::new(),
         notes: Vec::new(),
+        retention_degraded: false,
         profile_versions: ProfileVersions::default(),
     };
     DecodeResult::new(ir, report)
@@ -729,4 +730,163 @@ fn finish_records_every_deviating_dimension_in_sorted_order() {
         report.profile_versions.overrides,
         vec!["max_depth=4".to_string(), "max_work=10".to_string()]
     );
+}
+
+#[test]
+fn retain_charges_dedups_and_yields_a_whole_blob_range() {
+    let bytes: &[u8] = &[7u8; 64];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    let payload_a = arena.alloc(vec![1u8, 2, 3, 4, 5, 6, 7, 8].into_boxed_slice());
+    let retention = ctx.retain(payload_a).unwrap();
+    let range = retention.range().expect("retained recoverable");
+    assert_eq!(range.start(), 0);
+    assert_eq!(range.end(), 8);
+    assert_eq!(range.len(), 8);
+    assert_eq!(ctx.charged(ResourceDimension::RetainedBytes), 8);
+
+    // Identical bytes in a distinct buffer deduplicate to the same blob and do
+    // not charge again.
+    let payload_b = arena.alloc(vec![1u8, 2, 3, 4, 5, 6, 7, 8].into_boxed_slice());
+    let again = ctx.retain(payload_b).unwrap();
+    assert_eq!(again.range().unwrap().blob(), range.blob());
+    assert_eq!(ctx.charged(ResourceDimension::RetainedBytes), 8);
+
+    // Distinct bytes are a new blob and charge again.
+    let other = arena.alloc(vec![9u8; 4].into_boxed_slice());
+    let _ = ctx.retain(other).unwrap();
+    assert_eq!(ctx.charged(ResourceDimension::RetainedBytes), 12);
+    assert_eq!(ctx.retained_blobs().len(), 2);
+}
+
+#[test]
+fn subranges_reference_one_blob_under_containment() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    let blob = arena.alloc(vec![0u8; 100].into_boxed_slice());
+    let whole = ctx.retain(blob).unwrap().range().unwrap().clone();
+
+    let head = whole.subrange(0, 40).expect("contained");
+    let tail = whole.subrange(40, 100).expect("contained");
+    assert_eq!(head.blob(), tail.blob());
+    assert_eq!(head.blob(), whole.blob());
+    assert_eq!(head.len(), 40);
+    assert_eq!(tail.len(), 60);
+
+    // Escaping or inverted subranges are refused.
+    assert!(whole.subrange(0, 101).is_none());
+    assert!(whole.subrange(60, 40).is_none());
+
+    // Serialized reference names the blob and its subrange.
+    let serialized = tail.to_serialized();
+    assert_eq!(serialized.blob, whole.blob().as_str());
+    assert_eq!(serialized.range.start, 40);
+    assert_eq!(serialized.range.end, 100);
+}
+
+#[test]
+fn strict_fails_with_resource_limit_on_retained_exhaustion() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let mut policy = strict();
+    policy.limits.max_retained_bytes = 8;
+    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    let payload = arena.alloc(vec![3u8; 16].into_boxed_slice());
+    match ctx.retain(payload) {
+        Err(CodecError::ResourceLimit(limit)) => {
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.reason, ResourceFailure::BudgetExceeded);
+        }
+        other => panic!("expected ResourceLimit, got {other:?}"),
+    }
+    // The refusal fused the context: finish cannot return Ok.
+    assert!(ctx.is_fused());
+    assert!(ctx.finish(Ok(dummy_result())).is_err());
+}
+
+#[test]
+fn salvage_degrades_retained_exhaustion_to_accounting() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = tight(|limits| limits.max_retained_bytes = 8);
+    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    // A blob that fits is retained recoverably.
+    let small = arena.alloc(vec![1u8; 8].into_boxed_slice());
+    assert!(ctx.retain(small).unwrap().is_retained());
+
+    // The next blob exhausts the retained budget: it degrades to accounting
+    // rather than failing or fusing.
+    let big = arena.alloc(vec![2u8; 16].into_boxed_slice());
+    match ctx.retain(big).unwrap() {
+        Retention::Accounted { digest } => assert_eq!(digest.len(), 64),
+        Retention::Retained(_) => panic!("expected degradation to accounting"),
+    }
+    assert!(!ctx.is_fused(), "retention alone never fuses in salvage");
+    assert!(ctx.retention_degraded());
+
+    // finish succeeds, flags the degradation, and records one loss note.
+    let report = ctx.finish(Ok(dummy_result())).unwrap().report;
+    assert!(report.retention_degraded);
+    let notes: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|note| note.message.contains("retained-byte budget exhausted"))
+        .collect();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].severity, Severity::Warning);
+}
+
+#[test]
+fn retained_blobs_survive_context_teardown_without_recopy() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    let payload = arena.alloc(vec![5u8; 12].into_boxed_slice());
+    let _ = ctx.retain(payload).unwrap();
+    // Collect the egress before finishing; the borrows address the arena.
+    let egress = ctx.retained_blobs();
+    let recovered = egress[0].bytes;
+
+    // finish consumes the context; the arena outlives it, so the retained bytes
+    // remain readable with no copy at teardown.
+    let _ = ctx.finish(Ok(dummy_result())).unwrap();
+    assert_eq!(recovered, &[5u8; 12]);
+}
+
+#[test]
+fn retention_is_deterministic_across_repeat_decodes() {
+    fn run(mode: DecodeMode) -> (String, bool) {
+        let bytes: &[u8] = &[0u8; 8];
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy {
+            mode,
+            limits: {
+                let mut limits = ResourceLimits::desktop();
+                limits.max_retained_bytes = 8;
+                limits
+            },
+        };
+        let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        let fits = arena.alloc(vec![1u8; 8].into_boxed_slice());
+        let id = ctx
+            .retain(fits)
+            .unwrap()
+            .range()
+            .unwrap()
+            .blob()
+            .as_str()
+            .to_string();
+        (id, ctx.retention_degraded())
+    }
+    assert_eq!(run(DecodeMode::Salvage), run(DecodeMode::Salvage));
+    assert_eq!(run(DecodeMode::Strict).0, run(DecodeMode::Salvage).0);
 }

@@ -19,6 +19,9 @@ use super::error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
 use super::policy::{DecodeMode, DecodePolicy, Envelope, ResourceLimits};
+use super::retained::{
+    RetainedAddr, RetainedBlob, RetainedBlobId, RetainedRange, RetainedStore, Retention,
+};
 use super::space::{ByteRange, SourceSpan, SpaceId, SpaceOrigin, SpaceRegistry, TransformKind};
 use super::view::{BoundedCount, View};
 
@@ -42,6 +45,7 @@ pub struct DecodeContext<'a> {
     budget: BudgetCells,
     spaces: SpaceRegistry,
     tickets: TicketTable,
+    retained: RetainedStore,
     fuse: Cell<Option<ResourceLimit>>,
 }
 
@@ -120,6 +124,7 @@ impl<'a> DecodeContext<'a> {
             budget,
             spaces,
             tickets: TicketTable::default(),
+            retained: RetainedStore::default(),
             fuse: Cell::new(None),
         };
         Ok((ctx, View::over_space(bytes, root_space)))
@@ -189,6 +194,109 @@ impl<'a> DecodeContext<'a> {
             operation,
             location,
         )
+    }
+
+    // --- retained blobs -----------------------------------------------------
+
+    /// Retains an opaque payload as a content-addressed blob, returning a
+    /// recoverable [`Retention`].
+    ///
+    /// Identity is the bytes' SHA-256 digest, so retaining identical bytes twice
+    /// deduplicates to one blob and charges the [`RetainedBytes`](ResourceDimension::RetainedBytes)
+    /// budget once. The bytes are borrowed for the arena's lifetime, never
+    /// re-copied, so the blob survives the context teardown.
+    ///
+    /// The exhaustion outcome is mode-defined (§11.10). A fresh blob whose bytes
+    /// do not fit the retained budget fails in strict mode with a
+    /// `ResourceLimit` (fusing the context) and degrades in salvage mode to
+    /// [`Retention::Accounted`]: the digest is kept, the bytes are dropped, a
+    /// loss note and the report's `retention_degraded` flag are set at
+    /// [`finish`](DecodeContext::finish), and the decode is never failed for
+    /// retention alone.
+    pub fn retain(&self, bytes: &'a [u8]) -> Result<Retention, CodecError> {
+        if let Some(limit) = self.fuse.get() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
+        let digest = crate::hash::sha256_hex(bytes);
+        let len = bytes.len() as u64;
+        let addr = RetainedAddr {
+            ptr: bytes.as_ptr(),
+            len: bytes.len(),
+        };
+        if self.retained.contains(&digest) {
+            // Dedup: identical bytes are already retained and already charged.
+            return Ok(Retention::Retained(RetainedRange::whole(digest, len)));
+        }
+        match self.policy.mode {
+            DecodeMode::Strict => {
+                // Strict fails on retained exhaustion: charge_retained fuses and
+                // returns ResourceLimit, aborting the decode (§11.10).
+                self.charge_retained(len, "retain", None)?;
+                self.retained.insert(digest.clone(), addr);
+                Ok(Retention::Retained(RetainedRange::whole(digest, len)))
+            }
+            DecodeMode::Salvage => {
+                if self.try_charge_retained(len) {
+                    self.retained.insert(digest.clone(), addr);
+                    Ok(Retention::Retained(RetainedRange::whole(digest, len)))
+                } else {
+                    // Salvage degrades R->A: keep the digest, drop the bytes,
+                    // and record the degradation for finish. The context is not
+                    // fused — retention alone never fails a decode (§11.10).
+                    self.retained.mark_degraded(len);
+                    Ok(Retention::Accounted { digest })
+                }
+            }
+        }
+    }
+
+    /// Applies a retained-byte charge without fusing on refusal, returning
+    /// whether it fit. The salvage-mode retention path uses this so an exhausted
+    /// retained budget degrades to accounting instead of poisoning the decode.
+    fn try_charge_retained(&self, bytes: u64) -> bool {
+        let dim = ResourceDimension::RetainedBytes;
+        let allowance = self
+            .budget
+            .allowance(dim, &self.policy.limits, &self.envelope);
+        let used = self.budget.counter(dim);
+        if bytes > allowance.saturating_sub(used) {
+            return false;
+        }
+        self.budget.set_counter(dim, used.saturating_add(bytes));
+        true
+    }
+
+    /// Returns the retained blobs in canonical order, borrowed for the arena's
+    /// lifetime.
+    ///
+    /// The returned borrows outlive the context: they address the arena the
+    /// decode wrapper owns, so a codec collects retained bytes here and they stay
+    /// valid after [`finish`](DecodeContext::finish) consumes the context — the
+    /// egress copies no bytes.
+    pub fn retained_blobs(&self) -> Vec<RetainedBlob<'a>> {
+        self.retained
+            .addrs()
+            .into_iter()
+            .map(|(digest, addr)| {
+                // SAFETY: `addr` was taken from a `&'a [u8]` passed to `retain`.
+                // Those bytes live in the arena (or the caller's root input),
+                // which outlives the context and never moves or mutates a stored
+                // buffer, so a shared `&'a [u8]` rebuilt from the address is valid
+                // for the returned lifetime. This is the same frozen-buffer
+                // aliasing the arena relies on.
+                let bytes = unsafe { std::slice::from_raw_parts(addr.ptr, addr.len) };
+                RetainedBlob {
+                    id: RetainedBlobId::new(digest),
+                    bytes,
+                }
+            })
+            .collect()
+    }
+
+    /// Returns whether any retention degraded from recoverable to accounted
+    /// because the retained-byte budget was exhausted (salvage mode, §11.10).
+    pub fn retention_degraded(&self) -> bool {
+        self.retained.is_degraded()
     }
 
     /// Charges the allocation budget for auxiliary heap growth that does not
@@ -635,6 +743,23 @@ impl<'a> DecodeContext<'a> {
                     result.report.losses.extend(losses);
                 }
             }
+        }
+        if self.retained.is_degraded() {
+            // Salvage degraded recovery to accounting on retained exhaustion:
+            // surface it as an accountable outcome — a report flag plus one
+            // deterministic loss note — never as a decode failure (§11.10).
+            result.report.retention_degraded = true;
+            result.report.losses.push(LossNote {
+                category: LossCategory::Other,
+                severity: Severity::Warning,
+                message: format!(
+                    "retained-byte budget exhausted: {} opaque span(s) totaling {} bytes \
+                     degraded from recoverable to accounted",
+                    self.retained.degraded_count(),
+                    self.retained.degraded_bytes()
+                ),
+                provenance: None,
+            });
         }
         result.report.profile_versions = self.profile_versions();
         Ok(result)

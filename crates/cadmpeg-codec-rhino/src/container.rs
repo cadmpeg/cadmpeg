@@ -693,6 +693,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
         DecodeReport {
+            retention_degraded: false,
             profile_versions: ProfileVersions::default(),
             format: "rhino".to_string(),
             container_only: true,

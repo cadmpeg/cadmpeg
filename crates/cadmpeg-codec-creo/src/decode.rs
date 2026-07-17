@@ -1176,6 +1176,7 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
     });
 
     DecodeReport {
+        retention_degraded: false,
         profile_versions: ProfileVersions::default(),
         format: "creo".to_string(),
         container_only,

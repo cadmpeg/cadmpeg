@@ -1891,6 +1891,7 @@ impl<'a> DecodeContext<'a> {
         DecodeResult::new(
             self.ir,
             DecodeReport {
+                retention_degraded: false,
                 profile_versions: ProfileVersions::default(),
                 format: "rhino".to_string(),
                 container_only: false,

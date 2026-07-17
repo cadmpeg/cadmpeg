@@ -199,6 +199,7 @@ fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeRepo
     ir.annotations = annotations.build();
     let summary = container::summarize(scan);
     let report = DecodeReport {
+        retention_degraded: false,
         profile_versions: ProfileVersions::default(),
         format: "catia".to_string(),
         container_only: false,
@@ -316,6 +317,7 @@ fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
     Some((
         ir,
         DecodeReport {
+            retention_degraded: false,
             profile_versions: ProfileVersions::default(),
             format: "catia".to_string(),
             container_only: false,
@@ -851,6 +853,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<(CadIr, Deco
     Some((
         ir,
         DecodeReport {
+            retention_degraded: false,
             profile_versions: ProfileVersions::default(),
             format: "catia".to_string(),
             container_only: false,
@@ -1767,6 +1770,7 @@ fn build_geometry_report(
     });
 
     DecodeReport {
+        retention_degraded: false,
         profile_versions: ProfileVersions::default(),
         format: "catia".to_string(),
         container_only: false,
@@ -1906,6 +1910,7 @@ fn build_container_report(scan: &ContainerScan<'_>, container_only: bool) -> Dec
     });
 
     DecodeReport {
+        retention_degraded: false,
         profile_versions: ProfileVersions::default(),
         format: "catia".to_string(),
         container_only,
